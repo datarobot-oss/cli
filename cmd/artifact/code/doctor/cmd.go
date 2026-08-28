@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
@@ -30,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -74,6 +76,12 @@ re-run every check and report the post-fix state. Nothing is ever written to
 the server, and a live sync holding the lock gates all repairs. --fix and
 --relink are mutually exclusive.
 
+Pass --relink <new-artifact-id> to repoint the project at a different
+artifact with a fresh sync baseline. The target must exist, be a draft
+(not locked), and be a service-type artifact. An interactive confirm prompt
+defaults to No (use --yes to skip it); the working tree is never touched and
+no server writes are made. The relink is logged to history.log.
+
 Exit code is 0 when no check FAILs (warnings are allowed) and 1 when at
 least one check FAILs. Pass --output-format json for a machine-parseable
 report on stdout.
@@ -82,6 +90,7 @@ Example:
   dr artifact code doctor
   dr artifact code doctor --dir ./service
   dr artifact code doctor --fix
+  dr artifact code doctor --relink <new-artifact-id>
   dr artifact code doctor --output-format json`,
 		// No PreRunE on purpose: a read-only diagnostic must never abort on
 		// auth or launch the interactive login wizard. Auth is probed softly
@@ -106,10 +115,19 @@ Example:
 		"Attempt safe local repairs (rebuild the manifest from config, restore an "+
 			"interrupted rollback, clear a stale sync lock), then re-run the checks.")
 
+	c.Flags().String("relink", "",
+		"Repoint the project at <new-artifact-id> with a fresh sync baseline. "+
+			"The target must exist, be a draft, and be a service-type artifact. "+
+			"Mutually exclusive with --fix.")
+
+	c.MarkFlagsMutuallyExclusive("fix", "relink")
+
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"yes":           cli.IsNonInteractive(cmd),
 			"output_format": string(outputFormat),
+			"fix":           fixFlagChanged(cmd),
+			"relink":        relinkFlagChanged(cmd),
 		}
 	})
 
@@ -119,15 +137,19 @@ Example:
 // runDoctor executes one diagnosis: resolve the project directory, run the
 // check suite, render the report, and exit 1 iff any check FAILed. With
 // --fix, the safe local repairs run first and the reported checks (and exit
-// code) reflect the POST-fix state. The rendered report is the user-facing
-// outcome, so a FAIL run returns cli.ErrSilent (with SilenceErrors set)
-// instead of a second cobra error line.
+// code) reflect the POST-fix state. With --relink, the project is repointed
+// at a new artifact (fresh BASE reset) before the checks re-run. The rendered
+// report is the user-facing outcome, so a FAIL run returns cli.ErrSilent
+// (with SilenceErrors set) instead of a second cobra error line.
 func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error {
 	fix, _ := cmd.Flags().GetBool("fix")
 
-	// --fix and --relink are mutually exclusive: a usage error exits 1
-	// before any check runs. The relink flag lands with the relink feature;
-	// Flags().Changed reports false until it is registered.
+	relinkID, _ := cmd.Flags().GetString("relink")
+
+	// --fix and --relink are mutually exclusive: cobra's
+	// MarkFlagsMutuallyExclusive handles the usage error, but the explicit
+	// check stays as a belt-and-suspenders guard (and gives a clearer
+	// message than cobra's generic one).
 	if fix && cmd.Flags().Changed("relink") {
 		return errors.New("--fix and --relink are mutually exclusive; use one or the other")
 	}
@@ -139,13 +161,7 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 		return err
 	}
 
-	var actions *[]core.Action
-
-	if fix {
-		performed := wldoctor.RunFix(cmd.Context(), projectDir)
-
-		actions = &performed
-	}
+	actions, relinkErr := runRepairPhase(cmd, projectDir, fix, relinkID)
 
 	// Soft auth probe: resolve remote credentials without prompting and
 	// without writing any config file. Local checks never need auth; the
@@ -161,8 +177,9 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 
 	// The complete check suite in the pinned fixed order: six local checks
 	// then the four remote checks. The remote checks share one artifact
-	// fetch through the getArtifactFn seam. After --fix this is the post-fix
-	// state, so both the report and the exit code describe what remains.
+	// fetch through the getArtifactFn seam. After --fix/--relink this is the
+	// post-repair state, so both the report and the exit code describe what
+	// remains.
 	results := core.NewRunner(
 		wldoctor.Checks(projectDir, wldoctor.ArtifactGetterFunc(getArtifactFn))...,
 	).Run(cmd.Context())
@@ -171,30 +188,58 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 
 	report.Actions = actions
 
-	out := cmd.OutOrStdout()
-
-	if outputFormat == outputformat.OutputFormatJSON {
-		err = core.WriteJSON(out, report)
-	} else {
-		err = core.WriteText(out, report)
-	}
-
-	if err != nil {
+	if err := renderReport(cmd, outputFormat, report); err != nil {
 		return err
 	}
 
-	if report.ExitCode() == 1 {
-		// The report is already rendered on stdout; silence cobra's error
-		// echo and exit 1 via the sentinel (main maps any RunE error to 1).
-		// Per docs/development/telemetry.md, a command returning
-		// cli.ErrSilent must carry SilenceErrors — set here so flag/usage
-		// errors keep their explanatory message.
+	// Print relink abort errors to stderr (for not-linked and API-unreachable
+	// cases the user needs a message; for other aborts the actions array
+	// already describes the reason). In JSON mode this keeps stdout pure.
+	if relinkErr != nil && !errors.Is(relinkErr, wldoctor.ErrRelinkAbort) {
+		fmt.Fprintln(cmd.ErrOrStderr(), relinkErr)
+	}
+
+	if relinkErr != nil || report.ExitCode() == 1 {
 		cmd.SilenceErrors = true
 
 		return cli.ErrSilent
 	}
 
 	return nil
+}
+
+// runRepairPhase executes the --fix or --relink repair phase and returns the
+// actions (nil for read-only runs) and any relink error (nil for --fix and
+// read-only runs).
+func runRepairPhase(cmd *cobra.Command, projectDir string, fix bool, relinkID string) (*[]core.Action, error) {
+	if fix {
+		performed := wldoctor.RunFix(cmd.Context(), projectDir)
+
+		return &performed, nil
+	}
+
+	if relinkID != "" {
+		performed, rErr := runRelinkPhase(cmd, projectDir, relinkID)
+
+		if performed != nil {
+			return &performed, rErr
+		}
+
+		return nil, rErr
+	}
+
+	return nil, nil
+}
+
+// renderReport writes the report to stdout as text or JSON.
+func renderReport(cmd *cobra.Command, outputFormat outputformat.OutputFormat, report core.Report) error {
+	out := cmd.OutOrStdout()
+
+	if outputFormat == outputformat.OutputFormatJSON {
+		return core.WriteJSON(out, report)
+	}
+
+	return core.WriteText(out, report)
 }
 
 // resolveProjectDir turns the --dir value (or its "." default) into the
@@ -268,4 +313,65 @@ func softAuthProbe() (remoteCreds, bool) {
 	}
 
 	return remoteCreds{Endpoint: endpoint, Token: token}, true
+}
+
+// runRelinkPhase executes the relink operation and returns the actions and
+// error. Extracted from runDoctor to keep cyclomatic complexity manageable.
+func runRelinkPhase(cmd *cobra.Command, projectDir, relinkID string) ([]core.Action, error) {
+	return wldoctor.RunRelink(cmd.Context(), wldoctor.RelinkOptions{
+		ProjectDir:    projectDir,
+		NewArtifactID: relinkID,
+		Store:         wldoctor.ArtifactGetterFunc(getArtifactFn),
+		Confirm:       makeRelinkConfirm(cmd),
+	})
+}
+
+// makeRelinkConfirm builds the confirm function for the relink operation.
+//
+// Interactive (TTY, no --yes): the warning and a [y/N] prompt are written to
+// stderr; only an explicit "y" or "yes" proceeds (empty Enter declines — this
+// is the bespoke default-No prompt, NOT reader.AskYesNo which treats empty
+// Enter as Yes). Ctrl-C/EOF at the prompt also declines.
+//
+// Non-interactive (--yes or non-TTY): the warning is printed to stderr and the
+// relink proceeds. In JSON mode this keeps stdout pure (all human text to
+// stderr).
+func makeRelinkConfirm(cmd *cobra.Command) wldoctor.RelinkConfirmFunc {
+	nonInteractive := cli.IsNonInteractive(cmd)
+
+	stderr := cmd.ErrOrStderr()
+
+	return func(warning string) bool {
+		if nonInteractive || !reader.IsStdinTerminal() {
+			fmt.Fprintln(stderr, warning)
+
+			return true
+		}
+
+		fmt.Fprintln(stderr, warning)
+
+		fmt.Fprint(stderr, "Proceed? [y/N] ")
+
+		line, err := reader.ReadString()
+		if err != nil {
+			// Ctrl-C, EOF, or cancelreader error: treat as decline.
+			return false
+		}
+
+		answer := strings.TrimSpace(strings.ToLower(line))
+
+		return answer == "y" || answer == "yes"
+	}
+}
+
+// fixFlagChanged reports whether --fix was explicitly set, for telemetry.
+func fixFlagChanged(cmd *cobra.Command) bool {
+	changed, _ := cmd.Flags().GetBool("fix")
+
+	return changed
+}
+
+// relinkFlagChanged reports whether --relink was explicitly set, for telemetry.
+func relinkFlagChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("relink")
 }
