@@ -102,13 +102,24 @@ wl::pass "the errored refusal agrees with the deploy that produced it"
 # --- E.4 --dry-run --recreate deletes nothing ------------------------------
 # The delete happens before the plan is printed, so a dry run that deleted
 # would be a dry run that mutated.
-wl::dr_capture workload up --dir "$work" --yes --recreate --dry-run
+wl::dr_capture workload up --dir "$work" --yes --recreate --dry-run --output-format json
 wl::assert_cmd_ok "$WL_RC" "$WL_OUT" "$WL_ERR" "workload up --recreate --dry-run"
+
+# Held now: the next wl:: call reuses WL_OUT.
+preview_json="$WL_OUT"
 
 still="$(wl::dr_jq '.status' workload get "$wl_id" 2>/dev/null || echo gone)"
 [[ "$still" != "gone" ]] \
     || wl::fail "--dry-run --recreate deleted the workload"
 wl::pass "--dry-run --recreate left the workload alone (status: $still)"
+
+# A preview has to predict the run it previews. Planning against the workload
+# that is about to be deleted described a roll onto something the very next
+# check refuses, while the hint above it said a create would happen.
+previewed="$(printf '%s' "$preview_json" | jq -r '.action')"
+[[ "$previewed" == "created" ]] \
+    || wl::fail "--dry-run --recreate planned '$previewed'; the delete leaves a create"
+wl::pass "--dry-run --recreate plans the create the real run performs"
 
 # --- E.5 --recreate performs the recovery ----------------------------------
 # The workload is deleted, the binding goes with it, and the run continues

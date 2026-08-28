@@ -132,6 +132,50 @@ func TestRecreate_DryRunDeletesNothing(t *testing.T) {
 	assert.Contains(t, stderr, "would delete workload "+boundWorkloadID)
 }
 
+// A dry run has to answer "what would this deploy", so it has to plan against
+// the state the real run reaches rather than the one it starts from.
+//
+// Skipping the delete but keeping the dead workload described a deploy that
+// cannot happen: the plan rendered a roll onto a workload the very next check
+// refuses, and the envelope reported "rolled" for a run whose real action is
+// "created" — while the hint above it said a create would happen.
+func TestRecreate_DryRunPlansTheRunItWouldPerform(t *testing.T) {
+	install(t, fakes{
+		workloadD: deadWorkload(workload.WorkloadStatusErrored),
+		artifactD: func(string) (workload.Document, error) { return nil, nil },
+	})
+
+	previewed, stderr, err := runIn(t, boundManifestFor(),
+		Options{NonInteractive: true, Recreate: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionCreated, previewed.Plan.Action(),
+		"the dead workload is deleted, so what follows is a create")
+	assert.Contains(t, stderr, "will be created")
+	assert.NotContains(t, stderr, "nothing healthy to deploy onto",
+		"the plan must not describe a deploy onto the workload it just said would be deleted")
+
+	// The same run for real, which is the thing the preview claims to predict.
+	install(t, fakes{
+		workloadD:      deadWorkload(workload.WorkloadStatusErrored),
+		artifactD:      func(string) (workload.Document, error) { return nil, nil },
+		deleteWorkload: func(string) error { return nil },
+		clearID:        func(string, string) (bool, error) { return true, nil },
+		create:         func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, workload.Serving, time.Duration, time.Duration,
+			func(*workload.Workload),
+		) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	performed, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Recreate: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, performed.Action, previewed.Plan.Action(),
+		"a preview that names a different action than the run is not a preview")
+}
+
 // Deleting is irreversible, so a run with nobody to ask and no --yes must stop
 // rather than assume consent.
 func TestRecreate_WithoutATerminalOrYesRefuses(t *testing.T) {

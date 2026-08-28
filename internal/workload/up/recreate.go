@@ -59,15 +59,24 @@ func recreate(loaded Loaded, live Live, opts Options) (Live, error) {
 			name(loaded, live), live.Status)
 	}
 
-	// A dry run has to stay one. This is the only mutation that happens before
-	// the plan is printed, so without this branch --dry-run --recreate would
-	// delete a workload on its way to announcing that it would change nothing.
+	// A dry run has to stay one, and has to stay honest. This is the only
+	// mutation that happens before the plan is printed, so the delete is
+	// skipped — but the state handed back is still the one the real run would
+	// reach, because the plan printed here is the whole answer to "what would
+	// this deploy".
+	//
+	// Returning the dead workload instead described a deploy that cannot
+	// happen: the plan rendered a roll onto something the next line refuses,
+	// and the envelope reported action "rolled" for a run whose real action is
+	// "created". Nothing mutates on the strength of this, because Run stops at
+	// its own DryRun branch before anything is applied.
 	if opts.DryRun {
 		fmt.Fprintln(opts.Stderr, tui.HintStyle.Render(fmt.Sprintf(
-			"--recreate would delete workload %s (%s) and create it again under the same name.",
+			"--recreate would delete workload %s (%s) and create it again under the same name. "+
+				"The plan below is the one that would run after it.",
 			live.WorkloadID, live.Status)))
 
-		return live, nil
+		return Live{State: StateUnbound}, nil
 	}
 
 	agreed, err := confirmRecreate(loaded, live, opts)

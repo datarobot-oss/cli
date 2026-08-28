@@ -278,7 +278,7 @@ dr workload up
 dr workload up --recreate
 ```
 
-`--recreate` deletes the bound workload and creates it again under the same name. It acts only on a workload that is errored or terminated; any other state is refused, because a workload a deploy can act on is deployed onto rather than replaced. Deleting cannot be undone, so it asks for the workload name to be typed back unless `--yes` is passed, and `--dry-run --recreate` prints what it would do without deleting anything.
+`--recreate` deletes the bound workload and creates it again under the same name. It acts only on a workload that is errored or terminated; any other state is refused, because a workload a deploy can act on is deployed onto rather than replaced. Deleting cannot be undone, so it asks for the workload name to be typed back unless `--yes` is passed, and `--dry-run --recreate` deletes nothing while still planning against what would follow the delete, so the plan it prints is the one the real run carries out.
 
 Do not remove the `workloadId` line by hand, and do not delete `.datarobot/`. Clearing the binding alone leaves the old workload holding the name, so the create that follows fails; deleting the state directory discards the code catalog and the last-synced version, so the next sync re-uploads a tree the platform already has.
 
