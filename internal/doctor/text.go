@@ -36,19 +36,23 @@ func WriteText(w io.Writer, report Report) error {
 		artifact = "not linked"
 	}
 
-	fmt.Fprintf(w, "Doctor report for %s — artifact: %s\n\n", report.ProjectDir, artifact)
+	if _, err := fmt.Fprintf(w, "Doctor report for %s — artifact: %s\n\n", report.ProjectDir, artifact); err != nil {
+		return err
+	}
 
 	if err := writeChecksTable(w, report); err != nil {
 		return err
 	}
 
-	writeRemedies(w, report)
+	if err := writeRemedies(w, report); err != nil {
+		return err
+	}
 
-	writeActions(w, report)
+	if err := writeActions(w, report); err != nil {
+		return err
+	}
 
-	writeSummary(w, report)
-
-	return nil
+	return writeSummary(w, report)
 }
 
 // writeChecksTable renders the per-check table using the repo-standard
@@ -120,7 +124,7 @@ func renderDetail(res Result) string {
 }
 
 // writeRemedies prints the remedy for each non-OK check that carries one.
-func writeRemedies(w io.Writer, report Report) {
+func writeRemedies(w io.Writer, report Report) error {
 	remedies := make([]string, 0, len(report.Checks))
 
 	for _, res := range report.Checks {
@@ -132,33 +136,41 @@ func writeRemedies(w io.Writer, report Report) {
 	}
 
 	if len(remedies) == 0 {
-		return
+		return nil
 	}
 
-	fmt.Fprintln(w, "\nRemedies")
+	if _, err := fmt.Fprintln(w, "\nRemedies"); err != nil {
+		return err
+	}
 
 	for _, r := range remedies {
-		fmt.Fprintln(w, r)
+		if _, err := fmt.Fprintln(w, r); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // writeActions prints the per-repair outcomes of a repair run (--fix /
 // --relink); read-only runs (Actions nil) print nothing. When every repair
 // reported not-needed, the section says so explicitly: a --fix on a healthy
 // project is a no-op and the output must state that unambiguously.
-func writeActions(w io.Writer, report Report) {
+func writeActions(w io.Writer, report Report) error {
 	if report.Actions == nil {
-		return
+		return nil
 	}
 
 	actions := *report.Actions
 
-	fmt.Fprintln(w, "\nRepairs")
+	if _, err := fmt.Fprintln(w, "\nRepairs"); err != nil {
+		return err
+	}
 
 	if len(actions) == 0 {
-		fmt.Fprintln(w, "  nothing to fix: no repairs needed")
+		_, err := fmt.Fprintln(w, "  nothing to fix: no repairs needed")
 
-		return
+		return err
 	}
 
 	allNotNeeded := true
@@ -174,18 +186,26 @@ func writeActions(w io.Writer, report Report) {
 			line += " — " + action.Reason
 		}
 
-		fmt.Fprintln(w, line)
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
 	}
 
 	if allNotNeeded {
-		fmt.Fprintln(w, "  nothing to fix: no repairs needed")
+		_, err := fmt.Fprintln(w, "  nothing to fix: no repairs needed")
+
+		return err
 	}
+
+	return nil
 }
 
 // writeSummary prints the per-status counts and the overall verdict.
-func writeSummary(w io.Writer, report Report) {
+func writeSummary(w io.Writer, report Report) error {
 	counts := report.Counts()
 
-	fmt.Fprintf(w, "\nSummary: %d ok, %d warn, %d fail, %d skip — verdict: %s\n",
+	_, err := fmt.Fprintf(w, "\nSummary: %d ok, %d warn, %d fail, %d skip — verdict: %s\n",
 		counts.OK, counts.WARN, counts.FAIL, counts.SKIP, report.OverallStatus())
+
+	return err
 }
