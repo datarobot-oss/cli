@@ -113,6 +113,10 @@ type fakeFilesClient struct {
 	failApplyStage     bool   // ApplyStage returns error after staging succeeded
 	numFilesOverride   *int   // if non-nil, ApplyStage returns this numFiles; otherwise real count
 
+	// Version-scoped checksum fault: served only when AllFiles is called
+	// for this version (see withWrongChecksumForVersion).
+	wrongChecksumForVersion *wrongChecksumFault
+
 	// Download faults, keyed by path. failDownloadPath makes DownloadFile
 	// return an error for that path; corruptDownloadPath makes it serve
 	// bytes whose SHA-256 differs from the advertised checksum (same
@@ -230,6 +234,24 @@ func (f *fakeFilesClient) withWrongChecksum(path, checksum string) *fakeFilesCli
 
 	f.wrongChecksumPath = path
 	f.wrongChecksumValue = checksum
+
+	return f
+}
+
+// withWrongChecksumForVersion is the version-scoped form of withWrongChecksum:
+// the substitute checksum is served only when AllFiles is called for the given
+// version. The engine's post-apply verification reads the NEW version, which
+// Phase 2 never fetches, so a fault scoped to it models "the post-apply
+// listing disagrees" without corrupting the Phase-2 fetch or the plan.
+func (f *fakeFilesClient) withWrongChecksumForVersion(versionID, path, checksum string) *fakeFilesClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.wrongChecksumForVersion = &wrongChecksumFault{
+		versionID: versionID,
+		path:      path,
+		checksum:  checksum,
+	}
 
 	return f
 }
@@ -664,6 +686,29 @@ func (f *fakeFilesClient) applyWrongChecksum(result map[string]filesapi.FileMeta
 	}
 }
 
+// wrongChecksumFault is the version-scoped checksum fault record (see
+// withWrongChecksumForVersion).
+type wrongChecksumFault struct {
+	versionID string
+	path      string
+	checksum  string
+}
+
+// applyWrongChecksumForVersion applies the version-scoped checksum fault when
+// AllFiles was called for the fault's version, leaving every other version's
+// listing truthful.
+func (f *fakeFilesClient) applyWrongChecksumForVersion(versionID string, result map[string]filesapi.FileMeta) {
+	flt := f.wrongChecksumForVersion
+	if flt == nil || flt.versionID != versionID {
+		return
+	}
+
+	if fm, exists := result[flt.path]; exists {
+		fm.Hash = flt.checksum
+		result[flt.path] = fm
+	}
+}
+
 // paginateFiles simulates the server's paginated response and the client's
 // next-link following. With a page size of 1 and N files, the fake processes
 // N pages; if it failed to follow next links, only the first file would be
@@ -721,6 +766,7 @@ func (f *fakeFilesClient) AllFiles(_, versionID string) (map[string]filesapi.Fil
 
 	// Fault injection: return a wrong checksum for a chosen path.
 	f.applyWrongChecksum(result)
+	f.applyWrongChecksumForVersion(versionID, result)
 
 	// Simulate pagination: split into pages and follow next links, mirroring
 	// the real client. A bug here (not following next links) would cause

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/datarobot/cli/internal/workload/fileops"
 )
@@ -102,6 +103,15 @@ func executePlan(e *Engine, rb *Rollback) error {
 
 	e.newCatalogID = newCatalogID
 	e.newVersionID = newVersionID
+
+	// --verify's post-apply check runs before this function returns so a
+	// mismatch propagates to phase5Execute, which restores the working tree
+	// and stops the pipeline before phase6State can persist anything. The
+	// check itself is a no-op unless the plan uploaded files and Options.Verify
+	// opted in.
+	if err := verifyPostApplyUploads(e, e.uploadOutcome); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -331,4 +341,67 @@ func applyDeletes(e *Engine, catalogID string) (string, error) {
 	}
 
 	return resp.CatalogVersionID, nil
+}
+
+// verifyPostApplyUploads is --verify's second effect: after ApplyUploads,
+// fetch the new version's file listing and confirm the server's checksum for
+// every UPLOADED path equals the hash of the bytes this run streamed. The
+// comparison is plain strings because the server's file checksum is the
+// SHA-256 hex of the content, the same digest the uploader computed while
+// streaming.
+//
+// It must run here in Phase 5, not in Phase 6: a mismatch has to fail the
+// phase and trip the rollback while Phase 6 has written nothing — a Phase-6
+// check would run after SaveManifest/SaveConfig, and failing there cannot
+// un-write either file. The check is placed after the codeRef PATCH: the
+// remote version cannot be un-published, so the recoverable posture after a
+// failed verification is the drifted one — config still names the old
+// version, the next sync sees the difference, fetches the real remote, and
+// reconciles.
+//
+// Only uploaded paths are compared. Stage REPLACE merges staged paths into
+// the version in place, so the listing legitimately contains files this sync
+// never touched, some carrying checksums from earlier runs; flagging one of
+// those would fail honest runs.
+//
+// numFiles from ApplyStage counts every file in the resulting version, not
+// the ones uploaded, so it has no arithmetic relationship to the plan and is
+// never used to gate, skip, or abort this check.
+//
+// The check is skipped entirely when nothing was uploaded: a downloads-only
+// or empty plan makes no AllFiles request here, and a nil outcome or an
+// empty Sent map is not an error.
+func verifyPostApplyUploads(e *Engine, outcome *UploadOutcome) error {
+	if !e.opts.Verify || outcome == nil || len(outcome.Sent) == 0 {
+		return nil
+	}
+
+	listing, err := e.files.AllFiles(outcome.CatalogID, outcome.VersionID)
+	if err != nil {
+		return fmt.Errorf("post-apply verification: fetch files of version %s: %w", outcome.VersionID, err)
+	}
+
+	// Sorted so the reported path is deterministic when several differ.
+	paths := make([]string, 0, len(outcome.Sent))
+
+	for path := range outcome.Sent {
+		paths = append(paths, path)
+	}
+
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		sent := outcome.Sent[path]
+
+		held, ok := listing[path]
+		if !ok {
+			return fmt.Errorf("post-apply verification: uploaded file %s is absent from server version %s", path, outcome.VersionID)
+		}
+
+		if held.Hash != sent.Hash {
+			return fmt.Errorf("post-apply verification: server checksum for %s in version %s does not match the uploaded bytes (sent %s, server holds %s)", path, outcome.VersionID, sent.Hash, held.Hash)
+		}
+	}
+
+	return nil
 }
