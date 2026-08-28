@@ -28,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 )
@@ -182,12 +183,19 @@ func reportAlreadyLinked(cmd *cobra.Command, dir string, outputFormat outputform
 	if err != nil {
 		// Corrupt config: cannot read the linked artifact id. Do NOT fetch;
 		// report unreadable, remedy names doctor --fix, never deletion.
+		// The underlying LoadConfig error is wrapped so the user sees the
+		// root cause (e.g. JSON parse error), and the config path is included
+		// in both text and JSON stderr so the user knows which file is bad.
 		const remedy = "dr artifact code doctor --fix"
+
+		configPath := wapi.ConfigPath(dir)
+
+		wrappedErr := fmt.Errorf("init aborted: project already linked (config unreadable at %s): %w", configPath, err)
 
 		if outputFormat == outputformat.OutputFormatJSON {
 			renderAlreadyLinkedJSON(cmd.OutOrStdout(), nil, remedy)
 
-			fmt.Fprintln(stderr, "Project is already linked but the config is unreadable.")
+			fmt.Fprintf(stderr, "Project is already linked but the config at %s is unreadable: %v\n", configPath, err)
 			fmt.Fprintln(stderr, "Run 'dr artifact code doctor --fix' to repair the config.")
 
 			cmd.SilenceErrors = true
@@ -197,17 +205,17 @@ func reportAlreadyLinked(cmd *cobra.Command, dir string, outputFormat outputform
 
 		printCorruptConfig(cmd.OutOrStdout(), dir)
 
-		return errors.New("init aborted: project already linked (config unreadable)")
+		return wrappedErr
 	}
 
 	// Fetch the linked artifact to determine health.
 	art, fetchErr := getArtifactFn(cfg.ArtifactID)
 
-	gone := isNotFound(fetchErr)
+	gone := wldoctor.IsNotFound(fetchErr)
 
 	mismatch := false
 	if fetchErr == nil && art != nil {
-		mismatch = isCatalogMismatch(cfg.CatalogID, art)
+		mismatch = wldoctor.IsCatalogMismatch(cfg.CatalogID, art)
 	}
 
 	if gone || mismatch {
@@ -232,27 +240,4 @@ func reportAlreadyLinked(cmd *cobra.Command, dir string, outputFormat outputform
 	printAlreadyLinkedHealthy(cmd.OutOrStdout(), cfg.ArtifactID, dir)
 
 	return errors.New("init aborted: project already linked")
-}
-
-// isNotFound reports whether err is the API's 404 (possibly wrapped).
-func isNotFound(err error) bool {
-	var httpErr *drapi.HTTPError
-
-	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound
-}
-
-// isCatalogMismatch reports whether the locally pinned catalog id no longer
-// matches the artifact's codeRef. The anchor-on-local rule applies: a
-// nil/empty local pin means "never synced from here" and is always OK.
-func isCatalogMismatch(localCatalogID *string, art *workload.Artifact) bool {
-	if localCatalogID == nil || *localCatalogID == "" {
-		return false
-	}
-
-	codeRef := workload.ExtractCodeRef(*art)
-	if codeRef == nil || codeRef.CatalogID == "" {
-		return true // local pin set, remote absent/empty
-	}
-
-	return *localCatalogID != codeRef.CatalogID
 }

@@ -586,3 +586,40 @@ func splitLinesStr(s string) []string {
 
 	return lines
 }
+
+// TestRunE_RelinkEmptyValue_UsageError verifies that --relink ” (an explicit
+// empty value) is a usage error (exit 1), not a silent read-only run. The
+// repair phase must gate on Flags().Changed so an empty value is rejected.
+func TestRunE_RelinkEmptyValue_UsageError(t *testing.T) {
+	tmp := t.TempDir()
+
+	linkHealthyProject(t, tmp)
+
+	c, out, errOut := newTestCmd(t, "--dir", tmp, "--relink", "")
+
+	err := c.Execute()
+
+	require.Error(t, err, "--relink '' must be a usage error")
+
+	assert.Contains(t, errOut.String(), "non-empty artifact id",
+		"stderr must explain the empty-value rejection")
+
+	// No checks execute, no report on stdout.
+	assert.Empty(t, out.String(), "no report for a usage error")
+}
+
+// TestRunE_RelinkUnchanged_ReadOnlyRun verifies that a plain read-only run
+// (no --relink flag at all) is unaffected by the empty-value gate.
+func TestRunE_RelinkUnchanged_ReadOnlyRun(t *testing.T) {
+	tmp := t.TempDir()
+
+	linkHealthyProject(t, tmp)
+
+	c, out, _ := newTestCmd(t, "--dir", tmp)
+
+	err := c.Execute()
+
+	require.NoError(t, err, "a plain read-only run must succeed")
+
+	assert.NotEmpty(t, out.String(), "the diagnostic report must be rendered")
+}

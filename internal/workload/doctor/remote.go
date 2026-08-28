@@ -175,12 +175,39 @@ func remoteSkipResult(err error) core.Result {
 	}
 }
 
-// isNotFound reports whether err is the API's 404 (possibly wrapped),
-// detected via drapi.HTTPError status rather than string matching.
-func isNotFound(err error) bool {
+// IsNotFound reports whether err is the API's 404 (possibly wrapped),
+// detected via drapi.HTTPError status rather than string matching. It is
+// the single shared implementation used by both the doctor remote checks and
+// the init already-linked branch, so the two surfaces cannot drift apart.
+func IsNotFound(err error) bool {
 	var httpErr *drapi.HTTPError
 
 	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound
+}
+
+// isNotFound is an internal alias kept for the remote checks' own call sites
+// that already use the unexported name. It delegates to the exported
+// IsNotFound so there is exactly one implementation.
+func isNotFound(err error) bool {
+	return IsNotFound(err)
+}
+
+// IsCatalogMismatch reports whether the locally pinned catalog id no longer
+// matches the artifact's codeRef. The anchor-on-local rule applies: a
+// nil/empty local pin means "never synced from here" and is always OK (no
+// mismatch). It is the single shared implementation used by both the doctor
+// catalog-mismatch check and the init already-linked branch.
+func IsCatalogMismatch(localCatalogID *string, art *workload.Artifact) bool {
+	if localCatalogID == nil || *localCatalogID == "" {
+		return false
+	}
+
+	codeRef := workload.ExtractCodeRef(*art)
+	if codeRef == nil || codeRef.CatalogID == "" {
+		return true // local pin set, remote absent/empty
+	}
+
+	return *localCatalogID != codeRef.CatalogID
 }
 
 // codeRefCatalog returns the artifact's pinned catalog id with empty-vs-nil

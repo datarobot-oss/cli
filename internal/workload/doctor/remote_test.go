@@ -412,3 +412,103 @@ func TestRemoteChecks_ErrorSummaryIsInformative(t *testing.T) {
 
 // Compile-time proof that the production store satisfies the seam.
 var _ ArtifactGetter = ProductionArtifactGetter()
+
+// TestIsNotFound verifies the shared 404-detection predicate used by both the
+// doctor remote checks and the init already-linked branch.
+func TestIsNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "404 HTTPError",
+			err:  &drapi.HTTPError{StatusCode: 404, URL: "test"},
+			want: true,
+		},
+		{
+			name: "500 HTTPError",
+			err:  &drapi.HTTPError{StatusCode: 500, URL: "test"},
+			want: false,
+		},
+		{
+			name: "wrapped 404",
+			err:  fmt.Errorf("fetch failed: %w", &drapi.HTTPError{StatusCode: 404, URL: "test"}),
+			want: true,
+		},
+		{
+			name: "plain error",
+			err:  errors.New("connection refused"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsNotFound(tt.err))
+		})
+	}
+}
+
+// TestIsCatalogMismatch verifies the shared catalog-mismatch predicate used by
+// both the doctor catalog-mismatch check and the init already-linked branch.
+func TestIsCatalogMismatch(t *testing.T) {
+	matchingCodeRef := &workload.DatarobotCodeRef{CatalogID: "cat-123"}
+	mismatchedCodeRef := &workload.DatarobotCodeRef{CatalogID: "cat-456"}
+	emptyCodeRef := &workload.DatarobotCodeRef{CatalogID: ""}
+
+	tests := []struct {
+		name  string
+		local *string
+		art   *workload.Artifact
+		want  bool
+	}{
+		{
+			name:  "nil local pin always OK (anchor-on-local)",
+			local: nil,
+			art:   makeArtifact("id", "DRAFT", mismatchedCodeRef),
+			want:  false,
+		},
+		{
+			name:  "empty local pin always OK",
+			local: strPtr(""),
+			art:   makeArtifact("id", "DRAFT", mismatchedCodeRef),
+			want:  false,
+		},
+		{
+			name:  "matching catalogs OK",
+			local: strPtr("cat-123"),
+			art:   makeArtifact("id", "DRAFT", matchingCodeRef),
+			want:  false,
+		},
+		{
+			name:  "mismatched catalogs FAIL",
+			local: strPtr("cat-123"),
+			art:   makeArtifact("id", "DRAFT", mismatchedCodeRef),
+			want:  true,
+		},
+		{
+			name:  "local pin set, remote codeRef absent FAIL",
+			local: strPtr("cat-123"),
+			art:   makeArtifact("id", "DRAFT", nil),
+			want:  true,
+		},
+		{
+			name:  "local pin set, remote codeRef empty FAIL",
+			local: strPtr("cat-123"),
+			art:   makeArtifact("id", "DRAFT", emptyCodeRef),
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsCatalogMismatch(tt.local, tt.art))
+		})
+	}
+}

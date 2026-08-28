@@ -212,11 +212,21 @@ func fixRollback(projectDir string) core.Action {
 // fixLock verifies the sync lock is clearable and leaves it untouched. An
 // absent lock file is not-needed (and is never created); a present lock that
 // AcquireSyncLock acquires is immediately released again and reported
-// not-needed — the OS already released an unheld flock, so the file is the
-// healthy steady state and nothing needed clearing (it is also never
-// unlinked, because another process may hold the open descriptor). A lock
-// that cannot be acquired (a holder appeared after the safety gate, or the
-// file is uninspectable) is left exactly as found and reported skipped.
+// not-needed with a "verified acquirable" reason — the OS already released an
+// unheld flock, so the file is the healthy steady state and nothing needed
+// clearing (it is also never unlinked, because another process may hold the
+// open descriptor). A lock that cannot be acquired (a holder appeared after
+// the safety gate, or the file is uninspectable) is left exactly as found and
+// reported skipped.
+//
+// Benign TOCTOU: the stat-then-acquire sequence has a race window — a sync
+// could start between the stat and the AcquireSyncLock call. This is harmless:
+// if a sync acquires the lock in that window, AcquireSyncLock fails and the
+// repair reports skipped (the lock is held); if the lock file is created by a
+// starting sync after the stat found it absent, AcquireSyncLock succeeds and
+// is released, which is fine because the sync's own flock is on a different
+// file descriptor (flock is per-open-file-description, not per-path). In both
+// cases the post-fix check suite reports the honest state.
 func fixLock(projectDir string) core.Action {
 	path := filepath.Join(wapi.Dir(projectDir), sync.LockFileName)
 
@@ -249,5 +259,9 @@ func fixLock(projectDir string) core.Action {
 		}
 	}
 
-	return core.Action{ID: CheckIDLock, Status: core.ActionNotNeeded}
+	return core.Action{
+		ID:     CheckIDLock,
+		Status: core.ActionNotNeeded,
+		Reason: "verified acquirable (acquired and released); no holder detected",
+	}
 }

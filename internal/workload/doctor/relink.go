@@ -101,7 +101,6 @@ type RelinkOptions struct {
 //  4. Target 404 → abort.
 //  5. Target locked → abort (cannot sync to a locked artifact).
 //  6. Target Artifact.Type != "service" → abort (cross-type lineage refused).
-//  7. Same-id relink (target == currently linked) → allowed, warned, BASE reset.
 //
 // After all gates pass, the confirm function is called. On confirmation:
 //   - Config rewritten (artifactId=new, catalogId=new codeRef.CatalogID
@@ -109,6 +108,9 @@ type RelinkOptions struct {
 //   - Manifest reset to empty BASE (Files={}, synced fields nil).
 //   - History.log appended {op:relink, from, to, ts}.
 //   - Working tree untouched. Zero server writes.
+//
+// The same-id relink (target == currently linked) is allowed, warned, and
+// resets BASE.
 //
 // The returned actions describe the relink; the returned error is non-nil for
 // every abort case (the command layer forces exit 1).
@@ -139,11 +141,19 @@ func RunRelink(ctx context.Context, opts RelinkOptions) ([]core.Action, error) {
 		return fetchActions, err
 	}
 
-	// Gate 6: same-id relink → allowed, warned, BASE reset.
+	// Same-id relink → allowed, warned, BASE reset.
 	warning := relinkWarning(oldCfg.ArtifactID, opts.NewArtifactID)
 
-	// Gate 7: confirm prompt (defaults to No; empty Enter declines).
-	if !opts.Confirm(warning) {
+	// Confirm prompt (defaults to No; empty Enter declines). A nil Confirm
+	// function is treated as a decline so an internal caller that forgets to
+	// set it cannot accidentally proceed with a destructive operation.
+	confirm := opts.Confirm
+
+	if confirm == nil {
+		confirm = func(string) bool { return false }
+	}
+
+	if !confirm(warning) {
 		return relinkSkipped("declined by user"), ErrRelinkAbort
 	}
 
@@ -238,6 +248,16 @@ func relinkWarning(oldID, newID string) string {
 // relinkWrite performs the config/manifest/history writes after all gates pass
 // and the user confirms. Returns a performed action on success; a skipped
 // action with ErrRelinkAbort on any write failure.
+//
+// Mid-write non-atomicity: the three writes (SaveConfig, SaveManifest,
+// AppendHistory) are not atomic across each other. State is untouched until
+// the first write (SaveConfig); if SaveConfig succeeds but a later write
+// fails, the project is left in a partially-relinked state (config repointed
+// but manifest/history stale). Recovery is 'dr artifact code doctor --fix',
+// which rebuilds the manifest from the now-correct config and re-runs the
+// checks. Each write uses wapi's atomic-write (write-temp-then-rename) so an
+// individual file is never left half-written, but the sequence as a whole is
+// not transactional.
 func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact) ([]core.Action, error) {
 	newCfg := wapi.Config{
 		ArtifactID:          opts.NewArtifactID,
