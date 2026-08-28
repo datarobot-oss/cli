@@ -496,5 +496,7 @@ func hashLocal(t *testing.T, dir, rel string) (string, int64, error) {
 
 	abs := filepath.Join(dir, filepath.FromSlash(rel))
 
-	return fileops.HashFile(abs)
+	hash, size, _, err := fileops.HashFile(abs)
+
+	return hash, size, err
 }

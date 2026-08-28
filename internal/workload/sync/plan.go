@@ -25,6 +25,8 @@ type FileAction struct {
 	RemoteSize     int64
 	LocalHash      string
 	RemoteHash     string
+	LocalMode      uint32
+	RemoteMode     uint32
 }
 
 // SyncPlan is the blueprint Phase 5 executes and the structure the display

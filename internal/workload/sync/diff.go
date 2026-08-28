@@ -20,6 +20,7 @@ import "github.com/datarobot/cli/internal/drapi/filesapi"
 type FileEntry struct {
 	Hash string
 	Size int64
+	Mode uint32
 }
 
 type (
@@ -53,6 +54,8 @@ func Diff(base, local, remote BaseManifest) *SyncPlan {
 			RemoteSize:     r.Size,
 			LocalHash:      l.Hash,
 			RemoteHash:     r.Hash,
+			LocalMode:      l.Mode,
+			RemoteMode:     r.Mode,
 		})
 	}
 
@@ -75,7 +78,7 @@ func pathUnion(maps ...BaseManifest) map[string]struct{} {
 func FromFilesAPI(remote map[string]filesapi.FileMeta) RemoteManifest {
 	out := make(RemoteManifest, len(remote))
 	for k, v := range remote {
-		out[k] = FileEntry{Hash: v.Hash, Size: v.Size}
+		out[k] = FileEntry{Hash: v.Hash, Size: v.Size, Mode: v.Mode}
 	}
 
 	return out

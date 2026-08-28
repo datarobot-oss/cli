@@ -150,6 +150,7 @@ var jsonFieldNames = map[string]string{
 	"SyncedVersionID":     "syncedVersionId",
 	"Hash":                "hash",
 	"Size":                "size",
+	"Mode":                "mode",
 }
 
 func jsonFieldName(fe validator.FieldError) string {

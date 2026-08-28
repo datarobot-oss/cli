@@ -58,6 +58,37 @@ func TestManifest_SaveLoadRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Files, got.Files)
 }
 
+func TestManifest_ModeRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	initWapiDir(t, tmp)
+
+	original := Manifest{
+		Version: ManifestVersion,
+		Files: map[string]FileMeta{
+			"bin/entrypoint.sh": {Hash: testHash('1'), Size: 42, Mode: 0o755},
+		},
+	}
+
+	require.NoError(t, SaveManifest(tmp, original))
+
+	got, err := LoadManifest(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0o755), got.Files["bin/entrypoint.sh"].Mode)
+}
+
+func TestManifest_ModeAbsentDefaultsToZero(t *testing.T) {
+	tmp := t.TempDir()
+	initWapiDir(t, tmp)
+
+	path := filepath.Join(Dir(tmp), manifestFile)
+	body := `{"version":1,"files":{"a.py":{"hash":"` + testHash('a') + `","size":1}}}`
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+
+	got, err := LoadManifest(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0), got.Files["a.py"].Mode, "manifest predating mode tracking must still parse")
+}
+
 func TestManifest_EmptyFilesMap(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
@@ -165,6 +196,10 @@ func TestManifest_LoadInvalid(t *testing.T) {
 		{
 			name: "negative size",
 			json: `{"version":1,"files":{"a.py":{"hash":"` + validHash + `","size":-1}}}`,
+		},
+		{
+			name: "mode out of range",
+			json: `{"version":1,"files":{"a.py":{"hash":"` + validHash + `","size":1,"mode":512}}}`,
 		},
 		{
 			name: "syncedAt without syncedVersionId",
