@@ -523,8 +523,14 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 // before rendering it. And onTick stays silent, because it reports poll
 // results and this wait had none, rather than replaying the seed as if it
 // were an observation.
+//
+// The absence has to hold across several polls, so this also pins that a
+// rollout which really is over still settles the wait.
 func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
+	var hits int32
+
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
 		notFound(w)
 	})
 
@@ -538,6 +544,36 @@ func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 	assert.Equal(t, "art-2", replacement.ArtifactID)
 	assert.Equal(t, "submitted", replacement.Status,
 		"the seed comes back as it was; a nil error here does not mean the status is terminal")
+	assert.Equal(t, int32(uncorroboratedAbsences), atomic.LoadInt32(&hits),
+		"one 404 is not enough to conclude a rollout finished before the wait could see it")
+}
+
+// TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord is the cost of
+// the seed above. The first poll fires immediately after the POST, so a 404
+// there says equally "the rollout is over" and "the route has not caught up",
+// and taking it at face value ended the wait before the swap had begun.
+func TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord(t *testing.T) {
+	var hits int32
+
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		switch atomic.AddInt32(&hits, 1) {
+		case 1:
+			notFound(w)
+		case 2:
+			fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"switching"}`)
+		default:
+			fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"completed"}`)
+		}
+	})
+
+	started := &Replacement{ArtifactID: "art-2", Status: "submitted"}
+
+	replacement, err := WaitForReplacement("wl-1", started, time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	require.NotNil(t, replacement)
+	assert.Equal(t, ReplacementStatusCompleted, replacement.Status,
+		"a 404 one poll after the POST must not settle the wait before the record has appeared")
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3))
 }
 
 // TestWaitForReplacement_NonTerminalClearedViaNotFoundIsSuccess is the other

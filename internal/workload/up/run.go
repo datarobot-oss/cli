@@ -810,7 +810,7 @@ func create(
 		return result, nil
 	}
 
-	return settle(created.ID, result, opts, report)
+	return settle(created.ID, workload.Serving{}, result, opts, report)
 }
 
 // startFirst brings a stopped workload up so the rest of the plan has
@@ -853,10 +853,10 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 	// Only the run that ends here may lock: locking is about the artifact left
 	// serving, and a start that is about to be rolled off is not that.
 	if only {
-		return settle(result.WorkloadID, result, opts, report)
+		return settle(result.WorkloadID, workload.Serving{}, result, opts, report)
 	}
 
-	return awaitRunning(result.WorkloadID, result, opts, report)
+	return awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
 }
 
 // requestStart POSTs the start and passes on the one thing the platform says
@@ -1005,8 +1005,25 @@ func isConflict(err error) bool {
 // awaitRunning instead: locking is about the artifact left serving, and an
 // artifact about to be rolled off is not it. Locking cannot be undone, so the
 // distinction is not a tidiness one.
-func settle(workloadID string, result Result, opts Options, report *reporter) (Result, error) {
-	result, err := awaitRunning(workloadID, result, opts, report)
+//
+// want is what makes the lock safe as well as the report honest. lock makes
+// result.ArtifactID permanent, and that is whatever the wait last saw: a wait
+// that returned early would lock the artifact being rolled off, leaving it
+// undeletable while the version actually serving stays a draft.
+//
+// It is also what puts verifyEndpoint after the cutover rather than inside it.
+// Before this wait existed, a roll GETted the endpoint mid-swap and reported
+// the version being replaced.
+func settle(workloadID string, want workload.Serving, result Result, opts Options, report *reporter) (Result, error) {
+	// Whether the drain wait actually happened decides what the endpoint line
+	// below is allowed to claim. On an install without the proton route the
+	// wait rests on the artifact alone, and the artifact moves about a minute
+	// before the endpoint stops answering the old build, so a GET made there
+	// can describe the version being rolled off.
+	unconfirmed := ""
+	want.OnUnconfirmed = func(reason string) { unconfirmed = reason }
+
+	result, err := awaitRunning(workloadID, want, result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -1014,7 +1031,7 @@ func settle(workloadID string, result Result, opts Options, report *reporter) (R
 	// One GET against the endpoint, reported and never fatal. Running means
 	// the container started; with no probe written by default, whether
 	// anything answers is a question nobody has asked yet.
-	verifyEndpoint(result, report)
+	verifyEndpoint(result, unconfirmed, report)
 
 	if !opts.Lock {
 		return result, nil
@@ -1024,11 +1041,25 @@ func settle(workloadID string, result Result, opts Options, report *reporter) (R
 }
 
 // awaitRunning waits for the workload to come up and records where it landed.
-func awaitRunning(workloadID string, result Result, opts Options, report *reporter) (Result, error) {
+//
+// want says what the wait has to see. A roll names its candidate and asks for
+// the drain, because the workload reports "running" for the whole of a swap and
+// the status alone would settle the wait too early; a resize asks for the drain
+// with no artifact to name; a create and a start ask for neither.
+func awaitRunning(
+	workloadID string,
+	want workload.Serving,
+	result Result,
+	opts Options,
+	report *reporter,
+) (Result, error) {
 	var final *workload.Workload
 
-	err := report.run("Waiting for the workload to run", func() error {
-		wl, waitErr := waitWorkloadFn(workloadID, opts.PollInterval, opts.PollTimeout, nil)
+	label := waitLabel(want, result)
+
+	err := report.run(label, func() error {
+		wl, waitErr := waitWorkloadFn(workloadID, want, opts.PollInterval, opts.PollTimeout,
+			heartbeat(strings.ToLower(label), opts, report))
 		final = wl
 
 		return waitErr
@@ -1051,6 +1082,105 @@ func awaitRunning(workloadID string, result Result, opts Options, report *report
 
 	return result, nil
 }
+
+// waitLabel names what is actually being waited for.
+//
+// A workload that never stopped running makes "waiting for the workload to run"
+// describe a wait that was over before it began, which is how this bug read as
+// a success. Both paths that replace a generation have that shape, so the label
+// keys on AwaitDrain rather than on the artifact: a resize waits out a drain
+// with no artifact to name, and would otherwise keep the wording the roll just
+// stopped using.
+//
+// result.ArtifactID still names the outgoing version at this point, by settle's
+// ordering, which is what tells a roll from a start onto the same version.
+func waitLabel(want workload.Serving, result Result) string {
+	if !want.AwaitDrain {
+		return "Waiting for the workload to run"
+	}
+
+	if want.ArtifactID == "" {
+		return "Waiting for the new settings to serve"
+	}
+
+	if want.ArtifactID == result.ArtifactID {
+		return "Waiting for the workload to run"
+	}
+
+	return "Waiting for the new version to serve"
+}
+
+// budgetLeft is opts with the poll timeout reduced by what a run has already
+// spent on it.
+//
+// A roll waits twice: once on the replacement, once on the handover. Each used
+// to take opts.PollTimeout in full, which was invisible while the second wait
+// returned on its first poll and is not now that it sits through a drain. A
+// --poll-timeout of ten minutes meant ten, not twenty, and a CI budget set
+// against the flag should still hold.
+//
+// A floor is kept so a first wait that used the whole budget still gives the
+// second one long enough to say something better than "timeout".
+func budgetLeft(opts Options, since time.Time) Options {
+	if opts.PollTimeout <= 0 {
+		return opts
+	}
+
+	left := opts.PollTimeout - time.Since(since)
+	if left < minPollBudget {
+		left = minPollBudget
+	}
+
+	opts.PollTimeout = left
+
+	return opts
+}
+
+// minPollBudget is what a wait gets when the one before it spent everything.
+const minPollBudget = 30 * time.Second
+
+// heartbeat prints a line every so often while a long wait runs, and nil when
+// there is a spinner to do that job.
+//
+// report.run prints nothing until a phase ends, so without this the longest
+// phase in the deploy emits no bytes at all: on a live rollout it sat for eight
+// and a half minutes, which from outside is indistinguishable from a hang.
+//
+// The line carries the phase name because it is printed before the checkmark it
+// belongs to. Read top to bottom, an unlabelled line sits under the previous
+// phase's tick and reads as belonging to that one.
+func heartbeat(label string, opts Options, report *reporter) func(*workload.Workload) {
+	if opts.Spinner || opts.PollInterval <= 0 {
+		return nil
+	}
+
+	every := int(heartbeatEvery / opts.PollInterval)
+	if every < 1 {
+		every = 1
+	}
+
+	started := phaseClock()
+	ticks := 0
+
+	return func(wl *workload.Workload) {
+		ticks++
+
+		if ticks%every != 0 {
+			return
+		}
+
+		// Elapsed, not the artifact. Naming the version being waited for reads
+		// as though it had arrived, which is the question this line exists to
+		// answer: the wait is progressing, not stuck.
+		report.say("    %s\n", tui.HintStyle.Render(fmt.Sprintf(
+			"%s, %s so far; the workload is %s",
+			label, phaseClock().Sub(started).Truncate(time.Second), wl.Status)))
+	}
+}
+
+// heartbeatEvery is how often a silent wait says it is still there. Long
+// enough not to bury a CI log, short enough that nobody reaches for Ctrl-C.
+const heartbeatEvery = 30 * time.Second
 
 // lock makes the live artifact permanent. It runs only after the workload is
 // serving, because locking is one-way: locking an artifact that never came up

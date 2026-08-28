@@ -38,7 +38,7 @@ func TestVerifyEndpoint_StatesTheStatusInWords(t *testing.T) {
 
 	var out bytes.Buffer
 
-	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, newReporter(&out, false))
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, "", newReporter(&out, false))
 
 	assert.Contains(t, out.String(), "404 Not Found")
 	assert.Contains(t, out.String(), "anonymous GET")
@@ -54,7 +54,7 @@ func TestVerifyEndpoint_SaysPlainlyWhenNothingAnswers(t *testing.T) {
 
 	var out bytes.Buffer
 
-	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, newReporter(&out, false))
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, "", newReporter(&out, false))
 
 	text := out.String()
 	assert.Contains(t, text, "did not answer")
@@ -74,7 +74,7 @@ func TestVerifyEndpoint_SkipsWithoutAnEndpoint(t *testing.T) {
 
 	var out bytes.Buffer
 
-	verifyEndpoint(Result{}, newReporter(&out, false))
+	verifyEndpoint(Result{}, "", newReporter(&out, false))
 	assert.Empty(t, out.String())
 }
 
@@ -125,7 +125,7 @@ func TestRun_EndpointNotAnsweringDoesNotFailTheRun(t *testing.T) {
 	install(t, fakes{
 		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		writeID: func(string, string) error { return nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		getArtifact: func(id string) (*workload.Artifact, error) {
@@ -147,7 +147,7 @@ func TestRun_ReportsTheEndpointAnswer(t *testing.T) {
 	install(t, fakes{
 		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		writeID: func(string, string) error { return nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		getArtifact: func(id string) (*workload.Artifact, error) {

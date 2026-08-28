@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -59,10 +60,10 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 		return result, err
 	}
 
-	// result.ArtifactID stays on the version that is serving, and settle
-	// moves it when the rollout has actually promoted the new one. A failed
-	// swap leaves the old version running, so an envelope naming the
-	// candidate would send someone to read the wrong artifact.
+	// result.ArtifactID stays on the version that is serving, and settle moves
+	// it once the rollout has promoted the new one, which it now waits to see
+	// rather than assuming. A failed swap leaves the old version running, so an
+	// envelope naming the candidate would point at the wrong artifact.
 
 	// A file that moved the sizing as well as the version rides both in on the
 	// same swap: the platform takes runtime alongside the artifact, so there is
@@ -278,6 +279,10 @@ func alsoStarting(live Live) string {
 
 // replace starts the rollout and follows it to the end. sizing is nil unless
 // the runtime block changed too, in which case it travels with the swap.
+//
+// The candidate travels into settle as well as into the POST: the workload says
+// "running" throughout a swap, so naming the artifact is what makes the wait
+// that follows wait for this rollout rather than the state it was already in.
 func replace(
 	workloadID string,
 	made version,
@@ -330,13 +335,18 @@ func replace(
 	// that reported "rolled" would be naming an outcome the workload did not
 	// reach. What was attempted is still legible: the plan says what was
 	// wanted and the artifact and build ids say what was made.
+	// The two waits share one budget. Both can now run for minutes, and a
+	// --poll-timeout the user set is a bound on the deploy, not on each half.
+	waitFrom := time.Now()
+
 	if err := awaitRollout(workloadID, started, opts, report); err != nil {
 		return result, err
 	}
 
 	result.Action = ActionRolled
 
-	return settle(workloadID, result, opts, report)
+	return settle(workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
+		result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.
