@@ -387,7 +387,13 @@ func WaitForBuild(
 
 		if IsTerminalBuildStatus(build.Status) {
 			if IsBuildErrorStatus(build.Status) {
-				return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
+				// No 'dr artifact build logs' suggestion here: this shared
+				// primitive doesn't know whether logs exist, and callers
+				// that already fetch them (via BuildSummaryFor) shouldn't be
+				// forced into a second fetch just so this function can
+				// build a hint. Callers construct the final message
+				// themselves via BuildFailureMessage.
+				return build, fmt.Errorf("build %s ended with status %s", buildID, build.Status)
 			}
 
 			return build, nil
@@ -399,6 +405,27 @@ func WaitForBuild(
 
 		time.Sleep(interval)
 	}
+}
+
+// BuildLogsAvailable reports whether at least one log entry exists for the
+// build. Used to decide whether it's worth pointing the user at
+// 'dr artifact build logs' -- suggesting a command that 404s or prints
+// nothing is worse than not suggesting anything.
+func BuildLogsAvailable(artifactID, buildID string) bool {
+	entries, err := GetArtifactBuildLogs(artifactID, buildID)
+
+	return err == nil && len(entries) > 0
+}
+
+// BuildFailureMessage formats the error for a build that ended in
+// FAILED/CANCELLED, pointing at 'dr artifact build logs' only when
+// logsAvailable is true.
+func BuildFailureMessage(artifactID, buildID, status string, logsAvailable bool) error {
+	if !logsAvailable {
+		return fmt.Errorf("build %s ended with status %s; no logs were captured for this build", buildID, status)
+	}
+
+	return fmt.Errorf("build %s ended with status %s; see 'dr artifact build logs %s %s'", buildID, status, artifactID, buildID)
 }
 
 // BuildSummaryFor composes the terminal-state summary RenderBuildSummary

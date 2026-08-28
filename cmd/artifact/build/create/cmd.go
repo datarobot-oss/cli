@@ -144,22 +144,28 @@ func waitForAllBuilds(
 		fmt.Fprintf(cmd.ErrOrStderr(), "Waiting for build %s...\n", buildID)
 
 		build, werr := waitStreaming(cmd, artifactID, buildID, poll)
+
+		if build != nil {
+			summary, serr := workload.BuildSummaryFor(build, workload.DefaultBuildLogTail)
+
+			// Reuses summary.LogTail (just fetched above) to decide whether
+			// the logs hint is worth showing -- no extra call.
+			if workload.IsBuildErrorStatus(build.Status) {
+				werr = workload.BuildFailureMessage(artifactID, build.ID, build.Status, len(summary.LogTail) > 0)
+			}
+
+			if serr != nil && firstWaitErr == nil {
+				firstWaitErr = serr
+			}
+
+			summaries = append(summaries, summary)
+		} else {
+			summaries = append(summaries, workload.BuildSummary{BuildID: buildID, Status: workload.BuildStatusCLIUnknown})
+		}
+
 		if werr != nil && firstWaitErr == nil {
 			firstWaitErr = werr
 		}
-
-		if build == nil {
-			summaries = append(summaries, workload.BuildSummary{BuildID: buildID, Status: workload.BuildStatusCLIUnknown})
-
-			continue
-		}
-
-		summary, serr := workload.BuildSummaryFor(build, workload.DefaultBuildLogTail)
-		if serr != nil && firstWaitErr == nil {
-			firstWaitErr = serr
-		}
-
-		summaries = append(summaries, summary)
 	}
 
 	return summaries, firstWaitErr

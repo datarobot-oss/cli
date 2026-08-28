@@ -1457,6 +1457,8 @@ func TestRun_FailedBuildOnARollLeavesTheOldVersionServing(t *testing.T) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 	}
+	// Logs exist for this build, so the failure message should point at them.
+	f.hasLogs = func(string, string) bool { return true }
 
 	install(t, f)
 

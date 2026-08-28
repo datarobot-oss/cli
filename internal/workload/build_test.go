@@ -544,6 +544,96 @@ func TestGetArtifactBuildLogs_ReadsTheOTELStream(t *testing.T) {
 	assert.NotEmpty(t, entries[0].Raw, "OTEL record preserved for JSON passthrough")
 }
 
+// An empty OTEL page (no records for this build's external_build_id) is a
+// legitimate empty result, not an error.
+func TestGetArtifactBuildLogs_EmptyPageIsEmpty(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(logsPage("")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	entries, err := GetArtifactBuildLogs("art-1", "b-1")
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestBuildLogsAvailable(t *testing.T) {
+	t.Run("true when entries exist", func(t *testing.T) {
+		installSkipAuth(t)
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(logsPage("", logEntryDoc("INFO", "hi"))))
+		}))
+
+		defer srv.Close()
+
+		installEndpoint(t, srv.URL)
+
+		assert.True(t, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("false on 404", func(t *testing.T) {
+		installSkipAuth(t)
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+
+		defer srv.Close()
+
+		installEndpoint(t, srv.URL)
+
+		assert.False(t, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("false on empty page", func(t *testing.T) {
+		installSkipAuth(t)
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(logsPage("")))
+		}))
+
+		defer srv.Close()
+
+		installEndpoint(t, srv.URL)
+
+		assert.False(t, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("false on server error", func(t *testing.T) {
+		installSkipAuth(t)
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+
+		defer srv.Close()
+
+		installEndpoint(t, srv.URL)
+
+		assert.False(t, BuildLogsAvailable("art-1", "b-1"))
+	})
+}
+
+func TestBuildFailureMessage(t *testing.T) {
+	t.Run("with logs available", func(t *testing.T) {
+		err := BuildFailureMessage("art-1", "b-1", BuildStatusFailed, true)
+		require.Error(t, err)
+		assert.EqualError(t, err, "build b-1 ended with status FAILED; see 'dr artifact build logs art-1 b-1'")
+	})
+
+	t.Run("without logs available", func(t *testing.T) {
+		err := BuildFailureMessage("art-1", "b-1", BuildStatusCancelled, false)
+		require.Error(t, err)
+		assert.EqualError(t, err, "build b-1 ended with status CANCELLED; no logs were captured for this build")
+	})
+}
+
 func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 	installSkipAuth(t)
 

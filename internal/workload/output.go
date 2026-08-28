@@ -254,9 +254,23 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 	return nil
 }
 
+// RenderBuildLogs prints a build's log entries: one formatted line each in
+// text mode, or a JSON array (always [], never null, when empty). With no
+// entries in text mode, "No logs found." goes to stderr so stdout stays log
+// lines only and a `logs | grep`/pipe is not polluted by a status line.
 func RenderBuildLogs(format outputformat.OutputFormat, entries []BuildLogEntry) error {
 	if format == outputformat.OutputFormatJSON {
+		if len(entries) == 0 {
+			entries = []BuildLogEntry{}
+		}
+
 		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No logs found.")
+
+		return nil
 	}
 
 	for _, entry := range entries {
