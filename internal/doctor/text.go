@@ -44,6 +44,8 @@ func WriteText(w io.Writer, report Report) error {
 
 	writeRemedies(w, report)
 
+	writeActions(w, report)
+
 	writeSummary(w, report)
 
 	return nil
@@ -137,6 +139,46 @@ func writeRemedies(w io.Writer, report Report) {
 
 	for _, r := range remedies {
 		fmt.Fprintln(w, r)
+	}
+}
+
+// writeActions prints the per-repair outcomes of a repair run (--fix /
+// --relink); read-only runs (Actions nil) print nothing. When every repair
+// reported not-needed, the section says so explicitly: a --fix on a healthy
+// project is a no-op and the output must state that unambiguously.
+func writeActions(w io.Writer, report Report) {
+	if report.Actions == nil {
+		return
+	}
+
+	actions := *report.Actions
+
+	fmt.Fprintln(w, "\nRepairs")
+
+	if len(actions) == 0 {
+		fmt.Fprintln(w, "  nothing to fix: no repairs needed")
+
+		return
+	}
+
+	allNotNeeded := true
+
+	for _, action := range actions {
+		if action.Status != ActionNotNeeded {
+			allNotNeeded = false
+		}
+
+		line := fmt.Sprintf("  %s: %s", action.ID, action.Status)
+
+		if action.Reason != "" {
+			line += " — " + action.Reason
+		}
+
+		fmt.Fprintln(w, line)
+	}
+
+	if allNotNeeded {
+		fmt.Fprintln(w, "  nothing to fix: no repairs needed")
 	}
 }
 

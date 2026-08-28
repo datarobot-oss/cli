@@ -45,7 +45,14 @@ type lockCheck struct {
 
 // newLockCheck builds the lock check with the real host platform.
 func newLockCheck(projectDir string) *lockCheck {
-	return &lockCheck{projectDir: projectDir, goos: runtime.GOOS}
+	return newLockCheckWithGoos(projectDir, runtime.GOOS)
+}
+
+// newLockCheckWithGoos builds the lock check with an injected platform, so
+// the windows SKIP path (flock not enforced, per RAPTOR-16928) stays
+// unit-testable on any host.
+func newLockCheckWithGoos(projectDir, goos string) *lockCheck {
+	return &lockCheck{projectDir: projectDir, goos: goos}
 }
 
 func (c *lockCheck) ID() string {
