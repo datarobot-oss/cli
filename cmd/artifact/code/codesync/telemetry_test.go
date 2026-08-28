@@ -39,3 +39,30 @@ func TestTelemetry_ExtractorPropertiesAfterFlagParse(t *testing.T) {
 	assert.Equal(t, true, event.EventProperties["yes"])
 	assert.Equal(t, "json", event.EventProperties["output_format"])
 }
+
+// The verify attribute must make --verify runs distinguishable from plain
+// runs. It is emitted unconditionally (false without the flag) rather than
+// omitted, so a missing key reads as a wiring bug instead of quietly
+// blending verify runs into the plain-run population.
+func TestTelemetry_VerifyAttribute(t *testing.T) {
+	t.Run("false without the flag", func(t *testing.T) {
+		cmd := Cmd()
+		require.NoError(t, cmd.ParseFlags([]string{"--yes"}))
+
+		event, ok := telemetry.EventFor(cmd, nil)
+		require.True(t, ok, "EventFor must return ok=true for an annotated command")
+
+		assert.Contains(t, event.EventProperties, "verify", "the attribute must always be emitted, never omitted")
+		assert.Equal(t, false, event.EventProperties["verify"])
+	})
+
+	t.Run("true with --verify", func(t *testing.T) {
+		cmd := Cmd()
+		require.NoError(t, cmd.ParseFlags([]string{"--verify", "--yes"}))
+
+		event, ok := telemetry.EventFor(cmd, nil)
+		require.True(t, ok, "EventFor must return ok=true for an annotated command")
+
+		assert.Equal(t, true, event.EventProperties["verify"])
+	})
+}

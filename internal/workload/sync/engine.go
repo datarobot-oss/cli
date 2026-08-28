@@ -30,6 +30,14 @@ type Options struct {
 	DryRun    bool
 	ShowDiffs bool
 	Yes       bool
+
+	// Verify opts into the network-cost integrity checks: a remote
+	// round-trip even when the artifact is not drifted, and post-apply
+	// verification that the server holds what was uploaded. It changes how
+	// much a run checks, not whether the run applies its plan, so it must
+	// never be treated as a preview mode: previewOnly must not consider it,
+	// and a Verify run without DryRun/ShowDiffs still reaches Execute.
+	Verify bool
 }
 
 // Result is the outcome of a successful sync.

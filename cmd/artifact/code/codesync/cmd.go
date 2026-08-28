@@ -71,11 +71,15 @@ type Deps struct {
 
 // runFlags is the parsed view of the boolean flags that gate
 // finishSync's render/prompt/execute decisions. Grouped so the inner
-// helpers don't carry a three-bool tail through every signature.
+// helpers don't carry a bool tail through every signature. Verify is
+// carried here for the engine Options and telemetry only: it must never
+// gate the render/prompt/execute decisions, because a verify run that
+// is not a preview still has to execute.
 type runFlags struct {
 	DryRun bool
 	Diff   bool
 	Yes    bool
+	Verify bool
 }
 
 func defaultDeps() Deps {
@@ -118,8 +122,11 @@ versioned step.
 
 Use --dry-run to preview the plan without writing anything; --diff to
 also print per-file unified diffs. Both modes exit before any remote
-write. --yes auto-confirms the post-plan prompt and skips any
-interactive directory prompt.
+write. --verify forces a remote round-trip and post-apply verification
+of what was uploaded, catching server-side divergence the ordinary fast
+path cannot see; it composes with --dry-run and --diff. --yes
+auto-confirms the post-plan prompt and skips any interactive directory
+prompt.
 
 Run 'dr artifact code init <artifact-id>' first to link a project
 directory to an artifact.
@@ -129,6 +136,7 @@ Example:
   dr artifact code sync --dry-run
   dr artifact code sync --diff
   dr artifact code sync --yes
+  dr artifact code sync --verify
   dr artifact code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -144,6 +152,15 @@ Example:
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
+
+	// Transient flag, like --yes: read straight from cobra in parseRunFlags,
+	// never bound into viper and never persisted to drconfig.yaml.
+	//
+	// It must not join the dry-run/diff mutual-exclusion group: verify is a
+	// diagnostic intensity switch, not a third preview mode, and a verify
+	// run without --dry-run still applies its plan.
+	c.Flags().Bool("verify", false, "Force a remote round-trip and post-apply verification of what was uploaded.")
+
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
@@ -153,6 +170,7 @@ Example:
 			"dry_run":       flags.DryRun,
 			"diff":          flags.Diff,
 			"yes":           flags.Yes,
+			"verify":        flags.Verify,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -174,7 +192,12 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
 	}
 
-	engine, err := deps.NewEngine(dir, sync.Options{DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes})
+	engine, err := deps.NewEngine(dir, sync.Options{
+		DryRun:    flags.DryRun,
+		ShowDiffs: flags.Diff,
+		Yes:       flags.Yes,
+		Verify:    flags.Verify,
+	})
 	if err != nil {
 		return err
 	}
@@ -205,15 +228,19 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 
 // parseRunFlags reads the cobra flags once and folds the
 // DATAROBOT_CLI_NON_INTERACTIVE env-var override into Yes, so the
-// downstream helpers see a single source of truth.
+// downstream helpers see a single source of truth. Every flag here is
+// transient: read directly from cobra, never through viper.
 func parseRunFlags(cmd *cobra.Command) runFlags {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	diff, _ := cmd.Flags().GetBool("diff")
+
+	verify, _ := cmd.Flags().GetBool("verify")
 
 	return runFlags{
 		DryRun: dryRun,
 		Diff:   diff,
 		Yes:    cli.IsNonInteractive(cmd),
+		Verify: verify,
 	}
 }
 
