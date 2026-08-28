@@ -264,12 +264,90 @@ func TestCaseCollision_FailsBeforeUpload(t *testing.T) {
 	assert.Contains(t, msg, "Config.yaml vs config.yaml")
 }
 
-// TestCaseCollision_ErrorIsBeforeUpload verifies that the case-collision check
-// runs in Phase 2 (manifests), before Phase 5 (execute) where uploads happen.
-// We cannot create case-colliding files on macOS, so we verify the check
-// position by confirming that a Plan with no case collisions succeeds and
-// the fake's upload counters are zero (Plan does not execute).
-func TestCaseCollision_ErrorIsBeforeUpload(t *testing.T) {
+// fsIsCaseInsensitive reports whether dir lives on a case-insensitive
+// filesystem, using a throwaway probe pair inside dir: on a
+// case-insensitive filesystem, os.Stat of the upper-case spelling resolves
+// to the lower-case file that was just written.
+func fsIsCaseInsensitive(t *testing.T, dir string) bool {
+	t.Helper()
+
+	probeDir := filepath.Join(dir, "case-probe")
+	require.NoError(t, os.MkdirAll(probeDir, 0o755))
+
+	lower := filepath.Join(probeDir, "probe.txt")
+	require.NoError(t, os.WriteFile(lower, []byte("x"), 0o644))
+
+	_, err := os.Stat(filepath.Join(probeDir, "PROBE.TXT"))
+
+	return err == nil
+}
+
+// TestCaseCollision_EndToEnd_FailsBeforeUpload drives Plan() against a
+// genuinely colliding tree — two real files whose paths differ only in case —
+// and asserts the plan fails with the case-collision error before any
+// upload-side call. This is the end-to-end complement to
+// TestCaseCollision_FailsBeforeUpload, which must call
+// caseCollisionsFromManifest directly because a colliding tree cannot exist
+// on a case-insensitive filesystem: here the tree is real, so the exact
+// walk → hash → collision-check seam the production code runs is exercised.
+// The probe skips with a visible reason on macOS/Windows, where the two
+// files would collapse into one; Linux CI exercises this test for real.
+func TestCaseCollision_EndToEnd_FailsBeforeUpload(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	})
+
+	if fsIsCaseInsensitive(t, dir) {
+		t.Skip("case-insensitive filesystem: two paths differing only in case collapse into one file, so a genuinely colliding tree cannot be created here (TestCaseCollision_FailsBeforeUpload covers the collision check directly)")
+	}
+
+	// The colliding pair. Neither name is ignored or system-excluded, so the
+	// walk collects both and the local manifest carries both.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Greeting.txt"), []byte("hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "greeting.txt"), []byte("hi\n"), 0o644))
+
+	fake := &fakeFilesClient{}
+
+	e, err := newWithDeps(dir, Options{}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, "", ""), nil
+			},
+		},
+		Now:      time.Now,
+		Lockfile: noLockfileRunner,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e.Close() })
+
+	_, err = e.Plan()
+
+	require.Error(t, err, "a genuinely colliding tree must fail the plan")
+	assert.Contains(t, err.Error(), "case-only path collisions",
+		"the failure must be the case-collision error")
+	assert.Contains(t, err.Error(), "Greeting.txt", "the error must name the colliding paths")
+	assert.Contains(t, err.Error(), "greeting.txt", "the error must name the colliding paths")
+
+	// The collision check sits in Phase 2, so the failure must precede every
+	// upload-side call: nothing may reach the network from a plan that never
+	// became executable.
+	assert.Equal(t, 0, fake.CreateStageCalls(), "no stage may be created when the plan fails")
+	assert.Equal(t, 0, fake.UploadToStageCalls(), "nothing may be uploaded when the plan fails")
+	assert.Equal(t, 0, fake.ApplyStageCalls(), "no stage may be applied when the plan fails")
+	assert.Equal(t, 0, fake.UploadFromZipCalls(), "no zip upload may be issued when the plan fails")
+}
+
+// TestPlanWithoutCaseCollisions_MakesNoUploadCalls is the false-positive
+// control for the case-collision tests: with no colliding tree, Plan must
+// succeed with an empty plan and issue no upload-side calls. A colliding
+// tree cannot be created on a case-insensitive filesystem (macOS), so this
+// test observes no collision error at all — it does not verify where the
+// error fires; that is TestCaseCollision_EndToEnd_FailsBeforeUpload's job on
+// case-sensitive filesystems, and TestCaseCollision_FailsBeforeUpload's at
+// function level everywhere else.
+func TestPlanWithoutCaseCollisions_MakesNoUploadCalls(t *testing.T) {
 	dir := syncedProject(t, map[string]string{
 		"app.py": "print('hi')\n",
 	}, "cid-cc", "ver-cc")

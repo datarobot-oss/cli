@@ -130,6 +130,12 @@ type fakeFilesClient struct {
 
 // withVersion pre-populates a version in the fake's server state. Useful for
 // testing REPLACE-merge semantics without going through the upload flow.
+//
+// The seed map is copied, not aliased: a caller that reuses or mutates its
+// map after handing it over must not silently rewrite server state mid-test.
+// (The fake used to store the caller's map directly, so a later mutation
+// changed an already-seeded version behind the test's back.
+// TestWithVersionCopiesTheSeed pins the copy.)
 func (f *fakeFilesClient) withVersion(catalogID, versionID string, files map[string]filesapi.FileMeta) *fakeFilesClient {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -142,7 +148,13 @@ func (f *fakeFilesClient) withVersion(catalogID, versionID string, files map[str
 		f.latestVersion = make(map[string]string)
 	}
 
-	f.versions[versionID] = files
+	copied := make(map[string]filesapi.FileMeta, len(files))
+
+	for path, fm := range files {
+		copied[path] = fm
+	}
+
+	f.versions[versionID] = copied
 	f.latestVersion[catalogID] = versionID
 
 	// This builder seeds metadata only; drop any content a previous seed
@@ -393,7 +405,13 @@ func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
 		return nil, errors.New("fakeFilesClient.CreateStage: no stageID configured")
 	}
 
-	// Initialize a fresh staging area for this stage.
+	// Initialize a fresh staging area for this stage. The fake models ONE
+	// active stage: the staging area is shared and wiped here, so anything
+	// staged but not yet applied is discarded when a test calls CreateStage
+	// again mid-flow. This matches production usage — exactly one
+	// CreateStage per sync, then the uploads, then ApplyStage — so a test
+	// that interleaves two stages exercises a flow the real server never
+	// sees.
 	f.stagedFiles = make(map[string][]byte)
 
 	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil

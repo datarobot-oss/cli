@@ -227,6 +227,86 @@ func TestPhase6EmptyPlanStillWritesManifest(t *testing.T) {
 	assert.Equal(t, sha256Hex([]byte("print('hi')\n")), manifest.Files["app.py"].Hash)
 }
 
+// TestPhase6ConfigCopyIsNotMutatedInPlace pins the property that makes the
+// `cfg := e.config` value copy in phase6State safe: Phase 6 must REASSIGN
+// the copy's pointer fields, never write through the pointers it shares
+// with the loaded config. Today wapi.Config holds only value types and
+// reassigned pointers, so the shallow copy cannot corrupt e.config — but
+// that safety invariant silently breaks if wapi.Config ever gains a
+// reference-type field (a slice or map, or a pointer whose pointee is
+// edited rather than replaced) that Phase 6 mutates in place: the mutation
+// would reach e.config through the shared reference, with nothing at the
+// type level to catch it. If this test fails, a field like that was added;
+// deep-copy or rebuild that field inside Phase 6 rather than reverting the
+// value copy.
+func TestPhase6ConfigCopyIsNotMutatedInPlace(t *testing.T) {
+	const (
+		catalogID = "cid-synced"
+		versionID = "ver-synced"
+		newVerID  = "ver-new"
+	)
+
+	dir := syncedProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	}, catalogID, versionID)
+
+	cfg, err := wapi.LoadConfig(dir)
+	require.NoError(t, err)
+
+	// Retain the ORIGINAL pointers Phase 6's copy starts from, so the test
+	// can see a write-through mutation that comparing the (replaced) fields
+	// on the copy would miss.
+	origCatalogPtr := cfg.CatalogID
+	origVersionPtr := cfg.LastSyncedVersionID
+
+	require.NotNil(t, origCatalogPtr)
+	require.NotNil(t, origVersionPtr)
+
+	e := &Engine{
+		projectDir: dir,
+		config:     cfg,
+		plan: &SyncPlan{
+			Uploads: []FileAction{
+				{Path: "app.py", LocalHash: "phase2hash", LocalSize: 11},
+			},
+		},
+		remote: RemoteManifest{
+			"app.py": {Hash: sha256Hex([]byte("print('hi')\n")), Size: 11},
+		},
+		uploadOutcome: &UploadOutcome{
+			CatalogID: "cid-new",
+			VersionID: newVerID,
+			Sent: map[string]FileEntry{
+				"app.py": {Hash: sha256Hex([]byte("print('hi')\n")), Size: 11},
+			},
+		},
+		newCatalogID: "cid-new",
+		newVersionID: newVerID,
+		nowFn:        time.Now,
+	}
+
+	require.NoError(t, phase6State(e))
+
+	// The engine's config advanced to the new IDs.
+	require.NotNil(t, e.config.LastSyncedVersionID)
+	assert.Equal(t, newVerID, *e.config.LastSyncedVersionID)
+
+	require.NotNil(t, e.config.CatalogID)
+	assert.Equal(t, "cid-new", *e.config.CatalogID)
+
+	// The pre-existing pointer TARGETS must be untouched: Phase 6 reassigned
+	// its local copy's pointers instead of writing through the shared ones.
+	// A `*cfg.LastSyncedVersionID = ...` style in-place mutation would show
+	// up here as the new version leaking into the old pointer.
+	require.NotNil(t, origVersionPtr)
+	assert.Equal(t, versionID, *origVersionPtr,
+		"Phase 6 must not mutate the old LastSyncedVersionID pointer target in place")
+
+	require.NotNil(t, origCatalogPtr)
+	assert.Equal(t, catalogID, *origCatalogPtr,
+		"Phase 6 must not mutate the old CatalogID pointer target in place")
+}
+
 // TestManifestSchemaUnchanged verifies that the written manifest carries
 // "version": 1 and that no new fields are added to manifest.json or config.json.
 func TestManifestSchemaUnchanged(t *testing.T) {

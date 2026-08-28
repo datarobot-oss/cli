@@ -132,6 +132,37 @@ func TestFakeServerState_StagePathMergeSemantics(t *testing.T) {
 	assert.Equal(t, sha256Hex([]byte("d")), all["d.py"].Hash)
 }
 
+// TestWithVersionCopiesTheSeed pins that withVersion copies the caller's map
+// into server state: mutating the map after handing it over must not change
+// what the fake serves. The fake used to alias the caller's map directly, so
+// a reused or later-mutated seed silently rewrote an already-seeded version
+// behind the test's back — the kind of cross-test state leak -shuffle=on is
+// meant to surface.
+func TestWithVersionCopiesTheSeed(t *testing.T) {
+	seed := map[string]filesapi.FileMeta{
+		"a.py": {Hash: "hash-a", Size: 1},
+	}
+
+	fake := (&fakeFilesClient{}).withVersion("cid-1", "ver-1", seed)
+
+	// Mutate the caller's map after handing it over; server state must not
+	// follow.
+	seed["a.py"] = filesapi.FileMeta{Hash: "hash-mutated", Size: 99}
+	seed["injected.py"] = filesapi.FileMeta{Hash: "hash-injected", Size: 5}
+
+	all, err := fake.AllFiles("cid-1", "ver-1")
+	require.NoError(t, err)
+
+	fm, ok := all["a.py"]
+	require.True(t, ok, "seeded path must remain present")
+
+	assert.Equal(t, "hash-a", fm.Hash, "a later mutation of the caller's map must not reach server state")
+	assert.Equal(t, int64(1), fm.Size, "a later mutation of the caller's map must not reach server state")
+
+	assert.NotContains(t, all, "injected.py",
+		"paths added to the caller's map after the call must not appear in server state")
+}
+
 // TestFakeServerState_StagePathReplacesExisting verifies that uploading a file
 // that already exists in the prior version replaces its content (REPLACE
 // semantics for staged paths).
