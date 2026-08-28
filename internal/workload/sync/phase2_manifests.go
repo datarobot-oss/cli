@@ -55,12 +55,14 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("walk project directory: %w", err)
 	}
 
-	local, err := hashEntries(entries)
+	local, executables, err := hashEntries(entries)
 	if err != nil {
 		return err
 	}
 
 	e.local = local
+
+	warnIfExecutablesFound(executables)
 
 	if cs := caseCollisionsFromManifest(local); len(cs) > 0 {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
@@ -94,20 +96,56 @@ func phase2Manifests(e *Engine) error {
 
 // hashEntries hashes each entry sequentially. Concurrency would help
 // only marginally for typical projects since Phase 5 network is the
-// real bottleneck.
-func hashEntries(entries []fileops.Entry) (LocalManifest, error) {
+// real bottleneck. The returned relpaths are the entries with the
+// executable bit set locally, for warnIfExecutablesFound.
+func hashEntries(entries []fileops.Entry) (LocalManifest, []string, error) {
 	out := make(LocalManifest, len(entries))
+
+	var executables []string
 
 	for _, ent := range entries {
 		hash, size, mode, err := fileops.HashFile(ent.AbsPath)
 		if err != nil {
-			return nil, fmt.Errorf("hash %s: %w", ent.RelPath, err)
+			return nil, nil, fmt.Errorf("hash %s: %w", ent.RelPath, err)
+		}
+
+		if mode&0o111 != 0 {
+			executables = append(executables, ent.RelPath)
 		}
 
 		out[ent.RelPath] = FileEntry{Hash: hash, Size: size, Mode: uint32(mode)}
 	}
 
-	return out, nil
+	return out, executables, nil
+}
+
+// warnIfExecutablesFound tells the user their locally-executable files are
+// now captured and forwarded through the sync, but the server side of this
+// round trip (WAPI/IBS) doesn't apply or return mode yet -- so the bit may
+// still not survive into the built image until that ships. This is worth
+// hearing before a build fails at container startup with a "permission
+// denied" that doesn't obviously point back at sync.
+func warnIfExecutablesFound(executables []string) {
+	if msg := executableWarningMessage(executables); msg != "" {
+		log.Warn(msg)
+	}
+}
+
+// executableWarningMessage builds warnIfExecutablesFound's message, or ""
+// when there's nothing to warn about. Split out as a pure function so the
+// wording can be asserted on directly, without capturing log output.
+func executableWarningMessage(executables []string) string {
+	if len(executables) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"%d file(s) have the executable bit set locally (e.g. %s). "+
+			"File permissions are now captured and forwarded by the sync, but the "+
+			"server does not yet apply or return them, so the executable bit may "+
+			"still be lost in the built image. If a Dockerfile COPYs one of these "+
+			"directly, add `COPY --chmod=755 <path> ...` as a safety net for now.",
+		len(executables), executables[0])
 }
 
 func caseCollisionsFromManifest(m LocalManifest) []fileops.CaseCollision {
