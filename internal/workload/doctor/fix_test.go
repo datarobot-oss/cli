@@ -345,7 +345,14 @@ func TestRunFix_LockAcquirable_VerifiedNotNeeded(t *testing.T) {
 
 	actions := RunFix(context.Background(), dir)
 
-	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDLock].Status)
+	lockAction := actionByID(t, actions)[CheckIDLock]
+
+	assert.Equal(t, core.ActionNotNeeded, lockAction.Status)
+
+	// Pin the probe-path reason string: the lock was verified acquirable
+	// (acquired and released) with no holder detected.
+	assert.Contains(t, lockAction.Reason, "verified acquirable",
+		"the acquirable-lock probe path must carry the 'verified acquirable' reason")
 
 	// After the verify, the lock check must report OK (acquirable), and the
 	// probe must still be able to acquire and release within this process.

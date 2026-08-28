@@ -150,7 +150,7 @@ func RunRelink(ctx context.Context, opts RelinkOptions) ([]core.Action, error) {
 	confirm := opts.Confirm
 
 	if confirm == nil {
-		confirm = func(string) bool { return false }
+		return relinkSkipped("no confirm function provided; relink declined as a safety default"), ErrRelinkAbort
 	}
 
 	if !confirm(warning) {
