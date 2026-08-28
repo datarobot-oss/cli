@@ -24,7 +24,9 @@ import (
 	"io"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
+	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
@@ -45,6 +47,9 @@ type engineRunner interface {
 	Execute(*sync.SyncPlan) (*sync.Result, error)
 	Close() error
 	StaleRollbackRestored() bool
+	StateMigrationNotice() string
+	IgnoreFileNotice() string
+	LockedNotice() string
 	Fetcher() display.ContentFetcher
 }
 
@@ -89,7 +94,7 @@ func defaultDeps() Deps {
 
 func init() {
 	// --yes is read directly from cobra; only the env var binds to viper
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 }
 
 // Cmd returns the cobra.Command for `dr artifact code sync`.
@@ -138,7 +143,7 @@ Example:
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
-	c.Flags().BoolP("yes", "y", false, "Skip interactive prompts; auto-confirm.")
+	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
@@ -185,6 +190,12 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return err
 	}
 
+	// Stderr for all of them: they are never part of a command's data output,
+	// and stdout has to stay parseable under --output-format json.
+	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
+	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
+	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
+
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
 	}
@@ -196,14 +207,13 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 // DATAROBOT_CLI_NON_INTERACTIVE env-var override into Yes, so the
 // downstream helpers see a single source of truth.
 func parseRunFlags(cmd *cobra.Command) runFlags {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	diff, _ := cmd.Flags().GetBool("diff")
 
 	return runFlags{
 		DryRun: dryRun,
 		Diff:   diff,
-		Yes:    yesFlag || viperx.GetBool("yes"),
+		Yes:    cli.IsNonInteractive(cmd),
 	}
 }
 
@@ -273,7 +283,7 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // plan is emitted and no Execute is run, so callers can inspect the
 // plan and re-invoke with --yes if they want to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
-	if err := display.RenderPlanJSON(out, plan); err != nil {
+	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != ""); err != nil {
 		return err
 	}
 

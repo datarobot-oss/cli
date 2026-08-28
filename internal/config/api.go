@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/datarobot/cli/internal/version"
@@ -30,8 +31,20 @@ const DRAPIURLSuffix = "/api/v2"
 var ErrInvalidURL = errors.New("Invalid URL.")
 
 // SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
-// returns https://app.datarobot.com (no trailing slash)
+// returns https://app.datarobot.com (no trailing slash).
+//
+// A bare hostname without a scheme (e.g. "app.datarobot.com") is also accepted
+// and defaults to the https scheme, so "app.datarobot.com" is treated the same
+// as "https://app.datarobot.com".
 func SchemeHostOnly(longURL string) (string, error) {
+	longURL = strings.TrimSpace(longURL)
+
+	// Default to https when no scheme is provided so that a bare hostname is
+	// accepted in addition to a full URL.
+	if longURL != "" && !strings.Contains(longURL, "://") {
+		longURL = "https://" + longURL
+	}
+
 	parsedURL, err := url.Parse(longURL)
 	if err != nil {
 		return "", err
@@ -70,7 +83,7 @@ func GetUserAgentHeader() string {
 }
 
 // apiConsumerTrace holds the dot-notation command path set at startup.
-// Example: "datarobot.cli.templates.setup"
+// Example: "datarobot.cli.templates.setup".
 var apiConsumerTrace string
 
 // SetAPIConsumerTrace stores the dot-notation trace value for the running command.
@@ -121,11 +134,26 @@ func RedactedReqInfo(req *http.Request) string {
 		return ""
 	}
 
-	return string(requestDump)
+	return RedactSecretFields(string(requestDump))
+}
+
+// secretBodyFields matches a JSON field whose value is a secret. The dump
+// above includes the request body, and bodies carry secrets: POST
+// /credentials/ sends one by definition. Without this, `dr --debug` writes
+// the user's token into the debug log file, permanently and in the clear.
+var secretBodyFields = regexp.MustCompile(
+	`(?i)"(apiToken|password|passwd|secret|privateKey|clientSecret|refreshToken|accessToken|token)"\s*:\s*"[^"]*"`)
+
+// RedactSecretFields replaces the value of every known secret-bearing JSON
+// field in s. It is deliberately keyed on field names rather than on the value
+// looking secret: a redactor that has to recognise a secret will one day fail
+// to, and this one only has to recognise the handful of names the API uses.
+func RedactSecretFields(s string) string {
+	return secretBodyFields.ReplaceAllString(s, `"$1": "[REDACTED]"`)
 }
 
 // TODO: I believe we want to delete this function as there is SetURLToConfig function
-// But it is used in cmd/templates/setup/model.go
+// But it is used in cmd/templates/setup/model.go.
 func SaveURLToConfig(newURL string) error {
 	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {

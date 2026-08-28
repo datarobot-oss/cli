@@ -138,7 +138,7 @@ func resolveShellForUninstall(specifiedShell string) (string, error) {
 
 	shell, err := internalShell.DetectShell()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("detect shell: %w", err)
 	}
 
 	fmt.Printf("%s Detected shell: %s\n", infoStyle.Render("→"), shell)
@@ -191,6 +191,9 @@ func performUninstall(shell internalShell.Shell) error {
 		removed = uninstallFish()
 	case internalShell.PowerShell:
 		removed = uninstallPowerShell()
+	case internalShell.Cmd:
+		// cmd.exe has no completions to remove.
+		return nil
 	default:
 		return fmt.Errorf("Unsupported shell: %s.", shell)
 	}
@@ -276,6 +279,9 @@ func getUninstallPaths(shell internalShell.Shell) []string {
 		}
 
 		return paths
+	case internalShell.Cmd:
+		// cmd.exe has no completions on disk.
+		return nil
 	default:
 		return []string{}
 	}

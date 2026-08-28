@@ -10,6 +10,7 @@ Use Taskfile tasks rather than raw Go commands:
 
 | Command         | Description                                 |
 | --------------- | ------------------------------------------- |
+| `task bootstrap`| Set up complete dev environment (Go check, tools, hooks, build) |
 | `task build`    | Build the CLI binary (outputs to ./dist/dr) |
 | `task lint`     | Check for lint issues (read-only)           |
 | `task delint`   | Fix lint and formatting issues              |
@@ -23,6 +24,7 @@ Use Taskfile tasks rather than raw Go commands:
 - Tests use `testify/assert` for assertions
 - Test files follow `*_test.go` naming convention
 - If DR_API_TOKEN is set, run smoke tests: `task smoke-test` (but ask for permission before using a real API token)
+- Workload/artifact acceptance (live): `task smoke-test-workload` for scenarios A–C + artifact, or `task smoke-test-workload-full` to include the ~20-30 min built-workload scenario D. Uses the CLI's existing `drconfig.yaml` auth (set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override); CI wiring is pending team review.
 
 **Go Version Requirement:** Tests run with the `-race` flag for data race detection. The race runtime must match your Go compiler version exactly. If you see errors like `compile: version "go1.X.Y" does not match go tool version "go1.X.Z"`, ensure your installed Go version matches the version in `go.mod` (run `brew upgrade go` or adjust `go.mod` accordingly).
 
@@ -77,16 +79,44 @@ func example() {
 - `go mod tidy -diff` - checks if go.mod/go.sum need updates
 - `gofumpt -l -d` - lists formatting issues and shows diffs
 - `go vet` - checks for suspicious constructs
-- `golangci-lint run` - comprehensive linting checks (includes wsl, revive, staticcheck)
+- `golangci-lint run` - comprehensive linting checks (includes wsl, revive, staticcheck), run once per target GOOS
 - `goreleaser check` - validates release configuration
 
 **`task delint`** (auto-fixes):
 - `go mod tidy` - fixes go.mod/go.sum
 - `go fmt` - fixes basic formatting
 - `gofumpt -l -w` - fixes aggressive Go formatting
-- `golangci-lint run --fix` - fixes linting issues where possible
+- `golangci-lint run --fix` - fixes linting issues where possible, run once per target GOOS
 
 All code must pass `task lint` before submitting.
+
+### Cross-Platform Linting
+
+`golangci-lint` only analyzes files selected by the build constraints of the platform
+it runs on. Without help, `*_windows.go` (and any `//go:build` file) would only ever be
+linted on that OS — so a violation in a Windows-only file ships undetected from a macOS
+laptop and from Linux CI alike (CFX-7138).
+
+To close that gap, `lint` and `delint` route their `golangci-lint run` through the internal
+`lint-goos` task, which loops over the `LINT_GOOS_TARGETS` variable in `Taskfile.yaml`
+(`linux darwin windows` — kept in sync with the `goos` lists in `goreleaser.yaml`). Output
+is labelled per leg, e.g. `🧹 Linting (GOOS=windows)…`.
+
+`precommit` deliberately stays **host-GOOS only**. It runs on every commit, and looping all
+targets there costs ~4-6s of interactive latency for little benefit — `task lint` and CI
+already enforce every target, so a cross-platform violation is caught before merge either
+way.
+
+Practical notes:
+- Expect `task lint` to fail on a file your own OS never compiles. That is the point.
+  `task delint` can auto-fix those files from any host.
+- The overhead is small (~1s per extra GOOS on a warm cache); each GOOS gets its own
+  golangci-lint analysis cache.
+- **When adding a new release platform, add it to `LINT_GOOS_TARGETS`.**
+- `go mod tidy`, `golangci-lint fmt`, and `goreleaser check` stay single-run — they are
+  GOOS-independent (the formatter walks files directly and is not build-constrained).
+- CI needs no OS matrix for lint: the single `ubuntu-latest` lint job covers all targets
+  because it just calls `task lint`.
 
 ### Git Hooks (Lefthook)
 
@@ -96,7 +126,7 @@ automatically by `task install-tools` and wired up by `task dev-init`.
 Hooks run automatically on `git commit`. Run manually with `task precommit`.
 Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
 
-- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only), verifies golangci-lint config, and checks go.mod/go.sum are tidy
+- **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only, host GOOS only — see [Cross-Platform Linting](#cross-platform-linting)), verifies golangci-lint config, and checks go.mod/go.sum are tidy
 - **`task dupcheck`**: duplicate code detection via jscpd (threshold and exclusions in `.jscpd.json`)
 
 Both hooks reuse Taskfile tasks so there is a single source of truth for quality checks.
@@ -129,11 +159,11 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **Never bulk-bind subcommand flags to viper.** `viperx` does not expose
   `BindPFlags`. Bind only specific persistent flags explicitly via
   `viperx.BindPFlag` in `cmd/root.go::init()`.
-- **Read transient flags directly from cobra**: `cmd.Flags().GetBool("yes")`.
+- **Read transient flags directly from cobra**: e.g. `cmd.Flags().GetBool(cli.YesFlagName)`.
   Do not bind them with `viperx.BindPFlag`.
 - **Env-var override for a transient flag:** register only the env var via
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources at the call site:
-  `yesFlag, _ := cmd.Flags().GetBool("yes"); yes := yesFlag || viperx.GetBool("yes")`.
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with
+  `cli.IsNonInteractive(cmd)` rather than inlining the flag/env OR yourself.
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
@@ -142,32 +172,41 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUGBOT.md). Rules are organized by risk level:
 
 **High-Risk** (catches silent failures, data corruption, poor error handling):
+
 - **Concurrency** — Goroutine panic recovery, loop variable capture, WaitGroup pairing, channel closure
 - **Error Handling** — Wrapping errors with context, user-facing messages, not silently ignoring errors
 - **Security** — Input validation, security boundaries, threat models
 - **Testing** — Race detector, error path coverage, test seams
+- **User Files** — In-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry
 
 **Resource & Operations** (prevents hangs, leaks, platform bugs):
+
 - **Resources** — Lock lifecycle, timeouts, cleanup, disk space checks
 - **Paths** — Validation, normalization, Unicode, symlinks
 - **Cross-Platform** — Build tags, case sensitivity, line endings, symlink handling
 
 **Design** (prevents tight coupling, premature abstraction):
+
 - **Architecture** — Code organization, separation of concerns, dependency injection, phase orchestration
 - **Package APIs** — Contracts between packages, documentation, limitations
 
 **Quality** (consistency and maintainability):
+
 - **Testing** — Test coverage, mocking, pagination tests
-- **Commands** — Table rendering, file organization, output formatting
+- **Commands** — Table rendering, file organization, output formatting, JSON output purity
 
 **CI & Workflows** (informational callouts, not correctness bugs):
+
 - **Composite Actions** — Changes to `.github/actions/*/action.yaml` can't be validated by their own PR's CI
 
 **When working on code**, apply these quick principles:
+
 - **Concurrency**: Recover from panics, capture loop variables, pair WaitGroups, close channels safely
 - **Errors**: Wrap with context, specialize messages (404 vs 500), log before returning
 - **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
+- **JSON output purity**: When `--output-format json` is set, stdout must contain only valid JSON. All deprecation warnings, logs, usage, and update hints go to stderr
 - **Platforms**: Add build tags, match signatures, test on target platforms
+- **User files**: Re-emit the parsed tree, never regenerate; CLI markers must die with the key they annotate; refuse a file you cannot put back soundly
 
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 

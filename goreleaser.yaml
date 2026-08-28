@@ -17,14 +17,12 @@ builds:
       binary: "dr"
       mod_timestamp: "{{ .CommitTimestamp }}"
 
-      # Telemetry disabled pending legal approval. To re-enable, add this back
-      # to the ldflags block below:
-      #   -X "github.com/datarobot/cli/internal/telemetry.AmplitudeAPIKey={{ if index .Env "AMPLITUDE_API_KEY" }}{{ .Env.AMPLITUDE_API_KEY }}{{ end }}"
       ldflags:
         - >
           -X "github.com/datarobot/cli/internal/version.Version={{ .Tag }}"
           -X "github.com/datarobot/cli/internal/version.GitCommit={{ .ShortCommit }}"
           -X "github.com/datarobot/cli/internal/version.BuildDate={{ .CommitDate }}"
+          -X "github.com/datarobot/cli/internal/telemetry.AmplitudeAPIKey={{ if index .Env "AMPLITUDE_API_KEY" }}{{ .Env.AMPLITUDE_API_KEY }}{{ end }}"
           -X "github.com/datarobot/cli/internal/telemetry.InstallMethod=release"
 
       goarch:
@@ -76,6 +74,26 @@ release:
 
 git:
   tag_sort: -version:creatordate
+
+dockers_v2:
+  - ids: [linux]
+    dockerfile: Dockerfile.goreleaser
+    images:
+      - ghcr.io/datarobot-oss/cli
+    tags:
+      - "{{ .Tag }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "DataRobot command-line interface."
+      "org.opencontainers.image.url": "https://github.com/datarobot-oss/cli"
+      "org.opencontainers.image.source": "https://github.com/datarobot-oss/cli"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .CommitDate }}"
+      "org.opencontainers.image.licenses": "Apache-2.0"
 
 homebrew_casks:
   - name: dr-cli

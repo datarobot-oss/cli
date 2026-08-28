@@ -15,6 +15,8 @@
 package lock
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -42,7 +44,7 @@ Example:
 
 			result, err := pipeline.LockPipeline(args[0])
 			if err != nil {
-				return err
+				return fmt.Errorf("lock pipeline: %w", err)
 			}
 
 			return pipeline.RenderCreateResponse(outputFormat, *result)

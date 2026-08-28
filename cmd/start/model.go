@@ -27,7 +27,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/repo"
@@ -37,7 +37,11 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// step represents a single step in the quickstart process
+// rerunReminder is shown after a prerequisite failure ends the run without
+// installing the tools, so the user knows to rerun once they've fixed them.
+const rerunReminder = "Rerun dr start after installing or configuring the missing prerequisites."
+
+// step represents a single step in the quickstart process.
 type step struct {
 	// description is a brief summary of the step
 	description string
@@ -59,6 +63,7 @@ type Model struct {
 	waitingToExecute     bool                 // Whether to wait for user input before proceeding
 	waitingToInstall     bool                 // Whether to wait for user confirmation before installing deps
 	depsToInstall        []tools.Prerequisite // Deps to install when user confirms
+	depsFailed           bool                 // Whether the run ended on an uninstalled prerequisite failure
 	needTemplateSetup    bool                 // Whether we need to run template setup after quitting
 	repoRoot             string
 	telemetry            telemetryCapture
@@ -93,7 +98,7 @@ type depsInstallCompleteMsg struct {
 	installed []string
 }
 
-// telemetryCapture holds data to be sent for telemetry after the cobra.Command completes or fails
+// telemetryCapture holds data to be sent for telemetry after the cobra.Command completes or fails.
 type telemetryCapture struct {
 	validationViolations []string
 	missingMsgs          []string
@@ -131,8 +136,11 @@ func NewStartModel(opts Options) Model {
 		opts:     opts,
 		repoRoot: repoRoot,
 		telemetry: telemetryCapture{
-			yesFlag:        opts.AnswerYes,
-			nonInteractive: viperx.GetBool("yes"),
+			yesFlag: opts.AnswerYes,
+			// IsNonInteractive(nil) cannot see the --yes flag (it is bound to
+			// opts, not viper), so OR it in explicitly — same pattern as the
+			// prompt-skipping checks below.
+			nonInteractive: opts.AnswerYes || cli.IsNonInteractive(nil),
 		},
 	}
 }
@@ -195,7 +203,7 @@ func (m Model) execQuickstartScript() tea.Cmd {
 	}
 
 	// Regular quickstart script execution
-	cmd := exec.Command(m.quickstartScriptPath)
+	cmd := exec.Command(m.quickstartScriptPath) //nolint:gosec // subprocess launched with validated input
 
 	return tea.ExecProcess(cmd, func(e error) tea.Msg {
 		return startScriptCompleteMsg{err: e}
@@ -346,7 +354,7 @@ func (m Model) handleDepsMissing(msg depsMissingMsg) (tea.Model, tea.Cmd) {
 	m.telemetry.missingMsgs = msg.checkResult.MissingMsgs
 	m.telemetry.wrongVersionMsgs = msg.checkResult.WrongVersionMsgs
 
-	autoInstall := m.opts.AnswerYes || viperx.GetBool("yes")
+	autoInstall := m.opts.AnswerYes || cli.IsNonInteractive(nil)
 
 	log.Debug("start: handling missing deps", "count", len(msg.prerequisites), "auto_install", autoInstall)
 
@@ -367,6 +375,7 @@ func (m Model) handleDepsInstallComplete(msg depsInstallCompleteMsg) (tea.Model,
 	if msg.err != nil {
 		m.telemetry.installError = msg.err.Error()
 		m.err = msg.err
+		m.depsFailed = true
 
 		return m, tea.Quit
 	}
@@ -427,6 +436,7 @@ func (m Model) handleInstallConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		log.Debug("start: user cancelled deps install")
 
 		m.err = errors.New("Installation cancelled. Run 'dr dependencies install' to install missing dependencies.")
+		m.depsFailed = true
 
 		return m, tea.Quit
 	}
@@ -483,6 +493,10 @@ func (m Model) View() string { //nolint: cyclop
 	// Display error or status message
 	if m.err != nil {
 		fmt.Fprintf(&sb, "%s %s\n", tui.ErrorStyle.Render("Error: "), m.err.Error())
+
+		if m.depsFailed {
+			fmt.Fprintf(&sb, "\n%s\n", tui.InfoStyle.Render(rerunReminder))
+		}
 
 		return sb.String()
 	}
@@ -636,7 +650,7 @@ func findAndExecuteStart(m *Model) tea.Msg {
 		// Found a quickstart script
 		// Don't wait for confirmation if '--yes' flag is set or
 		// DATAROBOT_CLI_NON_INTERACTIVE env var is true
-		waitForConfirmation := !m.opts.AnswerYes && !viperx.GetBool("yes")
+		waitForConfirmation := !m.opts.AnswerYes && !cli.IsNonInteractive(nil)
 
 		return stepCompleteMsg{
 			message:              fmt.Sprintf("Found quickstart script at: %s\n", quickstartScript),
@@ -709,7 +723,7 @@ func findQuickstartScript() (string, error) {
 	return "", nil
 }
 
-// isExecutable determines if a file is executable based on platform-specific rules
+// isExecutable determines if a file is executable based on platform-specific rules.
 func isExecutable(path string, info os.FileInfo) bool {
 	// On Windows, check for common executable extensions
 	if runtime.GOOS == "windows" {

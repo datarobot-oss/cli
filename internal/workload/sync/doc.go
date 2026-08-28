@@ -14,6 +14,6 @@
 
 // Package sync is the engine behind `dr artifact code sync`. It walks the
 // project, builds a three-way diff against base and remote manifests,
-// executes the plan with rollback safety, and updates .wapi/ state on
+// executes the plan with rollback safety, and updates the local state on
 // success. The `dr artifact code sync` CLI command wires it in.
 package sync

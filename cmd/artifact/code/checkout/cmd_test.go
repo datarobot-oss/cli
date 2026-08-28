@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	gosync "sync"
 	"testing"
@@ -183,6 +184,25 @@ func TestCheckout_NotLinked(t *testing.T) {
 	assert.Contains(t, err.Error(), "not linked")
 }
 
+// The state directory moving out from under a project is the sort of thing a
+// user notices, so the migration is not allowed to happen behind their back.
+// This pins the wiring from the command through to stderr; the wording itself
+// is the wapi package's business.
+func TestCheckout_ReportsStateMigration(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, wapi.LegacyDirName)
+
+	require.NoError(t, os.Mkdir(legacy, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.json"), []byte(`{"artifactId":"art-abc-123"}`), 0o600))
+
+	cmd, buf := newTestCmd(t, dir, Deps{}, []string{"abcdef12"})
+	_ = cmd.Execute()
+
+	assert.Contains(t, buf.String(), wapi.LegacyDirName)
+	assert.Contains(t, buf.String(), path.Join(wapi.RootDirName, wapi.StateDirName))
+	assert.NoDirExists(t, legacy, "and the move actually happened")
+}
+
 func TestCheckout_NoCatalog(t *testing.T) {
 	cmd, _ := newTestCmd(t, initLinkedDir(t, ""), Deps{}, []string{"abcdef12"})
 	err := cmd.Execute()
@@ -210,7 +230,7 @@ func TestCheckout_HappyPath_FullID(t *testing.T) {
 
 	out := buf.String()
 	assert.Contains(t, out, "Downloading version "+verA)
-	assert.Contains(t, out, "Checked out to: "+filepath.Join(".wapi", ".checkouts", verA))
+	assert.Contains(t, out, "Checked out to: "+filepath.Join(wapi.RootDirName, wapi.StateDirName, ".checkouts", verA))
 	assert.Contains(t, out, "read-only snapshot")
 
 	checkoutDir := wapi.CheckoutDir(dir, verA)
@@ -226,7 +246,7 @@ func TestCheckout_HappyPath_FullID(t *testing.T) {
 	assert.Equal(t, verA, meta.VersionID)
 	assert.Equal(t, 2, meta.FileCount)
 
-	historyData, err := os.ReadFile(filepath.Join(dir, ".wapi", "history.log"))
+	historyData, err := os.ReadFile(filepath.Join(wapi.Dir(dir), "history.log"))
 	require.NoError(t, err)
 
 	lines := bytes.Split(bytes.TrimRight(historyData, "\n"), []byte("\n"))

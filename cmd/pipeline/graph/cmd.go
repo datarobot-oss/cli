@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
@@ -62,12 +63,12 @@ Example:
 
 			scope, version, err := flags.Resolve(cmd)
 			if err != nil {
-				return err
+				return fmt.Errorf(errmsg.ResolveScope, err)
 			}
 
 			result, err := pipeline.GetGraph(flags.PipelineID, scope, version)
 			if err != nil {
-				return handleGraphError(err, flags.PipelineID)
+				return handleGraphError(err, flags.PipelineID, outputFormat)
 			}
 
 			if outputFormat == outputformat.OutputFormatJSON {
@@ -95,10 +96,14 @@ Example:
 	return cmd
 }
 
-func handleGraphError(err error, pipelineID string) error {
+func handleGraphError(err error, pipelineID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No graph available for pipeline: " + pipelineID))
 
 		return nil
@@ -110,7 +115,7 @@ func handleGraphError(err error, pipelineID string) error {
 func printGraphJSON(g pipeline.Graph) error {
 	data, err := json.MarshalIndent(g, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf(errmsg.MarshalJSON, err)
 	}
 
 	fmt.Println(string(data))

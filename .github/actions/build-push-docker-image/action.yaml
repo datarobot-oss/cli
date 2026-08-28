@@ -1,0 +1,72 @@
+name: Build and push a multi-arch dr Docker image
+description: Builds dr for linux/{amd64,arm64} via GoReleaser, then builds and pushes a multi-arch image under every tag in `tags`.
+
+inputs:
+  tags:
+    description: >
+      Space-separated list of tags to publish (e.g. "dev" or "pr-123 pr-123-abc1234").
+    required: true
+  revision:
+    description: Git commit SHA to stamp as the org.opencontainers.image.revision label.
+    required: true
+  image:
+    description: Fully-qualified image repository to push to.
+    required: false
+    default: ghcr.io/datarobot-oss/cli
+
+runs:
+  using: composite
+  steps:
+    - name: Build linux binaries with GoReleaser
+      uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+      with:
+        distribution: goreleaser
+        version: latest
+        args: build --snapshot --clean --id=linux
+
+    - name: Stage per-platform build context
+      id: stage
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        TAGS: ${{ inputs.tags }}
+      run: |
+        set -euo pipefail
+
+        [[ -n "${TAGS// }" ]] || { echo "::error::tags input must not be empty"; exit 1; }
+        read -ra tag_list <<< "${TAGS}"
+
+        # Dockerfile.goreleaser does `COPY $TARGETPLATFORM/dr /dr`; stage each
+        # arch's binary at that path. RUNNER_TEMP is cleaned up by the runner.
+        ctx="$(mktemp -d "${RUNNER_TEMP}/dr-docker-ctx.XXXXXX")"
+        for arch in amd64 arm64; do
+          dir="dist/linux_linux_amd64_v1"
+          [[ "${arch}" == "arm64" ]] && dir="dist/linux_linux_arm64_v8.0"
+          [[ -f "${dir}/dr" ]] || { echo "::error::${dir}/dr not found — did the GoReleaser build step produce it?"; exit 1; }
+          mkdir -p "${ctx}/linux/${arch}"
+          cp "${dir}/dr" "${ctx}/linux/${arch}/dr"
+        done
+
+        echo "context=${ctx}" >> "$GITHUB_OUTPUT"
+        {
+          echo "tags<<TAGS_EOF"
+          for tag in "${tag_list[@]}"; do echo "${IMAGE}:${tag}"; done
+          echo "TAGS_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Build and push multi-arch image
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      with:
+        context: ${{ steps.stage.outputs.context }}
+        file: Dockerfile.goreleaser
+        platforms: linux/amd64,linux/arm64
+        push: true
+        pull: true
+        tags: ${{ steps.stage.outputs.tags }}
+        labels: |
+          org.opencontainers.image.title=dr
+          org.opencontainers.image.description=DataRobot command-line interface.
+          org.opencontainers.image.url=https://github.com/datarobot-oss/cli
+          org.opencontainers.image.source=https://github.com/datarobot-oss/cli
+          org.opencontainers.image.revision=${{ inputs.revision }}
+          org.opencontainers.image.licenses=Apache-2.0

@@ -15,6 +15,7 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,6 +33,8 @@ type taskRunOptions struct {
 	Dir      string
 	taskOpts task.RunOpts
 }
+
+const taskRunFromRootEnv = task.RunFromRootEnv
 
 // splitTaskArgs separates task names from additional arguments.
 // Supports: dr run task1 task2 -- -flag1 -flag2
@@ -97,11 +100,18 @@ Examples:
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			binaryName := "task"
-			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
+			taskNames, taskArgs := splitTaskArgs(args)
 
-			rootTaskfile, err := discovery.Discover(opts.Dir, 2)
+			rootTaskfile, usingRootTaskfile, err := task.ResolveTaskfile(opts.Dir)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
+
+				return cli.ErrSilent
+			}
+
+			runStackEnv, err := task.GuardRunStack(rootTaskfile, taskNames)
+			if err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, "❌ "+err.Error())
 
 				return cli.ErrSilent
 			}
@@ -129,19 +139,24 @@ Examples:
 				return cli.ErrSilent
 			}
 
-			taskNames, taskArgs := splitTaskArgs(args)
-
 			if !opts.taskOpts.Silent {
 				log.Printf("Running task(s): %s\n", strings.Join(taskNames, ", "))
 			}
 
 			opts.taskOpts.TaskArgs = taskArgs
+			opts.taskOpts.Env = append(opts.taskOpts.Env, runStackEnv)
+
+			if usingRootTaskfile {
+				opts.taskOpts.Env = append(opts.taskOpts.Env, taskRunFromRootEnv+"=1")
+			}
 
 			err = runner.Run(taskNames, opts.taskOpts)
 			if err != nil { //nolint: nestif
 				exitCode := 1
 
-				if exitErr, ok := err.(*exec.ExitError); ok {
+				var exitErr *exec.ExitError
+
+				if errors.As(err, &exitErr) {
 					// Only propagate if '--exit-code' was requested
 					if opts.taskOpts.ExitCode {
 						if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
@@ -191,7 +206,7 @@ Examples:
 	return cmd
 }
 
-// completeTaskNames provides shell completion for task names
+// completeTaskNames provides shell completion for task names.
 func completeTaskNames(opts *taskRunOptions) ([]string, cobra.ShellCompDirective) {
 	binaryName := "task"
 
@@ -204,10 +219,7 @@ func completeTaskNames(opts *taskRunOptions) ([]string, cobra.ShellCompDirective
 	if _, err := os.Stat(standardTaskfile); err == nil {
 		taskfilePath = standardTaskfile
 	} else {
-		// Try template discovery with Taskfile.gen.yaml
-		discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
-
-		discoveredTaskfile, err := discovery.Discover(opts.Dir, 2)
+		discoveredTaskfile, _, err := task.ResolveTaskfile(opts.Dir)
 		if err != nil {
 			// No Taskfile found - return no completions
 			return nil, cobra.ShellCompDirectiveNoFileComp

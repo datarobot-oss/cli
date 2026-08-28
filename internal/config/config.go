@@ -28,6 +28,10 @@ import (
 
 var configFileName = "drconfig.yaml"
 
+// configFileMode is the permission drconfig.yaml must have: it stores the API
+// token in plaintext, so it is owner-only.
+const configFileMode = 0o600
+
 // GetConfigDir returns the config directory, respecting XDG_CONFIG_HOME if set.
 // Falls back to ~/.config/datarobot if XDG_CONFIG_HOME is not set.
 func GetConfigDir() (string, error) {
@@ -108,9 +112,18 @@ func CreateConfigFileDirIfNotExists() error {
 		return fmt.Errorf("Failed to create config file directory: %w", err)
 	}
 
-	_, err = os.Create(defaultConfigFilePath)
+	// Create with 0600 rather than os.Create's 0666&^umask: this file holds the API
+	// token. os.WriteFile in UpdateConfigFile cannot fix the mode later, because its
+	// perm argument only applies when it creates the file itself.
+	f, err := os.OpenFile(defaultConfigFilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, configFileMode)
 	if err != nil {
 		return fmt.Errorf("Failed to create config file: %w", err)
+	}
+
+	// Close the handle immediately. On Windows an open handle blocks the file
+	// from being removed (e.g. t.TempDir cleanup); POSIX silently tolerates it.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("Failed to close config file: %w", err)
 	}
 
 	return nil

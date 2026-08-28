@@ -13,6 +13,9 @@ vars:
   GOLANGCI_LINT_VERSION: "v2.11.4"
   LEFTHOOK_VERSION: "v2.1.10"
   JSCPD_VERSION: "5.0.12"
+  GORELEASER_VERSION: "v2.17.1"
+  # Keep this in sync with the GOOS lists in goreleaser.yaml.
+  LINT_GOOS_TARGETS: "linux darwin windows"
 
 dotenv: [".env"]
 
@@ -36,7 +39,28 @@ tasks:
         export GOBIN={{.BIN_DIR}}
 
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
-        go install github.com/goreleaser/goreleaser/v2@latest
+        # goreleaser: download the prebuilt binary instead of `go install`, which
+        # compiles a large dependency tree from source and slows container/CI setup.
+        GORELEASER_OS=$(go env GOOS)
+        GORELEASER_ARCH=$(go env GOARCH)
+        case "$GORELEASER_OS-$GORELEASER_ARCH" in
+          darwin-arm64)  GORELEASER_ASSET="goreleaser_Darwin_arm64.tar.gz" ;;
+          darwin-amd64)  GORELEASER_ASSET="goreleaser_Darwin_x86_64.tar.gz" ;;
+          linux-arm64)   GORELEASER_ASSET="goreleaser_Linux_arm64.tar.gz" ;;
+          linux-amd64)   GORELEASER_ASSET="goreleaser_Linux_x86_64.tar.gz" ;;
+          windows-amd64) GORELEASER_ASSET="goreleaser_Windows_x86_64.zip" ;;
+          *) echo "Unsupported platform for goreleaser: $GORELEASER_ASSET on $GORELEASER_OS-$GORELEASER_ARCH"; exit 1 ;;
+        esac
+        GORELEASER_TMP=$(mktemp -d)
+        curl -sSfL "https://github.com/goreleaser/goreleaser/releases/download/{{.GORELEASER_VERSION}}/${GORELEASER_ASSET}" -o "$GORELEASER_TMP/archive"
+        if [ "$GORELEASER_OS" = "windows" ]; then
+          unzip -o "$GORELEASER_TMP/archive" -d "$GORELEASER_TMP"
+          mv "$GORELEASER_TMP/goreleaser.exe" {{.BIN_DIR}}/
+        else
+          tar -xzf "$GORELEASER_TMP/archive" -C "$GORELEASER_TMP"
+          mv "$GORELEASER_TMP/goreleaser" {{.BIN_DIR}}/
+        fi
+        rm -rf "$GORELEASER_TMP"
 
         # jscpd: download prebuilt Rust binary from GitHub releases
         JSCPD_OS=$(go env GOOS)
@@ -51,7 +75,26 @@ tasks:
         esac
         curl -sSfL "https://github.com/kucherenko/jscpd/releases/download/v{{.JSCPD_VERSION}}/${JSCPD_ASSET}.tar.gz" | tar -xz -C {{.BIN_DIR}}
 
-        go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
+        # lefthook: download the prebuilt binary instead of `go install` for the
+        # same reason as goreleaser (avoids compiling its dependency tree from source).
+        LEFTHOOK_OS=$(go env GOOS)
+        LEFTHOOK_ARCH=$(go env GOARCH)
+        LEFTHOOK_VER={{.LEFTHOOK_VERSION}}
+        LEFTHOOK_VER=${LEFTHOOK_VER#v}
+        case "$LEFTHOOK_OS-$LEFTHOOK_ARCH" in
+          darwin-arm64)  LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_MacOS_arm64.gz" ;;
+          darwin-amd64)  LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_MacOS_x86_64.gz" ;;
+          linux-arm64)   LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_Linux_arm64.gz" ;;
+          linux-amd64)   LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_Linux_x86_64.gz" ;;
+          windows-amd64) LEFTHOOK_ASSET="lefthook_${LEFTHOOK_VER}_Windows_x86_64.exe" ;;
+          *) echo "Unsupported platform for lefthook: $LEFTHOOK_OS-$LEFTHOOK_ARCH"; exit 1 ;;
+        esac
+        if [ "$LEFTHOOK_OS" = "windows" ]; then
+          curl -sSfL "https://github.com/evilmartians/lefthook/releases/download/{{.LEFTHOOK_VERSION}}/${LEFTHOOK_ASSET}" -o {{.BIN_DIR}}/lefthook.exe
+        else
+          curl -sSfL "https://github.com/evilmartians/lefthook/releases/download/{{.LEFTHOOK_VERSION}}/${LEFTHOOK_ASSET}" | gunzip > {{.BIN_DIR}}/lefthook
+          chmod +x {{.BIN_DIR}}/lefthook
+        fi
     status:
       - "{{.BIN_DIR}}/golangci-lint --version"
       - "{{.BIN_DIR}}/goreleaser --version"
@@ -82,6 +125,23 @@ tasks:
         {{.BIN_DIR}}/lefthook install
         echo "✅ Development environment initialized."
 
+  bootstrap:
+    silent: true
+    desc: "Set up complete dev environment (verify Go, tools, hooks, build)"
+    cmds:
+      - |
+        GO_REQUIRED=$(grep '^go ' go.mod | awk '{print $2}')
+        GO_INSTALLED=$(go version | awk '{print $3}' | sed 's/go//')
+        if [ "$GO_REQUIRED" != "$GO_INSTALLED" ]; then
+          echo "Go version mismatch: go.mod requires $GO_REQUIRED, installed is $GO_INSTALLED"
+          echo "Install Go $GO_REQUIRED from https://go.dev/dl/"
+          exit 1
+        fi
+        echo "Go $GO_INSTALLED matches go.mod"
+      - task: install-tools
+      - "{{.BIN_DIR}}/lefthook install"
+      - task: build
+
   lint:
     silent: true
     desc: "Check for lint issues (does not modify files)"
@@ -93,8 +153,7 @@ tasks:
       - "{{.BIN_DIR}}/golangci-lint fmt --diff"
       - echo "🧹 Vetting…"
       - go vet ./...
-      - echo "🧹 Linting…"
-      - "{{.BIN_DIR}}/golangci-lint run ./..."
+      - task: lint-goos
       - echo "🧹 Checking GoReleaser config…"
       - "{{.BIN_DIR}}/goreleaser check"
 
@@ -107,8 +166,24 @@ tasks:
       - go mod tidy
       - echo "🧹 Formatting files…"
       - "{{.BIN_DIR}}/golangci-lint fmt"
-      - echo "🧹 Fixing lint issues…"
-      - "{{.BIN_DIR}}/golangci-lint run --fix ./..."
+      - task: lint-goos
+        vars:
+          LINT_ARGS: "--fix"
+
+  # CFX-7138: run golangci-lint once per target GOOS so build-constrained files
+  # (*_windows.go, //go:build linux, …) are enforced no matter which OS the
+  # linter runs on. Without this, a macOS dev only lints the darwin/!windows
+  # files and CI (ubuntu) only the linux/!windows ones, so windows-only files
+  # are linted by nobody. Callers pass LINT_ARGS to select the mode.
+  lint-goos:
+    internal: true
+    silent: true
+    deps: [install-tools]
+    cmds:
+      - for: { var: LINT_GOOS_TARGETS, split: " " }
+        cmd: |
+          echo "🧹 Linting (GOOS={{.ITEM}})…"
+          GOOS={{.ITEM}} {{.BIN_DIR}}/golangci-lint run {{.LINT_ARGS}} ./...
 
   run:
     silent: true
@@ -157,6 +232,12 @@ tasks:
     cmds:
       - go test -count=1 -race -shuffle=on ./...
 
+  test-windows:
+    silent: true
+    desc: "Run tests without race detector or coverage (Windows CI leg, CFX-6919)"
+    cmds:
+      - go test -count=1 -shuffle=on ./...
+
   test-coverage:
     silent: true
     desc: "Run tests with coverage rendered in HTML"
@@ -186,6 +267,9 @@ tasks:
       - go mod tidy
       - echo "🧹 Vetting…"
       - go vet ./...
+      # CFX-7138: deliberately host-GOOS only. The commit hook runs on every
+      # commit, and looping all targets here costs ~4-6s of interactive latency
+      # for little benefit — `task lint` and CI already enforce every GOOS.
       - echo "🧹 Linting new changes…"
       - "{{.BIN_DIR}}/golangci-lint run --new-from-rev HEAD ./..."
       - echo "🧹 Verifying golangci-lint config…"
@@ -220,11 +304,26 @@ tasks:
     deps: [build]
     cmds:
       - ./smoke_test_scripts/run_plugin_update_smoke_test.sh
+  smoke-test-workload:
+    desc: "Run workload/artifact acceptance scenarios (live; uses configured drconfig.yaml auth)"
+    deps: [build]
+    cmds:
+      - ./smoke_test_scripts/run_workload_smoke_test.sh {{.CLI_ARGS}}
+  smoke-test-workload-full:
+    desc: "Run the full workload/artifact acceptance suite incl. the ~20-30 min built-workload scenario (live; uses configured drconfig.yaml auth)"
+    deps: [build]
+    cmds:
+      - WORKLOAD_SMOKE_INCLUDE_D=1 ./smoke_test_scripts/run_workload_smoke_test.sh
 
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
     cmds:
-      - powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
+      # Clear PSModulePath so powershell.exe (5.1) reconstructs its own module
+      # path instead of inheriting pwsh 7's incompatible module paths.
+      # Taskfile uses mvdan/sh (POSIX sh), so we use env-prefix assignment
+      # syntax (not cmd.exe `set` or pwsh `$env:` syntax).
+      # See: https://github.com/PowerShell/PowerShell/issues/18530#issuecomment-1325691850
+      - PSModulePath= powershell.exe -ExecutionPolicy Bypass -File ./smoke_test_scripts/windows/run_smoke_test.ps1 {{if .DR_API_TOKEN}}{{.DR_API_TOKEN}}{{else}}$env:DR_API_TOKEN{{end}}
 
   docs-serve:
     silent: true

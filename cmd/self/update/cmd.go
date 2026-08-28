@@ -44,7 +44,7 @@ with your default shell.
 		RunE: func(_ *cobra.Command, _ []string) error {
 			requirement, err := tools.GetSelfRequirement()
 			if err != nil {
-				return err
+				return fmt.Errorf("get self requirement: %w", err)
 			}
 
 			if tools.SufficientSelfVersion(requirement.MinimumVersion) && !force {
@@ -74,7 +74,7 @@ with your default shell.
 
 						if err := brewUpdateCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return err
+							return fmt.Errorf("brew update: %w", err)
 						}
 
 						brewReinstallCmd := exec.Command(brewPath, "reinstall", "--cask", "dr-cli", "--force")
@@ -83,7 +83,7 @@ with your default shell.
 
 						if err := brewReinstallCmd.Run(); err != nil {
 							fmt.Fprintln(os.Stderr, "Error: ", err)
-							return err
+							return fmt.Errorf("brew reinstall: %w", err)
 						}
 
 						return nil
@@ -95,13 +95,14 @@ with your default shell.
 			shell, err := internalShell.DetectShell()
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Error while determining shell: ", err)
-				return err
+				return fmt.Errorf("detect shell: %w", err)
 			}
 
 			var (
 				command    string
 				executable string
 				backup     string
+				execCmd    *exec.Cmd
 			)
 
 			switch runtime.GOOS {
@@ -114,13 +115,17 @@ with your default shell.
 				if err != nil {
 					return err
 				}
+
+				// The install command is a PowerShell one-liner, so it must run
+				// under PowerShell regardless of the detected shell (e.g. cmd.exe,
+				// which uses /C and cannot run `irm ... | iex`).
+				execCmd = exec.Command("powershell", "-NoProfile", "-Command", command)
 			case "darwin", "linux":
 				command = "curl -fsSL https://raw.githubusercontent.com/datarobot-oss/cli/main/install.sh | sh"
+				execCmd = exec.Command(shell, "-c", command)
 			default:
 				return fmt.Errorf("could not determine OS: %s", runtime.GOOS)
 			}
-
-			execCmd := exec.Command(shell, "-c", command)
 
 			execCmd.Stdout = os.Stdout
 			execCmd.Stderr = os.Stderr

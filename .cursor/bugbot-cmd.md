@@ -16,6 +16,14 @@ Follow the standard file naming pattern: `cmd.go` for command logic, `model.go` 
 
 Text and JSON output must contain identical data with consistent field naming (camelCase for JSON).
 
+### JSON output purity
+
+When a command is invoked with `--output-format json` (or the deprecated `-o json` / `--format json`), **stdout must contain only valid JSON** — nothing else. This guarantees `dr <cmd> --output-format json | jq .` and `dr <cmd> --output-format json 2>&1 | jq .` both parse.
+
+All non-JSON diagnostics must go to **stderr**, never stdout.
+
+Prefer `outputformat.PrintJSONEnvelope` for structured output so the payload is always a single JSON object.
+
 ## Pagination Safety
 
 Validate that pagination never crosses host boundaries.

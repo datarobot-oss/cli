@@ -25,6 +25,7 @@ function Write-InfoMsg {
     Write-Host $Message
 }
 
+# Prints a section header banner centered around the given message.
 function Write-Delimiter {
     param([string]$Message)
     Write-Host ""
@@ -35,6 +36,7 @@ function Write-Delimiter {
     Write-Host ("=" * 20)
 }
 
+# Prints a closing END banner to delimit test sections.
 function Write-End {
     Write-Host ("=" * 20) -NoNewline
     Write-Host " END " -NoNewline
@@ -49,6 +51,117 @@ function Test-URLAccessible {
     } catch {
         return $false
     }
+}
+
+# Installs PowerShell completions under a given execution policy and asserts warning behavior, profile contents, and policy preservation.
+function Test-DRCompletionInstallWithExecutionPolicy {
+    param(
+        [string]$TestName,
+        [string]$Policy,
+        [string]$ExpectedPolicy,
+        [bool]$ExpectWarning
+    )
+
+    # Guard: Get-ExecutionPolicy may not be available on every PowerShell
+    # build (e.g. some Windows Server 2025 runner images fail to auto-load
+    # the Microsoft.PowerShell.Security module).  Skip gracefully instead of
+    # crashing the entire smoke-test suite.
+    try {
+        $null = Get-ExecutionPolicy -ErrorAction Stop
+    } catch {
+        Write-InfoMsg "Skipping [$TestName]: Get-ExecutionPolicy cmdlet not available on this system."
+
+        return
+    }
+
+    # Save the current effective policy so it can be restored after the test.
+    # Use -Scope Process for Set-ExecutionPolicy so we don't touch the registry
+    # (some CI runners lock down CurrentUser/Machine policy via Group Policy).
+    # Get-ExecutionPolicy (no -Scope) returns the effective policy, which
+    # correctly reflects the Process-scope override.
+    $originalPolicy = Get-ExecutionPolicy
+
+    try {
+        Set-ExecutionPolicy $Policy -Scope Process -Force -ErrorAction Stop
+    } catch {
+        Write-InfoMsg "Skipping [$TestName]: unable to set execution policy to $Policy."
+
+        return
+    }
+
+    # Resolve the PowerShell profile path, preferring PowerShell Core over Windows PowerShell (matches the Go installer).
+    $documentsPath = "$env:USERPROFILE\Documents"
+    $psCoreDir = Join-Path $documentsPath "PowerShell"
+    $windowsPsDir = Join-Path $documentsPath "WindowsPowerShell"
+
+    if (Test-Path $psCoreDir) {
+        $profilePath = Join-Path $psCoreDir "Microsoft.PowerShell_profile.ps1"
+    } else {
+        $profilePath = Join-Path $windowsPsDir "Microsoft.PowerShell_profile.ps1"
+    }
+
+    # Clean up any existing profile from a previous test so each run starts fresh.
+    if (Test-Path $profilePath) {
+        Remove-Item $profilePath -Force -ErrorAction SilentlyContinue
+    }
+
+    # Run the installer with --force so each invocation performs a real install.
+    # Relax EAP to "Continue" so stderr lines from the native command are
+    # captured, not thrown (same pattern as the --debug test above).
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $installOutput = (dr self completion install powershell --yes --force 2>&1 | Out-String)
+    $installExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    if ($installExitCode -ne 0) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "dr self completion install powershell --yes --force failed with exit code $installExitCode"
+    }
+
+    # Assert the installer warned (or did not warn) about the execution policy fix command.
+    $fixCommand = "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser"
+    $hasWarning = $installOutput -match $fixCommand
+
+    if ($ExpectWarning -and -not $hasWarning) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer did not warn user with the execution policy fix command"
+    }
+
+    if (-not $ExpectWarning -and $hasWarning) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: installer warned about execution policy when policy was already permissive"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: warning behavior correct"
+
+    # Assert the profile exists and contains the dr completion block.
+    # Restricted policy blocks *loading* the profile, not writing it, so the
+    # installer should still create the profile even under Restricted.
+    if (-not (Test-Path $profilePath)) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: PowerShell profile was not found at $profilePath"
+    }
+
+    $profileContent = Get-Content $profilePath -Raw
+    if ($profileContent -notmatch "dr completion powershell") {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed: profile does not contain completion block"
+    }
+
+    Write-SuccessMsg "Assertion passed: profile contains completion block"
+
+    # Assert the execution policy was not modified by the installer.
+    $actualPolicy = Get-ExecutionPolicy
+    if ($actualPolicy -ne $ExpectedPolicy) {
+        Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+        Write-ErrorMsg "Assertion failed [$TestName]: expected execution policy to be $ExpectedPolicy, but it is '$actualPolicy'"
+    }
+
+    Write-SuccessMsg "Assertion passed [$TestName]: execution policy remains '$actualPolicy'"
+
+    # Restore the original execution policy and clean up the profile.
+    Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
+    if (Test-Path $profilePath) { Remove-Item $profilePath -Force -ErrorAction SilentlyContinue }
 }
 
 # Main execution
@@ -150,6 +263,20 @@ if (Test-Path $completion_file) {
 }
 Write-End
 
+# Test completion install under a fresh-machine execution policy.
+# The installer should warn the user that the profile will not load under the
+# default Restricted policy and print the exact command to fix it, but it should
+# not modify the policy itself.
+Write-Delimiter "Testing dr self completion install (Restricted execution policy)"
+Test-DRCompletionInstallWithExecutionPolicy -TestName "Restricted" -Policy "Restricted" -ExpectedPolicy "Restricted" -ExpectWarning $true
+Write-End
+
+# Test completion install under a permissive execution policy.
+# The installer should complete silently without warning the user.
+Write-Delimiter "Testing dr self completion install (permissive execution policy)"
+Test-DRCompletionInstallWithExecutionPolicy -TestName "RemoteSigned" -Policy "RemoteSigned" -ExpectedPolicy "RemoteSigned" -ExpectWarning $false
+Write-End
+
 # Test dr run command
 Write-Delimiter "Testing dr run command"
 dr run
@@ -205,10 +332,14 @@ for ($i = 0; $i -lt 20; $i++) {
     if ($auth_proc.HasExited) { break }
 }
 
+# Whether the process was still running tells a hang apart from an early exit, so
+# capture it before the kill below makes it moot.
+$auth_still_running = -not $auth_proc.HasExited
+
 # No browser round-trip happens in tests, so stop the waiting process. Guard the
 # kill: the process may exit between the check and the Kill() call, which would
 # otherwise throw under $ErrorActionPreference = "Stop".
-if (-not $auth_proc.HasExited) {
+if ($auth_still_running) {
     try {
         $auth_proc.Kill()
         $auth_proc.WaitForExit()
@@ -217,13 +348,69 @@ if (-not $auth_proc.HasExited) {
     }
 }
 
-Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
-
 if ($auth_url_shown) {
+    Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
     Write-SuccessMsg "Assertion passed: 'dr auth login' displayed the OAuth redirect URL."
 } else {
+    # Dump both streams before deleting them. Without this the failure says only
+    # "the URL was not on stdout", which cannot distinguish the three causes that
+    # look identical from here: the link went to stderr instead, the process never
+    # got as far as printing it (a browser launcher that blocks would do that), or
+    # it exited early with an error.
     Write-ErrorMsg "Assertion failed: 'dr auth login' did not display the auth URL (cliRedirect=true)."
+    Write-InfoMsg "Process still running when polling gave up: $auth_still_running"
+
+    foreach ($stream in @(@{ Name = "stdout"; Path = $auth_out }, @{ Name = "stderr"; Path = $auth_err })) {
+        Write-InfoMsg "--- dr auth login $($stream.Name) ---"
+
+        if (Test-Path $stream.Path) {
+            $content = Get-Content $stream.Path -Raw
+
+            if ([string]::IsNullOrWhiteSpace($content)) {
+                Write-Host "(empty)"
+            } else {
+                Write-Host $content
+            }
+        } else {
+            Write-Host "(file never created)"
+        }
+    }
+
+    Remove-Item $auth_out, $auth_err -Force -ErrorAction SilentlyContinue
 }
+Write-End
+
+# Test auth export
+#
+# Verifies the PowerShell rendering and that piping it to Invoke-Expression
+# actually populates $env:. Values are never echoed, so no token reaches the
+# CI log.
+Write-Delimiter "Testing dr auth export"
+
+$auth_export_output = (dr auth export --shell powershell) -join "`n"
+
+if ($auth_export_output -match '\$env:DATAROBOT_ENDPOINT = ' -and
+    $auth_export_output -match '\$env:DATAROBOT_API_TOKEN = ') {
+    Write-SuccessMsg "Assertion passed: 'dr auth export' emitted both canonical variables."
+} else {
+    Write-ErrorMsg "Assertion failed: 'dr auth export' did not emit both canonical variables."
+}
+
+# Snapshot and restore so the token does not leak into the rest of the suite.
+$saved_endpoint = $env:DATAROBOT_ENDPOINT
+$saved_token = $env:DATAROBOT_API_TOKEN
+
+$auth_export_output | Invoke-Expression
+
+if ($env:DATAROBOT_ENDPOINT -eq "${testing_url}/api/v2" -and -not [string]::IsNullOrEmpty($env:DATAROBOT_API_TOKEN)) {
+    Write-SuccessMsg "Assertion passed: Invoke-Expression of 'dr auth export' set the canonical variables."
+} else {
+    Write-Host "DATAROBOT_ENDPOINT=$($env:DATAROBOT_ENDPOINT)"
+    Write-ErrorMsg "Assertion failed: Invoke-Expression of 'dr auth export' did not set the canonical variables."
+}
+
+$env:DATAROBOT_ENDPOINT = $saved_endpoint
+$env:DATAROBOT_API_TOKEN = $saved_token
 Write-End
 
 # Test templates (if URL is accessible)

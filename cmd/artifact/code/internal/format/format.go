@@ -15,7 +15,24 @@
 // Package format provides display helpers shared across workload-code commands.
 package format
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+
+	"github.com/datarobot/cli/tui"
+)
+
+// StateNotice prints an incidental note about the state directory to w, dimmed
+// like the other housekeeping chatter. An empty notice prints nothing, so a
+// caller can pass wapi.EnsureMigrated's result straight through. Send it to
+// stderr: it is never part of a command's data output.
+func StateNotice(w io.Writer, notice string) {
+	if notice == "" {
+		return
+	}
+
+	fmt.Fprintln(w, tui.DimStyle.Render(notice))
+}
 
 // Bytes renders n in base-1024 units, capping at PB to avoid suffix overflow.
 func Bytes(n int64) string {

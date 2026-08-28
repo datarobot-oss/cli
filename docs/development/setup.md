@@ -6,7 +6,7 @@ This page outlines how to set up your development environment to build and devel
 
 ## Prerequisites
 
-- [Go 1.26.5](https://golang.org/dl/)
+- [Go 1.26.7](https://golang.org/dl/)
 - Git for version control
 - [Task](https://taskfile.dev/installation/) (A task runner)
 
@@ -42,6 +42,37 @@ choco install go-task
 # Fork and clone in one command
 gh repo fork datarobot-oss/cli --clone --default-branch-only
 cd cli
+```
+
+### Set up the development environment
+
+There are two ways to set up your development environment:
+
+#### Option A: Devcontainer (VS Code, Codespaces)
+
+A [devcontainer](https://containers.dev/) configuration is provided at `.devcontainer/devcontainer.json`. It pins Go 1.26 and installs Task automatically, so you do not need to install prerequisites manually.
+
+- **VS Code**: Open the repo and select "Reopen in Container" (requires the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers))
+- **VS Code Remote-SSH**: Use the devcontainer on a remote machine or [Droid Computer](https://docs.factory.ai/cli/features/droid-computers) via SSH
+- **GitHub Codespaces**: Create a codespace from this repo; the devcontainer is used automatically
+
+The devcontainer's `postCreateCommand` runs `task bootstrap`, which verifies the Go version, installs all tools, sets up git hooks, and builds the CLI.
+
+#### Option B: Local setup (no container)
+
+If you prefer not to use a devcontainer, install the [prerequisites](#prerequisites) listed above (Go 1.26.7, Git, Task), then run:
+
+```bash
+task bootstrap
+```
+
+This is a one-command setup that verifies your Go version matches `go.mod`, installs all development tools (golangci-lint, goreleaser, jscpd, lefthook), sets up git hooks via `lefthook install`, and builds the CLI binary.
+
+Alternatively, you can run the individual steps manually:
+
+```bash
+task dev-init    # Install tools and git hooks
+task build       # Build the CLI binary
 ```
 
 ### Install development tools
@@ -89,6 +120,7 @@ task --list
 
 | Task | Description |
 | ------ | ------------- |
+| `task bootstrap` | Set up complete dev environment (verify Go, tools, hooks, build). |
 | `task build` | Build the CLI binary. |
 | `task test` | Run all tests. |
 | `task test-coverage` | Run tests with a coverage report. |

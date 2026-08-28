@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
@@ -152,7 +153,7 @@ func validatePluginScript(pluginDir string, expectedManifest *plugin.PluginManif
 	log.Info("Validating plugin script output", "plugin", expectedManifest.Name)
 
 	if err := plugin.ValidatePluginScript(pluginDir, *expectedManifest); err != nil {
-		return err
+		return fmt.Errorf(errmsg.ValidatePluginScript, err)
 	}
 
 	log.Info("✓ Plugin script output matches manifest.json")
@@ -173,7 +174,7 @@ func determineOutputPath(output, archiveName string) string {
 func createArchive(sourceDir, archivePath string) error {
 	archiveFile, err := os.Create(archivePath)
 	if err != nil {
-		return err
+		return fmt.Errorf(errmsg.CreateArchiveFile, err)
 	}
 	defer archiveFile.Close()
 
@@ -186,58 +187,72 @@ func createArchive(sourceDir, archivePath string) error {
 	tarWriter := tar.NewWriter(xzWriter)
 	defer tarWriter.Close()
 
-	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	if err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		return appendToArchive(tarWriter, sourceDir, path, info, err)
+	}); err != nil {
+		return fmt.Errorf(errmsg.WalkSourceDirectory, err)
+	}
 
-		relPath, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
+	return nil
+}
 
-		if relPath == "." {
-			return nil
-		}
+// appendToArchive is the filepath.Walk callback that adds each entry under
+// sourceDir to tarWriter. It is a named function (rather than an inline
+// closure) to keep createArchive's cyclomatic complexity manageable.
+func appendToArchive(tarWriter *tar.Writer, sourceDir, path string, info os.FileInfo, err error) error {
+	if err != nil {
+		return fmt.Errorf(errmsg.WalkSourceDir, err)
+	}
 
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
+	relPath, err := filepath.Rel(sourceDir, path)
+	if err != nil {
+		return fmt.Errorf(errmsg.ResolveRelativePath, err)
+	}
 
-		header.Name = relPath
+	if relPath == "." {
+		return nil
+	}
 
-		if err := tarWriter.WriteHeader(header); err != nil {
-			return err
-		}
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return fmt.Errorf(errmsg.BuildTarHeader, err)
+	}
 
-		if info.IsDir() {
-			return nil
-		}
+	header.Name = relPath
 
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
+	if err := tarWriter.WriteHeader(header); err != nil {
+		return fmt.Errorf(errmsg.WriteTarHeader, err)
+	}
 
-		_, err = io.Copy(tarWriter, file)
+	if info.IsDir() {
+		return nil
+	}
 
-		return err
-	})
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf(errmsg.OpenFile, err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(tarWriter, file)
+	if err != nil {
+		return fmt.Errorf(errmsg.CopyFileIntoArchive, err)
+	}
+
+	return nil
 }
 
 func calculateSHA256(filePath string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open archive for checksum: %w", err)
 	}
 	defer file.Close()
 
 	hash := sha256.New()
 
 	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+		return "", fmt.Errorf("hash archive: %w", err)
 	}
 
 	return hex.EncodeToString(hash.Sum(nil)), nil
@@ -279,13 +294,13 @@ func saveIndexFragment(path string, manifest *plugin.PluginManifest, archiveName
 
 	data, err := json.MarshalIndent(fragment, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf(errmsg.MarshalJSON, err)
 	}
 
 	data = append(data, '\n')
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return err
+		return fmt.Errorf("write file: %w", err)
 	}
 
 	return nil

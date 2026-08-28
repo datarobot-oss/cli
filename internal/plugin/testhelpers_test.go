@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -52,13 +53,41 @@ func writePluginManifestScript(t *testing.T, dir, name, manifestJSON string) str
 	return scriptPath
 }
 
-// writeExitScript creates a Unix shell script that exits with the given code.
-// Returns the script path.
+// writeExitScript creates a cross-platform script that exits with the given
+// code. On Windows it emits a .ps1 (which buildPluginCommand wraps in
+// PowerShell); elsewhere a POSIX shell script. Returns the script path.
 func writeExitScript(t *testing.T, dir, name string, exitCode int) string {
 	t.Helper()
 
-	script := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
-	path := filepath.Join(dir, name)
+	var path, script string
+
+	if runtime.GOOS == "windows" {
+		path = filepath.Join(dir, name+".ps1")
+		script = fmt.Sprintf("exit %d\n", exitCode)
+	} else {
+		path = filepath.Join(dir, name)
+		script = fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
+	}
+
+	createScript(t, path, script)
+
+	return path
+}
+
+// writeArgCheckScript creates a cross-platform script that exits 0 iff its
+// first two args are exactly "expected" "args", else 1. Returns the script path.
+func writeArgCheckScript(t *testing.T, dir, name string) string {
+	t.Helper()
+
+	var path, script string
+
+	if runtime.GOOS == "windows" {
+		path = filepath.Join(dir, name+".ps1")
+		script = "if ($args[0] -eq 'expected' -and $args[1] -eq 'args') { exit 0 } else { exit 1 }\n"
+	} else {
+		path = filepath.Join(dir, name)
+		script = "#!/bin/sh\nif [ \"$1\" = \"expected\" ] && [ \"$2\" = \"args\" ]; then\n  exit 0\nelse\n  exit 1\nfi\n"
+	}
 
 	createScript(t, path, script)
 
@@ -71,4 +100,23 @@ func createScript(t *testing.T, path, content string) {
 
 	err := os.WriteFile(path, []byte(content), 0o755)
 	require.NoError(t, err)
+}
+
+// waitForFile polls until path exists, failing the test after ten seconds.
+// It replaces the fixed sleeps the subprocess tests used to guess at shell
+// startup with, which a loaded machine routinely outran.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("file %s did not appear within 10s", path)
 }

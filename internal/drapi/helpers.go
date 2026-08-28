@@ -43,12 +43,17 @@ func EndpointURL(path string, query url.Values) (string, error) {
 // ErrFromResp wraps a non-2xx *http.Response into a *HTTPError, capturing
 // up to 512 bytes of the response body for context. It always closes
 // resp.Body, so callers must not read it after calling this function.
+//
+// The body is carried raw on HTTPError.Body, uninterpreted: drapi serves
+// every DataRobot API the CLI talks to, and they do not agree on an error
+// envelope, so reading meaning into the bytes is a caller's job (see
+// workload/apiclient for the Workload API's).
 func ErrFromResp(resp *http.Response, requestURL string) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	if len(body) > 0 {
-		return fmt.Errorf("%w: body=%s", &HTTPError{StatusCode: resp.StatusCode, URL: requestURL}, body)
+		return fmt.Errorf("%w: body=%s", &HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Body: body}, body)
 	}
 
 	return &HTTPError{StatusCode: resp.StatusCode, URL: requestURL}

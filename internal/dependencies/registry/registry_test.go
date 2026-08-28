@@ -17,6 +17,7 @@ package registry
 import (
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -189,6 +190,10 @@ func TestDetectEnvironment_NVM_ViaEnvVar(t *testing.T) {
 }
 
 func TestDetectEnvironment_NVM_ViaHomeFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on os.UserHomeDir honoring $HOME, which is POSIX-only")
+	}
+
 	t.Setenv("HOME", "/home/user")
 
 	dirExists := func(p string) bool { return p == "/home/user/.nvm" }
@@ -419,7 +424,7 @@ func TestSelectInstallStrategy_WingetPresent_Task(t *testing.T) {
 	ms, ok := SelectInstallStrategy("task", "", env).(ManagerStrategy)
 
 	require.True(t, ok)
-	assert.Equal(t, []string{"winget install Task.Task"}, ms.Commands)
+	assert.Equal(t, []string{"winget install Task.Task" + WingetUnattendedFlags}, ms.Commands)
 }
 
 func TestSelectInstallStrategy_NVMPresent_Node(t *testing.T) {

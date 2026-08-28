@@ -25,7 +25,10 @@ import (
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
-	var specFile string
+	var (
+		specFile string
+		enclave  string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -45,6 +48,15 @@ using standard YAML typing rules before sending: quote values that must
 stay strings (for example "0644" or "1.10"), and unquoted dates are sent
 as RFC3339 timestamps. The server validates field-level shape and returns
 a 422 with a JSON-path detail on a mismatch.
+
+Use --enclave <name> to pin the workload to a specific Enclave: it sets
+runtime.enclaveSelectionPolicy to "manual" and runtime.enclaves to the
+named Enclave, which must be eligible and grant you deploy access. The
+flag refuses to override a spec that already sets either field, and using
+it means the spec is re-encoded rather than sent byte-for-byte. Without
+the flag (or with enclaveSelectionPolicy "availability"), DataRobot picks
+the placement. Confirm where the workload landed with
+'dr workload list --enclave <name>'.
 
 Three flows:
 
@@ -117,6 +129,7 @@ Three flows:
 Example:
   dr workload create --spec-file workload.json
   dr workload create --spec-file workload.yaml
+  dr workload create --spec-file workload.json --enclave prod-east
   dr workload create --spec-file workload.yaml --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -127,6 +140,15 @@ Example:
 			payload, err := workload.ReadSpecFile(specFile)
 			if err != nil {
 				return err
+			}
+
+			// Changed, not enclave != "": an explicit --enclave "" must be
+			// rejected by ApplyEnclavePin, not silently create unpinned.
+			if cmd.Flags().Changed("enclave") {
+				payload, err = workload.ApplyEnclavePin(payload, enclave)
+				if err != nil {
+					return err
+				}
 			}
 
 			if err := workload.ValidateWorkloadCreateRequest(payload); err != nil {
@@ -147,9 +169,13 @@ Example:
 	cmd.Flags().StringVar(&specFile, "spec-file", "", "Path to JSON or YAML spec file (required)")
 	_ = cmd.MarkFlagRequired("spec-file")
 
+	cmd.Flags().StringVar(&enclave, "enclave", "",
+		"Pin the workload to the named Enclave (sets runtime.enclaveSelectionPolicy=manual)")
+
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"output_format": string(outputFormat),
+			"enclave":       enclave,
 		}
 	})
 

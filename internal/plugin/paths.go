@@ -21,7 +21,7 @@ import (
 )
 
 // ManagedPluginsDir returns the user-global managed plugins directory.
-// It respects XDG_CONFIG_HOME if set, otherwise falls back to ~/.config/datarobot/plugins/
+// It respects XDG_CONFIG_HOME if set, otherwise falls back to ~/.config/datarobot/plugins/.
 func ManagedPluginsDir() (string, error) {
 	configDir, err := config.GetConfigDir()
 	if err != nil {

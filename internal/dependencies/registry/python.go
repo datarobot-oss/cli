@@ -22,7 +22,7 @@ func init() {
 			ManagerStrategy{Manager: "pyenv", DefaultVersion: "3.14", Commands: []string{"pyenv install {version}", "pyenv global {version}"}},
 			ManagerStrategy{Manager: "asdf", DefaultVersion: "3.14", Commands: []string{"asdf install python {version}", "asdf global python {version}"}},
 			ManagerStrategy{Manager: "brew", DefaultVersion: "3.14", Commands: []string{"brew install python@{version_mm}"}},
-			ManagerStrategy{Manager: "winget", DefaultVersion: "3.14", Commands: []string{"winget install Python.Python.{version_mm}"}},
+			ManagerStrategy{Manager: "winget", DefaultVersion: "3.14", Commands: []string{"winget install Python.Python.{version_mm}" + WingetUnattendedFlags}},
 			ManagerStrategy{Manager: "choco", DefaultVersion: "3.14", Commands: []string{"choco install python --version={version}"}},
 			FallbackStrategy{
 				DefaultVersion: "3.14",

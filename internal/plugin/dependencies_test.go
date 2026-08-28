@@ -47,6 +47,7 @@ const (
   install:
     macos: "echo install"
     linux: "echo install"
+    windows: "echo install"
 `
 )
 

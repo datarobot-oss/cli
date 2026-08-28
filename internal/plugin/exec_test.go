@@ -34,7 +34,7 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// ExecTestSuite tests plugin execution functions
+// ExecTestSuite tests plugin execution functions.
 type ExecTestSuite struct {
 	suite.Suite
 	tempDir string
@@ -84,38 +84,84 @@ func (s *ExecTestSuite) TestExecutePluginCommandNotFound() {
 }
 
 func (s *ExecTestSuite) TestExecutePluginWithArguments() {
-	// Create a script that uses arguments
-	script := `#!/bin/sh
-if [ "$1" = "expected" ] && [ "$2" = "args" ]; then
-  exit 0
-else
-  exit 1
-fi
-`
-	path := filepath.Join(s.tempDir, "with-args")
-	createScript(s.T(), path, script)
+	path := writeArgCheckScript(s.T(), s.tempDir, "with-args")
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"expected", "args"}, nil)
 	s.Equal(0, exitCode)
 }
 
 func (s *ExecTestSuite) TestExecutePluginWithWrongArguments() {
-	// Create a script that uses arguments
-	script := `#!/bin/sh
-if [ "$1" = "expected" ] && [ "$2" = "args" ]; then
-  exit 0
-else
-  exit 1
-fi
-`
-	path := filepath.Join(s.tempDir, "with-args-fail")
-	createScript(s.T(), path, script)
+	path := writeArgCheckScript(s.T(), s.tempDir, "with-args-fail")
 
 	exitCode := ExecutePlugin(context.Background(), PluginManifest{}, path, []string{"wrong", "arguments"}, nil)
 	s.Equal(1, exitCode)
 }
 
-// TestExecutePluginExitCodes tests various exit codes are properly propagated
+// TestPluginCommandArgsFor verifies the goos-parameterized wrapping decision so
+// the Windows PowerShell branch is exercised on any platform (the real Windows
+// runners are not yet part of CI).
+func TestPluginCommandArgsFor(t *testing.T) {
+	tests := []struct {
+		name         string
+		goos         string
+		executable   string
+		args         []string
+		expectedName string
+		expectedArgs []string
+	}{
+		{
+			name:         "windows ps1 is wrapped in powershell",
+			goos:         "windows",
+			executable:   `C:\plugins\dr-foo.ps1`,
+			args:         []string{PluginManifestFlag},
+			expectedName: "powershell.exe",
+			expectedArgs: []string{"-ExecutionPolicy", "Bypass", "-File", `C:\plugins\dr-foo.ps1`, PluginManifestFlag},
+		},
+		{
+			name:         "windows ps1 preserves extra args in order",
+			goos:         "windows",
+			executable:   "dr-foo.ps1",
+			args:         []string{"alpha", "beta"},
+			expectedName: "powershell.exe",
+			expectedArgs: []string{"-ExecutionPolicy", "Bypass", "-File", "dr-foo.ps1", "alpha", "beta"},
+		},
+		{
+			name:         "windows non-ps1 executable is unchanged",
+			goos:         "windows",
+			executable:   "dr-foo.exe",
+			args:         []string{PluginManifestFlag},
+			expectedName: "dr-foo.exe",
+			expectedArgs: []string{PluginManifestFlag},
+		},
+		{
+			name:         "windows extensionless executable is unchanged",
+			goos:         "windows",
+			executable:   "dr-foo",
+			args:         []string{PluginManifestFlag},
+			expectedName: "dr-foo",
+			expectedArgs: []string{PluginManifestFlag},
+		},
+		{
+			name:         "non-windows ps1 is not wrapped",
+			goos:         "linux",
+			executable:   "dr-foo.ps1",
+			args:         []string{PluginManifestFlag},
+			expectedName: "dr-foo.ps1",
+			expectedArgs: []string{PluginManifestFlag},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, cmdArgs := pluginCommandArgsFor(tt.goos, tt.executable, tt.args...)
+
+			assert.Equal(t, tt.expectedName, name)
+			assert.Equal(t, tt.expectedArgs, cmdArgs)
+		})
+	}
+}
+
+// TestExecutePluginExitCodes tests various exit codes are properly propagated.
 func TestExecutePluginExitCodes(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "plugin-exitcode-test")
 	require.NoError(t, err)
@@ -152,12 +198,17 @@ func TestExecutePluginContextCancellation(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that traps SIGTERM, writes a marker, and exits cleanly
+	// A script that traps SIGTERM, writes a marker, and exits cleanly. It
+	// also announces readiness: the trap has to be installed before the
+	// cancel fires, or the default handler kills the shell and the exit code
+	// asserts on the race rather than on the graceful path.
 	markerFile := filepath.Join(t.TempDir(), "sigterm-received")
+	readyFile := filepath.Join(t.TempDir(), "ready")
 	script := fmt.Sprintf(`#!/bin/sh
 trap 'touch %s; exit 55' TERM
+touch %s
 while true; do sleep 0.1; done
-`, markerFile)
+`, markerFile, readyFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "trap-term.sh")
 	createScript(t, scriptPath, script)
@@ -170,8 +221,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
-	// Give the subprocess time to start and install its signal handler
-	time.Sleep(500 * time.Millisecond)
+	waitForFile(t, readyFile)
 
 	cancel()
 
@@ -194,11 +244,14 @@ func TestExecutePluginContextCancellationKillsUnresponsive(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that ignores SIGTERM entirely
-	script := `#!/bin/sh
+	// A script that ignores SIGTERM entirely, announcing readiness once the
+	// trap is installed so the cancel cannot race the shell's startup.
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
 trap '' TERM
+touch %s
 while true; do sleep 0.1; done
-`
+`, readyFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
 	createScript(t, scriptPath, script)
@@ -211,8 +264,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
-	// Give the subprocess time to start
-	time.Sleep(500 * time.Millisecond)
+	waitForFile(t, readyFile)
 
 	cancel()
 
@@ -225,7 +277,7 @@ while true; do sleep 0.1; done
 	}
 }
 
-// TestExecutePluginCustomUserAgent verifies that plugins use custom User-Agent during authentication
+// TestExecutePluginCustomUserAgent verifies that plugins use custom User-Agent during authentication.
 func TestExecutePluginCustomUserAgent(t *testing.T) {
 	var capturedUserAgent string
 
@@ -243,8 +295,7 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	scriptPath := filepath.Join(t.TempDir(), "test.sh")
-	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
+	scriptPath := writeExitScript(t, t.TempDir(), "test", 0)
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
@@ -545,14 +596,13 @@ func TestTraverseChildren_PostPluginFlagsInvisibleToCore(t *testing.T) {
 
 func TestExecutePluginSkipAuthBypassesAuthCheck(t *testing.T) {
 	viperx.Reset()
-	viperx.Set("skip-auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 
 	// Deliberately leave no credentials configured — if auth were attempted it would fail.
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	scriptPath := filepath.Join(t.TempDir(), "skip-auth-test.sh")
-	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
+	scriptPath := writeExitScript(t, t.TempDir(), "skip-auth-test", 0)
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},
@@ -580,8 +630,7 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 	os.Unsetenv("DATAROBOT_ENDPOINT")
 	os.Unsetenv("DATAROBOT_API_TOKEN")
 
-	scriptPath := filepath.Join(t.TempDir(), "no-skip-auth-test.sh")
-	createScript(t, scriptPath, "#!/bin/sh\nexit 0\n")
+	scriptPath := writeExitScript(t, t.TempDir(), "no-skip-auth-test", 0)
 
 	manifest := PluginManifest{
 		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.0.0", Authentication: true},

@@ -209,6 +209,11 @@ func HasCompletedDotenvSetup(repoRoot string) bool {
 		return false
 	}
 
+	// Treat a timestamp that is not in the future as "completed". Using a strict
+	// Before(now) is fragile: the stored time comes from time.Now().UTC() (which
+	// strips the monotonic reading), so a write-then-read within a single coarse
+	// wall-clock tick — observed on Windows CI — would otherwise read as
+	// not-completed. !After(now) still rejects future timestamps (clock skew).
 	return existingState.LastDotenvSetup != nil &&
-		existingState.LastDotenvSetup.Before(time.Now())
+		!existingState.LastDotenvSetup.After(time.Now())
 }

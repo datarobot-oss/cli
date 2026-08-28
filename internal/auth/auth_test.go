@@ -15,10 +15,13 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,6 +47,12 @@ func setupTestEnvironment(t *testing.T) (*httptest.Server, func()) {
 	require.NoError(t, err)
 
 	testutil.SetTestHomeDir(t, tempDir)
+
+	// Without this the developer's own env pair reaches EnsureAuthenticated,
+	// which then verifies against their real instance instead of the mock.
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_TOKEN", "")
 
 	// Save original callback function.
 	originalCallback := APIKeyCallbackFunc
@@ -161,12 +170,388 @@ func TestEnsureAuthenticated_ValidEnvironmentToken(t *testing.T) {
 	assert.Equal(t, "valid-token", apiKey, "Expected GetAPIKey after EnsureAuthenticated to return valid token")
 }
 
+// TestEnsureAuthenticated_EnvInvalidStoredValid is the regression test for the
+// silent-fallback bug: a complete pair of environment credentials that fails
+// verification must fail the command, never silently substitute the stored
+// profile (which is valid here and would have made the old code return true).
+func TestEnsureAuthenticated_EnvInvalidStoredValid(t *testing.T) {
+	server, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
+	t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+	t.Setenv("DATAROBOT_API_TOKEN", "expired-token")
+
+	// The login flow must not start either; fail the test if it does.
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		t.Error("login flow must not start when explicit env credentials fail")
+
+		return "", errors.New("unexpected login flow")
+	}
+
+	result := EnsureAuthenticated(context.Background())
+	assert.False(t, result,
+		"Expected EnsureAuthenticated to fail instead of falling back to the valid stored profile")
+}
+
+// TestEnsureAuthenticated_EnvMalformedEndpointStoredValid covers the malformed
+// endpoint variant of the same rule (e.g. a quoted URL from running
+// `$(dr auth export)` without eval).
+func TestEnsureAuthenticated_EnvMalformedEndpointStoredValid(t *testing.T) {
+	server, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
+	t.Setenv("DATAROBOT_ENDPOINT", `"`+server.URL+`/api/v2"`)
+	t.Setenv("DATAROBOT_API_TOKEN", "valid-token")
+
+	result := EnsureAuthenticated(context.Background())
+	assert.False(t, result,
+		"Expected EnsureAuthenticated to fail on a malformed endpoint instead of using the stored profile")
+}
+
+func TestReportEnvCredentialsError(t *testing.T) {
+	t.Run("timeout", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "https://app.example.com/api/v2", Token: "some-token"}
+		ReportEnvCredentialsError(&buf, creds, context.DeadlineExceeded)
+
+		assert.Contains(t, buf.String(), "timed out")
+		assert.Contains(t, buf.String(), "https://app.example.com")
+	})
+
+	t.Run("malformed endpoint", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: `"https://app.example.com/api/v2"`, Token: "some-token"}
+		ReportEnvCredentialsError(&buf, creds, errors.New("invalid token"))
+
+		assert.Contains(t, buf.String(), "DATAROBOT_ENDPOINT environment variable is invalid")
+		assert.NotContains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
+	})
+
+	t.Run("invalid token", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "https://app.example.com/api/v2", Token: "bad-token"}
+		ReportEnvCredentialsError(&buf, creds, errors.New("invalid token"))
+
+		assert.Contains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
+		assert.Contains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+	})
+
+	t.Run("scheme-less endpoint is an endpoint problem, not transport", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "app.example.com/api/v2", Token: "some-token"}
+		dialErr := &url.Error{
+			Op:  "Get",
+			URL: creds.Endpoint + "/version/",
+			Err: errors.New(`unsupported protocol scheme ""`),
+		}
+		ReportEnvCredentialsError(&buf, creds, dialErr)
+
+		assert.Contains(t, buf.String(), "missing URL scheme")
+		assert.NotContains(t, buf.String(), "Could not connect")
+	})
+
+	t.Run("raw parse failure is an endpoint problem, not transport", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		// Leading whitespace fails VerifyToken's raw url.Parse but survives
+		// ValidateEndpoint, which trims before parsing.
+		creds := &EnvCredentials{Endpoint: " https://app.example.com/api/v2", Token: "some-token"}
+		parseErr := &url.Error{
+			Op:  "parse",
+			URL: creds.Endpoint,
+			Err: errors.New("first path segment in URL cannot contain colon"),
+		}
+		ReportEnvCredentialsError(&buf, creds, parseErr)
+
+		assert.Contains(t, buf.String(), "environment variable is invalid")
+		assert.NotContains(t, buf.String(), "Could not connect")
+	})
+
+	t.Run("unreachable endpoint is not a token problem", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "https://app.example.com/api/v2", Token: "valid-but-never-judged"}
+		transportErr := &url.Error{
+			Op:  "Get",
+			URL: creds.Endpoint + "/version/",
+			Err: errors.New("dial tcp 203.0.113.1:443: connect: connection refused"),
+		}
+		ReportEnvCredentialsError(&buf, creds, transportErr)
+
+		assert.Contains(t, buf.String(), "Could not connect to")
+		assert.Contains(t, buf.String(), "connection refused")
+		assert.NotContains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+	})
+
+	t.Run("names DATAROBOT_API_ENDPOINT when the endpoint came from the fallback var", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		t.Setenv("DATAROBOT_ENDPOINT", "")
+		t.Setenv("DATAROBOT_API_ENDPOINT", `"https://app.example.com/api/v2"`)
+		t.Setenv("DATAROBOT_API_TOKEN", "some-token")
+
+		creds := GetEnvCredentials()
+		ReportEnvCredentialsError(&buf, &creds, errors.New("parse error"))
+
+		assert.Contains(t, buf.String(), "DATAROBOT_API_ENDPOINT environment variable is invalid")
+		assert.NotContains(t, buf.String(), "DATAROBOT_ENDPOINT environment variable is invalid")
+	})
+
+	t.Run("unsupported scheme is an endpoint problem, not transport", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		creds := &EnvCredentials{Endpoint: "ftp://app.example.com/api/v2", Token: "some-token"}
+		dialErr := &url.Error{
+			Op:  "Get",
+			URL: creds.Endpoint + "/version/",
+			Err: errors.New(`unsupported protocol scheme "ftp"`),
+		}
+		ReportEnvCredentialsError(&buf, creds, dialErr)
+
+		assert.Contains(t, buf.String(), `unsupported URL scheme "ftp"`)
+		assert.NotContains(t, buf.String(), "Could not connect")
+	})
+
+	// Only 401 and 403 may blame the token; every other status is the server
+	// failing to answer the version check.
+	creds := &EnvCredentials{Endpoint: "https://app.example.com/api/v2", Token: "some-token"}
+
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(fmt.Sprintf("%d blames the token", status), func(t *testing.T) {
+			var buf bytes.Buffer
+
+			ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: status})
+
+			assert.Contains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
+			assert.Contains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+		})
+	}
+
+	for _, status := range []int{
+		http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError,
+	} {
+		t.Run(fmt.Sprintf("%d blames the instance", status), func(t *testing.T) {
+			var buf bytes.Buffer
+
+			ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: status})
+
+			assert.Contains(t, buf.String(), fmt.Sprintf("answered HTTP %d", status))
+			assert.Contains(t, buf.String(), "https://app.example.com")
+			assert.NotContains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+		})
+	}
+}
+
+func TestReportUnjudged(t *testing.T) {
+	const endpoint = "https://app.example.com/api/v2"
+
+	cases := []struct {
+		name        string
+		endpoint    string
+		err         error
+		wantHandled bool
+		contains    string
+	}{
+		{"timeout", endpoint, context.DeadlineExceeded, true, "timed out"},
+		{"404", endpoint, &config.HTTPStatusError{StatusCode: http.StatusNotFound}, true, "answered HTTP 404"},
+		{"429", endpoint, &config.HTTPStatusError{StatusCode: http.StatusTooManyRequests}, true, "answered HTTP 429"},
+		{"503", endpoint, &config.HTTPStatusError{StatusCode: http.StatusServiceUnavailable}, true, "answered HTTP 503"},
+		{"401 is a verdict", endpoint, &config.HTTPStatusError{StatusCode: http.StatusUnauthorized}, false, ""},
+		{"403 is a verdict", endpoint, &config.HTTPStatusError{StatusCode: http.StatusForbidden}, false, ""},
+		// An absent token carries no status, so it must read as a verdict and
+		// let the caller start the login flow.
+		{"empty token is a verdict", endpoint, errors.New("empty token"), false, ""},
+		{
+			"transport", endpoint,
+			&url.Error{Op: "Get", URL: endpoint, Err: errors.New("connection refused")},
+			true, "Could not connect to",
+		},
+		{
+			"raw parse failure", " " + endpoint,
+			&url.Error{Op: "parse", URL: " " + endpoint, Err: errors.New("cannot contain colon")},
+			true, "is invalid",
+		},
+		// Reported as the missing scheme it is, not as a failure to reach the
+		// https host SchemeHostOnly would have invented.
+		{
+			"bare host", "app.example.com",
+			&url.Error{Op: "Get", URL: "app.example.com", Err: errors.New(`unsupported protocol scheme ""`)},
+			true, "missing URL scheme",
+		},
+		{
+			"ftp scheme", "ftp://app.example.com",
+			&url.Error{Op: "Get", URL: "ftp://app.example.com", Err: errors.New(`unsupported protocol scheme "ftp"`)},
+			true, `unsupported URL scheme "ftp"`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+
+			handled := ReportUnjudged(&buf, c.endpoint, StoredEndpointName, c.err)
+
+			assert.Equal(t, c.wantHandled, handled)
+
+			if c.wantHandled {
+				assert.Contains(t, buf.String(), c.contains)
+			} else {
+				assert.Empty(t, buf.String(), "a rejected credential is the caller's message to write")
+			}
+		})
+	}
+}
+
+// TestEnsureAuthenticated_NoTokenBadEndpoint is the lockout regression test: an
+// endpoint the CLI cannot dial must not withhold the login flow that fixes it.
+func TestEnsureAuthenticated_NoTokenBadEndpoint(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotURL, "app.datarobot.invalid")
+	viperx.Set(config.DataRobotAPIKey, "")
+
+	loginStarted := false
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		loginStarted = true
+
+		return "fresh-token", nil
+	}
+
+	EnsureAuthenticated(context.Background())
+
+	assert.True(t, loginStarted, "Expected the login flow to open when no token is stored")
+}
+
+// TestEnsureAuthenticated_StoredProfileServerError is the regression test for
+// the token-wiping bug: a 503 never judged the token, so it must survive.
+func TestEnsureAuthenticated_StoredProfileServerError(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
+
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		t.Error("login flow must not start when the instance never judged the token")
+
+		return "", errors.New("unexpected login flow")
+	}
+
+	result := EnsureAuthenticated(context.Background())
+
+	assert.False(t, result, "Expected EnsureAuthenticated to fail on a 503 from the stored profile")
+	assert.Equal(t, "valid-token", viperx.GetString(config.DataRobotAPIKey),
+		"Expected the stored token to survive a status the instance never judged it with")
+}
+
+// TestEnsureAuthenticated_StoredProfileRejected proves the 503 change did not
+// disable the login flow for a token the instance actually rejected.
+func TestEnsureAuthenticated_StoredProfileRejected(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "expired-token")
+
+	loginStarted := false
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		loginStarted = true
+
+		return "fresh-token", nil
+	}
+
+	result := EnsureAuthenticated(context.Background())
+
+	assert.True(t, result)
+	assert.True(t, loginStarted, "Expected a 401 to still open the login flow")
+	assert.Equal(t, "fresh-token", viperx.GetString(config.DataRobotAPIKey))
+}
+
+// TestEnsureAuthenticated_NoStoredToken keeps a fresh install working: an absent
+// token carries no status, so it must still reach the login flow.
+func TestEnsureAuthenticated_NoStoredToken(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "")
+
+	loginStarted := false
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		loginStarted = true
+
+		return "fresh-token", nil
+	}
+
+	result := EnsureAuthenticated(context.Background())
+
+	assert.True(t, result)
+	assert.True(t, loginStarted, "Expected an absent stored token to open the login flow")
+}
+
+// TestEnsureAuthenticated_EnvUnreachableStoredValid proves VerifyToken's
+// transport errors really surface as *url.Error and classify as
+// could-not-connect end to end, still failing instead of using the stored
+// profile.
+func TestEnsureAuthenticated_EnvUnreachableStoredValid(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	// A second server, closed immediately, donates a port that refuses
+	// connections.
+	deadServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
+	deadServer.Close()
+
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
+	t.Setenv("DATAROBOT_ENDPOINT", deadServer.URL+"/api/v2")
+	t.Setenv("DATAROBOT_API_TOKEN", "valid-token")
+
+	result := EnsureAuthenticated(context.Background())
+	assert.False(t, result,
+		"Expected EnsureAuthenticated to fail on an unreachable endpoint instead of using the stored profile")
+}
+
+func TestReportStoredProfileNotUsed(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	creds := &EnvCredentials{Endpoint: "https://requested.example.com/api/v2", Token: "bad-token"}
+
+	t.Run("names both endpoints when a stored profile exists", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		reportStoredProfileNotUsed(&buf, creds)
+
+		assert.Contains(t, buf.String(), "https://requested.example.com")
+		assert.Contains(t, buf.String(), "not falling back to the stored profile")
+	})
+
+	t.Run("silent without a stored profile", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		viperx.Set(config.DataRobotURL, "")
+		reportStoredProfileNotUsed(&buf, creds)
+
+		assert.Empty(t, buf.String())
+	})
+}
+
 func TestEnsureAuthenticated_SkipAuth(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
-	// Set skip_auth flag to true
-	viperx.Set("skip_auth", true)
+	// Set the skip-auth flag to true
+	viperx.Set(config.SkipAuthKey, true)
 
 	// Don't set any credentials
 	viperx.Set(config.DataRobotAPIKey, "")
@@ -321,6 +706,48 @@ func TestGetEnvCredentials(t *testing.T) {
 		assert.Empty(t, creds.Endpoint)
 		assert.Empty(t, creds.Token)
 	})
+
+	t.Run("preserves surrounding quotes verbatim", func(t *testing.T) {
+		// GetEnvCredentials must NOT strip quotes. The DataRobot PySDK and RSDK
+		// read these variables verbatim, so stripping here would let the CLI
+		// silently succeed where other SDKs fail.
+		t.Setenv("DATAROBOT_ENDPOINT", "'https://staging.datarobot.com/api/v2'")
+		t.Setenv("DATAROBOT_API_TOKEN", "'secret-token'")
+
+		creds := GetEnvCredentials()
+
+		assert.Equal(t, "'https://staging.datarobot.com/api/v2'", creds.Endpoint)
+		assert.Equal(t, "'secret-token'", creds.Token)
+	})
+}
+
+func TestValidateEndpoint(t *testing.T) {
+	cases := []struct {
+		name     string
+		endpoint string
+		wantErr  bool
+	}{
+		{"empty returns nil", "", false},
+		{"valid url", "https://app.datarobot.com/api/v2", false},
+		{"bare host", "app.datarobot.com", false},
+		{"single quoted", "'https://staging.datarobot.com/api/v2'", true},
+		{"double quoted", `"https://staging.datarobot.com/api/v2"`, true},
+		{"mismatched quotes", `'https://staging.datarobot.com/api/v2"`, true},
+		{"plain http", "http://localhost:8080/api/v2", false},
+		{"uppercase scheme", "HTTPS://app.datarobot.com/api/v2", false},
+		{"ftp scheme", "ftp://app.datarobot.com/api/v2", true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := ValidateEndpoint(c.endpoint)
+			if c.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestVerifyEnvCredentials(t *testing.T) {

@@ -18,10 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/version"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
 // InitOptions carries the caller-supplied values that Initialize persists
@@ -34,20 +36,22 @@ type InitOptions struct {
 	LastSyncedVersionID string `validate:"omitempty,dr_id"`
 }
 
-// Initialize creates the .wapi/ directory at projectDir and writes all the
+// Initialize creates the state directory at projectDir and writes all the
 // bootstrap files: config.json, manifest.json (empty BASE), .gitignore ("*"),
-// and an "init" entry in history.log. It also drops the .wapiignore template
-// at projectDir if the user has no .wapiignore yet.
+// and an "init" entry in history.log. It also drops the starter ignore-file
+// template at projectDir if the user has no ignore file yet, under either the
+// current or the legacy name.
 //
 // Basic input validation happens before any filesystem changes (including
-// creating projectDir or running mkdir for .wapi/).
+// creating projectDir or running mkdir for the state directory).
 //
 // projectDir is created (with any missing parents) if it does not already
 // exist, matching the convenience of `git init <newdir>`.
 //
-// Returns ErrAlreadyLinked if .wapi/ already exists. On partial failure after
-// mkdir, the incomplete .wapi/ tree is left in place for the user to inspect
-// or remove manually rather than attempting rollback.
+// Returns ErrAlreadyLinked if the project is already linked, at either the
+// current or the legacy location. On partial failure after mkdir, the
+// incomplete tree is left in place for the user to inspect or remove manually
+// rather than attempting rollback.
 func Initialize(projectDir string, opts InitOptions) error {
 	if err := validateInitOptions(opts); err != nil {
 		return err
@@ -57,12 +61,8 @@ func Initialize(projectDir string, opts InitOptions) error {
 		return fmt.Errorf("create project directory %s: %w", projectDir, err)
 	}
 
-	if err := os.Mkdir(wapiDir(projectDir), 0o755); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrAlreadyLinked
-		}
-
-		return fmt.Errorf("create .wapi/ directory: %w", err)
+	if err := createStateDir(projectDir); err != nil {
+		return err
 	}
 
 	now := time.Now().UTC()
@@ -83,12 +83,17 @@ func Initialize(projectDir string, opts InitOptions) error {
 		return err
 	}
 
-	if err := atomicWriteFile(gitignorePath(projectDir), []byte(gitignoreContents)); err != nil {
+	if err := fsutil.AtomicWriteFile(gitignorePath(projectDir), []byte(gitignoreContents)); err != nil {
 		return err
 	}
 
-	if !fsutil.FileExists(wapiignorePath(projectDir)) {
-		if err := atomicWriteFile(wapiignorePath(projectDir), wapiignoreTemplate); err != nil {
+	// Any name counts as having one, which is why this asks the package that
+	// reads them rather than testing for the current name. Writing the default
+	// template beside a tuned legacy file would not overwrite anything, but the
+	// new name takes precedence when both exist, so the user's own patterns
+	// would stop applying without a single byte of theirs being touched.
+	if ignore.Locate(projectDir) == "" {
+		if err := fsutil.AtomicWriteFile(ignorePath(projectDir), ignoreTemplate); err != nil {
 			return err
 		}
 	}
@@ -101,4 +106,25 @@ func Initialize(projectDir string, opts InitOptions) error {
 		"baseFiles": 0,
 		"duration":  "0.0s",
 	})
+}
+
+// createStateDir makes the state directory for a fresh link. Dir resolves to
+// the legacy location when one is present, so an un-migrated project reports
+// ErrAlreadyLinked rather than acquiring a second state directory.
+func createStateDir(projectDir string) error {
+	stateDir := Dir(projectDir)
+
+	if err := os.MkdirAll(filepath.Dir(stateDir), 0o755); err != nil {
+		return fmt.Errorf("create %s directory: %w", RootDirName, err)
+	}
+
+	if err := os.Mkdir(stateDir, 0o755); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrAlreadyLinked
+		}
+
+		return fmt.Errorf("create %s directory: %w", stateDir, err)
+	}
+
+	return nil
 }

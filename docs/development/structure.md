@@ -86,6 +86,10 @@ DataRobot API client implementation for:
 - API authentication
 - API endpoint communication
 
+See the package doc (`go doc ./internal/drapi`) for the timeout-override
+convention and the `HTTPError`/`errors.As` contract new commands should
+follow when wiring in a call.
+
 #### envbuilder/
 
 An environment configuration builder that:

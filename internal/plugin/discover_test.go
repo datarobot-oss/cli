@@ -32,20 +32,34 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// Test manifests
+// Test manifests.
 var (
 	validManifest   = `{"name":"test-plugin","version":"1.0.0","description":"Test plugin"}`
 	invalidManifest = `{invalid json`
 )
 
-// createMockPlugin creates a shell script that responds to --dr-plugin-manifest
+// createMockPlugin creates a shell script that responds to --dr-plugin-manifest.
 func createMockPlugin(t *testing.T, dir, name, manifestJSON string) string {
 	t.Helper()
 
 	return writePluginManifestScript(t, dir, name, manifestJSON)
 }
 
-// DiscoverTestSuite tests discovery functions with filesystem fixtures
+// setDiscoveryPath sets PATH to value for the test. On Windows the existing
+// PATH is appended so powershell.exe — used to run .ps1 plugins during
+// discovery — stays resolvable; on POSIX the value is used as-is to keep
+// discovery scoped to the controlled dirs (scripts run via their shebang).
+func setDiscoveryPath(t *testing.T, value string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		value += string(os.PathListSeparator) + os.Getenv("PATH")
+	}
+
+	t.Setenv("PATH", value)
+}
+
+// DiscoverTestSuite tests discovery functions with filesystem fixtures.
 type DiscoverTestSuite struct {
 	suite.Suite
 	tempDir string
@@ -225,7 +239,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirCancelledContext() {
 	s.Empty(errs)
 }
 
-// PathDirsTestSuite tests discoverPathDirsParallel
+// PathDirsTestSuite tests discoverPathDirsParallel.
 type PathDirsTestSuite struct {
 	suite.Suite
 	dir1 string
@@ -288,18 +302,20 @@ func (s *PathDirsTestSuite) TestCrossDirDeduplicationFirstDirWins() {
 	// Same manifest name in both dirs — dir1 must win because results are
 	// merged in directory order after all goroutines complete.
 	manifest := `{"name":"shared-plugin","version":"1.0.0","description":"Shared"}`
-	createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
-	createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
+	// createMockPlugin returns the actual script path, which carries a .ps1
+	// extension on Windows — assert against it rather than reconstructing.
+	exe1 := createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
+	exe2 := createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
 
 	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
 
 	s.Require().Len(plugins, 1)
 	s.Equal("shared-plugin", plugins[0].Manifest.Name)
-	s.Equal(filepath.Join(s.dir1, "dr-shared"), plugins[0].Executable)
+	s.Equal(exe1, plugins[0].Executable)
 
 	s.Require().Len(conflicts, 1, "the second dir's binary sharing the manifest name must be recorded as a conflict")
 	s.Equal("shared-plugin", conflicts[0].Name)
-	s.Equal(filepath.Join(s.dir2, "dr-shared"), conflicts[0].Path)
+	s.Equal(exe2, conflicts[0].Path)
 }
 
 func (s *PathDirsTestSuite) TestBaseSeenFiltersPlugins() {
@@ -361,7 +377,7 @@ func (s *PathDirsTestSuite) TestPartialResultsWhenContextExpiresAfterFastPlugin(
 	s.False(names["slow-plugin"], "slow plugin should be skipped after deadline expires")
 }
 
-// TestGetManifest tests manifest retrieval
+// TestGetManifest tests manifest retrieval.
 type ManifestTestSuite struct {
 	suite.Suite
 	tempDir string
@@ -377,8 +393,13 @@ func (s *ManifestTestSuite) SetupTest() {
 	s.tempDir, err = os.MkdirTemp("", "plugin-manifest-test")
 	s.Require().NoError(err)
 
-	// Reset viper state for each test
+	// Reset viper state for each test, then raise the manifest timeout the
+	// way the other suites in this file do: these tests are about parsing
+	// and error paths, not about the deadline, and under a loaded full-suite
+	// run (or Windows CI) merely spawning the mock script can take longer
+	// than the 500ms production default.
 	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
 }
 
 func (s *ManifestTestSuite) TearDownTest() {
@@ -415,8 +436,10 @@ func (s *ManifestTestSuite) TestGetManifestNonExistent() {
 }
 
 func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
-	// Set a custom timeout via viper
-	viperx.Set("plugin.manifest_timeout_ms", 1000)
+	// A custom timeout via viper. The value only has to prove the configured
+	// branch is honored, so it is generous: a tight one races the process
+	// spawn under load, which is not what this test is about.
+	viperx.Set("plugin.manifest_timeout_ms", 15000)
 
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 
@@ -508,7 +531,7 @@ func (s *DiscoverWithContextSuite) TearDownTest() {
 func (s *DiscoverWithContextSuite) TestDiscoversPATHPlugin() {
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-alpha",
 		`{"name":"ctx-alpha","version":"1.0.0","description":"Alpha"}`)
-	s.T().Setenv("PATH", s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir)
 
 	plugins, _ := DiscoverPluginsWithContext(context.Background())
 
@@ -531,7 +554,7 @@ func (s *DiscoverWithContextSuite) TestPartialResultsOnTimeout() {
 	slowScript := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"%s\" ]; then\n  exec sleep 30\nfi\n", PluginManifestFlag)
 	createScript(s.T(), filepath.Join(slowDir, "dr-ctx-slow"), slowScript)
 
-	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+slowDir)
+	setDiscoveryPath(s.T(), s.pluginDir+string(os.PathListSeparator)+slowDir)
 
 	// 2 s gives the fast plugin plenty of time to respond; the slow plugin is
 	// killed by the per-manifest timeout (5 s set in SetupTest capped by the
@@ -551,7 +574,7 @@ func (s *DiscoverWithContextSuite) TestTimeoutLogsWarn() {
 	// which is the condition that triggers the WARN — no real-time dependency.
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-warn",
 		`{"name":"ctx-warn","version":"1.0.0","description":"Warn"}`)
-	s.T().Setenv("PATH", s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -567,7 +590,7 @@ func (s *DiscoverWithContextSuite) TestTimeoutLogsWarn() {
 func (s *DiscoverWithContextSuite) TestCancelledContextSkipsPATHPlugins() {
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-skip",
 		`{"name":"ctx-skip","version":"1.0.0","description":"Skip"}`)
-	s.T().Setenv("PATH", s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -582,7 +605,7 @@ func (s *DiscoverWithContextSuite) TestDuplicatePATHEntryDoesNotWarn() {
 		`{"name":"ctx-dup","version":"1.0.0","description":"Dup"}`)
 	// The same directory listed twice in PATH used to make discovery scan it
 	// twice, reporting a false conflict against itself.
-	s.T().Setenv("PATH", s.pluginDir+string(os.PathListSeparator)+s.pluginDir)
+	setDiscoveryPath(s.T(), s.pluginDir+string(os.PathListSeparator)+s.pluginDir)
 
 	plugins, conflicts := DiscoverPluginsWithContext(context.Background())
 

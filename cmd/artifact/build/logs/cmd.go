@@ -46,11 +46,13 @@ func Cmd() *cobra.Command {
 		Long: `Fetch the structured log stream for a build.
 
 When invoked with one positional argument the artifact-id is read from
-.wapi/config.json in the current directory. When invoked with two, the
+.datarobot/workload/config.json in the current directory. When invoked with two, the
 first argument is the artifact-id and the second is the build-id.
 
-The server emits one structured JSON record per line; the default
-output drops records below INFO. Use --level debug to keep everything.
+Logs are read from the artifact's OTEL stream, narrowed to the one
+build — they outlive the build itself, unlike the deprecated per-build
+proxy this command used to call. The default output drops records
+below INFO. Use --level debug to keep everything.
 
 JSON output emits a single array document so the result can be piped
 to jq directly.

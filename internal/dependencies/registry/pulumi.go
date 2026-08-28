@@ -20,7 +20,7 @@ func init() {
 		Aliases: []string{"pulumi infrastructure as code tool"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install pulumi"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Pulumi.Pulumi"}},
+			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Pulumi.Pulumi" + WingetUnattendedFlags}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install pulumi"}},
 			FallbackStrategy{
 				Commands:        []string{"curl -fsSL https://get.pulumi.com | sh"},

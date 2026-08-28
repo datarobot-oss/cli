@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/pipeline/internal/testutil"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,14 +79,34 @@ func TestPrintGraphHuman_EmptyGraph(t *testing.T) {
 func TestHandleGraphError_404IsSuppressed(t *testing.T) {
 	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
 
-	err := handleGraphError(httpErr, "abc")
+	err := handleGraphError(httpErr, "abc", outputformat.OutputFormatText)
 	assert.NoError(t, err)
 }
 
 func TestHandleGraphError_PropagatesOther(t *testing.T) {
-	err := handleGraphError(errors.New("boom"), "abc")
+	err := handleGraphError(errors.New("boom"), "abc", outputformat.OutputFormatText)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
+}
+
+func TestHandleGraphError_JSONFormat_404_ReturnsErrorAndKeepsStdoutClean(t *testing.T) {
+	httpErr := &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "x"}
+
+	output := testutil.CaptureStdout(t, func() {
+		err := handleGraphError(httpErr, "abc", outputformat.OutputFormatJSON)
+		require.Error(t, err)
+		assert.Same(t, httpErr, err)
+	})
+
+	assert.Empty(t, output, "JSON mode must not write friendly message to stdout")
+}
+
+func TestHandleGraphError_JSONFormat_NonNotFound_Propagates(t *testing.T) {
+	other := &drapi.HTTPError{StatusCode: http.StatusInternalServerError, URL: "x"}
+
+	err := handleGraphError(other, "abc", outputformat.OutputFormatJSON)
+	require.Error(t, err)
+	assert.Same(t, other, err)
 }
 
 func TestCmd_RejectsMissingPipeline(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -58,7 +59,7 @@ Example:
 
 			tasks, err := pipeline.ListTaskExecutions(pipelineID, runID)
 			if err != nil {
-				return err
+				return fmt.Errorf("list task executions: %w", err)
 			}
 
 			return renderTaskList(outputFormat, tasks)
@@ -87,7 +88,7 @@ func renderTaskList(format outputformat.OutputFormat, tasks []pipeline.TaskExecu
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(tasks, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Println(string(data))

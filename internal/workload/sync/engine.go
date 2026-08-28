@@ -65,11 +65,13 @@ func (workloadArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionI
 }
 
 // Deps are the external dependencies injected into an Engine. Use
-// defaultDeps for production wiring; tests build their own.
+// defaultDeps for production wiring; tests build their own. A nil
+// Lockfile falls back to the production runner (runUvLock).
 type Deps struct {
 	Files     filesapi.Client
 	Artifacts artifactStore
 	Now       func() time.Time
+	Lockfile  LockfileRunner
 }
 
 func defaultDeps() Deps {
@@ -77,6 +79,7 @@ func defaultDeps() Deps {
 		Files:     filesapi.New(),
 		Artifacts: workloadArtifactStore{},
 		Now:       time.Now,
+		Lockfile:  runUvLock,
 	}
 }
 
@@ -106,6 +109,13 @@ type Engine struct {
 	result         *Result
 	startedAt      time.Time
 	staleNote      bool
+	migrationNote  string
+	ignoreNotice   string
+	lockedNote     string
+
+	lockfileFn        LockfileRunner
+	lockfileGenerated bool
+	lockfileHint      string
 }
 
 // New constructs an Engine bound to projectDir with production deps.
@@ -120,12 +130,17 @@ func newWithDeps(projectDir string, opts Options, deps Deps) (*Engine, error) {
 		return nil, errors.New("sync.New: projectDir is required")
 	}
 
+	if deps.Lockfile == nil {
+		deps.Lockfile = runUvLock
+	}
+
 	return &Engine{
 		projectDir: projectDir,
 		opts:       opts,
 		files:      deps.Files,
 		artifacts:  deps.Artifacts,
 		nowFn:      deps.Now,
+		lockfileFn: deps.Lockfile,
 	}, nil
 }
 
@@ -138,6 +153,9 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 		e,
 		phase{name: "preflight", run: phase0Preflight},
 		phase{name: "gather", run: phase1Gather},
+		// Before the manifest walk so a generated uv.lock is collected,
+		// diffed, and uploaded by the normal pipeline.
+		phase{name: "lockfile", run: phaseLockfile},
 		phase{name: "manifests", run: phase2Manifests},
 		phase{name: "diff", run: phase3Diff},
 		phase{name: "preview", run: phase4Preview},
@@ -185,7 +203,7 @@ func (e *Engine) Run() (*Result, error) {
 		return nil, err
 	}
 
-	if e.opts.DryRun || e.opts.ShowDiffs || plan.IsEmpty() {
+	if e.previewOnly() || plan.IsEmpty() {
 		if relErr := e.releaseLock(); relErr != nil {
 			return nil, fmt.Errorf("release lock: %w", relErr)
 		}
@@ -207,6 +225,40 @@ func (e *Engine) Close() error {
 // StaleRollbackRestored reports whether Phase 0 restored a stale rollback
 // from a previously crashed sync.
 func (e *Engine) StaleRollbackRestored() bool { return e.staleNote }
+
+// StateMigrationNotice is Phase 0's one-line account of where local state now
+// lives, empty when the location did not change. The preview modes never
+// migrate, so it is always empty for --dry-run and --diff.
+func (e *Engine) StateMigrationNotice() string { return e.migrationNote }
+
+// IgnoreFileNotice reports that the project's ignore patterns came from the
+// deprecated filename, empty when they came from the current one or from
+// nowhere. Set in Phase 2, so it is only meaningful after Plan.
+//
+// This one is returned rather than logged because it is housekeeping: the
+// patterns still apply, and a caller emitting JSON needs it off stdout. The
+// ignore-file problems that cost the user something go through log.Warn with
+// the rest of the phase warnings, so they survive a later phase failing.
+func (e *Engine) IgnoreFileNotice() string { return e.ignoreNotice }
+
+// LockedNotice is Phase 1's one-line account of a plan computed against an
+// artifact that can no longer take code, empty in the ordinary case. Only a
+// preview can reach it, and a preview that printed a plan without saying so
+// would read as a sync that is going to work.
+func (e *Engine) LockedNotice() string { return e.lockedNote }
+
+// previewOnly reports that this run stops after Plan and sends nothing to the
+// platform, which is what makes the artifact's own mutability beside the point
+// in phase 1. It is not a promise that the working tree is untouched: phase 0
+// restores a stale rollback and the lockfile phase can still generate a
+// uv.lock, both of which a preview needs in order to plan the tree it would
+// actually upload.
+//
+// One owner for the question, because phase 1's locked-artifact exemption is
+// only safe while the set of modes that skip Execute is the same set that gets
+// exempted. Two spellings of it could drift into a preview that plans against
+// something immutable and then executes.
+func (e *Engine) previewOnly() bool { return e.opts.DryRun || e.opts.ShowDiffs }
 
 func (e *Engine) releaseLock() error {
 	if e.lock == nil {

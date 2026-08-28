@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -75,7 +76,7 @@ Example:
 
 			task, err := pipeline.GetTaskExecution(pipelineID, runID, taskID, node)
 			if err != nil {
-				return handleNotFound(err, args[0])
+				return handleNotFound(err, args[0], outputFormat)
 			}
 
 			return renderTask(outputFormat, task)
@@ -115,7 +116,7 @@ func renderTask(format outputformat.OutputFormat, task *pipeline.TaskExecution) 
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(task, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Println(string(data))
@@ -167,10 +168,14 @@ func printTaskHuman(task *pipeline.TaskExecution) {
 	w.Flush()
 }
 
-func handleNotFound(err error, taskID string) error {
+func handleNotFound(err error, taskID string, format outputformat.OutputFormat) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		if format == outputformat.OutputFormatJSON {
+			return err
+		}
+
 		fmt.Println(tui.DimStyle.Render("No task execution found with id: " + taskID))
 
 		return nil

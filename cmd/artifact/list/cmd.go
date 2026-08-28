@@ -29,6 +29,7 @@ func Cmd() *cobra.Command {
 		outputFormat outputformat.OutputFormat
 		status       workload.Status
 		limit        int
+		offset       int
 	)
 
 	cmd := &cobra.Command{
@@ -46,6 +47,8 @@ By default, output is a human-readable table. Use --output-format json for machi
 Example:
   dr artifact list
   dr artifact list --limit 10
+  dr artifact list --offset 100
+  dr artifact list --offset 100 --limit 50
   dr artifact list --status draft
   dr artifact list --output-format json`,
 		Args:    cobra.NoArgs,
@@ -57,7 +60,11 @@ Example:
 				return fmt.Errorf("invalid --limit %d: must be positive", limit)
 			}
 
-			artifacts, err := workload.ListArtifacts(limit, status)
+			if offset < 0 {
+				return fmt.Errorf("invalid --offset %d: must be non-negative", offset)
+			}
+
+			artifacts, err := workload.ListArtifacts(limit, offset, status)
 			if err != nil {
 				return err
 			}
@@ -70,12 +77,15 @@ Example:
 
 	workload.AddStatusFlag(cmd, &status)
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of artifacts to return")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Number of artifacts to skip before returning results")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
+		offset, _ := c.Flags().GetInt("offset")
 
 		return map[string]any{
 			"limit":         limit,
+			"offset":        offset,
 			"output_format": string(outputFormat),
 			"status":        string(status),
 		}

@@ -20,7 +20,7 @@ func init() {
 		Aliases: []string{"taskfile task runner"},
 		Strategies: []Strategy{
 			ManagerStrategy{Manager: "brew", Commands: []string{"brew install go-task"}},
-			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Task.Task"}},
+			ManagerStrategy{Manager: "winget", Commands: []string{"winget install Task.Task" + WingetUnattendedFlags}},
 			ManagerStrategy{Manager: "choco", Commands: []string{"choco install go-task"}},
 			ManagerStrategy{Manager: "scoop", Commands: []string{"scoop install task"}},
 			FallbackStrategy{

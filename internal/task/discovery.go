@@ -26,6 +26,7 @@ import (
 	"text/template"
 
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
 	"gopkg.in/yaml.v3"
 )
@@ -72,17 +73,17 @@ var (
 )
 
 // taskfileData is the structure of the .taskfile-data.yaml configuration file
-// that allows template authors to provide additional data for template rendering
+// that allows template authors to provide additional data for template rendering.
 type taskfileData struct {
 	Ports []devPort `yaml:"ports"`
 }
 
-// taskfileMetadata is used to parse just the dotenv directive from a Taskfile
+// taskfileMetadata is used to parse just the dotenv directive from a Taskfile.
 type taskfileMetadata struct {
 	Dotenv interface{} `yaml:"dotenv"`
 }
 
-// depth gets our current directory depth by file path
+// depth gets our current directory depth by file path.
 func depth(path string) int {
 	// Windows uses backslashes, so we normalize to forward slashes
 	normalized := filepath.ToSlash(path)
@@ -95,8 +96,10 @@ func depth(path string) int {
 }
 
 type Discovery struct {
-	RootTaskfileName string
-	TemplatePath     string
+	RootTaskfileName   string
+	TemplatePath       string
+	UseProjectTemplate bool
+	PreferRootTaskfile bool // if true, return any existing Taskfile.yaml/yml at root instead of generating
 }
 
 func NewTaskDiscovery(rootTaskfileName string) *Discovery {
@@ -107,16 +110,75 @@ func NewTaskDiscovery(rootTaskfileName string) *Discovery {
 
 func NewComposeDiscovery(rootTaskfileName string, templatePath string) *Discovery {
 	return &Discovery{
-		RootTaskfileName: rootTaskfileName,
-		TemplatePath:     templatePath,
+		RootTaskfileName:   rootTaskfileName,
+		TemplatePath:       templatePath,
+		UseProjectTemplate: true,
 	}
 }
 
+// NewDiscovery creates the appropriate Discovery for the given taskfile name.
+// If templatePath is non-empty it is resolved to an absolute path and used as
+// the custom template. If templatePath is empty, Discover will automatically
+// check for a ".Taskfile.template" file in the project root at runtime.
+func NewDiscovery(taskfileName, templatePath string) (*Discovery, error) {
+	if templatePath == "" {
+		return NewComposeDiscovery(taskfileName, ""), nil
+	}
+
+	absPath, err := filepath.Abs(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving template path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("template file not found: %s", absPath)
+	}
+
+	return NewComposeDiscovery(taskfileName, absPath), nil
+}
+
+func (d *Discovery) existingRootTaskfile(root string) string {
+	for _, name := range []string{"Taskfile.yaml", "Taskfile.yml"} {
+		path := filepath.Join(root, name)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return ""
+}
+
+func (d *Discovery) generateTaskfile(root string, includes []componentInclude) (string, error) {
+	if d.UseProjectTemplate && d.TemplatePath == "" {
+		candidate := filepath.Join(root, ".Taskfile.template")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			d.TemplatePath = candidate
+		}
+	}
+
+	composeData, err := d.buildComposeData(root, includes)
+	if err != nil {
+		return "", fmt.Errorf("failed to build compose data: %w", err)
+	}
+
+	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
+
+	if err = d.genRootTaskfile(rootTaskfilePath, composeData); err != nil {
+		return "", fmt.Errorf("Failed to create the root Taskfile: %w", err)
+	}
+
+	return rootTaskfilePath, nil
+}
+
 func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
-	// Check if .env file exists in the root directory
-	envPath := filepath.Join(root, ".datarobot")
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+	if !repo.IsTemplateDir(root) {
 		return "", ErrNotInTemplate
+	}
+
+	if d.PreferRootTaskfile {
+		if path := d.existingRootTaskfile(root); path != "" {
+			return path, nil
+		}
 	}
 
 	includes, err := d.findComponents(root, maxDepth)
@@ -128,24 +190,11 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 		return "", ErrNoTaskFilesFound
 	}
 
-	// Check if any discovered Taskfiles already have a dotenv directive
 	if err := d.checkForDotenvConflicts(root, includes); err != nil {
 		return "", err
 	}
 
-	rootTaskfilePath := filepath.Join(root, d.RootTaskfileName)
-
-	composeData, err := d.buildComposeData(root, includes)
-	if err != nil {
-		return "", fmt.Errorf("failed to build compose data: %w", err)
-	}
-
-	err = d.genRootTaskfile(rootTaskfilePath, composeData)
-	if err != nil {
-		return "", fmt.Errorf("Failed to create the root Taskfile: %w", err)
-	}
-
-	return rootTaskfilePath, nil
+	return d.generateTaskfile(root, includes)
 }
 
 // FormatDiscoveryError formats a discovery error into a user-friendly message string.
@@ -153,9 +202,17 @@ func (d *Discovery) Discover(root string, maxDepth int) (string, error) {
 // and return cli.ErrSilent (or the returned error directly).
 func FormatDiscoveryError(err error) error {
 	if errors.Is(err, ErrNotInTemplate) {
-		return fmt.Errorf("%s\n%s",
+		requirement := fmt.Sprintf(
+			"This command requires a '%s' folder, or a '%s' folder holding something other than '%s'.",
+			repo.DataRobotTemplateDetectAnswersPath,
+			repo.DataRobotTemplateDetectCliPath,
+			repo.TemplateDetectStateFileName,
+		)
+
+		return fmt.Errorf("%s\n%s\n%s",
 			tui.BaseTextStyle.Render("You don't seem to be in a DataRobot Template directory."),
-			tui.BaseTextStyle.Render("This command requires a '.datarobot' folder to be present."))
+			tui.BaseTextStyle.Render(requirement),
+			tui.BaseTextStyle.Render("Run 'dr template setup' to create one, or switch to an existing template directory."))
 	}
 
 	if errors.Is(err, ErrTaskfileHasDotenv) {
@@ -168,7 +225,7 @@ func FormatDiscoveryError(err error) error {
 }
 
 // findComponents looks for the {T,t}askfile.{yaml,yml} files in subdirectories (e.g. which are app framework components) of the given root directory,
-// and returns discovered components
+// and returns discovered components.
 func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclude, error) {
 	var includes []componentInclude
 
@@ -227,7 +284,7 @@ func (d *Discovery) findComponents(root string, maxDepth int) ([]componentInclud
 	return includes, err
 }
 
-// checkForDotenvConflicts checks if any of the discovered Taskfiles already have a dotenv directive
+// checkForDotenvConflicts checks if any of the discovered Taskfiles already have a dotenv directive.
 func (d *Discovery) checkForDotenvConflicts(root string, includes []componentInclude) error {
 	for _, include := range includes {
 		taskfilePath := filepath.Join(root, include.Taskfile)
@@ -246,7 +303,7 @@ func (d *Discovery) checkForDotenvConflicts(root string, includes []componentInc
 	return nil
 }
 
-// taskfileHasDotenv checks if a Taskfile has a dotenv directive
+// taskfileHasDotenv checks if a Taskfile has a dotenv directive.
 func (d *Discovery) taskfileHasDotenv(path string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -322,7 +379,7 @@ func (d *Discovery) buildComposeData(root string, includes []componentInclude) (
 	return data, nil
 }
 
-// aggregateComponentTasks discovers and aggregates tasks from a single component
+// aggregateComponentTasks discovers and aggregates tasks from a single component.
 func (d *Discovery) aggregateComponentTasks(data *taskfileTmplData, root string, include componentInclude) {
 	componentPath := filepath.Join(root, include.Dir)
 	runner := NewTaskRunner(RunnerOpts{
@@ -342,7 +399,7 @@ func (d *Discovery) aggregateComponentTasks(data *taskfileTmplData, root string,
 	}
 }
 
-// checkAndAddTask checks if a task matches known task types and adds it to the appropriate list
+// checkAndAddTask checks if a task matches known task types and adds it to the appropriate list.
 func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, componentName string) {
 	// Map task names/aliases to their component lists and flags
 	taskTypeMap := map[string]struct {
@@ -375,7 +432,7 @@ func (d *Discovery) checkAndAddTask(data *taskfileTmplData, task Task, component
 }
 
 // addComponentOnce adds a component to the list if it's not already present.
-// If components is nil, only sets the hasFlag (used for tasks like "start" that don't aggregate)
+// If components is nil, only sets the hasFlag (used for tasks like "start" that don't aggregate).
 func addComponentOnce(components *[]string, hasFlag *bool, componentName string) {
 	if components == nil {
 		// Just set the flag without adding to components
@@ -393,7 +450,7 @@ func addComponentOnce(components *[]string, hasFlag *bool, componentName string)
 	*hasFlag = true
 }
 
-// loadDevPorts reads port configuration from .taskfile-data.yaml if it exists
+// loadDevPorts reads port configuration from .taskfile-data.yaml if it exists.
 func (d *Discovery) loadDevPorts(root string) []devPort {
 	dataFile := filepath.Join(root, ".taskfile-data.yaml")
 

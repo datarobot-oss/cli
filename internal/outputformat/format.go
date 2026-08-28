@@ -74,7 +74,7 @@ func AddPersistentFlag(cmd *cobra.Command, dest *OutputFormat) {
 // 1. explicit CLI flag (local or inherited, with Changed=true)
 // 2. viper (env-var / config file, e.g. DATAROBOT_CLI_OUTPUT_FORMAT)
 // 3. flag default value
-// 4. OutputFormatText
+// 4. OutputFormatText.
 func GetFormat(cmd *cobra.Command) OutputFormat {
 	if cmd == nil {
 		return OutputFormatText
@@ -112,6 +112,26 @@ func GetFormat(cmd *cobra.Command) OutputFormat {
 // can be added to the envelope without breaking callers).
 func PrintJSONEnvelope(w io.Writer, key string, data any) error {
 	payload := map[string]any{key: data}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(payload)
+}
+
+// PrintJSONEnvelopeWithMeta is like PrintJSONEnvelope but attaches the given
+// top-level metadata siblings alongside the primary data key. For example,
+// passing meta {"source": "drconfig.yaml"} yields
+// {"<key>": <data>, "source": "drconfig.yaml"}. Keys in meta that collide with
+// the primary data key are not overwritten.
+func PrintJSONEnvelopeWithMeta(w io.Writer, key string, data any, meta map[string]any) error {
+	payload := map[string]any{key: data}
+
+	for k, v := range meta {
+		if _, ok := payload[k]; !ok {
+			payload[k] = v
+		}
+	}
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 

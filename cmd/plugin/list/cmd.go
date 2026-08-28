@@ -137,8 +137,9 @@ func runList(cmd *cobra.Command, _ []string) error {
 		fmt.Println("No plugins discovered.")
 		fmt.Println()
 		fmt.Println("Plugins are discovered from:")
-		fmt.Println("  1. Project-local .dr/plugins/ directory")
-		fmt.Println("  2. Executables named 'dr-*' in PATH")
+		fmt.Println("  1. Managed plugin directories (~/.config/datarobot/plugins/)")
+		fmt.Println("  2. Project-local .dr/plugins/ directory")
+		fmt.Println("  3. Executables named 'dr-*' in PATH")
 
 		return nil
 	}

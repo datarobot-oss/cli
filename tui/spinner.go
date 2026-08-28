@@ -18,14 +18,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/misc/reader"
 )
 
 type spinnerModel struct {
-	spinner spinner.Model
+	spinner Loading
 	label   string
+	prefix  string
 	fn      func() error
 	done    bool
 }
@@ -34,7 +34,7 @@ type spinnerDoneMsg struct{ err error }
 
 func (m spinnerModel) Init() tea.Cmd {
 	return tea.Batch(
-		m.spinner.Tick,
+		m.spinner.Init(),
 		func() tea.Msg {
 			return spinnerDoneMsg{err: m.fn()}
 		},
@@ -47,15 +47,13 @@ func (m spinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 
 		return m, tea.Quit
-	case spinner.TickMsg:
+	default:
 		var cmd tea.Cmd
 
 		m.spinner, cmd = m.spinner.Update(msg)
 
 		return m, cmd
 	}
-
-	return m, nil
 }
 
 func (m spinnerModel) View() string {
@@ -63,31 +61,40 @@ func (m spinnerModel) View() string {
 		return ""
 	}
 
-	return InfoStyle.Render(m.spinner.View()+" ") + m.label + "\n"
+	// The Dot frames carry their own trailing space, so nothing more goes
+	// between glyph and label: one column, the same gap the glyph-led lines
+	// around a spinner (a phase list's "✓ label") leave.
+	return m.prefix + InfoStyle.Render(m.spinner.View()) + m.label + "\n"
 }
 
 // RunWithSpinner runs fn in the background while showing an animated spinner
 // with the given label. Returns the error from fn, if any.
 func RunWithSpinner(label string, fn func() error) error {
+	return RunWithSpinnerPrefix("", label, fn)
+}
+
+// RunWithSpinnerPrefix is RunWithSpinner with a fixed prefix ahead of the
+// glyph on every frame, including the non-interactive fallback line. The
+// glyph leads the line, so a caller aligning the spinner under other
+// glyph-led output (a phase list's "  ✓ label") has to hand the indent in
+// here; an indent on the label could never move the glyph.
+func RunWithSpinnerPrefix(prefix, label string, fn func() error) error {
 	if !reader.IsStdinTerminal() {
 		return fn()
 	}
 
 	if reader.IsNonInteractive() {
-		fmt.Fprintln(os.Stderr, InfoStyle.Render("• ")+label)
+		fmt.Fprintln(os.Stderr, prefix+InfoStyle.Render("• ")+label)
 
 		return fn()
 	}
 
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = InfoStyle
-
 	var fnErr error
 
 	m := spinnerModel{
-		spinner: s,
+		spinner: NewLoading(),
 		label:   label,
+		prefix:  prefix,
 		fn: func() error {
 			fnErr = fn()
 

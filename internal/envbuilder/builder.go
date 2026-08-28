@@ -152,7 +152,7 @@ func (up UserPrompt) SkipSaving() bool {
 	return !up.Active && up.Value == up.Default
 }
 
-// HasEnvValue returns true if prompt has effective value when written to .env file
+// HasEnvValue returns true if prompt has effective value when written to .env file.
 func (up UserPrompt) HasEnvValue() bool {
 	return !up.Commented && up.Env != "" && up.Active
 }
@@ -256,6 +256,17 @@ func ApplyGeneratedValues(prompts []UserPrompt) ([]UserPrompt, error) {
 }
 
 func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error) {
+	return gatherUserPrompts(rootDir, variables, true, true)
+}
+
+// gatherUserPrompts collects and resolves user prompts from the repository.
+// When includeEnv is true, OS environment variables override .env file values.
+// When synthesize is true, YAML defaults are applied and secret values are
+// auto-generated for prompts with generate: true. When synthesize is false
+// (presence-only mode), only effective, uncommented .env file entries count —
+// defaults are not applied and no values are generated. The PULUMI_CONFIG_PASSPHRASE
+// viper-config exception applies in both modes (see resolvePulumiPassphrase).
+func gatherUserPrompts(rootDir string, variables Variables, includeEnv, synthesize bool) ([]UserPrompt, error) {
 	yamlFiles, err := Discover(rootDir, 5)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to discover task yaml files: %w", err)
@@ -274,11 +285,13 @@ func GatherUserPrompts(rootDir string, variables Variables) ([]UserPrompt, error
 		allPrompts = append(allPrompts, prompts...)
 	}
 
-	allPrompts = promptsWithValues(allPrompts, variables)
+	allPrompts = promptsWithValues(allPrompts, variables, includeEnv, synthesize)
 
-	allPrompts, err = ApplyGeneratedValues(allPrompts)
-	if err != nil {
-		return nil, err
+	if synthesize {
+		allPrompts, err = ApplyGeneratedValues(allPrompts)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	allPrompts = DetermineRequiredSections(allPrompts)

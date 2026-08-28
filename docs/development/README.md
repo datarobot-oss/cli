@@ -7,8 +7,9 @@ This section provides comprehensive documentation for contributors and developer
 If you're new to developing the CLI, start here:
 
 1. **[Setup](setup.md)**&mdash;set up your development environment, install prerequisites, and clone the repository.
-2. **[Building](building.md)**&mdash;learn how to build the CLI from source, understand the build process, and explore available development tasks.
-3. **[Structure](structure.md)**&mdash;understand the codebase organization, key packages, and design patterns used throughout the project.
+2. **[Devcontainer](devcontainer.md)**&mdash;use the included devcontainer for local development, Codespaces, and Factory Droid Computers.
+3. **[Building](building.md)**&mdash;learn how to build the CLI from source, understand the build process, and explore available development tasks.
+4. **[Structure](structure.md)**&mdash;understand the codebase organization, key packages, and design patterns used throughout the project.
 
 ## Development guides
 
@@ -24,9 +25,10 @@ If you're new to developing the CLI, start here:
 - **[Tool registry](tool-registry.md)**&mdash;how install-hint strategies and manager detection work; how to add a new tool or package manager.
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
-- **[Workload `.wapi/` validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
+- **[Workload state directory validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
+- **[Editing user-owned files](editing-user-files.md)**&mdash;rules for in-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry, and when a refusal beats a rewrite.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
-- **[Telemetry](telemetry.md)**&mdash;how anonymous usage analytics are collected, how to add events, and how to opt out.
+- **[Telemetry](telemetry.md)**&mdash;how usage analytics linked to your DataRobot user ID are collected, how to add events, and how to opt out.
 
 ## Quick reference
 
@@ -72,7 +74,7 @@ See [Building](building.md) for detailed workflow documentation.
 
 Before you begin development:
 
-- **Go 1.26.5 or later**&mdash;required for building the CLI.
+- **Go 1.26.7 or later**&mdash;required for building the CLI.
 - **Git**&mdash;version control.
 - **Task**&mdash;task runner for development commands.
 - **golangci-lint**&mdash;installed automatically via `task dev-init`.

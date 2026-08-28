@@ -152,7 +152,7 @@ func TestPromptsWithValues(t *testing.T) {
 			{Env: "VAR2"},
 		}
 
-		result := promptsWithValues(prompts, variables)
+		result := promptsWithValues(prompts, variables, true, true)
 
 		if result[0].Value != "value1" {
 			t.Errorf("Expected VAR1 to be 'value1', got '%s'", result[0].Value)
@@ -177,7 +177,7 @@ func TestPromptsWithValues(t *testing.T) {
 			{Env: "TEST_OVERRIDE"},
 		}
 
-		result := promptsWithValues(prompts, variables)
+		result := promptsWithValues(prompts, variables, true, true)
 
 		if result[0].Value != "from-env" {
 			t.Errorf("Expected TEST_OVERRIDE to be overridden to 'from-env', got '%s'", result[0].Value)
@@ -194,7 +194,7 @@ func TestPromptsWithValues(t *testing.T) {
 			{Env: "PULUMI_CONFIG_PASSPHRASE", Default: "default-pass"},
 		}
 
-		result := promptsWithValues(prompts, variables)
+		result := promptsWithValues(prompts, variables, true, true)
 
 		// When variables is empty and viper config is not set, should remain empty
 		// This allows proper validation - the value will be filled from viper when it exists
@@ -213,7 +213,7 @@ func TestPromptsWithValues(t *testing.T) {
 			{Name: "PULUMI_CONFIG_PASSPHRASE", Value: "from-dotenv"},
 		}
 
-		result := promptsWithValues(prompts, variables)
+		result := promptsWithValues(prompts, variables, true, true)
 
 		if result[0].Value != "from-dotenv" {
 			t.Errorf("Expected .env value 'from-dotenv' to override viper config, got '%s'", result[0].Value)
@@ -234,7 +234,7 @@ func TestPromptsWithValues(t *testing.T) {
 			{Name: "PULUMI_CONFIG_PASSPHRASE", Value: "from-dotenv"},
 		}
 
-		result := promptsWithValues(prompts, variables)
+		result := promptsWithValues(prompts, variables, true, true)
 
 		if result[0].Value != "from-env" {
 			t.Errorf("Expected env var 'from-env' to take highest priority, got '%s'", result[0].Value)
@@ -355,7 +355,7 @@ func TestValidatePrompts(t *testing.T) {
 
 		prompts = promptsWithValues(prompts, []Variable{
 			{Name: "REQUIRED_VAR", Value: "value"},
-		})
+		}, true, true)
 
 		result := &EnvironmentValidationError{
 			Results: make([]ValidationResult, 0),
@@ -735,7 +735,7 @@ func TestDetermineRequiredSectionsDuplicates(t *testing.T) {
 	})
 }
 
-// Helper function for string contains check
+// Helper function for string contains check.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
 }

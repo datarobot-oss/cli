@@ -43,8 +43,7 @@ type LoginModelTestSuite struct {
 func (suite *LoginModelTestSuite) SetupTest() {
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
-	suite.T().Setenv("HOME", suite.tempDir)
-	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+	testutil.SetTestHomeDir(suite.T(), suite.tempDir)
 
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
@@ -77,7 +76,10 @@ func (suite *LoginModelTestSuite) WaitFor(tm *teatest.TestModel, contains string
 			return bytes.Contains(bts, []byte(contains))
 		},
 		teatest.WithCheckInterval(time.Millisecond*100),
-		teatest.WithDuration(time.Second*3),
+		// teatest's PTY rendering is markedly slower on Windows CI runners, so
+		// use a generous deadline. Healthy runs still return as soon as the
+		// awaited output appears, so non-Windows pays no penalty on success.
+		teatest.WithDuration(time.Second*10),
 	)
 }
 
@@ -95,8 +97,7 @@ func (suite *LoginModelTestSuite) AfterTest(suiteName, testName string) {
 
 	dir, _ := os.MkdirTemp("", "datarobot-config-test")
 	suite.tempDir = dir
-	suite.T().Setenv("HOME", suite.tempDir)
-	testutil.SetXDGEnv(suite.T(), "XDG_CONFIG_HOME", "")
+	testutil.SetTestHomeDir(suite.T(), suite.tempDir)
 
 	suite.configFile = filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 
@@ -109,7 +110,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_1() {
 	suite.WaitFor(tm, "US Cloud")
 	// US Cloud is already selected by default (first item)
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -131,7 +132,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_2() {
 	// Navigate down to EU Cloud (second item)
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -154,7 +155,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Press_3() {
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)
@@ -186,7 +187,7 @@ func (suite *LoginModelTestSuite) TestLoginModel_Init_Custom_URL() {
 	}
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	suite.WaitFor(tm, "If your browser didn't open automatically")
+	suite.WaitFor(tm, "Didn't open? Use this link:")
 	suite.Send(tm, "esc")
 
 	suite.Quit(tm)

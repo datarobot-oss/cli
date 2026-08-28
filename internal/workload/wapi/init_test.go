@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/version"
+	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,8 +40,8 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 
 	require.NoError(t, err)
 
-	// .wapi/ listing — exactly the four machine-managed files.
-	entries, err := os.ReadDir(filepath.Join(tmp, DirName))
+	// State dir listing — exactly the four machine-managed files.
+	entries, err := os.ReadDir(Dir(tmp))
 	require.NoError(t, err)
 
 	names := make([]string, 0, len(entries))
@@ -50,15 +51,17 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 
 	assert.ElementsMatch(t, []string{gitignoreFile, configFile, HistoryFile, manifestFile}, names)
 
-	// .wapi/.gitignore is "*\n".
-	gi, err := os.ReadFile(filepath.Join(tmp, DirName, gitignoreFile))
+	// The self-ignoring .gitignore is "*\n".
+	gi, err := os.ReadFile(filepath.Join(Dir(tmp), gitignoreFile))
 	require.NoError(t, err)
 	assert.Equal(t, "*\n", string(gi))
 
-	// .wapiignore at project root matches the embedded template.
-	rootIgnore, err := os.ReadFile(filepath.Join(tmp, wapiignoreFile))
+	// .drignore at project root matches the embedded template.
+	rootIgnore, err := os.ReadFile(ignorePath(tmp))
 	require.NoError(t, err)
-	assert.Equal(t, wapiignoreTemplate, rootIgnore)
+	assert.Equal(t, ignoreTemplate, rootIgnore)
+
+	assert.NoFileExists(t, filepath.Join(tmp, ignore.LegacyFileName), "init writes the current name only")
 
 	// config.json round-trips cleanly.
 	cfg, err := LoadConfig(tmp)
@@ -73,7 +76,7 @@ func TestInitialize_CreatesFullLayout(t *testing.T) {
 	assert.False(t, cfg.CreatedAt.After(after), "CreatedAt should be <= after")
 
 	// manifest.json is empty BASE with explicit null sync pointers.
-	raw, err := os.ReadFile(filepath.Join(tmp, DirName, manifestFile))
+	raw, err := os.ReadFile(filepath.Join(Dir(tmp), manifestFile))
 	require.NoError(t, err)
 
 	var parsed map[string]any
@@ -95,7 +98,7 @@ func TestInitialize_WritesInitHistoryEntry(t *testing.T) {
 	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc-123"})
 	require.NoError(t, err)
 
-	entries := readHistoryLines(t, filepath.Join(tmp, DirName, HistoryFile))
+	entries := readHistoryLines(t, filepath.Join(Dir(tmp), HistoryFile))
 	require.Len(t, entries, 1)
 
 	e := entries[0]
@@ -118,7 +121,7 @@ func TestInitialize_HistoryCatalogPresentForExistingCode(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	entries := readHistoryLines(t, filepath.Join(tmp, DirName, HistoryFile))
+	entries := readHistoryLines(t, filepath.Join(Dir(tmp), HistoryFile))
 	require.Len(t, entries, 1)
 	assert.Equal(t, "cat-xyz-789", entries[0]["catalog"])
 }
@@ -130,7 +133,7 @@ func TestInitialize_CreatesMissingProjectDir(t *testing.T) {
 	err := Initialize(nested, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
-	assert.True(t, Exists(nested), "project dir + .wapi/ must be created end-to-end")
+	assert.True(t, Exists(nested), "project dir + state dir must be created end-to-end")
 }
 
 func TestInitialize_AlreadyLinked(t *testing.T) {
@@ -143,19 +146,42 @@ func TestInitialize_AlreadyLinked(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAlreadyLinked)
 }
 
-func TestInitialize_PreservesUserWapiignore(t *testing.T) {
+func TestInitialize_PreservesUserIgnoreFile(t *testing.T) {
 	tmp := t.TempDir()
 
 	custom := []byte("# my custom ignore\nsecret/\n")
-	err := os.WriteFile(filepath.Join(tmp, wapiignoreFile), custom, 0o644)
+	err := os.WriteFile(ignorePath(tmp), custom, 0o644)
 	require.NoError(t, err)
 
 	err = Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
-	got, err := os.ReadFile(filepath.Join(tmp, wapiignoreFile))
+	got, err := os.ReadFile(ignorePath(tmp))
 	require.NoError(t, err)
-	assert.Equal(t, custom, got, "existing .wapiignore must not be overwritten")
+	assert.Equal(t, custom, got, "existing .drignore must not be overwritten")
+}
+
+// A project still on the legacy name already has ignore patterns, and the
+// current name wins when both exist. Dropping the default template beside a
+// tuned legacy file would leave every byte of the user's file intact while
+// quietly retiring every pattern in it.
+func TestInitialize_LeavesLegacyIgnoreFileAlone(t *testing.T) {
+	tmp := t.TempDir()
+
+	legacy := filepath.Join(tmp, ignore.LegacyFileName)
+
+	custom := []byte("# my custom ignore\nsecret/\n")
+	err := os.WriteFile(legacy, custom, 0o644)
+	require.NoError(t, err)
+
+	err = Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, ignorePath(tmp), "a legacy file counts as already having one")
+
+	got, err := os.ReadFile(legacy)
+	require.NoError(t, err)
+	assert.Equal(t, custom, got)
 }
 
 func TestInitialize_NullsForEmptyOptionals(t *testing.T) {
@@ -164,7 +190,7 @@ func TestInitialize_NullsForEmptyOptionals(t *testing.T) {
 	err := Initialize(tmp, InitOptions{ArtifactID: "art-abc"})
 	require.NoError(t, err)
 
-	raw, err := os.ReadFile(filepath.Join(tmp, DirName, configFile))
+	raw, err := os.ReadFile(filepath.Join(Dir(tmp), configFile))
 	require.NoError(t, err)
 
 	var parsed map[string]any

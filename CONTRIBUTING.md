@@ -123,6 +123,12 @@ task lint
    task test
 
    # Run linters
+   #
+   # `task lint` runs golangci-lint once per target GOOS (linux, darwin,
+   # windows), so build-constrained files such as *_windows.go are checked no
+   # matter which OS you develop on. Do not be surprised by a failure in a file
+   # your own platform never compiles — `task delint` can auto-fix it from any
+   # host. See "Cross-Platform Linting" in AGENTS.md.
    task lint
 
    # Check for duplicate code

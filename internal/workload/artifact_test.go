@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -789,4 +790,216 @@ func TestLockArtifact_403AlreadyLockedPropagatesAsHTTPError(t *testing.T) {
 	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusForbidden, httpErr.StatusCode)
 	assert.Contains(t, err.Error(), "artifact is locked")
+}
+
+func TestPrimaryContainerName(t *testing.T) {
+	primary := true
+
+	t.Run("returns the name of the primary-flagged container", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+			{Containers: []Container{{Name: "sidecar"}, {Name: "main", Primary: &primary}}},
+		}}}
+		assert.Equal(t, "main", PrimaryContainerName(art))
+	})
+
+	t.Run("falls back to the first container when none is flagged primary", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+			{Containers: []Container{{Name: "only"}}},
+		}}}
+		assert.Equal(t, "only", PrimaryContainerName(art))
+	})
+
+	t.Run("falls back to \"primary\" when the artifact has no named container", func(t *testing.T) {
+		assert.Equal(t, "primary", PrimaryContainerName(Artifact{}))
+	})
+
+	t.Run("skips a primary container that has no name", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+			{Containers: []Container{{Primary: &primary}}},
+		}}}
+		assert.Equal(t, "primary", PrimaryContainerName(art))
+	})
+}
+
+func TestPrimaryEnvironmentVars(t *testing.T) {
+	primary := true
+
+	plain := EnvironmentVar{Name: "LOG_LEVEL", Value: "debug"}
+	secret := EnvironmentVar{
+		Source:         EnvironmentVarSourceDRCredential,
+		Name:           "OPENAI_API_KEY",
+		DRCredentialID: "66f0000000000000000000aa",
+		Key:            "apiToken",
+	}
+
+	t.Run("reads the primary-flagged container", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{{Containers: []Container{
+			{Name: "sidecar", EnvironmentVars: []EnvironmentVar{{Name: "WRONG"}}},
+			{Name: "main", Primary: &primary, EnvironmentVars: []EnvironmentVar{plain, secret}},
+		}}}}}
+		assert.Equal(t, []EnvironmentVar{plain, secret}, PrimaryEnvironmentVars(art))
+	})
+
+	t.Run("falls back to the first container when none is flagged primary", func(t *testing.T) {
+		art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+			{Containers: []Container{{Name: "only", EnvironmentVars: []EnvironmentVar{plain}}}},
+		}}}
+		assert.Equal(t, []EnvironmentVar{plain}, PrimaryEnvironmentVars(art))
+	})
+
+	t.Run("returns nil for an artifact with no groups or no containers", func(t *testing.T) {
+		assert.Nil(t, PrimaryEnvironmentVars(Artifact{}))
+		assert.Nil(t, PrimaryEnvironmentVars(Artifact{Spec: Spec{
+			ContainerGroups: []ContainerGroup{{Containers: []Container{}}},
+		}}))
+	})
+}
+
+// A credential-backed var must serialize to the reference shape and never
+// carry a value; a plain var must omit the credential fields and the source
+// discriminator, which the server defaults.
+func TestEnvironmentVar_MarshalShapes(t *testing.T) {
+	secret, err := json.Marshal(EnvironmentVar{
+		Source:         EnvironmentVarSourceDRCredential,
+		Name:           "OPENAI_API_KEY",
+		DRCredentialID: "66f0000000000000000000aa",
+		Key:            "apiToken",
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"source": "dr-credential",
+		"name": "OPENAI_API_KEY",
+		"drCredentialId": "66f0000000000000000000aa",
+		"key": "apiToken"
+	}`, string(secret))
+
+	plain, err := json.Marshal(EnvironmentVar{Name: "LOG_LEVEL", Value: "debug"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"name": "LOG_LEVEL", "value": "debug"}`, string(plain))
+}
+
+// Container.Name and EnvironmentVars must survive a round trip through the
+// server document shape, since the plan renderer and runtime-spec builder
+// both read them off a fetched artifact.
+func TestContainer_ParsesNameAndEnvironmentVars(t *testing.T) {
+	var art Artifact
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"id": "art-1",
+		"spec": {"containerGroups": [{"containers": [{
+			"name": "primary",
+			"primary": true,
+			"imageUri": "example/app:1",
+			"environmentVars": [
+				{"name": "LOG_LEVEL", "value": "debug"},
+				{"source": "dr-credential", "name": "TOKEN", "drCredentialId": "66f", "key": "apiToken"}
+			]
+		}]}]}
+	}`), &art))
+
+	assert.Equal(t, "primary", PrimaryContainerName(art))
+
+	vars := PrimaryEnvironmentVars(art)
+	require.Len(t, vars, 2)
+	assert.Equal(t, "debug", vars[0].Value)
+	assert.Empty(t, vars[0].Source, "a plain var carries no source discriminator")
+	assert.Equal(t, EnvironmentVarSourceDRCredential, vars[1].Source)
+	assert.Equal(t, "apiToken", vars[1].Key)
+	assert.Empty(t, vars[1].Value, "a credential-backed var never carries a literal value")
+}
+
+// The four Primary* helpers must always describe the same container. Before
+// they shared a traversal, PrimaryContainerName additionally required a
+// non-empty name, so an unnamed primary made it fall through and report a
+// sidecar's name while the others read the primary.
+func TestPrimaryHelpers_AgreeOnUnnamedPrimary(t *testing.T) {
+	primary := true
+
+	art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{{Containers: []Container{
+		{
+			Name:            "sidecar",
+			ImageURI:        "sidecar:1",
+			EnvironmentVars: []EnvironmentVar{{Name: "WRONG"}},
+		},
+		{
+			Name:            "",
+			Primary:         &primary,
+			ImageURI:        "app:1",
+			EnvironmentVars: []EnvironmentVar{{Name: "RIGHT"}},
+		},
+	}}}}}
+
+	assert.Equal(t, "app:1", GetPrimaryContainerImageURI(art))
+	require.Len(t, PrimaryEnvironmentVars(art), 1)
+	assert.Equal(t, "RIGHT", PrimaryEnvironmentVars(art)[0].Name)
+	assert.Equal(t, "primary", PrimaryContainerName(art),
+		"an unnamed primary falls back to the CLI's own convention, never to a sidecar's name")
+	assert.NotEqual(t, "sidecar", PrimaryContainerName(art))
+}
+
+// A primary container in a later group must win over an earlier group's
+// unflagged container, for every helper.
+func TestPrimaryHelpers_AgreeAcrossGroups(t *testing.T) {
+	primary := true
+
+	art := Artifact{Spec: Spec{ContainerGroups: []ContainerGroup{
+		{Containers: []Container{{Name: "first", ImageURI: "first:1"}}},
+		{Containers: []Container{{Name: "real", Primary: &primary, ImageURI: "real:1"}}},
+	}}}
+
+	assert.Equal(t, "real", PrimaryContainerName(art))
+	assert.Equal(t, "real:1", GetPrimaryContainerImageURI(art))
+}
+
+// serverArtifactDoc builds a minimal artifact JSON doc for list-page tests.
+func serverArtifactDoc(id, name, status string) string {
+	return fmt.Sprintf(`{"id":%q,"name":%q,"status":%q}`, id, name, status)
+}
+
+// artifactListPage wraps docs in the ArtifactList pagination envelope, mirroring
+// workloadListPage so the artifact list tests can assert next-link following.
+func artifactListPage(next string, docs ...string) string {
+	nextJSON := "null"
+	if next != "" {
+		nextJSON = fmt.Sprintf("%q", next)
+	}
+
+	return fmt.Sprintf(
+		`{"data": [%s], "count": %d, "totalCount": %d, "next": %s, "previous": null}`,
+		strings.Join(docs, ","), len(docs), len(docs), nextJSON,
+	)
+}
+
+func TestListArtifacts_RejectsNonPositiveLimit(t *testing.T) {
+	for _, limit := range []int{0, -1} {
+		_, err := ListArtifacts(limit, 0, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be positive")
+	}
+}
+
+func TestListArtifacts_RejectsNegativeOffset(t *testing.T) {
+	for _, offset := range []int{-1} {
+		_, err := ListArtifacts(1, offset, "")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be non-negative")
+	}
+}
+
+func TestListArtifacts_ClampsPageSizeToServerMax(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The server rejects limit > 100 with a 422, so the page size must
+		// be clamped even when --limit asks for more.
+		assert.Equal(t, "100", r.URL.Query().Get("limit"))
+		fmt.Fprint(w, artifactListPage("", serverArtifactDoc("art-1", "a", "draft")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListArtifacts(250, 0, "")
+	require.NoError(t, err)
 }

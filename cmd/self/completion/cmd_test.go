@@ -26,7 +26,7 @@ import (
 func TestSupportedShells(t *testing.T) {
 	shells := internalShell.SupportedShells()
 
-	expected := []string{"bash", "zsh", "fish", "powershell"}
+	expected := []string{"bash", "zsh", "fish", "powershell", "cmd"}
 
 	if len(shells) != len(expected) {
 		t.Errorf("expected %d shells, got %d", len(expected), len(shells))
@@ -48,7 +48,7 @@ func TestCmd(t *testing.T) {
 		return
 	}
 
-	if cmd.Use != "completion [bash|zsh|fish|powershell]" {
+	if cmd.Use != "completion [bash|zsh|fish|powershell|cmd]" {
 		t.Errorf("unexpected Use: %s", cmd.Use)
 	}
 
@@ -131,6 +131,8 @@ func TestCompletionGeneration(t *testing.T) {
 				err = rootCmd.GenFishCompletion(&buf, true)
 			case internalShell.PowerShell:
 				err = rootCmd.GenPowerShellCompletionWithDesc(&buf)
+			case internalShell.Cmd:
+				// cmd.exe has no completion generator; not exercised here.
 			}
 
 			if err != nil {

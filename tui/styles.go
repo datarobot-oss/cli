@@ -16,21 +16,24 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Common style definitions using DataRobot branding
+// Common style definitions using DataRobot branding.
 var (
-	// Adaptive colors for light/dark terminals
+	// Adaptive colors for light/dark terminals.
 	TitleColor  = GetAdaptiveColor(DrGreen, DrGreenDark)
 	BorderColor = GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)
 
 	BaseTextStyle = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurple, DrPurpleDark))
 	ErrorStyle    = lipgloss.NewStyle().Foreground(DrRed).Bold(true)
 	SuccessStyle  = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGreen, DrGreen)).Bold(true)
-	InfoStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
-	DimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	HintStyle     = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGray, DrGrayDark))
-	TitleStyle    = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)
+	// WarnStyle marks something that did not happen but did not stop the run,
+	// and the changed half of a diff. Amber rather than red: the run carried on.
+	WarnStyle  = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrYellow, DrYellowDark)).Bold(true)
+	InfoStyle  = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrPurpleLight, DrPurpleDarkLight)).Bold(true)
+	DimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	HintStyle  = lipgloss.NewStyle().Foreground(GetAdaptiveColor(DrGray, DrGrayDark))
+	TitleStyle = BaseTextStyle.Foreground(TitleColor).Bold(true).MarginBottom(1)
 
-	// Specific UI styles
+	// Specific UI styles.
 	LogoStyle     = BaseTextStyle
 	WelcomeStyle  = BaseTextStyle.Bold(true)
 	SubTitleStyle = BaseTextStyle.Bold(true).

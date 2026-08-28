@@ -76,7 +76,7 @@ func TestAppendHistory_WritesOneJSONLine(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	entries := readHistoryLines(t, filepath.Join(tmp, DirName, HistoryFile))
+	entries := readHistoryLines(t, filepath.Join(Dir(tmp), HistoryFile))
 	require.Len(t, entries, 1)
 	assert.Equal(t, "init", entries[0]["op"])
 	assert.Equal(t, "bar", entries[0]["foo"])
@@ -92,7 +92,7 @@ func TestAppendHistory_MultipleAppendsPreserveOrder(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	entries := readHistoryLines(t, filepath.Join(tmp, DirName, HistoryFile))
+	entries := readHistoryLines(t, filepath.Join(Dir(tmp), HistoryFile))
 	require.Len(t, entries, len(ops))
 
 	for i, op := range ops {
@@ -104,8 +104,8 @@ func TestAppendHistory_RotatesAtThreshold(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
 
-	path := filepath.Join(tmp, DirName, HistoryFile)
-	backup := filepath.Join(tmp, DirName, historyBackupFile)
+	path := filepath.Join(Dir(tmp), HistoryFile)
+	backup := filepath.Join(Dir(tmp), historyBackupFile)
 
 	// Seed the log at exactly the rotation threshold. Truncate creates a
 	// sparse file on APFS/ext4, so no 1 MB of zeros is actually written.
@@ -129,9 +129,9 @@ func TestAppendHistory_RotationKeepsOneBackup(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
 
-	path := filepath.Join(tmp, DirName, HistoryFile)
-	backup := filepath.Join(tmp, DirName, historyBackupFile)
-	secondBackup := filepath.Join(tmp, DirName, "history.log.2")
+	path := filepath.Join(Dir(tmp), HistoryFile)
+	backup := filepath.Join(Dir(tmp), historyBackupFile)
+	secondBackup := filepath.Join(Dir(tmp), "history.log.2")
 
 	// First rotation (sparse via Truncate, see TestAppendHistory_RotatesAtThreshold).
 	err := os.WriteFile(path, nil, 0o644)
@@ -166,8 +166,8 @@ func TestAppendHistory_RotationRenameFailureSurfaces(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)
 
-	path := filepath.Join(tmp, DirName, HistoryFile)
-	backup := filepath.Join(tmp, DirName, historyBackupFile)
+	path := filepath.Join(Dir(tmp), HistoryFile)
+	backup := filepath.Join(Dir(tmp), historyBackupFile)
 
 	err := os.WriteFile(path, nil, 0o644)
 	require.NoError(t, err)

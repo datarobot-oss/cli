@@ -439,6 +439,112 @@ func TestLogDedup_RotationKeepsRecentMemory(t *testing.T) {
 	}
 }
 
+// Pruning forgets exactly what the next fetch can no longer return, and
+// nothing else: a key inside the overlap must survive however many lines
+// arrived after it, and one outside it is memory spent on nothing.
+func TestLogDedup_PruneForgetsWhatLeftTheOverlap(t *testing.T) {
+	at := func(offset time.Duration) string {
+		return time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC).Add(offset).Format(time.RFC3339Nano)
+	}
+
+	dedup := newLogDedup(100)
+
+	old := WorkloadLogEntry{Timestamp: at(0), Level: "INFO", Message: "old"}
+	recent := WorkloadLogEntry{Timestamp: at(90 * time.Second), Level: "INFO", Message: "recent"}
+
+	require.Len(t, dedup.filterUnseen([]WorkloadLogEntry{old, recent}), 2)
+
+	// The floor a 60s-lag fetch would use after the cursor reached "recent".
+	dedup.prune(mustParseLogTime(t, recent.Timestamp).Add(-60 * time.Second))
+
+	assert.Empty(t, dedup.filterUnseen([]WorkloadLogEntry{recent}),
+		"a key inside the overlap stays known")
+	assert.Len(t, dedup.filterUnseen([]WorkloadLogEntry{old}), 1,
+		"a key no fetch can re-offer is forgotten, which is the memory bound")
+}
+
+// The follower prunes its dedup to its own fetch floor after every emit, so
+// the generation cap is a ceiling for pathological rates rather than a
+// horizon an ordinary fast builder outruns.
+func TestFollower_PrunesTheDedupToItsFetchFloor(t *testing.T) {
+	at := func(offset time.Duration) string {
+		return time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC).Add(offset).Format(time.RFC3339Nano)
+	}
+
+	f, err := newLogFollower(
+		func(int, string, string, string) ([]WorkloadLogEntry, error) { return nil, nil },
+		10, "", time.Second,
+		func(WorkloadLogEntry) error { return nil },
+		func(string) {},
+	)
+	require.NoError(t, err)
+
+	f.lag = 60 * time.Second
+
+	old := WorkloadLogEntry{Timestamp: at(0), Level: "INFO", Message: "old"}
+	require.NoError(t, f.emit([]WorkloadLogEntry{old}, false))
+
+	// The cursor advances past this entry, putting "old" outside cursor-lag.
+	newest := WorkloadLogEntry{Timestamp: at(5 * time.Minute), Level: "INFO", Message: "new"}
+	require.NoError(t, f.emit([]WorkloadLogEntry{newest}, true))
+
+	assert.Len(t, f.dedup.filterUnseen([]WorkloadLogEntry{old}), 1,
+		"emit pruned the key that left the fetch overlap")
+	assert.Empty(t, f.dedup.filterUnseen([]WorkloadLogEntry{newest}),
+		"the key inside the overlap is still known")
+}
+
+// A leading empty poll must not arm the gap warning: the first real batch
+// filling the window is the seed being as big as it was asked to be, not
+// lines lost.
+func TestFollower_LeadingEmptyPollDoesNotArmTheGapWarning(t *testing.T) {
+	at := func(n int) string {
+		return time.Date(2026, 8, 26, 10, 0, n, 0, time.UTC).Format(time.RFC3339Nano)
+	}
+
+	var warns []string
+
+	f, err := newLogFollower(
+		func(int, string, string, string) ([]WorkloadLogEntry, error) { return nil, nil },
+		2, "", time.Second,
+		func(WorkloadLogEntry) error { return nil },
+		func(w string) { warns = append(warns, w) },
+	)
+	require.NoError(t, err)
+
+	// The empty first poll: seeds nothing, warns about nothing.
+	require.NoError(t, f.emit(nil, false))
+	assert.Empty(t, warns)
+
+	// The first real batch fills the whole window and is entirely fresh —
+	// the exact shape the gap warning looks for, and exactly what a seed is.
+	seed := []WorkloadLogEntry{
+		{Timestamp: at(1), Level: "INFO", Message: "a"},
+		{Timestamp: at(2), Level: "INFO", Message: "b"},
+	}
+	require.NoError(t, f.emit(seed, false))
+	assert.Empty(t, warns, "the seed batch is not a gap")
+
+	// The control: the same full-fresh window after the seed is a real gap.
+	burst := []WorkloadLogEntry{
+		{Timestamp: at(3), Level: "INFO", Message: "c"},
+		{Timestamp: at(4), Level: "INFO", Message: "d"},
+	}
+	require.NoError(t, f.emit(burst, false))
+	require.Len(t, warns, 1)
+	assert.Contains(t, warns[0], "possible gap")
+}
+
+// mustParseLogTime is parseLogTimestamp for fixtures the test itself wrote.
+func mustParseLogTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	at, ok := parseLogTimestamp(value)
+	require.True(t, ok)
+
+	return at
+}
+
 func TestFollowWorkloadLogs_StreamsWithTimeCursor(t *testing.T) {
 	installSkipAuth(t)
 

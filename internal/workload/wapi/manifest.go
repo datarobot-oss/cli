@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
 // FileMeta is the per-file entry in the BASE manifest. Hash is SHA-256 hex
@@ -29,7 +31,7 @@ type FileMeta struct {
 	Size int64  `json:"size" validate:"gte=0"`
 }
 
-// Manifest is the parsed representation of .wapi/manifest.json — the BASE
+// Manifest is the parsed representation of the project's manifest.json — the BASE
 // snapshot of "what both sides looked like the last time we successfully
 // synced." Written by Initialize (empty) and by the sync engine.
 //
@@ -44,8 +46,8 @@ type Manifest struct {
 	Files           map[string]FileMeta `json:"files" validate:"dive"`
 }
 
-// LoadManifest reads and parses .wapi/manifest.json. Returns
-// ErrNotInitialized if .wapi/ (or manifest.json inside it) is missing, and
+// LoadManifest reads and parses the project's manifest.json. Returns
+// ErrNotInitialized if the state directory (or manifest.json inside it) is missing, and
 // a *CorruptedError wrapping parse or semantic validation failures if the
 // file is unreadable, malformed, or invalid.
 func LoadManifest(projectDir string) (Manifest, error) {
@@ -77,8 +79,8 @@ func LoadManifest(projectDir string) (Manifest, error) {
 	return m, nil
 }
 
-// SaveManifest atomically writes the manifest to .wapi/manifest.json. Returns
-// ErrNotInitialized if .wapi/ does not exist.
+// SaveManifest atomically writes the manifest to manifest.json. Returns
+// ErrNotInitialized if the state directory does not exist.
 func SaveManifest(projectDir string, m Manifest) error {
 	if err := writeManifest(projectDir, m); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -91,7 +93,7 @@ func SaveManifest(projectDir string, m Manifest) error {
 	return nil
 }
 
-// writeManifest writes the manifest to .wapi/manifest.json. Shared by SaveManifest
+// writeManifest writes the manifest to manifest.json. Shared by SaveManifest
 // (which maps os.ErrNotExist → ErrNotInitialized) and by Initialize.
 func writeManifest(projectDir string, m Manifest) error {
 	// Ensure JSON emits "files": {} rather than "files": null.
@@ -104,5 +106,5 @@ func writeManifest(projectDir string, m Manifest) error {
 		return fmt.Errorf("marshal manifest: %w", err)
 	}
 
-	return atomicWriteFile(manifestPath(projectDir), data)
+	return fsutil.AtomicWriteFile(manifestPath(projectDir), data)
 }

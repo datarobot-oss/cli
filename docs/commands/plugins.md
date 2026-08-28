@@ -183,7 +183,7 @@ Either way, the check is not repeated until the configured cooldown interval has
 ### Configuring the update check
 
 ```bash
-# Change the cooldown interval (default 24h)
+# Change the cooldown interval (default 1h)
 # Accepts Go duration strings: 30m, 6h, 48h, 0s
 dr --plugin-update-check-interval 6h assist
 
@@ -228,10 +228,13 @@ A plugin is an executable that:
 
 ### Plugin discovery
 
-The CLI discovers plugins from:
+The CLI discovers plugins from, in priority order:
 
-1. Project-local `.dr/plugins/` directory (highest priority).
-2. All directories on your `PATH`.
+1. **Managed plugin directories** (highest priority) — plugins installed via `dr plugin install`.
+   - Primary: `$XDG_CONFIG_HOME/datarobot/plugins/` (or `~/.config/datarobot/plugins/` when `XDG_CONFIG_HOME` is not set).
+   - Additional directories from `$XDG_CONFIG_DIRS` if set (e.g., `/etc/xdg/datarobot/plugins` for system-wide plugins).
+2. **Project-local** `.dr/plugins/` directory.
+3. **All directories on your `PATH`**.
 
 If multiple executables declare the same manifest `name`, the CLI uses only the first discovered plugin.
 

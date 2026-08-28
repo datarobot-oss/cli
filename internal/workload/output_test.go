@@ -181,8 +181,86 @@ func TestPrintArtifactDetails_WithoutCodeRef(t *testing.T) {
 		printArtifactDetails(artifact)
 	})
 
-	assert.Contains(t, output, "Catalog ID:  —")
-	assert.Contains(t, output, "Version ID:  —")
+	// Matched loosely because the gap is tabwriter's, sized by the longest
+	// label on the block. Pinning it turns adding a field into a failure about
+	// a field nobody changed.
+	assert.Regexp(t, `Catalog ID:\s+—`, output)
+	assert.Regexp(t, `Version ID:\s+—`, output)
+}
+
+// A draft has no number of its own, and the repository is the platform's to
+// assign, so an artifact read before either exists shows both as absent rather
+// than as a version 0 that does not exist.
+func TestPrintArtifactDetails_DraftHasNoRepositoryVersion(t *testing.T) {
+	artifact := makeTestArtifact("art-abc-123", "my-agent", "DRAFT", "", "")
+
+	output := captureStdout(t, func() {
+		printArtifactDetails(artifact)
+	})
+
+	assert.Regexp(t, `Repository:\s+—`, output)
+	assert.Regexp(t, `Repository version:\s+—`, output)
+}
+
+func TestPrintArtifactDetails_LockedShowsItsRepositoryAndVersion(t *testing.T) {
+	artifact := makeTestArtifact("art-abc-123", "my-agent", "LOCKED", "", "")
+	artifact.ArtifactRepositoryID = "repo-555"
+	artifact.Version = intPtr(2)
+
+	output := captureStdout(t, func() {
+		printArtifactDetails(artifact)
+	})
+
+	assert.Regexp(t, `Repository:\s+repo-555`, output)
+	assert.Regexp(t, `Repository version:\s+2`, output)
+}
+
+// The two fields ride the JSON envelope as well, which is how a deploy is
+// checked without opening the Registry.
+func TestNewArtifactOutput_CarriesRepositoryAndVersion(t *testing.T) {
+	locked := makeTestArtifact("art-1", "my-agent", "LOCKED", "", "")
+	locked.ArtifactRepositoryID = "repo-555"
+	locked.Version = intPtr(3)
+
+	out := NewArtifactOutput(locked)
+	assert.Equal(t, "repo-555", out.ArtifactRepositoryID)
+	require.NotNil(t, out.Version)
+	assert.Equal(t, 3, *out.Version)
+}
+
+// Text and JSON have to carry the same fields, so a draft emits both keys
+// rather than dropping the ones it has no value for: a script cannot branch on
+// a key that comes and goes with the artifact's status. The version is null,
+// which says unnumbered, where 0 would name a version no repository issues.
+func TestNewArtifactOutput_DraftStillCarriesBothKeys(t *testing.T) {
+	encoded, err := json.Marshal(NewArtifactOutput(makeTestArtifact("art-2", "my-agent", "DRAFT", "", "")))
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Contains(t, decoded, "artifactRepositoryId")
+	assert.Contains(t, decoded, "version")
+	assert.Nil(t, decoded["version"])
+	assert.Empty(t, decoded["artifactRepositoryId"])
+}
+
+func intPtr(v int) *int { return &v }
+
+// A container can carry a codeRef whose catalog pair is half filled in: the
+// sync creates the reference and the version id arrives when the upload lands,
+// so the window between them is real. Both halves read as absent rather than
+// as a blank column, which is the same answer an artifact with no codeRef at
+// all gets, because to a reader they are the same thing.
+func TestPrintArtifactDetails_PartialCodeRefReadsAsAbsent(t *testing.T) {
+	artifact := makeTestArtifact("art-abc-123", "my-agent", "DRAFT", "cat-xyz-789", "")
+
+	output := captureStdout(t, func() {
+		printArtifactDetails(artifact)
+	})
+
+	assert.Regexp(t, `Catalog ID:\s+cat-xyz-789`, output)
+	assert.Regexp(t, `Version ID:\s+—`, output)
 }
 
 func TestPrintArtifactsTable_WithCodeRef(t *testing.T) {

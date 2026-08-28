@@ -17,6 +17,7 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -29,7 +30,7 @@ type contextKey string
 
 const userAgentKey contextKey = "userAgent"
 
-// WithUserAgent adds a custom User-Agent to the context
+// WithUserAgent adds a custom User-Agent to the context.
 func WithUserAgent(ctx context.Context, userAgent string) context.Context {
 	return context.WithValue(ctx, userAgentKey, userAgent)
 }
@@ -42,7 +43,18 @@ func getUserAgent(ctx context.Context) string {
 	return GetUserAgentHeader()
 }
 
+// HTTPStatusError is a non-200 answer to the version check, so callers can tell
+// a rejected token (401/403) from a server or endpoint problem.
+type HTTPStatusError struct {
+	StatusCode int
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("token verification returned HTTP %d", e.StatusCode)
+}
+
 // VerifyToken verifies if the datarobot endpoint + api key pair correspond to a valid pair.
+// A non-200 response is returned as *HTTPStatusError.
 func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	_, err := url.Parse(datarobotEndpoint)
 	if err != nil {
@@ -80,7 +92,7 @@ func VerifyToken(ctx context.Context, datarobotEndpoint, token string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("invalid token")
+		return &HTTPStatusError{StatusCode: resp.StatusCode}
 	}
 
 	return nil

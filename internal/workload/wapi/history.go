@@ -19,19 +19,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
-// HistoryEntry is one JSONL record in .wapi/history.log. It is deliberately
+// HistoryEntry is one JSONL record in the project's history.log. It is deliberately
 // open-schema: each operation type owns its own field shape. Callers SHOULD
 // populate at least "ts" (RFC3339 UTC timestamp) and "op".
 type HistoryEntry map[string]any
 
 // AppendHistory writes entry as a single JSON object followed by "\n" to
-// .wapi/history.log. If the existing log has grown to historyRotateBytes or
+// history.log. If the existing log has grown to historyRotateBytes or
 // more, it is renamed to history.log.1 first (overwriting any prior .1 —
 // only one backup is retained).
 //
-// Returns ErrNotInitialized if .wapi/ does not exist. Unlike SaveConfig /
+// Returns ErrNotInitialized if the state directory does not exist. Unlike SaveConfig /
 // SaveManifest, appends use O_APPEND rather than an atomic rename (which
 // would lose prior entries). The caller is responsible for serializing
 // concurrent writers via an external lock.
@@ -47,7 +49,7 @@ func AppendHistory(projectDir string, entry HistoryEntry) error {
 		return fmt.Errorf("marshal history entry: %w", err)
 	}
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, atomicFileMode)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, fsutil.DefaultFileMode)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return ErrNotInitialized

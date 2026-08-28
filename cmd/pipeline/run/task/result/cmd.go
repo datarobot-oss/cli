@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
@@ -76,7 +77,7 @@ Example:
 
 			res, err := pipeline.GetTaskResult(pipelineID, runID, taskID, node)
 			if err != nil {
-				return err
+				return fmt.Errorf("get task result: %w", err)
 			}
 
 			return renderResult(cmd.OutOrStdout(), outputFormat, res)
@@ -107,7 +108,7 @@ func renderResult(w io.Writer, format outputformat.OutputFormat, res *pipeline.T
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
-			return err
+			return fmt.Errorf(errmsg.MarshalJSON, err)
 		}
 
 		fmt.Fprintln(w, string(data))

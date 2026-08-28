@@ -23,6 +23,7 @@ package drapi
 
 import (
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -30,10 +31,18 @@ import (
 // callers don't specify their own.
 const DefaultClientTimeout = 30 * time.Second
 
+// tokenMu guards the `token` global. See its declaration in get.go.
+var tokenMu sync.Mutex
+
 // getToken returns the memoized API token, resolving and caching it on first
-// use to avoid repeated VerifyToken() round-trips. The underlying `token`
-// variable and resolveToken() function are defined in get.go.
+// use to avoid repeated VerifyToken() round-trips. The lock is held across
+// resolveToken so concurrent callers share one round-trip instead of each
+// making their own. A failed resolve is not cached, so a later call retries.
+// The `token` variable and resolveToken() are defined in get.go.
 func getToken() (string, error) {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	if token != "" {
 		return token, nil
 	}
@@ -50,7 +59,28 @@ func getToken() (string, error) {
 
 // NewHTTPClient returns an *http.Client preconfigured with the given timeout.
 // Use this in place of constructing &http.Client{...} inline so timeouts and
-// future shared-transport tweaks live in one place.
+// future shared-transport tweaks live in one place. A non-positive timeout
+// (the zero value included, so an omitted variadic override falls through
+// cleanly) clamps to DefaultClientTimeout. Passing 0 straight to http.Client
+// would otherwise mean "no timeout" — silently unbounded, not "use the
+// default" — since that's how net/http itself reads a zero Timeout.
 func NewHTTPClient(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = DefaultClientTimeout
+	}
+
 	return &http.Client{Timeout: timeout}
+}
+
+// Do sends req using a client built by NewHTTPClient(timeout). It exists for
+// callers that must build their own *http.Request — a multipart body, or a
+// caller with its own error-decoding shape — so they get the same
+// clamp-then-construct behavior as Get/Post/Patch/Delete without hand-rolling
+// NewHTTPClient(t).Do(req) themselves.
+func Do(req *http.Request, timeout time.Duration) (*http.Response, error) {
+	// req is caller-built, same as every other verb function's internally
+	// built request in this file — always against a DataRobot endpoint
+	// resolved via config.GetEndpointURL/drapi.EndpointURL, never arbitrary
+	// user- or network-supplied input, so this isn't an SSRF sink.
+	return NewHTTPClient(timeout).Do(req) //nolint:gosec // req comes from a caller-built DataRobot endpoint URL, not external input
 }

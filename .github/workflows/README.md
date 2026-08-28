@@ -61,6 +61,7 @@ One extension everywhere: **`.yaml`**.
 | `manual-smoke.yaml` | `workflow_dispatch` | Manual deps / install-integration / installation smoke suites (`suite` input). |
 | `nightly-smoke.yaml` | `push → main`, `schedule`, `dispatch` | Full smoke matrix + install/self-update tests + Slack on failure. |
 | `release.yaml` | `push tags v*` | GoReleaser release → verify-installation → pre-release smoke → promote. |
+| `dev-image.yaml` | `push → main`, `dispatch` | Build and push a floating multi-arch `ghcr.io/datarobot-oss/cli:dev` Docker image. |
 | `pages.yaml` | `push → main`, `dispatch` | Build and deploy the MkDocs site to GitHub Pages. |
 
 ## Composite actions

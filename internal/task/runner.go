@@ -45,7 +45,7 @@ type RunnerOpts struct {
 	Stdin      *os.File
 }
 
-// Runner uses Taskfile to run template tasks
+// Runner uses Taskfile to run template tasks.
 type Runner struct {
 	opts RunnerOpts
 }
@@ -91,7 +91,7 @@ func (r *Runner) ListTasks() ([]Task, error) {
 		args = append(args, "-t", r.opts.Taskfile)
 	}
 
-	cmd := exec.Command(r.opts.BinaryName, args...)
+	cmd := exec.Command(r.opts.BinaryName, args...) //nolint:gosec // subprocess launched with validated input
 
 	cmd.Dir = r.opts.Dir
 
@@ -123,6 +123,7 @@ type RunOpts struct {
 	ExitCode    bool
 	Concurrency int
 	TaskArgs    []string // Additional arguments to pass to the task command
+	Env         []string
 }
 
 func (o *RunOpts) RunArgs() []string {
@@ -169,13 +170,17 @@ func (r *Runner) Run(tasks []string, opts RunOpts) error {
 		args = append(args, opts.TaskArgs...)
 	}
 
-	cmd := exec.Command(r.opts.BinaryName, args...)
+	cmd := exec.Command(r.opts.BinaryName, args...) //nolint:gosec // subprocess launched with validated input
 
 	cmd.Dir = r.opts.Dir
 
 	cmd.Stdout = r.opts.Stdout
 	cmd.Stderr = r.opts.Stderr
+
 	cmd.Stdin = r.opts.Stdin
+	if len(opts.Env) > 0 {
+		cmd.Env = append(os.Environ(), opts.Env...)
+	}
 
 	return cmd.Run()
 }

@@ -41,7 +41,7 @@ type promptModel struct {
 	Values     []string
 	successCmd tea.Cmd
 	loading    bool
-	spinner    spinner.Model
+	spinner    tui.Loading
 }
 
 var (
@@ -125,18 +125,14 @@ func newPromptModel(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptMod
 }
 
 func newLLMListPromptAsync(prompt envbuilder.UserPrompt, successCmd tea.Cmd) (promptModel, tea.Cmd) {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = tui.InfoStyle
-
 	pm := promptModel{
 		prompt:     prompt,
 		successCmd: successCmd,
 		loading:    true,
-		spinner:    s,
+		spinner:    tui.NewLoading(),
 	}
 
-	return pm, tea.Batch(pm.spinner.Tick, loadLLMCatalogCmd())
+	return pm, tea.Batch(pm.spinner.Init(), loadLLMCatalogCmd())
 }
 
 func loadLLMCatalogCmd() tea.Cmd {

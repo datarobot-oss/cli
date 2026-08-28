@@ -1,0 +1,30 @@
+{
+  "name": "DataRobot CLI (Go 1.26)",
+  "image": "mcr.microsoft.com/devcontainers/go:2-1.26-bookworm",
+  "features": {
+    "ghcr.io/eitsupi/devcontainer-features/go-task:1": {},
+    "ghcr.io/va-h/devcontainers-features/uv:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "task.vscode-task"
+      ],
+      "settings": {
+        "go.useLanguageServer": true,
+        "[go]": {
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        }
+      }
+    }
+  },
+  "updateContentCommand": "bash .devcontainer/sync-go.sh",
+  "postCreateCommand": "task bootstrap",
+  "waitFor": "postCreateCommand"
+}

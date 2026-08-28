@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -47,9 +48,28 @@ func ParseArtifactStatus(s string) (string, error) {
 }
 
 type Artifact struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+
+	// Type is what kind of thing this is: a service, an agent. It sits beside
+	// the spec rather than in it, because the platform reads the discriminator
+	// from the artifact and pops any type sent inside the spec. An artifact
+	// repository takes its own type from whichever artifact opened it, so this
+	// is what says whether a later version can still join that lineage.
+	Type string `json:"type"`
+
+	// ArtifactRepositoryID is the lineage this artifact belongs to. Successive
+	// versions of one thing share it, which is the only way to tell them from
+	// unrelated artifacts that happen to carry the same name.
+	ArtifactRepositoryID string `json:"artifactRepositoryId"`
+
+	// Version numbers this artifact within its repository. A pointer because
+	// the platform sends null for a draft and assigns a number only on
+	// locking, and an unnumbered draft is a different thing from a version 0
+	// that no repository ever issues.
+	Version *int `json:"version"`
+
 	Spec      Spec      `json:"spec"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -64,6 +84,10 @@ type ContainerGroup struct {
 }
 
 type Container struct {
+	// Name is the container's identifier within its group. Workload runtime
+	// overrides (e.g. resourceAllocation) must reference the container by this
+	// name, so it is parsed for callers that build a runtime spec.
+	Name             string            `json:"name,omitempty"`
 	ImageBuildConfig *ImageBuildConfig `json:"imageBuildConfig,omitempty"`
 	// ImageURI is the resolved container image reference. Server-managed:
 	// before a successful build this is the placeholder from create; after
@@ -71,8 +95,34 @@ type Container struct {
 	ImageURI string `json:"imageUri,omitempty"`
 	// *bool so an absent value round-trips as nil and omitempty drops it
 	// on marshal, instead of re-asserting `false` back to the server.
-	Primary *bool `json:"primary,omitempty"`
+	Primary         *bool            `json:"primary,omitempty"`
+	EnvironmentVars []EnvironmentVar `json:"environmentVars,omitempty"`
 }
+
+// EnvironmentVar is one entry in a container's environmentVars array. A plain
+// var carries Value directly; a credential-backed var has Source ==
+// "dr-credential" and carries DRCredentialID/Key instead, so the secret never
+// appears in the spec. Source is omitempty because the server defaults plain
+// vars to "string".
+//
+// Key selects which field of the credential to use, not to be confused with
+// Name (the env var's own name): one stored credential can bundle several
+// fields, as an S3 credential bundles awsAccessKeyId and awsSecretAccessKey.
+type EnvironmentVar struct {
+	Source         string `json:"source,omitempty"`
+	Name           string `json:"name"`
+	Value          string `json:"value,omitempty"`
+	DRCredentialID string `json:"drCredentialId,omitempty"`
+	Key            string `json:"key,omitempty"`
+}
+
+// EnvironmentVarSourceDRCredential marks a variable the platform resolves from
+// the credential store at container start.
+const EnvironmentVarSourceDRCredential = "dr-credential"
+
+// defaultPrimaryContainerName is the name the CLI writes into the specs it
+// generates, and the fallback for an unnamed primary container.
+const defaultPrimaryContainerName = "primary"
 
 type ImageBuildConfig struct {
 	CodeRef    *CodeRef    `json:"codeRef,omitempty"`
@@ -99,9 +149,18 @@ type DatarobotCodeRef struct {
 }
 
 type ArtifactOutput struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+
+	// ArtifactRepositoryID and Version place the artifact in its lineage.
+	// Neither is omitempty: the text and JSON forms of a command have to carry
+	// the same fields, and a key that comes and goes with the artifact's status
+	// is one a script cannot rely on. A draft's version is null rather than 0,
+	// which says unnumbered instead of naming a version no repository issues.
+	ArtifactRepositoryID string `json:"artifactRepositoryId"`
+	Version              *int   `json:"version"`
+
 	CatalogID string `json:"catalogId"`
 	VersionID string `json:"versionId"`
 	CreatedAt string `json:"createdAt"`
@@ -110,11 +169,13 @@ type ArtifactOutput struct {
 
 func NewArtifactOutput(a Artifact) ArtifactOutput {
 	out := ArtifactOutput{
-		ID:        a.ID,
-		Name:      a.Name,
-		Status:    a.Status,
-		CreatedAt: a.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: a.UpdatedAt.Format(time.RFC3339),
+		ID:                   a.ID,
+		Name:                 a.Name,
+		Status:               a.Status,
+		ArtifactRepositoryID: a.ArtifactRepositoryID,
+		Version:              a.Version,
+		CreatedAt:            a.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            a.UpdatedAt.Format(time.RFC3339),
 	}
 
 	if codeRef := ExtractCodeRef(a); codeRef != nil {
@@ -126,34 +187,48 @@ func NewArtifactOutput(a Artifact) ArtifactOutput {
 }
 
 func (a *Artifact) IsLocked() bool {
-	return strings.EqualFold(a.Status, ArtifactStatusLocked)
+	return IsLockedStatus(a.Status)
 }
 
-// ExtractCodeRef mirrors the write-side selection in setPrimaryCodeRefInRawArtifact:
-// once a primary container is found it commits, returning nil if the primary
-// has no codeRef rather than falling through to a sidecar (which would surface
-// stale catalog info in display). Falls back to containerGroups[0].containers[0]
-// when no container is flagged primary.
-func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
-	for _, group := range artifact.Spec.ContainerGroups {
-		for _, container := range group.Containers {
-			if container.Primary == nil || !*container.Primary {
-				continue
-			}
+// IsLockedStatus is the same question asked of a status read off a raw
+// document, for a caller that already has the artifact as the server sent it
+// and should not fetch it again to get a typed struct to ask.
+func IsLockedStatus(status string) bool {
+	return strings.EqualFold(status, ArtifactStatusLocked)
+}
 
-			return codeRefFromContainer(container)
+// primaryContainer is the single definition of which container the CLI reads
+// per-container fields from: the one flagged "primary": true, falling back to
+// containerGroups[0].containers[0], nil when the artifact has neither. Every
+// exported Primary* helper goes through it so they cannot disagree. Mirrors
+// setPrimaryCodeRefInRawArtifact: once a primary is found it commits rather
+// than falling through to a sidecar.
+func primaryContainer(artifact Artifact) *Container {
+	for i, group := range artifact.Spec.ContainerGroups {
+		for j, container := range group.Containers {
+			if container.Primary != nil && *container.Primary {
+				return &artifact.Spec.ContainerGroups[i].Containers[j]
+			}
 		}
 	}
 
-	if len(artifact.Spec.ContainerGroups) == 0 {
+	if len(artifact.Spec.ContainerGroups) == 0 || len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
 		return nil
 	}
 
-	if len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
+	return &artifact.Spec.ContainerGroups[0].Containers[0]
+}
+
+// ExtractCodeRef returns the primary container's codeRef, or nil when the
+// primary has no codeRef (rather than falling through to a sidecar, which
+// would surface stale catalog info in display).
+func ExtractCodeRef(artifact Artifact) *DatarobotCodeRef {
+	container := primaryContainer(artifact)
+	if container == nil {
 		return nil
 	}
 
-	return codeRefFromContainer(artifact.Spec.ContainerGroups[0].Containers[0])
+	return codeRefFromContainer(*container)
 }
 
 func codeRefFromContainer(container Container) *DatarobotCodeRef {
@@ -164,31 +239,42 @@ func codeRefFromContainer(container Container) *DatarobotCodeRef {
 	return container.ImageBuildConfig.CodeRef.Datarobot
 }
 
-// GetPrimaryContainerImageURI returns the imageUri of the primary container
-// (the one flagged "primary": true), falling back to
-// containerGroups[0].containers[0] when no primary is marked. Mirrors
-// ExtractCodeRef's selection semantics so reads and writes target the same
-// container after a build updates the spec server-side.
+// GetPrimaryContainerImageURI returns the imageUri of the primary container.
+// Server-managed: the placeholder from create before a build, the produced
+// image after one completes.
 func GetPrimaryContainerImageURI(artifact Artifact) string {
-	for _, group := range artifact.Spec.ContainerGroups {
-		for _, container := range group.Containers {
-			if container.Primary == nil || !*container.Primary {
-				continue
-			}
-
-			return container.ImageURI
-		}
-	}
-
-	if len(artifact.Spec.ContainerGroups) == 0 {
+	container := primaryContainer(artifact)
+	if container == nil {
 		return ""
 	}
 
-	if len(artifact.Spec.ContainerGroups[0].Containers) == 0 {
-		return ""
+	return container.ImageURI
+}
+
+// PrimaryEnvironmentVars returns the environmentVars of the primary container,
+// nil when the artifact has no containers.
+func PrimaryEnvironmentVars(artifact Artifact) []EnvironmentVar {
+	container := primaryContainer(artifact)
+	if container == nil {
+		return nil
 	}
 
-	return artifact.Spec.ContainerGroups[0].Containers[0].ImageURI
+	return container.EnvironmentVars
+}
+
+// PrimaryContainerName returns the name of the artifact's primary container.
+// Callers building a workload runtime spec need it because resourceAllocation
+// overrides are keyed by container name and must match a container in the
+// artifact. An unnamed primary falls back to "primary", which is the CLI's own
+// convention rather than a guarantee: a hand-written artifact that leaves its
+// primary blank will not match, and the server decides what to do with that.
+func PrimaryContainerName(artifact Artifact) string {
+	container := primaryContainer(artifact)
+	if container == nil || container.Name == "" {
+		return defaultPrimaryContainerName
+	}
+
+	return container.Name
 }
 
 func GetArtifact(artifactID string) (*Artifact, error) {
@@ -443,18 +529,38 @@ func DeleteArtifact(artifactID string) error {
 	return drapi.DeleteJSON(url, "artifact", nil, nil)
 }
 
-func ListArtifacts(limit int, status Status) ([]Artifact, error) {
-	endpoint := "/api/v2/artifacts/?limit=" + strconv.Itoa(limit)
-
-	if status != "" {
-		endpoint += "&status=" + string(status)
+// ListArtifacts fetches up to limit artifacts starting at offset, optionally
+// filtered by status. It validates its arguments and clamps the page size to
+// the server-enforced ceiling, mirroring ListWorkloads.
+func ListArtifacts(limit, offset int, status Status) ([]Artifact, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	pageURL, err := config.GetEndpointURL(endpoint)
+	if offset < 0 {
+		return nil, fmt.Errorf("invalid offset %d: must be non-negative", offset)
+	}
+
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(min(limit, maxPageSize)))
+	query.Set("offset", strconv.Itoa(offset))
+
+	if status != "" {
+		query.Set("status", string(status))
+	}
+
+	pageURL, err := drapi.EndpointURL("/artifacts/", query)
 	if err != nil {
 		return nil, err
 	}
 
+	return paginateArtifacts(pageURL, limit)
+}
+
+// paginateArtifacts follows next-links from pageURL, accumulating artifacts
+// until limit is reached or the pages run out. Split from ListArtifacts to
+// keep that function's cyclomatic complexity under the linter threshold.
+func paginateArtifacts(pageURL string, limit int) ([]Artifact, error) {
 	var all []Artifact
 
 	for pageURL != "" {

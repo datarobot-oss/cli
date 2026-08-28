@@ -89,11 +89,11 @@ var EditCmd = &cobra.Command{
 		}
 
 		m := Model{
-			initialScreen: screen,
-			DotenvFile:    dotenvFile,
-			variables:     variables,
-			contents:      contents,
-			SuccessCmd:    tea.Quit,
+			screen:     screen,
+			DotenvFile: dotenvFile,
+			variables:  variables,
+			contents:   contents,
+			SuccessCmd: tea.Quit,
 		}
 		_, err = tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 
@@ -152,13 +152,9 @@ This wizard will help you:
 		}
 
 		showAllPrompts, _ := cmd.Flags().GetBool("all")
-		// Read --yes directly from flags rather than through viper to
-		// avoid the flag value leaking into viper.AllSettings() (and from
-		// there into drconfig.yaml on subsequent writes). The
-		// DATAROBOT_CLI_NON_INTERACTIVE environment variable still flows
-		// through viper via BindEnv below.
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-		yes := yesFlag || viperx.GetBool("yes")
+		// Merge --yes and DATAROBOT_CLI_NON_INTERACTIVE via the shared helper so the
+		// transient flag never leaks into viper.AllSettings().
+		yes := cli.IsNonInteractive(cmd)
 
 		// When --yes is set, run fully non-interactive setup without TUI
 		if yes {
@@ -190,20 +186,16 @@ This wizard will help you:
 		dotenvFileLines, _ := readDotenvFile(dotenvFile)
 		variables, contents := envbuilder.VariablesFromLines(dotenvFileLines)
 
-		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
-
 		m := Model{
-			initialScreen:         wizardScreen,
-			DotenvFile:            dotenvFile,
-			variables:             variables,
-			contents:              contents,
-			SuccessCmd:            tea.Quit,
-			ShowAllPrompts:        showAllPrompts,
-			Yes:                   yes,
-			NeedsPulumiLogin:      needsPulumi,
-			PulumiAlreadyLoggedIn: pulumiLoggedIn,
-			NeedsPulumiPassphrase: needsPassphrase,
+			DotenvFile:     dotenvFile,
+			variables:      variables,
+			contents:       contents,
+			SuccessCmd:     tea.Quit,
+			ShowAllPrompts: showAllPrompts,
 		}
+
+		needsPulumi, pulumiLoggedIn, needsPassphrase := CheckPulumiSetup(repositoryRoot, variables)
+		m.ConfigureFromPulumiCheck(needsPulumi, pulumiLoggedIn, needsPassphrase, yes)
 
 		finalModel, err := tui.Run(m, tea.WithAltScreen(), tea.WithContext(cmd.Context()))
 		if err != nil {
@@ -234,15 +226,15 @@ This wizard will help you:
 func init() {
 	SetupCmd.Flags().Bool("if-needed", false, "Only run setup if '.env' file doesn't exist or there are missing env vars.")
 	SetupCmd.Flags().BoolP("all", "a", false, "Show all prompts including those with default values already set.")
-	SetupCmd.Flags().BoolP("yes", "y", false, "Skip interactive prompts and use defaults (useful for automation).")
+	SetupCmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts and use defaults (useful for automation).")
 	SetupCmd.Flags().StringP("output", "o", "", "Directory where the '.env' file should be written (defaults to repository root). This option skips the logic of finding the repository root.")
-	SetupCmd.MarkFlagsMutuallyExclusive("yes", "all")
+	SetupCmd.MarkFlagsMutuallyExclusive(cli.YesFlagName, "all")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper.
 	// The --yes flag itself is read directly from cmd.Flags() in RunE so
 	// that an explicit --yes does not leak into viper.AllSettings() and
 	// get persisted to drconfig.yaml on subsequent config writes.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.Track(SetupCmd)
 	telemetry.Track(UpdateCmd)
@@ -250,13 +242,9 @@ func init() {
 }
 
 // shouldSkipSetup checks if setup should be skipped when --if-needed flag is set.
-// Returns true if .env file exists and all required variables are valid.
-//
-// Note: This uses ParseVariablesOnly to read only what's in the .env file, but
-// ValidateEnvironment also checks OS environment variables via os.LookupEnv.
-// This means validation can pass if required variables are set as environment
-// variables even if they're not in the .env file. This is intentional - if the
-// app can run (because vars are available from any source), setup can be skipped.
+// Returns true if .env file exists and all required variables are present in the
+// .env file itself. OS environment variables are intentionally ignored for the
+// skip decision so that an incomplete .env file still triggers the wizard.
 func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 	if _, err := os.Stat(dotenvFile); err != nil {
 		// .env doesn't exist, don't skip
@@ -266,7 +254,7 @@ func shouldSkipSetup(repositoryRoot, dotenvFile string) (bool, error) {
 	dotenvFileLines, _ := readDotenvFile(dotenvFile)
 	variables := envbuilder.ParseVariablesOnly(dotenvFileLines)
 
-	result := envbuilder.ValidateEnvironment(repositoryRoot, variables)
+	result := envbuilder.ValidateEnvironmentFileOnly(repositoryRoot, variables)
 
 	return !result.HasErrors(), nil
 }

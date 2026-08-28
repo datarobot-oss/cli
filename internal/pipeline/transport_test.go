@@ -34,14 +34,14 @@ import (
 func installSkipAuth(t *testing.T) {
 	t.Helper()
 
-	prevSkip := viperx.GetBool("skip_auth")
+	prevSkip := viperx.GetBool(config.SkipAuthKey)
 	prevTok := viperx.GetString(config.DataRobotAPIKey)
 
-	viperx.Set("skip_auth", true)
+	viperx.Set(config.SkipAuthKey, true)
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
 	t.Cleanup(func() {
-		viperx.Set("skip_auth", prevSkip)
+		viperx.Set(config.SkipAuthKey, prevSkip)
 		viperx.Set(config.DataRobotAPIKey, prevTok)
 	})
 }

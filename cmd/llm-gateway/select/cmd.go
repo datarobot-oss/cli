@@ -17,6 +17,7 @@ package selectcmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/auth"
@@ -31,12 +32,12 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "select [llm-id]",
-		Short:        "Set the default LLM Gateway model",
+		Short:        "Set the default LLM",
 		Args:         cobra.MaximumNArgs(1),
 		SilenceUsage: true,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			llmList, err := drapi.GetLLMs()
+			llmList, err := drapi.GetLLMsAndDeployed()
 			if err != nil {
 				return err
 			}
@@ -50,6 +51,13 @@ func Cmd() *cobra.Command {
 			}
 
 			if err != nil {
+				// One source may have failed while the other returned a partial
+				// list. Surface that so a "not found" isn't blamed on the user
+				// when the model is really just missing from an unreachable source.
+				if len(llmList.Warnings) > 0 {
+					return fmt.Errorf("%w (%s)", err, strings.Join(llmList.Warnings, "; "))
+				}
+
 				return err
 			}
 
@@ -81,12 +89,12 @@ func findByID(llms []drapi.LLM, id string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("LLM %q not found in the active catalog", id)
+	return "", fmt.Errorf("LLM %q not found", id)
 }
 
 func runPicker(llms []drapi.LLM) (string, error) {
 	if len(llms) == 0 {
-		return "", errors.New("no active LLMs available in the LLM Gateway catalog")
+		return "", errors.New("no active LLMs available")
 	}
 
 	m := NewPickerModel(llms)

@@ -29,7 +29,7 @@ import (
 // NAME="Bazzite"
 // VERSION="43.20260420.0 (Silverblue)"
 // ID=bazzite
-// VERSION_ID=43
+// VERSION_ID=43.
 func osVersion() string {
 	f, err := os.Open("/etc/os-release")
 	if err != nil {

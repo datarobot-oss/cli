@@ -29,10 +29,23 @@ type llmItem struct {
 	name     string
 	provider string
 	model    string
+	kind     string
 }
 
-func (i llmItem) Title() string       { return i.name }
-func (i llmItem) Description() string { return i.provider + " · " + i.model }
+func (i llmItem) Title() string { return i.name }
+
+// Description is the dim second line under each row. Deployed LLMs carry no
+// provider and only the litellm sentinel model, so surface the source and the
+// deployment id (what the user selects by) instead of an empty "· sentinel".
+func (i llmItem) descriptionText() string {
+	if i.kind == drapi.LLMKindDeployed {
+		return "deployed · " + i.llmID
+	}
+
+	return i.provider + " · " + i.model
+}
+
+func (i llmItem) Description() string { return i.descriptionText() }
 func (i llmItem) FilterValue() string { return i.name }
 
 type llmItemDelegate struct{}
@@ -60,7 +73,7 @@ func (d llmItemDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 		fmt.Fprint(w, titleStyle.Render("▶ "+i.name))
 		fmt.Fprint(w, "\n")
-		fmt.Fprint(w, descStyle.Render("  "+i.provider+" · "+i.model))
+		fmt.Fprint(w, descStyle.Render("  "+i.descriptionText()))
 	} else {
 		titleStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"})
@@ -71,7 +84,7 @@ func (d llmItemDelegate) Render(w io.Writer, m list.Model, index int, listItem l
 
 		fmt.Fprint(w, titleStyle.Render("  "+i.name))
 		fmt.Fprint(w, "\n")
-		fmt.Fprint(w, descStyle.Render("  "+i.provider+" · "+i.model))
+		fmt.Fprint(w, descStyle.Render("  "+i.descriptionText()))
 	}
 }
 
@@ -91,6 +104,7 @@ func NewPickerModel(llms []drapi.LLM) PickerModel {
 			name:     l.Name,
 			provider: l.Provider,
 			model:    l.Model,
+			kind:     l.Kind,
 		}
 	}
 

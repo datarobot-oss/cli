@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/cmd/helpers"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/dependencies"
 	"github.com/datarobot/cli/internal/log"
@@ -46,7 +47,7 @@ func Cmd() *cobra.Command {
 		Short: "📦 Install missing template dependencies",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			yesFlag = opts.Yes
-			nonInteractive = viperx.GetBool("yes")
+			nonInteractive = cli.IsNonInteractive(cmd)
 
 			log.Debug("deps: install start", "yes", yesFlag, "non_interactive", nonInteractive)
 
@@ -69,7 +70,7 @@ func Cmd() *cobra.Command {
 				if err != nil {
 					cmd.SilenceUsage = true
 
-					return err
+					return fmt.Errorf("confirm install: %w", err)
 				}
 
 				if !yes {
@@ -88,7 +89,7 @@ func Cmd() *cobra.Command {
 				installError = err.Error()
 				cmd.SilenceUsage = true
 
-				return err
+				return fmt.Errorf("install prerequisites: %w", err)
 			}
 
 			log.Debug("deps: install complete", "installed", installSuccess)
@@ -97,9 +98,9 @@ func Cmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVarP(&opts.Yes, "yes", "y", false, `Assume "yes" as answer to the install prompt.`)
+	cmd.Flags().BoolVarP(&opts.Yes, cli.YesFlagName, "y", false, `Assume "yes" as answer to the install prompt.`)
 
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{

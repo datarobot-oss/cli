@@ -91,6 +91,34 @@ if format == outputformat.OutputFormatJSON {
 
 The envelope format is `{"<key>": <data>}`, which ensures output is always a JSON object (never a bare array). This makes the output forward-compatible for adding metadata, pagination, or warnings without breaking callers.
 
+### PrintJSONEnvelopeWithMeta
+
+When you need top-level metadata siblings alongside the primary data key (for example, a `source` field naming where data came from), use `outputformat.PrintJSONEnvelopeWithMeta`:
+
+```go
+return outputformat.PrintJSONEnvelopeWithMeta(cmd.OutOrStdout(), "items", outputs,
+    map[string]any{"source": "drconfig.yaml"},
+)
+```
+
+This yields `{"items": <data>, "source": "drconfig.yaml"}`. It is otherwise identical to `PrintJSONEnvelope`; a metadata key that collides with the primary data key is not overwritten.
+
+### JSON output purity
+
+When the effective format is JSON, **stdout must contain only valid JSON**. Anything that would break `dr <cmd> --output-format json | jq .` (or `... 2>&1 | jq .`) is a bug.
+
+All non-JSON diagnostics belong on **stderr**, never stdout:
+
+- Cobra deprecation warnings (e.g. from `MarkDeprecated` / the legacy `-o`/`--format` shorthand)
+- Usage/help printed on error
+- Log lines, warnings, progress messages, update hints
+
+Concretely:
+
+- Write JSON via `fmt.Fprintln(cmd.OutOrStdout(), payload)` or `outputformat.PrintJSONEnvelope(os.Stdout, ...)` — never mix in non-JSON `fmt.Fprintln(cmd.OutOrStdout(), ...)` calls on the JSON path.
+- Return errors from `RunE` so cobra routes them to stderr; do not print errors to stdout.
+- If you need to emit a deprecation/notice alongside JSON output, write it to `cmd.ErrOrStderr()`.
+
 ## Universal flags (forwarded to plugins)
 
 Some root flags must be forwarded to plugin subprocesses as `DATAROBOT_CLI_*` environment variables so plugins can honour them (e.g. `--debug` → `DATAROBOT_CLI_DEBUG=1`). These are called **universal flags**.
@@ -322,14 +350,15 @@ Outside `internal/config/...`, all viper interaction goes through the
 Quick rules for new flags:
 
 - **Transient flags** (per-invocation): read directly via
-  `cmd.Flags().GetBool(...)`. Do not bind to viper.
+  `cmd.Flags().GetBool(...)` (for example `cli.YesFlagName`). Do not bind to viper.
 - **Env-var override needed?** Register only the env var with
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources in your
-  handler:
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with the shared
+  helper:
 
   ```go
-  yesFlag, _ := cmd.Flags().GetBool("yes")
-  yes := yesFlag || viperx.GetBool("yes")
+  _ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
+
+  nonInteractive := cli.IsNonInteractive(cmd)
   ```
 
 - **Sticky CLI preferences** (rare): bind via `viperx.BindPFlag` *and*

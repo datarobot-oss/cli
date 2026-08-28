@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -174,7 +175,7 @@ func TestValidateServerPaths_SkipsLocalDrivenEntries(t *testing.T) {
 // Phase-level regression: an unsafe path in plan.Downloads would
 // otherwise reach rb.Backup via backupDownloadTargets before any
 // per-call-site guard fired. The up-front check must short-circuit
-// before NewRollback runs, so no .wapi/.rollback dir is created and
+// before NewRollback runs, so no rollback dir is created and
 // no bytes outside e.projectDir are read.
 func TestPhase5Execute_RejectsUnsafePathBeforeAnyFilesystemOp(t *testing.T) {
 	dir := t.TempDir()
@@ -197,7 +198,7 @@ func TestPhase5Execute_RejectsUnsafePathBeforeAnyFilesystemOp(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "server returned unsafe download path")
 
-	_, statErr := os.Stat(filepath.Join(dir, ".wapi", rollbackDirName))
+	_, statErr := os.Stat(wapi.RollbackDir(dir))
 	assert.True(t, os.IsNotExist(statErr), "rollback dir must not be created when validation fails")
 
 	_, statErr = os.Stat(sentinel)

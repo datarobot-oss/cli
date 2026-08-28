@@ -31,27 +31,54 @@ import (
 type HTTPError struct {
 	StatusCode int
 	URL        string
-	Detail     string
+
+	// Detail is a best-effort, caller-parsed human-readable message (see
+	// workload/apiclient.LiftDetail) — not a structural guarantee. It comes
+	// back empty for reasons that have nothing to do with whether the
+	// request actually failed: the API's envelope shape, a proxy in the
+	// middle, a truncated body, even the caller's locale. Branch decisions
+	// on StatusCode, which the server always sets; use Detail for display
+	// only.
+	Detail string
+
+	// Body is up to 512 bytes of the error response, raw and uninterpreted.
+	// DataRobot's APIs do not agree on an error envelope (FastAPI services
+	// answer {"detail": ...}, the drflask Public API {"message": ...}, a
+	// proxy plain text), so drapi carries the bytes and a caller that knows
+	// its API's shape reads meaning into them — e.g. workload/apiclient.
+	Body []byte
 }
 
-// Error implements the error interface for HTTPError.
+// Error implements the error interface for HTTPError. Both shapes carry the
+// URL: a message like "Internal server error" identifies nothing without the
+// endpoint it came from.
 func (e *HTTPError) Error() string {
 	if e.Detail != "" {
-		return fmt.Sprintf("HTTP %d %s: %s", e.StatusCode, http.StatusText(e.StatusCode), e.Detail)
+		return fmt.Sprintf("HTTP %d %s: %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.Detail, e.URL)
 	}
 
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
 }
 
+// token is the cached API token. Every read and write takes tokenMu (declared
+// in client.go), including the accessors below: GetLLMsAndDeployed fetches two
+// endpoints at once, so a refresh path calling SetToken mid-fetch would race
+// the readers.
 var token string
 
 // GetToken returns the current cached API token.
 func GetToken() string {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	return token
 }
 
 // SetToken sets the cached API token.
 func SetToken(value string) {
+	tokenMu.Lock()
+	defer tokenMu.Unlock()
+
 	token = value
 }
 
@@ -60,17 +87,19 @@ func SetToken(value string) {
 // is in viper without contacting the server, so local development against
 // stub APIs that don't implement /version/ still works.
 func resolveToken() (string, error) {
-	if viperx.GetBool("skip_auth") {
+	if viperx.GetBool(config.SkipAuthKey) {
 		return viperx.GetString(config.DataRobotAPIKey), nil
 	}
 
 	return config.GetAPIKey(context.Background())
 }
 
-func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
-	timeout := DefaultClientTimeout
-	if len(timeoutSecs) > 0 {
-		timeout = time.Duration(timeoutSecs[0]) * time.Second
+// Get sends a GET request. timeout optionally overrides DefaultClientTimeout;
+// omitted, or ≤0, falls back to it (see NewHTTPClient).
+func Get(url, info string, timeout ...time.Duration) (*http.Response, error) {
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
 	}
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -83,12 +112,12 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	}
 
 	if info != "" {
-		log.Infof("Fetching %s from: %s", info, url)
+		log.Debugf("Fetching %s from: %s", info, url)
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	resp, err := NewHTTPClient(timeout).Do(req)
+	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +131,9 @@ func Get(url, info string, timeoutSecs ...int) (*http.Response, error) {
 	return resp, err
 }
 
-func GetJSON(url, info string, v any, timeoutSecs ...int) error {
-	resp, err := Get(url, info, timeoutSecs...)
+// GetJSON is Get with the response body decoded into v. timeout forwards to Get.
+func GetJSON(url, info string, v any, timeout ...time.Duration) error {
+	resp, err := Get(url, info, timeout...)
 	if err != nil {
 		return err
 	}

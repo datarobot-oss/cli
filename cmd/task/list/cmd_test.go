@@ -15,6 +15,11 @@
 package list
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/internal/outputformat"
@@ -25,51 +30,79 @@ import (
 )
 
 func TestTaskListJSON(t *testing.T) {
-	t.Skip("Skipping task list test - requires a DataRobot project directory with Taskfile")
+	projectDir := t.TempDir()
+	writeProjectFixture(t, projectDir, true)
+	writeFakeTaskBinary(t, filepath.Join(t.TempDir(), "task.log"))
 
-	// Create a root command with persistent output-format flag
 	root := &cobra.Command{Use: "test"}
 
 	var rootOutputFormat outputformat.OutputFormat
 	outputformat.AddPersistentFlag(root, &rootOutputFormat)
 
-	// Create and add the list command
-	listCmd := Cmd()
-	root.AddCommand(listCmd)
+	root.AddCommand(Cmd())
+	root.SetArgs([]string{"list", "--dir", projectDir, "--output-format", "json"})
 
-	// Parse args to set JSON output format
-	root.SetArgs([]string{"list", "--output-format", "json"})
+	var err error
 
-	// Execute the command - should not error
-	err := root.Execute()
+	out := captureStdout(t, func() { err = root.Execute() })
 	require.NoError(t, err)
 
-	// Test passes if command executes successfully with JSON format flag
-	// (actual output is tested via manual smoke tests)
+	var envelope struct {
+		Tasks []TaskOutput `json:"tasks"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope))
+	require.Len(t, envelope.Tasks, 1)
+	assert.Equal(t, "dev", envelope.Tasks[0].Name)
 }
 
 func TestTaskListText(t *testing.T) {
-	t.Skip("Skipping task list test - requires a DataRobot project directory with Taskfile")
+	projectDir := t.TempDir()
+	writeProjectFixture(t, projectDir, true)
+	writeFakeTaskBinary(t, filepath.Join(t.TempDir(), "task.log"))
 
-	// Create a root command with persistent output-format flag
 	root := &cobra.Command{Use: "test"}
 
 	var rootOutputFormat outputformat.OutputFormat
 	outputformat.AddPersistentFlag(root, &rootOutputFormat)
 
-	// Create and add the list command
-	listCmd := Cmd()
-	root.AddCommand(listCmd)
+	root.AddCommand(Cmd())
+	root.SetArgs([]string{"list", "--dir", projectDir})
 
-	// Execute with default text format
-	root.SetArgs([]string{"list"})
+	var err error
 
-	// Execute the command - should not error
-	err := root.Execute()
+	out := captureStdout(t, func() { err = root.Execute() })
 	require.NoError(t, err)
 
-	// Test passes if command executes successfully with default (text) format
-	// (actual output is tested via manual smoke tests)
+	assert.Contains(t, out, "Available Tasks")
+	assert.Contains(t, out, "dev")
+	assert.NotContains(t, out, `"tasks"`)
+}
+
+// captureStdout is local because the shared helper lives under
+// cmd/pipeline/internal, which this package cannot import.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stdout
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	os.Stdout = w
+
+	fn()
+
+	require.NoError(t, w.Close())
+
+	os.Stdout = old
+
+	var buf bytes.Buffer
+
+	_, err = io.Copy(&buf, r)
+	require.NoError(t, err)
+
+	return buf.String()
 }
 
 func TestToTaskOutputs(t *testing.T) {

@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/envbuilder"
+	"github.com/datarobot/cli/tui"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -221,7 +222,7 @@ func TestPromptModelView_LoadingState(t *testing.T) {
 	pm := promptModel{
 		prompt:  envbuilder.UserPrompt{Type: "llmgw_catalog", Env: "LLM_VAR", Help: "help text"},
 		loading: true,
-		spinner: spinner.New(),
+		spinner: tui.NewLoading(),
 	}
 
 	view := pm.View()

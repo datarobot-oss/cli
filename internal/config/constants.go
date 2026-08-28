@@ -20,7 +20,16 @@ const (
 
 	APIConsumerTrackingEnabled = "api-consumer-tracking-enabled"
 
-	// DefaultLLMID is the config key for the user's default LLM Gateway model ID.
+	// SkipAuthKey is the viper key behind the --skip-auth persistent flag.
+	//
+	// It must match the flag name exactly: viper lowercases keys but does not treat
+	// "-" and "_" as equivalent for lookups, so reading "skip_auth" silently missed
+	// the bound flag and only ever saw DATAROBOT_CLI_SKIP_AUTH. Use this constant at
+	// every bind and read site so the two cannot drift apart again.
+	SkipAuthKey = "skip-auth"
+
+	// DefaultLLMID is the config key for the user's default LLM ID. The value is
+	// either an LLM Gateway model id or a DataRobot deployment id.
 	DefaultLLMID = "default-llm-id"
 
 	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment

@@ -15,7 +15,29 @@
 package drapi
 
 import (
+	"errors"
+	"strings"
+	"sync"
+
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
+)
+
+// LLM source kinds. Gateway models come from the LLM Gateway catalog; deployed
+// models are DataRobot Deployments whose champion model is a TextGeneration
+// (chat) model, used on-prem or wherever the gateway catalog is empty.
+const (
+	LLMKindGateway  = "gateway"
+	LLMKindDeployed = "deployed"
+
+	// deployedModelSentinel is the litellm model string a deployed LLM is
+	// addressed by; the deployment id carries the actual routing. Matches the
+	// deployed-model .env contract consumed by downstream tooling.
+	deployedModelSentinel = "datarobot/datarobot-deployed-llm"
+
+	// targetTypeTextGeneration is the champion-model target type that marks a
+	// deployment as a chat LLM.
+	targetTypeTextGeneration = "TextGeneration"
 )
 
 type LLM struct {
@@ -25,10 +47,17 @@ type LLM struct {
 	IsActive bool   `json:"isActive"`
 	Model    string `json:"model"`
 
+	Description string `json:"description"`
+	ContextSize int    `json:"contextSize"`
+
+	// Kind and DeploymentID are set programmatically, not decoded from any API:
+	// gateway rows are LLMKindGateway; deployed rows are LLMKindDeployed and
+	// carry the deployment id.
+	Kind         string `json:"-"`
+	DeploymentID string `json:"-"`
+
 	//Version              string   `json:"version"`
-	//Description          string   `json:"description"`
 	//Creator              string   `json:"creator"`
-	//ContextSize          int      `json:"contextSize"`
 	//MaxCompletionTokens  int      `json:"maxCompletionTokens"`
 	//Capabilities         []string `json:"capabilities"`
 	//SupportedLanguages   []string `json:"supportedLanguages"`
@@ -61,6 +90,11 @@ type LLMList struct {
 	TotalCount int    `json:"totalCount"`
 	Next       string `json:"next"`
 	Previous   string `json:"previous"`
+
+	// Warnings is set programmatically (not decoded) by GetLLMsAndDeployed when
+	// one source failed but the other succeeded, so callers can surface why the
+	// list is partial instead of silently treating a missing source as empty.
+	Warnings []string `json:"-"`
 }
 
 func GetLLMs() (*LLMList, error) {
@@ -83,6 +117,7 @@ func GetLLMs() (*LLMList, error) {
 
 		for _, llm := range llmList.LLMs {
 			if llm.IsActive {
+				llm.Kind = LLMKindGateway
 				active = append(active, llm)
 			}
 		}
@@ -101,4 +136,148 @@ func GetLLMs() (*LLMList, error) {
 	llmList.LLMs = active
 
 	return &llmList, nil
+}
+
+// deployment is the subset of the /api/v2/deployments/ response the CLI needs
+// to present a deployed model as a selectable LLM.
+type deployment struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	Model       struct {
+		TargetType string `json:"targetType"`
+	} `json:"model"`
+}
+
+type deploymentList struct {
+	Data       []deployment `json:"data"`
+	Count      int          `json:"count"`
+	TotalCount int          `json:"totalCount"`
+	Next       string       `json:"next"`
+	Previous   string       `json:"previous"`
+}
+
+// GetDeployedLLMs lists DataRobot Deployments serving as chat LLMs (champion
+// model target type TextGeneration). The server-side championModelTargetType
+// filter is honored on recent platforms; older on-prem builds ignore unknown
+// query params and return every deployment, so rows are re-filtered
+// client-side on target type and active status.
+func GetDeployedLLMs() ([]LLM, error) {
+	url, err := config.GetEndpointURL("/api/v2/deployments/?championModelTargetType=" + targetTypeTextGeneration + "&limit=100")
+	if err != nil {
+		return nil, err
+	}
+
+	var deployed []LLM
+
+	for url != "" {
+		var dl deploymentList
+
+		if err = GetJSON(url, "deployed LLMs", &dl); err != nil {
+			return nil, err
+		}
+
+		for _, d := range dl.Data {
+			if d.Model.TargetType != targetTypeTextGeneration || !strings.EqualFold(d.Status, "active") {
+				continue
+			}
+
+			// A deployment's label is nullable; fall back to its id so the name
+			// column is never blank.
+			name := d.Label
+			if name == "" {
+				name = d.ID
+			}
+
+			deployed = append(deployed, LLM{
+				LlmID:        d.ID,
+				Name:         name,
+				Model:        deployedModelSentinel,
+				Description:  d.Description,
+				IsActive:     true,
+				Kind:         LLMKindDeployed,
+				DeploymentID: d.ID,
+			})
+		}
+
+		if dl.Next == "" {
+			break
+		}
+
+		if err = AssertNextOnSameHost(dl.Next); err != nil {
+			return nil, err
+		}
+
+		url = dl.Next
+	}
+
+	return deployed, nil
+}
+
+// GetLLMsAndDeployed returns the union of LLM Gateway catalog models and
+// DataRobot-deployed LLMs. Each source is best-effort: a single-source failure
+// is logged and the other source is still returned, so an empty or disabled
+// gateway (common on-prem) or missing deployment access does not blank the
+// list. An error is returned only when both sources fail.
+//
+// The sources are fetched concurrently. Each is a paginated round-trip set, so
+// the caller waits on the slower one instead of both.
+//
+// Keep this call outside a running TUI. Both goroutines log through
+// internal/log, whose stderrLogger global tui.Run rewrites. Nothing overlaps
+// today because select starts its picker after this returns, but wrapping the
+// fetch in a spinner would make that a live race.
+func GetLLMsAndDeployed() (*LLMList, error) {
+	var (
+		gateway  *LLMList
+		deployed []LLM
+		gwErr    error
+		depErr   error
+		wg       sync.WaitGroup
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		gateway, gwErr = GetLLMs()
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		deployed, depErr = GetDeployedLLMs()
+	}()
+
+	wg.Wait()
+
+	var warnings []string
+
+	if gwErr != nil {
+		warnings = append(warnings, "LLM Gateway catalog unavailable: "+gwErr.Error())
+
+		log.Warnf("Could not list LLM Gateway models: %s", gwErr.Error())
+	}
+
+	if depErr != nil {
+		warnings = append(warnings, "DataRobot-deployed LLMs unavailable: "+depErr.Error())
+
+		log.Warnf("Could not list DataRobot-deployed LLMs: %s", depErr.Error())
+	}
+
+	if gwErr != nil && depErr != nil {
+		return nil, errors.Join(gwErr, depErr)
+	}
+
+	var llms []LLM
+
+	if gateway != nil {
+		llms = append(llms, gateway.LLMs...)
+	}
+
+	llms = append(llms, deployed...)
+
+	return &LLMList{LLMs: llms, Count: len(llms), TotalCount: len(llms), Warnings: warnings}, nil
 }

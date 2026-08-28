@@ -37,6 +37,7 @@ const (
 	Zsh        Shell = "zsh"
 	Fish       Shell = "fish"
 	PowerShell Shell = "powershell"
+	Cmd        Shell = "cmd"
 )
 
 func SupportedShells() []string {
@@ -45,6 +46,7 @@ func SupportedShells() []string {
 		string(Zsh),
 		string(Fish),
 		string(PowerShell),
+		string(Cmd),
 	}
 }
 
@@ -53,11 +55,16 @@ func SupportedShells() []string {
 // its process name as "pwsh" (or "pwsh.exe" on Windows), but the CLI uses the
 // constant "powershell" for all PowerShell variants.
 func normalizeShellName(name string) string {
-	if name == "pwsh" {
+	switch name {
+	case "pwsh":
 		return string(PowerShell)
+	case "cmd.exe":
+		// $SHELL (rare on Windows) may carry the .exe suffix; the parent-process
+		// path already strips it, so canonicalize here for the fallback case.
+		return string(Cmd)
+	default:
+		return name
 	}
-
-	return name
 }
 
 // isSupportedShell reports whether name is one of the shells the CLI supports
@@ -90,6 +97,13 @@ func DetectShell() (string, error) {
 		return normalizeShellName(filepath.Base(shellPath)), nil
 	}
 
+	// On Windows, $SHELL is a Unix convention and is normally unset, and the
+	// parent process is often a non-shell (e.g. the installer). Default to
+	// PowerShell, which the CLI fully supports, rather than failing detection.
+	if runtime.GOOS == "windows" {
+		return string(PowerShell), nil
+	}
+
 	return "", errors.New("Could not detect shell. Please set SHELL environment variable")
 }
 
@@ -99,13 +113,24 @@ func parentProcessNameWindows(ppid int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output()
+	out, err := exec.CommandContext(ctx, "tasklist", "/FI", "PID eq "+strconv.Itoa(ppid), "/NH", "/FO", "CSV").Output() //nolint:gosec // subprocess launched with validated input
 	if err != nil {
 		return ""
 	}
 
-	// Output: "powershell.exe","12345","Console","1","4,000 K"
-	line := strings.TrimSpace(string(out))
+	return parseTasklistName(string(out))
+}
+
+// parseTasklistName extracts the lowercase process name (without the .exe
+// suffix) from a single tasklist CSV row. The expected format is:
+//
+//	"powershell.exe","12345","Console","1","4,000 K"
+//
+// It returns an empty string when the row cannot be parsed. This is split out
+// from parentProcessNameWindows so the CSV parsing can be unit-tested on any
+// platform (tasklist itself only exists on Windows).
+func parseTasklistName(output string) string {
+	line := strings.TrimSpace(output)
 
 	idx := strings.Index(line, ",")
 	if idx <= 0 {
@@ -140,7 +165,7 @@ func parentProcessName() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output()
+	out, err := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(ppid), "-o", "comm=").Output() //nolint:gosec // subprocess launched with validated input
 	if err != nil {
 		return ""
 	}

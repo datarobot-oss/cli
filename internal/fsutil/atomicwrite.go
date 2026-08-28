@@ -1,0 +1,224 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package fsutil
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// DefaultFileMode is the permission CLI-written data files get: readable by
+// anyone who can read the project, writable by the owner. Exported so callers
+// that open a file themselves (an append-only log, say) stay consistent with
+// what AtomicWriteFile leaves behind.
+const DefaultFileMode os.FileMode = 0o644
+
+// ownerOnlyFileMode is what a new file gets when the umask cannot be measured.
+// Narrower than DefaultFileMode on purpose: the measurement exists to stop a
+// file being widened past what the user's umask allows, so failing it must not
+// hand out the very mode that was in question.
+const ownerOnlyFileMode os.FileMode = 0o600
+
+// targetMode is the permission the written file should end up with.
+//
+// Replacing a file keeps the mode it already had: a user who tightened
+// something to 0600 should not find it widened by an unrelated edit. A new
+// file gets what a plain create would give it, umask included, because
+// os.CreateTemp makes the temp file 0600 and chmodding to a fixed mode would
+// hand a developer with a restrictive umask a wider file than everything else
+// they write.
+//
+// probePath is where the umask gets measured: a scratch path in the directory
+// the file will live in, never the destination itself. Measuring on the
+// destination would create it here, and any later failure would then leave an
+// empty file where there had been none, which is the one outcome
+// AtomicWriteFile promises never to produce.
+func targetMode(path, probePath string) (os.FileMode, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		return info.Mode().Perm(), nil
+	}
+
+	if !errors.Is(err, os.ErrNotExist) {
+		return 0, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	// The cheapest way to learn what the umask allows is to let the kernel
+	// apply it, in the directory the file is going to live in.
+	probe, err := os.OpenFile(probePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, DefaultFileMode)
+	if err != nil {
+		return ownerOnlyFileMode, nil
+	}
+
+	defer func() { _ = os.Remove(probePath) }()
+
+	if err = probe.Close(); err != nil {
+		return 0, fmt.Errorf("close %s: %w", probePath, err)
+	}
+
+	info, err = os.Stat(probePath)
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", probePath, err)
+	}
+
+	return info.Mode().Perm(), nil
+}
+
+// resolveWriteTarget resolves a symlinked path to its target so the write
+// goes through the link instead of replacing it. Lstat is the primary fact:
+// only when the caller's final path component is itself a symlink does
+// EvalSymlinks run, so plain files never pay for intermediate-directory
+// canonicalization (and the symlink check doubles as the gate that used to
+// need a separate Lstat carve-out).
+//
+// viaSymlink reports whether the caller's path itself was a symlink, so a
+// failure can be reported against the name the caller knows rather than a
+// resolved target they may never have seen.
+//
+// Resolution is fail-fast: a live symlink whose resolution fails for a reason
+// other than a missing target (a circular link, a permission error) returns
+// the error here rather than letting the write proceed to a later os.Stat that
+// might succeed against a different view of the path. The error names the
+// caller's path directly, so it bypasses the "write through symlink" defer
+// wrapper registered in AtomicWriteFile (which only fires when viaSymlink is
+// set and err is non-nil with no resolve error already attached). A dangling
+// link (target missing) is the one carve-out: it returns (path, true, nil) so
+// the write replaces the broken link as-is, pinned by DanglingSymlinkIsReplaced.
+func resolveWriteTarget(path string) (resolved string, viaSymlink bool, err error) {
+	fi, lerr := os.Lstat(path)
+	if lerr != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return path, false, nil
+	}
+
+	resolved, rerr := filepath.EvalSymlinks(path)
+	if rerr != nil {
+		if errors.Is(rerr, os.ErrNotExist) {
+			return path, true, nil // dangling link: replace as-is
+		}
+
+		return "", true, fmt.Errorf("resolve symlink %s: %w", path, rerr)
+	}
+
+	return resolved, true, nil
+}
+
+// AtomicWriteFile writes data to a sibling temp file in the same directory as
+// path, fsyncs it, then renames it over path. os.Rename is atomic on POSIX
+// and handled as replace-on-existing by Go on Windows. The parent directory
+// is fsynced after rename so the new dentry survives a crash. The temp file
+// is removed on any failure before rename so no .tmp.* leftovers remain.
+//
+// When path is a symlink, the write goes to the real file the link resolves
+// to so the link itself is preserved. resolveWriteTarget follows the full
+// chain via EvalSymlinks; a plain file never calls EvalSymlinks, a dangling
+// link is replaced as-is, and a live symlink whose resolution fails for any
+// other reason (a circular link, a permission error) fails fast before the
+// write begins. A failure after resolution is reported against the path the
+// caller passed, with the resolved target carried in the wrapped error.
+func AtomicWriteFile(path string, data []byte) (err error) {
+	callerPath := path
+
+	path, viaSymlink, err := resolveWriteTarget(path)
+	if err != nil {
+		// Already names the caller's path; do not double-wrap.
+		return err
+	}
+
+	// Deferred so every error exit below — including a CreateTemp failure
+	// that names the resolved target — is annotated with the path the caller
+	// passed.
+	defer func() {
+		if err != nil && viaSymlink {
+			err = fmt.Errorf("write through symlink %s: %w", callerPath, err)
+		}
+	}()
+
+	dir := filepath.Dir(path)
+
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp.*")
+	if err != nil {
+		return fmt.Errorf("create temp file for %s: %w", path, err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+
+	if _, err = tmp.Write(data); err != nil {
+		_ = tmp.Close()
+
+		return fmt.Errorf("write temp file %s: %w", tmp.Name(), err)
+	}
+
+	if err = tmp.Sync(); err != nil {
+		_ = tmp.Close()
+
+		return fmt.Errorf("sync temp file %s: %w", tmp.Name(), err)
+	}
+
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file %s: %w", tmp.Name(), err)
+	}
+
+	// The umask probe borrows the temp file's name so that two writers racing
+	// for the same destination cannot collide on it. targetMode removes it
+	// before returning.
+	mode, err := targetMode(path, tmp.Name()+".mode")
+	if err != nil {
+		return err
+	}
+
+	return renameIntoPlace(tmp.Name(), path, dir, mode)
+}
+
+// renameIntoPlace sets the temp file's mode, clears any read-only attribute
+// on the destination (Windows only, see golang/go#38287), renames the temp
+// over the target, and fsyncs the parent directory so the rename is durable.
+// The mode passed in is what targetMode decided the file should end up with:
+// the existing file's preserved mode on a replace, or umask-applied
+// DefaultFileMode on a new file.
+func renameIntoPlace(tmpPath, targetPath, dir string, mode os.FileMode) error {
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		return fmt.Errorf("chmod temp file %s: %w", tmpPath, err)
+	}
+
+	// On Windows, os.Rename fails with "Access is denied" when the
+	// destination is read-only (golang/go#38287). Clear the attribute first
+	// so a read-only file is replaced the way it would be on POSIX. The chmod
+	// above already set the temp file's mode, so the rename lands the right
+	// permissions; targetMode returned the existing file's mode, which on
+	// Windows is 0o444 for a read-only file, so the read-only attribute is
+	// restored by that chmod.
+	if err := clearReadOnlyBeforeRename(targetPath); err != nil {
+		return fmt.Errorf("cannot clear read-only attribute on %s: %w", targetPath, err)
+	}
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", tmpPath, targetPath, err)
+	}
+
+	// Best-effort fsync of the parent directory so the rename is durable.
+	// Silently no-op where unsupported (Windows).
+	if d, derr := os.Open(dir); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+
+	return nil
+}

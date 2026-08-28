@@ -75,6 +75,8 @@ func TestTelemetryWiring_AllCoreCommandsTracked(t *testing.T) {
 // findCommandByPath matches against the root's Name(), which is
 // "workload" for the standalone subtree.
 var expectedWorkloadTrackedCommands = []string{
+	"workload config",
+	"workload up",
 	"workload create",
 	"workload get",
 	"workload list",

@@ -178,9 +178,15 @@ func ListPipelines(mode, search string, offset, limit int) (*DataPage[ListItem],
 	return &page, nil
 }
 
+// escapeID percent-encodes a caller-supplied pipeline id so reserved path
+// characters can't rewrite the request path (mirrors internal/workload/workload.go).
+func escapeID(id string) string {
+	return url.PathEscape(id)
+}
+
 // GetPipeline fetches a single pipeline from GET /api/v2/pipelines/{pipeline_id}.
 func GetPipeline(pipelineID string) (*Pipeline, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID)
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID))
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +204,7 @@ func GetPipeline(pipelineID string) (*Pipeline, error) {
 // UpdatePipeline patches a draft pipeline. filePath is optional (empty = no file
 // re-upload); name, description, and imageID are each no-op when empty.
 func UpdatePipeline(pipelineID, filePath, imageID, name, description string) (*CreateResponse, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID)
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID))
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +236,7 @@ func UpdatePipeline(pipelineID, filePath, imageID, name, description string) (*C
 // DeletePipeline issues DELETE /api/v2/pipelines/{pipeline_id}. The API
 // returns 204 on success.
 func DeletePipeline(pipelineID string) error {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID)
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID))
 	if err != nil {
 		return err
 	}
@@ -243,7 +249,7 @@ func DeletePipeline(pipelineID string) error {
 // create/update payload, with `mode` set to "locked" and `version`
 // pointing at the locked version.
 func LockPipeline(pipelineID string) (*CreateResponse, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID + "/mode")
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID) + "/mode")
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +257,33 @@ func LockPipeline(pipelineID string) (*CreateResponse, error) {
 	var result CreateResponse
 
 	err = doJSON(http.MethodPatch, endpoint, nil, "lock pipeline", &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// cloneRequest is the JSON body for POST /api/v2/pipelines/{id}/clone. The
+// omitempty keeps the body as `{}` when no name override is supplied, letting
+// the server apply its default "Clone of <source name>" label.
+type cloneRequest struct {
+	Name string `json:"name,omitempty"`
+}
+
+// ClonePipeline issues POST /api/v2/pipelines/{pipeline_id}/clone to copy an
+// existing pipeline into a new draft (source, description, latest input, and
+// assigned image). An empty name lets the server default to
+// "Clone of <source name>". The response mirrors a create payload.
+func ClonePipeline(pipelineID, name string) (*CreateResponse, error) {
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID) + "/clone")
+	if err != nil {
+		return nil, err
+	}
+
+	var result CreateResponse
+
+	err = doJSON(http.MethodPost, endpoint, cloneRequest{Name: name}, "clone pipeline", &result)
 	if err != nil {
 		return nil, err
 	}
@@ -278,9 +311,7 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 	}
 
-	client := drapi.NewHTTPClient(uploadTimeout)
-
-	resp, err := client.Do(req)
+	resp, err := drapi.Do(req, uploadTimeout)
 	if err != nil {
 		return fmt.Errorf("request %s: %w", endpoint, err)
 	}

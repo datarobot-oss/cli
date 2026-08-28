@@ -21,7 +21,7 @@ Each container in the spec is one of two kinds:
 - **Prebuilt**: set `imageUri` to an existing image. There is nothing to build.
 - **Built from source**: set `imageBuildConfig`, push your code with `dr artifact code sync`, and produce an image with `dr artifact build create`. The Dockerfile is either one you provide (`./Dockerfile`) or one the server generates from a base environment.
 
-The `code` subcommands keep a local directory in sync with an artifact's source. They store a `.wapi/` state directory at the project root, much like `.git/`: local work happens in the project root while `.wapi/` records the remote binding and last-synced state. Once a directory is linked with `dr artifact code init`, the `build` and `code` subcommands read the artifact id from `.wapi/config.json`, so you can leave it off.
+The `code` subcommands keep a local directory in sync with an artifact's source. They store a `.datarobot/workload/` state directory at the project root, much like `.git/`: local work happens in the project root while `.datarobot/workload/` records the remote binding and last-synced state. Once a directory is linked with `dr artifact code init`, the `build` and `code` subcommands read the artifact id from `.datarobot/workload/config.json`, so you can leave it off. A project linked by an older CLI keeps its state in a root `.wapi/`; the next command that touches state relocates it and prints one line saying so.
 
 A locked, fully built artifact is what you hand to `dr workload create` to deploy. See [`dr workload`](workload.md).
 
@@ -107,11 +107,13 @@ spec:
 
 ### `get`
 
-Show a single artifact: its name, status, code reference, and timestamps.
+Show a single artifact: its name, status, repository and version, code reference, and timestamps.
 
 ```bash
 dr artifact get <artifact-id> [--output-format text|json]
 ```
+
+The repository is the lineage the artifact belongs to. Successive versions of one workload share it, which is what tells them apart from unrelated artifacts that happen to carry the same name. The version numbers the artifact within that repository and is assigned only on locking, so a draft shows none.
 
 ### `list`
 
@@ -149,7 +151,7 @@ dr artifact delete <artifact-id> [--yes]
 
 ### `build`
 
-Trigger and inspect container image builds for an artifact. Inside a linked directory the `<artifact-id>` argument can be omitted; it is read from `.wapi/config.json`.
+Trigger and inspect container image builds for an artifact. Inside a linked directory the `<artifact-id>` argument can be omitted; it is read from `.datarobot/workload/config.json`.
 
 ```bash
 dr artifact build create [<artifact-id>] [--wait]             # trigger a build
@@ -171,10 +173,12 @@ dr artifact code versions [--dir <path>] [--limit N]
 dr artifact code checkout [<ver>] [--dir <path>] [--clean]
 ```
 
-- `init` creates the `.wapi/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle.
+- `init` creates the `.datarobot/workload/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle. It also drops a starter `.drignore` at the project root, in gitignore syntax, listing what `sync` should leave out. Edit it and commit it. A project that already has an ignore file under either name keeps it, and no new one is written.
+- Projects created before the file was renamed have a `.wapiignore` instead. It is still read when there is no `.drignore` beside it, and `sync` says so once per run, but the name is deprecated: rename the file when convenient. If both are present, `.drignore` is the one that applies and `sync` warns that the other file's patterns are not in effect. Merge them and delete the old one: two ignore files at a project root is a state where patterns you wrote silently stop filtering. The ignore file is uploaded with your code, so if you work with others, agree on the rename rather than doing it alone.
 - `sync` computes a three-way diff against the last synced state and applies it in one versioned step. Conflicts resolve to the remote copy, and your version is kept as a `*.LOCAL.<timestamp>` file. Preview with `--dry-run`, or use `--diff` to also see per-file diffs. Both exit before any remote write.
+- For Python projects, the image build requires a `uv.lock` next to `pyproject.toml`. When your project has `pyproject.toml` but no `uv.lock`, `sync` generates one automatically by running your local `uv lock` (your uv configuration, private indexes, and credentials apply) and uploads it with the rest of your code — commit the generated file to your repo. If `uv` is not installed or lock generation fails, sync still completes and prints what to do (`uv lock`, then re-sync); the image build will fail until a lock file is added. This also happens on `--dry-run`/`--diff`, so the preview matches what a real sync would upload. An existing `uv.lock` is never modified, and sync warns if your `.drignore` excludes it.
 - `versions` lists the artifact's catalog versions, marking the one the artifact currently points at (`*`) and noting the one you last synced.
-- `checkout` downloads a version into `.wapi/.checkouts/<version-id>/` for read-only inspection; your working directory is left untouched. `--clean` removes checkout directories instead of downloading.
+- `checkout` downloads a version into `.datarobot/workload/.checkouts/<version-id>/` for read-only inspection; your working directory is left untouched. `--clean` removes checkout directories instead of downloading.
 
 ## Shared flags
 

@@ -108,7 +108,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 	}
 }
 
-// syncHistoryEntry assembles the JSONL line written to .wapi/history.log.
+// syncHistoryEntry assembles the JSONL line written to history.log.
 func syncHistoryEntry(e *Engine, now time.Time) wapi.HistoryEntry {
 	entry := wapi.HistoryEntry{
 		"ts":         now.Format(time.RFC3339),

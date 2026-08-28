@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package telemetry provides anonymous usage analytics for the DataRobot CLI.
+// Package telemetry provides usage analytics for the DataRobot CLI.
 //
 // Telemetry is collected via the Amplitude analytics-go SDK. When telemetry is
 // disabled (via --disable-telemetry flag, DATAROBOT_CLI_DISABLE_TELEMETRY env var,
@@ -109,6 +109,13 @@ func NewClient(props *CommonProperties) *Client {
 		amp:   client,
 		props: props,
 	}
+}
+
+// NewTestClient returns a Client backed by the given amplitude.Client, for
+// tests that need to capture tracked events. Production code uses NewClient.
+// Passing a nil amp yields the same safe no-op behavior as a disabled client.
+func NewTestClient(amp amplitude.Client, props *CommonProperties) *Client {
+	return &Client{amp: amp, props: props}
 }
 
 // Track queues an event for delivery to Amplitude. Common properties from the

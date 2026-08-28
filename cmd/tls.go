@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/datarobot/cli/internal/config/viperx"
 	internaltls "github.com/datarobot/cli/internal/tls"
 	"github.com/spf13/cobra"
@@ -38,8 +40,12 @@ func setupTLS(cmd *cobra.Command) error {
 	}
 
 	if err := internaltls.Apply(opts); err != nil {
-		return err
+		return fmt.Errorf("apply tls options: %w", err)
 	}
 
-	return internaltls.PropagateEnv(opts)
+	if err := internaltls.PropagateEnv(opts); err != nil {
+		return fmt.Errorf("propagate tls env: %w", err)
+	}
+
+	return nil
 }

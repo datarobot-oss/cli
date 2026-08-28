@@ -1,0 +1,8 @@
+# Wolfi-based, minimal, nonroot equivalent of distroless/static.
+# Do not pin chainguard/static via sha; these eventually disappear
+FROM cgr.dev/chainguard/static:latest
+
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/dr /dr
+
+ENTRYPOINT ["/dr"]
