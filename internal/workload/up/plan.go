@@ -104,6 +104,22 @@ type Plan struct {
 	// InheritsImage reports that the new version can take the running image.
 	// What the plan intends, not a promise; the envelope is corrected after.
 	InheritsImage bool
+	// DiffArtifact and DiffRuntime are the same two halves for the --diff
+	// rendering: every leaf the file names, changed or not, so a diff can
+	// draw context around its changes instead of listing only what moves.
+	// They come from the walks that produce Artifact and Runtime, so the two
+	// renderings of one plan cannot disagree about what differs. The changes
+	// below that no walk can produce -- the artifact id and type -- are
+	// merged into the rows as well, because a change the default plan prints
+	// must never be invisible in the diff.
+	DiffArtifact []DiffRow
+	DiffRuntime  []DiffRow
+
+	// Unmanaged lists the name-keyed elements the live object carries that
+	// the file never names, from Extra. The diff renders them as a count
+	// rather than as the removals they are not: the file leaving a field out
+	// is the file declining to manage it, not asking for it to be deleted.
+	Unmanaged []string
 
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
@@ -344,6 +360,16 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	// Nothing exists to compare against, so every field is trivially an
 	// addition. Saying so once is a plan; saying it per field is a wall.
 	if plan.Creates {
+		artifactRows, runtimeRows, err := createRows(loaded)
+		if err != nil {
+			return Plan{}, err
+		}
+
+		// The diff has no live side to draw context from either, so it walks
+		// the file against nil and shows what will be created, leaf by leaf.
+		plan.DiffArtifact = artifactRows
+		plan.DiffRuntime = runtimeRows
+
 		return plan, nil
 	}
 
@@ -360,6 +386,20 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	plan.Artifact = Subset(spec, live.Spec)
 	plan.Runtime = Subset(runtime, live.Runtime)
 
+	// The diff rows are the same two walks with the agreeing leaves kept, so
+	// the changes above and the context around them come from one comparison
+	// and cannot disagree about what differs.
+	plan.DiffArtifact = DiffRows(spec, live.Spec)
+	plan.DiffRuntime = DiffRows(runtime, live.Runtime)
+
+	// A diff that stayed silent about what the live object carries that the
+	// file never names would read as an exhaustive account of the workload,
+	// so the paths land on the plan for the renderer to count. The two
+	// documents can hold the same unmanaged element -- a sidecar exists in
+	// the artifact's spec and in the workload's runtime -- and one element is
+	// one field to a reader, so the list holds each path once.
+	plan.Unmanaged = dedupePaths(Extra(spec, live.Spec), Extra(runtime, live.Runtime))
+
 	// A file that names an artifact by id describes no spec to compare, so
 	// the walk above has nothing to say about it. Pointing at a different
 	// version than the one running is still the whole plan: it is a roll, and
@@ -371,6 +411,13 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 			Keys: []string{keyArtifactID},
 			Have: live.ArtifactID,
 			Want: bound,
+		})
+
+		plan.DiffArtifact = append(plan.DiffArtifact, DiffRow{
+			Path:    keyArtifactID,
+			Have:    live.ArtifactID,
+			Want:    bound,
+			Changed: true,
 		})
 	}
 
@@ -412,10 +459,67 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 			Have: running,
 			Want: kind,
 		})
+
+		plan.DiffArtifact = append(plan.DiffArtifact, DiffRow{
+			Path:    keyArtifactType,
+			Have:    running,
+			Want:    kind,
+			Changed: true,
+		})
 	}
 
 	// Last: every drift has to be in hand before RebuildsImage can answer.
 	plan.InheritsImage = inheritsImage(live, plan, opts, kind, loaded.Compiled.ArtifactName)
 
 	return plan, nil
+}
+
+// createRows walks the file against nothing, which is what a create compares
+// against: the spec half and the runtime half both come back as additions,
+// one row per leaf, so a diff can show what will be created rather than
+// summarise it.
+func createRows(loaded Loaded) ([]DiffRow, []DiffRow, error) {
+	spec, err := loaded.Spec()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	runtime, err := loaded.Runtime()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return DiffRows(spec, nil), DiffRows(runtime, nil), nil
+}
+
+// dedupePaths merges the unmanaged path lists from the two halves of the
+// plan, keeping the first sighting of each path. The lists each arrive in a
+// deterministic order, and the same element can be reported by both -- a
+// sidecar the file never names exists in the artifact's spec and in the
+// workload's runtime alike -- so counting it twice would promise a reader
+// two fields where there is one name to go look at.
+func dedupePaths(lists ...[]string) []string {
+	var total int
+
+	for _, list := range lists {
+		total += len(list)
+	}
+
+	seen := make(map[string]struct{}, total)
+
+	out := make([]string, 0, total)
+
+	for _, list := range lists {
+		for _, path := range list {
+			if _, ok := seen[path]; ok {
+				continue
+			}
+
+			seen[path] = struct{}{}
+
+			out = append(out, path)
+		}
+	}
+
+	return out
 }

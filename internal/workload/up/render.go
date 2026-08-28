@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/uidiff"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
@@ -85,6 +86,175 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	_, err := io.WriteString(w, b.String())
 
 	return err
+}
+
+// RenderDiff writes the plan block as a unified diff, for `up --diff`.
+//
+// Where Render summarises, this lays the plan out leaf by leaf: a changed
+// field states both sides of itself, `- old` then `+ new`; an agreeing field
+// is context that collapses once it runs past the window; and what the live
+// object carries that the file never names is counted once, because none of
+// it is a removal. The default plan caps its detail list because a plan is a
+// summary, and the file is a better place to read the rest; a diff is the
+// detail, so nothing here is capped.
+func RenderDiff(w io.Writer, s Summary, plan Plan) error {
+	var b strings.Builder
+
+	if head := diffHeader(s, plan); head != "" {
+		b.WriteString(planTitleStyle.Render(head))
+		b.WriteString("\n")
+	}
+
+	if plan.Empty() {
+		// The three-state rule is the point of --diff, so an empty plan does
+		// not skip the block the way Render's does: what the live object
+		// carries that the file never names still gets said. The verdict is
+		// the line the default mode prints, because the run's outcome, and
+		// its exit code, are the same run's.
+		b.WriteString("\n" + settledVerdict(plan) + "\n")
+
+		if note := unmanagedNote(plan.Unmanaged); note != "" {
+			b.WriteString(note)
+			b.WriteString("\n")
+		}
+
+		_, err := io.WriteString(w, b.String())
+
+		return err
+	}
+
+	b.WriteString("\n")
+
+	for _, line := range diffActionLines(s, plan) {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+
+	if err := uidiff.Render(&b, diffRows(plan), uidiff.Options{Redact: redacted}); err != nil {
+		return err
+	}
+
+	if note := unmanagedNote(plan.Unmanaged); note != "" {
+		b.WriteString(note)
+		b.WriteString("\n")
+	}
+
+	_, err := io.WriteString(w, b.String())
+
+	return err
+}
+
+// diffActionLines are the lines a diff keeps from the default plan: the
+// reasons the run will act. None of them is a field change, so each keeps
+// the entry form and position the default plan gives it -- rendered as a
+// hunk, a stopped workload or a locked version would read as an edit to a
+// field nobody wrote.
+func diffActionLines(s Summary, plan Plan) []string {
+	var out []string
+
+	if plan.Creates {
+		out = append(out, entry("+", "workload", createDetail(s, plan)))
+	}
+
+	if line := stateLine(plan.State, s.Status); line != "" {
+		out = append(out, line)
+	}
+
+	if plan.Code.Changed() {
+		out = append(out, entry("~", "code", codeDetail(plan.Code)))
+	}
+
+	out = append(out, lockLines(plan)...)
+	out = append(out, artifactEntry(plan)...)
+
+	return out
+}
+
+// diffHeader names the plan's subject. A live workload is named exactly as
+// the default plan names it. A first deploy has no live side to name, and
+// above a diff of the file itself the default plan's silence would leave the
+// block unheaded, so the header states the subject instead. A create that
+// replaces a dead binding is not a first deploy and still gets no header:
+// the create line is the warning, as it is in the default mode.
+func diffHeader(s Summary, plan Plan) string {
+	if !plan.Creates {
+		return header(s, plan)
+	}
+
+	if plan.PriorWorkloadID != "" {
+		return ""
+	}
+
+	name := s.Name
+	if name == "" {
+		name = "workload"
+	}
+
+	return name + ", first deploy"
+}
+
+// diffRows flattens the plan's two row halves into the order the diff draws
+// them, the artifact spec first and the runtime sizing second, one diff
+// either way: they are one deploy and the reader reviews them together.
+func diffRows(plan Plan) []uidiff.Row {
+	rows := make([]uidiff.Row, 0, len(plan.DiffArtifact)+len(plan.DiffRuntime))
+
+	rows = appendLeafRows(rows, plan.DiffArtifact)
+	rows = appendLeafRows(rows, plan.DiffRuntime)
+
+	return rows
+}
+
+// appendLeafRows turns whole-leaf rows into diff lines. A changed leaf
+// becomes two lines, the value it replaces and the value it becomes, because
+// that is what a unified diff states; an addition is one line, and an
+// agreeing leaf is context. Redaction is left to the uidiff hook, which
+// rewrites the whole line for a path it refuses, so a value formatted into
+// the text here is never what prints.
+func appendLeafRows(rows []uidiff.Row, leaves []DiffRow) []uidiff.Row {
+	for _, leaf := range leaves {
+		switch {
+		case !leaf.Changed:
+			rows = append(rows, uidiff.Row{
+				Kind: uidiff.Context,
+				Path: leaf.Path,
+				Text: leafText(leaf.Path, leaf.Want),
+			})
+		case leaf.Absent:
+			rows = append(rows, uidiff.Row{
+				Kind: uidiff.Add,
+				Path: leaf.Path,
+				Text: leafText(leaf.Path, leaf.Want),
+			})
+		default:
+			rows = append(rows,
+				uidiff.Row{Kind: uidiff.Del, Path: leaf.Path, Text: leafText(leaf.Path, leaf.Have)},
+				uidiff.Row{Kind: uidiff.Add, Path: leaf.Path, Text: leafText(leaf.Path, leaf.Want)},
+			)
+		}
+	}
+
+	return rows
+}
+
+// leafText renders one leaf the way the plan's detail lines spell a value,
+// reusing format so a composite still reads as a summary rather than a dump.
+func leafText(path string, v any) string {
+	return path + ": " + format(v)
+}
+
+// unmanagedNote is the diff's whole account of the live object's unmanaged
+// fields, one counted line rather than a marking per field. Each such field
+// is live state the file declines to manage, so none of them is a removal,
+// and interleaving them with the rows would put them next to edits they have
+// nothing to do with.
+func unmanagedNote(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+
+	return tui.HintStyle.Render(fmt.Sprintf("%d %s not managed by this file",
+		len(paths), plural(len(paths), "field", "fields")))
 }
 
 // settledVerdict is what an empty plan means, which is not always that there
@@ -329,6 +499,19 @@ func lockLines(plan Plan) []string {
 // A version that keeps the running image says so: --dry-run is the whole of the
 // review a deploy gets.
 func artifactLines(plan Plan) []string {
+	head := artifactEntry(plan)
+	if head == nil {
+		return nil
+	}
+
+	return append(head, details(plan.Artifact)...)
+}
+
+// artifactEntry is the artifact line without its detail list, which --diff
+// replaces with the full rows underneath. It stays in diff mode because the
+// one fact it carries, that a new version will be minted, is not visible in
+// any field value.
+func artifactEntry(plan Plan) []string {
 	if !plan.RollsArtifact() {
 		return nil
 	}
@@ -343,7 +526,7 @@ func artifactLines(plan Plan) []string {
 		reason += "; keeps the running image, so no rebuild"
 	}
 
-	return append([]string{entry("+", "artifact", reason)}, details(plan.Artifact)...)
+	return []string{entry("+", "artifact", reason)}
 }
 
 // runtimeLines describes a sizing change, which needs no new version. A
