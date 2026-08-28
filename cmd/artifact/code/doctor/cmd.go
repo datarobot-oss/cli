@@ -147,12 +147,8 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 
 	relinkID, _ := cmd.Flags().GetString("relink")
 
-	// --fix and --relink are mutually exclusive: cobra's
-	// MarkFlagsMutuallyExclusive handles the usage error, but the explicit
-	// check stays as a belt-and-suspenders guard (and gives a clearer
-	// message than cobra's generic one).
-	if fix && cmd.Flags().Changed("relink") {
-		return errors.New("--fix and --relink are mutually exclusive; use one or the other")
+	if err := validateRepairFlags(cmd, fix, relinkID); err != nil {
+		return err
 	}
 
 	dirFlag, _ := cmd.Flags().GetString("dir")
@@ -209,9 +205,29 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 	return nil
 }
 
+// validateRepairFlags checks the --fix and --relink flags for usage errors
+// before any work begins. --fix and --relink are mutually exclusive (cobra's
+// MarkFlagsMutuallyExclusive handles this too, but the explicit check gives
+// a clearer message). An explicit empty --relink value is a usage error,
+// not a silent read-only run — gating on Flags().Changed distinguishes
+// "flag not set" (read-only) from "flag set to empty" (usage error).
+func validateRepairFlags(cmd *cobra.Command, fix bool, relinkID string) error {
+	if fix && cmd.Flags().Changed("relink") {
+		return errors.New("--fix and --relink are mutually exclusive; use one or the other")
+	}
+
+	if cmd.Flags().Changed("relink") && relinkID == "" {
+		return errors.New("--relink requires a non-empty artifact id")
+	}
+
+	return nil
+}
+
 // runRepairPhase executes the --fix or --relink repair phase and returns the
 // actions (nil for read-only runs) and any relink error (nil for --fix and
-// read-only runs).
+// read-only runs). The empty-value check for --relink is handled in runDoctor
+// before any work begins, so by the time we get here a changed --relink flag
+// always carries a non-empty id.
 func runRepairPhase(cmd *cobra.Command, projectDir string, fix bool, relinkID string) (*[]core.Action, error) {
 	if fix {
 		performed := wldoctor.RunFix(cmd.Context(), projectDir)
@@ -219,7 +235,7 @@ func runRepairPhase(cmd *cobra.Command, projectDir string, fix bool, relinkID st
 		return &performed, nil
 	}
 
-	if relinkID != "" {
+	if cmd.Flags().Changed("relink") {
 		performed, rErr := runRelinkPhase(cmd, projectDir, relinkID)
 
 		if performed != nil {

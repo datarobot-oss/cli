@@ -15,7 +15,6 @@
 package initcmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -129,7 +128,7 @@ func reportGoneOrMismatchAbort(cmd *cobra.Command, artifactID string, outputForm
 func runRelinkFromInit(cmd *cobra.Command, dir, oldID, newID string, outputFormat outputformat.OutputFormat) error {
 	stderr := cmd.ErrOrStderr()
 
-	actions, err := wldoctor.RunRelink(context.Background(), wldoctor.RelinkOptions{
+	actions, err := wldoctor.RunRelink(cmd.Context(), wldoctor.RelinkOptions{
 		ProjectDir:    dir,
 		NewArtifactID: newID,
 		Store:         wldoctor.ArtifactGetterFunc(getArtifactFn),
@@ -185,6 +184,14 @@ func printRelinkAbortReason(stderr io.Writer, err error, actions []core.Action) 
 // defaultOfferRelink is the production interactive relink offer. It prints
 // the notice to w, asks whether the user wants to relink (default No), and if
 // yes, prompts for the new artifact ID.
+//
+// An empty entry at the new-artifact-ID prompt (dirprompt.Ask returning "") is
+// treated as a decline, not a re-prompt. This is the intended default-No UX:
+// dirprompt.Ask's contract returns "" on empty Enter, and the caller
+// (handleGoneOrMismatch) treats "" as "declined, abort with guidance" —
+// consistent with the bespoke [y/N] confirm prompt where empty Enter also
+// declines. Re-prompting would surprise users who pressed Enter expecting to
+// cancel.
 func defaultOfferRelink(w io.Writer, notice string) (string, error) {
 	fmt.Fprintln(w, notice)
 
