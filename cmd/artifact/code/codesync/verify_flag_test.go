@@ -15,6 +15,8 @@
 package codesync
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -133,4 +135,113 @@ func TestCmd_VerifyStillExecutes_NonDryRun(t *testing.T) {
 
 	assert.True(t, fe.executed, "a non-dry-run --verify run must still Execute the plan")
 	assert.Contains(t, stdout.String(), "Sync complete", "the completion summary must be printed")
+}
+
+// sampleDivergences is the flagship-shaped finding set: a hash mismatch plus
+// both one-sided kinds, so every test below exercises a notice that carries
+// all three distinctions.
+func sampleDivergences() []sync.Divergence {
+	return []sync.Divergence{
+		{Path: "app.py", Kind: sync.DivergenceHashMismatch, BaseHash: "aaaa", RemoteHash: "bbbb"},
+		{Path: "gone.py", Kind: sync.DivergenceBaseOnly, BaseHash: "cccc"},
+		{Path: "stray.py", Kind: sync.DivergenceRemoteOnly, RemoteHash: "dddd"},
+	}
+}
+
+// The divergence notice is a diagnostic, and diagnostics never belong on the
+// data stream: it must reach stderr in human mode and stay off stdout.
+func TestRunE_DivergenceNotice_ReachesStderrOnly(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:        &sync.SyncPlan{},
+		divergences: sampleDivergences(),
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "verify": "true"}
+
+	_, stdout, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	errText := stderr.String()
+
+	// The summary names every divergent path, not just the first.
+	assert.Contains(t, errText, "app.py")
+	assert.Contains(t, errText, "gone.py")
+	assert.Contains(t, errText, "stray.py")
+
+	assert.NotContains(t, stdout.String(), "app.py", "divergence prose must stay off the data stream")
+}
+
+// Under --output-format json the divergence data flows into the plan document
+// as a structured field, and every trace of the prose stays on stderr so
+// stdout decodes as JSON to EOF.
+func TestRunE_JSON_DivergenceFieldPopulated(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:        &sync.SyncPlan{},
+		divergences: sampleDivergences(),
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "verify": "true", "output-format": "json"}
+
+	_, stdout, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	// Capture before any reader drains the buffer: assertOnlyJSON decodes to
+	// EOF, and a bytes.Buffer stays empty afterwards.
+	raw := stdout.String()
+
+	assertOnlyJSON(t, strings.NewReader(raw))
+
+	assert.Contains(t, stderr.String(), "app.py", "the divergence notice must remain on stderr in JSON mode")
+
+	dec := json.NewDecoder(strings.NewReader(raw))
+
+	var doc struct {
+		Divergence []struct {
+			Path       string `json:"path"`
+			Kind       string `json:"kind"`
+			BaseHash   string `json:"baseHash"`
+			RemoteHash string `json:"remoteHash"`
+		} `json:"divergence"`
+	}
+
+	require.NoError(t, dec.Decode(&doc), "the first stdout document must be the plan")
+	require.Len(t, doc.Divergence, 3, "every divergent path must be listed in the plan document")
+
+	assert.Equal(t, "app.py", doc.Divergence[0].Path)
+	assert.Equal(t, "hash_mismatch", doc.Divergence[0].Kind)
+	assert.Equal(t, "aaaa", doc.Divergence[0].BaseHash)
+	assert.Equal(t, "bbbb", doc.Divergence[0].RemoteHash)
+
+	assert.Equal(t, "gone.py", doc.Divergence[1].Path)
+	assert.Equal(t, "base_only", doc.Divergence[1].Kind)
+
+	assert.Equal(t, "stray.py", doc.Divergence[2].Path)
+	assert.Equal(t, "remote_only", doc.Divergence[2].Kind)
+}
+
+// A healthy --verify run leaves the field explicitly empty rather than
+// omitted: a script must be able to tell "no divergence" from "the field was
+// never emitted" (the locked:false precedent).
+func TestRunE_JSON_DivergenceExplicitlyEmptyWhenClean(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true", "verify": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	// Same capture-before-drain discipline as above.
+	raw := stdout.String()
+
+	assertOnlyJSON(t, strings.NewReader(raw))
+	assert.Contains(t, raw, `"divergence": []`)
 }

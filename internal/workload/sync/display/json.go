@@ -37,6 +37,26 @@ type PlanJSON struct {
 	// like, and a script reading only this document has nothing else to go on:
 	// the human warning goes to stderr and the exit status is 0.
 	Locked bool `json:"locked"`
+
+	// Divergence lists the paths where manifest.json (BASE) disagrees with
+	// the server (REMOTE), as detected by a --verify run. Like Locked it is
+	// always emitted and explicitly empty when there is nothing to report, so
+	// a script never has to guess whether a missing key meant "checked and
+	// clean" or "never checked". Only a --verify run can populate it; every
+	// other run leaves it empty. The findings are diagnostics: the plan
+	// already reconciles them and the exit status is unchanged.
+	Divergence []DivergenceJSON `json:"divergence"`
+}
+
+// DivergenceJSON is one BASE-vs-REMOTE disagreement in the plan document.
+// Kind is the fixed vocabulary shared with the stderr prose (hash_mismatch /
+// base_only / remote_only); the hash of the side a kind does not involve is
+// omitted, so a script can identify each finding without re-fetching.
+type DivergenceJSON struct {
+	Path       string              `json:"path"`
+	Kind       sync.DivergenceKind `json:"kind"`
+	BaseHash   string              `json:"baseHash,omitempty"`
+	RemoteHash string              `json:"remoteHash,omitempty"`
 }
 
 type FileActionJSON struct {
@@ -58,21 +78,25 @@ type PlanStatsJSON struct {
 	OldVersionShort string `json:"oldVersionShort,omitempty"`
 }
 
-// RenderPlanJSON writes plan as pretty-printed JSON to w.
-func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
+// RenderPlanJSON writes plan as pretty-printed JSON to w. divergences are
+// the BASE-vs-REMOTE findings of a --verify run; they are rendered even when
+// plan is nil, because divergence is detected in Phase 2 regardless of what
+// the plan goes on to do with the paths.
+func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan, locked bool, divergences []sync.Divergence) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 
 	if plan == nil {
-		return enc.Encode(PlanJSON{Locked: locked})
+		return enc.Encode(PlanJSON{Locked: locked, Divergence: divergencesJSON(divergences)})
 	}
 
 	out := PlanJSON{
-		Locked:    locked,
-		Uploads:   actionsJSON(plan.Uploads),
-		Downloads: actionsJSON(plan.Downloads),
-		Deletes:   actionsJSON(plan.Deletes),
-		Conflicts: actionsJSON(plan.Conflicts),
+		Locked:     locked,
+		Divergence: divergencesJSON(divergences),
+		Uploads:    actionsJSON(plan.Uploads),
+		Downloads:  actionsJSON(plan.Downloads),
+		Deletes:    actionsJSON(plan.Deletes),
+		Conflicts:  actionsJSON(plan.Conflicts),
 		Stats: PlanStatsJSON{
 			UploadCount:     len(plan.Uploads),
 			DownloadCount:   len(plan.Downloads),
@@ -89,6 +113,24 @@ func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
 	}
 
 	return nil
+}
+
+// divergencesJSON converts the engine's findings to the wire shape. The
+// result is never nil: an empty input yields an explicit empty slice so the
+// rendered document says "no divergence" instead of null.
+func divergencesJSON(in []sync.Divergence) []DivergenceJSON {
+	out := make([]DivergenceJSON, len(in))
+
+	for i, d := range in {
+		out[i] = DivergenceJSON{
+			Path:       d.Path,
+			Kind:       d.Kind,
+			BaseHash:   d.BaseHash,
+			RemoteHash: d.RemoteHash,
+		}
+	}
+
+	return out
 }
 
 type ResultJSON struct {

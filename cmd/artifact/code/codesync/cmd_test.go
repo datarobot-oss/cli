@@ -42,6 +42,7 @@ type fakeEngine struct {
 	migrationNote string
 	ignoreNotice  string
 	lockedNote    string
+	divergences   []sync.Divergence
 	fetcher       display.ContentFetcher
 	closeErr      error
 
@@ -70,6 +71,8 @@ func (f *fakeEngine) StateMigrationNotice() string { return f.migrationNote }
 func (f *fakeEngine) IgnoreFileNotice() string { return f.ignoreNotice }
 
 func (f *fakeEngine) LockedNotice() string { return f.lockedNote }
+
+func (f *fakeEngine) Divergences() []sync.Divergence { return f.divergences }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 

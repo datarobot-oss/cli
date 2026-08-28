@@ -66,9 +66,21 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
 	}
 
-	if !e.drifted {
+	return loadRemote(e)
+}
+
+// loadRemote decides where REMOTE comes from: copied from BASE by the
+// solo-developer fast path, empty on a first sync, or fetched from the
+// FilesAPI. It is split out of the phase body because the fast-path guard
+// and the divergence check each carry compound conditions, and the phase
+// function is at the complexity ceiling.
+func loadRemote(e *Engine) error {
+	if !e.drifted && !e.opts.Verify {
 		// Nobody else changed the remote since our last sync; skip the
-		// allFiles round-trip and reuse BASE.
+		// allFiles round-trip and reuse BASE. --verify opts out of this
+		// trust: its whole point is to check that BASE still describes the
+		// server, which requires actually asking the server. The bypass is
+		// unconditional on dry-run — a non-dry-run verify run must fetch too.
 		e.remote = copyManifest(e.base)
 
 		return nil
@@ -88,6 +100,13 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	e.remote = FromFilesAPI(remote)
+
+	// Only a verify-forced fetch on a non-drifted artifact checks BASE's
+	// claim: here — and only here — BASE claims to describe exactly the
+	// version just fetched, so a mismatch is a lie worth reporting. On a
+	// drifted artifact the remote is a newer version by design, and
+	// BASE-vs-REMOTE differences are ordinary drift, not findings.
+	maybeDetectDivergence(e)
 
 	return nil
 }

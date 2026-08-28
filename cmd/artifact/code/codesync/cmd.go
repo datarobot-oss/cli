@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
@@ -50,6 +51,7 @@ type engineRunner interface {
 	StateMigrationNotice() string
 	IgnoreFileNotice() string
 	LockedNotice() string
+	Divergences() []sync.Divergence
 	Fetcher() display.ContentFetcher
 }
 
@@ -218,6 +220,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
+	format.StateNotice(cmd.ErrOrStderr(), divergenceSummaryNotice(engine.Divergences()))
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
@@ -242,6 +245,26 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 		Yes:    cli.IsNonInteractive(cmd),
 		Verify: verify,
 	}
+}
+
+// divergenceSummaryNotice renders the one-line --verify summary that runs
+// alongside the other state notices: what diverged and what happens next.
+// The per-path detail (with hashes) is logged from Phase 2 itself, so this
+// summary stays stream-agnostic and names every affected path.
+func divergenceSummaryNotice(divergences []sync.Divergence) string {
+	if len(divergences) == 0 {
+		return ""
+	}
+
+	paths := make([]string, len(divergences))
+
+	for i, d := range divergences {
+		paths[i] = d.Path
+	}
+
+	return fmt.Sprintf(
+		"--verify found %d divergence(s) between manifest.json (BASE) and the server (REMOTE): %s. The plan reconciles them.",
+		len(divergences), strings.Join(paths, ", "))
 }
 
 // finishSync handles the render → optional prompt → execute → render
@@ -310,7 +333,7 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // plan is emitted and no Execute is run, so callers can inspect the
 // plan and re-invoke with --yes if they want to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
-	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != ""); err != nil {
+	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != "", engine.Divergences()); err != nil {
 		return err
 	}
 
