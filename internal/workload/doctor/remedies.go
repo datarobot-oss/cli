@@ -47,4 +47,28 @@ const (
 	// RemedyLockInspect is shown when the lock file cannot be inspected
 	// (permission or I/O error). This is NOT a held-lock condition.
 	RemedyLockInspect = "check permissions on the sync state directory and sync.lock, then re-run this command"
+
+	// RemedyRelink is shown when the linked artifact is gone (404): the only
+	// recovery is repointing the project at a new artifact with a fresh BASE.
+	RemedyRelink = "dr artifact code doctor --relink <new-artifact-id>"
+
+	// RemedyArtifactLocked is shown when the linked artifact is locked
+	// (locking is one-way). Sync execution is refused but preview works; work
+	// against a draft instead, or relink to one.
+	RemedyArtifactLocked = "work against a draft artifact, or relink to one: dr artifact code doctor --relink <new-artifact-id>"
+
+	// RemedyCatalogMismatch is shown when the locally pinned catalog id no
+	// longer matches the artifact's codeRef: the pin is stale server-side.
+	RemedyCatalogMismatch = "dr artifact code doctor --relink <new-artifact-id> (or re-init against the intended artifact)"
+
+	// RemedyDrift is shown when the artifact's codeRef version no longer
+	// matches the last-synced version. Review what a sync would do first;
+	// relink starts a fresh baseline instead.
+	RemedyDrift = "review with 'dr artifact code sync --dry-run', or relink to start fresh: dr artifact code doctor --relink <new-artifact-id>"
+
+	// RemedyRemoteConnectivity is shown when a remote check could not reach
+	// the API for ANY reason other than a 404 (unauthenticated, 401/403,
+	// 5xx, timeout, unreachable endpoint). It deliberately never mentions
+	// --relink: a fetch failure is not evidence that the artifact is gone.
+	RemedyRemoteConnectivity = "run 'dr auth login' or fix network connectivity, then re-run this command"
 )
