@@ -525,3 +525,58 @@ func TestCheckout_PromptsForVersionWhenMissing(t *testing.T) {
 	assert.Contains(t, buf.String(), "dr artifact code versions")
 	assert.DirExists(t, wapi.CheckoutDir(dir, verA))
 }
+
+// The download stages into a .tmp-<version>-* sibling of the final snapshot
+// dir and swaps it into place. Regression guard for the surrounding-state
+// contract: whether the checkout succeeds or fails mid-download, the staging
+// directory must be gone from the checkouts parent — renamed away on success,
+// removed by the failure defer otherwise.
+func TestCheckout_LeavesNoTempDirsInCheckoutsParent(t *testing.T) {
+	// Failure first: the download dies mid-way and the staging dir must be
+	// cleaned up rather than stranded next to the (absent) snapshot.
+	failDir := initLinkedDir(t, "cat-1")
+
+	failing := &fakeClient{
+		versions:    []filesapi.CatalogVersion{{ID: verA}},
+		content:     map[string][]byte{"a.txt": []byte("a")},
+		downloadErr: errors.New("network died"),
+	}
+
+	cmd, _ := newTestCmd(t, failDir, fakeDeps(draftArtifact("art-abc-123"), failing), []string{verA})
+
+	require.Error(t, cmd.Execute())
+
+	assertNoTmpStagingDirs(t, failDir)
+
+	// Then success: the staging dir is renamed to the snapshot, so the
+	// parent must hold only the snapshot — no staging residue.
+	okDir := initLinkedDir(t, "cat-1")
+
+	fc := &fakeClient{
+		versions: []filesapi.CatalogVersion{{ID: verA}},
+		content:  map[string][]byte{"a.txt": []byte("a")},
+	}
+
+	cmd2, _ := newTestCmd(t, okDir, fakeDeps(draftArtifact("art-abc-123"), fc), []string{verA})
+
+	require.NoError(t, cmd2.Execute())
+
+	assertNoTmpStagingDirs(t, okDir)
+}
+
+// assertNoTmpStagingDirs fails when any .tmp- prefixed staging directory
+// survived a checkout in the project's checkouts parent.
+func assertNoTmpStagingDirs(t *testing.T, dir string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(wapi.CheckoutsDir(dir))
+	if os.IsNotExist(err) {
+		return
+	}
+
+	require.NoError(t, err)
+
+	for _, e := range entries {
+		assert.NotContains(t, e.Name(), ".tmp-", "checkout staging directory must not survive the command")
+	}
+}
