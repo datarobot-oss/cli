@@ -19,6 +19,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -29,6 +31,8 @@ import (
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -70,7 +74,8 @@ type jsonReport struct {
 	Summary    jsonSummary `json:"summary"`
 }
 
-// pinnedCheckOrder is the fixed local-check order the command must preserve.
+// pinnedCheckOrder is the fixed check order the command must preserve:
+// six local checks then the four remote checks (ten total).
 var pinnedCheckOrder = []string{
 	"wapi.presence",
 	"wapi.config",
@@ -78,6 +83,54 @@ var pinnedCheckOrder = []string{
 	"wapi.config-manifest-divergence",
 	"wapi.rollback",
 	"wapi.lock",
+	"remote.artifact-exists",
+	"remote.artifact-locked",
+	"remote.catalog-mismatch",
+	"remote.drift",
+}
+
+// withFakeArtifact swaps the command's remote artifact seam for fn, restoring
+// the original when the test ends.
+func withFakeArtifact(t *testing.T, fn func(string) (*workload.Artifact, error)) {
+	t.Helper()
+
+	orig := getArtifactFn
+
+	getArtifactFn = fn
+
+	t.Cleanup(func() { getArtifactFn = orig })
+}
+
+// fakeArtifact builds an artifact fixture with an optional codeRef planted on
+// the primary container (mirrors the init command's test helper).
+func fakeArtifact(id, name, status string, codeRef *workload.DatarobotCodeRef) *workload.Artifact {
+	art := &workload.Artifact{
+		ID:     id,
+		Name:   name,
+		Status: status,
+	}
+
+	if codeRef == nil {
+		return art
+	}
+
+	primary := true
+
+	art.Spec.ContainerGroups = []workload.ContainerGroup{
+		{
+			Containers: []workload.Container{
+				{
+					Primary: &primary,
+
+					ImageBuildConfig: &workload.ImageBuildConfig{
+						CodeRef: &workload.CodeRef{Datarobot: codeRef},
+					},
+				},
+			},
+		},
+	}
+
+	return art
 }
 
 // newTestCmd builds the doctor command with buffered stdout/stderr and no
@@ -198,6 +251,12 @@ func TestRunE_HealthyProject_TextReport_ExitZero(t *testing.T) {
 
 	linkHealthyProject(t, tmp)
 
+	// A never-synced draft (no codeRef) matches the never-synced state files:
+	// every check, local and remote, must be OK.
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "doctor-fixture", "DRAFT", nil), nil
+	})
+
 	c, out, errOut := newTestCmd(t, "--dir", tmp)
 
 	outStr := mustRun(t, c, out)
@@ -213,7 +272,7 @@ func TestRunE_HealthyProject_TextReport_ExitZero(t *testing.T) {
 		assert.Contains(t, outStr, id, "renders check row %s", id)
 	}
 
-	assert.Contains(t, outStr, "Summary: 6 ok, 0 warn, 0 fail, 0 skip — verdict: ok")
+	assert.Contains(t, outStr, "Summary: 10 ok, 0 warn, 0 fail, 0 skip — verdict: ok")
 }
 
 func TestRunE_UnlinkedProject_RendersReport_ExitsOneSilently(t *testing.T) {
@@ -235,6 +294,10 @@ func TestRunE_HealthyProject_JSONReport(t *testing.T) {
 	tmp := t.TempDir()
 
 	linkHealthyProject(t, tmp)
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "doctor-fixture", "DRAFT", nil), nil
+	})
 
 	c, out, _ := newTestCmd(t, "--dir", tmp, "--output-format", "json")
 
@@ -258,7 +321,7 @@ func TestRunE_HealthyProject_JSONReport(t *testing.T) {
 	}
 
 	assert.Equal(t, pinnedCheckOrder, gotOrder)
-	assert.Equal(t, jsonSummary{OK: 6}, report.Summary)
+	assert.Equal(t, jsonSummary{OK: 10}, report.Summary)
 }
 
 func TestRunE_JSONOutput_CorruptConfig_FailWithPath(t *testing.T) {
@@ -423,6 +486,150 @@ func TestCmd_RejectsPositionalArgs(t *testing.T) {
 	c.SetArgs([]string{"unexpected"})
 
 	assert.Error(t, c.Execute())
+}
+
+func TestRunE_Remote404_DeletedArtifact_FailWithRelinkRemedy(t *testing.T) {
+	tmp := t.TempDir()
+
+	linkHealthyProject(t, tmp)
+
+	withFakeArtifact(t, func(_ string) (*workload.Artifact, error) {
+		return nil, &drapi.HTTPError{StatusCode: 404, URL: "https://test/artifacts/x/"}
+	})
+
+	c, out, _ := newTestCmd(t, "--dir", tmp, "--output-format", "json")
+
+	err := c.Execute()
+
+	require.ErrorIs(t, err, cli.ErrSilent, "a remote FAIL drives exit 1")
+
+	var report jsonReport
+
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report), "stdout stays pure JSON on failure")
+
+	require.Len(t, report.Checks, len(pinnedCheckOrder))
+
+	byID := make(map[string]jsonCheck, len(report.Checks))
+
+	for _, check := range report.Checks {
+		byID[check.ID] = check
+	}
+
+	exists := byID["remote.artifact-exists"]
+
+	assert.Equal(t, "FAIL", exists.Status)
+	assert.Contains(t, exists.Summary, "deleted")
+	assert.Contains(t, exists.Remedy, "--relink")
+
+	// The dependent remote checks SKIP rather than pile on their own FAILs.
+	for _, id := range []string{"remote.artifact-locked", "remote.catalog-mismatch", "remote.drift"} {
+		assert.Equal(t, "SKIP", byID[id].Status, "check %s", id)
+	}
+
+	assert.Equal(t, "fail", report.Status)
+}
+
+func TestRunE_RemoteNon404_AllSkipWithConnectivityRemedy_ExitZero(t *testing.T) {
+	for name, remoteErr := range map[string]error{
+		"500":             &drapi.HTTPError{StatusCode: 500, URL: "https://test/"},
+		"unauthorized":    &drapi.HTTPError{StatusCode: 401, URL: "https://test/"},
+		"conn-refused":    errors.New("dial tcp 127.0.0.1:443: connect: connection refused"),
+		"wrapped-non-404": fmt.Errorf("fetch: %w", &drapi.HTTPError{StatusCode: 503, URL: "https://test/"}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			tmp := t.TempDir()
+
+			linkHealthyProject(t, tmp)
+
+			withFakeArtifact(t, func(_ string) (*workload.Artifact, error) {
+				return nil, remoteErr
+			})
+
+			c, out, errOut := newTestCmd(t, "--dir", tmp, "--output-format", "json")
+
+			require.NoError(t, c.Execute(), "non-404 remote errors never FAIL the run")
+
+			var report jsonReport
+
+			require.NoError(t, json.Unmarshal(out.Bytes(), &report), "stdout stays pure JSON")
+
+			byID := make(map[string]jsonCheck, len(report.Checks))
+
+			for _, check := range report.Checks {
+				byID[check.ID] = check
+
+				if strings.HasPrefix(check.ID, "remote.") {
+					assert.Equal(t, "SKIP", check.Status, "check %s: summary %q", check.ID, check.Summary)
+
+					assert.NotContains(t, check.Summary, "deleted", "non-404 is never reported as deleted")
+
+					assert.Contains(t, check.Remedy, "auth login")
+
+					assert.NotContains(t, check.Remedy, "--relink")
+				} else {
+					assert.Equal(t, "OK", check.Status, "local checks unaffected by remote failure: %s", check.ID)
+				}
+			}
+
+			assert.Equal(t, jsonSummary{OK: 6, SKIP: 4}, report.Summary)
+
+			assert.Equal(t, "ok", report.Status, "SKIP-only remote outcome keeps verdict ok")
+
+			assert.Empty(t, errOut.String())
+		})
+	}
+}
+
+func TestRunE_RemoteLockedArtifact_WarnNeverFail_ExitZero(t *testing.T) {
+	tmp := t.TempDir()
+
+	linkHealthyProject(t, tmp)
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "doctor-fixture", "locked", nil), nil
+	})
+
+	c, out, _ := newTestCmd(t, "--dir", tmp, "--output-format", "json")
+
+	require.NoError(t, c.Execute(), "a WARN alone must not fail the run")
+
+	var report jsonReport
+
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+
+	byID := make(map[string]jsonCheck, len(report.Checks))
+
+	for _, check := range report.Checks {
+		byID[check.ID] = check
+	}
+
+	locked := byID["remote.artifact-locked"]
+
+	assert.Equal(t, "WARN", locked.Status, "locked must WARN, never FAIL")
+	assert.False(t, locked.Fixable)
+	assert.Contains(t, locked.Summary, "preview")
+	assert.Contains(t, locked.Summary, "execute")
+	assert.Equal(t, "warn", report.Status)
+}
+
+func TestRunE_RemoteChecks_SingleArtifactFetchPerRun(t *testing.T) {
+	tmp := t.TempDir()
+
+	linkHealthyProject(t, tmp)
+
+	calls := 0
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		calls++
+
+		return fakeArtifact(id, "doctor-fixture", "DRAFT", nil), nil
+	})
+
+	c, _, _ := newTestCmd(t, "--dir", tmp)
+
+	require.NoError(t, c.Execute())
+
+	assert.Equal(t, 1, calls, "all four remote checks share one artifact fetch per run")
 }
 
 func TestSoftAuthProbe(t *testing.T) {

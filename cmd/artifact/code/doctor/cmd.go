@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/workload"
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -41,6 +42,10 @@ func init() {
 	// explicit --yes never leaks into drconfig.yaml.
 	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 }
+
+// Test seam: cmd_test.go reassigns this to stub the remote artifact fetch.
+// Production wiring always leaves it pointing at workload.GetArtifact.
+var getArtifactFn = workload.GetArtifact
 
 // Cmd returns the cobra.Command for `dr artifact code doctor`. It inherits the
 // artifact tree's DATAROBOT_CLI_FEATURE_WORKLOAD gate from its parent.
@@ -123,9 +128,12 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 		log.Debug("doctor found no remote credentials; remote checks will report SKIP")
 	}
 
-	// The six local checks in the pinned fixed order. Remote checks append
-	// after these once their feature lands (fixed order contract).
-	results := core.NewRunner(wldoctor.LocalChecks(projectDir)...).Run(cmd.Context())
+	// The complete check suite in the pinned fixed order: six local checks
+	// then the four remote checks. The remote checks share one artifact
+	// fetch through the getArtifactFn seam.
+	results := core.NewRunner(
+		wldoctor.Checks(projectDir, wldoctor.ArtifactGetterFunc(getArtifactFn))...,
+	).Run(cmd.Context())
 
 	report := core.NewReport(projectDir, linkedArtifactID(projectDir), results)
 

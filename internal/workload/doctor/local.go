@@ -34,6 +34,18 @@ const (
 	CheckIDLock       = "wapi.lock"
 )
 
+// Checks returns the complete doctor check suite in the pinned fixed order:
+// the six local checks followed by the four remote checks (ten total in
+// ticket scope; any future extras append after). The remote checks share one
+// artifact snapshot fetched through store.
+//
+// Each check resolves projectDir independently at Run time, so the returned
+// checks stay correct even if the directory's state changes between
+// construction and execution.
+func Checks(projectDir string, store ArtifactGetter) []core.Check {
+	return append(LocalChecks(projectDir), RemoteChecks(projectDir, store)...)
+}
+
 // LocalChecks returns the six local sync-state checks in the fixed report
 // order: presence, config, manifest, divergence, rollback, lock. The remote
 // checks (defined by their own feature) append after these.
