@@ -31,7 +31,7 @@ func planDocWithDivergence(t *testing.T, plan *sync.SyncPlan, divergences []sync
 
 	var buf bytes.Buffer
 
-	require.NoError(t, RenderPlanJSON(&buf, plan, false, divergences))
+	require.NoError(t, RenderPlanJSON(&buf, plan, false, divergences, nil))
 
 	var doc map[string]any
 
@@ -108,4 +108,74 @@ func TestRenderPlanJSON_NilPlan_KeepsDivergence(t *testing.T) {
 
 	require.IsType(t, []any{}, div)
 	assert.Len(t, div, 1)
+}
+
+// planDocWithSymlinks renders a plan with the given skipped symlinks and
+// returns the decoded top-level document.
+func planDocWithSymlinks(t *testing.T, plan *sync.SyncPlan, symlinks []sync.SkippedSymlink) map[string]any {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	require.NoError(t, RenderPlanJSON(&buf, plan, false, nil, symlinks))
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc), "the plan document must decode as JSON")
+
+	return doc
+}
+
+// The skippedSymlinks field is part of the contract: always present and
+// explicitly empty when there are none (the locked:false precedent).
+func TestRenderPlanJSON_SkippedSymlinksAlwaysPresent(t *testing.T) {
+	doc := planDocWithSymlinks(t, &sync.SyncPlan{}, nil)
+
+	sym, ok := doc["skippedSymlinks"]
+	require.True(t, ok, "the skippedSymlinks key must always be emitted")
+
+	require.IsType(t, []any{}, sym)
+	assert.Empty(t, sym, "no skipped symlinks must render as an explicit empty array, not null and not an omitted key")
+}
+
+func TestRenderPlanJSON_SkippedSymlinkEntries(t *testing.T) {
+	symlinks := []sync.SkippedSymlink{
+		{Path: "link_to_file.py", IsDir: false},
+		{Path: "link_to_dir", IsDir: true},
+	}
+
+	doc := planDocWithSymlinks(t, &sync.SyncPlan{}, symlinks)
+
+	raw, err := json.Marshal(doc["skippedSymlinks"])
+	require.NoError(t, err)
+
+	var entries []struct {
+		Path  string `json:"path"`
+		IsDir bool   `json:"isDir"`
+	}
+
+	require.NoError(t, json.Unmarshal(raw, &entries))
+	require.Len(t, entries, 2)
+
+	assert.Equal(t, "link_to_file.py", entries[0].Path)
+	assert.False(t, entries[0].IsDir, "file symlink must report isDir false")
+
+	assert.Equal(t, "link_to_dir", entries[1].Path)
+	assert.True(t, entries[1].IsDir, "directory symlink must report isDir true")
+}
+
+// A nil plan can still carry findings: skipped symlinks are detected in Phase 2
+// and reported regardless of what the plan does with the paths.
+func TestRenderPlanJSON_NilPlan_KeepsSkippedSymlinks(t *testing.T) {
+	symlinks := []sync.SkippedSymlink{
+		{Path: "link.py", IsDir: false},
+	}
+
+	doc := planDocWithSymlinks(t, nil, symlinks)
+
+	sym, ok := doc["skippedSymlinks"]
+	require.True(t, ok, "the skippedSymlinks key must be emitted even for a nil plan")
+
+	require.IsType(t, []any{}, sym)
+	assert.Len(t, sym, 1)
 }

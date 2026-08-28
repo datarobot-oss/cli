@@ -16,6 +16,7 @@ package sync
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -62,6 +63,31 @@ func phase2Manifests(e *Engine) error {
 	entries, err := fileops.Walk(e.projectDir, matcher.Match, walkOnSymlink)
 	if err != nil {
 		return fmt.Errorf("walk project directory: %w", err)
+	}
+
+	// Sort the skipped symlinks by path so notices and the structured field
+	// are deterministic across runs, then emit the warning from within the
+	// phase via log.Warn. Like the .wapiignore shadow warning, logging here
+	// (rather than returning a notice for the display layer to render) means
+	// the user hears it even when a later phase fails before anything gets a
+	// chance to render. The prose is bounded at SymlinkNoticeBound entries;
+	// the structured field on the engine carries every symlink regardless.
+	sort.Slice(e.skippedSymlinks, func(i, j int) bool {
+		return e.skippedSymlinks[i].Path < e.skippedSymlinks[j].Path
+	})
+
+	for i, s := range e.skippedSymlinks {
+		if i >= SymlinkNoticeBound {
+			break
+		}
+
+		log.Warn(skippedSymlinkNotice(s))
+	}
+
+	if len(e.skippedSymlinks) > SymlinkNoticeBound {
+		log.Warn(fmt.Sprintf(
+			"skipped symlink: and %d more symlink(s) were not uploaded or synced (see the plan JSON for the full list)",
+			len(e.skippedSymlinks)-SymlinkNoticeBound))
 	}
 
 	local, err := hashEntries(entries)

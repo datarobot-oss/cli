@@ -280,6 +280,14 @@ func (e *Engine) LockedNotice() string { return e.lockedNote }
 // because the real remote is in hand, and the exit status must not change.
 func (e *Engine) Divergences() []Divergence { return e.divergences }
 
+// SkippedSymlinks reports the symlinks the walk did not follow, filtered
+// through the ignore matcher so deliberately-ignored or system-excluded
+// links are absent. Each entry distinguishes a single skipped file from an
+// entire omitted subtree (a directory symlink prunes all of its children).
+// The findings are diagnostics: the plan already excludes them, and the
+// exit status must not change.
+func (e *Engine) SkippedSymlinks() []SkippedSymlink { return e.skippedSymlinks }
+
 // previewOnly reports that this run stops after Plan and sends nothing to the
 // platform, which is what makes the artifact's own mutability beside the point
 // in phase 1. It is not a promise that the working tree is untouched: phase 0

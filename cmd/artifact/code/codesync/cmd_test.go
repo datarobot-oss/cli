@@ -34,17 +34,18 @@ import (
 // flag to assert the cmd's branch decisions (dry-run, diff, conflict
 // prompt, JSON output).
 type fakeEngine struct {
-	plan          *sync.SyncPlan
-	planErr       error
-	result        *sync.Result
-	executeErr    error
-	stale         bool
-	migrationNote string
-	ignoreNotice  string
-	lockedNote    string
-	divergences   []sync.Divergence
-	fetcher       display.ContentFetcher
-	closeErr      error
+	plan            *sync.SyncPlan
+	planErr         error
+	result          *sync.Result
+	executeErr      error
+	stale           bool
+	migrationNote   string
+	ignoreNotice    string
+	lockedNote      string
+	divergences     []sync.Divergence
+	skippedSymlinks []sync.SkippedSymlink
+	fetcher         display.ContentFetcher
+	closeErr        error
 
 	executed bool
 	closed   bool
@@ -73,6 +74,8 @@ func (f *fakeEngine) IgnoreFileNotice() string { return f.ignoreNotice }
 func (f *fakeEngine) LockedNotice() string { return f.lockedNote }
 
 func (f *fakeEngine) Divergences() []sync.Divergence { return f.divergences }
+
+func (f *fakeEngine) SkippedSymlinks() []sync.SkippedSymlink { return f.skippedSymlinks }
 
 func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 

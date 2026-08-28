@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
@@ -52,6 +53,7 @@ type engineRunner interface {
 	IgnoreFileNotice() string
 	LockedNotice() string
 	Divergences() []sync.Divergence
+	SkippedSymlinks() []sync.SkippedSymlink
 	Fetcher() display.ContentFetcher
 }
 
@@ -221,6 +223,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
 	format.StateNotice(cmd.ErrOrStderr(), divergenceSummaryNotice(engine.Divergences()))
+	format.StateNotice(cmd.ErrOrStderr(), skippedSymlinkSummaryNotice(engine.SkippedSymlinks()))
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
@@ -265,6 +268,51 @@ func divergenceSummaryNotice(divergences []sync.Divergence) string {
 	return fmt.Sprintf(
 		"--verify found %d divergence(s) between manifest.json (BASE) and the server (REMOTE): %s. The plan reconciles them.",
 		len(divergences), strings.Join(paths, ", "))
+}
+
+// skippedSymlinkSummaryNotice renders the one-line summary of skipped
+// symlinks that runs alongside the other state notices. The per-symlink
+// detail (with kind-specific wording) is logged from Phase 2 itself, so
+// this summary stays stream-agnostic and names each symlink with its kind.
+// The prose is bounded at SymlinkNoticeBound entries; the structured JSON
+// field on the plan document carries every symlink regardless.
+func skippedSymlinkSummaryNotice(symlinks []sync.SkippedSymlink) string {
+	if len(symlinks) == 0 {
+		return ""
+	}
+
+	// Sort by path for deterministic output across runs.
+	sorted := make([]sync.SkippedSymlink, len(symlinks))
+	copy(sorted, symlinks)
+
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
+
+	shown := sorted
+
+	if len(sorted) > sync.SymlinkNoticeBound {
+		shown = sorted[:sync.SymlinkNoticeBound]
+	}
+
+	parts := make([]string, len(shown))
+
+	for i, s := range shown {
+		kind := "file"
+		if s.IsDir {
+			kind = "directory"
+		}
+
+		parts[i] = fmt.Sprintf("%s (%s)", s.Path, kind)
+	}
+
+	if len(sorted) > sync.SymlinkNoticeBound {
+		return fmt.Sprintf(
+			"%d symlink(s) were not uploaded or synced: %s, and %d more.",
+			len(sorted), strings.Join(parts, ", "), len(sorted)-sync.SymlinkNoticeBound)
+	}
+
+	return fmt.Sprintf(
+		"%d symlink(s) were not uploaded or synced: %s.",
+		len(sorted), strings.Join(parts, ", "))
 }
 
 // finishSync handles the render → optional prompt → execute → render
@@ -347,7 +395,7 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // plan is emitted and no Execute is run, so callers can inspect the
 // plan and re-invoke with --yes if they want to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
-	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != "", engine.Divergences()); err != nil {
+	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != "", engine.Divergences(), engine.SkippedSymlinks()); err != nil {
 		return err
 	}
 
