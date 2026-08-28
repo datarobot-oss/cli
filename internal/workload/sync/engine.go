@@ -207,13 +207,20 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 }
 
 // Run is Plan + Execute. With DryRun or ShowDiffs it stops after Plan.
+// An empty plan normally short-circuits before Execute too, but a --verify
+// run that recorded BASE-vs-REMOTE divergences must still run Phase 6: the
+// plan has nothing to apply, yet the manifest on disk is a lie about the
+// server, and Phase 6 is what rewrites it from the real remote now in hand.
+// The sharpest shape — BASE poisoned to A while disk and server both hold B
+// — classifies as CONVERGED and plans nothing, so without this the poison
+// survives the very run that detected it.
 func (e *Engine) Run() (*Result, error) {
 	plan, err := e.Plan()
 	if err != nil {
 		return nil, err
 	}
 
-	if e.previewOnly() || plan.IsEmpty() {
+	if e.previewOnly() || (plan.IsEmpty() && len(e.divergences) == 0) {
 		if relErr := e.releaseLock(); relErr != nil {
 			return nil, fmt.Errorf("release lock: %w", relErr)
 		}

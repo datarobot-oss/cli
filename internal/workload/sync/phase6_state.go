@@ -105,7 +105,7 @@ func phase6State(e *Engine) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	if err := wapi.AppendHistory(e.projectDir, syncHistoryEntry(e, now)); err != nil {
+	if err := wapi.AppendHistory(e.projectDir, syncHistoryEntry(e, versionForState, now)); err != nil {
 		return fmt.Errorf("append history: %w", err)
 	}
 
@@ -191,12 +191,17 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 	}, nil
 }
 
-// syncHistoryEntry assembles the JSONL line written to history.log.
-func syncHistoryEntry(e *Engine, now time.Time) wapi.HistoryEntry {
+// syncHistoryEntry assembles the JSONL line written to history.log. The
+// destination version is the one the run ended on (resolved in phase6State),
+// not the raw new-version ID: a sync that applies no uploads — a pull-only
+// sync, or the empty-plan state repair a --verify run performs — ends at the
+// version it started from, and an empty tail would read as a truncated
+// entry rather than as "no new version".
+func syncHistoryEntry(e *Engine, versionForState string, now time.Time) wapi.HistoryEntry {
 	entry := wapi.HistoryEntry{
 		"ts":         now.Format(time.RFC3339),
 		"op":         "sync",
-		"version":    fmt.Sprintf("%s→%s", ShortVer(e.plan.OldVersionShort), ShortVer(e.newVersionID)),
+		"version":    fmt.Sprintf("%s→%s", ShortVer(e.plan.OldVersionShort), ShortVer(versionForState)),
 		"uploaded":   len(e.plan.Uploads),
 		"downloaded": len(e.plan.Downloads),
 		"deleted":    len(e.plan.Deletes),

@@ -245,3 +245,57 @@ func TestRunE_JSON_DivergenceExplicitlyEmptyWhenClean(t *testing.T) {
 	assertOnlyJSON(t, strings.NewReader(raw))
 	assert.Contains(t, raw, `"divergence": []`)
 }
+
+// The empty-plan repair: a verify run whose plan came back empty but whose
+// divergence findings are non-empty must still reach Execute. The engine's
+// Phase 5 no-ops on an empty plan, so the Execute is what drives the Phase 6
+// state write that rewrites the poisoned manifest from the real remote;
+// skipping Execute here is how the poison survives the run that caught it.
+func TestRunE_EmptyPlan_WithDivergence_ExecutesForRepair(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{},
+		divergences: []sync.Divergence{
+			{Path: "app.py", Kind: sync.DivergenceHashMismatch, BaseHash: "aaaa", RemoteHash: "bbbb"},
+		},
+		result: &sync.Result{NewVersion: "v1"},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "verify": "true"}
+
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	assert.True(t, fe.executed,
+		"an empty plan with divergence findings must still Execute so Phase 6 repairs the manifest")
+	assert.Contains(t, stderr.String(), "app.py", "the divergence summary must still reach stderr")
+}
+
+// JSON-mode twin of the repair path: the plan document is emitted first (its
+// divergence field populated), then Execute runs and the result document
+// follows — the same two-document shape as a normal applying sync.
+func TestRunE_JSON_EmptyPlan_WithDivergence_ExecutesAndEmitsResult(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{},
+		divergences: []sync.Divergence{
+			{Path: "app.py", Kind: sync.DivergenceHashMismatch, BaseHash: "aaaa", RemoteHash: "bbbb"},
+		},
+		result: &sync.Result{NewVersion: "v1"},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "verify": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	raw := stdout.String()
+
+	assertOnlyJSON(t, strings.NewReader(raw))
+	assert.True(t, fe.executed, "the JSON path must Execute for the empty-plan repair too")
+	assert.Contains(t, raw, `"v1"`, "the result document must follow the plan document")
+}

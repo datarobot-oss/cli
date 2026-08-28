@@ -281,7 +281,7 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 		return err
 	}
 
-	if flags.DryRun || flags.Diff || plan.IsEmpty() {
+	if skipsExecute(flags, plan, engine.Divergences()) {
 		return nil
 	}
 
@@ -319,6 +319,20 @@ func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPla
 	return display.PrintDiffs(out, plan, engine.Fetcher())
 }
 
+// skipsExecute encapsulates the decision to stop after rendering the plan.
+// A preview always stops. An empty plan stops too — except when a --verify
+// run recorded BASE-vs-REMOTE divergences: then Execute must run, because
+// Phase 5 no-ops on an empty plan and the Execute is what drives Phase 6's
+// rewrite of the poisoned manifest from the real remote. Skipping Execute
+// there is how the poison survives the run that caught it.
+func skipsExecute(flags runFlags, plan *sync.SyncPlan, divergences []sync.Divergence) bool {
+	if flags.DryRun || flags.Diff {
+		return true
+	}
+
+	return plan.IsEmpty() && len(divergences) == 0
+}
+
 // shouldPromptConflicts encapsulates the decision: prompt only when
 // the user has not passed --yes and the plan actually has conflicts.
 func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
@@ -337,7 +351,10 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 		return err
 	}
 
-	if flags.DryRun || flags.Diff || plan.IsEmpty() {
+	// Same skip rule as the human path, including the empty-plan exception:
+	// divergence findings from --verify mean Execute must run so Phase 6
+	// repairs the manifest, even though the plan itself has no rows.
+	if skipsExecute(flags, plan, engine.Divergences()) {
 		return nil
 	}
 
