@@ -65,7 +65,7 @@ func (c *httpClient) UploadFromZipExisting(catalogID, name, overwrite string, si
 }
 
 func uploadZipMultipart(requestURL string, fields url.Values, name string, size int64, body io.Reader) (*FromFileResp, error) {
-	req, err := newStreamingMultipartRequest(requestURL, nil, fields, name, size, body)
+	req, err := newStreamingMultipartRequest(requestURL, fields, name, size, body)
 	if err != nil {
 		return nil, err
 	}
