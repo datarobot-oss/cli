@@ -44,10 +44,19 @@ func phase2Manifests(e *Engine) error {
 
 	warnIfLockfileIgnored(e, matcher)
 
-	var skippedSymlinks []string
+	// The walk's symlink arm returns before the ignore check (walk.go tests
+	// ModeSymlink before calling ignore), so filtering must happen here rather
+	// than in the walker. Without it, a symlink the user deliberately .drignore'd
+	// or that is system-excluded (e.g. named .git) would still be announced — the
+	// classic unfiltered-warning trap. matcher.Match applies both the user's
+	// .drignore patterns and the hardcoded system excludes, with the same
+	// case-folding rules used for regular files.
+	walkOnSymlink := func(rel, _ string, isDir bool) {
+		if matcher.Match(rel, isDir) {
+			return
+		}
 
-	walkOnSymlink := func(rel, _ string) {
-		skippedSymlinks = append(skippedSymlinks, rel)
+		e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: rel, IsDir: isDir})
 	}
 
 	entries, err := fileops.Walk(e.projectDir, matcher.Match, walkOnSymlink)

@@ -26,7 +26,13 @@ import (
 type IgnoreFunc func(relPath string, isDir bool) bool
 
 // SymlinkLogger is called once per skipped symlink. nil disables it.
-type SymlinkLogger func(relPath, target string)
+//
+// isDir reports whether the link target resolves to a directory (resolved
+// via os.Stat, which follows the link). A dangling symlink reports an empty
+// target and isDir false; the caller can distinguish "lost one file" from
+// "lost an entire subtree" from the boolean, which is the whole reason it
+// exists.
+type SymlinkLogger func(relPath, target string, isDir bool)
 
 type Entry struct {
 	AbsPath string
@@ -95,13 +101,29 @@ func walkVisit(
 	return nil
 }
 
+// notifySymlink resolves the link target and its kind, then delivers the
+// callback. os.Stat follows the symlink, so a dangling link fails here and is
+// reported with an empty target and isDir false — the user sees that a link
+// points nowhere rather than getting a walk error. os.Readlink is still
+// attempted first so a resolvable link reports the link text the user wrote;
+// only when Stat fails (the target does not exist) is the target cleared.
 func notifySymlink(onSymlink SymlinkLogger, absPath, relPath string) {
 	if onSymlink == nil {
 		return
 	}
 
 	target, _ := os.Readlink(absPath)
-	onSymlink(relPath, target)
+
+	// Stat follows the link. A failure means the target does not exist
+	// (dangling) or is inaccessible: report an empty target and isDir
+	// false so the caller can label it without a walk error.
+	info, err := os.Stat(absPath)
+	if err != nil {
+		onSymlink(relPath, "", false)
+		return
+	}
+
+	onSymlink(relPath, target, info.IsDir())
 }
 
 func dirAction(relPath string, ignore IgnoreFunc) error {

@@ -123,6 +123,11 @@ type Engine struct {
 	ignoreNotice   string
 	lockedNote     string
 
+	// skippedSymlinks holds symlinks the walk did not follow, filtered
+	// through the ignore matcher so deliberately-ignored or system-excluded
+	// links are absent. Populated in Phase 2; exposed by the display layer.
+	skippedSymlinks []SkippedSymlink
+
 	lockfileFn        LockfileRunner
 	lockfileGenerated bool
 	lockfileHint      string
