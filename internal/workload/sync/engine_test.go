@@ -64,6 +64,7 @@ type fakeFilesClient struct {
 	versionID     string
 	stageID       string
 	uploadedFiles map[string][]byte
+	uploadedModes map[string]uint32
 	deletedPaths  []string
 	mu            stdsync.Mutex
 }
@@ -84,7 +85,7 @@ func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
 	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil
 }
 
-func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Reader) error {
+func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, mode uint32, body io.Reader) error {
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return err
@@ -98,6 +99,12 @@ func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Read
 	}
 
 	f.uploadedFiles[name] = data
+
+	if f.uploadedModes == nil {
+		f.uploadedModes = map[string]uint32{}
+	}
+
+	f.uploadedModes[name] = mode
 
 	return nil
 }
