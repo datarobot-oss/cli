@@ -438,6 +438,41 @@ func TestRunE_SymlinkedDirResolvesToTarget(t *testing.T) {
 	assert.Equal(t, want, report.ProjectDir, "a symlinked --dir reports its target")
 }
 
+// TestRunE_SymlinkedDirSameBasenameResolvesToTarget pins the fix for the
+// basename-only heuristic: a symlink whose target directory shares the link's
+// own basename must still be detected and resolved. The old
+// filepath.Base(resolved) == filepath.Base(abs) check would treat this as a
+// non-symlink because both basename components are "project".
+func TestRunE_SymlinkedDirSameBasenameResolvesToTarget(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Target directory shares the basename "project" with the link itself.
+	target := filepath.Join(tmp, "data", "project")
+
+	link := filepath.Join(tmp, "project")
+
+	// linkHealthyProject creates the target dir (via MkdirAll in
+	// writeStateFile) and writes valid state files into it.
+	linkHealthyProject(t, target)
+
+	require.NoError(t, os.Symlink(target, link))
+
+	c, out, _ := newTestCmd(t, "--dir", link, "--output-format", "json")
+
+	outStr := mustRun(t, c, out)
+
+	var report jsonReport
+
+	require.NoError(t, json.Unmarshal([]byte(outStr), &report))
+
+	want, err := filepath.EvalSymlinks(target)
+
+	require.NoError(t, err)
+
+	assert.Equal(t, want, report.ProjectDir,
+		"a symlink whose target shares its basename still resolves to the target")
+}
+
 func TestRunE_ReadOnlyRun_WritesNothing(t *testing.T) {
 	tmp := t.TempDir()
 

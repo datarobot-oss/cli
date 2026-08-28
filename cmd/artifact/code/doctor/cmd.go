@@ -22,6 +22,7 @@ package doctor
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -248,17 +249,30 @@ func renderReport(cmd *cobra.Command, outputFormat outputformat.OutputFormat, re
 // so a project reached through a link reports the link's destination.
 // Intermediate components stay as written, so an OS-level alias the user did
 // not create (e.g. macOS /tmp → /private/tmp) never rewrites their path.
+//
+// Symlink detection uses os.Lstat on the final component rather than a
+// basename comparison of the EvalSymlinks result: a symlink whose target
+// directory happens to share the link's basename would defeat a basename
+// check but is correctly detected by Lstat.
 func resolveProjectDir(dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", fmt.Errorf("resolve project directory: %w", err)
 	}
 
+	// Lstat the final component without following it: only a symlink on the
+	// last element triggers resolution. Intermediate symlinks (e.g. macOS
+	// /tmp → /private/tmp) are transparently resolved by the OS during Lstat
+	// but do not cause the final component to be reported as a symlink, so
+	// the user's path stays as written. A missing or unreadable path keeps
+	// the Abs result — the checks report the real condition.
+	info, statErr := os.Lstat(abs)
+	if statErr != nil || info.Mode()&os.ModeSymlink == 0 {
+		return abs, nil
+	}
+
 	resolved, linkErr := filepath.EvalSymlinks(abs)
-	if linkErr != nil || filepath.Base(resolved) == filepath.Base(abs) {
-		// A missing or unreadable path keeps the Abs result — the checks
-		// report the real condition. An unchanged final component means the
-		// path itself is not a symlink.
+	if linkErr != nil {
 		return abs, nil
 	}
 

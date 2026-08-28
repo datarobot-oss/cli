@@ -36,7 +36,7 @@ func stripANSI(s string) string {
 func sampleReport() Report {
 	artifact := "abc123"
 
-	remedy := "dr artifact code doctor --relink <new-artifact-id>"
+	remedy := "dr artifact code doctor --relink <new-artifact-id> & sync"
 
 	checks := []Result{
 		{CheckID: "wapi.presence", Status: StatusOK, Summary: "linked"},
@@ -70,7 +70,7 @@ func TestTextReporter_HeaderTableRemediesSummary(t *testing.T) {
 
 	// Remedies rendered for non-OK rows.
 	assert.Contains(t, out, "dr artifact code doctor --fix")
-	assert.Contains(t, out, "dr artifact code doctor --relink <new-artifact-id>")
+	assert.Contains(t, out, "dr artifact code doctor --relink <new-artifact-id> & sync")
 
 	// Summary line: counts plus verdict.
 	assert.Contains(t, out, "2 ok")
@@ -124,6 +124,18 @@ func TestJSONReporter_Schema(t *testing.T) {
 
 	require.NoError(t, WriteJSON(&buf, report))
 
+	// Raw-bytes assertion (BEFORE json.Unmarshal): SetEscapeHTML(false) must
+	// leave <, >, and & verbatim in the marshaled output. The post-Unmarshal
+	// assertions below are escaping-invariant (Decode reverses HTML escaping),
+	// so only this check pins the encoder configuration documented in json.go.
+	raw := buf.String()
+
+	assert.Contains(t, raw, "<new-artifact-id>")
+	assert.Contains(t, raw, "& sync")
+	assert.NotContains(t, raw, `\u003c`)
+	assert.NotContains(t, raw, `\u003e`)
+	assert.NotContains(t, raw, `\u0026`)
+
 	var got map[string]any
 
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &got))
@@ -164,7 +176,7 @@ func TestJSONReporter_Schema(t *testing.T) {
 
 	assert.Equal(t, "FAIL", diverged["status"])
 	assert.Equal(t, "diverged", diverged["summary"])
-	assert.Equal(t, "dr artifact code doctor --relink <new-artifact-id>", diverged["remedy"])
+	assert.Equal(t, "dr artifact code doctor --relink <new-artifact-id> & sync", diverged["remedy"])
 	assert.Equal(t, true, diverged["fixable"])
 
 	details, ok := diverged["details"].(map[string]any)
