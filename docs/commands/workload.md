@@ -154,7 +154,7 @@ dr workload delete [<workload-id>] [--dir <path>] [--yes]
 - `--yes`, `-y`: skip the confirmation prompt. `DATAROBOT_CLI_NON_INTERACTIVE=1` stands in for it only when you passed the workload id; a workload whose id is specified in the manifest takes the explicit flag.
 - `--dir <path>`: project directory whose `.datarobot.yaml` names the workload, and holds the binding to clear, searched upward from there. Defaults to the current directory. Pass the same value you deployed with, since a manifest in a subdirectory is not visible from its parent.
 
-If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next `dr workload up` creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
+If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next `dr workload up` creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names `dr artifact code init --force <artifact-id>` as the way to point the project at a different one. These notes go to stderr, so stdout stays the command's result.
 
 A manifest this edit cannot make sound again is refused rather than rewritten, with the reason and the remedy: a binding whose value something else aliases, repeated `workloadId` keys that disagree, a file whose only recognized key is the binding, and a file carrying more than one YAML document.
 
@@ -261,6 +261,26 @@ dr workload stop   <workload-id>
 dr workload start  <workload-id>
 dr workload delete <workload-id>
 ```
+
+## Recovering a stuck workload
+
+An errored or terminated workload is the one state a deploy cannot rescue. It still holds its name, so the next `dr workload up` can neither deploy onto it nor create a replacement beside it. Recovery is to remove it and deploy again, and the CLI names that exit wherever it refuses:
+
+```bash
+# Diagnose first: a slow start can report errored and then recover on its own.
+dr workload logs <workload-id>
+
+# Either remove it explicitly, which also clears the binding in .datarobot.yaml,
+dr workload delete <workload-id> --dir .
+dr workload up
+
+# or fold both into the deploy.
+dr workload up --recreate
+```
+
+`--recreate` deletes the bound workload and creates it again under the same name. It acts only on a workload that is errored or terminated; any other state is refused, because a workload a deploy can act on is deployed onto rather than replaced. Deleting cannot be undone, so it asks for the workload name to be typed back unless `--yes` is passed, and `--dry-run --recreate` prints what it would do without deleting anything.
+
+Do not remove the `workloadId` line by hand, and do not delete `.datarobot/`. Clearing the binding alone leaves the old workload holding the name, so the create that follows fails; deleting the state directory discards the code catalog and the last-synced version, so the next sync re-uploads a tree the platform already has.
 
 ## Error handling
 

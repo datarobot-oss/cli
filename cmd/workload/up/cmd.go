@@ -153,6 +153,7 @@ type flags struct {
 	detach    bool
 	lock      bool
 	force     bool
+	recreate  bool
 	importEnv bool
 	updateEnv bool
 
@@ -221,10 +222,20 @@ plan is built against where it landed. A stopped one is started and then
 reconciled in the same run, which is one command whether the file asks for a
 start alone or for a start and a new version.
 
+An errored or terminated workload is the one state a deploy cannot rescue: it
+still holds its name, so nothing new can take it. --recreate deletes it and
+creates it again under the same name, which is the same recovery
+'dr workload delete' performs, folded into the deploy. Deleting cannot be
+undone, so it asks first unless --yes is passed, and it refuses any other
+state: a workload a deploy can act on is deployed onto, not replaced. Check
+'dr workload logs' before reaching for it, because a slow start can report
+errored and then recover on its own.
+
 Examples:
   dr workload up
   dr workload up --dry-run
-  dr workload up --yes --output-format json`,
+  dr workload up --yes --output-format json
+  dr workload up --recreate`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -249,6 +260,7 @@ Examples:
 			"detach":        f.detach,
 			"lock":          f.lock,
 			"force_build":   f.force,
+			"recreate":      f.recreate,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -268,6 +280,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"version. Locking is one-way.")
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
 		"Rebuild the image even when the working tree matches what was last synced.")
+	cmd.Flags().BoolVar(&f.recreate, "recreate", false,
+		"Delete the bound workload and create it again under the same name. Only a workload that is errored "+
+			"or terminated may be recreated; deleting one cannot be undone.")
 
 	// The same two flags `dr workload config` takes, because the first run of
 	// this command already reads .env: with no manifest it is the wizard. A
@@ -322,6 +337,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Lock:           f.lock,
 		Confirm:        rollConfirm(cmd, yes),
 		ForceBuild:     f.force,
+		Recreate:       f.recreate,
 		ImportEnv:      f.importEnv,
 		UpdateEnv:      f.updateEnv,
 		PollInterval:   poll.Interval,

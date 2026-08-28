@@ -71,7 +71,31 @@ func TestPrintAlreadyLinked_IncludesPath(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Already linked to artifact art-abc-123; state exists at "+wapi.Dir("/tmp/proj")+".")
-	assert.Contains(t, out, "Delete "+wapi.Dir("/tmp/proj")+" to re-init.")
+	assert.Contains(t, out, "--force", "the refusal has to name the command that changes the link")
+	assert.NotContains(t, out, "Delete "+wapi.Dir("/tmp/proj"),
+		"recovery must never end at deleting the state directory")
+}
+
+// Re-pointing names both ends, because the id being left is the only way back
+// for someone who forced the wrong directory.
+func TestPrintRelinked_NamesBothArtifacts(t *testing.T) {
+	out := captureStdout(t, func() {
+		printRelinked("art-old-111", "art-new-222", "/tmp/proj")
+	})
+
+	assert.Contains(t, out, "art-old-111")
+	assert.Contains(t, out, "art-new-222")
+	assert.NotContains(t, out, "Delete ", "the whole point of --force is not deleting anything")
+}
+
+// A link with no readable predecessor still says what it now points at.
+func TestPrintRelinked_WithoutAPreviousArtifact(t *testing.T) {
+	out := captureStdout(t, func() {
+		printRelinked("", "art-new-222", "/tmp/proj")
+	})
+
+	assert.Contains(t, out, "art-new-222")
+	assert.NotContains(t, out, "from artifact")
 }
 
 func TestRenderInitResult_TextWithCodeRef(t *testing.T) {

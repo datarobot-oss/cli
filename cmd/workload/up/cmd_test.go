@@ -247,6 +247,22 @@ func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 	_, _, err = runCmd(t, "--lock")
 	require.NoError(t, err)
 	assert.True(t, locking.Lock)
+
+	recreating := stubRun(t, deployed(), nil)
+
+	_, _, err = runCmd(t, "--recreate")
+	require.NoError(t, err)
+	assert.True(t, recreating.Recreate)
+}
+
+// --recreate is off unless it is asked for: it deletes a workload, and a flag
+// that defaulted on would do that to a run that never mentioned it.
+func TestCmd_RecreateIsOffByDefault(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t)
+	require.NoError(t, err)
+	assert.False(t, seen.Recreate)
 }
 
 // Locking happens after the workload is serving and --detach returns before

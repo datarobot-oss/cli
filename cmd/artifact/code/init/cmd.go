@@ -74,6 +74,9 @@ Example:
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; use defaults.")
+	c.Flags().Bool("force", false,
+		"Re-point an already-linked directory at this artifact instead of refusing. The catalog and last "+
+			"synced version are taken from the artifact named here, so the next sync uploads what it lacks.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() in runInit so an explicit
@@ -82,10 +85,12 @@ Example:
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, args []string) map[string]any {
 		yes := cli.IsNonInteractive(cmd)
+		force, _ := cmd.Flags().GetBool("force")
 
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
 			"yes":           yes,
+			"force":         force,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -104,7 +109,10 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 
 	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
 
-	if wapi.Exists(dir) {
+	force, _ := cmd.Flags().GetBool("force")
+
+	linked := wapi.Exists(dir)
+	if linked && !force {
 		return reportAlreadyLinked(dir)
 	}
 
@@ -121,6 +129,14 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	codeRef := workload.ExtractCodeRef(*art)
 	opts := buildInitOptions(artifactID, codeRef)
 
+	// Re-pointing and linking are one command because they are one question:
+	// which artifact does this directory push to. Splitting them would leave
+	// --force to be discovered separately from the thing it fixes, which is how
+	// "delete the state directory" became the answer people found first.
+	if linked {
+		return relink(dir, *art, opts, outputFormat)
+	}
+
 	if err := wapi.Initialize(dir, opts); err != nil {
 		if errors.Is(err, wapi.ErrAlreadyLinked) {
 			return reportAlreadyLinked(dir)
@@ -130,6 +146,33 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	}
 
 	return renderInitResult(outputFormat, newInitResult(*art, dir))
+}
+
+// relink moves an existing link, naming where it came from.
+//
+// The previous artifact is read before the write, because after it there is
+// nothing left that remembers: a user who re-pointed the wrong directory has
+// the id they need to put it back only if this line printed it.
+func relink(dir string, art workload.Artifact, opts wapi.InitOptions, outputFormat outputformat.OutputFormat) error {
+	previous := ""
+	if cfg, err := wapi.LoadConfig(dir); err == nil {
+		previous = cfg.ArtifactID
+	}
+
+	if err := wapi.Relink(dir, opts); err != nil {
+		return err
+	}
+
+	// The JSON envelope is the same shape a fresh link produces: a caller
+	// parsing it is asking which artifact this directory pushes to, and the
+	// answer does not depend on whether it had a different one a moment ago.
+	if outputFormat == outputformat.OutputFormatJSON {
+		return renderInitResult(outputFormat, newInitResult(art, dir))
+	}
+
+	printRelinked(previous, opts.ArtifactID, dir)
+
+	return nil
 }
 
 func fetchArtifact(artifactID string) (*workload.Artifact, error) {

@@ -325,3 +325,70 @@ func TestCmd_DoesNotClobberGlobalYesViper(t *testing.T) {
 	assert.False(t, viperx.GetBool("yes"),
 		"init's --yes must not be bound to global viper key 'yes' (would clobber dotenv)")
 }
+
+// --force is the command that "delete the state directory" used to stand in
+// for. It re-points the link and leaves everything a deletion would have taken.
+func TestRunE_ForceRelinksAnAlreadyLinkedDirectory(t *testing.T) {
+	tmp := t.TempDir()
+
+	require.NoError(t, wapi.Initialize(tmp, wapi.InitOptions{
+		ArtifactID: "68b0aaaa0000000000000001",
+		CatalogID:  "68b0bbbb0000000000000002",
+	}))
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "my-agent", "DRAFT", &workload.DatarobotCodeRef{
+			CatalogID: "68b0eeee0000000000000005",
+		}), nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{"68b0dddd0000000000000004"})
+	require.NoError(t, cmd.Flags().Set("force", "true"))
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	assert.Contains(t, out, "68b0aaaa0000000000000001", "name what it was pointing at, so it can be put back")
+	assert.Contains(t, out, "68b0dddd0000000000000004")
+
+	cfg, err := wapi.LoadConfig(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, "68b0dddd0000000000000004", cfg.ArtifactID)
+
+	require.NotNil(t, cfg.CatalogID)
+	assert.Equal(t, "68b0eeee0000000000000005", *cfg.CatalogID,
+		"the catalog comes from the artifact being linked to")
+}
+
+// Without --force the refusal stands, and it has to name the flag rather than
+// send the reader to delete the directory.
+func TestRunE_WithoutForceStillRefusesAndNamesTheFlag(t *testing.T) {
+	tmp := t.TempDir()
+
+	require.NoError(t, wapi.Initialize(tmp, wapi.InitOptions{ArtifactID: "68b0aaaa0000000000000001"}))
+
+	withFakeArtifact(t, func(string) (*workload.Artifact, error) {
+		t.Fatal("a refusal must not cost an API call")
+
+		return nil, nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{"68b0dddd0000000000000004"})
+
+	var err error
+
+	out := captureStdout(t, func() { err = cmd.Execute() })
+
+	require.Error(t, err)
+	assert.Contains(t, out, "--force")
+	assert.NotContains(t, out, "to re-init", "recovery must never end at deleting the state directory")
+
+	cfg, lerr := wapi.LoadConfig(tmp)
+	require.NoError(t, lerr)
+	assert.Equal(t, "68b0aaaa0000000000000001", cfg.ArtifactID, "a refusal changes nothing")
+}
+
+func TestCmd_RegistersForceFlag(t *testing.T) {
+	assert.NotNil(t, Cmd().Flags().Lookup("force"))
+}
