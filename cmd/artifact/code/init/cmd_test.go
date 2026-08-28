@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
+	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
@@ -79,6 +80,18 @@ func withInteractive(t *testing.T, interactive bool) {
 	}
 
 	t.Cleanup(func() { isInteractiveFn = orig })
+}
+
+// withRunRelink overrides the relink execution seam. The override receives
+// the context and options that runRelinkFromInit would pass to
+// wldoctor.RunRelink, and returns the captured context via the closure.
+func withRunRelink(t *testing.T, fn func(context.Context, wldoctor.RelinkOptions) ([]core.Action, error)) {
+	t.Helper()
+
+	orig := runRelinkFn
+	runRelinkFn = fn
+
+	t.Cleanup(func() { runRelinkFn = orig })
 }
 
 // PreRunE is removed because unit tests don't go through auth.
@@ -1009,7 +1022,12 @@ func TestRunE_AlreadyLinked_NoDeleteAdvice(t *testing.T) {
 
 // TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext verifies that the
 // interactive relink-from-init path propagates the cobra command's context
-// to RunRelink (finding 6: previously passed context.Background()).
+// to RunRelink (finding 6: previously passed context.Background()). The test
+// overrides the runRelinkFn seam to capture the context received by the
+// relink call and asserts it is the exact cmd.Context() value — not
+// context.Background(). This makes the assertion genuinely falsifiable: if
+// the code reverts to context.Background(), the captured ctx will differ
+// from cmd.Context() and the test will fail.
 func TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -1035,33 +1053,44 @@ func TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext(t *testing.T) {
 		return func(_ string) bool { return true }
 	})
 
+	// Use a context with a sentinel value so we can distinguish it from
+	// context.Background() and verify it is the exact cmd.Context().
+	type ctxKey struct{}
+
+	sentinel := &struct{}{}
+
+	ctx := context.WithValue(context.Background(), ctxKey{}, sentinel)
+
+	var capturedCtx context.Context
+
+	withRunRelink(t, func(receivedCtx context.Context, opts wldoctor.RelinkOptions) ([]core.Action, error) {
+		capturedCtx = receivedCtx
+
+		// Delegate to the real RunRelink so the relink actually executes.
+		return wldoctor.RunRelink(receivedCtx, opts)
+	})
+
 	cmd := newTestCmd(t, tmp, false, []string{"art-ctx-001"})
-
-	// Set a context with a value so we can verify it propagates through to
-	// RunRelink. The lock check's Run method receives the context; we verify
-	// the context is the command's (not context.Background()) by checking that
-	// a canceled context causes the relink to abort before writing.
-	ctx, cancel := context.WithCancel(context.Background())
-
-	cancel() // cancel immediately so the context is already done
 
 	cmd.SetContext(ctx)
 
 	_, _, err := runCapture(t, cmd)
 
-	// With a canceled context, the lock check should still run (it doesn't
-	// check ctx.Done), but the key assertion is that the code path uses
-	// cmd.Context() — if it used context.Background() the canceled context
-	// would have no effect. The relink should still succeed because the lock
-	// check doesn't check context cancellation, but the context propagation
-	// is verified by the fact that the code compiles and runs correctly with
-	// a non-Background context.
-	_ = err // the relink may succeed or fail depending on lock state
+	require.NoError(t, err)
 
-	// Verify state was either relinked (success) or untouched (abort) —
-	// either way the context was propagated.
+	// The captured context must be the exact cmd.Context() — not
+	// context.Background(). If the code reverted to context.Background(),
+	// the sentinel value would be absent and this assertion would fail.
+	require.NotNil(t, capturedCtx, "runRelinkFn must have been called")
+
+	assert.Equal(t, ctx, capturedCtx,
+		"the context passed to RunRelink must be cmd.Context(), not context.Background()")
+
+	assert.Equal(t, sentinel, capturedCtx.Value(ctxKey{}),
+		"the sentinel value from cmd.Context() must propagate to RunRelink")
+
+	// Verify the relink actually succeeded (proves the real RunRelink ran).
 	cfg, cfgErr := wapi.LoadConfig(tmp)
 	require.NoError(t, cfgErr)
-	// If relink succeeded, artifactId is the new one; if aborted, it's the old one.
-	assert.Contains(t, []string{"art-ctx-001", "art-ctx-002"}, cfg.ArtifactID)
+	assert.Equal(t, "art-ctx-002", cfg.ArtifactID, "relink must have repointed to the new artifact")
 }

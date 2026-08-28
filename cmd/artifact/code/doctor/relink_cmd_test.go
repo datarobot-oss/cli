@@ -587,7 +587,7 @@ func splitLinesStr(s string) []string {
 	return lines
 }
 
-// TestRunE_RelinkEmptyValue_UsageError verifies that --relink ” (an explicit
+// TestRunE_RelinkEmptyValue_UsageError verifies that --relink "" (an explicit
 // empty value) is a usage error (exit 1), not a silent read-only run. The
 // repair phase must gate on Flags().Changed so an empty value is rejected.
 func TestRunE_RelinkEmptyValue_UsageError(t *testing.T) {

@@ -50,6 +50,11 @@ var makeRelinkConfirmFn = makeInitRelinkConfirm
 // real terminal.
 var isInteractiveFn = defaultIsInteractive
 
+// runRelinkFn is the relink execution seam. Production delegates to
+// wldoctor.RunRelink; tests override this to capture the propagated context
+// and assert it equals cmd.Context() (not context.Background()).
+var runRelinkFn = wldoctor.RunRelink
+
 // defaultIsInteractive returns true when the command is interactive (not
 // --yes and stdin is a TTY).
 func defaultIsInteractive(cmd *cobra.Command) bool {
@@ -128,7 +133,7 @@ func reportGoneOrMismatchAbort(cmd *cobra.Command, artifactID string, outputForm
 func runRelinkFromInit(cmd *cobra.Command, dir, oldID, newID string, outputFormat outputformat.OutputFormat) error {
 	stderr := cmd.ErrOrStderr()
 
-	actions, err := wldoctor.RunRelink(cmd.Context(), wldoctor.RelinkOptions{
+	actions, err := runRelinkFn(cmd.Context(), wldoctor.RelinkOptions{
 		ProjectDir:    dir,
 		NewArtifactID: newID,
 		Store:         wldoctor.ArtifactGetterFunc(getArtifactFn),
