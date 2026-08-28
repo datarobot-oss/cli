@@ -18,6 +18,7 @@ import (
 	"slices"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 )
 
 // Actions are what a run will do, and what the JSON envelope reports. A run
@@ -64,6 +65,15 @@ type CodeChange struct {
 	// the link onto it, which the plan says out loud because nothing in the
 	// file asked for it.
 	LinkLocked bool
+
+	// SyncPlan is the dry-run plan the sync engine measured this tree with,
+	// the same one Files counts. --diff renders it through the sync command's
+	// own plan printer, so the two commands describe an upload with one
+	// format instead of two. It is plain data rather than engine state -- the
+	// lock is released right after measuring -- so carrying it past the
+	// engine's Close costs nothing. Nil on a first deploy, for a manifest
+	// that names an image, and when a test harness wires only the count.
+	SyncPlan *sync.SyncPlan
 }
 
 // Changed reports whether the code needs syncing and rebuilding.

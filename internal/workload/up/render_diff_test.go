@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -454,10 +455,65 @@ func TestRenderDiff_ArtifactEntryAnnouncesTheRoll(t *testing.T) {
 		"the capped detail list is replaced by the diff, not repeated under it")
 }
 
-// TestRenderDiff_CodeLineKeepsItsPositionUntilTheFileListLands: code drift
-// is measured upstream of the renderer, so until the sync file list replaces
-// it the bare count renders as the action line it already is.
-func TestRenderDiff_CodeLineKeepsItsPositionUntilTheFileListLands(t *testing.T) {
+// driftedSyncPlan is the dry-run plan the sync engine hands back for a tree
+// with two changed files and one deleted one, wired through the codeChangeFn
+// seam exactly as defaultCodeChange carries the real one.
+func driftedSyncPlan() *sync.SyncPlan {
+	return &sync.SyncPlan{
+		Uploads: []sync.FileAction{
+			{Path: "main.py", Classification: sync.ClsLocalModified, Action: sync.ActUploadModify, LocalSize: 1234},
+			{Path: "new.go", Classification: sync.ClsLocalAdded, Action: sync.ActUploadAdd, LocalSize: 300},
+		},
+		Deletes: []sync.FileAction{
+			{Path: "old.txt", Action: sync.ActUploadDelete, LocalSize: 15},
+		},
+	}
+}
+
+// TestRenderDiff_CodeDriftPrintsTheSyncFileList: in diff mode the code block
+// is the file list the sync would upload, drawn by the same renderer
+// `dr artifact code sync --dry-run` uses and fed the same dry-run plan.
+// Naming the files is the whole point of a diff; a count would leave the
+// reader guessing which ones move.
+func TestRenderDiff_CodeDriftPrintsTheSyncFileList(t *testing.T) {
+	plan := Plan{
+		State:  StateRunning,
+		Locked: true,
+		Code: CodeChange{
+			Applies:  true,
+			Files:    3,
+			SyncPlan: driftedSyncPlan(),
+		},
+		DiffArtifact: []DiffRow{
+			{Path: "port", Want: 9090.0, Have: 8080.0, Changed: true},
+		},
+	}
+
+	out := renderDiff(t, appSummary, plan)
+
+	assert.Contains(t, out, "Sync plan:")
+	assert.Contains(t, out, "↑ UPLOAD (2):")
+	assert.Contains(t, out, "main.py  1.2 KiB")
+	assert.Contains(t, out, "new.go   300 B", "rows align inside a group, the way the sync plan prints them")
+	assert.Contains(t, out, "✕ DELETE (1):")
+	assert.Contains(t, out, "old.txt  15 B")
+
+	assert.Contains(t, out, "~ lock", "the plan below the file list pins the block order")
+
+	assert.NotContains(t, out, "3 files changed since the last deploy",
+		"the count is the default mode's summary; the diff names the files instead")
+	assert.NotContains(t, out, "~ code")
+
+	assert.Less(t, strings.Index(out, "Sync plan:"), strings.Index(out, "~ lock"),
+		"the file list keeps the code block's position, ahead of the lock line")
+}
+
+// TestRenderDiff_CodeCountWithoutAPlanKeepsTheSummaryLine: the file list
+// needs the sync plan the seam carries, and a CodeChange built without one --
+// as test harnesses build them, since no production path measures files
+// without also measuring the list -- falls back to the count the default
+// mode prints rather than going silent about real drift.
+func TestRenderDiff_CodeCountWithoutAPlanKeepsTheSummaryLine(t *testing.T) {
 	plan := Plan{
 		State: StateRunning,
 		Code:  builtCode(14),

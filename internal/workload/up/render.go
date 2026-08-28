@@ -23,6 +23,7 @@ import (
 	"github.com/datarobot/cli/internal/uidiff"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync/display"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -125,7 +126,12 @@ func RenderDiff(w io.Writer, s Summary, plan Plan) error {
 
 	b.WriteString("\n")
 
-	for _, line := range diffActionLines(s, plan) {
+	actions, err := diffActionLines(s, plan)
+	if err != nil {
+		return err
+	}
+
+	for _, line := range actions {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -139,7 +145,7 @@ func RenderDiff(w io.Writer, s Summary, plan Plan) error {
 		b.WriteString("\n")
 	}
 
-	_, err := io.WriteString(w, b.String())
+	_, err = io.WriteString(w, b.String())
 
 	return err
 }
@@ -149,7 +155,7 @@ func RenderDiff(w io.Writer, s Summary, plan Plan) error {
 // the entry form and position the default plan gives it -- rendered as a
 // hunk, a stopped workload or a locked version would read as an edit to a
 // field nobody wrote.
-func diffActionLines(s Summary, plan Plan) []string {
+func diffActionLines(s Summary, plan Plan) ([]string, error) {
 	var out []string
 
 	if plan.Creates {
@@ -160,14 +166,39 @@ func diffActionLines(s Summary, plan Plan) []string {
 		out = append(out, line)
 	}
 
-	if plan.Code.Changed() {
-		out = append(out, entry("~", "code", codeDetail(plan.Code)))
+	code, err := codeBlock(plan.Code)
+	if err != nil {
+		return nil, err
 	}
 
+	out = append(out, code...)
 	out = append(out, lockLines(plan)...)
 	out = append(out, artifactEntry(plan)...)
 
-	return out
+	return out, nil
+}
+
+// codeBlock is the diff's code section. A first deploy has no sync plan to
+// list, because nothing was ever uploaded to compare the tree against, so it
+// keeps the default plan's wording. Otherwise the section is the file list
+// the sync would upload, drawn by the sync command's own plan printer and fed
+// the dry-run plan the code-change seam carried: two formats for one upload
+// would eventually disagree, which is the whole reason the list is borrowed
+// rather than redrawn. A plan measured without its list -- no production path
+// makes one, but a harness wiring only the count does -- falls back to the
+// count rather than printing nothing about real drift.
+func codeBlock(code CodeChange) ([]string, error) {
+	if code.FirstDeploy || code.SyncPlan == nil || code.SyncPlan.IsEmpty() {
+		return []string{entry("~", "code", codeDetail(code))}, nil
+	}
+
+	var b strings.Builder
+
+	if err := display.PrintPlan(&b, code.SyncPlan); err != nil {
+		return nil, fmt.Errorf("render the sync file list: %w", err)
+	}
+
+	return strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n"), nil
 }
 
 // diffHeader names the plan's subject. A live workload is named exactly as

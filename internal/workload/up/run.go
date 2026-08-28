@@ -1267,8 +1267,13 @@ func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) 
 	}
 
 	return CodeChange{
-		Applies:      true,
-		Files:        len(plan.Uploads) + len(plan.Deletes),
+		Applies: true,
+		Files:   len(plan.Uploads) + len(plan.Deletes),
+		// The plan rides along beside its count so --diff can name the files
+		// rather than only counting them, rendered by the sync command's own
+		// plan printer. It is data, not engine state, so it survives the
+		// Close below.
+		SyncPlan:     plan,
 		IgnoreNotice: notice,
 		ImageStale:   imageStale(loaded.ProjectDir, live),
 		// The engine says so rather than this asking a second time: it fetched
