@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/stretchr/testify/assert"
@@ -610,6 +611,54 @@ func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
 	assert.Contains(t, stderr, draftHeadline)
+}
+
+// TestCmd_DiffIsRegistered keeps the flag discoverable: cobra lists it in
+// --help only when it is registered, not hidden, and defaulted off, and the
+// help text is what tells a reader what they are about to get.
+func TestCmd_DiffIsRegistered(t *testing.T) {
+	lookup := Cmd().Flags().Lookup("diff")
+
+	require.NotNil(t, lookup, "the flag has to exist for --diff to parse at all")
+	assert.False(t, lookup.Hidden)
+	assert.Equal(t, "false", lookup.DefValue, "the diff rendering is opt-in")
+	assert.Contains(t, lookup.Usage, "unified diff")
+}
+
+// TestCmd_DiffReachesTheDeploy threads the flag into the deploy's options,
+// and only when it was given: a run without it must not silently start
+// rendering diffs.
+func TestCmd_DiffReachesTheDeploy(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--dry-run", "--diff")
+	require.NoError(t, err)
+	assert.True(t, seen.Diff)
+	assert.True(t, seen.DryRun)
+
+	defaults := stubRun(t, deployed(), nil)
+
+	_, _, err = runCmd(t)
+	require.NoError(t, err)
+	assert.False(t, defaults.Diff)
+}
+
+// TestCmd_TelemetryRecordsTheDiffFlag: adoption of the flag has to be
+// readable without guessing at it from dry_run, so it is reported under its
+// own key, reflecting the flag as given.
+func TestCmd_TelemetryRecordsTheDiffFlag(t *testing.T) {
+	withFlag := Cmd()
+	require.NoError(t, withFlag.ParseFlags([]string{"--diff"}))
+
+	event, ok := telemetry.EventFor(withFlag, nil)
+	require.True(t, ok, "EventFor must return ok=true for an annotated command")
+
+	assert.Equal(t, true, event.EventProperties["diff"])
+	assert.Equal(t, false, event.EventProperties["dry_run"], "the pre-existing keys keep their own values")
+
+	event, ok = telemetry.EventFor(Cmd(), nil)
+	require.True(t, ok)
+	assert.Equal(t, false, event.EventProperties["diff"], "an unset flag reports itself as off, not as absent")
 }
 
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {

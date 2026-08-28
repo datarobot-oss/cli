@@ -85,6 +85,7 @@ type flags struct {
 	dir    string
 	yes    bool
 	dryRun bool
+	diff   bool
 	detach bool
 	lock   bool
 	force  bool
@@ -179,6 +180,7 @@ Examples:
 		return map[string]any{
 			"yes":           nonInteractive,
 			"dry_run":       f.dryRun,
+			"diff":          f.diff,
 			"detach":        f.detach,
 			"lock":          f.lock,
 			"force_build":   f.force,
@@ -195,6 +197,13 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 		"Do not prompt. With no manifest this is an error rather than a wizard, "+
 			"and rolling a locked production version is not confirmed.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
+	// The help says what changes about the rendering rather than leaving the
+	// reader to run it to find out: the default plan is the summary, the
+	// diff is the detail, and neither says anything the other does not.
+	cmd.Flags().BoolVar(&f.diff, "diff", false,
+		"Render the plan as a unified diff instead of the changed-fields list: "+
+			"every field the file names appears, unchanged ones as context that collapses when it runs long, "+
+			"and nothing is truncated. Combine with --dry-run to look without touching.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
 		"Lock whichever artifact ends up live, making it permanent, even when this deploy minted no new "+
@@ -239,6 +248,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
+		Diff:           f.diff,
 		Detach:         f.detach,
 		Lock:           f.lock,
 		Confirm:        rollConfirm(cmd, yes),

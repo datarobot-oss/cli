@@ -81,6 +81,13 @@ type Options struct {
 	// DryRun stops after the plan.
 	DryRun bool
 
+	// Diff renders the plan as a unified diff instead of the summary list:
+	// the same plan, laid out leaf by leaf with context around what moves.
+	// It changes how the plan is shown and nothing else -- the dry-run
+	// return and every apply branch read the plan exactly as they do
+	// without it, so a diff run and a summary run mutate the same things.
+	Diff bool
+
 	// Detach returns once the apply is requested, skipping the waits.
 	Detach bool
 
@@ -198,7 +205,10 @@ func Run(opts Options) (Result, error) {
 	}
 
 	summary := Summary{Name: result.Name, WorkloadID: result.WorkloadID, Status: live.Status}
-	if err := Render(opts.Stderr, summary, plan); err != nil {
+
+	renderPlan := rendererFor(opts.Diff)
+
+	if err := renderPlan(opts.Stderr, summary, plan); err != nil {
 		return result, err
 	}
 
@@ -217,6 +227,17 @@ func Run(opts Options) (Result, error) {
 	}
 
 	return apply(loaded, live, plan, result, opts)
+}
+
+// rendererFor picks how the plan is shown. --diff swaps the renderer and
+// nothing else: the plan goes out laid out as a diff rather than summarised,
+// and everything below reads it identically either way.
+func rendererFor(diff bool) func(io.Writer, Summary, Plan) error {
+	if diff {
+		return RenderDiff
+	}
+
+	return Render
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
