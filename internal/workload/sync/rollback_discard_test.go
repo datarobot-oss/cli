@@ -15,8 +15,10 @@
 package sync
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -67,6 +69,15 @@ type rollbackDiscardScenario struct {
 // setupRollbackDiscardScenario wires the scenario and returns it after Plan(),
 // so the caller can inject a Phase 6 fault and then Execute.
 func setupRollbackDiscardScenario(t *testing.T) *rollbackDiscardScenario {
+	return setupRollbackDiscardScenarioWithPatchHook(t, nil)
+}
+
+// setupRollbackDiscardScenarioWithPatchHook is the hook-aware variant. The
+// hook, when non-nil, replaces the no-op PatchCodeRef fake: it runs at the
+// very end of Phase 5 — after every backup, download, delete, and upload,
+// with the rollback dir already on disk but Phase 6 not yet entered — which
+// is exactly the window a Phase 6-entry fault must land in.
+func setupRollbackDiscardScenarioWithPatchHook(t *testing.T, patchHook func(artifactID, catalogID, catalogVersionID string) error) *rollbackDiscardScenario {
 	t.Helper()
 
 	const (
@@ -117,7 +128,8 @@ func setupRollbackDiscardScenario(t *testing.T) *rollbackDiscardScenario {
 			GetFn: func(id string) (*workload.Artifact, error) {
 				return draftArtifact(id, catalogID, remoteVer), nil
 			},
-			PatchFn: func(_, _, _ string) error { return nil },
+			// nil PatchFn is safe: the fake no-ops when the hook is unset.
+			PatchFn: patchHook,
 		},
 		Now: time.Now,
 	})
@@ -226,7 +238,9 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 
 	require.NoError(t, os.RemoveAll(cPath))
 
-	//nolint:gosec // G703: cPath is the project's own config.json under t.TempDir(); the bytes were read from that same file before the fault
+	// gosec's taint analysis does not flag this write today, so no nolint
+	// directive is needed here; if a future gosec flags it again, add one
+	// back with the G703 rationale.
 	require.NoError(t, os.WriteFile(cPath, s.cfgBytes, 0o644))
 
 	staleCfg, err := wapi.LoadConfig(s.dir)
@@ -361,4 +375,75 @@ func TestPhase6CleanSuccessDiscardsRollback(t *testing.T) {
 
 	assert.Equal(t, sha256Hex([]byte(s.newA)), manifest.Files["a.py"].Hash)
 	assert.Equal(t, sha256Hex([]byte(s.remoteB)), manifest.Files["b.py"].Hash)
+}
+
+// TestPhase6DiscardFailure_AbortsBeforeStateWrites covers the one Phase 6
+// failure mode the write-failure tests above cannot reach: Discard itself
+// failing. The fault rides Phase 5's final step (PatchCodeRef), which fires
+// after the rollback dir exists but before Phase 6 runs, and strips write
+// permission from the rollback dir so Discard's os.RemoveAll fails.
+//
+// Phase 6 must abort with a wrapped error BEFORE SaveManifest/SaveConfig.
+// At entry nothing has been persisted, so un-advanced state plus the
+// surviving rollback dir is exactly the recoverable mid-Phase-5 outcome:
+// the next run's stale-rollback restore puts back pre-sync bytes that the
+// un-advanced manifest still matches, and the next diff schedules downloads,
+// not false uploads. Swallowing the error instead (the pre-fix behavior)
+// strands the rollback dir next to ADVANCED state, and that same stale
+// restore resurrects pre-sync bytes as phantom local edits which the next
+// sync silently re-uploads over the remote.
+func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fault injection relies on POSIX directory permissions; windows ignores them")
+	}
+
+	// Declare first so the hook closure can read s.rollDir: the hook fires
+	// during Execute, long after the assignment completes.
+	var s *rollbackDiscardScenario
+
+	s = setupRollbackDiscardScenarioWithPatchHook(t, func(_, _, _ string) error {
+		// Phase 5's last step: make the rollback dir unremovable so the
+		// Phase 6 entry Discard fails. The hook itself must succeed so
+		// Phase 5 completes and Phase 6 is genuinely reached.
+		if err := os.Chmod(s.rollDir, 0o555); err != nil {
+			return fmt.Errorf("fault: chmod rollback dir: %w", err)
+		}
+
+		return nil
+	})
+
+	// Restore permissions before t.TempDir cleanup so the read-only dir can
+	// be removed; cleanup runs LIFO, so this lands ahead of the TempDir one.
+	t.Cleanup(func() { _ = os.Chmod(s.rollDir, 0o755) })
+
+	preManifest, err := os.ReadFile(filepath.Join(wapi.Dir(s.dir), "manifest.json"))
+	require.NoError(t, err)
+
+	_, err = s.engine.Execute(s.plan)
+
+	require.Error(t, err, "Phase 6 must abort when the rollback dir cannot be discarded")
+	assert.Contains(t, err.Error(), "discard rollback",
+		"error must be the wrapped Discard failure, not a later write error")
+
+	// No state write may have happened: the manifest stays byte-identical to
+	// its pre-sync content, and config does not advance.
+	postManifest, err := os.ReadFile(filepath.Join(wapi.Dir(s.dir), "manifest.json"))
+	require.NoError(t, err)
+
+	assert.Equal(t, preManifest, postManifest,
+		"manifest.json must be untouched when Discard fails at Phase 6 entry")
+
+	cfg, err := wapi.LoadConfig(s.dir)
+	require.NoError(t, err)
+
+	require.NotNil(t, cfg.LastSyncedVersionID)
+	assert.Equal(t, "ver-synced", *cfg.LastSyncedVersionID,
+		"config.json must not advance when Discard fails at Phase 6 entry")
+
+	// The rollback dir survives the failed Discard — that is the fault. Its
+	// presence is safe only because no state advanced (asserted above): the
+	// next run's stale-rollback recovery restores it against un-advanced
+	// state, which is the recoverable mid-Phase-5 outcome.
+	_, statErr := os.Stat(s.rollDir)
+	assert.NoError(t, statErr, "the unremovable rollback dir must still be present after the abort")
 }
