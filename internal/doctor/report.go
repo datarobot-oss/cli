@@ -29,10 +29,9 @@ type Report struct {
 	// Checks holds the results in runner order.
 	Checks []Result
 
-	// Actions is nil for read-only runs (the JSON "actions" key is omitted
-	// entirely). For repair runs (--fix/--relink) it points at the per-repair
-	// outcomes; it is a pointer so a repair run with zero actions still
-	// renders "actions": [].
+	// Actions is nil for read-only runs (the JSON "actions" key is omitted).
+	// For repair runs it points at the per-repair outcomes; it is a pointer so
+	// a repair run with zero actions still renders "actions": [].
 	Actions *[]Action
 }
 
@@ -46,8 +45,7 @@ func NewReport(projectDir string, artifactID *string, checks []Result) Report {
 	}
 }
 
-// Counts tallies the report's checks by status. The counts always equal the
-// per-check tally of Checks.
+// Counts tallies the report's checks by status.
 func (r Report) Counts() Counts {
 	return CountResults(r.Checks)
 }
@@ -67,8 +65,8 @@ func (r Report) ExitCode() int {
 	return 0
 }
 
-// linkedArtifact returns the artifact id for display, or "" when unlinked.
-// Empty-string ids are treated as unlinked (empty ≈ nil normalization).
+// linkedArtifact returns the artifact id for display, or "" when unlinked
+// (empty ≈ nil normalization).
 func (r Report) linkedArtifact() string {
 	if r.ArtifactID == nil || *r.ArtifactID == "" {
 		return ""

@@ -34,10 +34,9 @@ const (
 	CheckIDLock       = "wapi.lock"
 )
 
-// Checks returns the complete doctor check suite in the pinned fixed order:
-// the six local checks followed by the four remote checks (ten total in
-// ticket scope; any future extras append after). The remote checks share one
-// artifact snapshot fetched through store.
+// Checks returns the complete doctor check suite in pinned order: the six
+// local checks then the four remote checks (ten total; future extras append
+// after). The remote checks share one artifact snapshot fetched through store.
 //
 // Each check resolves projectDir independently at Run time, so the returned
 // checks stay correct even if the directory's state changes between
@@ -46,9 +45,9 @@ func Checks(projectDir string, store ArtifactGetter) []core.Check {
 	return append(LocalChecks(projectDir), RemoteChecks(projectDir, store)...)
 }
 
-// LocalChecks returns the six local sync-state checks in the fixed report
-// order: presence, config, manifest, divergence, rollback, lock. The remote
-// checks (defined by their own feature) append after these.
+// LocalChecks returns the six local sync-state checks in fixed report order:
+// presence, config, manifest, divergence, rollback, lock. The remote checks
+// append after these.
 //
 // Each check resolves projectDir independently at Run time, so the returned
 // checks stay correct even if the directory's state changes between
@@ -65,9 +64,9 @@ func LocalChecks(projectDir string) []core.Check {
 }
 
 // skipIfUnlinked implements the presence-FAIL cascade: a check that needs
-// linked state SKIPs with an honest "no linked state" summary rather than
-// reporting a misleading FAIL of its own. The second return value reports
-// whether the caller should skip.
+// linked state SKIPs with an honest "no linked state" summary rather than a
+// misleading FAIL of its own. The second return value reports whether the
+// caller should skip.
 func skipIfUnlinked(projectDir string) (core.Result, bool) {
 	if wapi.Exists(projectDir) {
 		return core.Result{}, false
@@ -80,8 +79,8 @@ func skipIfUnlinked(projectDir string) (core.Result, bool) {
 }
 
 // corruptFileResult builds a FAIL result for a missing or unreadable state
-// file. The absolute file path appears both in the human-readable summary
-// and in details.path for JSON consumers.
+// file. The absolute path appears in both the summary and details.path for
+// JSON consumers.
 func corruptFileResult(summary, path, remedy string, fixable bool) core.Result {
 	abs := absPath(path)
 
@@ -107,9 +106,9 @@ func stateErrPath(err error, fallbackPath string) string {
 }
 
 // corruptReason returns the most specific message for a corrupted state
-// file: the underlying cause of a wapi.CorruptedError (whose own Error text
+// file: the underlying cause of a wapi.CorruptedError (whose Error text
 // already embeds the path, which corruptFileResult appends once), or the
-// error itself for anything else.
+// error itself otherwise.
 func corruptReason(err error) string {
 	var corruptErr *wapi.CorruptedError
 
@@ -122,7 +121,7 @@ func corruptReason(err error) string {
 
 // absPath converts p to its absolute form. On the (non-representable) error
 // path it returns p unchanged: callers already pass an absolute project dir
-// in normal wiring, where the command resolves --dir with filepath.Abs.
+// in normal wiring (the command resolves --dir with filepath.Abs).
 func absPath(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {

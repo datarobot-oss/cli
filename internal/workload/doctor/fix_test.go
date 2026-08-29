@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// actionByID indexes a repair run's actions by their check id for assertions.
+// actionByID indexes a repair run's actions by their check id.
 func actionByID(t *testing.T, actions []core.Action) map[string]core.Action {
 	t.Helper()
 
@@ -52,9 +52,9 @@ func requireActionsInOrder(t *testing.T, actions []core.Action) {
 	require.Equal(t, CheckIDLock, actions[2].ID)
 }
 
-// TestRunFix_HealthyProject_AllNotNeeded covers VAL-FIX-001/VAL-FIX-012: on a
-// healthy project every repair reports not-needed and the filesystem is left
-// untouched (in particular, no sync.lock is created).
+// TestRunFix_HealthyProject_AllNotNeeded verifies that on a healthy project
+// every repair reports not-needed and the filesystem is left untouched (in
+// particular, no sync.lock is created).
 func TestRunFix_HealthyProject_AllNotNeeded(t *testing.T) {
 	dir := t.TempDir()
 
@@ -81,8 +81,8 @@ func TestRunFix_HealthyProject_AllNotNeeded(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist, "fix must not create sync.lock")
 }
 
-// TestRunFix_MissingManifest_RebuiltEmptyBase covers VAL-FIX-002: the rebuilt
-// manifest is an empty BASE derived from config, honoring both-or-neither.
+// TestRunFix_MissingManifest_RebuiltEmptyBase verifies the rebuilt manifest is
+// an empty BASE derived from config, honoring both-or-neither.
 func TestRunFix_MissingManifest_RebuiltEmptyBase(t *testing.T) {
 	dir := t.TempDir()
 
@@ -108,8 +108,8 @@ func TestRunFix_MissingManifest_RebuiltEmptyBase(t *testing.T) {
 	assert.Empty(t, m.Files, "rebuild resets to an empty BASE")
 }
 
-// TestRunFix_CorruptManifest_Rebuilt covers VAL-FIX-003: truncated JSON is
-// replaced by a valid empty BASE.
+// TestRunFix_CorruptManifest_Rebuilt verifies truncated JSON is replaced by a
+// valid empty BASE.
 func TestRunFix_CorruptManifest_Rebuilt(t *testing.T) {
 	dir := t.TempDir()
 
@@ -128,9 +128,9 @@ func TestRunFix_CorruptManifest_Rebuilt(t *testing.T) {
 	require.NoError(t, err, "manifest must parse after the rebuild")
 }
 
-// TestRunFix_DivergentManifest_ConfigWins covers VAL-FIX-004: a valid but
-// divergent manifest is reset from config, with both-or-neither honored on
-// the rebuilt synced pointers.
+// TestRunFix_DivergentManifest_ConfigWins verifies a valid but divergent
+// manifest is reset from config, with both-or-neither honored on the rebuilt
+// synced pointers.
 func TestRunFix_DivergentManifest_ConfigWins(t *testing.T) {
 	dir := t.TempDir()
 
@@ -155,8 +155,8 @@ func TestRunFix_DivergentManifest_ConfigWins(t *testing.T) {
 	require.NotNil(t, m.SyncedAt, "syncedAt must be non-nil iff syncedVersionId is non-nil")
 }
 
-// TestRunFix_CorruptConfig_ManifestSkippedWithReinitRemedy covers VAL-FIX-005:
-// without a valid config the manifest cannot be rebuilt; the skip reason
+// TestRunFix_CorruptConfig_ManifestSkippedWithReinitRemedy verifies that
+// without a valid config the manifest cannot be rebuilt and the skip reason
 // points at re-initialization.
 func TestRunFix_CorruptConfig_ManifestSkippedWithReinitRemedy(t *testing.T) {
 	dir := t.TempDir()
@@ -217,8 +217,8 @@ func seedRollback(t *testing.T, projectDir, relPath, contents string) {
 	require.NoError(t, os.WriteFile(dst, []byte(contents), 0o600))
 }
 
-// TestRunFix_RollbackRestoredAndRemoved covers VAL-FIX-006: backed-up files
-// return to their original paths and the .rollback/ tree is removed.
+// TestRunFix_RollbackRestoredAndRemoved verifies backed-up files return to
+// their original paths and the .rollback/ tree is removed.
 func TestRunFix_RollbackRestoredAndRemoved(t *testing.T) {
 	dir := t.TempDir()
 
@@ -251,8 +251,8 @@ func TestRunFix_RollbackRestoredAndRemoved(t *testing.T) {
 	assert.ErrorIs(t, statErr, os.ErrNotExist, ".rollback/ must be removed after the restore")
 }
 
-// TestRunFix_RollbackRecreatesDeletedFile covers VAL-FIX-007: a file the
-// interrupted sync had deleted comes back from the backup tree.
+// TestRunFix_RollbackRecreatesDeletedFile verifies a file the interrupted sync
+// had deleted comes back from the backup tree.
 func TestRunFix_RollbackRecreatesDeletedFile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -308,8 +308,8 @@ func TestRunFix_RollbackAbsent_NotNeeded(t *testing.T) {
 	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDRollback].Status)
 }
 
-// TestRunFix_LockAbsent_NotNeededAndNotCreated covers VAL-FIX-010: with no
-// sync.lock file the repair reports not-needed and must NOT create the file.
+// TestRunFix_LockAbsent_NotNeededAndNotCreated verifies that with no sync.lock
+// file the repair reports not-needed and must NOT create the file.
 func TestRunFix_LockAbsent_NotNeededAndNotCreated(t *testing.T) {
 	dir := t.TempDir()
 
@@ -326,10 +326,10 @@ func TestRunFix_LockAbsent_NotNeededAndNotCreated(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist, "the lock repair must not create sync.lock")
 }
 
-// TestRunFix_LockAcquirable_VerifiedNotNeeded covers VAL-FIX-009: a stale but
-// unheld lock file is verified acquirable (acquired and released) and
-// reported not-needed — the file itself is never removed and the lock stays
-// acquirable afterwards.
+// TestRunFix_LockAcquirable_VerifiedNotNeeded verifies a stale but unheld lock
+// file is verified acquirable (acquired and released) and reported
+// not-needed — the file itself is never removed and the lock stays acquirable
+// afterwards.
 func TestRunFix_LockAcquirable_VerifiedNotNeeded(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("flock semantics are unix-only; the windows path is covered by the seam tests")
@@ -379,9 +379,9 @@ func holdLockForTest(t *testing.T, projectDir string) func() {
 	}
 }
 
-// TestRunFix_LockHeld_SkipsAllRepairsStateUntouched covers VAL-FIX-008 and
-// VAL-CROSS-014: when a live process holds the lock, EVERY repair is skipped
-// with the sync-in-progress reason and no state is touched.
+// TestRunFix_LockHeld_SkipsAllRepairsStateUntouched verifies that when a live
+// process holds the lock, EVERY repair is skipped with the sync-in-progress
+// reason and no state is touched.
 func TestRunFix_LockHeld_SkipsAllRepairsStateUntouched(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("flock semantics are unix-only; the windows path is covered by the seam tests")
@@ -455,9 +455,9 @@ func TestRunFix_UninspectableLock_SkipsAllRepairs(t *testing.T) {
 	}
 }
 
-// TestRunFix_PartialFailure_OthersStillPerformed covers VAL-FIX-019: a repair
-// that fails mid-write is reported skipped with the error as reason while the
-// remaining repairs still run.
+// TestRunFix_PartialFailure_OthersStillPerformed verifies a repair that fails
+// mid-write is reported skipped with the error as reason while the remaining
+// repairs still run.
 func TestRunFix_PartialFailure_OthersStillPerformed(t *testing.T) {
 	dir := t.TempDir()
 
@@ -491,9 +491,9 @@ func TestRunFix_PartialFailure_OthersStillPerformed(t *testing.T) {
 	assert.Equal(t, "backed up contents", string(restored))
 }
 
-// TestRunFix_ManifestRebuild_WorkingTreeUntouched covers VAL-FIX-017: the
-// manifest rebuild only rewrites the state file; every working-tree file
-// keeps its exact checksum.
+// TestRunFix_ManifestRebuild_WorkingTreeUntouched verifies the manifest
+// rebuild only rewrites the state file; every working-tree file keeps its
+// exact checksum.
 func TestRunFix_ManifestRebuild_WorkingTreeUntouched(t *testing.T) {
 	dir := t.TempDir()
 
@@ -578,9 +578,9 @@ func TestRunFix_WindowsGate_Proceeds(t *testing.T) {
 	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDLock].Status)
 }
 
-// TestRunFix_MultipleProblems_AllRepairedInOneRun covers VAL-FIX-011:
+// TestRunFix_MultipleProblems_AllRepairedInOneRun verifies that with
 // simultaneously corrupt manifest, stale .rollback/ (with a modified project
-// file), and a dead sync.lock. Each repair gets its own action entry; the
+// file), and a dead sync.lock, each repair gets its own action entry; the
 // post-fix state is healthy; non-rollback working-tree files are unchanged.
 func TestRunFix_MultipleProblems_AllRepairedInOneRun(t *testing.T) {
 	if runtime.GOOS == "windows" {

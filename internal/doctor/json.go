@@ -42,10 +42,10 @@ type jsonReport struct {
 	Actions    *[]Action   `json:"actions,omitempty"`
 }
 
-// WriteJSON renders a report as a single pure-JSON object (indented, with a
-// trailing newline). HTML escaping is disabled so remedy strings like
-// "--relink <new-artifact-id>" survive verbatim. For read-only runs the
-// "actions" key is omitted entirely; repair runs always include it.
+// WriteJSON renders a report as a single pure-JSON object (indented, trailing
+// newline). HTML escaping is disabled so remedy strings like
+// "--relink <new-artifact-id>" survive verbatim. Read-only runs omit the
+// "actions" key; repair runs always include it.
 func WriteJSON(w io.Writer, report Report) error {
 	checks := make([]jsonCheck, 0, len(report.Checks))
 

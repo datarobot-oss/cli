@@ -30,7 +30,7 @@ func NewRunner(checks ...Check) *Runner {
 
 // Run executes every check in construction order and returns the results in
 // the same order. Each result's CheckID is stamped from the check itself, so
-// reporters never render an anonymous row even if a check forgets to set it.
+// reporters never render an anonymous row.
 func (r *Runner) Run(ctx context.Context) []Result {
 	results := make([]Result, 0, len(r.checks))
 
@@ -54,9 +54,8 @@ type Counts struct {
 	SKIP int `json:"skip"`
 }
 
-// OverallStatus derives the run's top-level verdict from its checks:
-// "fail" if any check FAILed, else "warn" if any WARNed, else "ok".
-// A run with only SKIPs counts as ok.
+// OverallStatus derives the run's top-level verdict: "fail" if any check
+// FAILed, else "warn" if any WARNed, else "ok" (SKIP-only counts as ok).
 func OverallStatus(checks []Result) string {
 	counts := CountResults(checks)
 

@@ -99,7 +99,7 @@ Example:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			return runDoctor(cmd, outputFormat)
+			return pageDoctor(cmd, outputFormat)
 		},
 	}
 
@@ -135,14 +135,14 @@ Example:
 	return c
 }
 
-// runDoctor executes one diagnosis: resolve the project directory, run the
+// pageDoctor executes one diagnosis: resolve the project directory, run the
 // check suite, render the report, and exit 1 iff any check FAILed. With
 // --fix, the safe local repairs run first and the reported checks (and exit
 // code) reflect the POST-fix state. With --relink, the project is repointed
 // at a new artifact (fresh BASE reset) before the checks re-run. The rendered
 // report is the user-facing outcome, so a FAIL run returns cli.ErrSilent
 // (with SilenceErrors set) instead of a second cobra error line.
-func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error {
+func pageDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error {
 	fix, _ := cmd.Flags().GetBool("fix")
 
 	relinkID, _ := cmd.Flags().GetString("relink")
@@ -205,17 +205,13 @@ func runDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) error
 	return nil
 }
 
-// validateRepairFlags checks the --fix and --relink flags for usage errors
-// before any work begins. --fix and --relink are mutually exclusive (cobra's
-// MarkFlagsMutuallyExclusive handles this too, but the explicit check gives
-// a clearer message). An explicit empty --relink value is a usage error,
-// not a silent read-only run — gating on Flags().Changed distinguishes
-// "flag not set" (read-only) from "flag set to empty" (usage error).
-func validateRepairFlags(cmd *cobra.Command, fix bool, relinkID string) error {
-	if fix && cmd.Flags().Changed("relink") {
-		return errors.New("--fix and --relink are mutually exclusive; use one or the other")
-	}
-
+// validateRepairFlags checks the --relink flag for usage errors before any
+// work begins. The --fix/--relink mutual exclusion is enforced by cobra's
+// MarkFlagsMutuallyExclusive registration, so it is not re-checked here. An
+// explicit empty --relink value is a usage error, not a silent read-only
+// run — gating on Flags().Changed distinguishes "flag not set" (read-only)
+// from "flag set to empty" (usage error).
+func validateRepairFlags(cmd *cobra.Command, _ bool, relinkID string) error {
 	if cmd.Flags().Changed("relink") && relinkID == "" {
 		return errors.New("--relink requires a non-empty artifact id")
 	}
@@ -225,7 +221,7 @@ func validateRepairFlags(cmd *cobra.Command, fix bool, relinkID string) error {
 
 // runRepairPhase executes the --fix or --relink repair phase and returns the
 // actions (nil for read-only runs) and any relink error (nil for --fix and
-// read-only runs). The empty-value check for --relink is handled in runDoctor
+// read-only runs). The empty-value check for --relink is handled in pageDoctor
 // before any work begins, so by the time we get here a changed --relink flag
 // always carries a non-empty id.
 func runRepairPhase(cmd *cobra.Command, projectDir string, fix bool, relinkID string) (*[]core.Action, error) {
@@ -346,7 +342,7 @@ func softAuthProbe() (remoteCreds, bool) {
 }
 
 // runRelinkPhase executes the relink operation and returns the actions and
-// error. Extracted from runDoctor to keep cyclomatic complexity manageable.
+// error. Extracted from pageDoctor to keep cyclomatic complexity manageable.
 func runRelinkPhase(cmd *cobra.Command, projectDir, relinkID string) ([]core.Action, error) {
 	return wldoctor.RunRelink(cmd.Context(), wldoctor.RelinkOptions{
 		ProjectDir:    projectDir,

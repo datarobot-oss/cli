@@ -96,7 +96,7 @@ func runRemoteChecks(t *testing.T, projectDir string, store *fakeArtifactStore) 
 	return core.NewRunner(RemoteChecks(projectDir, store)...).Run(context.Background())
 }
 
-// byID indexes results by check id for point assertions.
+// byID indexes results by check id for lookups by id.
 func byID(results []core.Result) map[string]core.Result {
 	m := make(map[string]core.Result, len(results))
 

@@ -29,9 +29,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRunE_RelinkHappyPath_PostRelinkChecksTargetNew covers VAL-RELINK-001
-// and VAL-RELINK-020 at the command surface: relink to a new live artifact,
-// post-relink checks target the new artifact, exit 0.
+// TestRunE_RelinkHappyPath_PostRelinkChecksTargetNew verifies at the command
+// surface relink to a new live artifact, post-relink checks target the new
+// artifact, exit 0.
 func TestRunE_RelinkHappyPath_PostRelinkChecksTargetNew(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -84,8 +84,8 @@ func TestRunE_RelinkHappyPath_PostRelinkChecksTargetNew(t *testing.T) {
 	assert.Nil(t, cfg.LastSyncedVersionID)
 }
 
-// TestRunE_RelinkNonInteractiveWarning_ToStderr covers VAL-RELINK-004:
-// --yes prints the warning to stderr and proceeds; stdout stays pure JSON.
+// TestRunE_RelinkNonInteractiveWarning_ToStderr verifies --yes prints the
+// warning to stderr and proceeds; stdout stays pure JSON.
 func TestRunE_RelinkNonInteractiveWarning_ToStderr(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -110,8 +110,8 @@ func TestRunE_RelinkNonInteractiveWarning_ToStderr(t *testing.T) {
 	assert.Contains(t, errOut.String(), "Relink repoints")
 }
 
-// TestRunE_RelinkNonInteractiveText_WarningToStderr covers VAL-RELINK-004
-// in text mode: the warning goes to stderr.
+// TestRunE_RelinkNonInteractiveText_WarningToStderr verifies in text mode the
+// warning goes to stderr.
 func TestRunE_RelinkNonInteractiveText_WarningToStderr(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -132,8 +132,8 @@ func TestRunE_RelinkNonInteractiveText_WarningToStderr(t *testing.T) {
 	assert.Contains(t, out.String(), "relink: performed")
 }
 
-// TestRunE_Relink404_AbortsStateUntouched covers VAL-RELINK-006 at the
-// command surface: a 404 target aborts with exit 1 and state untouched.
+// TestRunE_Relink404_AbortsStateUntouched verifies at the command surface a
+// 404 target aborts with exit 1 and state untouched.
 func TestRunE_Relink404_AbortsStateUntouched(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -169,8 +169,8 @@ func TestRunE_Relink404_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, before, stateFileHashes(t, tmp))
 }
 
-// TestRunE_RelinkNotLinked_ErrorPointsToInit covers VAL-RELINK-010 at the
-// command surface: relink on a not-linked project exits 1 with presence FAIL.
+// TestRunE_RelinkNotLinked_ErrorPointsToInit verifies at the command surface
+// relink on a not-linked project exits 1 with presence FAIL.
 func TestRunE_RelinkNotLinked_ErrorPointsToInit(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -211,8 +211,8 @@ func TestRunE_RelinkNotLinked_ErrorPointsToInit(t *testing.T) {
 	assert.Contains(t, errOut.String(), "not linked")
 }
 
-// TestRunE_RelinkSameID_WarnedBaseReset covers VAL-RELINK-009 at the command
-// surface: same-id relink is allowed, warned, and resets BASE.
+// TestRunE_RelinkSameID_WarnedBaseReset verifies at the command surface
+// same-id relink is allowed, warned, and resets BASE.
 func TestRunE_RelinkSameID_WarnedBaseReset(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -248,8 +248,8 @@ func TestRunE_RelinkSameID_WarnedBaseReset(t *testing.T) {
 	assert.Contains(t, out.String(), "performed")
 }
 
-// TestRunE_RelinkJSON_ActionsArray_PureStdout covers VAL-RELINK-015:
-// JSON mode has actions array describing the relink, stdout pure, warning on stderr.
+// TestRunE_RelinkJSON_ActionsArray_PureStdout verifies JSON mode has an actions
+// array describing the relink, stdout pure, warning on stderr.
 func TestRunE_RelinkJSON_ActionsArray_PureStdout(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -287,8 +287,8 @@ func TestRunE_RelinkJSON_ActionsArray_PureStdout(t *testing.T) {
 	assert.Contains(t, errOut.String(), "Relink repoints")
 }
 
-// TestRunE_RelinkWorkingTreeUntouched covers VAL-RELINK-014:
-// the working tree is untouched by the relink.
+// TestRunE_RelinkWorkingTreeUntouched verifies the working tree is untouched
+// by the relink.
 func TestRunE_RelinkWorkingTreeUntouched(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -329,8 +329,8 @@ func TestRunE_RelinkWorkingTreeUntouched(t *testing.T) {
 	}
 }
 
-// TestRunE_RelinkHistoryEntry covers VAL-RELINK-013:
-// history.log gains a well-formed {op:relink, from, to, ts} entry.
+// TestRunE_RelinkHistoryEntry verifies history.log gains a well-formed
+// {op:relink, from, to, ts} entry.
 func TestRunE_RelinkHistoryEntry(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -376,8 +376,8 @@ func TestRunE_RelinkHistoryEntry(t *testing.T) {
 	assert.NotEmpty(t, ts, "ts must be non-empty")
 }
 
-// TestRunE_RelinkLockHeld_AbortsStateUntouched covers VAL-RELINK-021 at the
-// command surface: a held lock aborts the relink with state untouched.
+// TestRunE_RelinkLockHeld_AbortsStateUntouched verifies at the command surface
+// a held lock aborts the relink with state untouched.
 func TestRunE_RelinkLockHeld_AbortsStateUntouched(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("flock semantics are unix-only")
@@ -422,8 +422,8 @@ func TestRunE_RelinkLockHeld_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, before, stateFileHashes(t, tmp))
 }
 
-// TestRunE_RelinkWrongType_AbortsStateUntouched covers VAL-RELINK-023 at the
-// command surface: a non-service artifact type aborts with state untouched.
+// TestRunE_RelinkWrongType_AbortsStateUntouched verifies at the command
+// surface a non-service artifact type aborts with state untouched.
 func TestRunE_RelinkWrongType_AbortsStateUntouched(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -488,8 +488,8 @@ func TestRunE_RelinkAPIUnreachable_Aborts(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
 }
 
-// TestRunE_RelinkNoActionsKey_ReadOnlyRun covers VAL-OUTPUT-009(a):
-// a plain diagnosis (no --fix/--relink) has no actions key.
+// TestRunE_RelinkNoActionsKey_ReadOnlyRun verifies a plain diagnosis (no
+// --fix/--relink) has no actions key.
 func TestRunE_RelinkNoActionsKey_ReadOnlyRun(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -539,8 +539,8 @@ func TestCmd_FixAndRelinkMutuallyExclusiveShape(t *testing.T) {
 	require.NotNil(t, relinkFlag)
 }
 
-// TestRunE_RelinkMissingValue_UsageError covers VAL-OUTPUT-018:
-// --relink without a value is a usage error.
+// TestRunE_RelinkMissingValue_UsageError verifies --relink without a value
+// is a usage error.
 func TestRunE_RelinkMissingValue_UsageError(t *testing.T) {
 	tmp := t.TempDir()
 

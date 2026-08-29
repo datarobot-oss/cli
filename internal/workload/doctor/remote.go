@@ -38,15 +38,15 @@ const (
 
 // ArtifactGetter is the doctor's remote seam: the small surface of the
 // artifact API the remote checks depend on. Production uses
-// ProductionArtifactGetter (which delegates to workload.GetArtifact); tests
-// inject a fake so no network is touched.
+// ProductionArtifactGetter (delegating to workload.GetArtifact); tests inject
+// a fake so no network is touched.
 type ArtifactGetter interface {
 	// Get fetches the artifact by id, mirroring workload.GetArtifact.
 	Get(artifactID string) (*workload.Artifact, error)
 }
 
-// ArtifactGetterFunc adapts a plain function to the ArtifactGetter seam,
-// so the command layer can hand over its test seam variable directly.
+// ArtifactGetterFunc adapts a plain function to the ArtifactGetter seam so
+// the command layer can hand over its test seam variable directly.
 type ArtifactGetterFunc func(artifactID string) (*workload.Artifact, error)
 
 // Get implements ArtifactGetter.
@@ -60,10 +60,10 @@ func ProductionArtifactGetter() ArtifactGetter {
 	return ArtifactGetterFunc(workload.GetArtifact)
 }
 
-// RemoteChecks returns the four remote sync-state checks in the fixed report
+// RemoteChecks returns the four remote sync-state checks in fixed report
 // order: artifact-exists, artifact-locked, catalog-mismatch, drift. All four
-// share the single artifact snapshot fetched through store (exactly one
-// GetArtifact per doctor run; TOCTOU within a run collapses to one read).
+// share one artifact snapshot fetched through store (exactly one GetArtifact
+// per run; TOCTOU within a run collapses to one read).
 //
 // Each check re-reads local state at Run time (same pattern as the local
 // checks), so the SKIP cascades (unlinked project, unreadable config) are

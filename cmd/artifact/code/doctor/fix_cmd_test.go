@@ -54,9 +54,9 @@ type jsonFixReport struct {
 	Actions []jsonAction `json:"actions"`
 }
 
-// TestRunE_FixHealthyProject_NothingToDo_ExitZero covers VAL-FIX-001: --fix
-// on a healthy project is a no-op whose text output says "nothing to do"
-// explicitly and exits 0.
+// TestRunE_FixHealthyProject_NothingToDo_ExitZero verifies --fix on a healthy
+// project is a no-op whose text output says "nothing to do" explicitly and
+// exits 0.
 func TestRunE_FixHealthyProject_NothingToDo_ExitZero(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -76,10 +76,10 @@ func TestRunE_FixHealthyProject_NothingToDo_ExitZero(t *testing.T) {
 	assert.Contains(t, outStr, "verdict: ok")
 }
 
-// TestRunE_FixMissingManifest_PostFixOK_ExitZero covers VAL-FIX-002,
-// VAL-FIX-013 and VAL-FIX-014 at the command surface: the repair is
-// performed, the post-fix check suite reports the manifest OK, the exit code
-// is 0, and the JSON stdout is pure with a pinned-shape actions array.
+// TestRunE_FixMissingManifest_PostFixOK_ExitZero verifies at the command
+// surface the repair is performed, the post-fix check suite reports the
+// manifest OK, the exit code is 0, and the JSON stdout is pure with a
+// pinned-shape actions array.
 func TestRunE_FixMissingManifest_PostFixOK_ExitZero(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -124,10 +124,9 @@ func TestRunE_FixMissingManifest_PostFixOK_ExitZero(t *testing.T) {
 	assert.Nil(t, m.SyncedAt)
 }
 
-// TestRunE_FixCorruptConfig_ManifestSkipped_ExitOne covers VAL-FIX-005 and
-// VAL-FIX-015: a corrupt config makes the manifest rebuild skip with a
-// re-init remedy, the unfixable FAIL keeps exit 1, and stdout stays pure
-// JSON on the failure path.
+// TestRunE_FixCorruptConfig_ManifestSkipped_ExitOne verifies a corrupt config
+// makes the manifest rebuild skip with a re-init remedy, the unfixable FAIL
+// keeps exit 1, and stdout stays pure JSON on the failure path.
 func TestRunE_FixCorruptConfig_ManifestSkipped_ExitOne(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -155,10 +154,10 @@ func TestRunE_FixCorruptConfig_ManifestSkipped_ExitOne(t *testing.T) {
 	assert.Contains(t, rebuild.Reason, "init", "the skip reason must carry the re-init remedy")
 }
 
-// TestRunE_FixHeldLock_AllSkipped_ExitOne covers VAL-FIX-008, VAL-FIX-018
-// and VAL-CROSS-014 at the command surface: a live holder gates the whole
-// run — every repair is skipped with the sync-in-progress reason, nothing is
-// written, and the still-held lock keeps exit 1.
+// TestRunE_FixHeldLock_AllSkipped_ExitOne verifies at the command surface a
+// live holder gates the whole run — every repair is skipped with the
+// sync-in-progress reason, nothing is written, and the still-held lock keeps
+// exit 1.
 func TestRunE_FixHeldLock_AllSkipped_ExitOne(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("flock semantics are unix-only; the windows gate path is covered by the seam tests")
@@ -207,9 +206,9 @@ func TestRunE_FixHeldLock_AllSkipped_ExitOne(t *testing.T) {
 	assert.Equal(t, "FAIL", locked["wapi.lock"].Status, "the post-fix suite still reports the held lock")
 }
 
-// TestRunE_FixRollbackRestoresFiles_TextActions covers VAL-FIX-006 at the
-// command surface: the restore lands on disk and the text report shows the
-// performed action.
+// TestRunE_FixRollbackRestoresFiles_TextActions verifies at the command
+// surface the restore lands on disk and the text report shows the performed
+// action.
 func TestRunE_FixRollbackRestoresFiles_TextActions(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -249,8 +248,8 @@ func TestRunE_FixRollbackRestoresFiles_TextActions(t *testing.T) {
 	assert.ErrorIs(t, statErr, os.ErrNotExist, ".rollback/ must be removed after the restore")
 }
 
-// TestRunE_FixRollbackRecreatesDeletedProjectFile covers VAL-FIX-007 end to
-// end: a file the interrupted sync deleted comes back from the backup tree.
+// TestRunE_FixRollbackRecreatesDeletedProjectFile verifies end to end a file
+// the interrupted sync deleted comes back from the backup tree.
 func TestRunE_FixRollbackRecreatesDeletedProjectFile(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -278,9 +277,8 @@ func TestRunE_FixRollbackRecreatesDeletedProjectFile(t *testing.T) {
 	assert.Contains(t, out.String(), "performed")
 }
 
-// TestRunE_FixSecondRunIsNoop covers VAL-FIX-012 at the command surface:
-// after one successful fix, a second --fix run reports nothing to do and
-// exits 0.
+// TestRunE_FixSecondRunIsNoop verifies at the command surface after one
+// successful fix, a second --fix run reports nothing to do and exits 0.
 func TestRunE_FixSecondRunIsNoop(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -309,9 +307,10 @@ func TestRunE_FixSecondRunIsNoop(t *testing.T) {
 	}
 }
 
-// TestRunE_FixAndRelinkMutuallyExclusive covers the usage-error rule: --fix
-// and --relink cannot be combined — the run errors with exit 1 and no checks
-// run (the remote artifact seam is never called, stdout stays empty).
+// TestRunE_FixAndRelinkMutuallyExclusive verifies the cobra-level mutual
+// exclusion: combining --fix and --relink errors before any check runs (the
+// remote artifact seam is never called, stdout stays empty) with cobra's
+// generic mutually-exclusive message rather than a hand-rolled one.
 func TestRunE_FixAndRelinkMutuallyExclusive(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -325,9 +324,13 @@ func TestRunE_FixAndRelinkMutuallyExclusive(t *testing.T) {
 		return fakeArtifact(id, "doctor-fixture", "DRAFT", nil), nil
 	})
 
-	c, out, _ := newTestCmd(t, "--dir", tmp, "--fix", "--relink", "abc123")
+	c, out, errOut := newTestCmd(t, "--dir", tmp, "--fix", "--relink", "abc123")
 
 	require.Error(t, c.Execute(), "combining --fix and --relink must be a usage error")
+
+	assert.Contains(t, errOut.String(),
+		"if any flags in the group [fix relink] are set none of the others can be",
+		"stderr must carry cobra's generic mutually-exclusive message")
 
 	assert.Empty(t, out.String(), "no report may be rendered for a usage error")
 
@@ -346,8 +349,8 @@ func TestCmd_FixFlagShape(t *testing.T) {
 }
 
 // TestRunE_FixDeletedArtifactAndMissingManifest_LocalFixSucceedsRemoteStillFails
-// covers VAL-FIX-020: the manifest rebuild (local) succeeds, but the deleted
-// artifact (remote) remains FAIL — --fix is local-only and does not relink.
+// verifies the manifest rebuild (local) succeeds, but the deleted artifact
+// (remote) remains FAIL — --fix is local-only and does not relink.
 func TestRunE_FixDeletedArtifactAndMissingManifest_LocalFixSucceedsRemoteStillFails(t *testing.T) {
 	tmp := t.TempDir()
 
