@@ -527,6 +527,82 @@ func TestRenderDiff_CodeCountWithoutAPlanKeepsTheSummaryLine(t *testing.T) {
 	assert.Contains(t, out, "~ code       14 files changed since the last deploy")
 }
 
+// TestRenderDiff_UnchangedCodeRendersNoCodeEntry is the regression for the
+// guard the file-list feature dropped: a plan whose drift is elsewhere --
+// here the runtime sizing -- with a tree that matches the last deploy must
+// not grow a code entry, because "0 files changed since the last deploy"
+// names a sync the run is never going to perform. A manifest naming an
+// image has no code to sync at all, and gets the same silence.
+func TestRenderDiff_UnchangedCodeRendersNoCodeEntry(t *testing.T) {
+	sizingOnly := Plan{
+		State: StateRunning,
+		Code:  builtCode(0),
+		Runtime: []Change{
+			{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0},
+		},
+		DiffRuntime: []DiffRow{
+			{Path: "containerGroups[default].replicaCount", Want: 3.0, Have: 1.0, Changed: true},
+		},
+	}
+
+	publishedImage := Plan{
+		State: StateRunning,
+		Code:  CodeChange{Applies: false, Files: 12},
+		Runtime: []Change{
+			{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0},
+		},
+		DiffRuntime: []DiffRow{
+			{Path: "containerGroups[default].replicaCount", Want: 3.0, Have: 1.0, Changed: true},
+		},
+	}
+
+	for name, plan := range map[string]Plan{"unchanged tree": sizingOnly, "published image": publishedImage} {
+		t.Run(name, func(t *testing.T) {
+			out := renderDiff(t, appSummary, plan)
+
+			assert.NotContains(t, out, "~ code")
+			assert.NotContains(t, out, "files changed since the last deploy")
+			assert.NotContains(t, out, "Sync plan:")
+		})
+	}
+}
+
+// TestRenderDiff_DownloadOnlySyncPlanRendersNoFileList pins the one
+// predicate the code block is gated on. The deploy pushes the plan's Uploads
+// and Deletes and never pulls the remote side, so a dry-run plan holding
+// only downloads and conflicts -- which IsEmpty() counts and Files does not
+// -- must not render a file list for a sync the run will not perform.
+func TestRenderDiff_DownloadOnlySyncPlanRendersNoFileList(t *testing.T) {
+	plan := Plan{
+		State: StateRunning,
+		Code: CodeChange{
+			Applies: true,
+			SyncPlan: &sync.SyncPlan{
+				Downloads: []sync.FileAction{
+					{
+						Path:           "remote-only.txt",
+						Classification: sync.ClsRemoteModified,
+						Action:         sync.ActDownloadModify,
+						RemoteSize:     99,
+					},
+				},
+			},
+		},
+		Runtime: []Change{
+			{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0},
+		},
+		DiffRuntime: []DiffRow{
+			{Path: "containerGroups[default].replicaCount", Want: 3.0, Have: 1.0, Changed: true},
+		},
+	}
+
+	out := renderDiff(t, appSummary, plan)
+
+	assert.NotContains(t, out, "Sync plan:")
+	assert.NotContains(t, out, "remote-only.txt")
+	assert.NotContains(t, out, "~ code")
+}
+
 // TestRender_DefaultModeBaselineIsUnchanged pins the default plan's exact
 // bytes against a baseline captured before --diff existed. The renderer grew
 // fields that carry the diff rows, and this is the proof that Render neither

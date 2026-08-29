@@ -178,17 +178,27 @@ func diffActionLines(s Summary, plan Plan) ([]string, error) {
 	return out, nil
 }
 
-// codeBlock is the diff's code section. A first deploy has no sync plan to
-// list, because nothing was ever uploaded to compare the tree against, so it
-// keeps the default plan's wording. Otherwise the section is the file list
-// the sync would upload, drawn by the sync command's own plan printer and fed
-// the dry-run plan the code-change seam carried: two formats for one upload
-// would eventually disagree, which is the whole reason the list is borrowed
-// rather than redrawn. A plan measured without its list -- no production path
-// makes one, but a harness wiring only the count does -- falls back to the
-// count rather than printing nothing about real drift.
+// codeBlock is the diff's code section, and it exists only for code the
+// deploy will push: an entry saying nothing moved, or a file list for a sync
+// the run will not perform, would both invent work. The gate is Changed(),
+// one predicate for the whole block, because Files counts exactly the plan's
+// Uploads and Deletes -- the rows a deploy pushes. IsEmpty() would also count
+// Downloads and Conflicts, which the deploy never pulls, and would then print
+// a file list for a tree the run leaves alone. A first deploy has no sync
+// plan to list, because nothing was ever uploaded to compare the tree
+// against, so it keeps the default plan's wording. Otherwise the section is
+// the file list the sync would upload, drawn by the sync command's own plan
+// printer and fed the dry-run plan the code-change seam carried: two formats
+// for one upload would eventually disagree, which is the whole reason the
+// list is borrowed rather than redrawn. A plan measured without its list --
+// no production path makes one, but a harness wiring only the count does --
+// falls back to the count rather than printing nothing about real drift.
 func codeBlock(code CodeChange) ([]string, error) {
-	if code.FirstDeploy || code.SyncPlan == nil || code.SyncPlan.IsEmpty() {
+	if !code.Changed() {
+		return nil, nil
+	}
+
+	if code.FirstDeploy || code.SyncPlan == nil || len(code.SyncPlan.Uploads)+len(code.SyncPlan.Deletes) == 0 {
 		return []string{entry("~", "code", codeDetail(code))}, nil
 	}
 
