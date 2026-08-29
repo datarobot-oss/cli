@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // ZipUploader implements the async zip workflow: build a zip locally,
@@ -97,7 +98,13 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 	}
 
 	if err != nil {
-		_ = os.Remove(tmp.Name())
+		// The remove itself can fail — a Windows sharing violation was the
+		// original leak — so a discarded error here would hide exactly the
+		// recurrence this cleanup exists to prevent. Log it instead.
+		if rmErr := os.Remove(tmp.Name()); rmErr != nil {
+			log.Debug("zip temp cleanup failed; the archive may be stranded in the system temp dir",
+				"path", tmp.Name(), "err", rmErr)
+		}
 
 		return "", nil, err
 	}
@@ -118,6 +125,7 @@ func writeZip(tmp *os.File, projectDir string, files []FileAction) (map[string]F
 
 		entry, err := addToZip(zw, abs, fa.Path)
 		if err != nil {
+			// Lifecycle contract: zw is deliberately left unclosed here — the caller closes the temp file and removes the dead archive, and closing would only flush a doomed central directory that risks masking the real error.
 			return nil, err
 		}
 
