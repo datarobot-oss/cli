@@ -414,7 +414,15 @@ func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
 
 	// Restore permissions before t.TempDir cleanup so the read-only dir can
 	// be removed; cleanup runs LIFO, so this lands ahead of the TempDir one.
-	t.Cleanup(func() { _ = os.Chmod(s.rollDir, 0o755) })
+	// Nil-guarded: if scenario setup itself fails, s (or s.rollDir) may never
+	// have been assigned and the cleanup must not dereference it.
+	t.Cleanup(func() {
+		if s == nil || s.rollDir == "" {
+			return
+		}
+
+		_ = os.Chmod(s.rollDir, 0o755)
+	})
 
 	preManifest, err := os.ReadFile(filepath.Join(wapi.Dir(s.dir), "manifest.json"))
 	require.NoError(t, err)
