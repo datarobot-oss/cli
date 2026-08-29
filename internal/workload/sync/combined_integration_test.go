@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/ignore"
@@ -1207,11 +1206,18 @@ func TestCombined_ExitCodeCoherence(t *testing.T) {
 	})
 
 	t.Run("case_collision_nonzero", func(t *testing.T) {
-		if runtime.GOOS == "darwin" {
-			t.Skip("case-collision test needs a case-sensitive filesystem; macOS APFS is case-insensitive by default")
-		}
-
 		dir := initProject(t, map[string]string{"app.py": "x"})
+
+		// The collision must exist ON DISK for Run() to see it, and a
+		// case-insensitive filesystem (macOS APFS and Windows NTFS by
+		// default) collapses APP.py into app.py instead of creating a
+		// second entry — so the expectation is filesystem-aware, not
+		// universal. The detector itself is covered platform-independently
+		// by TestCaseCollision_FailsBeforeUpload, and the end-to-end shape
+		// by TestCaseCollision_EndToEnd_FailsBeforeUpload.
+		if fsIsCaseInsensitive(t, dir) {
+			t.Skip("case-insensitive filesystem: a case-only colliding tree cannot exist here, so no non-zero exit is reachable")
+		}
 
 		// Create a file whose name differs only in case from app.py.
 		// On a case-insensitive filesystem this is the same file, so the

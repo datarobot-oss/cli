@@ -75,17 +75,41 @@ func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, e
 // buildZip writes a zip archive to a temp file and returns the per-path
 // streamed hashes. Buffering on disk keeps very large zips from pinning a
 // multi-GiB allocation.
+//
+// The temp file is closed before any failure-path removal: on Windows an
+// open handle blocks os.Remove (Go opens files without FILE_SHARE_DELETE,
+// so the remove fails with a sharing violation), and the leak-prone order —
+// remove-then-close via defers — would strand the archive in the system
+// temp dir on every build failure. POSIX unlinks an open file freely, which
+// is exactly why the leak only ever showed on Windows.
 func buildZip(projectDir string, files []FileAction) (string, map[string]FileEntry, error) {
 	tmp, err := os.CreateTemp("", "wapi-sync-*.zip")
 	if err != nil {
 		return "", nil, fmt.Errorf("create zip tempfile: %w", err)
 	}
 
-	defer func() { _ = tmp.Close() }()
+	sent, err := writeZip(tmp, projectDir, files)
 
+	// A close error must not mask the real failure, so it is adopted only
+	// when the archive built cleanly.
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+
+	if err != nil {
+		_ = os.Remove(tmp.Name())
+
+		return "", nil, err
+	}
+
+	return tmp.Name(), sent, nil
+}
+
+// writeZip streams every planned file into tmp and returns the per-path
+// streamed hashes. It owns no lifecycle: the caller closes the file and
+// removes it on failure.
+func writeZip(tmp *os.File, projectDir string, files []FileAction) (map[string]FileEntry, error) {
 	zw := zip.NewWriter(tmp)
-
-	defer func() { _ = zw.Close() }()
 
 	sent := make(map[string]FileEntry, len(files))
 
@@ -94,19 +118,17 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 
 		entry, err := addToZip(zw, abs, fa.Path)
 		if err != nil {
-			_ = os.Remove(tmp.Name())
-			return "", nil, err
+			return nil, err
 		}
 
 		sent[fa.Path] = entry
 	}
 
 	if err := zw.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", nil, fmt.Errorf("close zip writer: %w", err)
+		return nil, fmt.Errorf("close zip writer: %w", err)
 	}
 
-	return tmp.Name(), sent, nil
+	return sent, nil
 }
 
 func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
