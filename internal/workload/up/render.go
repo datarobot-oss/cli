@@ -852,15 +852,19 @@ func changesJSON(artifact, runtime []DiffRow) []ChangeJSON {
 // CI artifacts; the entry still says which path moved, so the change itself
 // is not silently lost to the refusal.
 //
-// Path-based redaction alone is not enough. A NEW name-keyed list element
-// arrives as one whole-element row (a new container is one row for the
-// container, not one per field), so the row's own path names the container
-// and never trips redacted() while its value carries an environmentVars
-// block complete with secrets. Of the two ways to close that leak, dropping
-// the whole entry would hide the element's other fields from a consumer that
-// has to review the plan, so the subtree is scrubbed instead: variable names
-// survive, values do not, and the scrub copies rather than mutates because
-// the same rows feed the human diff after this.
+// Path-based redaction alone is not enough, twice over. A NEW name-keyed list
+// element arrives as one whole-element row (a new container is one row for
+// the container, not one per field), so the row's own path names the
+// container and never trips redacted() while its value carries an
+// environmentVars block complete with secrets. And when the live side
+// carries no such list at all, there is nothing to match variables against
+// by name, so the file's whole list arrives as one row whose path ENDS at
+// the list -- a row that is itself the block the redaction refuses to print.
+// Of the two ways to close either leak, dropping the whole entry would hide
+// what the element carries from a consumer that has to review the plan, so
+// the values are scrubbed instead: variable names survive, values do not,
+// and the scrub copies rather than mutates because the same rows feed the
+// human diff after this.
 func changeJSON(leaf DiffRow) ChangeJSON {
 	out := ChangeJSON{
 		Path:   leaf.Path,
@@ -877,13 +881,31 @@ func changeJSON(leaf DiffRow) ChangeJSON {
 		return out
 	}
 
-	if carriesEnvVars(leaf.Want) || carriesEnvVars(leaf.Have) {
+	if endsAtEnvVars(leaf.Path) {
+		// The row IS the environmentVars list, so the scrub is the list
+		// scrub itself; routing the value through the generic walker would
+		// copy every element verbatim, because the elements carry no
+		// environmentVars key of their own to catch.
+		out.Want = scrubEnvList(leaf.Want)
+		out.Have = scrubEnvList(leaf.Have)
+		out.Redacted = true
+	} else if carriesEnvVars(leaf.Want) || carriesEnvVars(leaf.Have) {
 		out.Want = scrubEnvVars(leaf.Want)
 		out.Have = scrubEnvVars(leaf.Have)
 		out.Redacted = true
 	}
 
 	return out
+}
+
+// endsAtEnvVars reports whether a leaf's path ends at the environmentVars
+// list itself, the shape the walker emits when the live side has no list to
+// walk element-by-element. redacted() misses it because that hook matches
+// the per-variable spelling (".environmentVars["), while this row's path
+// stops at the list, so the constructor names the shape itself and scrubs
+// the values exactly as it scrubs them below a whole-element row.
+func endsAtEnvVars(path string) bool {
+	return strings.HasSuffix(path, "."+envVarsKey)
 }
 
 // carriesEnvVars reports whether a value holds an environmentVars block

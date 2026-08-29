@@ -823,6 +823,92 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 	assert.Equal(t, plain.Artifact, plan.JSONWithDiff().Artifact)
 }
 
+// TestPlanJSON_DiffRedactsAWholeEnvVarsList: when the live side carries no
+// environmentVars list at all, the walker has nothing to match variables
+// against by name, so the file's whole list arrives as ONE row whose path
+// ENDS at the list. That row is as much a carrier of variable values as any
+// whole-element row, and the document must scrub it the same way: the names
+// stay, every value -- literal or credential ref -- is gone, and the refusal
+// is marked. (Caught against live staging: the container-level scrub only
+// saw values nested BELOW a row, never a row that was the list itself.)
+func TestPlanJSON_DiffRedactsAWholeEnvVarsList(t *testing.T) {
+	const (
+		literal = "sk-plaintext-9999"
+		credID  = "88d3c4d5e6f7a8b9c0d1e2f3"
+	)
+
+	payload := `{
+	  "name": "my-app",
+	  "artifact": {"name": "my-app-artifact", "spec": {
+	    "type": "service",
+	    "containerGroups": [{"name": "default", "containers": [
+	      {"name": "primary", "environmentVars": [
+	        {"name": "OPENAI_API_KEY", "value": "` + literal + `"},
+	        {"name": "HUGGING_FACE_HUB_TOKEN", "source": "dr-credential",
+	         "drCredentialId": "` + credID + `", "key": "apiToken"}
+	      ]}
+	    ]}]
+	  }}
+	}`
+
+	// The live container exists but names no variables, so there is no list
+	// to walk element-by-element: the file's whole environmentVars list is
+	// one changed leaf.
+	live := `{
+	  "type": "service",
+	  "containerGroups": [{"name": "default", "containers": [
+	    {"name": "primary", "image": "app:1"}
+	  ]}]
+	}`
+
+	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0))
+	require.NoError(t, err)
+
+	// The fixture has to earn its keep: the change must arrive as the
+	// whole-list row, not as per-variable rows.
+	assert.Contains(t, paths(plan.Artifact),
+		"containerGroups[default].containers[primary].environmentVars",
+		"expected the whole environmentVars list as one changed leaf")
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	document := string(encoded)
+
+	for _, secret := range []string{literal, credID, "dr-credential:"} {
+		assert.NotContains(t, document, secret)
+	}
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	changes := decoded["diff"].(map[string]any)["changes"].([]any)
+
+	var entry map[string]any
+
+	for _, c := range changes {
+		e, _ := c.(map[string]any)
+
+		if e["path"] == "containerGroups[default].containers[primary].environmentVars" {
+			entry = e
+
+			break
+		}
+	}
+
+	require.NotNil(t, entry, "the whole-list change must survive the scrub")
+	assert.Equal(t, true, entry["redacted"])
+
+	want, ok := entry["want"].([]any)
+	require.True(t, ok, "the variable names keep their list")
+
+	assert.Equal(t, []any{
+		map[string]any{"name": "OPENAI_API_KEY"},
+		map[string]any{"name": "HUGGING_FACE_HUB_TOKEN"},
+	}, want, "only the names survive the scrub")
+}
+
 // TestPlanJSON_FirstDeployDiffIsAllAdditions: with no live object every leaf
 // of the compiled manifest is an addition, absent with no live value, and
 // there is nothing for the unmanaged list to hold.
