@@ -28,8 +28,8 @@ import (
 
 // WriteText renders a report in human-readable form: a header (project dir
 // and linked artifact or "not linked"), a CHECK/STATUS/DETAIL table with one
-// row per check in runner order, remedies for non-OK rows, and a summary line
-// with per-status counts plus the overall verdict.
+// row per check in runner order, remedies for non-OK rows, and a summary
+// line with per-status counts plus the overall verdict.
 func WriteText(w io.Writer, report Report) error {
 	artifact := report.linkedArtifact()
 	if artifact == "" {
@@ -154,8 +154,8 @@ func writeRemedies(w io.Writer, report Report) error {
 
 // writeActions prints the per-repair outcomes of a repair run (--fix /
 // --relink); read-only runs (Actions nil) print nothing. When every repair
-// reported not-needed, the section says so explicitly: a --fix on a healthy
-// project is a no-op and the output must state that unambiguously.
+// reported not-needed, the section says so explicitly so a --fix on a healthy
+// project is unambiguously a no-op.
 func writeActions(w io.Writer, report Report) error {
 	if report.Actions == nil {
 		return nil

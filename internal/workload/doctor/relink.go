@@ -128,8 +128,7 @@ func RunRelink(ctx context.Context, opts RelinkOptions) ([]core.Action, error) {
 		return actions, abort
 	}
 
-	// Gate 2: not-linked project → error pointing to init.
-	// Short-circuit before any network fetch (VAL-RELINK-010).
+	// Gate 2: not-linked project → error pointing to init, before any network fetch.
 	oldCfg, err := relinkLoadOldConfig(opts.ProjectDir)
 	if err != nil {
 		return nil, err

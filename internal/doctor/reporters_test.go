@@ -124,10 +124,10 @@ func TestJSONReporter_Schema(t *testing.T) {
 
 	require.NoError(t, WriteJSON(&buf, report))
 
-	// Raw-bytes assertion (BEFORE json.Unmarshal): SetEscapeHTML(false) must
-	// leave <, >, and & verbatim in the marshaled output. The post-Unmarshal
-	// assertions below are escaping-invariant (Decode reverses HTML escaping),
-	// so only this check pins the encoder configuration documented in json.go.
+	// Raw-bytes check (BEFORE json.Unmarshal): SetEscapeHTML(false) must leave
+	// <, >, and & verbatim in the marshaled output. The post-Unmarshal checks
+	// below are escaping-invariant (Decode reverses HTML escaping), so only
+	// this check pins the encoder configuration documented in json.go.
 	raw := buf.String()
 
 	assert.Contains(t, raw, "<new-artifact-id>")

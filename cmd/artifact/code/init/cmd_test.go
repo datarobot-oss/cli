@@ -399,12 +399,12 @@ func TestCmd_DoesNotClobberGlobalYesViper(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Already-linked branches (VAL-INIT-001 through VAL-INIT-016)
+// Already-linked branches
 // ---------------------------------------------------------------------------
 
-// TestRunE_AlreadyLinked_GoneArtifact_NonInteractive covers VAL-INIT-005:
-// gone artifact (404) in non-interactive mode prints guidance naming
-// doctor --relink, never delete advice, state byte-identical.
+// TestRunE_AlreadyLinked_GoneArtifact_NonInteractive verifies a gone artifact
+// (404) in non-interactive mode prints guidance naming doctor --relink,
+// never delete advice, state byte-identical.
 func TestRunE_AlreadyLinked_GoneArtifact_NonInteractive(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -433,9 +433,9 @@ func TestRunE_AlreadyLinked_GoneArtifact_NonInteractive(t *testing.T) {
 	assert.Equal(t, "art-gone-001", cfg.ArtifactID)
 }
 
-// TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive covers VAL-INIT-008:
-// catalog mismatch in non-interactive mode points to doctor --relink, no
-// delete advice, state unchanged.
+// TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive verifies catalog
+// mismatch in non-interactive mode points to doctor --relink, no delete
+// advice, state unchanged.
 func TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -481,9 +481,9 @@ func TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive(t *testing.T) {
 	assert.Equal(t, catB, *cfg.CatalogID)
 }
 
-// TestRunE_AlreadyLinked_CorruptConfig covers VAL-INIT-015:
-// corrupt config (unreadable linked state) reports unreadable, remedy names
-// doctor --fix, never deletion, no fetch, state byte-identical.
+// TestRunE_AlreadyLinked_CorruptConfig verifies corrupt config (unreadable
+// linked state) reports unreadable, remedy names doctor --fix, never
+// deletion, no fetch, state byte-identical.
 func TestRunE_AlreadyLinked_CorruptConfig(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -519,9 +519,9 @@ func TestRunE_AlreadyLinked_CorruptConfig(t *testing.T) {
 	require.NoError(t, statErr)
 }
 
-// TestRunE_AlreadyLinked_Healthy_JSON covers VAL-INIT-002:
-// healthy linked artifact in JSON mode emits the pinned abort shape on stdout
-// with human text on stderr, exit 1, no delete advice.
+// TestRunE_AlreadyLinked_Healthy_JSON verifies a healthy linked artifact in
+// JSON mode emits the pinned abort shape on stdout with human text on stderr,
+// exit 1, no delete advice.
 func TestRunE_AlreadyLinked_Healthy_JSON(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -555,10 +555,9 @@ func TestRunE_AlreadyLinked_Healthy_JSON(t *testing.T) {
 	assert.NotContains(t, stderr, "re-init")
 }
 
-// TestRunE_AlreadyLinked_Gone_JSON covers VAL-INIT-006:
-// gone artifact in JSON mode emits the pinned shape with remedy containing
-// doctor --relink, human text to stderr, no deletion, exit non-zero, state
-// unchanged.
+// TestRunE_AlreadyLinked_Gone_JSON verifies a gone artifact in JSON mode emits
+// the pinned shape with remedy containing doctor --relink, human text to
+// stderr, no deletion, exit non-zero, state unchanged.
 func TestRunE_AlreadyLinked_Gone_JSON(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -629,9 +628,9 @@ func TestRunE_AlreadyLinked_CorruptConfig_JSON(t *testing.T) {
 	assert.NotContains(t, stderr, "re-init")
 }
 
-// TestRunE_AlreadyLinked_GoneArtifact_RelinkAccept covers VAL-INIT-003:
-// interactive gone-artifact offer accepted drives the full relink (config
-// repointed, manifest reset, relink history entry), working tree untouched.
+// TestRunE_AlreadyLinked_GoneArtifact_RelinkAccept verifies an interactive
+// gone-artifact offer accepted drives the full relink (config repointed,
+// manifest reset, relink history entry), working tree untouched.
 func TestRunE_AlreadyLinked_GoneArtifact_RelinkAccept(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -690,8 +689,8 @@ func TestRunE_AlreadyLinked_GoneArtifact_RelinkAccept(t *testing.T) {
 	assert.Contains(t, string(historyData), `"to":"art-new-003"`)
 }
 
-// TestRunE_AlreadyLinked_GoneArtifact_RelinkDecline covers VAL-INIT-004:
-// interactive gone-artifact offer declined leaves state byte-identical.
+// TestRunE_AlreadyLinked_GoneArtifact_RelinkDecline verifies an interactive
+// gone-artifact offer declined leaves state byte-identical.
 func TestRunE_AlreadyLinked_GoneArtifact_RelinkDecline(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -727,9 +726,8 @@ func TestRunE_AlreadyLinked_GoneArtifact_RelinkDecline(t *testing.T) {
 	assert.NotContains(t, string(historyData), `"op":"relink"`)
 }
 
-// TestRunE_AlreadyLinked_GoneArtifact_Relink404Target covers VAL-INIT-012:
-// interactive offer accepted but the new artifact ID 404s → abort, state
-// untouched.
+// TestRunE_AlreadyLinked_GoneArtifact_Relink404Target verifies an interactive
+// offer accepted but the new artifact ID 404s → abort, state untouched.
 func TestRunE_AlreadyLinked_GoneArtifact_Relink404Target(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -769,9 +767,9 @@ func TestRunE_AlreadyLinked_GoneArtifact_Relink404Target(t *testing.T) {
 	assert.NotContains(t, string(historyData), `"op":"relink"`)
 }
 
-// TestRunE_AlreadyLinked_GoneArtifact_RelinkLockedTarget covers
-// VAL-INIT-013: interactive offer accepted but the new artifact is locked →
-// abort, state untouched.
+// TestRunE_AlreadyLinked_GoneArtifact_RelinkLockedTarget verifies an
+// interactive offer accepted but the new artifact is locked → abort, state
+// untouched.
 func TestRunE_AlreadyLinked_GoneArtifact_RelinkLockedTarget(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -811,8 +809,8 @@ func TestRunE_AlreadyLinked_GoneArtifact_RelinkLockedTarget(t *testing.T) {
 	assert.Equal(t, "art-gone-006", cfg.ArtifactID)
 }
 
-// TestRunE_AlreadyLinked_CatalogMismatch_RelinkAccept covers VAL-INIT-007:
-// catalog mismatch interactive offer accepted drives the full relink.
+// TestRunE_AlreadyLinked_CatalogMismatch_RelinkAccept verifies a catalog
+// mismatch interactive offer accepted drives the full relink.
 func TestRunE_AlreadyLinked_CatalogMismatch_RelinkAccept(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -868,9 +866,9 @@ func TestRunE_AlreadyLinked_CatalogMismatch_RelinkAccept(t *testing.T) {
 	assert.Equal(t, "art-new-mismatch-001", cfg.ArtifactID)
 }
 
-// TestRunE_AlreadyLinked_RelinkJSON covers VAL-INIT-011:
-// interactive relink offer in JSON mode — stdout is pure JSON describing the
-// relink result, prompts/warnings to stderr, exit 0.
+// TestRunE_AlreadyLinked_RelinkJSON verifies an interactive relink offer in
+// JSON mode — stdout is pure JSON describing the relink result,
+// prompts/warnings to stderr, exit 0.
 func TestRunE_AlreadyLinked_RelinkJSON(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -911,8 +909,8 @@ func TestRunE_AlreadyLinked_RelinkJSON(t *testing.T) {
 	assert.Equal(t, "art-new-007", parsed["artifactId"])
 }
 
-// TestRunE_AlreadyLinked_NoDeleteAdvice is the grep guard (VAL-INIT-014):
-// no init output path advises deleting .datarobot/workload/ or .wapi state.
+// TestRunE_AlreadyLinked_NoDeleteAdvice is the grep guard: no init output
+// path advises deleting .datarobot/workload/ or .wapi state.
 func TestRunE_AlreadyLinked_NoDeleteAdvice(t *testing.T) {
 	badSubstrings := []string{"Delete ", "rm -rf", "remove the state", "to re-init"}
 
@@ -1020,14 +1018,13 @@ func TestRunE_AlreadyLinked_NoDeleteAdvice(t *testing.T) {
 	})
 }
 
-// TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext verifies that the
-// interactive relink-from-init path propagates the cobra command's context
-// to RunRelink (finding 6: previously passed context.Background()). The test
-// overrides the runRelinkFn seam to capture the context received by the
-// relink call and asserts it is the exact cmd.Context() value — not
-// context.Background(). This makes the assertion genuinely falsifiable: if
-// the code reverts to context.Background(), the captured ctx will differ
-// from cmd.Context() and the test will fail.
+// TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext verifies the
+// interactive relink-from-init path propagates the cobra command's context to
+// RunRelink (previously passed context.Background()). The test overrides the
+// runRelinkFn seam to capture the context received by the relink call and
+// asserts it is the exact cmd.Context() value — not context.Background(). A
+// sentinel value makes the check falsifiable: reverting to
+// context.Background() drops the sentinel and the test fails.
 func TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -1080,7 +1077,7 @@ func TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext(t *testing.T) {
 
 	// The captured context must be the exact cmd.Context() — not
 	// context.Background(). If the code reverted to context.Background(),
-	// the sentinel value would be absent and this assertion would fail.
+	// the sentinel value would be absent and this check would fail.
 	require.NotNil(t, capturedCtx, "runRelinkFn must have been called")
 
 	assert.Equal(t, ctx, capturedCtx,

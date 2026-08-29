@@ -51,7 +51,7 @@ flowchart TD
     subgraph CMD["cmd/artifact/code/doctor (cobra wiring)"]
         F["flags: --dir, --output-format, --yes, --fix, --relink"]
         P["soft auth probe (non-fatal, no login wizard)"]
-        RUN["runDoctor"]
+        RUN["pageDoctor"]
     end
 
     subgraph WL["internal/workload/doctor (wapi checks + repairs)"]

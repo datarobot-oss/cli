@@ -38,7 +38,7 @@ const newArtifactID = "6a90da2ddeadbeefcafe5678"
 // newCatalogID is a second catalog id distinct from testCatalogID.
 const newCatalogID = "65f1a2b3c4d5e6f7a8b9c0d3"
 
-// fixedTime is a deterministic clock for history-entry timestamp assertions.
+// fixedTime is a deterministic clock for history-entry timestamps.
 var fixedTime = time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
 
 // alwaysConfirm is a RelinkConfirmFunc that always proceeds.
@@ -148,9 +148,9 @@ func linkedDraftProject(t *testing.T) string {
 	return dir
 }
 
-// TestRunRelink_HappyPath_RepointsWithFreshBase covers VAL-RELINK-001:
-// relink from an old artifact to a new live draft artifact repoints config,
-// resets manifest to empty BASE, and appends a relink history entry.
+// TestRunRelink_HappyPath_RepointsWithFreshBase verifies relink from an old
+// artifact to a new live draft artifact repoints config, resets manifest to
+// empty BASE, and appends a relink history entry.
 func TestRunRelink_HappyPath_RepointsWithFreshBase(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -226,9 +226,9 @@ func TestRunRelink_HappyPath_RepointsWithFreshBase(t *testing.T) {
 	assert.Equal(t, before[working], workingAfter, "working-tree file must be untouched")
 }
 
-// TestRunRelink_FreshInit_CatalogIdFromTargetOrNil covers VAL-RELINK-011:
-// relink from a fresh init (no prior sync) to a new artifact with no codeRef
-// leaves catalogId nil and lsv nil.
+// TestRunRelink_FreshInit_CatalogIdFromTargetOrNil verifies relink from a
+// fresh init (no prior sync) to a new artifact with no codeRef leaves
+// catalogId nil and lsv nil.
 func TestRunRelink_FreshInit_CatalogIdFromTargetOrNil(t *testing.T) {
 	dir := linkedDraftProject(t)
 
@@ -273,8 +273,8 @@ func TestRunRelink_EmptyCodeRef_NormalizedToNil(t *testing.T) {
 	assert.Nil(t, cfg.CatalogID, "empty codeRef.CatalogID must normalize to nil")
 }
 
-// TestRunRelink_PopulatedBaseWiped covers VAL-RELINK-012 and VAL-RELINK-018:
-// a populated manifest (files + synced pointers) is wiped to empty BASE.
+// TestRunRelink_PopulatedBaseWiped verifies a populated manifest (files +
+// synced pointers) is wiped to empty BASE.
 func TestRunRelink_PopulatedBaseWiped(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -303,8 +303,8 @@ func TestRunRelink_PopulatedBaseWiped(t *testing.T) {
 	assert.Nil(t, mAfter.SyncedAt, "syncedAt must be nil")
 }
 
-// TestRunRelink_SameID_AllowedWarnedBaseReset covers VAL-RELINK-009:
-// relinking to the same artifact id is allowed, warned, and resets BASE.
+// TestRunRelink_SameID_AllowedWarnedBaseReset verifies relinking to the same
+// artifact id is allowed, warned, and resets BASE.
 func TestRunRelink_SameID_AllowedWarnedBaseReset(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -364,8 +364,8 @@ func TestRunRelink_SameID_AllowedWarnedBaseReset(t *testing.T) {
 	assert.Contains(t, string(history), `"to":"`+testArtifactID+`"`)
 }
 
-// TestRunRelink_NotLinked_ErrorPointsToInit covers VAL-RELINK-010:
-// relink on a not-linked project returns ErrRelinkNotLinked without fetching.
+// TestRunRelink_NotLinked_ErrorPointsToInit verifies relink on a not-linked
+// project returns ErrRelinkNotLinked without fetching.
 func TestRunRelink_NotLinked_ErrorPointsToInit(t *testing.T) {
 	dir := t.TempDir()
 
@@ -391,8 +391,8 @@ func TestRunRelink_NotLinked_ErrorPointsToInit(t *testing.T) {
 	assert.ErrorIs(t, statErr, os.ErrNotExist, "no state dir created")
 }
 
-// TestRunRelink_404Target_AbortsStateUntouched covers VAL-RELINK-006:
-// a 404 target aborts with a skipped action and state untouched.
+// TestRunRelink_404Target_AbortsStateUntouched verifies a 404 target aborts
+// with a skipped action and state untouched.
 func TestRunRelink_404Target_AbortsStateUntouched(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -413,8 +413,8 @@ func TestRunRelink_404Target_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, before, stateFileHashes(t, dir))
 }
 
-// TestRunRelink_LockedTarget_AbortsStateUntouched covers VAL-RELINK-007:
-// a locked target aborts with a skipped action and writes nothing.
+// TestRunRelink_LockedTarget_AbortsStateUntouched verifies a locked target
+// aborts with a skipped action and writes nothing.
 func TestRunRelink_LockedTarget_AbortsStateUntouched(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -434,8 +434,8 @@ func TestRunRelink_LockedTarget_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, before, stateFileHashes(t, dir))
 }
 
-// TestRunRelink_WrongType_AbortsStateUntouched covers VAL-RELINK-023:
-// a non-service artifact type aborts with a skipped action.
+// TestRunRelink_WrongType_AbortsStateUntouched verifies a non-service artifact
+// type aborts with a skipped action.
 func TestRunRelink_WrongType_AbortsStateUntouched(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -498,8 +498,8 @@ func TestRunRelink_APIUnreachable_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, before, stateFileHashes(t, dir))
 }
 
-// TestRunRelink_LockHeld_AbortsStateUntouched covers VAL-RELINK-021:
-// a held sync lock aborts the relink with "sync in progress" and state untouched.
+// TestRunRelink_LockHeld_AbortsStateUntouched verifies a held sync lock aborts
+// the relink with "sync in progress" and state untouched.
 func TestRunRelink_LockHeld_AbortsStateUntouched(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("flock semantics are unix-only; the windows gate path is covered by the seam tests")
@@ -529,8 +529,8 @@ func TestRunRelink_LockHeld_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, before, stateFileHashes(t, dir))
 }
 
-// TestRunRelink_Declined_AbortsStateUntouched covers VAL-RELINK-003:
-// declining the confirm prompt aborts with state untouched.
+// TestRunRelink_Declined_AbortsStateUntouched verifies declining the confirm
+// prompt aborts with state untouched.
 func TestRunRelink_Declined_AbortsStateUntouched(t *testing.T) {
 	dir := linkedProject(t)
 
@@ -567,8 +567,8 @@ func TestRunRelink_WindowsGate_Proceeds(t *testing.T) {
 	assert.Equal(t, core.ActionPerformed, actions[0].Status)
 }
 
-// TestRunRelink_RepeatedRelink_LastWins covers VAL-RELINK-024:
-// relink A→B then B→C leaves config pointing at C with two history entries.
+// TestRunRelink_RepeatedRelink_LastWins verifies relink A→B then B→C leaves
+// config pointing at C with two history entries.
 func TestRunRelink_RepeatedRelink_LastWins(t *testing.T) {
 	dir := linkedDraftProject(t)
 

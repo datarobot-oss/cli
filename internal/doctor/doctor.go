@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package doctor is a generic, state-agnostic check-and-report framework.
-//
-// It defines a Check interface, a Result type, an ordered Runner, and two
-// reporters (human-readable text and pure-JSON). It knows nothing about any
-// specific state model: concrete checks (e.g. workload sync-state checks)
-// live in their own packages and plug into the Runner. This keeps the layer
-// reusable for a future top-level "dr doctor".
+// Package doctor is a generic, state-agnostic check-and-report framework: a
+// Check interface, a Result type, an ordered Runner, and text/JSON reporters.
+// Concrete checks (e.g. workload sync-state checks) live in their own packages
+// and plug into the Runner, keeping this layer reusable for a future
+// top-level "dr doctor".
 package doctor
 
 import "context"
 
-// Status is the outcome of a single check. Check-level statuses are rendered
-// uppercase in both reporters; the run's overall verdict (derived from these)
-// is rendered lowercase.
+// Status is the outcome of a single check. Check-level statuses render
+// uppercase; the run's overall verdict (derived from these) renders lowercase.
 type Status string
 
 const (
@@ -35,8 +32,7 @@ const (
 	// StatusWARN means something needs attention but the run can proceed.
 	StatusWARN Status = "WARN"
 
-	// StatusFAIL means the condition checked for is broken; any FAIL makes
-	// the overall exit code 1.
+	// StatusFAIL means the condition is broken; any FAIL makes the exit code 1.
 	StatusFAIL Status = "FAIL"
 
 	// StatusSKIP means the check could not meaningfully run (e.g. an earlier
@@ -46,10 +42,10 @@ const (
 )
 
 // Result is the outcome of one check. CheckID is normally stamped by the
-// Runner from the Check's ID, so individual checks do not need to set it.
+// Runner from the Check's ID, so checks do not need to set it.
 type Result struct {
 	// CheckID is the stable namespaced identifier of the check (e.g.
-	// "wapi.config"). It matches Check.ID.
+	// "wapi.config"); matches Check.ID.
 	CheckID string
 
 	// Status is the check outcome.
@@ -83,15 +79,14 @@ type Check interface {
 	Run(ctx context.Context) Result
 }
 
-// ActionStatus is the outcome of one repair operation in a repair run
-// (--fix / --relink).
+// ActionStatus is the outcome of one repair operation in a repair run (--fix / --relink).
 type ActionStatus string
 
 const (
 	// ActionPerformed means the repair was executed successfully.
 	ActionPerformed ActionStatus = "performed"
 
-	// ActionSkipped means the repair was not executed, with Reason saying why.
+	// ActionSkipped means the repair was not executed; Reason says why.
 	ActionSkipped ActionStatus = "skipped"
 
 	// ActionNotNeeded means the repair had nothing to do (already healthy).
