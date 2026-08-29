@@ -83,6 +83,11 @@ type fakeFilesClient struct {
 	// follows next links, mirroring the real client's pagination behavior.
 	allFilesPageSize int
 
+	// Downloadable content: versionID → (path → bytes served by DownloadFile).
+	// Opt-in: a test that never registers content gets the loud "not
+	// expected" failure, so unexpected download calls stay visible.
+	downloadContent map[string]map[string][]byte
+
 	// Fault-injection hooks (all opt-in; zero values are no-ops).
 	dropPathFromApply  string // omit this path from the resulting version after apply
 	wrongChecksumPath  string // return wrong checksum for this path in AllFiles
@@ -110,6 +115,23 @@ func (f *fakeFilesClient) withVersion(catalogID, versionID string, files map[str
 
 	f.versions[versionID] = files
 	f.latestVersion[catalogID] = versionID
+
+	return f
+}
+
+// withDownloadable registers the content bytes DownloadFile serves for a
+// version. The registered content must hash to the FileMeta the same test
+// put in the version state — the download path verifies the streamed bytes
+// against the plan's RemoteHash, exactly like the real server relationship.
+func (f *fakeFilesClient) withDownloadable(versionID string, files map[string][]byte) *fakeFilesClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.downloadContent == nil {
+		f.downloadContent = make(map[string]map[string][]byte)
+	}
+
+	f.downloadContent[versionID] = files
 
 	return f
 }
@@ -534,8 +556,26 @@ func (f *fakeFilesClient) AllFiles(_, versionID string) (map[string]filesapi.Fil
 	return result, nil
 }
 
-func (f *fakeFilesClient) DownloadFile(_, _, _ string, _ io.Writer) (string, int64, error) {
-	return "", 0, errors.New("fakeFilesClient: DownloadFile not expected")
+// DownloadFile serves content registered via withDownloadable. Without
+// registered content it fails loudly, so a download the test did not plan
+// for surfaces as an error instead of a silent empty file.
+func (f *fakeFilesClient) DownloadFile(_, versionID, path string, w io.Writer) (string, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	files, ok := f.downloadContent[versionID]
+	if !ok {
+		return "", 0, fmt.Errorf("fakeFilesClient: no downloadable content registered for version %s", versionID)
+	}
+
+	data, ok := files[path]
+	if !ok {
+		return "", 0, fmt.Errorf("fakeFilesClient: no content registered for %s in version %s", path, versionID)
+	}
+
+	n, err := w.Write(data)
+
+	return path, int64(n), err
 }
 
 func (f *fakeFilesClient) DeleteFiles(catalogID string, paths []string) (*filesapi.DeleteFilesResp, error) {

@@ -68,8 +68,13 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	// Phase 6 discards the rollback only after SaveConfig + SaveManifest
-	// succeed.
+	// Hand the rollback to Phase 6, which discards it at entry — before its
+	// first state write, not after its last. Once the plan has executed
+	// successfully the backup tree protects nothing, and discarding
+	// unconditionally keeps a Phase 6 write failure from stranding the dir
+	// for the next run's stale-restore to resurrect pre-sync bytes from.
+	// A Phase 5 failure above restores and returns, leaving the dir in place
+	// for exactly that stale-restore recovery.
 	e.rollback = rb
 
 	return nil

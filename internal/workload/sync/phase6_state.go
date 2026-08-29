@@ -21,10 +21,27 @@ import (
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
-// phase6State writes the new BASE manifest, config, history entry, and
-// discards the rollback. Failures here do NOT roll back Phase 5 since
-// the remote has already advanced; the next sync will reconcile.
+// phase6State writes the new BASE manifest, config, and history entry, and
+// discards the rollback at entry. Failures here do NOT roll back Phase 5
+// since the remote has already advanced; the next sync will reconcile.
 func phase6State(e *Engine) error {
+	// Discard the rollback BEFORE any state write, unconditionally. When this
+	// runs, Phase 5 executed the whole plan successfully (e.rollback is only
+	// assigned after executePlan returns nil; a Phase 5 failure restores and
+	// returns without reaching here), so the backup tree has no remaining
+	// purpose — and Phase 6 never restores on failure because the remote has
+	// already advanced. Discarding first makes the cleanup independent of
+	// write success: if SaveManifest or SaveConfig below fails, the early
+	// return must not strand the rollback dir, because the next run's
+	// stale-rollback recovery would blindly copy the pre-sync bytes back
+	// into the working tree. Against the manifest this run just wrote, those
+	// resurrected bytes look like local edits and are silently re-uploaded
+	// over the remote.
+	if e.rollback != nil {
+		_ = e.rollback.Discard()
+		e.rollback = nil
+	}
+
 	if e.plan == nil {
 		return nil
 	}
@@ -48,19 +65,31 @@ func phase6State(e *Engine) error {
 		cfg.LastSyncedVersionID = &versionForState
 	}
 
-	// Build and write the manifest BEFORE writing config. The failure
-	// direction is what matters, not elegance: if SaveManifest fails,
-	// config has not been advanced yet, so the next sync sees the old
-	// version in config, detects drift, fetches AllFiles, and rebuilds
-	// BASE from real remote data — safe and self-healing. The converse
-	// (config advanced, manifest stale) silently poisons BASE: the next
-	// sync sees no drift, fast-paths, copies the stale BASE to REMOTE,
-	// and reports "Up to date." forever.
+	// Build and write the manifest BEFORE writing config. Both orders leave
+	// a one-file window on failure, and the safe direction is the one where
+	// the next sync detects drift and rebuilds from real remote data:
 	//
-	// This reorder is data-safe: nothing between the two writes reads
-	// config from disk. buildNewBaseManifest reads only e.remote,
-	// e.plan, and e.uploadOutcome (all in-memory). e.config and
-	// populateResult are touched only after both writes complete.
+	//   - SaveManifest fails: config has not been advanced yet, so the next
+	//     sync sees the old version in config, detects drift, fetches
+	//     AllFiles, and rebuilds BASE from the remote — safe and
+	//     self-healing. The manifest write is retried by that same sync.
+	//
+	//   - SaveConfig fails: the manifest is already advanced while config
+	//     still names the old version. The version mismatch makes the next
+	//     sync detect drift and fetch the remote; BASE (the advanced
+	//     manifest) truthfully describes that remote, so the plan is empty
+	//     and the run merely converges config. The rollback dir is already
+	//     gone by then — discarded at entry above — so no stale-restore can
+	//     resurrect pre-sync bytes as false local edits.
+	//
+	// The converse (config advanced, manifest stale) is the poisonous
+	// direction: the next sync sees no drift, fast-paths, copies the stale
+	// BASE to REMOTE, and reports "Up to date." forever.
+	//
+	// This is data-safe because nothing between the two writes reads config
+	// from disk. buildNewBaseManifest reads only e.remote, e.plan, and
+	// e.uploadOutcome (all in-memory). e.config and populateResult are
+	// touched only after both writes complete.
 	manifest, err := buildNewBaseManifest(e, versionForState, now)
 	if err != nil {
 		return fmt.Errorf("build manifest: %w", err)
@@ -76,11 +105,6 @@ func phase6State(e *Engine) error {
 
 	if err := wapi.AppendHistory(e.projectDir, syncHistoryEntry(e, now)); err != nil {
 		return fmt.Errorf("append history: %w", err)
-	}
-
-	if e.rollback != nil {
-		_ = e.rollback.Discard()
-		e.rollback = nil
 	}
 
 	e.config = cfg
