@@ -687,6 +687,44 @@ type PlanJSON struct {
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
+
+	// Diff carries the structured form of what --diff renders, and is
+	// present only when --diff was asked for: a caller that never passed the
+	// flag reads the same document it always did, and one that did gets the
+	// changes as data rather than scraping them out of the human block.
+	Diff *DiffJSON `json:"diff,omitempty"`
+}
+
+// DiffJSON is the plan's diff section. Both of its lists are the plan's own
+// accounting, carried so a machine-readable envelope says everything the
+// human diff does about what moves and what is left alone.
+type DiffJSON struct {
+	// Changes is one entry per changing leaf of the manifest, in the order
+	// the diff body prints them. The unchanged leaves the diff draws as
+	// context are not here: a list of everything the file already agrees
+	// with would bury the few entries a consumer acts on.
+	Changes []ChangeJSON `json:"changes"`
+
+	// Unmanaged holds the paths of what the live object carries that the
+	// file never names, so a caller can see what this deploy leaves alone
+	// without parsing the count out of the human summary.
+	Unmanaged []string `json:"unmanaged"`
+}
+
+// ChangeJSON is one changing leaf, the structured twin of the `- old`/`+ new`
+// pair the diff prints for it. Have is null and Absent true for a leaf the
+// live object does not carry, which is an addition and not a swap.
+type ChangeJSON struct {
+	Path   string `json:"path"`
+	Have   any    `json:"have"`
+	Want   any    `json:"want"`
+	Absent bool   `json:"absent"`
+
+	// Redacted marks a path whose values were withheld, so an entry with
+	// null sides reads as refused rather than empty. The omitempty keeps the
+	// marker off the entries that carried their values in plain, which is
+	// most of them.
+	Redacted bool `json:"redacted,omitempty"`
 }
 
 // CodeJSON is the working tree's part of the answer.
@@ -742,4 +780,79 @@ func describeAll(changes []Change) []string {
 	}
 
 	return out
+}
+
+// JSONWithDiff is JSON plus the diff section --diff renders. Both come from
+// the one plan, so the envelope and the human block cannot disagree about
+// what changes; the plain JSON() keeps the default path's exact shape, which
+// is what a caller that never passed the flag is owed.
+func (p Plan) JSONWithDiff() PlanJSON {
+	out := p.JSON()
+	out.Diff = p.diffJSON()
+
+	return out
+}
+
+// diffJSON projects the diff rows into their machine-readable shape, the
+// artifact side first with the synthetic id and type entries where Build
+// appended them, then the runtime side: the order the diff body draws, so
+// the two renderings of one plan list their changes as one sequence a
+// consumer can zip.
+func (p Plan) diffJSON() *DiffJSON {
+	return &DiffJSON{
+		Changes:   changesJSON(p.DiffArtifact, p.DiffRuntime),
+		Unmanaged: unmanagedJSON(p.Unmanaged),
+	}
+}
+
+// changesJSON walks the two row halves keeping only the changing leaves. The
+// agreeing ones are context on the way to a reader and noise in a list, and
+// the walk they come from already put the changing ones in the body's order.
+func changesJSON(artifact, runtime []DiffRow) []ChangeJSON {
+	leaves := make([]DiffRow, 0, len(artifact)+len(runtime))
+
+	leaves = append(leaves, artifact...)
+	leaves = append(leaves, runtime...)
+
+	out := make([]ChangeJSON, 0, len(leaves))
+
+	for _, leaf := range leaves {
+		if !leaf.Changed {
+			continue
+		}
+
+		out = append(out, changeJSON(leaf))
+	}
+
+	return out
+}
+
+// changeJSON serialises one leaf, redacting before it marshals. The values
+// of an environment variable are withheld here exactly as the human diff
+// withholds them, because a machine-readable plan is the one that ends up in
+// CI artifacts; the entry still says which path moved, so the change itself
+// is not silently lost to the refusal.
+func changeJSON(leaf DiffRow) ChangeJSON {
+	out := ChangeJSON{
+		Path:   leaf.Path,
+		Have:   leaf.Have,
+		Want:   leaf.Want,
+		Absent: leaf.Absent,
+	}
+
+	if redacted(leaf.Path) {
+		out.Have = nil
+		out.Want = nil
+		out.Redacted = true
+	}
+
+	return out
+}
+
+// unmanagedJSON copies the unmanaged paths, always into a non-nil slice so
+// the JSON carries [] rather than null for "nothing unmanaged".
+func unmanagedJSON(paths []string) []string {
+	out := make([]string, 0, len(paths))
+
+	return append(out, paths...)
 }

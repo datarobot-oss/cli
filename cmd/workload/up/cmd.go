@@ -409,6 +409,18 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 	return f.dryRun || result.WorkloadID != ""
 }
 
+// planEnvelope picks the plan's machine shape. --diff adds the structured
+// diff section to the same document; without the flag the envelope keeps the
+// exact shape it had before the flag existed, so a consumer that never asked
+// for a diff never has to learn about one.
+func planEnvelope(p up.Plan, diff bool) up.PlanJSON {
+	if diff {
+		return p.JSONWithDiff()
+	}
+
+	return p.JSON()
+}
+
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
@@ -420,7 +432,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			BuildID:    buildID(result.BuildID),
 			Action:     result.Action,
 			Locked:     result.Locked,
-			Plan:       result.Plan.JSON(),
+			Plan:       planEnvelope(result.Plan, f.diff),
 		})
 	}
 

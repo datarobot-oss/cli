@@ -594,6 +594,60 @@ func TestRun_DryRunDiffMatchesTheWetDiffAndWritesNothing(t *testing.T) {
 		"the wet run must print the identical diff body before its progress;\ndry: %q\nwet: %q", dryStderr, wetStderr)
 }
 
+// TestRun_PlanJSONDiffIsTheSameDryAndWet is that equivalence for the machine
+// envelope: the diff section is computed from the pre-apply plan, so the dry
+// preview and the run that follows it hand a consumer the same changes and
+// the same unmanaged paths, in the same order. The action differs between
+// the two; the section must not, or a script diffing the two envelopes would
+// read drift into a deploy that fixed it.
+func TestRun_PlanJSONDiffIsTheSameDryAndWet(t *testing.T) {
+	sized := resizedManifest()
+
+	liveDocs := fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+
+	dry := liveDocs
+	dry.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not touch the workload")
+
+		return nil, nil
+	}
+	dry.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not roll anything")
+
+		return nil, nil
+	}
+
+	install(t, dry)
+
+	dryResult, _, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	dryDiff := dryResult.Plan.JSONWithDiff().Diff
+	require.NotNil(t, dryDiff)
+	require.NotEmpty(t, dryDiff.Changes,
+		"the fixture has to move something for the comparison to mean anything")
+
+	var resized bool
+
+	wet := liveDocs
+	wet.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		resized = true
+
+		return nil, nil
+	}
+
+	install(t, wet)
+
+	wetResult, _, err := runIn(t, sized, Options{NonInteractive: true, Diff: true, Detach: true})
+	require.NoError(t, err)
+	assert.True(t, resized, "the wet leg has to reach the mutation for the comparison to mean anything")
+
+	assert.Equal(t, dryDiff, wetResult.Plan.JSONWithDiff().Diff)
+}
+
 // TestRun_AlreadyUpToDate exits without touching anything, which is what
 // makes `up` cheap to run on every push.
 func TestRun_AlreadyUpToDate(t *testing.T) {

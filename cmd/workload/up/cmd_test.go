@@ -661,6 +661,90 @@ func TestCmd_TelemetryRecordsTheDiffFlag(t *testing.T) {
 	assert.Equal(t, false, event.EventProperties["diff"], "an unset flag reports itself as off, not as absent")
 }
 
+// diffedResult is a result whose plan carries one change in each half, a
+// whole row structure and an unmanaged path, the shape the JSON diff
+// envelope tests read through the stubbed deploy.
+func diffedResult() up.Result {
+	return up.Result{
+		Plan: up.Plan{
+			State:    up.StateRunning,
+			Code:     up.CodeChange{},
+			Artifact: []up.Change{{Path: "containerGroups[default].containers[primary].port", Have: 8080.0, Want: 9090.0}},
+			Runtime:  []up.Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+
+			DiffArtifact: []up.DiffRow{{
+				Path: "containerGroups[default].containers[primary].port",
+				Have: 8080.0, Want: 9090.0, Changed: true,
+			}},
+			DiffRuntime: []up.DiffRow{{
+				Path: "containerGroups[default].replicaCount",
+				Have: 1.0, Want: 3.0, Changed: true,
+			}},
+
+			Unmanaged: []string{"containerGroups[default].containers[metrics]"},
+		},
+	}
+}
+
+// TestCmd_JSONDiffSectionFollowsTheFlag threads the flag into the envelope
+// itself: with it, stdout is still exactly one JSON document and the plan
+// inside it gains the structured diff section; without it, the plan has no
+// diff key at all, which is what keeps a consumer that never asked for a diff
+// from having to learn about one.
+func TestCmd_JSONDiffSectionFollowsTheFlag(t *testing.T) {
+	stubRun(t, diffedResult(), nil)
+
+	stdout, _, err := runCmd(t, "--dry-run", "--output-format", "json", "--diff")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope),
+		"stdout must be one JSON document and nothing else")
+
+	body := envelope["up"].(map[string]any)
+
+	plan, ok := body["plan"].(map[string]any)
+	require.True(t, ok)
+
+	diff, ok := plan["diff"].(map[string]any)
+	require.True(t, ok, "--diff was requested, so the section is present")
+
+	changes := diff["changes"].([]any)
+	require.Len(t, changes, 2)
+
+	first := changes[0].(map[string]any)
+
+	assert.Equal(t, "containerGroups[default].containers[primary].port", first["path"])
+	assert.InDelta(t, 8080.0, first["have"], 0)
+	assert.InDelta(t, 9090.0, first["want"], 0)
+	assert.Equal(t, false, first["absent"])
+
+	unmanaged := diff["unmanaged"].([]any)
+	require.Len(t, unmanaged, 1)
+	assert.Equal(t, "containerGroups[default].containers[metrics]", unmanaged[0])
+
+	// The legacy arrays keep their place beside the new section.
+	artifact := plan["artifact"].([]any)
+	require.Len(t, artifact, 1)
+	assert.Equal(t, "containerGroups[default].containers[primary].port: 8080 -> 9090", artifact[0])
+
+	stubRun(t, diffedResult(), nil)
+
+	stdout, _, err = runCmd(t, "--dry-run", "--output-format", "json")
+	require.NoError(t, err)
+
+	envelope = map[string]any{}
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope),
+		"stdout must be one JSON document and nothing else")
+
+	body = envelope["up"].(map[string]any)
+	plan = body["plan"].(map[string]any)
+
+	assert.NotContains(t, plan, "diff", "without the flag the section is absent, not null")
+}
+
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	cmd := Cmd()
 

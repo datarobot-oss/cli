@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -529,4 +530,452 @@ func TestRender_LinkedProjectOnAPublishedImageStillGetsANewArtifact(t *testing.T
 
 	assert.Contains(t, out, "with its first artifact")
 	assert.NotContains(t, out, "linked to")
+}
+
+// diffDriftPayload is the fixture the JSON diff tests read: drift in both
+// halves (two spec leaves, one whole block the live object lacks, two sizing
+// leaves) with unchanged and unmanaged fields around them, which is the least
+// a section claiming to mirror the diff has to carry.
+const diffDriftPayload = `{
+  "name": "my-app",
+  "artifact": {"name": "my-app-artifact", "spec": {
+    "type": "service",
+    "containerGroups": [{"name": "default", "containers": [
+      {"name": "primary", "primary": true, "port": 9090,
+       "readinessProbe": {"path": "/ready", "port": 8080},
+       "startupProbe": {"path": "/started", "port": 8080}}
+    ]}]
+  }},
+  "runtime": {"containerGroups": [
+    {"name": "default", "replicaCount": 3,
+     "containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "512MB"}}]}
+  ]}
+}`
+
+// driftPlan builds that fixture the way a real run does, through Build, so
+// the envelope and the diff read the same walk rather than two constructions.
+func driftPlan(t *testing.T) Plan {
+	t.Helper()
+
+	plan, err := Build(
+		loadedFrom(diffDriftPayload),
+		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
+		builtCode(0),
+	)
+	require.NoError(t, err)
+
+	return plan
+}
+
+// TestPlanJSON_DiffAbsentWithoutTheFlag keeps the pre-feature envelope exact
+// for a caller that never asked for a diff: no diff key at all, never a null
+// one, on each of the three shapes an envelope can take.
+func TestPlanJSON_DiffAbsentWithoutTheFlag(t *testing.T) {
+	cases := []struct {
+		name string
+		plan Plan
+	}{
+		{"nothing changed", Plan{State: StateRunning, Code: builtCode(0)}},
+		{"a sizing change", Plan{
+			State:   StateRunning,
+			Runtime: []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		}},
+		{"a first deploy", Plan{State: StateUnbound, Creates: true}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			encoded, err := json.Marshal(c.plan.JSON())
+			require.NoError(t, err)
+
+			var decoded map[string]any
+
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.NotContains(t, decoded, "diff",
+				"the section is added only when --diff asked for it, not nulled out")
+		})
+	}
+}
+
+// TestPlanJSON_DiffCarriesTheChangingLeaves: with --diff the plan carries one
+// entry per changing leaf, in the walk's order, with the unchanged context
+// leaves left out of it and the unmanaged paths listed beside them. The
+// legacy artifact/runtime arrays ride along unchanged, because --diff adds a
+// section rather than reshaping the envelope a consumer already reads.
+func TestPlanJSON_DiffCarriesTheChangingLeaves(t *testing.T) {
+	plan := driftPlan(t)
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	diff, ok := decoded["diff"].(map[string]any)
+	require.True(t, ok, "--diff was requested, so the section is an object")
+
+	changes, ok := diff["changes"].([]any)
+	require.True(t, ok, "changes is an array even when it is empty")
+
+	got := make([]string, 0, len(changes))
+
+	for _, c := range changes {
+		entry, ok := c.(map[string]any)
+		require.True(t, ok)
+
+		path, _ := entry["path"].(string)
+		got = append(got, path)
+
+		assert.Contains(t, entry, "have")
+		assert.Contains(t, entry, "want")
+		assert.Contains(t, entry, "absent")
+		assert.NotContains(t, entry, "redacted", "nothing on this fixture is an environment variable")
+	}
+
+	// One entry per changing leaf of the manifest, in the same order the
+	// walk reports them to the default envelope: the two halves concatenated,
+	// unchanged-but-managed leaves nowhere among them.
+	want := make([]string, 0, len(plan.Artifact)+len(plan.Runtime))
+
+	want = append(want, paths(plan.Artifact)...)
+	want = append(want, paths(plan.Runtime)...)
+
+	assert.Equal(t, want, got)
+	assert.Len(t, got, 5, "the fixture drifts in five leaves across the two halves")
+	assert.Contains(t, got, "containerGroups[default].containers[primary].startupProbe")
+	assert.NotContains(t, got, "containerGroups[default].containers[primary].port.expectation",
+		"the walk only answers for leaves the file names")
+
+	// The absent leaf carries no live value, and says so twice: a null have
+	// and an absent flag, because "not there" is a different act from
+	// "different value".
+	var added map[string]any
+
+	for _, c := range changes {
+		entry, _ := c.(map[string]any)
+
+		if entry["path"] == "containerGroups[default].containers[primary].startupProbe" {
+			added = entry
+
+			break
+		}
+	}
+
+	require.NotNil(t, added)
+	assert.Nil(t, added["have"])
+	assert.Equal(t, true, added["absent"])
+	assert.NotNil(t, added["want"])
+
+	// The unmanaged side is its own list, the plan's deduped Extra paths:
+	// the sidecar the file never names, counted once however many halves
+	// carry it, and never mistaken for a change.
+	unmanaged, ok := diff["unmanaged"].([]any)
+	require.True(t, ok, "unmanaged is an array even when it is empty")
+	require.Len(t, unmanaged, 1)
+	assert.Equal(t, "containerGroups[default].containers[metrics]", unmanaged[0])
+
+	for _, path := range unmanaged {
+		assert.NotContains(t, got, path, "unmanaged fields are not changes")
+	}
+
+	// The arrays a consumer already reads keep their exact content with and
+	// without the section.
+	plain := plan.JSON()
+
+	assert.Equal(t, plain.Artifact, plan.JSONWithDiff().Artifact)
+	assert.Equal(t, plain.Runtime, plan.JSONWithDiff().Runtime)
+}
+
+// TestPlanJSON_DiffRedactsBeforeSerialising is the JSON half of the one hard
+// rule. A literal can be a secret pasted in plaintext and a credential ref
+// names one; both ride in the diff rows as raw values, so the values are
+// withheld here rather than trusted to a marshalling order, and the entry
+// carries a marker saying the refusal happened.
+func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
+	const (
+		literal = "sk-literal-plaintext"
+		oldLit  = "sk-old-plaintext"
+		rotated = "aaaa222222222222222222aa"
+		liveID  = "66f1a2b3c4d5e6f7a8b9c0d1"
+	)
+
+	payload := `{
+	  "name": "my-app",
+	  "artifact": {"name": "my-app-artifact", "spec": {
+	    "type": "service",
+	    "containerGroups": [{"name": "default", "containers": [
+	      {"name": "primary", "environmentVars": [
+	        {"name": "OPENAI_API_KEY", "value": "` + literal + `"},
+	        {"name": "HUGGING_FACE_HUB_TOKEN", "source": "dr-credential",
+	         "drCredentialId": "` + rotated + `", "key": "apiToken"}
+	      ]}
+	    ]}]
+	  }}
+	}`
+
+	live := `{
+	  "type": "service",
+	  "containerGroups": [{"name": "default", "containers": [
+	    {"name": "primary", "environmentVars": [
+	      {"name": "OPENAI_API_KEY", "value": "` + oldLit + `"},
+	      {"name": "HUGGING_FACE_HUB_TOKEN", "source": "dr-credential",
+	       "drCredentialId": "` + liveID + `", "key": "apiToken"}
+	    ]}
+	  ]}]
+	}`
+
+	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0))
+	require.NoError(t, err)
+
+	// The fixture has to earn its keep: two env-var changes are what the walk
+	// found, and they are what must not leak.
+	require.Equal(t, []string{
+		"containerGroups[default].containers[primary].environmentVars[OPENAI_API_KEY].value",
+		"containerGroups[default].containers[primary].environmentVars[HUGGING_FACE_HUB_TOKEN].drCredentialId",
+	}, paths(plan.Artifact))
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	document := string(encoded)
+
+	for _, secret := range []string{literal, oldLit, rotated, liveID, "dr-credential:"} {
+		assert.NotContains(t, document, secret)
+	}
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	diff := decoded["diff"].(map[string]any)
+	changes := diff["changes"].([]any)
+	require.Len(t, changes, 2)
+
+	for _, c := range changes {
+		entry := c.(map[string]any)
+
+		assert.Contains(t, entry["path"], "environmentVars[", "the name is the whole point of the entry")
+		assert.Nil(t, entry["have"], "the live value never serialises")
+		assert.Nil(t, entry["want"], "the asked-for value never serialises")
+		assert.Equal(t, true, entry["redacted"])
+	}
+
+	// The legacy arrays were redacted before this section existed, and stay
+	// that way: they say the change happened, never what it said.
+	plain := plan.JSON()
+
+	assert.NotContains(t, strings.Join(plain.Artifact, "\n"), literal)
+	assert.Contains(t, strings.Join(plain.Artifact, "\n"), "changed")
+	assert.Equal(t, plain.Artifact, plan.JSONWithDiff().Artifact)
+}
+
+// TestPlanJSON_FirstDeployDiffIsAllAdditions: with no live object every leaf
+// of the compiled manifest is an addition, absent with no live value, and
+// there is nothing for the unmanaged list to hold.
+func TestPlanJSON_FirstDeployDiffIsAllAdditions(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		Live{State: StateUnbound},
+		CodeChange{Applies: true, FirstDeploy: true},
+	)
+	require.NoError(t, err)
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+	assert.Equal(t, true, decoded["creates"])
+	assert.Empty(t, decoded["priorWorkloadId"])
+
+	diff, ok := decoded["diff"].(map[string]any)
+	require.True(t, ok)
+
+	changes := diff["changes"].([]any)
+	require.NotEmpty(t, changes, "a first deploy is made of the leaves the manifest names")
+
+	for _, c := range changes {
+		entry := c.(map[string]any)
+
+		assert.Equal(t, true, entry["absent"], "%v must be an addition", entry["path"])
+		assert.Nil(t, entry["have"])
+		assert.NotNil(t, entry["want"])
+	}
+
+	unmanaged := diff["unmanaged"].([]any)
+	assert.Empty(t, unmanaged, "there is no live object to carry unmanaged fields")
+
+	plain := plan.JSON()
+
+	assert.Equal(t, plain.Artifact, plan.JSONWithDiff().Artifact)
+	assert.Equal(t, plain.Runtime, plan.JSONWithDiff().Runtime)
+}
+
+// TestPlanJSON_EmptyPlanDiffIsTwoEmptyLists: --diff still asked, so the
+// section is present with empty arrays where a change would sit, and the
+// rest of the envelope is the exact document the default path would have
+// produced.
+func TestPlanJSON_EmptyPlanDiffIsTwoEmptyLists(t *testing.T) {
+	plan := Plan{State: StateRunning, Code: builtCode(0)}
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	var withDiff map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &withDiff))
+
+	diff, ok := withDiff["diff"].(map[string]any)
+	require.True(t, ok, "the section is present because --diff asked, even for an empty plan")
+
+	changes, ok := diff["changes"].([]any)
+	require.True(t, ok, "changes is [] rather than null")
+	assert.Empty(t, changes)
+
+	unmanaged, ok := diff["unmanaged"].([]any)
+	require.True(t, ok, "unmanaged is [] rather than null")
+	assert.Empty(t, unmanaged)
+
+	plainEncoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var plain map[string]any
+
+	require.NoError(t, json.Unmarshal(plainEncoded, &plain))
+
+	delete(withDiff, "diff")
+	assert.Equal(t, plain, withDiff, "aside from the section, the two envelopes are one document")
+}
+
+// textDiffChangePaths pulls the paths of a rendered diff's change lines, in
+// order. A changed leaf states both sides of itself, `- old` then `+ new`,
+// and is one entry in the JSON list, so a run of same-path lines collapses to
+// one. The text and the list then say the same sequence, not just the same set.
+func textDiffChangePaths(t *testing.T, body string) []string {
+	t.Helper()
+
+	var out []string
+
+	for _, line := range strings.Split(body, "\n") {
+		if len(line) < 2 || (line[0] != '+' && line[0] != '-') {
+			continue
+		}
+
+		path, _, _ := strings.Cut(line[2:], ": ")
+
+		if len(out) > 0 && out[len(out)-1] == path {
+			continue
+		}
+
+		out = append(out, path)
+	}
+
+	return out
+}
+
+// TestPlanJSON_DiffOrderMatchesTheTextBody: both renderings draw from the one
+// walk the plan was built with, so the Nth entry of the list is the Nth
+// change the text prints, artifact side then runtime side, synthetic
+// artifact-id change included. A consumer reading both representations
+// deserves a sequence it can zip, and a list that reordered itself between
+// the two would make every such zip a lie.
+func TestPlanJSON_DiffOrderMatchesTheTextBody(t *testing.T) {
+	plan := driftPlan(t)
+
+	var body strings.Builder
+
+	require.NoError(t, RenderDiff(&body, appSummary, plan))
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	var decoded PlanJSON
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.NotNil(t, decoded.Diff)
+	require.NotEmpty(t, decoded.Diff.Changes, "the fixture drifts, so both renderings have changes to line up")
+
+	fromJSON := make([]string, 0, len(decoded.Diff.Changes))
+
+	for _, c := range decoded.Diff.Changes {
+		fromJSON = append(fromJSON, c.Path)
+	}
+
+	assert.Equal(t, textDiffChangePaths(t, body.String()), fromJSON)
+}
+
+// TestPlanJSON_DiffSyntheticChangesSurvive: the artifact id is a change no
+// walk of the spec can produce, because a file bound by id describes no spec
+// at all. The default envelope reports it, so the diff section must too --
+// a version roll invisible in one rendering of the plan it drives is a
+// silent regression waiting for a reader.
+func TestPlanJSON_DiffSyntheticChangesSurvive(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload:    json.RawMessage(`{"name": "my-app", "artifactId": "68b0bbbb0000000000000002"}`),
+		ArtifactID: "68b0bbbb0000000000000002",
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactID = "68a0000000000000000000a1"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"artifactId"}, paths(plan.Artifact),
+		"the fixture has to reach Build's synthetic append for the test to mean anything")
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	var decoded PlanJSON
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.NotNil(t, decoded.Diff)
+
+	require.Len(t, decoded.Diff.Changes, 1)
+
+	change := decoded.Diff.Changes[0]
+
+	assert.Equal(t, "artifactId", change.Path)
+	assert.Equal(t, "68a0000000000000000000a1", change.Have)
+	assert.Equal(t, "68b0bbbb0000000000000002", change.Want)
+	assert.False(t, change.Absent)
+}
+
+// The type is the same kind of blind spot: the platform reads the
+// discriminator off the artifact, so the spec walk never sees it. It rides in
+// the synthetic append beside the id, and lands in the list the same way.
+func TestPlanJSON_DiffSyntheticTypeChangeSurvives(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0))
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
+
+	encoded, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	var decoded PlanJSON
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	require.NotNil(t, decoded.Diff)
+	require.Len(t, decoded.Diff.Changes, 1)
+
+	change := decoded.Diff.Changes[0]
+
+	assert.Equal(t, "artifact.type", change.Path)
+	assert.Equal(t, "service", change.Have)
+	assert.Equal(t, "agent", change.Want)
 }
