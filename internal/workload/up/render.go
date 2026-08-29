@@ -57,7 +57,16 @@ const detailLimit = 6
 // environment variable can be a secret someone pasted in plaintext, and a
 // plan that echoed it would put it in terminal scrollback and CI logs. Names
 // are enough to see what changed.
-const envVarsSegment = ".environmentVars["
+const (
+	// envVarsKey is the block's own key in a decoded manifest, the one the
+	// subtree scrub looks for: a whole-element row's path names the element
+	// around it, so catching secrets below it means reading the value, not
+	// the path.
+	envVarsKey = "environmentVars"
+
+	// envVarsSegment is how envVarsKey reads inside a leaf's path.
+	envVarsSegment = "." + envVarsKey + "["
+)
 
 // Render writes the plan block that `up` prints before it acts, and that
 // --dry-run prints instead of acting.
@@ -842,6 +851,16 @@ func changesJSON(artifact, runtime []DiffRow) []ChangeJSON {
 // withholds them, because a machine-readable plan is the one that ends up in
 // CI artifacts; the entry still says which path moved, so the change itself
 // is not silently lost to the refusal.
+//
+// Path-based redaction alone is not enough. A NEW name-keyed list element
+// arrives as one whole-element row (a new container is one row for the
+// container, not one per field), so the row's own path names the container
+// and never trips redacted() while its value carries an environmentVars
+// block complete with secrets. Of the two ways to close that leak, dropping
+// the whole entry would hide the element's other fields from a consumer that
+// has to review the plan, so the subtree is scrubbed instead: variable names
+// survive, values do not, and the scrub copies rather than mutates because
+// the same rows feed the human diff after this.
 func changeJSON(leaf DiffRow) ChangeJSON {
 	out := ChangeJSON{
 		Path:   leaf.Path,
@@ -854,6 +873,104 @@ func changeJSON(leaf DiffRow) ChangeJSON {
 		out.Have = nil
 		out.Want = nil
 		out.Redacted = true
+
+		return out
+	}
+
+	if carriesEnvVars(leaf.Want) || carriesEnvVars(leaf.Have) {
+		out.Want = scrubEnvVars(leaf.Want)
+		out.Have = scrubEnvVars(leaf.Have)
+		out.Redacted = true
+	}
+
+	return out
+}
+
+// carriesEnvVars reports whether a value holds an environmentVars block
+// anywhere below it, which is what turns a whole-element row into a leak
+// however innocent its own path reads.
+func carriesEnvVars(v any) bool {
+	switch typed := v.(type) {
+	case map[string]any:
+		if _, ok := typed[envVarsKey]; ok {
+			return true
+		}
+
+		for _, child := range typed {
+			if carriesEnvVars(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if carriesEnvVars(child) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// scrubEnvVars deep-copies a composite value with every environment variable
+// reduced to its name. Everything else keeps its structure, so the entry
+// still says what the element carries and a consumer can tell a container
+// apart from its variables; only the refuse-to-print part is dropped.
+func scrubEnvVars(v any) any {
+	switch typed := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+
+		for key, child := range typed {
+			if key == envVarsKey {
+				out[key] = scrubEnvList(child)
+
+				continue
+			}
+
+			out[key] = scrubEnvVars(child)
+		}
+
+		return out
+	case []any:
+		out := make([]any, len(typed))
+
+		for i, child := range typed {
+			out[i] = scrubEnvVars(child)
+		}
+
+		return out
+	default:
+		return v
+	}
+}
+
+// scrubEnvList copies one environmentVars block, keeping the names and
+// nothing else. A name is the part a reader acts on; every other key of an
+// element is a value or the address of one, whether a plaintext literal or a
+// dr-credential ref, so none of it survives the copy. An element without a
+// usable name has nothing safe to say and is dropped rather than passed
+// through.
+func scrubEnvList(v any) []any {
+	list, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+
+	out := make([]any, 0, len(list))
+
+	for _, item := range list {
+		element, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		name, ok := element["name"].(string)
+		if !ok || name == "" {
+			continue
+		}
+
+		out = append(out, map[string]any{"name": name})
 	}
 
 	return out

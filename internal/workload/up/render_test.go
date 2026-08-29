@@ -692,12 +692,20 @@ func TestPlanJSON_DiffCarriesTheChangingLeaves(t *testing.T) {
 // names one; both ride in the diff rows as raw values, so the values are
 // withheld here rather than trusted to a marshalling order, and the entry
 // carries a marker saying the refusal happened.
+//
+// The sidecar container pins the whole-element half of the rule: a NEW
+// name-keyed list element is one row for the element, not one per field, so
+// the row's own path names the container and never trips the path-based
+// redaction while its value carries an environmentVars block complete with
+// secrets. Nothing a variable holds may reach the document.
 func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 	const (
-		literal = "sk-literal-plaintext"
-		oldLit  = "sk-old-plaintext"
-		rotated = "aaaa222222222222222222aa"
-		liveID  = "66f1a2b3c4d5e6f7a8b9c0d1"
+		literal       = "sk-literal-plaintext"
+		oldLit        = "sk-old-plaintext"
+		rotated       = "aaaa222222222222222222aa"
+		liveID        = "66f1a2b3c4d5e6f7a8b9c0d1"
+		sidecarLit    = "hunter2-plaintext"
+		sidecarCredID = "77c2b3c4d5e6f7a8b9c0d199"
 	)
 
 	payload := `{
@@ -709,6 +717,11 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 	        {"name": "OPENAI_API_KEY", "value": "` + literal + `"},
 	        {"name": "HUGGING_FACE_HUB_TOKEN", "source": "dr-credential",
 	         "drCredentialId": "` + rotated + `", "key": "apiToken"}
+	      ]},
+	      {"name": "sidecar", "image": "sidecar:2", "environmentVars": [
+	        {"name": "SIDECAR_PASSWORD", "value": "` + sidecarLit + `"},
+	        {"name": "SIDECAR_API_TOKEN", "source": "dr-credential",
+	         "drCredentialId": "` + sidecarCredID + `", "key": "sidecarKey"}
 	      ]}
 	    ]}]
 	  }}
@@ -728,11 +741,13 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0))
 	require.NoError(t, err)
 
-	// The fixture has to earn its keep: two env-var changes are what the walk
-	// found, and they are what must not leak.
+	// The fixture has to earn its keep: two env-var changes on the existing
+	// container plus the whole-element row the new container emits, and all
+	// three are what must not leak.
 	require.Equal(t, []string{
 		"containerGroups[default].containers[primary].environmentVars[OPENAI_API_KEY].value",
 		"containerGroups[default].containers[primary].environmentVars[HUGGING_FACE_HUB_TOKEN].drCredentialId",
+		"containerGroups[default].containers[sidecar]",
 	}, paths(plan.Artifact))
 
 	encoded, err := json.Marshal(plan.JSONWithDiff())
@@ -740,7 +755,7 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 
 	document := string(encoded)
 
-	for _, secret := range []string{literal, oldLit, rotated, liveID, "dr-credential:"} {
+	for _, secret := range []string{literal, oldLit, rotated, liveID, sidecarLit, sidecarCredID, "dr-credential:"} {
 		assert.NotContains(t, document, secret)
 	}
 
@@ -750,16 +765,54 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 
 	diff := decoded["diff"].(map[string]any)
 	changes := diff["changes"].([]any)
-	require.Len(t, changes, 2)
+	require.Len(t, changes, 3)
 
 	for _, c := range changes {
 		entry := c.(map[string]any)
+
+		if entry["path"] == "containerGroups[default].containers[sidecar]" {
+			continue
+		}
 
 		assert.Contains(t, entry["path"], "environmentVars[", "the name is the whole point of the entry")
 		assert.Nil(t, entry["have"], "the live value never serialises")
 		assert.Nil(t, entry["want"], "the asked-for value never serialises")
 		assert.Equal(t, true, entry["redacted"])
 	}
+
+	// The new container's entry arrives as a whole-element row: the path
+	// names the container, so the scrub works on the subtree instead. The
+	// names of its variables stay, because seeing which variables an element
+	// sets is half the point of the entry; every value, literal or
+	// credential ref, is gone, and the refusal is marked.
+	var sidecar map[string]any
+
+	for _, c := range changes {
+		entry, _ := c.(map[string]any)
+
+		if entry["path"] == "containerGroups[default].containers[sidecar]" {
+			sidecar = entry
+
+			break
+		}
+	}
+
+	require.NotNil(t, sidecar, "the new container is one whole-element change")
+	assert.Equal(t, true, sidecar["redacted"])
+	assert.Nil(t, sidecar["have"], "the container is an addition")
+	assert.Equal(t, true, sidecar["absent"])
+
+	want, ok := sidecar["want"].(map[string]any)
+	require.True(t, ok, "the container's other fields keep their structure")
+
+	assert.Equal(t, "sidecar:2", want["image"], "nothing secret keeps the structure honest")
+
+	vars, ok := want["environmentVars"].([]any)
+	require.True(t, ok, "the variable names stay")
+	require.Len(t, vars, 2)
+
+	assert.Equal(t, map[string]any{"name": "SIDECAR_PASSWORD"}, vars[0])
+	assert.Equal(t, map[string]any{"name": "SIDECAR_API_TOKEN"}, vars[1])
 
 	// The legacy arrays were redacted before this section existed, and stay
 	// that way: they say the change happened, never what it said.
