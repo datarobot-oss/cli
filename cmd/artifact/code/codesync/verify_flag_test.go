@@ -16,6 +16,7 @@ package codesync
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -298,4 +299,166 @@ func TestRunE_JSON_EmptyPlan_WithDivergence_ExecutesAndEmitsResult(t *testing.T)
 	assertOnlyJSON(t, strings.NewReader(raw))
 	assert.True(t, fe.executed, "the JSON path must Execute for the empty-plan repair too")
 	assert.Contains(t, raw, `"v1"`, "the result document must follow the plan document")
+}
+
+// The one-line divergence summary must not claim a reconciliation the run
+// does not perform. In a preview (--dry-run/--diff) nothing is written at
+// all, so the summary has to say so and point at the mode flag instead of
+// asserting that the plan reconciles anything.
+func TestRunE_DivergenceSummary_PreviewSaysNothingWritten(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		previewFlag string
+		runWithout  string
+	}{
+		{name: "--dry-run", previewFlag: "dry-run", runWithout: "--dry-run"},
+		{name: "--diff", previewFlag: "diff", runWithout: "--diff"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			linkProject(t, dir)
+
+			fe := &fakeEngine{
+				plan:        &sync.SyncPlan{},
+				divergences: sampleDivergences(),
+			}
+
+			flags := map[string]string{"dir": dir, "yes": "true", "verify": "true", tc.previewFlag: "true"}
+
+			_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+			require.NoError(t, err)
+
+			errText := stderr.String()
+
+			assert.Contains(t, errText, "This was a preview; nothing was written.",
+				"a preview must not read as a run that reconciles anything")
+			assert.Contains(t, errText, fmt.Sprintf("Run without %s to reconcile.", tc.runWithout),
+				"the summary must say how to actually reconcile")
+
+			assert.NotContains(t, errText, "The plan reconciles them.",
+				"nothing is reconciled in a preview; the applying wording must not appear")
+		})
+	}
+}
+
+// The empty-plan repair run reconciles nothing through plan rows — the plan
+// has none. The reconciliation is the Phase 6 manifest rewrite, so the
+// summary must say the manifest is being rewritten from the server's state
+// rather than repeating "The plan reconciles them.".
+func TestRunE_DivergenceSummary_EmptyPlanRepair_SaysManifestRewritten(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:        &sync.SyncPlan{},
+		divergences: sampleDivergences(),
+		result:      &sync.Result{NewVersion: "v1"},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "verify": "true"}
+
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	errText := stderr.String()
+
+	assert.True(t, fe.executed, "the repair Execute must still run")
+	assert.Contains(t, errText,
+		"The plan is empty, but manifest.json is being rewritten from the server's state",
+		"the summary must name the manifest rewrite, not plan rows")
+	assert.NotContains(t, errText, "The plan reconciles them.",
+		"an empty plan reconciles no rows; the applying wording would mislead")
+}
+
+// The ordinary applying wording is load-bearing and unchanged: a non-empty
+// plan really does reconcile the divergences through its rows.
+func TestRunE_DivergenceSummary_ApplyingKeepsReconcilesWording(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:        &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "app.py"}}},
+		divergences: sampleDivergences(),
+		result:      &sync.Result{NewVersion: "v2", UploadedCount: 1},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "verify": "true"}
+
+	_, _, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	assert.True(t, fe.executed)
+	assert.Contains(t, stderr.String(), "The plan reconciles them.",
+		"the non-empty applying wording must stay as it is")
+}
+
+// The empty-plan repair run prints its honest line to stdout in place of
+// "Up to date.": the plan really is empty, but the run is about to repair
+// the manifest, and claiming the project is up to date immediately before
+// that rewrite is the lie scrutiny flagged. The completion summary from the
+// state write must still follow.
+func TestRunE_EmptyPlanRepair_NeverSaysUpToDate(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{},
+		divergences: []sync.Divergence{
+			{Path: "app.py", Kind: sync.DivergenceHashMismatch, BaseHash: "aaaa", RemoteHash: "bbbb"},
+		},
+		result: &sync.Result{NewVersion: "v1"},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "verify": "true"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	out := stdout.String()
+
+	assert.NotContains(t, out, "Up to date.",
+		"the repair run must not claim the project is up to date")
+	assert.Contains(t, out,
+		"The plan is empty, but manifest.json is being rewritten from the server's state to repair the divergences found by --verify.",
+		"stdout must say the plan is empty and the manifest is being repaired")
+	assert.Contains(t, out, "Sync complete",
+		"the state-write completion summary must still follow")
+}
+
+// The genuinely converged case keeps the pre-existing line: with no
+// divergence findings there is nothing to repair, the empty plan
+// short-circuits before Execute, and "Up to date." is the truth.
+func TestRunE_EmptyPlan_Converged_KeepsUpToDate(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "verify": "true"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	assert.False(t, fe.executed, "no divergences means the empty-plan short-circuit stands")
+	assert.Contains(t, stdout.String(), "Up to date.",
+		"a genuinely converged empty plan must keep its existing line")
+}
+
+// The summary is keyed off divergence findings alone: with none, every mode
+// and plan shape must render nothing, so a plain sync gains no extra prose.
+func TestDivergenceSummaryNotice_EmptyWhenNoDivergences(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		flags runFlags
+		plan  *sync.SyncPlan
+	}{
+		{name: "applying", flags: runFlags{}, plan: &sync.SyncPlan{}},
+		{name: "applying non-empty", flags: runFlags{}, plan: &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}},
+		{name: "dry-run", flags: runFlags{DryRun: true}, plan: &sync.SyncPlan{}},
+		{name: "diff", flags: runFlags{Diff: true}, plan: &sync.SyncPlan{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Empty(t, divergenceSummaryNotice(tc.flags, tc.plan, nil))
+		})
+	}
 }

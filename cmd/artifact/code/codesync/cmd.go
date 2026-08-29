@@ -222,7 +222,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
-	format.StateNotice(cmd.ErrOrStderr(), divergenceSummaryNotice(engine.Divergences()))
+	format.StateNotice(cmd.ErrOrStderr(), divergenceSummaryNotice(flags, plan, engine.Divergences()))
 	format.StateNotice(cmd.ErrOrStderr(), skippedSymlinkSummaryNotice(engine.SkippedSymlinks()))
 
 	if engine.StaleRollbackRestored() {
@@ -254,7 +254,13 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 // alongside the other state notices: what diverged and what happens next.
 // The per-path detail (with hashes) is logged from Phase 2 itself, so this
 // summary stays stream-agnostic and names every affected path.
-func divergenceSummaryNotice(divergences []sync.Divergence) string {
+//
+// The "what happens next" half is mode- and plan-aware because the honest
+// answer differs by what the run actually does: a preview writes nothing, an
+// empty-plan repair reconciles through the Phase 6 manifest rewrite rather
+// than through plan rows, and only a non-empty applying plan reconciles the
+// divergences through its rows.
+func divergenceSummaryNotice(flags runFlags, plan *sync.SyncPlan, divergences []sync.Divergence) string {
 	if len(divergences) == 0 {
 		return ""
 	}
@@ -265,9 +271,20 @@ func divergenceSummaryNotice(divergences []sync.Divergence) string {
 		paths[i] = d.Path
 	}
 
-	return fmt.Sprintf(
-		"--verify found %d divergence(s) between manifest.json (BASE) and the server (REMOTE): %s. The plan reconciles them.",
+	head := fmt.Sprintf(
+		"--verify found %d divergence(s) between manifest.json (BASE) and the server (REMOTE): %s.",
 		len(divergences), strings.Join(paths, ", "))
+
+	switch {
+	case flags.DryRun:
+		return head + " This was a preview; nothing was written. Run without --dry-run to reconcile."
+	case flags.Diff:
+		return head + " This was a preview; nothing was written. Run without --diff to reconcile."
+	case plan.IsEmpty():
+		return head + " The plan is empty, but manifest.json is being rewritten from the server's state to repair them."
+	default:
+		return head + " The plan reconciles them."
+	}
 }
 
 // skippedSymlinkSummaryNotice renders the one-line summary of skipped
@@ -325,7 +342,7 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 		return finishJSON(engine, plan, out, flags)
 	}
 
-	if err := renderHumanPlan(cmd, engine, plan, flags.Diff); err != nil {
+	if err := renderHumanPlan(cmd, engine, plan, flags); err != nil {
 		return err
 	}
 
@@ -353,14 +370,25 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 }
 
 // renderHumanPlan prints the plan and optional per-file diffs.
-func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, diffFlag bool) error {
+func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, flags runFlags) error {
 	out := cmd.OutOrStdout()
+
+	// An empty plan normally prints "Up to date." — truthful when disk and
+	// server genuinely agree. On an applying run whose --verify findings
+	// force the empty-plan repair, though, Execute is about to rewrite
+	// manifest.json from the server's state, and "Up to date." immediately
+	// before that rewrite would claim nothing is being fixed. Previews keep
+	// the ordinary line: nothing is written, so the divergence summary's
+	// preview wording is what carries the honesty there.
+	if plan.IsEmpty() && len(engine.Divergences()) > 0 && !flags.DryRun && !flags.Diff {
+		return display.PrintEmptyPlanRepair(out)
+	}
 
 	if err := display.PrintPlan(out, plan); err != nil {
 		return err
 	}
 
-	if !diffFlag {
+	if !flags.Diff {
 		return nil
 	}
 
