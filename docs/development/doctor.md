@@ -1,17 +1,17 @@
 # `dr artifact code doctor` — Architecture & Check-Authoring Guide
 
-Audience: CLI contributors, especially the workload team adding their own
-checks in follow-up PRs.
+Audience: CLI contributors
 
 ## Overview
 
 `dr artifact code doctor` is a read-only diagnostic for a project's
-`.datarobot/workload/` (legacy `.wapi/`) sync state. It inspects the local
-state — linked artifact, `config.json`/`manifest.json` health, config/manifest
-agreement, interrupted rollbacks, and the sync lock — and (when credentials
-resolve) the linked artifact's remote health, then reports each check as
-`OK`, `WARN`, `FAIL`, or `SKIP` with a concrete remedy for anything that needs
-attention.
+`.datarobot/workload/` sync state. It inspects the local state — linked
+artifact, `config.json`/`manifest.json` health, config/manifest agreement,
+interrupted rollbacks, and the sync lock. If credentials resolve, it also
+checks the linked artifact's remote health.
+
+At the end it reports each check as `OK`, `WARN`, `FAIL`, or `SKIP` with a
+concrete remedy for any issues.
 
 Key invariants:
 
@@ -43,6 +43,8 @@ flags and the soft auth probe; the workload layer owns the wapi-specific
 checks and repairs; the generic framework layer owns the ordered runner, the
 reporters, and exit-code aggregation. The generic layer imports nothing
 about workload state, so a future top-level `dr doctor` can reuse it.
+
+<!-- crap diagram, should be redone -->
 
 ```mermaid
 flowchart TD
@@ -131,7 +133,7 @@ flowchart TD
     E --> F
 ```
 
-Notes for the workload team:
+Notes for check authors:
 
 - **`Result` shape:** `{CheckID, Status, Summary, Remedy, Details, Fixable}`.
   `CheckID` is stamped by the `Runner` from `Check.ID()`, so do not set it
@@ -153,9 +155,3 @@ Notes for the workload team:
 - **Test seams.** Use the existing `initProject`-style temp state and the
   `ArtifactGetterFunc` fake (no network). Inject a `GOOS` seam for any
   platform-specific behavior so it is unit-testable on any host.
-
-The M4 extras branch (`aj/RAPTOR-18075-doctor-extras`, stacked off this
-branch as a separate draft PR) is the concrete example of this extension
-pattern: it adds five informational checks (`wapi.legacy-unmigrated`,
-`wapi.drignore`, `wapi.history`, `remote.no-coderef`, `wapi.checkouts-orphaned`)
-by following exactly the steps above.
