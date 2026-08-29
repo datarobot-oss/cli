@@ -663,7 +663,9 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 		".drignore": {Hash: sha256Hex([]byte("")), Size: 0},
 	})
 
-	// The fake's DownloadFile returns an error, so we cannot Execute a
+	// The fake's DownloadFile fails with a specific
+	// "no downloadable content registered" error unless the test registers
+	// downloadable content via withDownloadable, so we cannot Execute a
 	// conflict resolution through the fake. Instead, verify the plan
 	// structure: the conflict is in the Conflicts list, and the conflict
 	// path's RemoteHash is the server's hash. Phase 6 (buildNewBaseManifest)
