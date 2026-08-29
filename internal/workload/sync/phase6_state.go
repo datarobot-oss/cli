@@ -50,6 +50,7 @@ func phase6State(e *Engine) error {
 
 	now := e.nowFn().UTC()
 
+	// Shallow copy is safe only while wapi.Config has no reference-type field mutated in place; if one is added, switch to a deep copy.
 	cfg := e.config
 
 	if e.newCatalogID != "" {
