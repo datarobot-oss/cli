@@ -276,6 +276,13 @@ func TestSyncCleanup_ZipPathFailure(t *testing.T) {
 	_, err = e.Execute(plan)
 	require.Error(t, err, "the deleted source must fail the zip build")
 
+	// Pin the failure to buildZip's per-file open ("... for zip: ..."), the
+	// only error text in the zip path carrying that phrase: if Execute ever
+	// failed earlier (rollback journal, a delete, an uploader swap), the
+	// litter assertions below would otherwise pass vacuously on a run that
+	// never reached the archive build.
+	require.ErrorContains(t, err, "for zip")
+
 	assertNoNewSyncTemps(t, before)
 	assert.Empty(t, stateDirTmpLitter(t, dir))
 }

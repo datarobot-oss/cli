@@ -267,7 +267,10 @@ func TestCaseCollision_FailsBeforeUpload(t *testing.T) {
 // fsIsCaseInsensitive reports whether dir lives on a case-insensitive
 // filesystem, using a throwaway probe pair inside dir: on a
 // case-insensitive filesystem, os.Stat of the upper-case spelling resolves
-// to the lower-case file that was just written.
+// to the lower-case file that was just written. The probe directory is
+// removed before the helper returns, so the probe never leaks into the
+// caller's fixture: a test that probes for case sensitivity must not change
+// the tree it is about to build its colliding pair in.
 func fsIsCaseInsensitive(t *testing.T, dir string) bool {
 	t.Helper()
 
@@ -278,6 +281,12 @@ func fsIsCaseInsensitive(t *testing.T, dir string) bool {
 	require.NoError(t, os.WriteFile(lower, []byte("x"), 0o644))
 
 	_, err := os.Stat(filepath.Join(probeDir, "PROBE.TXT"))
+
+	// Synchronous removal rather than t.Cleanup: the caller builds its
+	// fixture immediately after this call, and the probe must be gone by
+	// then — on the non-skip path the project dir must hold exactly the
+	// files the caller creates afterwards.
+	require.NoError(t, os.RemoveAll(probeDir))
 
 	return err == nil
 }

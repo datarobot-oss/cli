@@ -251,14 +251,12 @@ func TestCombined_SymlinkAndPoisonedBase_VerifyDryRun(t *testing.T) {
 	// Add a file symlink.
 	addFileSymlink(t, dir, "realfile.py", "link_to_file.py")
 
-	// Poison the manifest: BASE says A but the server holds B.
-	poisonManifestHash(t, dir, "app.py", sha256HexOf(contentA))
-	// Re-poison to a truly wrong hash (not the disk hash) so the divergence
-	// is real: BASE = A_hash, REMOTE = B_hash, and A_hash != B_hash.
-	// Actually syncedProject already set the manifest to A's hash. We need
-	// the server to hold B while the manifest says A. So poison to a
-	// different hash than B.
+	// Poison the manifest to a hash that is neither the disk content (A) nor
+	// the server content (B): syncedProject already wrote A's hash into the
+	// manifest, so this overwrite is the only poisoning the fixture needs.
+	// --verify then has a real BASE-vs-REMOTE mismatch to report.
 	poisonedHash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 	poisonManifestHash(t, dir, "app.py", poisonedHash)
 
 	// Seed the server with B (different from the poisoned BASE).
@@ -375,10 +373,12 @@ func TestCombined_SymlinkReplacementDelete_NotDivergence(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestCombined_ZipPathWithDivergenceAndSymlinks proves that a 21+ file zip-path
-// project with a divergence and both symlink kinds: every uploaded file's
-// manifest hash equals the server checksum, the divergent file's entry
-// reflects the true server state after apply, both symlinks are reported with
-// correct kinds, and neither enters the archive.
+// project with a divergence and both symlink kinds: every one of the 23
+// uploaded files' manifest hashes equals the server checksum, one file is
+// rewritten between Plan and Execute so the recorded hash provably comes from
+// the bytes that entered the archive (not the Phase-2 planned hash), the
+// divergent file's entry reflects the true server state after apply, both
+// symlinks are reported with correct kinds, and neither enters the archive.
 func TestCombined_ZipPathWithDivergenceAndSymlinks(t *testing.T) {
 	skipNonWindowsSymlink(t)
 
@@ -426,7 +426,20 @@ func TestCombined_ZipPathWithDivergenceAndSymlinks(t *testing.T) {
 	e := engineFor(t, dir, Options{Verify: true, Yes: true}, fake, catalogID, versionID)
 
 	logged = captureWarnLog(t, func() {
-		_, execErr = e.Run()
+		plan, planErr := e.Plan()
+		require.NoError(t, planErr)
+
+		// Between Plan and Execute: rewrite one zip-bound file to different
+		// bytes of the SAME size. buildZip reads from disk at Execute time,
+		// so the archive carries these bytes and the streamed hash differs
+		// from the Phase-2 planned hash — the zip-path counterpart of the
+		// stage-path rewrite in TestCombined_SymlinkAndMidStreamRewrite.
+		// Without this, manifest==server would hold equally under an
+		// implementation that recorded the planned hash, so the streamed-hash
+		// claim below would not be discriminating.
+		modifyFile(t, dir, "file_10.py", "modified !!\n")
+
+		_, execErr = e.Execute(plan)
 	})
 
 	require.NoError(t, execErr, "the zip-path sync with divergence must succeed (exit 0)")
@@ -469,14 +482,30 @@ func TestCombined_ZipPathWithDivergenceAndSymlinks(t *testing.T) {
 	assert.False(t, hasFileSymlink, "the file symlink must not enter the archive")
 	assert.False(t, hasDirSymlink, "the directory symlink must not enter the archive")
 
-	// Every uploaded file's manifest hash equals the server checksum.
+	// Every one of the 23 uploads — the 21 modified files plus realfile.py
+	// and realdir/inner.py (created alongside the symlinks, so LOCAL_ADDED) —
+	// must record a manifest hash equal to the server checksum.
 	manifest := manifestHashes(t, dir)
 
-	for i := 0; i < 21; i++ {
-		rel := fmt.Sprintf("file_%02d.py", i)
-		assert.Equal(t, server[rel].Hash, manifest[rel],
-			"uploaded file %s: manifest hash must equal server checksum", rel)
+	require.Len(t, e.plan.Uploads, 23,
+		"precondition: 21 modified files plus realfile.py and realdir/inner.py must all upload")
+
+	for _, fa := range e.plan.Uploads {
+		assert.Equal(t, server[fa.Path].Hash, manifest[fa.Path],
+			"uploaded file %s: manifest hash must equal server checksum", fa.Path)
 	}
+
+	// The mid-stream rewrite is what makes the streamed-hash claim
+	// discriminating: file_10.py's Phase-2 planned hash describes bytes that
+	// never entered the archive, so only the hash of the bytes actually
+	// zipped can appear in both the manifest and the server listing.
+	streamed := sha256HexOf("modified !!\n")
+	planned := sha256HexOf("modified 10\n")
+
+	assert.Equal(t, streamed, manifest["file_10.py"],
+		"the manifest must hold the hash of the bytes that entered the archive")
+	assert.NotEqual(t, planned, manifest["file_10.py"],
+		"the Phase-2 planned hash must not survive the run")
 
 	// The divergent file's entry reflects the true server state after apply
 	// (the poisoned hash is gone; the manifest holds the real remote hash).

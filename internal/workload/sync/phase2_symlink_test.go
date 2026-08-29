@@ -64,55 +64,75 @@ func symlinkIsDir(ss []SkippedSymlink, path string) bool {
 // must happen at the collection site in phase2_manifests.go via the same
 // matcher used for regular files.
 //
+// The directory symlink's .drignore pattern is asserted in both spellings
+// gitignore accepts — trailing slash ("link_to_dir/") and bare
+// ("link_to_dir"). The two reach the matcher through different branches:
+// Match tries the bare path first and retries with a trailing slash only
+// when isDir is set, so pinning one spelling does not prove the other at
+// the collection site.
+//
 // Fulfills VAL-SYMLINK-002 (go test portion).
 func TestPhase2_Symlink_FilteredByDrignore(t *testing.T) {
 	skipNonWindowsSymlink(t)
 
-	dir := initProject(t, map[string]string{
-		"app.py": "print('hi')\n",
-	})
+	cases := []struct {
+		name string
+		// dirPattern is the .drignore line filtering the directory symlink;
+		// the file symlink's bare pattern is fixed for every case.
+		dirPattern string
+	}{
+		{name: "directory_pattern_trailing_slash", dirPattern: "link_to_dir/"},
+		{name: "directory_pattern_bare", dirPattern: "link_to_dir"},
+	}
 
-	// realfile.py is a real file; link_to_file.py is a symlink to it.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "realfile.py"), []byte("x"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realfile.py"),
-		filepath.Join(dir, "link_to_file.py")))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initProject(t, map[string]string{
+				"app.py": "print('hi')\n",
+			})
 
-	// realdir is a real directory with a child; link_to_dir is a symlink to it.
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "realdir"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "realdir", "inner.py"), []byte("y"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realdir"),
-		filepath.Join(dir, "link_to_dir")))
+			// realfile.py is a real file; link_to_file.py is a symlink to it.
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "realfile.py"), []byte("x"), 0o644))
+			require.NoError(t, os.Symlink(
+				filepath.Join(dir, "realfile.py"),
+				filepath.Join(dir, "link_to_file.py")))
 
-	// .drignore excludes both the file symlink and the directory symlink
-	// (in both bare and trailing-slash form, since matcher.Match handles
-	// the slash for isDir=true).
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.FileName),
-		[]byte("link_to_file.py\nlink_to_dir/\n"), 0o644))
+			// realdir is a real directory with a child; link_to_dir is a symlink to it.
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, "realdir"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "realdir", "inner.py"), []byte("y"), 0o644))
+			require.NoError(t, os.Symlink(
+				filepath.Join(dir, "realdir"),
+				filepath.Join(dir, "link_to_dir")))
 
-	e := lockfileEngine(t, dir, noLockfileRunner)
+			// .drignore excludes the file symlink and the directory symlink
+			// in this case's spelling.
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.FileName),
+				[]byte("link_to_file.py\n"+tc.dirPattern+"\n"), 0o644))
 
-	plan, err := e.Plan()
-	require.NoError(t, err)
+			e := lockfileEngine(t, dir, noLockfileRunner)
 
-	// Neither symlink is in the upload plan.
-	uploadPaths := uploadPathsOf(plan)
-	assert.NotContains(t, uploadPaths, "link_to_file.py")
-	assert.NotContains(t, uploadPaths, "link_to_dir")
-	assert.NotContains(t, uploadPaths, "link_to_dir/inner.py")
+			plan, err := e.Plan()
+			require.NoError(t, err)
 
-	// Neither ignored symlink is in the skipped-symlink list.
-	skipped := symlinkPaths(e.skippedSymlinks)
-	assert.NotContains(t, skipped, "link_to_file.py",
-		"a .drignore-matched file symlink must not be reported")
-	assert.NotContains(t, skipped, "link_to_dir",
-		"a .drignore-matched directory symlink must not be reported")
+			// Neither symlink is in the upload plan.
+			uploadPaths := uploadPathsOf(plan)
+			assert.NotContains(t, uploadPaths, "link_to_file.py")
+			assert.NotContains(t, uploadPaths, "link_to_dir")
+			assert.NotContains(t, uploadPaths, "link_to_dir/inner.py")
 
-	// The real files are still in the plan.
-	assert.Contains(t, uploadPaths, "app.py")
-	assert.Contains(t, uploadPaths, "realfile.py")
-	assert.Contains(t, uploadPaths, "realdir/inner.py")
+			// Neither ignored symlink is in the skipped-symlink list.
+			skipped := symlinkPaths(e.skippedSymlinks)
+			assert.NotContains(t, skipped, "link_to_file.py",
+				"a .drignore-matched file symlink must not be reported")
+			assert.NotContains(t, skipped, "link_to_dir",
+				"a .drignore-matched directory symlink must not be reported")
+
+			// The real files are still in the plan.
+			assert.Contains(t, uploadPaths, "app.py")
+			assert.Contains(t, uploadPaths, "realfile.py")
+			assert.Contains(t, uploadPaths, "realdir/inner.py")
+		})
+	}
 }
 
 // TestPhase2_Symlink_SystemExcludedNotReported verifies that a symlink whose

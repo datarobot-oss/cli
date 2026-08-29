@@ -15,8 +15,6 @@
 package sync
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -54,38 +52,38 @@ import (
 // regression that introduces text-mode handling (e.g., a bufio.Scanner
 // that strips \r, or a file open with O_TEXT on Windows).
 //
-// The expected hash is computed directly from the raw bytes via
-// crypto/sha256, so the assertion is against a platform-independent
-// reference. If any layer translates \r\n to \n (or vice versa), the hash
-// will differ and the test will fail.
+// The expected hashes are hardcoded SHA-256 hex digests of the raw bytes,
+// computed once with an independent tool (shasum -a 256 / python hashlib)
+// rather than with crypto/sha256 in this test, so every expected value is
+// externally eyeball-verifiable: the assertion cannot pass merely because
+// the reference computation shares a translation bug with the code under
+// test. A transcription error fails loudly on the first run, because
+// fileops.HashFile hashes the bytes actually written to disk.
 //
 // Fulfills VAL-REGRESSION-013(a).
 func TestSHA256Parity_CRLFContent(t *testing.T) {
 	cases := []struct {
-		name    string
-		content []byte
+		name     string
+		content  []byte
+		wantHash string
 	}{
 		// CRLF line endings — the primary case. If \r\n is translated to
 		// \n by any layer, the hash changes.
-		{name: "CRLFOnly", content: []byte("line1\r\nline2\r\nline3\r\n")},
+		{name: "CRLFOnly", content: []byte("line1\r\nline2\r\nline3\r\n"), wantHash: "96e4d66c5a42d171e8aa107059eacaf52d3c2c095cbba1316b590a7392497718"},
 		// Mixed line endings — CRLF and LF in the same file.
-		{name: "MixedLineEndings", content: []byte("unix\nwindows\r\nmixed\r\nunix\n")},
+		{name: "MixedLineEndings", content: []byte("unix\nwindows\r\nmixed\r\nunix\n"), wantHash: "c29fb97484f737e847c2efdf0ffad706c15398f9c38ccf85c677eb02e12c45ee"},
 		// LF-only — the control case. Should always match.
-		{name: "LFOnly", content: []byte("line1\nline2\nline3\n")},
+		{name: "LFOnly", content: []byte("line1\nline2\nline3\n"), wantHash: "66663af9c7aa341431a8ee2ff27b72abd06c9218f517bb6fef948e4803c19e03"},
 		// Empty file — the SHA-256 of the empty string is a known constant.
-		{name: "EmptyFile", content: []byte{}},
+		{name: "EmptyFile", content: []byte{}, wantHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 		// Binary data containing \r without \n — must not be stripped.
-		{name: "BinaryWithCR", content: []byte("data\r\x00more\rdata")},
+		{name: "BinaryWithCR", content: []byte("data\r\x00more\rdata"), wantHash: "fc440a4aa557bdf06c9e41f133e8380d371d23e4f564ff8f93c74d46329e1984"},
 		// A lone \r at end of file — must not be stripped or translated.
-		{name: "TrailingCR", content: []byte("content\r")},
+		{name: "TrailingCR", content: []byte("content\r"), wantHash: "98720b6e22244e28a7ac817c78fe102d2deb7902a607de513c5b38e81c178973"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Compute the expected hash directly from the raw bytes.
-			expected := sha256.Sum256(tc.content)
-			expectedHex := hex.EncodeToString(expected[:])
-
 			// Write the exact bytes to a temp file.
 			dir := t.TempDir()
 			p := filepath.Join(dir, "testfile.bin")
@@ -94,7 +92,7 @@ func TestSHA256Parity_CRLFContent(t *testing.T) {
 			gotHash, gotSize, err := fileops.HashFile(p)
 			require.NoError(t, err)
 
-			assert.Equal(t, expectedHex, gotHash,
+			assert.Equal(t, tc.wantHash, gotHash,
 				"SHA-256 must match the raw bytes exactly — no text-mode translation of \\r\\n")
 			assert.Equal(t, int64(len(tc.content)), gotSize,
 				"byte size must match the raw content length — no byte added or removed")
@@ -109,34 +107,45 @@ func TestSHA256Parity_CRLFContent(t *testing.T) {
 // file hash. If they diverged, every file would appear modified on every
 // sync — a silent correctness bug.
 //
+// Both pipelines are asserted against the same hardcoded digests the CRLF
+// test pins: parity between the two alone would still pass if both shared
+// a systematic translation bug, so the constants keep the parity claim
+// externally verifiable.
+//
 // Fulfills VAL-REGRESSION-013(a) for the streaming hash path.
 func TestSHA256Parity_StreamedMatchesFileHash(t *testing.T) {
-	cases := [][]byte{
-		[]byte("line1\r\nline2\r\nline3\r\n"),
-		[]byte("unix\nwindows\r\nmixed\r\n"),
-		[]byte("binary\r\x00data\rmore"),
-		{},
+	cases := []struct {
+		name     string
+		content  []byte
+		wantHash string
+	}{
+		{name: "crlf", content: []byte("line1\r\nline2\r\nline3\r\n"), wantHash: "96e4d66c5a42d171e8aa107059eacaf52d3c2c095cbba1316b590a7392497718"},
+		{name: "mixed", content: []byte("unix\nwindows\r\nmixed\r\n"), wantHash: "3a36c87e075f1dce28dab20be3eb9fbac27d7c7f0b834647bf05b087a8501b5b"},
+		{name: "binary_cr", content: []byte("binary\r\x00data\rmore"), wantHash: "3127d488be8b9d5a70e68996a339f4068898eeba2aaaae86382a44eb8942fd8f"},
+		{name: "empty", content: []byte{}, wantHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 	}
 
-	for _, content := range cases {
-		t.Run("size_"+itoa(len(content)), func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			// File hash via fileops.HashFile.
 			dir := t.TempDir()
 			p := filepath.Join(dir, "stream.bin")
-			require.NoError(t, os.WriteFile(p, content, 0o644))
+			require.NoError(t, os.WriteFile(p, tc.content, 0o644))
 
 			fileHash, fileSize, err := fileops.HashFile(p)
 			require.NoError(t, err)
 
 			// Streamed hash via the same pipeline the uploaders use.
 			h := newStreamHasher()
-			_, err = h.Write(content)
+			_, err = h.Write(tc.content)
 			require.NoError(t, err)
 
-			streamed := streamedEntry(h, int64(len(content)))
+			streamed := streamedEntry(h, int64(len(tc.content)))
 
-			assert.Equal(t, fileHash, streamed.Hash,
-				"streamed SHA-256 must match file SHA-256 for the same bytes")
+			assert.Equal(t, tc.wantHash, fileHash,
+				"file SHA-256 must match the hardcoded digest for the raw bytes")
+			assert.Equal(t, tc.wantHash, streamed.Hash,
+				"streamed SHA-256 must match the hardcoded digest for the raw bytes")
 			assert.Equal(t, fileSize, streamed.Size,
 				"streamed size must match file size for the same bytes")
 		})
@@ -349,29 +358,4 @@ func TestSyncLock_NoCrossProcessExclusionOnWindows(t *testing.T) {
 	_, err = AcquireSyncLock(dir)
 	assert.Error(t, err,
 		"second acquire must fail on POSIX while the first is held")
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// itoa converts an int to its decimal string representation without pulling
-// in strconv (kept lightweight for a test helper used in subtest names).
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-
-	var buf [20]byte
-
-	i := len(buf)
-
-	for n > 0 {
-		i--
-
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-
-	return string(buf[i:])
 }
