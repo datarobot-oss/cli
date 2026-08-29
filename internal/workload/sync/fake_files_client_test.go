@@ -103,7 +103,6 @@ type fakeFilesClient struct {
 	// Downloadable content: versionID → (path → bytes served by DownloadFile).
 	// Opt-in: a test that never registers content gets the loud "not
 	// expected" failure, so unexpected download calls stay visible.
-	downloadContent map[string]map[string][]byte
 
 	// Fault-injection hooks (all opt-in; zero values are no-ops).
 	dropPathFromApply  string // omit this path from the resulting version after apply
@@ -195,23 +194,6 @@ func (f *fakeFilesClient) withVersionContent(catalogID, versionID string, conten
 	f.versions[versionID] = metas
 	f.versionContents[versionID] = contents
 	f.latestVersion[catalogID] = versionID
-
-	return f
-}
-
-// withDownloadable registers the content bytes DownloadFile serves for a
-// version. The registered content must hash to the FileMeta the same test
-// put in the version state — the download path verifies the streamed bytes
-// against the plan's RemoteHash, exactly like the real server relationship.
-func (f *fakeFilesClient) withDownloadable(versionID string, files map[string][]byte) *fakeFilesClient {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.downloadContent == nil {
-		f.downloadContent = make(map[string]map[string][]byte)
-	}
-
-	f.downloadContent[versionID] = files
 
 	return f
 }
