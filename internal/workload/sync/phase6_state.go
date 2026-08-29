@@ -23,7 +23,10 @@ import (
 
 // phase6State writes the new BASE manifest, config, and history entry, and
 // discards the rollback at entry. Failures here do NOT roll back Phase 5
-// since the remote has already advanced; the next sync will reconcile.
+// since the remote has already advanced; the next sync will reconcile. A
+// Discard failure is the one entry failure that leaves the rollback dir
+// behind, and it aborts before any state write so that leftover dir pairs
+// with un-advanced state — the safe mid-Phase-5 shape (see below).
 func phase6State(e *Engine) error {
 	// Discard the rollback BEFORE any state write, unconditionally. When this
 	// runs, Phase 5 executed the whole plan successfully (e.rollback is only
@@ -37,9 +40,8 @@ func phase6State(e *Engine) error {
 	// into the working tree. Against the manifest this run just wrote, those
 	// resurrected bytes look like local edits and are silently re-uploaded
 	// over the remote.
-	if e.rollback != nil {
-		_ = e.rollback.Discard()
-		e.rollback = nil
+	if err := discardRollback(e); err != nil {
+		return err
 	}
 
 	if e.plan == nil {
@@ -109,6 +111,29 @@ func phase6State(e *Engine) error {
 
 	e.config = cfg
 	e.populateResult(versionForState)
+
+	return nil
+}
+
+// discardRollback removes the rollback tree at Phase 6 entry. A Discard
+// failure must abort the phase here, before any state write: nothing is
+// persisted yet, so returning an error leaves the next run with the rollback
+// dir AND un-advanced state — the recoverable mid-Phase-5 outcome. The stale
+// restore puts back bytes the un-advanced manifest still matches, and the
+// next diff schedules downloads, not false uploads. Swallowing the error
+// instead strands the rollback dir next to advanced state, where the same
+// stale restore resurrects pre-sync bytes as phantom local edits which the
+// next sync silently re-uploads over the remote.
+func discardRollback(e *Engine) error {
+	if e.rollback == nil {
+		return nil
+	}
+
+	if err := e.rollback.Discard(); err != nil {
+		return fmt.Errorf("discard rollback: %w", err)
+	}
+
+	e.rollback = nil
 
 	return nil
 }
