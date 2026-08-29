@@ -52,7 +52,6 @@ func TestDownloadOne_RejectsUnsafeServerPath(t *testing.T) {
 			err := downloadOne(e, "cid", "vid", FileAction{Path: bad})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "server returned unsafe download path")
-			assert.NotContains(t, err.Error(), "DownloadFile not expected")
 		})
 	}
 }

@@ -100,10 +100,6 @@ type fakeFilesClient struct {
 	// follows next links, mirroring the real client's pagination behavior.
 	allFilesPageSize int
 
-	// Downloadable content: versionID → (path → bytes served by DownloadFile).
-	// Opt-in: a test that never registers content gets the loud "not
-	// expected" failure, so unexpected download calls stay visible.
-
 	// Fault-injection hooks (all opt-in; zero values are no-ops).
 	dropPathFromApply  string // omit this path from the resulting version after apply
 	wrongChecksumPath  string // return wrong checksum for this path in AllFiles
