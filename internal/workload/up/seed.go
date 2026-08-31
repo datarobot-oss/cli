@@ -17,6 +17,7 @@ package up
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -85,13 +86,15 @@ func seedFromLiveArtifact(loaded Loaded, live Live, opts Options) error {
 
 	if !empty {
 		// Files, but not a recognised project, and not linked to this
-		// workload. Rolling them would replace the workload's code with
-		// whatever this is; deploying its own code needs an empty directory to
-		// pull into, or the project root.
+		// workload. Deploying would roll whatever is here onto the workload;
+		// pulling its own code instead needs an empty directory, or the
+		// project root. The message does not claim the workload has code to
+		// replace: that is not read on this path, and an artifact built from an
+		// empty tree has none.
 		return fmt.Errorf(
-			"refusing to deploy: %s has files but no recognised project layout, and workload %s already has "+
-				"code this run would replace. Deploy from the project root, or start from an empty directory "+
-				"to pull the workload's current code first",
+			"refusing to deploy: %s has files but no recognised project layout, so a deploy would roll "+
+				"whatever is here onto workload %s. Deploy from the project root, or start from an empty "+
+				"directory to pull the workload's current code first",
 			loaded.ProjectDir, name(loaded, live))
 	}
 
@@ -109,7 +112,9 @@ func pullLiveCode(loaded Loaded, live Live, opts Options) error {
 		return err
 	}
 
-	files, err := filesClientFn().AllFiles(codeRef.CatalogID, codeRef.CatalogVersionID)
+	client := filesClientFn()
+
+	files, err := client.AllFiles(codeRef.CatalogID, codeRef.CatalogVersionID)
 	if err != nil {
 		return fmt.Errorf("cannot read the code of workload %s to pull it: %w", live.WorkloadID, err)
 	}
@@ -121,7 +126,7 @@ func pullLiveCode(loaded Loaded, live Live, opts Options) error {
 		return nil
 	}
 
-	return pullCode(loaded.ProjectDir, codeRef, files, live, loaded, opts)
+	return pullCode(client, loaded.ProjectDir, codeRef, files, live, loaded, opts)
 }
 
 // seedApplies reports whether this run is the one shape a pull is for: a
@@ -185,8 +190,10 @@ func looksEmpty(dir string) (bool, error) {
 
 // pullCode downloads every file of the workload's current version into the
 // project directory. The directory is empty (looksEmpty gated the call), so
-// the files are written in place rather than staged and swapped.
+// the files are written in place; a pull that fails partway is reverted so the
+// directory is left as empty as it was found.
 func pullCode(
+	client filesapi.Client,
 	dir string,
 	codeRef *workload.DatarobotCodeRef,
 	files map[string]filesapi.FileMeta,
@@ -194,8 +201,6 @@ func pullCode(
 	loaded Loaded,
 	opts Options,
 ) error {
-	client := filesClientFn()
-
 	paths := make([]string, 0, len(files))
 	for path := range files {
 		paths = append(paths, path)
@@ -233,7 +238,21 @@ func pullCode(
 		actions = append(actions, sync.FileAction{Path: path, RemoteSize: meta.Size, RemoteHash: meta.Hash})
 	}
 
+	// The pull is parallel and stops on the first error, but the files that
+	// already landed stay on disk. Left there, a subset that happens to hold a
+	// root marker (pyproject.toml arrived, app.py did not) makes the next run's
+	// SuspectDir() false, so seeding is skipped and the deploy builds from an
+	// incomplete tree — the very thing this pull exists to prevent. The
+	// directory was empty before the pull, so a failure reverts it to empty and
+	// the retry pulls the whole set again rather than inheriting half of it.
+	before, err := topLevelNames(dir)
+	if err != nil {
+		return err
+	}
+
 	if err := sync.DownloadFiles(client, dir, codeRef.CatalogID, codeRef.CatalogVersionID, actions); err != nil {
+		revertPull(dir, before)
+
 		return err
 	}
 
@@ -241,4 +260,39 @@ func pullCode(
 		len(paths), name(loaded, live), dir)
 
 	return nil
+}
+
+// topLevelNames is the set of entries directly in dir, captured before a pull
+// so its leftovers can be told from what was already there.
+func topLevelNames(dir string) (map[string]struct{}, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read %s: %w", dir, err)
+	}
+
+	names := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		names[entry.Name()] = struct{}{}
+	}
+
+	return names, nil
+}
+
+// revertPull removes every top-level entry a failed pull added, returning the
+// directory to the state it had before. Best-effort: whatever it cannot remove
+// costs the user at most the manual deletion they faced before this existed,
+// and the pull's own error is what is reported.
+func revertPull(dir string, before map[string]struct{}) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if _, kept := before[entry.Name()]; kept {
+			continue
+		}
+
+		_ = os.RemoveAll(filepath.Join(dir, entry.Name()))
+	}
 }

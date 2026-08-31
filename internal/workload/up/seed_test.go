@@ -199,6 +199,42 @@ func TestSeed_RemovesAPartialFileWhenADownloadFails(t *testing.T) {
 		"a failed download must not leave a partial file a retry mistakes for a real project")
 }
 
+// A pull that fails partway must not leave the files that already landed on
+// disk: a subset holding a root marker would make the next run skip seeding and
+// build from an incomplete tree. The directory is reverted to what it held
+// before, so a retry pulls the whole set again.
+func TestSeed_RevertsAPartialPullOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".drignore"), []byte("__pycache__\n"), 0o644))
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+	stubFiles(t, &fakeFiles{
+		files: map[string]filesapi.FileMeta{
+			"pyproject.toml": {},
+			"src/app.py":     {},
+		},
+		content: map[string]string{
+			"pyproject.toml": "[project]\nname = \"x\"\n",
+			"src/app.py":     "print('hi')\n",
+		},
+		failPaths: map[string]bool{"src/app.py": true},
+	})
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.Error(t, err)
+
+	// The marker that may have arrived before the failure is gone, and so is
+	// the directory the failed file lived under; only the pre-existing residue
+	// is left, so the next run sees an empty directory and pulls again.
+	assert.NoFileExists(t, filepath.Join(dir, "pyproject.toml"))
+	assert.NoDirExists(t, filepath.Join(dir, "src"))
+	assert.FileExists(t, filepath.Join(dir, ".drignore"), "pre-existing residue is left in place")
+}
+
 // A download whose bytes do not match the catalog's recorded size is a silent
 // truncation the writer did not report; it fails and leaves nothing behind.
 func TestSeed_RejectsASizeMismatch(t *testing.T) {
