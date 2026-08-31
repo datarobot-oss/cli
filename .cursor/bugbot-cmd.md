@@ -27,3 +27,16 @@ Prefer `outputformat.PrintJSONEnvelope` for structured output so the payload is 
 ## Pagination Safety
 
 Validate that pagination never crosses host boundaries.
+
+## Count-Like Flags Validate at Parse Time
+
+A numeric flag that carries a count (`--limit`, `--offset`, `--tail`, `--concurrency`) must
+register through a `pflag.Value` (`internal/countflags`) so out-of-range input is rejected
+during flag parsing, not with a runtime check inside `RunE` after the command has already
+started.
+
+## Zero-As-Default Flags Are a Documented Exception
+
+A flag where `0` means "unset, use a default" (a port, a replica count) must not be forced
+through `internal/countflags`' positive/non-negative validators — but the exception must be
+called out at the flag definition, not left for a reviewer to guess.
