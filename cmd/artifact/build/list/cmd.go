@@ -15,10 +15,9 @@
 package list
 
 import (
-	"fmt"
-
 	"github.com/datarobot/cli/cmd/artifact/build/internal/buildargs"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -49,10 +48,6 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if limit <= 0 {
-				return fmt.Errorf("invalid --limit %d: must be positive", limit)
-			}
-
 			artifactID, err := buildargs.ResolveOptional(args)
 			if err != nil {
 				return err
@@ -69,7 +64,7 @@ Examples:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of builds to return.")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of builds to return.")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{

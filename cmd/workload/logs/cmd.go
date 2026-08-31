@@ -21,6 +21,7 @@ import (
 	"github.com/datarobot/cli/cmd/internal/pollflags"
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -77,10 +78,6 @@ Example:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if limit <= 0 {
-				return fmt.Errorf("invalid --limit %d: must be positive", limit)
-			}
-
 			parsedLevel, err := workload.ParseLogLevel(level)
 			if err != nil {
 				return err
@@ -117,7 +114,7 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 	idargs.AddDirFlag(cmd)
 
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of recent log lines to return")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of recent log lines to return")
 	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warn, warning, error, critical)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream new log lines as they arrive (Ctrl-C to stop).")
 	cmd.Flags().Var(pollflags.PositiveDuration(&interval, followPollInterval), "poll-interval",
