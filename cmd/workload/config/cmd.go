@@ -381,7 +381,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			EnvValuesUpdated:     result.EnvValuesUpdated,
 			EnvSecretsRotated:    result.EnvSecretsRotated,
 			EnvSecretsNotRotated: result.EnvSecretsNotRotated,
-			EnvLiterals:          literalNames(result.Draft.EnvVars),
+			EnvLiterals:          wizard.LiteralNames(result.Draft.EnvVars),
 		})
 	}
 
@@ -467,46 +467,7 @@ func reportEnvAdded(stderr io.Writer, result wizard.Result) {
 	// Last, and outside both counts: every value this run put in the file is
 	// owed the same disclosure, whether it arrived as a new name or as a new
 	// value for one already there.
-	warnLiterals(stderr, result.Draft.EnvVars)
-}
-
-// literalNames is the variables whose values the manifest carries in the
-// clear. The classifier prefers to call a doubtful value secret, but it is
-// still a heuristic: a short secret under an ordinary name reads as
-// configuration, and its value goes into a file meant to be committed.
-func literalNames(vars []manifest.EnvVar) []string {
-	names := make([]string, 0, len(vars))
-	seen := make(map[string]bool, len(vars))
-
-	// Deduplicated because a manifest may declare the same name twice, and an
-	// update rewrites both entries. Two rewrites is the honest count of what
-	// moved in the file, but naming the variable twice reads as a fault in the
-	// report rather than in the file it is describing.
-	for _, v := range vars {
-		if v.Secret || seen[v.Name] {
-			continue
-		}
-
-		seen[v.Name] = true
-
-		names = append(names, v.Name)
-	}
-
-	return names
-}
-
-// warnLiterals names those variables. Nothing prompts on a headless run and
-// the classifier's verdict is final there, so this listing is the only chance
-// the user gets to catch a misread before the file is committed. Names only:
-// the values are the thing being protected.
-func warnLiterals(stderr io.Writer, vars []manifest.EnvVar) {
-	names := literalNames(vars)
-	if len(names) == 0 {
-		return
-	}
-
-	fmt.Fprintf(stderr, "  Values written in the clear: %s. Anything secret among them belongs in a %s reference instead.\n",
-		wizard.JoinNames(names), manifest.CredentialShorthandPrefix)
+	wizard.WarnLiterals(stderr, result.Draft.EnvVars)
 }
 
 // secretSuffix names the entries that still need a credential id, because a

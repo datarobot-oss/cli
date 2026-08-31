@@ -2789,3 +2789,59 @@ func TestNameTaken_DeadHolderRemedySaysTheEndpointChanges(t *testing.T) {
 	assert.NotContains(t, err.Error(), "deploy again to recreate the name",
 		"recreating the name is exactly what sounds like continuity and is not")
 }
+
+// A run can rotate a secret and then die before there is a plan, and the
+// rotation is the one edit with nothing left on disk to find it by. Dropping
+// it from the failed result made the next bare `up` report the workload as up
+// to date while the container went on serving the old value.
+func TestRun_EnvEditSurvivesAFailureBeforeThePlan(t *testing.T) {
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 2}, nil
+		},
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		code: func(Loaded, Live) (CodeChange, error) {
+			return CodeChange{}, errors.New("cannot read the project")
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, UpdateEnv: true})
+	require.Error(t, err)
+
+	assert.Equal(t, 2, result.Env.SecretsRotated, "the failure has to carry what already reached the store")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID,
+		"and which workload it was about, or the deploy is unfindable")
+}
+
+// The values these flags write land in a file headed for git, exactly as
+// `dr workload config` writes them. The classifier is a heuristic, so naming
+// them is the only chance to catch a misread before the commit, and it cannot
+// depend on which command carried the edit.
+func TestRun_ImportEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			return wizard.Result{
+				Action:        wizard.ActionUnchanged,
+				EnvKeysListed: 2,
+				Draft: manifest.Draft{EnvVars: []manifest.EnvVar{
+					{Name: "REGION", Value: "eu-west-1"},
+					{Name: "OPENAI_API_KEY", Secret: true},
+				}},
+			}, nil
+		},
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, ImportEnv: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Values written in the clear: REGION.")
+	assert.NotContains(t, stderr, "OPENAI_API_KEY", "the secret is the thing being protected")
+	assert.Equal(t, []string{"REGION"}, result.Env.Literals)
+}

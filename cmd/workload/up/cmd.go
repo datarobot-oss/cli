@@ -69,6 +69,70 @@ type upResult struct {
 	Action     string      `json:"action"`
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
+	// Env is what --import-env and --update-env did before the plan was
+	// computed. A rotation edits no file and shows in no plan, so without
+	// these a run that re-sent a secret is indistinguishable from one that
+	// did nothing at all.
+	Env envJSON `json:"env"`
+}
+
+// envJSON is the .env re-entry's side of a deploy.
+type envJSON struct {
+	KeysAdded      int `json:"keysAdded"`
+	ValuesUpdated  int `json:"valuesUpdated"`
+	SecretsRotated int `json:"secretsRotated"`
+	SecretsFailed  int `json:"secretsNotRotated"`
+	SecretsPending int `json:"secretsPending"`
+	// Literals names the variables this run wrote into the manifest in the
+	// clear, so an audit step can check them without parsing the YAML. The
+	// same list `dr workload config` reports under envLiterals, because it is
+	// the same edit to the same committed file.
+	Literals []string `json:"literals"`
+}
+
+// warnSecretStillServing covers the one thing --update-env can do that a
+// deploy cannot finish: re-send a secret.
+//
+// The credential store takes the new value immediately, but a container reads
+// its credentials when it starts, so the workload keeps serving the old one
+// until it is replaced. A deploy that had something else to do replaces it on
+// the way past; a deploy that found nothing else leaves the rotation sitting
+// in the store, under a summary that says the workload is up to date. It is,
+// about the manifest, which is why this says the other half out loud.
+func warnSecretStillServing(stderr io.Writer, result up.Result, f flags) {
+	if f.dryRun || result.Env.SecretsRotated == 0 || result.Action != up.ActionUnchanged {
+		return
+	}
+
+	dir := manifest.DirFlag(f.dir)
+
+	fmt.Fprintf(stderr,
+		"\n  %s %d re-sent %s reached the credential store, and this deploy replaced no container, "+
+			"so the workload still serves the value it started with.\n    Restart it to pick %s up:\n"+
+			"      dr workload stop --yes%s\n      dr workload start --yes%s\n",
+		tui.WarnStyle.Render("!"), result.Env.SecretsRotated,
+		plural(result.Env.SecretsRotated, "secret", "secrets"),
+		plural(result.Env.SecretsRotated, "it", "them"), dir, dir)
+}
+
+// plural picks the word for count, the way the wizard's own reporting does.
+func plural(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+
+	return many
+}
+
+// envLiterals keeps the envelope's list a list. A run with no .env flags has
+// nothing to name, and an absent key encoded as null would make every consumer
+// guard for it before iterating.
+func envLiterals(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
+
+	return names
 }
 
 // buildID is the envelope's build reference: the id when a build ran, null
@@ -82,12 +146,14 @@ func buildID(id string) *string {
 }
 
 type flags struct {
-	dir    string
-	yes    bool
-	dryRun bool
-	detach bool
-	lock   bool
-	force  bool
+	dir       string
+	yes       bool
+	dryRun    bool
+	detach    bool
+	lock      bool
+	force     bool
+	importEnv bool
+	updateEnv bool
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -202,6 +268,18 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
 		"Rebuild the image even when the working tree matches what was last synced.")
 
+	// The same two flags `dr workload config` takes, because the first run of
+	// this command already reads .env: with no manifest it is the wizard. A
+	// deploy stays a function of the committed repo, since neither flag does
+	// anything unless it is passed.
+	cmd.Flags().BoolVar(&f.importEnv, "import-env", false,
+		"Before deploying, add the .env variables the manifest does not declare yet. "+
+			"Secrets are stored as credentials, the same way setup stores them.")
+	cmd.Flags().BoolVar(&f.updateEnv, "update-env", false,
+		"Before deploying, bring the variables the manifest already declares back in line with .env: "+
+			"a literal is rewritten and the credential behind a secret is re-sent. A re-sent secret reaches "+
+			"the containers this deploy replaces; if the deploy has nothing else to do, it will not replace them.")
+
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
 	_ = cmd.Flags().MarkHidden("workload-id")
@@ -243,6 +321,8 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Lock:           f.lock,
 		Confirm:        rollConfirm(cmd, yes),
 		ForceBuild:     f.force,
+		ImportEnv:      f.importEnv,
+		UpdateEnv:      f.updateEnv,
 		PollInterval:   poll.Interval,
 		PollTimeout:    poll.Timeout,
 		Stderr:         cmd.ErrOrStderr(),
@@ -400,6 +480,12 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 }
 
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
+	// Above the envelope, because a rotation this deploy could not finish is
+	// true of the workload whatever the output format, and the JSON return
+	// below ends the function. It writes to stderr only, so stdout stays the
+	// envelope and nothing else.
+	warnSecretStillServing(cmd.ErrOrStderr(), result, f)
+
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
 			WorkloadID: result.WorkloadID,
@@ -411,6 +497,14 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Action:     result.Action,
 			Locked:     result.Locked,
 			Plan:       result.Plan.JSON(),
+			Env: envJSON{
+				KeysAdded:      result.Env.KeysAdded,
+				ValuesUpdated:  result.Env.ValuesUpdated,
+				SecretsRotated: result.Env.SecretsRotated,
+				SecretsFailed:  result.Env.SecretsFailed,
+				SecretsPending: result.Env.SecretsPending,
+				Literals:       envLiterals(result.Env.Literals),
+			},
 		})
 	}
 
