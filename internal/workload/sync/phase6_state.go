@@ -77,12 +77,19 @@ func phase6State(e *Engine) error {
 	//     self-healing. The manifest write is retried by that same sync.
 	//
 	//   - SaveConfig fails: the manifest is already advanced while config
-	//     still names the old version. The version mismatch makes the next
-	//     sync detect drift and fetch the remote; BASE (the advanced
-	//     manifest) truthfully describes that remote, so the plan is empty
-	//     and the run merely converges config. The rollback dir is already
-	//     gone by then — discarded at entry above — so no stale-restore can
-	//     resurrect pre-sync bytes as false local edits.
+	//     still names the old version. The version mismatch makes every
+	//     later sync detect drift and fetch the real remote; BASE (the
+	//     advanced manifest) truthfully describes that remote, so those
+	//     syncs compute an empty plan. An empty plan never reaches this
+	//     phase — Run returns before Execute on empty plans — so Phase 6
+	//     is skipped and config.json stays stale on each of those runs,
+	//     converging only when a later sync has real work to execute.
+	//     The rollback dir is already gone by then — discarded at entry
+	//     above — so no stale-restore can resurrect pre-sync bytes as
+	//     false local edits. The asymmetry is safe because it is loud: a
+	//     manifest ahead of config re-triggers drift detection on every
+	//     sync, so the window self-heals at the first sync with actual
+	//     work; the reverse direction below is silent and never heals.
 	//
 	// The converse (config advanced, manifest stale) is the poisonous
 	// direction: the next sync sees no drift, fast-paths, copies the stale
