@@ -15,6 +15,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -228,7 +229,9 @@ func TestPhase6EmptyPlanStillWritesManifest(t *testing.T) {
 }
 
 // TestManifestSchemaUnchanged verifies that the written manifest carries
-// "version": 1 and that no new fields are added to manifest.json or config.json.
+// "version": 1 and that manifest.json and config.json carry exactly their
+// known top-level key sets — no field added, none removed. The version-1
+// schema is frozen: any new field must fail this test, not slip past it.
 func TestManifestSchemaUnchanged(t *testing.T) {
 	const (
 		catalogID = "cid-synced"
@@ -272,23 +275,25 @@ func TestManifestSchemaUnchanged(t *testing.T) {
 
 	assert.Equal(t, 1, manifest.Version, "manifest version must stay 1")
 
-	// Verify the manifest has exactly the expected top-level keys by reading
-	// the raw JSON and checking no unexpected fields were added.
+	// Pin the manifest schema by exact key set. Substring-presence checks on
+	// the raw JSON stay green when a field is ADDED — the very drift "no new
+	// fields" must catch — so compare the parsed object's top-level keys
+	// against the allow-list transcribed from wapi.Manifest's json tags.
 	rawManifest, err := os.ReadFile(dir + "/.datarobot/workload/manifest.json")
 	require.NoError(t, err)
 
-	// The manifest must contain "version": 1 and the standard fields only.
-	assert.Contains(t, string(rawManifest), `"version": 1`)
-	assert.Contains(t, string(rawManifest), `"files"`)
-	assert.Contains(t, string(rawManifest), `"syncedVersionId"`)
+	assert.Contains(t, string(rawManifest), `"version": 1`,
+		"the serialized manifest must carry version 1 as a JSON number")
 
-	// Verify config.json has no new fields.
+	assertTopLevelKeys(t, rawManifest, "manifest.json",
+		[]string{"version", "syncedAt", "syncedVersionId", "files"})
+
+	// Same pin for config.json, transcribed from wapi.Config's json tags.
 	rawConfig, err := os.ReadFile(dir + "/.datarobot/workload/config.json")
 	require.NoError(t, err)
 
-	assert.Contains(t, string(rawConfig), `"artifactId"`)
-	assert.Contains(t, string(rawConfig), `"catalogId"`)
-	assert.Contains(t, string(rawConfig), `"lastSyncedVersionId"`)
+	assertTopLevelKeys(t, rawConfig, "config.json",
+		[]string{"artifactId", "catalogId", "lastSyncedVersionId", "createdAt", "cliVersion"})
 
 	// syncedVersionId in manifest must equal the version in the result.
 	require.NotNil(t, manifest.SyncedVersionID)
@@ -302,4 +307,42 @@ func TestManifestSchemaUnchanged(t *testing.T) {
 	require.NotNil(t, cfg.LastSyncedVersionID)
 	assert.Equal(t, *manifest.SyncedVersionID, *cfg.LastSyncedVersionID,
 		"config LastSyncedVersionID must equal manifest syncedVersionId")
+}
+
+// assertTopLevelKeys pins the exact set of top-level keys of an on-disk JSON
+// state file. Substring-presence assertions cannot fail when a field is
+// ADDED, which is precisely the schema drift this guards against — the
+// key-set comparison fails on any added or removed key and names the
+// offending key in the failure message.
+func assertTopLevelKeys(t *testing.T, data []byte, label string, want []string) {
+	t.Helper()
+
+	var m map[string]any
+
+	require.NoError(t, json.Unmarshal(data, &m),
+		"%s must parse as a flat JSON object", label)
+
+	wantSet := make(map[string]bool, len(want))
+
+	for _, k := range want {
+		wantSet[k] = true
+	}
+
+	// A key present in the file but absent from the allow-list is a field
+	// ADDED to the on-disk schema. This is the direction substring checks
+	// are blind to, and the one that turns a schema change silent: the
+	// file's keys must each be contained in the allow-list, so an unknown
+	// key fails the assertion naming itself.
+	for k := range m {
+		assert.Contains(t, wantSet, k,
+			"%s has unexpected top-level key %q — a field was added to the on-disk schema (allow-list: %v)", label, k, want)
+	}
+
+	// The other direction: an allow-list key missing from the file means a
+	// field was removed or renamed. Either way the schema cannot drift
+	// silently.
+	for _, k := range want {
+		assert.Contains(t, m, k,
+			"%s is missing top-level key %q (allow-list: %v)", label, k, want)
+	}
 }

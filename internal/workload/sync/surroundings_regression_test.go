@@ -165,19 +165,16 @@ func TestCaseFoldedSystemExcludes(t *testing.T) {
 		"case-folded system exclude must still be excluded")
 }
 
-// TestCaseFoldedIgnorePatterns verifies that case-folding of ignore patterns
-// still matches paths differing only in case. A .drignore pattern "BUILD/"
-// must exclude a directory named "build/" (case-folded match via system
-// excludes is already tested above; this tests user-pattern case-folding
-// through the gitignore library).
+// TestCaseFoldedIgnorePatterns pins the case-sensitivity split between the
+// two ignore layers. USER patterns from .drignore go through the gitignore
+// library, which matches case-sensitively: *.TMP does NOT match scratch.tmp,
+// so the file stays in the upload plan. SYSTEM excludes fold case instead
+// (a differently-cased .Datarobot state directory is still excluded), which
+// the system-exclude test above covers separately.
 func TestCaseFoldedIgnorePatterns(t *testing.T) {
-	// The gitignore library is case-sensitive on Unix but the system excludes
-	// fold case. Here we test that a user pattern in .drignore matches a
-	// file of the same name with different case, which the system-exclude
-	// case-folding handles for system paths. For user patterns, the
-	// gitignore library is case-sensitive, so a pattern "*.TMP" does NOT
-	// match "scratch.tmp". We verify the actual behaviour: user patterns are
-	// case-sensitive (as documented), while system excludes fold case.
+	// A user pattern in .drignore is matched case-sensitively by the
+	// gitignore library: *.TMP must NOT exclude scratch.tmp. System excludes
+	// fold case, but they are a separate layer pinned by the test above.
 	dir := initProject(t, map[string]string{
 		"app.py":      "print('hi')\n",
 		"scratch.tmp": "x",
