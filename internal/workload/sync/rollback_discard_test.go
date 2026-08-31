@@ -18,11 +18,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -393,9 +393,12 @@ func TestPhase6CleanSuccessDiscardsRollback(t *testing.T) {
 // restore resurrects pre-sync bytes as phantom local edits which the next
 // sync silently re-uploads over the remote.
 func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fault injection relies on POSIX directory permissions; windows ignores them")
-	}
+	testutil.SkipIfWindows(t, "fault injection relies on POSIX directory permissions; windows ignores them")
+
+	// The fault is a chmod, which root bypasses: without this guard the
+	// Discard succeeds, no error is returned, and the test fails on its own
+	// setup rather than on the ordering it pins.
+	testutil.SkipIfRoot(t)
 
 	// Declare first so the hook closure can read s.rollDir: the hook fires
 	// during Execute, long after the assignment completes.
