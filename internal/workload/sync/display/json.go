@@ -58,16 +58,27 @@ type PlanStatsJSON struct {
 	OldVersionShort string `json:"oldVersionShort,omitempty"`
 }
 
-// RenderPlanJSON writes plan as pretty-printed JSON to w.
-func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
+// SyncJSON is the single document `dr artifact code sync --output-format json`
+// emits. The plan's fields sit at the top level (its shape unchanged), and the
+// result of a version-writing run is nested under "result" when one ran.
+//
+// One document per invocation: emitting the plan and the result as two
+// concatenated top-level objects made stdout unparseable by a plain json.loads
+// and forced every consumer to write a splitter (RAPTOR-19348).
+type SyncJSON struct {
+	PlanJSON
 
+	Result *ResultJSON `json:"result,omitempty"`
+}
+
+// planJSON builds the plan view. A nil plan carries only the locked flag, which
+// is all a preview of an unreadable plan can report.
+func planJSON(plan *sync.SyncPlan, locked bool) PlanJSON {
 	if plan == nil {
-		return enc.Encode(PlanJSON{Locked: locked})
+		return PlanJSON{Locked: locked}
 	}
 
-	out := PlanJSON{
+	return PlanJSON{
 		Locked:    locked,
 		Uploads:   actionsJSON(plan.Uploads),
 		Downloads: actionsJSON(plan.Downloads),
@@ -83,9 +94,23 @@ func RenderPlanJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
 			OldVersionShort: plan.OldVersionShort,
 		},
 	}
+}
+
+// RenderSyncJSON writes the one-document sync view to w: the plan, plus the
+// result under "result" when result is non-nil.
+func RenderSyncJSON(w io.Writer, plan *sync.SyncPlan, result *sync.Result, locked bool) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+
+	out := SyncJSON{PlanJSON: planJSON(plan, locked)}
+
+	if result != nil {
+		r := resultJSON(result)
+		out.Result = &r
+	}
 
 	if err := enc.Encode(out); err != nil {
-		return fmt.Errorf("encode plan json: %w", err)
+		return fmt.Errorf("encode sync json: %w", err)
 	}
 
 	return nil
@@ -102,16 +127,9 @@ type ResultJSON struct {
 	DurationMS      int64    `json:"durationMs"`
 }
 
-// RenderResultJSON writes result as pretty-printed JSON to w.
-func RenderResultJSON(w io.Writer, r *sync.Result) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-
-	if r == nil {
-		return enc.Encode(ResultJSON{})
-	}
-
-	out := ResultJSON{
+// resultJSON builds the result view of a completed sync.
+func resultJSON(r *sync.Result) ResultJSON {
+	return ResultJSON{
 		OldVersion:      r.OldVersion,
 		NewVersion:      r.NewVersion,
 		UploadedCount:   r.UploadedCount,
@@ -121,12 +139,6 @@ func RenderResultJSON(w io.Writer, r *sync.Result) error {
 		ConflictCopies:  r.ConflictCopies,
 		DurationMS:      r.Duration.Milliseconds(),
 	}
-
-	if err := enc.Encode(out); err != nil {
-		return fmt.Errorf("encode result json: %w", err)
-	}
-
-	return nil
 }
 
 func actionsJSON(in []sync.FileAction) []FileActionJSON {
