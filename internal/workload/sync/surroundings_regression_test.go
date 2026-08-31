@@ -226,43 +226,46 @@ func TestCaseCollision_FailsBeforeUpload(t *testing.T) {
 	assert.Contains(t, msg, "Config.yaml vs config.yaml")
 }
 
-// TestCaseCollision_ErrorIsBeforeUpload verifies that the case-collision check
-// runs in Phase 2 (manifests), before Phase 5 (execute) where uploads happen.
-// We cannot create case-colliding files on macOS, so we verify the check
-// position by confirming that a Plan with no case collisions succeeds and
-// the fake's upload counters are zero (Plan does not execute).
-func TestCaseCollision_ErrorIsBeforeUpload(t *testing.T) {
-	dir := syncedProject(t, map[string]string{
+// TestCaseCollision_Phase2StopsBeforeRemoteLoad pins the case-collision check
+// at its real call site inside phase2Manifests: a colliding local manifest
+// must make Phase 2 fail before the remote load, on any host.
+// TestCaseCollision_FailsBeforeUpload pins caseCollisionsFromManifest itself,
+// but nothing before this test proved phase2Manifests still calls it — a
+// real-FS walk can never produce a colliding pair on a case-insensitive host
+// (macOS, Windows collapse such paths), so the local manifest is injected
+// via the hashEntriesFn seam instead of walked off disk. Deleting the call
+// site makes this test fail; there is no skip and no case-sensitivity probe.
+func TestCaseCollision_Phase2StopsBeforeRemoteLoad(t *testing.T) {
+	dir := initProject(t, map[string]string{
 		"app.py": "print('hi')\n",
-	}, "cid-cc", "ver-cc")
+	})
 
-	fake := &fakeFilesClient{
-		catalogID: "cid-cc",
-		stageID:   "stage-cc",
-		versionID: "ver-cc-next",
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	// Swap the hashing seam for a manifest with a case-only collision. The
+	// package uses no t.Parallel, so the package-level swap is safe under
+	// -race -shuffle; t.Cleanup restores the real implementation even when
+	// an assertion fails mid-test.
+	origHashEntries := hashEntriesFn
+
+	hashEntriesFn = func(_ []fileops.Entry) (LocalManifest, error) {
+		return LocalManifest{
+			"Greeting.txt": {Hash: "h1", Size: 6},
+			"greeting.txt": {Hash: "h2", Size: 3},
+		}, nil
 	}
 
-	e, err := newWithDeps(dir, Options{}, Deps{
-		Files: fake,
-		Artifacts: &fakeArtifactStore{
-			GetFn: func(id string) (*workload.Artifact, error) {
-				return draftArtifact(id, "cid-cc", "ver-cc"), nil
-			},
-		},
-		Now:      time.Now,
-		Lockfile: noLockfileRunner,
-	})
-	require.NoError(t, err)
+	t.Cleanup(func() { hashEntriesFn = origHashEntries })
 
-	t.Cleanup(func() { _ = e.Close() })
+	err := phase2Manifests(e)
 
-	plan, err := e.Plan()
-	require.NoError(t, err)
-	require.True(t, plan.IsEmpty(), "synced project with no changes has an empty plan")
+	// With e.drifted unset (false), a phase2Manifests missing the collision
+	// check would copy BASE and return nil here — that is the mutation this
+	// test exists to catch.
+	require.Error(t, err, "phase2Manifests must fail on a case-only collision")
 
-	// No case collision, no uploads — Plan does not call Execute.
-	assert.Equal(t, 0, fake.UploadToStageCalls(), "Plan must not upload")
-	assert.Equal(t, 0, fake.ApplyStageCalls(), "Plan must not apply")
+	assert.Contains(t, err.Error(), "case-only path collisions")
+	assert.Contains(t, err.Error(), "Greeting.txt vs greeting.txt")
 }
 
 // ---------------------------------------------------------------------------
