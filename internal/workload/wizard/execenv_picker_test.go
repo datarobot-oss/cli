@@ -15,9 +15,12 @@
 package wizard
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,10 +68,48 @@ func TestExecEnvPicker_TagsAndLiftsTheInUseEnvironment(t *testing.T) {
 
 	require.Len(t, picker.all, 2)
 	// Tagged and first; the tag rides on the last (ID) cell so it trails on the
-	// right. liveStyle.Render is plain text in a test's no-colour profile.
-	assert.Equal(t, []string{"Node", "javascript", "ee-2" + liveStyle.Render(inUseSuffix)}, picker.all[0].cells,
+	// right. It is plain text, not styled, because the cell flows through
+	// bubbles/table's ANSI-unaware column sizing and truncation.
+	assert.Equal(t, []string{"Node", "javascript", "ee-2" + inUseSuffix}, picker.all[0].cells,
 		"the in-use environment is tagged on the right and lifted first")
 	assert.Equal(t, []string{"Py 3.12", "python", "ee-1"}, picker.all[1].cells)
+}
+
+// The in-use tag rides a table cell, and bubbles/table sizes columns and
+// truncates cells with no awareness of ANSI: a styled tag would inflate the
+// measured width and, on a narrow terminal, be cut mid-escape, bleeding colour
+// across the row. So the cells must stay plain text even under a real colour
+// profile. The other picker tests run in the no-colour profile, where a stray
+// style renders as plain text and a regression would hide; this one forces
+// TrueColor so it cannot.
+func TestExecEnvPicker_InUseTagCarriesNoAnsiUnderColour(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	picker := newExecEnvPicker([]workload.ExecutionEnvironment{
+		{
+			ID: "ee-1", Name: "Py 3.12", ProgrammingLanguage: "python",
+			LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"},
+		},
+		{
+			ID: "ee-2", Name: "Node", ProgrammingLanguage: "javascript",
+			LatestSuccessfulVersion: &workload.EEVersion{ID: "v2"},
+		},
+	}, "ee-2", 80, 40)
+
+	for _, row := range picker.all {
+		for _, cell := range row.cells {
+			assert.NotContains(t, cell, "\x1b", "picker cells must stay plain text, got %q", cell)
+		}
+	}
+
+	// The escape check is only meaningful if styling would otherwise emit one:
+	// prove the forced profile is live by rendering the tag's own style.
+	require.Contains(t, liveStyle.Render(inUseSuffix), "\x1b",
+		"the test must run under a colour profile for the assertion above to have teeth")
+	require.NotEmpty(t, strings.TrimSpace(inUseSuffix))
 }
 
 // A fresh setup has no bound workload, so nothing is tagged and the order is

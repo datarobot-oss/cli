@@ -126,7 +126,9 @@ func (c choice) view() string {
 		line := fmt.Sprintf("%d. %s", i+1, opt.label)
 
 		if i == c.selected {
-			b.WriteString(selectedStyle.Render("> " + line))
+			// The same cursor glyph the pickers use (table.go syncRows), so a
+			// selection reads the same across menus and lists.
+			b.WriteString(selectedStyle.Render("❯ " + line))
 		} else {
 			b.WriteString("  " + line)
 		}

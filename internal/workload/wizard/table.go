@@ -152,10 +152,15 @@ func columnsFor(headers []string, rows []tableRow, width int) []table.Column {
 
 	columns[0].Width = 2
 
+	// Cells are measured by display width, not byte length: a multibyte name is
+	// as wide as it looks, not as wide as its UTF-8 encoding. This is also the
+	// width bubbles/table truncates against, so the two agree. Cells must stay
+	// plain text — an embedded ANSI escape would be counted here and cut
+	// mid-sequence by the table's truncation, which is not escape-aware.
 	for _, row := range rows {
 		for i, cell := range row.cells {
 			if i+1 < len(columns) {
-				columns[i+1].Width = max(columns[i+1].Width, min(len(cell), maxColumnWidth))
+				columns[i+1].Width = max(columns[i+1].Width, min(lipgloss.Width(cell), maxColumnWidth))
 			}
 		}
 	}

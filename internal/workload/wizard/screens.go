@@ -1205,14 +1205,15 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, liveID strin
 		// the top: the list runs long, and the option most likely to be kept
 		// should not have to be scrolled for.
 		//
-		// The tag is green and on the last cell, matching the menus' live-value
-		// green and their trailing placement. Last is deliberate: a coloured
-		// cell resets colour where it ends, and only at the row's end does that
-		// reset land past everything, leaving the selection highlight on the
-		// rest of the row intact.
+		// The tag is plain text, not styled. It rides a table cell, and
+		// bubbles/table sizes columns and truncates cells by display width with
+		// no awareness of ANSI: a styled tag's escape bytes would inflate the
+		// column's measured width and, on a narrow terminal, be cut mid-escape,
+		// bleeding colour across the row. The green live-value tag stays on the
+		// menu screens, which render their own lines and never truncate.
 		if liveID != "" && ee.ID == liveID {
 			last := len(row.cells) - 1
-			row.cells[last] += liveStyle.Render(inUseSuffix)
+			row.cells[last] += inUseSuffix
 			inUse, haveInUse = row, true
 
 			continue
