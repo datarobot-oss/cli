@@ -178,6 +178,10 @@ func redactedText(row Row) string {
 		return row.Path + ": " + hiddenPlaceholder
 	}
 
+	// An out-of-range Kind falls through the switch the way Context does,
+	// and for the same reason: "set" and "changed" are claims about a
+	// transition the renderer recognizes, and it makes neither for a Kind it
+	// does not.
 	return row.Path + ": " + hiddenPlaceholder
 }
 

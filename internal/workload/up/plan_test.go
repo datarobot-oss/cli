@@ -781,7 +781,7 @@ func TestBuild_DiffRowsMirrorTheArtifactRuntimeSplit(t *testing.T) {
 		loadedFrom(drifted),
 		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
 		builtCode(0),
- Options{},
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -844,7 +844,7 @@ func TestBuild_UnmanagedComesFromExtra(t *testing.T) {
 		loadedFrom(planPayload),
 		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
 		builtCode(0),
- Options{},
+		Options{},
 	)
 	require.NoError(t, err)
 

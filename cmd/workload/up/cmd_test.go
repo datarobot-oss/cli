@@ -816,6 +816,8 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	assert.NotContains(t, next, "--lock")
 	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
 		"the lines that can name the workload still do")
+}
+
 // TestCmd_ConfirmIsRegistered: the flag exists, is opt-in, and its help says
 // the one thing a reader could not guess -- that under non-interactive
 // conditions it is suppressed rather than refused, because a flag that fails

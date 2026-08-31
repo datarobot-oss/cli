@@ -561,6 +561,7 @@ func driftPlan(t *testing.T) Plan {
 		loadedFrom(diffDriftPayload),
 		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -738,7 +739,7 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 	  ]}]
 	}`
 
-	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0))
+	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0), Options{})
 	require.NoError(t, err)
 
 	// The fixture has to earn its keep: two env-var changes on the existing
@@ -861,7 +862,7 @@ func TestPlanJSON_DiffRedactsAWholeEnvVarsList(t *testing.T) {
 	  ]}]
 	}`
 
-	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0))
+	plan, err := Build(loadedFrom(payload), liveFrom(t, StateRunning, live, planLiveRuntime), builtCode(0), Options{})
 	require.NoError(t, err)
 
 	// The fixture has to earn its keep: the change must arrive as the
@@ -917,6 +918,7 @@ func TestPlanJSON_FirstDeployDiffIsAllAdditions(t *testing.T) {
 		loadedFrom(planPayload),
 		Live{State: StateUnbound},
 		CodeChange{Applies: true, FirstDeploy: true},
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -1060,7 +1062,7 @@ func TestPlanJSON_DiffSyntheticChangesSurvive(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactID = "68a0000000000000000000a1"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"artifactId"}, paths(plan.Artifact),
@@ -1098,7 +1100,7 @@ func TestPlanJSON_DiffSyntheticTypeChangeSurvives(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "service"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))

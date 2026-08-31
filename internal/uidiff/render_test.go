@@ -20,8 +20,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/datarobot/cli/tui"
 )
 
 // renderRows runs Render against a buffer, which is how every test below
@@ -246,54 +250,117 @@ func TestRender_MarkersFollowThePlanVocabulary(t *testing.T) {
 		stripANSI(out))
 }
 
-// VAL-DIFF-004: the redaction hook suppresses the text of every Kind it
-// fires for, whatever the row was carrying, and never touches the others.
+// VAL-DIFF-004: the redaction hook suppresses the value of every Kind it
+// fires for, whatever the row was carrying, and touches nothing else. This
+// table is the canonical Kind x redaction-state matrix: every Kind appears
+// in each state the hook admits -- fired, passed over, and absent (nil
+// hook) -- so no combination ships untested and the placeholder vocabulary
+// has exactly one home.
 func TestRender_RedactionAppliesToEveryKind(t *testing.T) {
-	redact := func(path string) bool {
-		return strings.Contains(path, ".environmentVars[")
+	const (
+		path   = "runtime.environmentVars[TOKEN]"
+		secret = "plaintext-secret"
+	)
+
+	// The marker and placeholder each Kind earns: verbs for a value arriving
+	// and a value moving, the bracketed token where neither verb is true,
+	// and a marker only for the kinds that announce a change.
+	kinds := []struct {
+		name        string
+		kind        Kind
+		marker      string
+		placeholder string
+	}{
+		{name: "context", kind: Context, placeholder: hiddenPlaceholder},
+		{name: "add", kind: Add, marker: addMarker, placeholder: setPlaceholder},
+		{name: "del", kind: Del, marker: delMarker, placeholder: changedPlaceholder},
+		{name: "unmanaged", kind: Unmanaged, placeholder: hiddenPlaceholder},
 	}
 
-	rows := []Row{
-		ctxRow("port: 9090"),
-		{Kind: Context, Path: "runtime.environmentVars[LOG_LEVEL]", Text: "runtime.environmentVars[LOG_LEVEL]: debug"},
-		{Kind: Add, Path: "runtime.environmentVars[TOKEN]", Text: "runtime.environmentVars[TOKEN]: plaintext-secret"},
-		{Kind: Del, Path: "runtime.environmentVars[OLD]", Text: "runtime.environmentVars[OLD]: dr-credential:abc123/client-secret"},
-		{Kind: Unmanaged, Path: "runtime.environmentVars[SIDE]", Text: "~ runtime.environmentVars[SIDE]: not managed by this file"},
-		addRow("port: 9091"),
+	states := []struct {
+		name     string
+		hook     func(string) bool
+		redacted bool
+	}{
+		// The firing hook is path-scoped, the way the workload caller's is:
+		// it refuses the row's path, not the whole rendering, so the anchor
+		// row keeps its value even here.
+		{name: "hook-fires", hook: func(p string) bool { return p == path }, redacted: true},
+		{name: "hook-passes", hook: func(string) bool { return false }, redacted: false},
+		{name: "no-hook", hook: nil, redacted: false},
 	}
 
-	out := stripANSI(renderRows(t, rows, Options{Redact: redact}))
+	for _, k := range kinds {
+		for _, s := range states {
+			t.Run(k.name+"/"+s.name, func(t *testing.T) {
+				// Context and Unmanaged rows only show inside the window of
+				// a change, so every case anchors its row to one; the
+				// anchor's line is part of each expectation.
+				rows := []Row{
+					{Kind: k.kind, Path: path, Text: path + ": " + secret},
+					{Kind: Add, Path: "anchor", Text: "anchor"},
+				}
 
-	for _, secret := range []string{
-		"plaintext-secret",
-		"dr-credential:abc123/client-secret",
-		"debug",
-		"not managed by this file",
-	} {
-		assert.NotContains(t, out, secret)
+				var opts Options
+
+				if s.hook != nil {
+					opts.Redact = s.hook
+				}
+
+				out := stripANSI(renderRows(t, rows, opts))
+
+				marker := k.marker
+				if marker != "" {
+					marker += " "
+				}
+
+				want := marker + path + ": " + secret
+				if s.redacted {
+					want = marker + path + ": " + k.placeholder
+
+					assert.NotContains(t, out, secret, "a fired hook never lets the value through")
+				}
+
+				assert.Equal(t, want+"\n+ anchor\n", out)
+			})
+		}
 	}
-
-	assert.Contains(t, out, "runtime.environmentVars[LOG_LEVEL]: (redacted)")
-	assert.Contains(t, out, "+ runtime.environmentVars[TOKEN]: set")
-	assert.Contains(t, out, "- runtime.environmentVars[OLD]: changed")
-	assert.Contains(t, out, "runtime.environmentVars[SIDE]: (redacted)")
-
-	// Rows the hook does not fire for keep their values, so redaction is a
-	// property of the path, not of the renderer.
-	assert.Contains(t, out, "port: 9090")
-	assert.Contains(t, out, "+ port: 9091")
 }
 
-// Without a hook nothing is redacted; the placeholder machinery is opt-in.
-func TestRender_WithoutARedactHookTheValuesPrint(t *testing.T) {
+// The style mapping is invisible to the other tests because they strip ANSI:
+// they prove what a row says, never what it wears. This one forces a color
+// profile so the escapes survive, then checks each Kind against the palette
+// entry it is documented to carry -- additions read as success, removals and
+// unmanaged fields as warnings, and context as a hint. The expected strings
+// come from the same styles the renderer uses, so the assertion holds
+// whatever colors the profile downsamples to.
+func TestRender_PerKindStylesWithForcedColorProfile(t *testing.T) {
+	original := lipgloss.ColorProfile()
+
+	lipgloss.SetColorProfile(termenv.ANSI)
+
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(original)
+	})
+
 	rows := []Row{
-		{Kind: Add, Path: "runtime.environmentVars[TOKEN]", Text: "runtime.environmentVars[TOKEN]: secret"},
-		addRow("port: 9091"),
+		{Kind: Context, Path: "ctx", Text: "ctx"},
+		{Kind: Add, Path: "added", Text: "added"},
+		{Kind: Del, Path: "removed", Text: "removed"},
+		{Kind: Unmanaged, Path: "extra", Text: "~ extra: not managed"},
 	}
 
 	out := renderRows(t, rows, Options{})
 
-	assert.Contains(t, stripANSI(out), "+ runtime.environmentVars[TOKEN]: secret")
+	// A profile that failed to engage would leave both sides of the checks
+	// below plain text and the whole test vacuous, so first prove that the
+	// rendering actually carries escapes.
+	assert.NotEqual(t, stripANSI(out), out, "forcing a color profile must leave ANSI escapes in the rendering")
+
+	assert.Contains(t, out, tui.SuccessStyle.Render("+ added"), "Add wears the success style")
+	assert.Contains(t, out, tui.WarnStyle.Render("- removed"), "Del wears the warn style")
+	assert.Contains(t, out, tui.WarnStyle.Render("~ extra: not managed"), "Unmanaged wears the warn style, like Del")
+	assert.Contains(t, out, tui.HintStyle.Render("ctx"), "Context wears the hint style")
 }
 
 // The hook is a per-row decision: once per row, never per line of output.
