@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -33,6 +34,8 @@ const followPollInterval = 2 * time.Second
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
+	var ref idargs.Ref
+
 	var (
 		limit    int
 		level    string
@@ -41,7 +44,7 @@ func Cmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "logs <workload-id>",
+		Use:   "logs [<workload-id>]",
 		Short: "Show a workload's container logs.",
 		Long: `Show the application logs from a workload's running container(s).
 
@@ -59,13 +62,16 @@ per entry. Use --output-format json for machine-parseable output: a JSON
 array without --follow, or one JSON object per line (JSON Lines) with
 --follow.
 
+` + idargs.HelpText + `
+
 Example:
+  dr workload logs
   dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0
   dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0 --limit 500
   dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0 --level error
   dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0 --follow
   dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0 --output-format json`,
-		Args:         cobra.ExactArgs(1),
+		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -80,21 +86,28 @@ Example:
 				return err
 			}
 
+			// After the flag checks, so a bad --limit is not reported as a
+			// missing manifest, and before anything reaches the network.
+			ref, err = idargs.Resolve(cmd, args)
+			if err != nil {
+				return err
+			}
+
 			if follow {
 				// Warnings go to stderr so stdout stays log lines only.
 				onWarn := func(msg string) {
 					fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+msg)
 				}
 
-				return workload.FollowWorkloadLogs(cmd.Context(), args[0], limit, parsedLevel, interval,
+				return ref.Wrap(workload.FollowWorkloadLogs(cmd.Context(), ref.ID, limit, parsedLevel, interval,
 					func(e workload.WorkloadLogEntry) error {
 						return workload.RenderWorkloadLogLine(outputFormat, e)
-					}, onWarn)
+					}, onWarn))
 			}
 
-			entries, err := workload.GetWorkloadLogs(args[0], limit, parsedLevel)
+			entries, err := workload.GetWorkloadLogs(ref.ID, limit, parsedLevel)
 			if err != nil {
-				return err
+				return ref.Wrap(err)
 			}
 
 			return workload.RenderWorkloadLogs(outputFormat, entries)
@@ -102,6 +115,7 @@ Example:
 	}
 
 	outputformat.AddFlag(cmd, &outputFormat)
+	idargs.AddDirFlag(cmd)
 
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of recent log lines to return")
 	cmd.Flags().StringVar(&level, "level", "", "Minimum log level (debug, info, warn, warning, error, critical)")
@@ -114,11 +128,12 @@ Example:
 		limit, _ := c.Flags().GetInt("limit")
 
 		return map[string]any{
-			"workload_id":   telemetry.FirstArg(args),
-			"limit":         limit,
-			"level":         level,
-			"follow":        follow,
-			"output_format": string(outputFormat),
+			"workload_id":        idargs.TelemetryID(ref, args),
+			"workload_id_source": ref.Source,
+			"limit":              limit,
+			"level":              level,
+			"follow":             follow,
+			"output_format":      string(outputFormat),
 		}
 	})
 

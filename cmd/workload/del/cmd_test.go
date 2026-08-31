@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -28,13 +29,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCmd_RequiresArg(t *testing.T) {
+func TestCmd_ArgIsOptional(t *testing.T) {
 	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{})
 
-	err := cmd.Execute()
-	require.Error(t, err)
+	require.NoError(t, cmd.Args(cmd, []string{"68b0c1d2e3f4a5b6c7d8e9f0"}))
+	require.NoError(t, cmd.Args(cmd, nil))
+	require.Error(t, cmd.Args(cmd, []string{"a", "b"}))
 }
 
 // In tests stdin is not a terminal, so without --yes the command must stop
@@ -79,7 +79,7 @@ func TestConfirmDelete_YesSources(t *testing.T) {
 				require.NoError(t, cmd.Flags().Set("yes", "true"))
 			}
 
-			confirmed, err := confirmDelete(cmd, "wl-1")
+			confirmed, err := confirmDelete(cmd, idargs.Ref{ID: "wl-1"})
 
 			if c.wantErr {
 				require.Error(t, err)
@@ -344,4 +344,26 @@ func TestCmd_RegistersDirFlag(t *testing.T) {
 
 	require.NotNil(t, flag, "RunE reads --dir by name; renaming it here fails nothing else")
 	assert.Equal(t, "string", flag.Value.Type())
+}
+
+// The rule this PR adds to the one irreversible verb: a workload the manifest
+// named takes the explicit --yes, and the environment variable that suppresses
+// wizards across a pipeline is not consent to remove it. Deleting the
+// FromManifest branch in confirmDelete makes the second case pass.
+func TestConfirmDelete_AmbientNeedsTheFlag(t *testing.T) {
+	t.Setenv(reader.NonInteractiveEnv, "1")
+
+	typed := idargs.Ref{ID: "wl-1", Source: idargs.WorkloadIDSourceExplicit}
+
+	confirmed, err := confirmDelete(Cmd(), typed)
+	require.NoError(t, err)
+	assert.True(t, confirmed, "an id the user typed is still answered by the env var")
+
+	ambient := idargs.Ref{ID: "wl-1", Source: idargs.WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
+
+	_, err = confirmDelete(Cmd(), ambient)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pass --yes to run")
+	assert.NotContains(t, err.Error(), reader.NonInteractiveEnv,
+		"the remedy must not name the variable it just refused")
 }

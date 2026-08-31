@@ -492,8 +492,8 @@ func TestCmd_DraftDeployTradesStopForLock(t *testing.T) {
 
 	assert.Contains(t, stderr, "dr workload up --lock")
 	assert.NotContains(t, stderr, "dr workload stop")
-	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0", "the other two lines stay")
-	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload logs", "the other two lines stay")
+	assert.Contains(t, stderr, "dr workload status")
 }
 
 // A locked artifact is permanent, so there is nothing to warn about and the
@@ -509,7 +509,7 @@ func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
 
 	assert.False(t, draftWarned(stderr))
 	assert.NotContains(t, stderr, "dr workload up --lock")
-	assert.Contains(t, stderr, "dr workload stop 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload stop")
 }
 
 // A --lock run is the remedy, so telling it about drafts would be telling it
@@ -620,4 +620,67 @@ func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	assert.NotNil(t, cmd.Flags().Lookup("detach"))
 	assert.NotNil(t, cmd.Flags().Lookup("lock"))
 	assert.True(t, cmd.Flags().Lookup("poll-interval").Hidden)
+}
+
+// The commands are runnable as printed from the project that was just
+// deployed, which is the whole point of dropping the id from them.
+func TestCmd_NextStepsCarryNoID(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "dr workload logs  ")
+	assert.NotContains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// A deploy that ran elsewhere needs the flag that reaches it, because the
+// manifest search only walks upward.
+func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	dir := t.TempDir()
+
+	_, stderr, err := runCmd(t, "--dir", dir)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "dr workload logs --dir "+dir)
+	assert.Contains(t, stderr, "dr workload up --lock --dir "+dir,
+		"every line in the block has to run as printed, --lock included")
+}
+
+// The one shape where bare commands would not resolve: a workload was created
+// but its id could not be written back, so the manifest holds no binding. The
+// id is named instead, because a deploy that failed late still has to be
+// findable.
+func TestCmd_FailedRunStillNamesTheWorkload(t *testing.T) {
+	stubRun(t, deployed(), errors.New("id could not be written"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// --lock takes no id, so on a failed run it cannot be made to name the
+// workload, and that is the run whose manifest may hold no binding. Printed
+// bare it would create a second workload instead of locking this one.
+func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+
+	stubRun(t, result, errors.New("id could not be written"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	_, next, found := strings.Cut(stderr, "Next:")
+	require.True(t, found)
+
+	// Scoped to the block: the draft warning above it names the same command
+	// as prose, and says the same thing on the successful runs where it is
+	// sound. This is about the copy-and-run list.
+	assert.NotContains(t, next, "--lock")
+	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
+		"the lines that can name the workload still do")
 }

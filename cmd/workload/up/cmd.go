@@ -22,15 +22,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -263,20 +262,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 // the two commands are printed at each other often enough that answering it
 // differently is its own small confusion.
 func resolveDir(dir string) (string, error) {
-	if dir != "" {
-		if !fsutil.DirExists(dir) {
-			return "", fmt.Errorf("--dir %s: %w", dir, manifest.ErrNotADirectory)
-		}
-
-		return dir, nil
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("cannot determine the current directory: %w", err)
-	}
-
-	return cwd, nil
+	return idargs.ProjectDir(dir)
 }
 
 // checkFlags refuses what the flags cannot mean.
@@ -449,7 +435,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 	}
 
 	draftWarning(cmd.ErrOrStderr(), draft, false)
-	nextSteps(cmd.ErrOrStderr(), result, draft)
+	nextSteps(cmd.ErrOrStderr(), result, f.dir, draft, failed)
 
 	return nil
 }
@@ -504,28 +490,47 @@ func draftWarning(w io.Writer, draft, planned bool) {
 // run that produced no workload: a list of commands that need an id is no help
 // to someone who has not got one.
 //
+// The commands carry no id. A successful deploy leaves the manifest bound, so
+// they resolve from the project directory, and --dir carries a deploy that ran
+// somewhere else.
+//
+// A failed run is the exception, and takes the id instead. One of its shapes
+// is a workload created whose id could not be written back, where the binding
+// the bare commands need is exactly what is missing; printing them bare would
+// hand the reader three commands that cannot run. It is also what keeps
+// reportable's promise that a deploy which failed late is still findable.
+//
 // A draft deploy trades the stop line for --lock, and puts it first so it sits
 // directly under the warning that explains why it is there. Someone who wants
 // to switch a workload off goes looking for the command; someone whose
 // workload switches itself off does not know there is anything to look for,
 // and this list is the one place they will read either way.
-func nextSteps(w io.Writer, result up.Result, draft bool) {
+func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 	if result.WorkloadID == "" {
 		return
 	}
 
-	steps := [][2]string{
-		{"dr workload logs " + result.WorkloadID, "View the container logs"},
-		{"dr workload status " + result.WorkloadID, "Check the workload status"},
+	at := manifest.DirFlag(dir)
+	if failed {
+		at = " " + result.WorkloadID
 	}
 
-	if draft {
+	steps := [][2]string{
+		{"dr workload logs" + at, "View the container logs"},
+		{"dr workload status" + at, "Check the workload status"},
+	}
+
+	// --lock takes no id, so on a failed run it is the one line that cannot be
+	// made to name the workload. That is also the run where the manifest may
+	// hold no binding, which would make it create a second workload instead of
+	// locking this one, so it is left out rather than printed unrunnable.
+	if draft && !failed {
 		steps = append([][2]string{
-			{"dr workload up --lock", "Lock the artifact to make it permanent"},
+			{"dr workload up --lock" + manifest.DirFlag(dir), "Lock the artifact to make it permanent"},
 		}, steps...)
 	} else {
 		steps = append(steps,
-			[2]string{"dr workload stop " + result.WorkloadID, "Stop the workload, retaining its version"})
+			[2]string{"dr workload stop" + at, "Stop the workload, retaining its version"})
 	}
 
 	// No build-logs line. It needs an artifact id as well as a build id, and

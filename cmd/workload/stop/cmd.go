@@ -17,6 +17,7 @@ package stop
 import (
 	"fmt"
 
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -27,8 +28,10 @@ import (
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
+	var ref idargs.Ref
+
 	cmd := &cobra.Command{
-		Use:   "stop <workload-id>",
+		Use:   "stop [<workload-id>]",
 		Short: "Stop a workload.",
 		Long: `Stop a workload.
 
@@ -44,18 +47,39 @@ The acknowledgement message is printed on stdout. Use
 By default, output is human-readable. Use --output-format json for the
 full acknowledgement document.
 
+` + idargs.HelpText + `
+
+A workload named by the manifest rather than by you is confirmed
+first; pass --yes to skip that.
+
 Example:
+  dr workload stop
   dr workload stop 68b0c1d2e3f4a5b6c7d8e9f0
   dr workload stop 68b0c1d2e3f4a5b6c7d8e9f0 --output-format json`,
-		Args:         cobra.ExactArgs(1),
+		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			resp, err := workload.StopWorkload(args[0])
+			var err error
+
+			ref, err = idargs.Resolve(cmd, args)
 			if err != nil {
 				return err
+			}
+
+			// Only an ambient target is confirmed: a typed id is the consent.
+			if ref.FromManifest() {
+				confirmed, err := idargs.Confirm(cmd, idargs.AmbientPrompt("Stop", ref), idargs.EnvMayConsent)
+				if err != nil || !confirmed {
+					return err
+				}
+			}
+
+			resp, err := workload.StopWorkload(ref.ID)
+			if err != nil {
+				return ref.Wrap(err)
 			}
 
 			if err := workload.RenderWorkloadOperation(outputFormat, *resp); err != nil {
@@ -65,7 +89,7 @@ Example:
 			// The follow-up hint goes to stderr so script captures of stdout
 			// stay limited to the server's acknowledgement message.
 			if outputFormat == outputformat.OutputFormatText {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+args[0])
+				fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+ref.ID)
 			}
 
 			return nil
@@ -73,11 +97,14 @@ Example:
 	}
 
 	outputformat.AddFlag(cmd, &outputFormat)
+	idargs.AddDirFlag(cmd)
+	idargs.AddYesFlag(cmd, "Stop a manifest-named workload without confirmation.")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"workload_id":   telemetry.FirstArg(args),
-			"output_format": string(outputFormat),
+			"workload_id":        idargs.TelemetryID(ref, args),
+			"workload_id_source": ref.Source,
+			"output_format":      string(outputFormat),
 		}
 	})
 

@@ -432,7 +432,7 @@ func TestRun_WizardRedirectIsFollowed(t *testing.T) {
 			return wizard.Result{Path: manifest.Path(app)}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		writeID: func(path, _ string) error {

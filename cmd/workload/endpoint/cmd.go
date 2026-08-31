@@ -17,6 +17,7 @@ package endpoint
 import (
 	"fmt"
 
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -24,8 +25,10 @@ import (
 )
 
 func Cmd() *cobra.Command {
+	var ref idargs.Ref
+
 	cmd := &cobra.Command{
-		Use:   "endpoint <workload-id>",
+		Use:   "endpoint [<workload-id>]",
 		Short: "Print a workload's endpoint URL.",
 		Long: `Print a workload's endpoint URL, and nothing else.
 
@@ -40,21 +43,31 @@ traffic once the workload is running. The command fails when the
 workload has no endpoint URL. For the full document (including the
 endpoint alongside status and metadata) use 'dr workload get'.
 
+` + idargs.HelpText + `
+
 Example:
+  dr workload endpoint
   dr workload endpoint 68b0c1d2e3f4a5b6c7d8e9f0`,
-		Args:         cobra.ExactArgs(1),
+		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, args []string) error {
-			wl, err := workload.GetWorkload(args[0])
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+
+			ref, err = idargs.Resolve(cmd, args)
 			if err != nil {
 				return err
+			}
+
+			wl, err := workload.GetWorkload(ref.ID)
+			if err != nil {
+				return ref.Wrap(err)
 			}
 
 			// Fail loudly rather than print an empty line: a script doing
 			// curl "$(dr workload endpoint ...)" must not curl "".
 			if wl.Endpoint == "" {
-				return fmt.Errorf("workload %s has no endpoint URL", args[0])
+				return fmt.Errorf("workload %s has no endpoint URL", ref.ID)
 			}
 
 			fmt.Println(wl.Endpoint)
@@ -63,9 +76,12 @@ Example:
 		},
 	}
 
+	idargs.AddDirFlag(cmd)
+
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{
-			"workload_id": telemetry.FirstArg(args),
+			"workload_id":        idargs.TelemetryID(ref, args),
+			"workload_id_source": ref.Source,
 		}
 	})
 
