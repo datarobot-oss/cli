@@ -196,3 +196,43 @@ func pendingSecrets(vars []manifest.EnvVar) int {
 // createCredentialFn is the seam the tests replace: storing a secret is the
 // one call in setup that cannot be allowed to reach a real tenant by accident.
 var createCredentialFn = workload.CreateCredential
+
+// updateCredentialFn re-sends a value to a credential that already exists,
+// which is the only route a rotated .env secret has to a running workload.
+var updateCredentialFn = workload.UpdateCredential
+
+// getCredentialFn reads a credential's metadata, which is how a rotation
+// checks that the id in the manifest names one this project created.
+var getCredentialFn = workload.GetCredential
+
+// reportRotation says what re-sending the secrets did. It is separate from
+// reportImport because the acts differ in what they risk: an import that fails
+// leaves a placeholder a deploy refuses by name, while a rotation that fails
+// leaves the previous value in place and the container serving it, which
+// nothing downstream can notice.
+func reportRotation(stderr io.Writer, rotated int, failed []ImportFailure, dryRun bool) {
+	if stderr == nil || (rotated == 0 && len(failed) == 0) {
+		return
+	}
+
+	if rotated > 0 {
+		fmt.Fprint(stderr, rotationLine(rotated, dryRun))
+	}
+
+	for _, failure := range failed {
+		fmt.Fprintf(stderr, "  %s %s was not re-sent: %s. The workload keeps the value it has.\n",
+			tui.WarnStyle.Render("!"), failure.Name, failure.Reason)
+	}
+}
+
+// rotationLine reports the sends, in the tense the run earned: a dry run says
+// what it would do, and only a run that reached the store gets the tick.
+func rotationLine(rotated int, dryRun bool) string {
+	if dryRun {
+		return fmt.Sprintf("  %d %s would be re-sent to the credential store.\n",
+			rotated, Plural(rotated, "secret", "secrets"))
+	}
+
+	return fmt.Sprintf("  %s Re-sent %d %s to the credential store.\n",
+		tui.SuccessStyle.Render("✓"), rotated, Plural(rotated, "secret", "secrets"))
+}

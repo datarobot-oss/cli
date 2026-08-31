@@ -420,6 +420,106 @@ func TestPendingEnvNames_OnlyCountsCredentialReferences(t *testing.T) {
 	assert.Equal(t, []string{"STRIPE_API_KEY"}, parsed.PendingEnvNames())
 }
 
+// The update half owes the same refusal as the import half: an entry another
+// container reads must not be rewritten from here.
+func TestUpdateEnvVars_RefusesASharedEntry(t *testing.T) {
+	source := container(`            environmentVars:
+              - &shared
+                name: LOG_LEVEL
+                value: info
+`) + `x-sidecar:
+  environmentVars:
+    - *shared
+`
+
+	path := writeManifest(t, t.TempDir(), source)
+
+	_, _, err := UpdateEnvVars(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
+	require.ErrorIs(t, err, ErrSharedEnvVars)
+
+	assert.Equal(t, source, readFile(t, path))
+}
+
+// An anchored value is read by name elsewhere, so replacing it would change
+// what that name means.
+func TestUpdateEnvVars_RefusesAnAnchoredValue(t *testing.T) {
+	source := container(`            environmentVars:
+              - name: LOG_LEVEL
+                value: &lvl info
+`)
+
+	path := writeManifest(t, t.TempDir(), source)
+
+	_, _, err := UpdateEnvVars(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
+	require.ErrorIs(t, err, ErrSharedEnvVars)
+
+	assert.Equal(t, source, readFile(t, path))
+}
+
+// The value is edited rather than replaced, so everything the user wrote
+// around it survives, and a value another parser would misread is quoted.
+func TestUpdateEnvVars_KeepsCommentsAndQuotesWhatNeedsIt(t *testing.T) {
+	source := container(`            environmentVars:
+              - name: LOG_LEVEL
+                value: info # staging only
+              - name: CRON_WINDOW
+                value: "09:00"
+`)
+
+	path := writeManifest(t, t.TempDir(), source)
+
+	changed, _, err := UpdateEnvVars(path, []EnvVar{
+		{Name: "LOG_LEVEL", Value: "trace"},
+		{Name: "CRON_WINDOW", Value: "12:30"},
+	}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"LOG_LEVEL", "CRON_WINDOW"}, names(changed))
+
+	on := readFile(t, path)
+	assert.Contains(t, on, "# staging only")
+	assert.Contains(t, on, `"12:30"`)
+}
+
+// A credential-backed entry has no literal to rewrite: its value lives in the
+// store, and the id in the file stays the id in the file.
+func TestUpdateEnvVars_LeavesCredentialReferencesAlone(t *testing.T) {
+	source := container(`            environmentVars:
+              - name: STRIPE_API_KEY
+                value: ` + CredentialShorthandPrefix + `66f0c1d2e3f4a5b6c7d8e9f0/apiToken
+`)
+
+	path := writeManifest(t, t.TempDir(), source)
+
+	changed, _, err := UpdateEnvVars(path, []EnvVar{{Name: "STRIPE_API_KEY", Value: "fixture-key-new-e5e5"}}, false)
+	require.NoError(t, err)
+
+	assert.Empty(t, changed)
+	assert.Equal(t, source, readFile(t, path))
+}
+
+// DeclaredEnvVars carries which field of a credential an entry reads, because
+// only the one this CLI writes is one an update may re-send to.
+func TestDeclaredEnvVars_CarriesTheCredentialField(t *testing.T) {
+	parsed, err := Parse([]byte(container(`            environmentVars:
+              - name: LOG_LEVEL
+                value: debug
+              - name: API_KEY
+                value: `+CredentialShorthandPrefix+`66f0c1d2e3f4a5b6c7d8e9f0/apiToken
+              - name: DB_PASSWORD
+                value: `+CredentialShorthandPrefix+`66f0c1d2e3f4a5b6c7d8e9f1/password
+`)), "")
+	require.NoError(t, err)
+
+	declared := parsed.DeclaredEnvVars()
+	require.Len(t, declared, 3)
+
+	assert.False(t, declared[0].Secret())
+	assert.Equal(t, "debug", declared[0].Value)
+	assert.Equal(t, CredentialKeyWritten, declared[1].CredentialKey)
+	assert.Equal(t, "password", declared[2].CredentialKey)
+}
+
 // A group with no containers is a group to walk past, not a crash.
 func TestEditableContainer_SurvivesAGroupWithNoContainers(t *testing.T) {
 	parsed, err := Parse([]byte(`name: my-app
@@ -452,5 +552,6 @@ func TestCanDeclareEnvVars_ChangesNothing(t *testing.T) {
 
 	// Asked of the tree the guard was handed, which is what a later compile or
 	// re-validation would walk.
+	assert.Empty(t, parsed.DeclaredEnvVars())
 	assert.Empty(t, parsed.EnvVarNames())
 }

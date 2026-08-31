@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -460,4 +461,242 @@ func declaredEnvNodeNames(entries *yaml.Node) map[string]bool {
 	}
 
 	return declared
+}
+
+// DeclaredEnvVar is one entry as the manifest carries it, which is either a
+// literal the file spells out or a reference to a credential holding the value.
+type DeclaredEnvVar struct {
+	Name string
+	// Value is the literal the file carries, empty for a credential reference.
+	Value string
+	// CredentialID is set when the entry points at the credential store rather
+	// than carrying the value. The value behind it is not readable: the
+	// platform never hands a secret back, so nothing can compare it to .env.
+	CredentialID string
+	// CredentialKey is which field of that credential feeds the variable. A
+	// reference may name any of them, and only the one this CLI writes is one
+	// it may safely rewrite.
+	CredentialKey string
+	// Structured is set when the value is neither a literal nor a reference
+	// but a mapping or a list somebody wrote by hand. The update path leaves
+	// those alone, so anything comparing this against .env has to leave them
+	// alone too: reporting one as drift would name a flag that then does
+	// nothing, every run, for ever.
+	Structured bool
+}
+
+// CredentialKeyWritten is the credential field the wizard stores a .env secret
+// under, and so the only one an update may re-send to.
+const CredentialKeyWritten = credentialKey
+
+// Secret reports that the entry defers to the credential store.
+func (d DeclaredEnvVar) Secret() bool {
+	return d.CredentialID != ""
+}
+
+// DeclaredEnvVars is what the primary container says about each variable it
+// carries, in file order.
+//
+// It exists so a caller can compare the file against .env. Only the literals
+// can actually be compared: a secret is a reference, and the value behind it
+// is write-only as far as this CLI is concerned, so a rotated secret is
+// invisible and can only be re-sent, never detected.
+func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
+	container, err := editableContainer(m.root)
+	if err != nil {
+		return nil
+	}
+
+	entries := seqItems(mapValue(container, keyEnvironmentVars))
+	declared := make([]DeclaredEnvVar, 0, len(entries))
+
+	for _, entry := range entries {
+		name, ok := scalarString(mapValue(entry, keyName))
+		if !ok {
+			continue
+		}
+
+		id, key := credentialRefOf(entry)
+
+		declared = append(declared, DeclaredEnvVar{
+			Name:          name,
+			Value:         literalOf(entry, id),
+			CredentialID:  id,
+			CredentialKey: key,
+			Structured:    structuredValue(entry, id),
+		})
+	}
+
+	return declared
+}
+
+// structuredValue reports an entry whose value is a mapping or a list rather
+// than the string an environment variable can be. Nothing here can compare one
+// with a .env line, and rewriting it would throw away whatever the user meant
+// by it, so the same entries are skipped by the update and by the comparison.
+func structuredValue(entry *yaml.Node, credentialID string) bool {
+	if credentialID != "" {
+		return false
+	}
+
+	value := mapValue(entry, keyValue)
+
+	return value != nil && value.Kind != yaml.ScalarNode
+}
+
+// literalOf is the value an entry spells out, empty when it references a
+// credential in either the shorthand or the object form.
+func literalOf(entry *yaml.Node, credentialID string) string {
+	if credentialID != "" {
+		return ""
+	}
+
+	value, _ := scalarString(mapValue(entry, keyValue))
+
+	return value
+}
+
+// credentialRefOf is the credential an entry points at and the field of it the
+// variable reads, both empty for a literal. It accepts the object form and the
+// shorthand alike, the way the compiler's own collector does.
+func credentialRefOf(entry *yaml.Node) (id, key string) {
+	if id, _ := scalarString(mapValue(entry, keyDRCredentialID)); id != "" {
+		key, _ := scalarString(mapValue(entry, keyKey))
+
+		return id, key
+	}
+
+	value, _ := scalarString(mapValue(entry, keyValue))
+	if !strings.HasPrefix(value, CredentialShorthandPrefix) {
+		return "", ""
+	}
+
+	id, key, ok := strings.Cut(strings.TrimPrefix(value, CredentialShorthandPrefix), "/")
+	if !ok || id == "" || key == "" {
+		return "", ""
+	}
+
+	return id, key
+}
+
+// UpdateEnvVars rewrites the literal values of variables the manifest already
+// declares, and reports the ones it changed.
+//
+// The inverse of ImportEnvVars and deliberately a separate act: that one adds
+// names and never touches a value, this one touches values and never adds a
+// name. A run that wanted both asked for both.
+//
+// Only literals. A secret's entry is a reference, and rotating it means
+// sending a new value to the credential the reference names, which happens in
+// the store rather than in this file: the id does not change, so there is
+// nothing here to rewrite.
+func UpdateEnvVars(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, error) {
+	var changedVars []EnvVar
+
+	changed, rendered, err := renderEdit(path, "update environment variables", false,
+		func(root *yaml.Node) (bool, error) {
+			container, err := editableContainer(root)
+			if err != nil {
+				return false, err
+			}
+
+			if err := envVarsBlocker(container); err != nil {
+				return false, err
+			}
+
+			entries, _ := rawValue(container, keyEnvironmentVars)
+
+			changedVars, err = rewriteLiterals(seqItems(entries), vars)
+			if err != nil {
+				return false, err
+			}
+
+			return len(changedVars) > 0, nil
+		})
+	if err != nil || !changed {
+		return nil, nil, err
+	}
+
+	if err := checkImported(rendered, path); err != nil {
+		return nil, nil, err
+	}
+
+	if !preview {
+		if err := atomicWrite(path, rendered); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return changedVars, rendered, nil
+}
+
+// rewriteLiterals sets each entry's value to what .env now says, skipping the
+// ones that already agree and the ones that defer to a credential, and
+// refusing any entry the rest of the file may be reading through another name.
+//
+// The scalar is edited rather than replaced, so an anchor, a comment and the
+// entry's place in the file all survive an edit that only ever meant to change
+// what one value is.
+func rewriteLiterals(entries []*yaml.Node, vars []EnvVar) ([]EnvVar, error) {
+	wanted := make(map[string]EnvVar, len(vars))
+
+	for _, v := range vars {
+		if !v.Secret {
+			wanted[v.Name] = v
+		}
+	}
+
+	changed := make([]EnvVar, 0, len(wanted))
+
+	for _, entry := range entries {
+		want, value, err := rewritable(entry, wanted)
+		if err != nil {
+			return nil, err
+		}
+
+		if value == nil {
+			continue
+		}
+
+		// Styled the way a fresh write would style it, so a value that needs
+		// quoting to survive another parser gets it.
+		value.Value = want.Value
+		value.Style = scalar(want.Value).Style
+		value.Tag = "!!str"
+
+		changed = append(changed, want)
+	}
+
+	return changed, nil
+}
+
+// rewritable is the scalar an entry's value may be written into, or nil when
+// this entry is not one the update touches. It refuses rather than skips when
+// the entry is shared, because rewriting a node another container reads would
+// change a value in a place the diff never shows.
+func rewritable(entry *yaml.Node, wanted map[string]EnvVar) (EnvVar, *yaml.Node, error) {
+	name, ok := scalarString(mapValue(entry, keyName))
+	if !ok {
+		return EnvVar{}, nil, nil
+	}
+
+	want, asked := wanted[name]
+	if id, _ := credentialRefOf(entry); !asked || id != "" {
+		return EnvVar{}, nil, nil
+	}
+
+	value, _ := rawValue(entry, keyValue)
+	if value == nil || value.Kind != yaml.ScalarNode || value.Value == want.Value {
+		return EnvVar{}, nil, nil
+	}
+
+	if err := checkUnshared(entry); err != nil {
+		return EnvVar{}, nil, err
+	}
+
+	if value.Anchor != "" {
+		return EnvVar{}, nil, ErrSharedEnvVars
+	}
+
+	return want, value, nil
 }

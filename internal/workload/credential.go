@@ -154,3 +154,31 @@ func GetCredential(credentialID string) (*Credential, error) {
 
 	return &cred, nil
 }
+
+// UpdateCredential replaces the secret a credential holds, keeping its id so
+// every manifest reference to it keeps working.
+//
+// This is the only way a rotated .env value can reach a workload. The API
+// never hands a stored secret back, so nothing can tell whether the local
+// value differs from the stored one: a caller cannot detect a rotation, only
+// perform one, and must therefore be asked for it explicitly.
+func UpdateCredential(credentialID, value string) (*Credential, error) {
+	url, err := config.GetEndpointURL("/api/v2/credentials/" + escapeID(credentialID) + "/")
+	if err != nil {
+		return nil, err
+	}
+
+	// The type is set once, at creation, and the update route refuses it:
+	// sending it back costs a 422 saying "credentialType is not allowed key",
+	// which reads as a rejected value rather than as a field that may not be
+	// repeated. Only the secret goes.
+	body := map[string]string{"apiToken": value}
+
+	var cred Credential
+
+	if err := drapi.PatchJSON(url, "credential", body, &cred); err != nil {
+		return nil, err
+	}
+
+	return &cred, nil
+}

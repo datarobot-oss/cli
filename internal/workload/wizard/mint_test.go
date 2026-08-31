@@ -61,9 +61,53 @@ func credentialStore(t *testing.T) *[]storedCredential {
 		return &cred, nil
 	}
 
-	t.Cleanup(func() { createCredentialFn = original })
+	// A rotation checks that the id in the manifest names a credential this
+	// project created, so the fake store has to answer reads as well as
+	// writes, and answer them only for what it actually holds.
+	originalGet := getCredentialFn
+	getCredentialFn = func(id string) (*workload.Credential, error) {
+		cred, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("no credential %s", id)
+		}
+
+		return &cred, nil
+	}
+
+	t.Cleanup(func() {
+		createCredentialFn = original
+		getCredentialFn = originalGet
+	})
 
 	return &stored
+}
+
+// rotatingStore records what was re-sent to which credential.
+func rotatingStore(t *testing.T) *[]storedCredential {
+	t.Helper()
+
+	sent := make([]storedCredential, 0)
+
+	original := updateCredentialFn
+	updateCredentialFn = func(id, value string) (*workload.Credential, error) {
+		sent = append(sent, storedCredential{Name: id, Value: value})
+
+		return &workload.Credential{CredentialID: id}, nil
+	}
+
+	t.Cleanup(func() { updateCredentialFn = original })
+
+	return &sent
+}
+
+// failingRotation makes re-sending fail the way an unreachable platform does.
+func failingRotation(t *testing.T, err error) {
+	t.Helper()
+
+	original := updateCredentialFn
+	updateCredentialFn = func(string, string) (*workload.Credential, error) { return nil, err }
+
+	t.Cleanup(func() { updateCredentialFn = original })
 }
 
 // noCredentialStore makes storing fail the way an unreachable platform does.
