@@ -147,7 +147,7 @@ dr self version
 
 **Options:**
 
-- `-o, --output-format`&mdash;output format (`text` or `json`, default: `text`)
+- `--output-format`&mdash;output format (`text` or `json`, default: `text`). `-o` is accepted as a deprecated alias (it maps to the legacy `--format` flag, not `--output-format`).
 - `-s, --short`&mdash;print just the version number (text format only)
 
 **Examples:**
