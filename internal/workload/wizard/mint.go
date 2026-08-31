@@ -166,7 +166,7 @@ func reportImport(stderr io.Writer, report Import) {
 		fmt.Fprintf(stderr, "  %s Stored %d %s %s\n",
 			tui.SuccessStyle.Render("✓"),
 			len(report.Stored), Plural(len(report.Stored), "secret", "secrets"),
-			tui.HintStyle.Render("("+storedNames(report.Stored)+")"))
+			tui.HintStyle.Render("("+JoinNames(report.Stored)+", all in "+manifest.FileName+")"))
 	}
 
 	for _, failure := range report.Failed {
@@ -178,21 +178,6 @@ func reportImport(stderr io.Writer, report Import) {
 				manifest.FileName, manifest.CredentialPlaceholder)))
 	}
 }
-
-// storedNames lists what was stored, trimmed to a line's worth. Past a
-// handful the names stop being a summary and start being a wall, and the file
-// is the better place to read them all.
-func storedNames(names []string) string {
-	if len(names) <= namesShown {
-		return strings.Join(names, ", ")
-	}
-
-	return fmt.Sprintf("%s, … and %d more, all in %s",
-		strings.Join(names[:namesShown], ", "), len(names)-namesShown, manifest.FileName)
-}
-
-// namesShown is how many secrets are named before the list is cut short.
-const namesShown = 5
 
 // pendingSecrets counts the entries still carrying a placeholder, which is
 // what the command reports as unfinished.
