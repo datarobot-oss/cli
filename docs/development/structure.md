@@ -68,8 +68,7 @@ Contains all CLI command implementations using the Cobra framework. Each subdire
 - `cmd/auth/cmd.go`: The auth command group
 - `cmd/auth/login/cmd.go`: The login subcommand
 - `cmd/auth/logout/cmd.go`: The logout subcommand
-- `cmd/auth/check/cmd.go`, `cmd/auth/export/cmd.go`, `cmd/auth/seturl/cmd.go`:
-  the remaining auth subcommands, each in its own directory
+- ...
 
 ### internal/
 
