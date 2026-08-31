@@ -371,18 +371,31 @@ func TestSaveManifestFailure_DoesNotAdvanceConfig(t *testing.T) {
 		"config LastSyncedVersionID must NOT be advanced when SaveManifest fails")
 }
 
-// TestSaveConfigFailure_ManifestAdvanced_NextSyncResyncs verifies the safe
-// failure direction: when SaveManifest succeeds but SaveConfig fails (injected
-// by making config.json a directory), the manifest IS advanced (new version,
-// new hashes) while config stays stale (old version). The next sync detects
-// drift (config old != artifact new), fetches AllFiles rather than
-// fast-pathing, and converges — config is updated to match the manifest.
+// TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync
+// verifies the safe failure direction and the honest recovery path: when
+// SaveManifest succeeds but SaveConfig fails (injected by making config.json
+// a directory so the atomic rename fails), the manifest IS advanced (new
+// version, streamed hashes) while config stays stale (old version).
 //
-// This is the self-healing property that makes manifest-before-config the
-// safe ordering: an advanced manifest paired with a stale config makes the
-// next run re-sync, whereas an advanced config paired with a stale manifest
-// silently poisons BASE and reports "Up to date." forever.
-func TestSaveConfigFailure_ManifestAdvanced_NextSyncResyncs(t *testing.T) {
+// What production then does — and all this test asserts — is asymmetric on
+// purpose. The next sync detects drift (config's old version vs the
+// artifact's new one), fetches AllFiles rather than fast-pathing, computes an
+// EMPTY plan (the advanced manifest matches the remote, and the disk matches
+// both), and returns WITHOUT executing: Run short-circuits empty plans before
+// Execute, so Phase 6 never runs and config.json keeps the old version. No
+// production caller reaches Execute with an empty plan, so a test that forces
+// one there would assert a convergence path that cannot happen. Config is
+// converged only by the next sync that has real work to do — which is exactly
+// what the second half of this test drives and asserts.
+//
+// The asymmetry — manifest advanced past a stale config — is the safe
+// direction, and the reason manifest-before-config is the correct write
+// order: the version mismatch makes EVERY later sync detect drift and fetch
+// the real remote, so the window self-heals at the first sync with actual
+// work. The reverse — config advanced past a stale manifest — is silent,
+// permanent BASE poisoning: no drift is ever detected, the fast path copies
+// the stale BASE to REMOTE, and the CLI reports "Up to date." forever.
+func TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync(t *testing.T) {
 	const (
 		catalogID = "cid-synced"
 		versionID = "ver-synced"
@@ -488,62 +501,152 @@ func TestSaveConfigFailure_ManifestAdvanced_NextSyncResyncs(t *testing.T) {
 		serverFiles[path] = filesapi.FileMeta{Hash: fm.Hash, Size: fm.Size}
 	}
 
-	// The next sync must detect drift (config old != artifact new), fetch
-	// AllFiles rather than fast-pathing, and converge.
+	// The next sync goes through Run() — the production entry point, where
+	// the plan and the execute decision both live. The fake's server state
+	// is built from the manifest SaveManifest wrote, so AllFiles serves
+	// exactly what BASE describes: base == remote, and the disk matches
+	// both, so the honest plan is empty. What must still happen is the
+	// round-trip — drift was detected, the remote was fetched, no silent
+	// fast path. What must NOT happen is Execute: no production caller
+	// executes an empty plan.
 	fake := (&fakeFilesClient{
 		catalogID: catalogID,
 		stageID:   "stage-should-not-be-used",
 		versionID: newVerID,
 	}).withVersion(catalogID, newVerID, serverFiles)
 
-	e2, err := newWithDeps(dir, Options{Yes: true}, Deps{
-		Files: fake,
-		Artifacts: &fakeArtifactStore{
-			GetFn: func(id string) (*workload.Artifact, error) {
-				return draftArtifact(id, catalogID, newVerID), nil
+	// One engine per sync invocation, matching how the command layer
+	// constructs a fresh engine for every run.
+	newEngine := func() (*Engine, error) {
+		return newWithDeps(dir, Options{Yes: true}, Deps{
+			Files: fake,
+			Artifacts: &fakeArtifactStore{
+				GetFn: func(id string) (*workload.Artifact, error) {
+					return draftArtifact(id, catalogID, newVerID), nil
+				},
+				PatchFn: func(_, _, _ string) error { return nil },
 			},
-			PatchFn: func(_, _, _ string) error { return nil },
-		},
-		Now: time.Now,
-	})
+			Now: time.Now,
+		})
+	}
+
+	e2, err := newEngine()
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = e2.Close() })
 
-	plan, err := e2.Plan()
+	result, err := e2.Run()
 	require.NoError(t, err)
+	require.NotNil(t, result)
 
 	// Drift was detected: AllFiles was called (not fast-pathed).
 	assert.Equal(t, 1, fake.AllFilesCalls(),
 		"drift must trigger an AllFiles round-trip, not the fast path")
 
-	// The plan should be empty: manifest (advanced) == remote (AllFiles),
-	// and local == base (no disk changes since the failed sync). But the
-	// sync ran the full pipeline — it did not silently fast-path.
-	assert.True(t, plan.IsEmpty(),
+	// The plan Run computed is empty: manifest (advanced) == remote
+	// (AllFiles), and local == base (no disk changes since the failed
+	// sync). The sync ran the full pipeline — it did not silently
+	// fast-path — it just found nothing to do.
+	assert.True(t, e2.plan.IsEmpty(),
 		"plan should be empty — manifest matches remote, no disk changes")
 
-	// Execute to run Phase 6, which updates config to the new version.
-	result, err := e2.Execute(plan)
+	// Run returned WITHOUT executing. The empty-plan short-circuit fires
+	// before Execute, so no upload-side call was issued at all.
+	assert.Equal(t, 0, fake.CreateStageCalls(),
+		"the empty-plan sync must not stage anything — Run returns before Execute")
+	assert.Equal(t, 0, fake.UploadToStageCalls(),
+		"the empty-plan sync must not upload anything — Run returns before Execute")
+	assert.Equal(t, 0, fake.ApplyStageCalls(),
+		"the empty-plan sync must not apply anything — Run returns before Execute")
+
+	assert.Empty(t, result.NewVersion,
+		"the empty-plan run creates no new version — Phase 6 never ran")
+
+	// Phase 6 never ran, so config.json still holds the OLD version while
+	// manifest.json holds the new one. That asymmetry is the safe one (see
+	// the function comment): the version mismatch makes every later sync
+	// detect drift and fetch the real remote, so the window self-heals at
+	// the first sync with actual work. The reverse asymmetry — config
+	// advanced past a stale manifest — would never be detected and would
+	// silently poison BASE forever.
+	staleCfg, err := wapi.LoadConfig(dir)
 	require.NoError(t, err)
 
-	require.NotNil(t, result)
+	require.NotNil(t, staleCfg.LastSyncedVersionID)
+	assert.Equal(t, versionID, *staleCfg.LastSyncedVersionID,
+		"config must still hold the old version — Run short-circuits the empty plan, so Phase 6 never runs")
 
-	// Config must now converge to the new version — self-healing.
+	advManifest, err := wapi.LoadManifest(dir)
+	require.NoError(t, err)
+
+	require.NotNil(t, advManifest.SyncedVersionID)
+	assert.Equal(t, newVerID, *advManifest.SyncedVersionID,
+		"manifest stays advanced — SaveManifest ran before the SaveConfig failure")
+
+	// --- Convergence needs a sync with real work ---
+
+	// Only a plan with actual work makes Run reach Execute, and only the
+	// Phase 6 reached that way converges config. Introduce a real change
+	// so the next run has something to upload.
+	finalContent := "print('real work')\n"
+
+	modifyFile(t, dir, "app.py", finalContent)
+
+	e3, err := newEngine()
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e3.Close() })
+
+	result3, err := e3.Run()
+	require.NoError(t, err)
+	require.NotNil(t, result3)
+
+	require.Len(t, e3.plan.Uploads, 1,
+		"the modified file must be the one real upload")
+	assert.Equal(t, "app.py", e3.plan.Uploads[0].Path)
+	assert.Equal(t, 1, result3.UploadedCount,
+		"the real-work sync must report the upload it performed")
+
+	// Config still lagged the artifact, so this run detected drift too and
+	// fetched AllFiles a second time.
+	assert.Equal(t, 2, fake.AllFilesCalls(),
+		"the still-drifted run must fetch AllFiles again")
+
+	assert.Equal(t, 1, fake.ApplyStageCalls(),
+		"the real-work sync must execute its plan")
+
+	// Config must now converge to the manifest's version — the honest
+	// self-healing path: a sync with real work, never a forced Execute.
 	convergedCfg, err := wapi.LoadConfig(dir)
 	require.NoError(t, err)
 
 	require.NotNil(t, convergedCfg.LastSyncedVersionID)
 	assert.Equal(t, newVerID, *convergedCfg.LastSyncedVersionID,
-		"config must converge to the new version after the self-healing sync")
+		"config must converge to the manifest's version once a sync has real work")
 
-	// Manifest and config must agree.
 	convergedManifest, err := wapi.LoadManifest(dir)
 	require.NoError(t, err)
 
 	require.NotNil(t, convergedManifest.SyncedVersionID)
 	assert.Equal(t, *convergedCfg.LastSyncedVersionID, *convergedManifest.SyncedVersionID,
 		"config and manifest must agree on the version after convergence")
+
+	// The converged manifest records the bytes this sync actually
+	// streamed, and the server holds exactly those bytes.
+	convergedFM, ok := convergedManifest.Files["app.py"]
+	require.True(t, ok)
+
+	assert.Equal(t, sha256Hex([]byte(finalContent)), convergedFM.Hash,
+		"manifest must record the hash streamed by the converging sync")
+
+	serverAll, err := fake.AllFiles(catalogID, newVerID)
+	require.NoError(t, err)
+
+	serverFM, ok := serverAll["app.py"]
+	require.True(t, ok)
+
+	assert.Equal(t, convergedFM.Hash, serverFM.Hash,
+		"the server must hold the bytes the manifest records after convergence")
 }
 
 // --- VAL-UPLOAD-011b / VAL-UPLOAD-013: Failure modes through the engine ---
