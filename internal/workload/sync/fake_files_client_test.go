@@ -531,12 +531,21 @@ func (f *fakeFilesClient) AllFiles(_, versionID string) (map[string]filesapi.Fil
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// The counter means "calls received", so it increments even when the
+	// lookup below fails: a test asserting a call count does not want the
+	// total silently lowered by error-path bookkeeping, and the call did
+	// reach the client either way.
 	f.allFilesCalls++
 
-	// Get the files for the requested version from server state.
+	// Get the files for the requested version from server state. An
+	// unregistered version ID is a fixture mistake (usually a typo'd
+	// version string), not an empty remote: the real client surfaces the
+	// server's non-200 as an error here, and returning an empty map would
+	// instead fabricate a plausible-looking plan (every base entry
+	// REMOTE_DELETED, every local file LOCAL_ADDED) that hides the typo.
 	files, ok := f.versions[versionID]
 	if !ok {
-		return make(map[string]filesapi.FileMeta), nil
+		return nil, fmt.Errorf("fakeFilesClient.AllFiles: version %s not found", versionID)
 	}
 
 	// Copy so the caller cannot mutate our state.

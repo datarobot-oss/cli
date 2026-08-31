@@ -333,6 +333,47 @@ func TestFakeCallCounters(t *testing.T) {
 	assert.Equal(t, 2, fake.AllFilesCalls())
 }
 
+// TestFakeAllFiles_UnknownVersionErrors verifies that AllFiles fails loudly
+// with an error naming the version ID when asked for a version that was
+// never registered in the fake's server state. Returning an empty map here
+// would turn a typo'd fixture version into a plausible-looking plan (every
+// base entry REMOTE_DELETED, every local file LOCAL_ADDED) instead of a
+// test failure — the same loud-failure contract DownloadFile already
+// upholds for unregistered versions.
+func TestFakeAllFiles_UnknownVersionErrors(t *testing.T) {
+	registered := map[string]filesapi.FileMeta{
+		"app.py": {Hash: sha256Hex([]byte("app")), Size: 3},
+	}
+
+	fake := (&fakeFilesClient{
+		catalogID: "cid-1",
+		stageID:   "stage-1",
+		versionID: "ver-1",
+	}).withVersion("cid-1", "ver-1", registered)
+
+	// Control: a registered version still serves its files, so the error
+	// below is specific to the unregistered ID rather than a blanket failure.
+	all, err := fake.AllFiles(fake.catalogID, "ver-1")
+	require.NoError(t, err)
+
+	assert.Len(t, all, 1)
+	assert.Equal(t, registered["app.py"], all["app.py"])
+	assert.Equal(t, 1, fake.AllFilesCalls())
+
+	// The unknown version must error and name the version, never return an
+	// empty map that would read as "the remote has no files".
+	_, err = fake.AllFiles(fake.catalogID, "ver-typo")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "fakeFilesClient.AllFiles", "error must identify the failing client method")
+	assert.Contains(t, err.Error(), "ver-typo", "error must name the unregistered version ID")
+
+	// Counter semantics are "calls received": the failed lookup still
+	// counts, so a test's call-count assertions are not diluted because a
+	// call happened to hit the error path.
+	assert.Equal(t, 2, fake.AllFilesCalls())
+}
+
 // TestFakeFaultInjection_DropPath verifies that the dropPathFromApply hook
 // omits a path from the resulting version. Passes with the fault off, fails
 // with it on (the path is missing from AllFiles).
