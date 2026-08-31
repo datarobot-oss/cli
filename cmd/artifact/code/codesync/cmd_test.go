@@ -387,6 +387,27 @@ func TestRunE_JSONOutput(t *testing.T) {
 	assert.Equal(t, "v2", doc.Result.NewVersion)
 }
 
+// A sync that fails during Execute leaves stdout empty and surfaces the error,
+// rather than the old behavior of leaving a plan document on stdout. stdout
+// carries a document only when there is a result to report; a consumer keys off
+// the exit status (RAPTOR-19348).
+func TestRunE_JSONOutput_ExecuteError_LeavesStdoutEmpty(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		executeErr: errors.New("upload failed mid-sync"),
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.True(t, fe.executed, "the error must come from Execute, not an earlier gate")
+	assert.Empty(t, stdout.String(), "a failed JSON sync writes no document to stdout")
+}
+
 // Exit is 0 and the upload list reads as a sync that will work, so this flag
 // is the only thing in the document that says the plan can never be applied.
 // The stderr notice does not reach a script.

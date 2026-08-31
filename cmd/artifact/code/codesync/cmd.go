@@ -313,6 +313,13 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 		return display.RenderSyncJSON(out, plan, nil, locked)
 	}
 
+	// The document is written only after Execute succeeds, so a failed sync
+	// leaves stdout empty and reports the error on stderr with a non-zero exit.
+	// This differs from the old two-document output, which emitted the plan
+	// before Execute and so left a plan on stdout even when the sync failed:
+	// with a single document, stdout carries a result only when there is one,
+	// and a consumer keys off the exit status rather than parsing a document
+	// that describes what was attempted rather than what happened.
 	result, err := engine.Execute(plan)
 	if err != nil {
 		return err

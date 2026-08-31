@@ -65,6 +65,12 @@ type PlanStatsJSON struct {
 // One document per invocation: emitting the plan and the result as two
 // concatenated top-level objects made stdout unparseable by a plain json.loads
 // and forced every consumer to write a splitter (RAPTOR-19348).
+//
+// The plan sits at the top level (result nested), which is the opposite of
+// `dr workload up` (scalars at the top level, plan under "plan"). The shapes
+// differ deliberately: this command's documented output is the plan's own
+// uploads[]/downloads[]/conflicts[] keys, so they have to stay at the root that
+// existing consumers read.
 type SyncJSON struct {
 	PlanJSON
 
