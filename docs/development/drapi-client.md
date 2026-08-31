@@ -24,9 +24,9 @@ below.
 
 Every verb function takes an optional trailing `time.Duration`. Omit it, or
 pass `<=0`, and `NewHTTPClient` clamps it to `DefaultClientTimeout` (30s)
-internally — the clamp cannot be bypassed by a caller. This was tightened in
-CFX-7822 specifically so a stray `0` or negative duration could never
-produce an unbounded request.
+internally — the clamp cannot be bypassed by a caller. This was tightened
+specifically so a stray `0` or negative duration could never produce
+an unbounded request.
 
 ## The `HTTPError` / `errors.As` contract
 
