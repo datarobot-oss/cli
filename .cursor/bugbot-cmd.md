@@ -28,15 +28,18 @@ Prefer `outputformat.PrintJSONEnvelope` for structured output so the payload is 
 
 Validate that pagination never crosses host boundaries.
 
-## Count-Like Flags Validate at Parse Time
+## Repeated Flag Shapes Register Through a Shared pflag.Value
 
-A numeric flag that carries a count (`--limit`, `--offset`, `--tail`, `--concurrency`) must
-register through a `pflag.Value` (`internal/countflags`) so out-of-range input is rejected
-during flag parsing, not with a runtime check inside `RunE` after the command has already
-started.
+A flag shape that recurs across commands, or carries the same validation requirement wherever
+it appears (a count, a duration, an ID format), must register through one shared `pflag.Value`
+(see `internal/countflags`, `cmd/internal/pollflags`) — not a fresh ad hoc check hand-rolled in
+each command's `RunE`. A second command re-implementing the same "must be positive"/"must
+parse as a duration" logic instead of reusing the existing type is a sign the flag belongs in
+a shared package, not more copies of the check. Validating this way also moves the rejection to
+parse time, before the command runs.
 
-## Zero-As-Default Flags Are a Documented Exception
+## Sentinel Defaults Are a Documented Exception
 
-A flag where `0` means "unset, use a default" (a port, a replica count) must not be forced
-through `internal/countflags`' positive/non-negative validators — but the exception must be
-called out at the flag definition, not left for a reviewer to guess.
+A flag where a value like `0` means "unset, use a default" (a port, a replica count) must not
+be forced through a shared validator built for a different flag's semantics — but the exception
+must be called out at the flag definition, not left for a reviewer to guess.
