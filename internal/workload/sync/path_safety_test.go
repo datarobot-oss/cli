@@ -18,11 +18,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// staticNow is a fixed clock for engine unit tests that stamp *.LOCAL backups.
+func staticNow() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
 // Defense-in-depth: even if filesapi.AllFiles validates manifest entries,
 // FileAction.Path values flow through SyncPlan before reaching the
@@ -56,36 +60,44 @@ func TestDownloadOne_RejectsUnsafeServerPath(t *testing.T) {
 	}
 }
 
-func TestRemoveLocalDeletedFiles_RejectsUnsafeServerPath(t *testing.T) {
+func TestBackupOverwrittenLocals_RejectsUnsafeServerPath(t *testing.T) {
 	for _, bad := range unsafeServerPaths {
 		t.Run(bad, func(t *testing.T) {
+			dir := t.TempDir()
+
+			rb := newTestRollback(t, dir)
+
 			e := &Engine{
-				projectDir: t.TempDir(),
+				projectDir: dir,
+				nowFn:      staticNow,
 				plan: &SyncPlan{
 					Deletes: []FileAction{{Path: bad, Action: ActDownloadDelete}},
 				},
 			}
 
-			err := removeLocalDeletedFiles(e)
+			err := backupOverwrittenLocals(e, rb)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "server returned unsafe delete path")
+			assert.Contains(t, err.Error(), "server returned unsafe path")
 		})
 	}
 }
 
-func TestRemoveLocalDeletedFiles_DoesNotDeleteOutsideProjectDir(t *testing.T) {
+func TestBackupOverwrittenLocals_DoesNotTouchOutsideProjectDir(t *testing.T) {
 	dir := t.TempDir()
 
 	// Sentinel sits in the temp dir's parent; ../sentinel would resolve
 	// to it under a naive filepath.Join, so its survival proves the
-	// SafeRelPath guard short-circuited before os.Remove.
+	// SafeRelPath guard short-circuited before os.Rename.
 	sentinel := filepath.Join(filepath.Dir(dir), "sentinel-"+filepath.Base(dir))
 	require.NoError(t, os.WriteFile(sentinel, []byte("keep me"), 0o644))
 
 	t.Cleanup(func() { _ = os.Remove(sentinel) })
 
+	rb := newTestRollback(t, dir)
+
 	e := &Engine{
 		projectDir: dir,
+		nowFn:      staticNow,
 		plan: &SyncPlan{
 			Deletes: []FileAction{
 				{Path: "../" + filepath.Base(sentinel), Action: ActDownloadDelete},
@@ -93,20 +105,25 @@ func TestRemoveLocalDeletedFiles_DoesNotDeleteOutsideProjectDir(t *testing.T) {
 		},
 	}
 
-	err := removeLocalDeletedFiles(e)
+	err := backupOverwrittenLocals(e, rb)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "server returned unsafe delete path")
+	assert.Contains(t, err.Error(), "server returned unsafe path")
 
 	_, statErr := os.Stat(sentinel)
-	require.NoError(t, statErr, "sentinel outside project dir must not have been removed")
+	require.NoError(t, statErr, "sentinel outside project dir must not have been moved")
 }
 
-// Non-ActDownloadDelete entries must be skipped without validation —
-// uploads carry locally-scanned paths that don't need this guard, and
-// running SafeRelPath on them would over-reject.
-func TestRemoveLocalDeletedFiles_IgnoresNonDownloadDeleteEntries(t *testing.T) {
+// Non-ActDownloadDelete delete entries carry locally-scanned paths (a
+// LOCAL_DELETED push) and are never backed up, so their path is not validated
+// here and running SafeRelPath on them would over-reject.
+func TestBackupOverwrittenLocals_IgnoresUploadDeleteEntries(t *testing.T) {
+	dir := t.TempDir()
+
+	rb := newTestRollback(t, dir)
+
 	e := &Engine{
-		projectDir: t.TempDir(),
+		projectDir: dir,
+		nowFn:      staticNow,
 		plan: &SyncPlan{
 			Deletes: []FileAction{
 				{Path: "../would-be-unsafe", Action: ActUploadDelete},
@@ -114,12 +131,12 @@ func TestRemoveLocalDeletedFiles_IgnoresNonDownloadDeleteEntries(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, removeLocalDeletedFiles(e))
+	require.NoError(t, backupOverwrittenLocals(e, rb))
 }
 
 // validateServerPaths is the up-front phase5 guard that runs before any
 // filesystem op (including Rollback.Backup). The per-call-site guards in
-// downloadOne / removeLocalDeletedFiles back it up, but this guard is the
+// downloadOne / backupOverwrittenLocals back it up, but this guard is the
 // one that keeps unsafe paths out of rb.Backup's stat/open/copy calls.
 
 func TestValidateServerPaths_RejectsUnsafeDownload(t *testing.T) {
@@ -173,7 +190,7 @@ func TestValidateServerPaths_SkipsLocalDrivenEntries(t *testing.T) {
 }
 
 // Phase-level regression: an unsafe path in plan.Downloads would
-// otherwise reach rb.Backup via backupDownloadTargets before any
+// otherwise reach rb.Backup via backupOverwrittenLocals before any
 // per-call-site guard fired. The up-front check must short-circuit
 // before NewRollback runs, so no rollback dir is created and
 // no bytes outside e.projectDir are read.

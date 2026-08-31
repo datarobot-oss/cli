@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/datarobot/cli/internal/workload/fileops"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
 // phase5Execute applies the SyncPlan in the order: disk-space check +
@@ -76,18 +77,18 @@ func phase5Execute(e *Engine) error {
 }
 
 func executePlan(e *Engine, rb *Rollback) error {
-	if err := applyConflictCopies(e, rb); err != nil {
-		return fmt.Errorf("conflict copies: %w", err)
+	// Every local file a remote-side action would replace or delete is moved to
+	// a *.LOCAL.<ts> copy first, so nothing local is ever destroyed without a
+	// recoverable backup. This subsumes the old REMOTE_DELETED os.Remove: those
+	// files are renamed aside here, not removed.
+	if err := backupOverwrittenLocals(e, rb); err != nil {
+		return fmt.Errorf("back up overwritten local files: %w", err)
 	}
 
 	codeRef := codeRefOrEmpty(e)
 
 	if err := applyDownloads(e, rb, codeRef); err != nil {
 		return fmt.Errorf("downloads: %w", err)
-	}
-
-	if err := applyLocalDeletes(e, rb); err != nil {
-		return fmt.Errorf("local deletes: %w", err)
 	}
 
 	newCatalogID, newVersionID, err := applyRemoteDeletesAndUploads(e, codeRef)
@@ -101,49 +102,86 @@ func executePlan(e *Engine, rb *Rollback) error {
 	return nil
 }
 
-// applyConflictCopies renames each conflict's local file to
-// <path>.LOCAL.<ISO8601Z>. EDIT_DEL_CONFLICT is excluded since the user
-// already deleted that file.
-func applyConflictCopies(e *Engine, rb *Rollback) error {
-	stamp := e.nowFn().UTC().Format("20060102T150405Z")
+// backupStampFormat is the ISO-8601 basic UTC stamp appended after
+// ignore.BackupInfix to name a *.LOCAL backup. ignore.IsBackupCopy matches this
+// shape to keep backups out of the next sync; the two must stay in step.
+const backupStampFormat = "20060102T150405Z"
 
-	for _, fa := range e.plan.Conflicts {
-		if fa.Classification == ClsEditDelConflict {
-			continue
-		}
+// backupOverwrittenLocals moves every local file a remote-side action would
+// replace or delete to <path>.LOCAL.<stamp>, before any of those actions run.
+// It covers the three ways remote wins: a REMOTE_MODIFIED download (remote
+// bytes are about to land over the local file), a REMOTE_DELETED delete (the
+// local file is about to be removed), and a conflict (both sides changed).
+// REMOTE_ADDED and EDIT_DEL have no local file to keep, so they are not here.
+//
+// The rename frees the original path: applyDownloads then writes the remote
+// bytes there for downloads and conflicts, while REMOTE_DELETED has no download
+// and so simply stays gone, which is what the remote deletion asked for.
+func backupOverwrittenLocals(e *Engine, rb *Rollback) error {
+	stamp := e.nowFn().UTC().Format(backupStampFormat)
 
-		src := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
-		dst := src + ".LOCAL." + stamp
-
-		if err := rb.Backup(fa.Path); err != nil {
+	// OverwrittenLocalPaths is exactly the set of local files a remote-side
+	// action would replace or delete, so backing up that set is the whole job.
+	for _, path := range e.plan.OverwrittenLocalPaths() {
+		if err := backupLocalFile(e, rb, path, stamp); err != nil {
 			return err
 		}
-
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("rename %s -> %s: %w", fa.Path, dst, err)
-		}
-
-		rb.TrackCreated(dst)
-		e.conflictCopies = append(e.conflictCopies, dst)
 	}
 
 	return nil
 }
 
-// applyDownloads runs the download list plus the conflict-copy follow-up
-// downloads (remote wins, so remote bytes land at the original path).
-// REMOTE_DELETED files are removed locally instead.
-func applyDownloads(e *Engine, rb *Rollback, codeRef codeRefRef) error {
-	if codeRef.CatalogID == "" || codeRef.CatalogVersionID == "" {
+// backupLocalFile renames one local file to <path>.LOCAL.<stamp>, recording it
+// for rollback and for the result. A missing or non-regular local file is a
+// no-op: the remote-side action that follows still runs (a REMOTE_ADDED writes
+// a new file; an already-absent file has nothing to keep).
+func backupLocalFile(e *Engine, rb *Rollback, path, stamp string) error {
+	// phase5Execute already rejected unsafe server paths up front via
+	// validateServerPaths; re-check here so the per-call-site invariant
+	// survives future refactors that might reach this without the phase entry
+	// point, before Lstat/Rename touch anything outside projectDir.
+	if err := fileops.SafeRelPath(path); err != nil {
+		return fmt.Errorf("server returned unsafe path %q: %w", path, err)
+	}
+
+	src := filepath.Join(e.projectDir, filepath.FromSlash(path))
+
+	info, err := os.Lstat(src)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("stat %s for backup: %w", path, err)
+	}
+
+	if !info.Mode().IsRegular() {
 		return nil
 	}
 
-	if err := backupDownloadTargets(e, rb); err != nil {
+	dst := src + ignore.BackupInfix + stamp
+
+	if err := rb.Backup(path); err != nil {
 		return err
 	}
 
-	if err := removeLocalDeletedFiles(e); err != nil {
-		return err
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("rename %s -> %s: %w", path, dst, err)
+	}
+
+	rb.TrackCreated(dst)
+	e.localBackups = append(e.localBackups, dst)
+
+	return nil
+}
+
+// applyDownloads pulls remote bytes for downloads and conflicts (remote wins,
+// so remote bytes land at the original path, which backupOverwrittenLocals has
+// already freed). REMOTE_DELETED needs no download: its local file was renamed
+// aside and stays gone.
+func applyDownloads(e *Engine, rb *Rollback, codeRef codeRefRef) error {
+	if codeRef.CatalogID == "" || codeRef.CatalogVersionID == "" {
+		return nil
 	}
 
 	pulls := pullList(e.plan)
@@ -153,53 +191,6 @@ func applyDownloads(e *Engine, rb *Rollback, codeRef codeRefRef) error {
 
 	for _, fa := range pulls {
 		rb.TrackCreated(filepath.Join(e.projectDir, filepath.FromSlash(fa.Path)))
-	}
-
-	return nil
-}
-
-func backupDownloadTargets(e *Engine, rb *Rollback) error {
-	for _, fa := range e.plan.Downloads {
-		if err := rb.Backup(fa.Path); err != nil {
-			return err
-		}
-	}
-
-	// ActDownloadDelete lives in plan.Deletes, so back those up here
-	// before removeLocalDeletedFiles removes them.
-	for _, fa := range e.plan.Deletes {
-		if fa.Action != ActDownloadDelete {
-			continue
-		}
-
-		if err := rb.Backup(fa.Path); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// removeLocalDeletedFiles removes local copies of REMOTE_DELETED files.
-// Missing-file errors are tolerated for idempotency under retry.
-func removeLocalDeletedFiles(e *Engine) error {
-	for _, fa := range e.plan.Deletes {
-		if fa.Action != ActDownloadDelete {
-			continue
-		}
-
-		// phase5Execute already rejected unsafe server paths up front
-		// via validateServerPaths; re-check here so the per-call-site
-		// invariant survives future refactors that might bypass the
-		// phase entry point.
-		if err := fileops.SafeRelPath(fa.Path); err != nil {
-			return fmt.Errorf("server returned unsafe delete path %q: %w", fa.Path, err)
-		}
-
-		abs := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
-		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove %s: %w", fa.Path, err)
-		}
 	}
 
 	return nil
@@ -251,12 +242,6 @@ func pullList(plan *SyncPlan) []FileAction {
 	}
 
 	return out
-}
-
-// applyLocalDeletes is a no-op; applyDownloads already removed
-// REMOTE_DELETED files.
-func applyLocalDeletes(_ *Engine, _ *Rollback) error {
-	return nil
 }
 
 // applyRemoteDeletesAndUploads sends LOCAL_DELETED paths to FilesAPI,

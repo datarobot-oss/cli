@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
@@ -80,6 +81,10 @@ type runFlags struct {
 	DryRun bool
 	Diff   bool
 	Yes    bool
+	// AcceptRemote opts a non-interactive run into letting the remote
+	// overwrite or delete local files. Without it, such a run is refused
+	// rather than silently destroying local work (RAPTOR-19348).
+	AcceptRemote bool
 }
 
 // Preview reports whether this run only shows a plan and writes nothing, on
@@ -124,10 +129,15 @@ func cmdWithDeps(deps Deps) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		Long: `Synchronize the linked DataRobot artifact with the project
-directory. Computes a three-way diff against the last known state,
-auto-resolves any conflicts (remote wins; your version is saved as a
-*.LOCAL.<timestamp> copy), and applies the resulting plan in a single
-versioned step.
+directory. Computes a three-way diff against the last known state and
+applies the resulting plan in a single versioned step.
+
+Before the remote replaces or deletes any local file, your version is
+saved as a *.LOCAL.<timestamp> copy, so nothing local is ever lost
+without a recoverable backup. A run that would overwrite or delete local
+files asks first; run non-interactively (--yes or in CI) it is refused
+unless you pass --accept-remote, so an automated sync never silently
+rewrites your checkout.
 
 Use --dry-run to preview the plan without writing anything; --diff to
 also print per-file unified diffs. Both modes exit before any remote
@@ -143,6 +153,7 @@ Example:
   dr artifact code sync --dry-run
   dr artifact code sync --diff
   dr artifact code sync --yes
+  dr artifact code sync --yes --accept-remote
   dr artifact code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -158,6 +169,9 @@ Example:
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
+	c.Flags().Bool("accept-remote", false,
+		"Allow the remote to overwrite or delete local files in a non-interactive run "+
+			"(your versions are still saved as *.LOCAL copies).")
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
@@ -167,6 +181,7 @@ Example:
 			"dry_run":       flags.DryRun,
 			"diff":          flags.Diff,
 			"yes":           flags.Yes,
+			"accept_remote": flags.AcceptRemote,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -231,10 +246,13 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	diff, _ := cmd.Flags().GetBool("diff")
 
+	acceptRemote, _ := cmd.Flags().GetBool("accept-remote")
+
 	return runFlags{
-		DryRun: dryRun,
-		Diff:   diff,
-		Yes:    cli.IsNonInteractive(cmd),
+		DryRun:       dryRun,
+		Diff:         diff,
+		Yes:          cli.IsNonInteractive(cmd),
+		AcceptRemote: acceptRemote,
 	}
 }
 
@@ -256,15 +274,13 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 		return nil
 	}
 
-	if shouldPromptConflicts(plan, flags.Yes) {
-		choice, err := promptConflictMenu(cmd, engine, plan, deps.ReadLine)
-		if err != nil {
-			return err
-		}
+	proceed, err := gateLocalOverwrite(cmd, engine, plan, flags, deps)
+	if err != nil {
+		return err
+	}
 
-		if choice == promptQuit {
-			return nil
-		}
+	if !proceed {
+		return nil
 	}
 
 	result, err := engine.Execute(plan)
@@ -273,6 +289,34 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 	}
 
 	return display.PrintResult(out, result)
+}
+
+// gateLocalOverwrite decides whether a run that would overwrite or delete local
+// files may proceed. A plan that only uploads passes straight through. When it
+// would write the working tree from the remote side, an interactive run asks
+// first (default No), and a non-interactive run is refused unless --accept-remote
+// opted in — so CI fails loud instead of silently rewriting its checkout
+// (RAPTOR-19348). Either way, the files it would replace are backed up to
+// *.LOCAL before the remote lands.
+func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, flags runFlags, deps Deps) (bool, error) {
+	if !plan.OverwritesLocal() {
+		return true, nil
+	}
+
+	if flags.Yes {
+		if flags.AcceptRemote {
+			return true, nil
+		}
+
+		return false, overwriteRefusedError(plan)
+	}
+
+	choice, err := promptOverwriteMenu(cmd, engine, plan, deps.ReadLine)
+	if err != nil {
+		return false, err
+	}
+
+	return choice == promptSync, nil
 }
 
 // renderHumanPlan prints the plan and optional per-file diffs.
@@ -290,10 +334,44 @@ func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPla
 	return display.PrintDiffs(out, plan, engine.Fetcher())
 }
 
-// shouldPromptConflicts encapsulates the decision: prompt only when
-// the user has not passed --yes and the plan actually has conflicts.
-func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
-	return !yes && plan.HasConflicts()
+// overwriteRefusedError is the non-interactive refusal: it names the local
+// files the remote would replace or delete and the two ways forward, so a CI
+// log says exactly what went wrong and how to proceed on purpose.
+func overwriteRefusedError(plan *sync.SyncPlan) error {
+	paths := plan.OverwrittenLocalPaths()
+
+	return fmt.Errorf(
+		"refusing to overwrite local files: this sync would replace or delete %d local file(s) "+
+			"with the remote version, and no confirmation is possible non-interactively:\n%s\n"+
+			"Re-run with --accept-remote to allow it (your versions are saved as *.LOCAL copies), "+
+			"or --dry-run to inspect the plan first",
+		len(paths), formatPathList(paths))
+}
+
+// formatPathList renders up to listCap indented paths, summarizing the rest so
+// a plan touching hundreds of files does not bury the message.
+func formatPathList(paths []string) string {
+	const listCap = 10
+
+	shown := paths
+	more := 0
+
+	if len(shown) > listCap {
+		more = len(shown) - listCap
+		shown = shown[:listCap]
+	}
+
+	var b strings.Builder
+
+	for _, p := range shown {
+		fmt.Fprintf(&b, "  %s\n", p)
+	}
+
+	if more > 0 {
+		fmt.Fprintf(&b, "  ... and %d more\n", more)
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // finishJSON is the --output-format=json analogue of finishSync. It emits
@@ -309,8 +387,23 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
 	locked := engine.LockedNotice() != ""
 
-	if flags.Preview() || plan.IsEmpty() || shouldPromptConflicts(plan, flags.Yes) {
+	if flags.Preview() || plan.IsEmpty() {
 		return display.RenderSyncJSON(out, plan, nil, locked)
+	}
+
+	if plan.OverwritesLocal() {
+		// Without --yes there is no confirmation channel in JSON mode, so the
+		// plan is emitted and nothing runs: a script inspects it and re-invokes
+		// with --yes --accept-remote to proceed. With --yes but no opt-in, the
+		// run is refused loudly (non-zero exit) rather than silently rewriting
+		// local files (RAPTOR-19348).
+		if !flags.Yes {
+			return display.RenderSyncJSON(out, plan, nil, locked)
+		}
+
+		if !flags.AcceptRemote {
+			return overwriteRefusedError(plan)
+		}
 	}
 
 	// The document is written only after Execute succeeds, so a failed sync

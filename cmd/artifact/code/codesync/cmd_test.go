@@ -464,9 +464,26 @@ func TestRunE_JSONOutput_ConflictWithoutYes(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"x.py"`, "plan JSON should still be emitted")
 }
 
-// TestRunE_JSONOutput_ConflictWithYes: --yes opts into auto-execute
-// even on conflicts in JSON mode, matching the human-path Enter branch.
-func TestRunE_JSONOutput_ConflictWithYes(t *testing.T) {
+// TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote: in JSON mode,
+// --yes alone must not silently overwrite local files — it is refused loudly so
+// CI fails red instead of rewriting its checkout (RAPTOR-19348).
+func TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to overwrite local files")
+	assert.False(t, fe.executed, "--yes without --accept-remote must not execute an overwriting plan")
+}
+
+// TestRunE_JSONOutput_AcceptRemoteExecutes: --yes --accept-remote is the
+// explicit opt-in that lets a non-interactive run overwrite local files.
+func TestRunE_JSONOutput_AcceptRemoteExecutes(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
 
@@ -475,11 +492,11 @@ func TestRunE_JSONOutput_ConflictWithYes(t *testing.T) {
 		result: &sync.Result{NewVersion: "v3", ConflictCount: 1},
 	}
 
-	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+	flags := map[string]string{"dir": dir, "yes": "true", "accept-remote": "true", "output-format": "json"}
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
-	assert.True(t, fe.executed, "--yes must allow auto-execute on conflicts")
+	assert.True(t, fe.executed, "--accept-remote opts into overwriting local files")
 }
 
 // TestRunE_ConflictPromptQuit: with conflicts present and no --yes,
@@ -583,25 +600,97 @@ func TestRunE_ConflictPromptShowDiffsThenSync(t *testing.T) {
 	assert.Contains(t, stdout.String(), "x.py", "diff render must mention the conflict path")
 }
 
-// TestRunE_NonInteractiveEnvVar: DATAROBOT_CLI_NON_INTERACTIVE=true
-// skips the conflict prompt entirely (no reader stub installed; if
-// the prompt were reached the test would hang or read os.Stdin).
+// TestRunE_NonInteractiveEnvVar: DATAROBOT_CLI_NON_INTERACTIVE=true is treated
+// as non-interactive, so an overwriting plan takes the refuse-without-opt-in
+// path rather than the prompt. No reader stub is installed; if it had gone
+// interactive, promptOverwriteMenu would call a nil ReadLine and panic, so a
+// clean refusal proves the env var routed to the non-interactive branch.
 func TestRunE_NonInteractiveEnvVar(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
 
 	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
 
-	fe := &fakeEngine{
-		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
-		result: &sync.Result{NewVersion: "v3"},
-	}
+	fe := &fakeEngine{plan: &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}}}
 
 	flags := map[string]string{"dir": dir}
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to overwrite local files")
+	assert.False(t, fe.executed)
+}
+
+// TestRunE_NonInteractiveEnvVar_UploadOnlyProceeds: the same non-interactive
+// env var runs an upload-only plan straight through — the refusal is specific
+// to plans that would destroy local files, not to non-interactive runs.
+func TestRunE_NonInteractiveEnvVar_UploadOnlyProceeds(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
+
+	fe := &fakeEngine{
+		plan:   &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		result: &sync.Result{NewVersion: "v3", UploadedCount: 1},
+	}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir})
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "an upload-only plan needs no confirmation")
+}
+
+// TestRunE_Yes_RefusesOverwriteWithoutAcceptRemote: on the human path too,
+// --yes alone refuses an overwriting plan; --accept-remote is required.
+func TestRunE_Yes_RefusesOverwriteWithoutAcceptRemote(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{
+		Deletes: []sync.FileAction{{Path: "gone.py", Action: sync.ActDownloadDelete}},
+	}}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "yes": "true"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "gone.py", "the refusal names the files at risk")
+	assert.False(t, fe.executed)
+}
+
+// TestRunE_Yes_AcceptRemoteExecutes: --yes --accept-remote proceeds.
+func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
+		result: &sync.Result{NewVersion: "v3", ConflictCount: 1},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "accept-remote": "true"}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.True(t, fe.executed)
+}
+
+// TestRunE_PromptsOnADownloadOverwrite: the interactive prompt now fires on a
+// plain REMOTE_MODIFIED download, not only on conflicts — pulling remote bytes
+// over a local file is the same data-loss risk (RAPTOR-19348). Typing 'q'
+// aborts before Execute.
+func TestRunE_PromptsOnADownloadOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{
+		Downloads: []sync.FileAction{{Path: "app.py", Action: sync.ActDownloadModify}},
+	}}
+	deps := fakeEngineDeps(fe)
+	deps.ReadLine = stubReader("q")
+
+	_, _, stderr, err := runWithDeps(t, deps, map[string]string{"dir": dir})
+	require.NoError(t, err)
+	assert.False(t, fe.executed, "a download overwrite must be confirmed, and 'q' aborts")
+	assert.Contains(t, stderr.String(), "app.py", "the prompt names the file it would overwrite")
 }
 
 // TestRunE_StaleRollbackHint: when the engine reports a recovered
