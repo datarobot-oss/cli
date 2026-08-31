@@ -16,6 +16,7 @@ package up
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -62,9 +63,10 @@ runtime:
 // code under test reaches for one, which would be a test worth failing.
 type fakeFiles struct {
 	filesapi.Client
-	files   map[string]filesapi.FileMeta
-	content map[string]string
-	pulled  []string
+	files     map[string]filesapi.FileMeta
+	content   map[string]string
+	pulled    []string
+	failPaths map[string]bool
 }
 
 func (f *fakeFiles) AllFiles(string, string) (map[string]filesapi.FileMeta, error) {
@@ -74,7 +76,13 @@ func (f *fakeFiles) AllFiles(string, string) (map[string]filesapi.FileMeta, erro
 func (f *fakeFiles) DownloadFile(_, _, path string, w io.Writer) (string, int64, error) {
 	f.pulled = append(f.pulled, path)
 
+	// The bytes are written before the failure so the test exercises the
+	// partial-file-on-disk path, not a create that never wrote anything.
 	n, _ := io.WriteString(w, f.content[path])
+
+	if f.failPaths[path] {
+		return "", int64(n), errors.New("connection reset mid-stream")
+	}
 
 	return "", int64(n), nil
 }
@@ -159,6 +167,94 @@ func TestSeed_PullsCodeIntoAnEmptyBoundProject(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(dir, "app.py"))
 	require.NoError(t, err)
 	assert.Equal(t, "print('hi')\n", string(got))
+}
+
+// A download that fails mid-stream must not leave the partial file behind: on
+// a retry a truncated root marker would make the directory look like a real
+// project, seeding would be skipped, and the deploy would build from the
+// corrupt tree.
+func TestSeed_RemovesAPartialFileWhenADownloadFails(t *testing.T) {
+	dir := t.TempDir()
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+	stubFiles(t, &fakeFiles{
+		files:     map[string]filesapi.FileMeta{"pyproject.toml": {}},
+		content:   map[string]string{"pyproject.toml": "[project]\nname = \"x\"\n"},
+		failPaths: map[string]bool{"pyproject.toml": true},
+	})
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.Error(t, err)
+	assert.NoFileExists(t, filepath.Join(dir, "pyproject.toml"),
+		"a failed download must not leave a partial file a retry mistakes for a real project")
+}
+
+// A download whose bytes do not match the catalog's recorded size is a silent
+// truncation the writer did not report; it fails and leaves nothing behind.
+func TestSeed_RejectsASizeMismatch(t *testing.T) {
+	dir := t.TempDir()
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+	stubFiles(t, &fakeFiles{
+		files:   map[string]filesapi.FileMeta{"app.py": {Size: 999}},
+		content: map[string]string{"app.py": "print('hi')\n"},
+	})
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected 999")
+	assert.NoFileExists(t, filepath.Join(dir, "app.py"))
+}
+
+// Two catalog keys that differ only by case collapse to one file on a
+// case-insensitive filesystem, so the pull is refused before any file is
+// written rather than silently dropping one.
+func TestSeed_RefusesCaseCollidingCode(t *testing.T) {
+	dir := t.TempDir()
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+
+	fake := &fakeFiles{files: map[string]filesapi.FileMeta{"App.py": {}, "app.py": {}}}
+	stubFiles(t, fake)
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "case-only path collisions")
+	assert.Empty(t, fake.pulled, "nothing is downloaded when the code cannot be laid down safely")
+}
+
+// A recognised-but-unlinked project needs no seeding, and must not be blocked
+// by a files-API call it never needed: the live artifact is not read at all.
+func TestSeed_DoesNotReadTheArtifactForARecognisedProject(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0o644))
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		t.Fatal("a recognised project needs no pull, so its code is never read")
+
+		return nil, nil
+	})
+
+	fake := &fakeFiles{}
+	stubFiles(t, fake)
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.NoError(t, err)
+	assert.Empty(t, fake.pulled)
 }
 
 // A directory with files but no recognised project, not linked to the

@@ -15,8 +15,12 @@
 package up
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -67,53 +71,15 @@ func seedFromLiveArtifact(loaded Loaded, live Live, opts Options) error {
 		return nil
 	}
 
-	codeRef, err := artifactCodeRef(live.ArtifactID)
-	if err != nil || codeRef == nil {
-		// A nil ref (no code catalog: a published image) is nothing to pull.
-		return err
-	}
-
-	files, err := filesClientFn().AllFiles(codeRef.CatalogID, codeRef.CatalogVersionID)
-	if err != nil {
-		return fmt.Errorf("cannot read the code of workload %s to pull it: %w", live.WorkloadID, err)
-	}
-
-	if !hasRealCode(files) {
-		// The workload's own artifact is empty too (only the ignore file, or
-		// nothing). There is nothing to seed, and the build guard elsewhere is
-		// what speaks to a runtime that cannot be detected.
-		return nil
-	}
-
-	return seedLocalDir(loaded, live, codeRef, files, opts)
-}
-
-// seedApplies reports whether this run is the one shape a pull is for: a
-// source-built workload, bound and already existing, in a directory the CLI
-// has not linked yet. A linked project is past first-bind and its incremental
-// sync knows its own base; a published image has no code to pull.
-func seedApplies(loaded Loaded, live Live) bool {
-	mode := loaded.Manifest.BuildMode()
-	if mode != manifest.BuildModeDockerfile && mode != manifest.BuildModeGenerated {
-		return false
-	}
-
-	return live.ArtifactID != "" && !projectLinkedFn(loaded.ProjectDir)
-}
-
-// seedLocalDir decides what to do about the project directory: leave a real
-// project as it is, pull into an empty one, or refuse one that holds files
-// that are not a recognised project and are not this workload's code.
-func seedLocalDir(
-	loaded Loaded,
-	live Live,
-	codeRef *workload.DatarobotCodeRef,
-	files map[string]filesapi.FileMeta,
-	opts Options,
-) error {
-	// A directory that already looks like a project is the normal case: the
-	// user has the code, and the deploy reads it as it always has.
+	// The project directory decides whether a pull is even possible, and it
+	// needs no network to do it: a directory that already looks like a project
+	// is deployed as it is, and one that holds unrelated files is refused. Only
+	// an empty directory reaches for the live artifact, so the reads that
+	// resolve its code run after these gates rather than before — a transient
+	// files-API failure must not block a deploy that never needed seeding.
 	if !wizard.Detect(loaded.ProjectDir).SuspectDir() {
+		// A directory that already looks like a project is the normal case: the
+		// user has the code, and the deploy reads it as it always has.
 		return nil
 	}
 
@@ -134,7 +100,46 @@ func seedLocalDir(
 			loaded.ProjectDir, name(loaded, live))
 	}
 
+	return pullLiveCode(loaded, live, opts)
+}
+
+// pullLiveCode reads the live artifact's code catalog and pulls it into the
+// (already-confirmed-empty) project directory. It is reached only once the
+// local-directory gates have decided a pull is both possible and needed, so
+// the network reads it does are the reads no other run has to pay for.
+func pullLiveCode(loaded Loaded, live Live, opts Options) error {
+	codeRef, err := artifactCodeRef(live.ArtifactID)
+	if err != nil || codeRef == nil {
+		// A nil ref (no code catalog: a published image) is nothing to pull.
+		return err
+	}
+
+	files, err := filesClientFn().AllFiles(codeRef.CatalogID, codeRef.CatalogVersionID)
+	if err != nil {
+		return fmt.Errorf("cannot read the code of workload %s to pull it: %w", live.WorkloadID, err)
+	}
+
+	if !hasRealCode(files) {
+		// The workload's own artifact is empty too (only the ignore file, or
+		// nothing). There is nothing to seed, and the build guard elsewhere is
+		// what speaks to a runtime that cannot be detected.
+		return nil
+	}
+
 	return pullCode(loaded.ProjectDir, codeRef, files, live, loaded, opts)
+}
+
+// seedApplies reports whether this run is the one shape a pull is for: a
+// source-built workload, bound and already existing, in a directory the CLI
+// has not linked yet. A linked project is past first-bind and its incremental
+// sync knows its own base; a published image has no code to pull.
+func seedApplies(loaded Loaded, live Live) bool {
+	mode := loaded.Manifest.BuildMode()
+	if mode != manifest.BuildModeDockerfile && mode != manifest.BuildModeGenerated {
+		return false
+	}
+
+	return live.ArtifactID != "" && !projectLinkedFn(loaded.ProjectDir)
 }
 
 // artifactCodeRef reads the code catalog behind the artifact the workload is
@@ -203,14 +208,28 @@ func pullCode(
 
 	sort.Strings(paths)
 
+	set := make(map[string]struct{}, len(paths))
+
 	for _, path := range paths {
 		if err := fileops.SafeRelPath(path); err != nil {
 			return fmt.Errorf("the workload's code names an unsafe path %q: %w", path, err)
 		}
+
+		set[path] = struct{}{}
+	}
+
+	// Two catalog keys that differ only by case (App.py vs app.py) map to one
+	// file on macOS and Windows, so writing them in turn would silently drop
+	// one and seed a tree that is missing code the build needs. Caught before
+	// any file is written, mirroring the check the sync engine makes.
+	if cs := fileops.DetectCaseCollisions(set); len(cs) > 0 {
+		return fmt.Errorf(
+			"the workload's code cannot be pulled onto this filesystem: %s",
+			fileops.FormatCaseCollisions(cs))
 	}
 
 	for _, path := range paths {
-		if err := downloadInto(client, codeRef, dir, path); err != nil {
+		if err := downloadInto(client, codeRef, dir, path, files[path]); err != nil {
 			return err
 		}
 	}
@@ -221,8 +240,23 @@ func pullCode(
 	return nil
 }
 
-// downloadInto writes one file of the version into dir, creating parents.
-func downloadInto(client filesapi.Client, codeRef *workload.DatarobotCodeRef, dir, path string) error {
+// downloadInto writes one file of the version into dir, creating parents, and
+// verifies it against the catalog's size and hash as it streams.
+//
+// A half-written file is removed on any failure rather than left on disk. The
+// pull writes in place (the directory was empty), so a partial survivor is not
+// staged away from the deploy: on a retry a truncated root marker (a cut-off
+// pyproject.toml) makes the directory look like a real project, seeding is
+// skipped, and the deploy builds from the corrupt tree — and a partial that is
+// not a marker refuses the next run with a message the user can only clear by
+// deleting files by hand. Verifying size and hash catches a silent truncation
+// the writer itself did not report. This mirrors the sync engine's downloadOne.
+func downloadInto(
+	client filesapi.Client,
+	codeRef *workload.DatarobotCodeRef,
+	dir, path string,
+	meta filesapi.FileMeta,
+) error {
 	dst := filepath.Join(dir, filepath.FromSlash(path))
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -234,11 +268,47 @@ func downloadInto(client filesapi.Client, codeRef *workload.DatarobotCodeRef, di
 		return fmt.Errorf("cannot create %s: %w", path, err)
 	}
 
-	defer func() { _ = file.Close() }()
+	hasher := sha256.New()
 
-	if _, _, err := client.DownloadFile(codeRef.CatalogID, codeRef.CatalogVersionID, path, file); err != nil {
-		return errors.Join(fmt.Errorf("cannot download %s", path), err)
+	_, n, downloadErr := client.DownloadFile(
+		codeRef.CatalogID, codeRef.CatalogVersionID, path, io.MultiWriter(file, hasher))
+
+	closeErr := file.Close()
+
+	if failure := verifyDownload(path, meta, n, hasher, downloadErr, closeErr); failure != nil {
+		_ = os.Remove(dst)
+
+		return failure
 	}
 
 	return nil
+}
+
+// verifyDownload reports the first thing wrong with a file that was just
+// written: the download or close itself, a byte count short of the catalog's,
+// or a checksum that does not match. nil means the file on disk is the file
+// the catalog holds. The caller removes the partial when this returns non-nil.
+func verifyDownload(
+	path string,
+	meta filesapi.FileMeta,
+	n int64,
+	hasher hash.Hash,
+	downloadErr, closeErr error,
+) error {
+	switch {
+	case downloadErr != nil:
+		return errors.Join(fmt.Errorf("cannot download %s", path), downloadErr)
+
+	case closeErr != nil:
+		return fmt.Errorf("cannot finish writing %s: %w", path, closeErr)
+
+	case meta.Size > 0 && n != meta.Size:
+		return fmt.Errorf("download of %s is %d bytes, expected %d", path, n, meta.Size)
+
+	case meta.Hash != "" && hex.EncodeToString(hasher.Sum(nil)) != meta.Hash:
+		return fmt.Errorf("download of %s does not match its expected checksum", path)
+
+	default:
+		return nil
+	}
 }
