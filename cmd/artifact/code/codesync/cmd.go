@@ -67,6 +67,10 @@ func (r realEngine) Fetcher() display.ContentFetcher { return r.Engine.Fetcher()
 type Deps struct {
 	NewEngine func(dir string, opts sync.Options) (engineRunner, error)
 	ReadLine  func() (string, error)
+	// AskDir prompts for the project directory when neither --dir nor a
+	// non-interactive mode supplies one. A seam so tests can assert the
+	// preview modes never reach it.
+	AskDir func(label, defaultVal string) (string, error)
 }
 
 // runFlags is the parsed view of the boolean flags that gate
@@ -76,6 +80,14 @@ type runFlags struct {
 	DryRun bool
 	Diff   bool
 	Yes    bool
+}
+
+// Preview reports whether this run only shows a plan and writes nothing, on
+// either the local or the remote side. Such a run must never block on a
+// prompt: an operation that by definition changes nothing has no confirmation
+// to ask for (RAPTOR-19348).
+func (f runFlags) Preview() bool {
+	return f.DryRun || f.Diff
 }
 
 func defaultDeps() Deps {
@@ -89,6 +101,7 @@ func defaultDeps() Deps {
 			return realEngine{e}, nil
 		},
 		ReadLine: reader.ReadString,
+		AskDir:   dirprompt.AskWithDefault,
 	}
 }
 
@@ -118,8 +131,9 @@ versioned step.
 
 Use --dry-run to preview the plan without writing anything; --diff to
 also print per-file unified diffs. Both modes exit before any remote
-write. --yes auto-confirms the post-plan prompt and skips any
-interactive directory prompt.
+write and never prompt, so they are safe to run unattended. --yes
+auto-confirms the post-plan prompt and skips any interactive directory
+prompt.
 
 Run 'dr artifact code init <artifact-id>' first to link a project
 directory to an artifact.
@@ -165,7 +179,14 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 
 	dirFlag, _ := cmd.Flags().GetString("dir")
 
-	dir, err := dirprompt.ResolveDir(dirFlag, flags.Yes, dirprompt.AskWithDefault)
+	ask := deps.AskDir
+	if ask == nil {
+		ask = dirprompt.AskWithDefault
+	}
+
+	// A preview writes nothing, so it resolves the directory without asking:
+	// --dry-run used to block on this prompt before ever reaching the plan.
+	dir, err := dirprompt.ResolveDir(dirFlag, flags.Yes || flags.Preview(), ask)
 	if err != nil {
 		return err
 	}
@@ -275,30 +296,34 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 	return !yes && plan.HasConflicts()
 }
 
-// finishJSON is the --output-format=json analogue of finishSync. The
-// plan is always emitted; if neither --dry-run nor --diff is set and
-// the plan does not require explicit confirmation, an Execute runs
-// and the Result is emitted as a second JSON document. Conflicts
-// without --yes are treated like the human-path quit branch: the
-// plan is emitted and no Execute is run, so callers can inspect the
-// plan and re-invoke with --yes if they want to proceed.
+// finishJSON is the --output-format=json analogue of finishSync. It emits
+// exactly one JSON document: the plan at the top level and, when a
+// version-writing Execute runs, its result under a "result" key. Emitting the
+// plan and the result as two concatenated documents broke every consumer's
+// json.loads (RAPTOR-19348).
+//
+// An Execute runs only when neither preview mode is set, the plan is non-empty,
+// and it does not require explicit confirmation. Conflicts without --yes are
+// treated like the human-path quit branch: the plan is emitted and no Execute
+// is run, so callers can inspect it and re-invoke with --yes to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
-	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != ""); err != nil {
-		return err
+	locked := engine.LockedNotice() != ""
+
+	if flags.Preview() || plan.IsEmpty() || shouldPromptConflicts(plan, flags.Yes) {
+		return display.RenderSyncJSON(out, plan, nil, locked)
 	}
 
-	if flags.DryRun || flags.Diff || plan.IsEmpty() {
-		return nil
-	}
-
-	if shouldPromptConflicts(plan, flags.Yes) {
-		return nil
-	}
-
+	// The document is written only after Execute succeeds, so a failed sync
+	// leaves stdout empty and reports the error on stderr with a non-zero exit.
+	// This differs from the old two-document output, which emitted the plan
+	// before Execute and so left a plan on stdout even when the sync failed:
+	// with a single document, stdout carries a result only when there is one,
+	// and a consumer keys off the exit status rather than parsing a document
+	// that describes what was attempted rather than what happened.
 	result, err := engine.Execute(plan)
 	if err != nil {
 		return err
 	}
 
-	return display.RenderResultJSON(out, result)
+	return display.RenderSyncJSON(out, plan, result, locked)
 }
