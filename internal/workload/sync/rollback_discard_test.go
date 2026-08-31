@@ -183,7 +183,11 @@ func assertNoRollbackDir(t *testing.T, rollDir string) {
 // main regression: SaveConfig fails AFTER SaveManifest advanced the manifest.
 // The rollback dir must already be gone (discarded at Phase 6 entry), and the
 // next run must reconcile from the remote without resurrecting b.py's
-// pre-sync bytes as a false LOCAL_MODIFIED upload.
+// pre-sync bytes as a false LOCAL_MODIFIED upload. Every leg of the next-run
+// half drives the production entry point Run(); config convergence — the
+// self-healing of the manifest-ahead-of-config asymmetry — is asserted only
+// through the sync after that, which has real work to do, because Run
+// short-circuits empty plans before Execute and Phase 6 never runs on them.
 //
 // Fulfills VAL-ROLLBACK-001 (SaveConfig-failure leg) and VAL-ROLLBACK-002.
 func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testing.T) {
@@ -277,8 +281,22 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 
 	t.Cleanup(func() { _ = e2.Close() })
 
-	plan2, err := e2.Plan()
+	// The next sync goes through Run() — the production entry point, where
+	// the plan and the execute decision both live. The fake's server state
+	// is AllFiles on the version this sync's apply created, so BASE (the
+	// advanced manifest) == REMOTE and the disk matches both: the honest
+	// plan is empty. What must still happen is the round-trip — config
+	// still names the old version, so drift was detected and the real
+	// remote fetched, no silent fast path. What must NOT happen is a false
+	// upload for the rollback-covered path, or Execute: Run short-circuits
+	// empty plans before Execute, so Phase 6 never runs on this sync. No
+	// production caller reaches Execute with an empty plan, so a test that
+	// forced one there would assert a convergence path that cannot happen;
+	// convergence is asserted below through the only production path that
+	// reaches it — a subsequent sync with real work.
+	result2, err := e2.Run()
 	require.NoError(t, err)
+	require.NotNil(t, result2)
 
 	// No stale restore: with the rollback discarded at entry, Phase 0 has
 	// nothing to resurrect. Pre-fix, this is true AND b.py has been rolled
@@ -286,27 +304,95 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 	assert.False(t, e2.StaleRollbackRestored(),
 		"the next run must not restore a stale rollback — the rollback dir was discarded at Phase 6 entry")
 
-	// The plan must not contain false LOCAL_MODIFIED / LOCAL_ADDED uploads
-	// for the rollback-covered paths. b.py is the covered path here: its
-	// manifest entry (advanced) matches the remote, so there is nothing to
-	// upload. Pre-fix, the resurrected pre-sync bytes are classified as
-	// LOCAL_MODIFIED and silently re-uploaded over the remote.
-	assert.Empty(t, plan2.Uploads,
-		"the next run must not upload anything for rollback-covered paths — got %v", plan2.Uploads)
-	assert.True(t, plan2.IsEmpty(),
+	// Drift was detected (config names the old version, the artifact the
+	// new one): AllFiles was fetched, not fast-pathed.
+	assert.Equal(t, 1, fake2.AllFilesCalls(),
+		"drift must trigger an AllFiles round-trip, not the fast path")
+
+	// The plan Run computed must not contain false LOCAL_MODIFIED /
+	// LOCAL_ADDED uploads for the rollback-covered paths. b.py is the
+	// covered path here: its manifest entry (advanced) matches the remote,
+	// so there is nothing to upload. Pre-fix, the resurrected pre-sync bytes
+	// are classified as LOCAL_MODIFIED and silently re-uploaded over the
+	// remote.
+	assert.Empty(t, e2.plan.Uploads,
+		"the next run must not upload anything for rollback-covered paths — got %v", e2.plan.Uploads)
+	assert.True(t, e2.plan.IsEmpty(),
 		"the next run's plan must reconcile from the remote and be empty")
 
-	// Executing the (empty) plan runs Phase 6, which converges config to the
-	// version the manifest already records — the self-healing direction.
-	_, err = e2.Execute(plan2)
+	// Run returned WITHOUT executing. The empty-plan short-circuit fires
+	// before Execute, so no upload-side call was issued at all.
+	assert.Equal(t, 0, fake2.CreateStageCalls(),
+		"the empty-plan sync must not stage anything — Run returns before Execute")
+	assert.Equal(t, 0, fake2.UploadToStageCalls(),
+		"the empty-plan sync must not upload anything — Run returns before Execute")
+	assert.Equal(t, 0, fake2.ApplyStageCalls(),
+		"the empty-plan sync must not apply anything — Run returns before Execute")
+
+	assert.Empty(t, result2.NewVersion,
+		"the empty-plan run creates no new version — Phase 6 never ran")
+
+	// Phase 6 never ran, so config.json still holds the pre-sync version
+	// while the manifest holds the advanced one. That asymmetry is the safe
+	// one: the version mismatch makes every later sync detect drift and
+	// fetch the real remote, so the window self-heals at the first sync
+	// with actual work — which is what the leg below drives.
+	stillStaleCfg, err := wapi.LoadConfig(s.dir)
 	require.NoError(t, err)
 
+	require.NotNil(t, stillStaleCfg.LastSyncedVersionID)
+	assert.Equal(t, oldVersion, *stillStaleCfg.LastSyncedVersionID,
+		"config must still hold the pre-sync version — Run short-circuits the empty plan, so Phase 6 never runs")
+
+	// --- Convergence needs a sync with real work ---
+
+	// Only a plan with actual work makes Run reach Execute, and only the
+	// Phase 6 reached that way converges config. Modify a.py — NOT b.py:
+	// b.py is the rollback-covered path whose absence from every upload plan
+	// is this test's core claim, so the real-work leg must leave it
+	// untouched and prove it is still not uploaded alongside genuine work.
+	realWorkA := "AAAA-real-work\n"
+
+	modifyFile(t, s.dir, "a.py", realWorkA)
+
+	e3, err := newWithDeps(s.dir, Options{Yes: true}, Deps{
+		Files: fake2,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, catalogID, newVersion), nil
+			},
+			PatchFn: func(_, _, _ string) error { return nil },
+		},
+		Now: time.Now,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e3.Close() })
+
+	result3, err := e3.Run()
+	require.NoError(t, err)
+	require.NotNil(t, result3)
+
+	// a.py is the one real upload; b.py must STILL be absent — the
+	// rollback-covered path produces no false upload even in a sync that
+	// genuinely has work to do.
+	require.Len(t, e3.plan.Uploads, 1,
+		"the modified a.py must be the one real upload — b.py must not appear")
+	assert.Equal(t, "a.py", e3.plan.Uploads[0].Path)
+	assert.Equal(t, 1, result3.UploadedCount,
+		"the real-work sync must report the upload it performed")
+	assert.Equal(t, 1, fake2.ApplyStageCalls(),
+		"the real-work sync must execute its plan")
+
+	// Config must now converge to the version the manifest already records —
+	// the honest self-healing path: a sync with real work through Run(),
+	// never a forced Execute on an empty plan.
 	convergedCfg, err := wapi.LoadConfig(s.dir)
 	require.NoError(t, err)
 
 	require.NotNil(t, convergedCfg.LastSyncedVersionID)
 	assert.Equal(t, newVersion, *convergedCfg.LastSyncedVersionID,
-		"config must converge to the manifest's version on the next run")
+		"config must converge to the manifest's version once a sync has real work")
 
 	// Three-way consistency after convergence: manifest hash == server
 	// checksum for every file.
