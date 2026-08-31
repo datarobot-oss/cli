@@ -123,7 +123,7 @@ func TestResolve(t *testing.T) {
 		_, err := resolve(nil, project(t, "name: my-app\n"))
 		require.Error(t, err)
 		require.NotErrorIs(t, err, manifest.ErrNotFound)
-		assert.Contains(t, err.Error(), "names no workload yet")
+		assert.Contains(t, err.Error(), "specifies no workloadId yet")
 	})
 }
 

@@ -306,7 +306,8 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 	assert.Equal(t,
 		[]string{"guard", "create-artifact", "guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain"},
 		tr.steps, "the successor is locked after the last guard and before the swap")
-	assert.Contains(t, asked, "production")
+	assert.Contains(t, asked, "is on a locked version")
+	assert.NotContains(t, asked, "production", "why a version was locked is not something the CLI knows")
 	assert.Equal(t, "my-app", expect, "the name is what has to be typed")
 	assert.True(t, result.Locked)
 }
@@ -477,7 +478,8 @@ func TestRun_JSONOutputStillAsksBeforeRollingProduction(t *testing.T) {
 	})
 	require.Error(t, err, "the answer was no, so nothing may roll")
 
-	assert.Contains(t, asked, "production", "being unable to draw a wizard is not consent")
+	assert.Contains(t, asked, "is on a locked version", "being unable to draw a wizard is not consent")
+	assert.NotContains(t, asked, "production", "why a version was locked is not something the CLI knows")
 	assert.NotContains(t, tr.steps, "lock:art-2")
 	assert.NotContains(t, tr.steps, "replace:art-2")
 }
@@ -644,6 +646,10 @@ func TestRun_LockedProductionPromptDoesNotClaimAStoppedWorkloadIsRunning(t *test
 	assert.Contains(t, asked, "is on a locked version")
 	assert.Contains(t, asked, "this deploy starts it",
 		"that the run also switches the workload on is material to the answer")
+	assert.NotContains(t, asked, "production",
+		"a lock makes an artifact immutable; why it was taken is not something the CLI knows")
+	assert.Contains(t, asked, "will be locked too, permanently",
+		"permanence is stated of the lock; a bare \"this\" would point at the deploy one line above")
 	assert.Equal(t, []string{"guard"}, tr.steps,
 		"a no leaves the workload off and nothing minted; only the checks ahead of it ran")
 }
@@ -1068,7 +1074,7 @@ func TestRun_RollsABuiltProjectOffALockedVersion(t *testing.T) {
 	}, tr.steps)
 	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the link has to leave the locked version behind")
 	assert.True(t, result.Locked, "a locked version is replaced by a locked one")
-	assert.Contains(t, stderr, "the running version is locked, so a new one is created and locked to match",
+	assert.Contains(t, stderr, "the running version is locked, so a new one is created and permanently locked",
 		"a --yes run locks something without being asked to, and the plan has to say so")
 }
 

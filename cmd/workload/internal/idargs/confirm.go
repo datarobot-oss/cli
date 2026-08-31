@@ -41,12 +41,12 @@ func AddYesFlag(cmd *cobra.Command, usage string) {
 // EnvConsent says whether the non-interactive environment variable may stand
 // in for an answer.
 //
-// It may not when the target was named by a manifest rather than by the user
-// and the operation cannot be undone. That variable is set once in CI to keep
-// wizards from blocking a pipeline; letting it also mean "yes, delete whatever
-// the nearest manifest points at" turns a convenience into standing consent
-// for something nobody named. An explicit --yes is still accepted, because
-// that is typed for this command.
+// It may not when the target was specified in a manifest rather than on the
+// command line and the operation cannot be undone. That variable is set once in
+// CI to keep wizards from blocking a pipeline; letting it also mean "yes,
+// delete whatever the nearest manifest points at" turns a convenience into
+// standing consent for something nobody named. An explicit --yes is still
+// accepted, because that is typed for this command.
 type EnvConsent bool
 
 const (
@@ -58,8 +58,8 @@ const (
 // prompt is (false, nil) so the caller can exit 0 as a no-op.
 //
 // Whether to ask at all stays with the caller: `delete` always asks, while
-// `stop` and `start` ask only when the workload was named by a manifest rather
-// than by the user.
+// `stop` and `start` ask only when the workload was specified in a manifest
+// rather than on the command line.
 func Confirm(cmd *cobra.Command, question string, env EnvConsent) (bool, error) {
 	yesFlag, _ := cmd.Flags().GetBool(cli.YesFlagName)
 	if yesFlag {
@@ -111,11 +111,21 @@ func Confirm(cmd *cobra.Command, question string, env EnvConsent) (bool, error) 
 	return false, nil
 }
 
-// AmbientPrompt is the question a mutating command asks about a workload the
-// user did not name. It gives the manifest as well as the id, because an id
-// the reader has never seen is nothing to compare against.
-func AmbientPrompt(verb string, ref Ref) string {
-	return fmt.Sprintf("%s workload %s, named by %s? [y/N] ", verb, ref.ID, shortPath(ref.Path))
+// Prompt is the question a mutating command asks before it acts. consequence
+// is what agreeing costs, empty for a verb that can be undone.
+//
+// One skeleton for all three verbs, so they cannot come to ask about the same
+// kind of target in three shapes. The id is given whole, because an id the
+// reader has never seen is nothing to compare against, and Provenance says why
+// the question is being put rather than leaving that to be inferred. Both the
+// provenance and the consequence carry their own trailing space, so an absent
+// clause leaves no double space behind.
+func Prompt(verb string, ref Ref, consequence string) string {
+	if consequence != "" {
+		consequence += " "
+	}
+
+	return fmt.Sprintf("%s workload %s? %s%s[y/N] ", verb, ref.ID, ref.Provenance(), consequence)
 }
 
 // canAsk reports whether there is a terminal on both ends of the question.

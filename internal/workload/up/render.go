@@ -40,9 +40,9 @@ type Summary struct {
 	Status string
 }
 
-// shortIDLen is how much of an id is enough to recognise it. The platform's
-// ids are 24 hex characters and nobody reads past the first few; the full id
-// is in the JSON envelope for anything that needs to act on it.
+// shortIDLen is how much of an id is enough to label something with. The
+// platform's ids are 24 hex characters and nobody reads past the first few; the
+// full id is in the JSON envelope for anything that needs to act on it.
 const shortIDLen = 8
 
 // detailLimit caps how many individual changes a plan spells out. Past this
@@ -133,7 +133,12 @@ func header(s Summary, plan Plan) string {
 	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), state)
 }
 
-// shortID trims an id to something a person can compare at a glance.
+// shortID trims an id to something a person can take in at a glance.
+//
+// Only for an id the output is labelling, never for one the reader is being
+// asked to recognise. Comparing a bound id against what is in the manifest is
+// the check that catches a token resolving to a different instance or
+// organisation, and eight characters is not enough to do it with.
 func shortID(id string) string {
 	if len(id) <= shortIDLen {
 		return id
@@ -245,8 +250,11 @@ func createDetail(s Summary, plan Plan) string {
 	// being dropped, since the flow this most often follows produces both facts
 	// at once: a workload deleted outside the CLI leaves the binding stale and
 	// the artifact link exactly where it was.
+	// The id is printed whole: this is the line that separates a deleted
+	// workload from a run pointed at the wrong instance, and comparing it
+	// against what is in the file is the only way to know which happened.
 	line := fmt.Sprintf("%s will be created: %s is bound to %s, which no longer exists",
-		s.Name, manifest.FileName, shortID(plan.PriorWorkloadID))
+		s.Name, manifest.FileName, plan.PriorWorkloadID)
 
 	if !reusesLink(plan) {
 		return line
@@ -311,7 +319,7 @@ func lockLines(plan Plan) []string {
 	switch {
 	case plan.Locked:
 		return []string{entry("~", "lock",
-			"the running version is locked, so a new one is created and locked to match. Locking is permanent")}
+			"the running version is locked, so a new one is created and permanently locked to match")}
 
 	case plan.Code.LinkLocked:
 		return []string{entry("~", "lock",

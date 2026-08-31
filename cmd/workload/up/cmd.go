@@ -137,11 +137,11 @@ workload kind, a current version that was never built, and --force-build.
 Deploying onto a workload that already exists rolls it: a new version is made
 from the file and swapped in, the endpoint does not change, and the version
 already serving keeps serving until the new one is ready. When that version is
-locked, meaning production, an interactive run asks for the workload name to
-be typed back. A run with no terminal, or --yes, rolls without asking. Locking
-is one-way, so the new version is a new artifact rather than a change to the
-locked one, and it is locked to match. That is why a locked workload keeps
-deploying without --lock being passed again.
+locked, an interactive run asks for the workload name to be typed back. A run
+with no terminal, or --yes, rolls without asking. Locking is one-way, so the
+new version is a new artifact rather than a change to the locked one, and it is
+locked to match. That is why a locked workload keeps deploying without --lock
+being passed again.
 
 A change that moves only the sizing, such as a replica count or a resource
 allocation, is applied in place instead. Nothing is built and no version is
@@ -193,7 +193,7 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory; the manifest is searched upward from here.")
 	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
 		"Do not prompt. With no manifest this is an error rather than a wizard, "+
-			"and rolling a locked production version is not confirmed.")
+			"and rolling a locked version is not confirmed.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,

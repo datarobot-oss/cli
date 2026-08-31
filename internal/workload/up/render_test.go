@@ -161,8 +161,8 @@ func TestRender_RecreateNamesTheDeadBinding(t *testing.T) {
 		Code:            CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "+ workload   my-app will be created: .datarobot.yaml is bound to 68b0c1d2, "+
-		"which no longer exists")
+	assert.Contains(t, out, "+ workload   my-app will be created: "+
+		".datarobot.yaml is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.NotContains(t, out, "with its first artifact",
 		"this is a replacement for something that existed, not a first deploy")
 }
@@ -465,7 +465,7 @@ func TestRender_RecreateOnALinkedProjectSaysBoth(t *testing.T) {
 		Code:            CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.Contains(t, out, "it comes up on the artifact this project is linked to")
 }
 
@@ -479,7 +479,7 @@ func TestRender_RecreateOnAPublishedImageMentionsNoLink(t *testing.T) {
 		Code:            CodeChange{Applies: false},
 	})
 
-	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.NotContains(t, out, "linked to")
 }
 
@@ -512,7 +512,7 @@ func TestRender_RecreateOnALockedLinkClaimsNoReuse(t *testing.T) {
 		Code:            CodeChange{Applies: true, FirstDeploy: true, LinkLocked: true},
 	})
 
-	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.NotContains(t, out, "it comes up on the artifact this project is linked to")
 }
 

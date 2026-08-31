@@ -22,10 +22,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -199,14 +199,13 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		return err
 	}
 
-	dir := f.dir
-	if dir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("cannot determine the current directory: %w", err)
-		}
-
-		dir = cwd
+	// Shared with `up` and `delete` so one typo is refused one way. Without it
+	// this command walked into a directory that is not there and reported the
+	// missing Dockerfile instead, three messages after the one fact that
+	// explains them.
+	dir, err := idargs.ProjectDir(f.dir)
+	if err != nil {
+		return err
 	}
 
 	// JSON output implies non-interactive: a wizard on stderr alongside a
