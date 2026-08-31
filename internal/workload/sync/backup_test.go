@@ -109,6 +109,55 @@ func TestBackupOverwrittenLocals_BacksUpEveryDestructiveAction(t *testing.T) {
 	assert.Equal(t, "mine\n", backups["conf.py.LOCAL.20260102T030405Z"])
 }
 
+// End-to-end through phase5Execute: a conflict and a REMOTE_MODIFIED download
+// together. Each local file is preserved as *.LOCAL and the remote bytes land
+// at the freed original path — the backup-rename → download-at-freed-path
+// interaction the unit tests only cover in pieces (RAPTOR-19348 review).
+func TestPhase5Execute_ConflictAndDownloadBackupThenPullRemote(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "art-1"}))
+
+	writeLocal(t, dir, "app.py", "local app\n")   // REMOTE_MODIFIED
+	writeLocal(t, dir, "conf.py", "local conf\n") // CONFLICT
+
+	catalog := "cat-1"
+	e := &Engine{
+		projectDir: dir,
+		nowFn:      staticNow,
+		artifact:   draftArtifact("art-1", "", ""),
+		config:     wapi.Config{CatalogID: &catalog},
+		remoteVer:  "ver-1",
+		files: &downloadFake{content: map[string]string{
+			"app.py":  "remote app\n",
+			"conf.py": "remote conf\n",
+		}},
+		plan: &SyncPlan{
+			Downloads: []FileAction{{Path: "app.py", Action: ActDownloadModify}},
+			Conflicts: []FileAction{{Path: "conf.py", Classification: ClsConflict, Action: ActConflictCopy}},
+		},
+	}
+
+	require.NoError(t, phase5Execute(e))
+
+	// Remote bytes landed at the original paths...
+	for path, want := range map[string]string{"app.py": "remote app\n", "conf.py": "remote conf\n"} {
+		got, err := os.ReadFile(filepath.Join(dir, path))
+		require.NoError(t, err)
+		assert.Equal(t, want, string(got), "remote won at %s", path)
+	}
+
+	// ...and the local versions survive as *.LOCAL beside them.
+	stamp := staticNow().UTC().Format(backupStampFormat)
+
+	for path, want := range map[string]string{"app.py": "local app\n", "conf.py": "local conf\n"} {
+		got, err := os.ReadFile(filepath.Join(dir, path+".LOCAL."+stamp))
+		require.NoError(t, err, "a .LOCAL backup exists for %s", path)
+		assert.Equal(t, want, string(got))
+	}
+
+	assert.Len(t, e.localBackups, 2, "Result.ConflictCopies is populated from these")
+}
+
 // A REMOTE_ADDED path can still hold a file the local manifest never saw (a
 // .drignore'd file, a symlink the walk skipped). It gets no .LOCAL copy, so
 // applyDownloads must back it up for rollback: a failed sync's Restore then puts
