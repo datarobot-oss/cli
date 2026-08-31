@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -129,6 +130,37 @@ func TestFakeServerState_StagePathMergeSemantics(t *testing.T) {
 
 	assert.Contains(t, all, "d.py", "new file must be in the version")
 	assert.Equal(t, sha256Hex([]byte("d")), all["d.py"].Hash)
+}
+
+// TestWithVersionCopiesTheSeed pins that withVersion copies the caller's map
+// into server state: mutating the map after handing it over must not change
+// what the fake serves. The fake used to alias the caller's map directly, so
+// a reused or later-mutated seed silently rewrote an already-seeded version
+// behind the test's back — the kind of cross-test state leak -shuffle=on is
+// meant to surface.
+func TestWithVersionCopiesTheSeed(t *testing.T) {
+	seed := map[string]filesapi.FileMeta{
+		"a.py": {Hash: "hash-a", Size: 1},
+	}
+
+	fake := (&fakeFilesClient{}).withVersion("cid-1", "ver-1", seed)
+
+	// Mutate the caller's map after handing it over; server state must not
+	// follow.
+	seed["a.py"] = filesapi.FileMeta{Hash: "hash-mutated", Size: 99}
+	seed["injected.py"] = filesapi.FileMeta{Hash: "hash-injected", Size: 5}
+
+	all, err := fake.AllFiles("cid-1", "ver-1")
+	require.NoError(t, err)
+
+	fm, ok := all["a.py"]
+	require.True(t, ok, "seeded path must remain present")
+
+	assert.Equal(t, "hash-a", fm.Hash, "a later mutation of the caller's map must not reach server state")
+	assert.Equal(t, int64(1), fm.Size, "a later mutation of the caller's map must not reach server state")
+
+	assert.NotContains(t, all, "injected.py",
+		"paths added to the caller's map after the call must not appear in server state")
 }
 
 // TestFakeServerState_StagePathReplacesExisting verifies that uploading a file
@@ -291,7 +323,8 @@ func TestFakeNumFiles_Override(t *testing.T) {
 }
 
 // TestFakeCallCounters verifies that per-method call counters are incremented
-// correctly for stage-create, upload-to-stage, apply-stage, and AllFiles.
+// correctly for stage-create, upload-to-stage, apply-stage, AllFiles, and
+// DownloadFile.
 func TestFakeCallCounters(t *testing.T) {
 	fake := &fakeFilesClient{
 		catalogID: "cid-1",
@@ -305,6 +338,7 @@ func TestFakeCallCounters(t *testing.T) {
 	assert.Equal(t, 0, fake.ApplyStageCalls())
 	assert.Equal(t, 0, fake.AllFilesCalls())
 	assert.Equal(t, 0, fake.UploadFromZipCalls())
+	assert.Equal(t, 0, fake.DownloadFileCalls())
 
 	stage, err := fake.CreateStage(fake.catalogID)
 	require.NoError(t, err)
@@ -331,6 +365,14 @@ func TestFakeCallCounters(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, fake.AllFilesCalls())
+
+	var buf bytes.Buffer
+
+	_, _, err = fake.DownloadFile(fake.catalogID, "ver-1", "filea.py", &buf)
+	require.NoError(t, err)
+	assert.Equal(t, "x", buf.String(), "the downloaded bytes must be what was staged")
+
+	assert.Equal(t, 1, fake.DownloadFileCalls())
 }
 
 // TestFakeFaultInjection_DropPath verifies that the dropPathFromApply hook
@@ -513,4 +555,349 @@ func TestFakeRaceFree_ConcurrentUploads(t *testing.T) {
 		expected := sha256Hex([]byte(strings.Repeat("x", i+1)))
 		assert.Equal(t, expected, all[p].Hash, "checksum for %s", p)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Download modelling
+// ---------------------------------------------------------------------------
+
+// TestFakeDownload_ServesRecordedBytes_StagePath verifies that DownloadFile
+// returns byte-for-byte what the stage path recorded for a path at a
+// version, so a download test can assert "the right bytes were served"
+// rather than merely "no error was returned".
+func TestFakeDownload_ServesRecordedBytes_StagePath(t *testing.T) {
+	files := map[string][]byte{
+		"app.py":          []byte("print('hello')\n"),
+		"utils/helper.py": []byte("def help(): pass\n"),
+	}
+
+	fake := &fakeFilesClient{
+		catalogID: "cid-1",
+		stageID:   "stage-1",
+		versionID: "ver-1",
+	}
+
+	stageUpload(t, fake, files)
+
+	for path, want := range files {
+		var buf bytes.Buffer
+
+		_, n, err := fake.DownloadFile(fake.catalogID, "ver-1", path, &buf)
+		require.NoError(t, err, "download %s", path)
+
+		assert.Equal(t, string(want), buf.String(), "downloaded bytes for %s", path)
+		assert.Equal(t, int64(len(want)), n, "downloaded byte count for %s", path)
+	}
+
+	assert.Equal(t, len(files), fake.DownloadFileCalls())
+}
+
+// TestFakeDownload_ServesRecordedBytes_ZipPath verifies that the zip upload
+// path also records content, so downloads work for zip-synced catalogs too.
+func TestFakeDownload_ServesRecordedBytes_ZipPath(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"app.py":  "print('hi')\n",
+		"main.py": "if __name__ == '__main__': pass\n",
+	})
+
+	plan := &SyncPlan{
+		Uploads: []FileAction{
+			{Path: "app.py", LocalSize: 11},
+			{Path: "main.py", LocalSize: 34},
+		},
+	}
+
+	zipPath, _, err := buildZip(dir, plan.Uploads)
+	require.NoError(t, err)
+
+	zipData, err := os.ReadFile(zipPath)
+	require.NoError(t, err)
+
+	fake := &fakeFilesClient{
+		catalogID: "cid-zip",
+		versionID: "ver-zip",
+	}
+
+	_, err = fake.UploadFromZipNew("wapi-sync.zip", int64(len(zipData)), bytes.NewReader(zipData))
+	require.NoError(t, err)
+
+	for _, fa := range plan.Uploads {
+		want, err := os.ReadFile(filepath.Join(dir, fa.Path))
+		require.NoError(t, err)
+
+		var buf bytes.Buffer
+
+		_, n, err := fake.DownloadFile(fake.catalogID, "ver-zip", fa.Path, &buf)
+		require.NoError(t, err, "download %s", fa.Path)
+
+		assert.Equal(t, string(want), buf.String(), "zip-path downloaded bytes for %s", fa.Path)
+		assert.Equal(t, int64(len(want)), n, "zip-path downloaded byte count for %s", fa.Path)
+	}
+}
+
+// TestFakeDownload_WithVersionContentConsistentWithAllFiles verifies the
+// self-consistency the whole fake rests on: a version seeded through
+// withVersionContent advertises via AllFiles exactly the checksums its
+// recorded bytes hash to, and DownloadFile serves exactly those bytes. A
+// fake whose advertised checksums disagree with its served bytes would make
+// every checksum-verification test vacuous.
+func TestFakeDownload_WithVersionContentConsistentWithAllFiles(t *testing.T) {
+	contents := map[string][]byte{
+		"app.py": []byte("server holds this\n"),
+		"b.py":   []byte("and this"),
+	}
+
+	fake := (&fakeFilesClient{
+		catalogID: "cid-1",
+		versionID: "ver-1",
+	}).withVersionContent("cid-1", "ver-1", contents)
+
+	all, err := fake.AllFiles(fake.catalogID, "ver-1")
+	require.NoError(t, err)
+	assert.Len(t, all, len(contents))
+
+	for path, want := range contents {
+		fm, ok := all[path]
+		require.True(t, ok, "path %s missing from AllFiles", path)
+
+		assert.Equal(t, sha256Hex(want), fm.Hash, "advertised checksum for %s must be the bytes' hash", path)
+		assert.Equal(t, int64(len(want)), fm.Size, "advertised size for %s", path)
+
+		var buf bytes.Buffer
+
+		_, _, err := fake.DownloadFile(fake.catalogID, "ver-1", path, &buf)
+		require.NoError(t, err, "download %s", path)
+
+		assert.Equal(t, string(want), buf.String(), "served bytes for %s must match the advertised content", path)
+	}
+}
+
+// TestFakeDownload_UnknownPathOrVersionErrors pins the faithful-404
+// behaviour: an unknown version, an unknown path in a known version, and a
+// hash-only withVersion seed (metadata without recorded content) all error
+// rather than serving empty bytes that would hash like the empty string.
+func TestFakeDownload_UnknownPathOrVersionErrors(t *testing.T) {
+	fake := (&fakeFilesClient{
+		catalogID: "cid-1",
+		versionID: "ver-1",
+	}).withVersionContent("cid-1", "ver-1", map[string][]byte{"a.py": []byte("a")})
+
+	t.Run("unknown version", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		_, _, err := fake.DownloadFile(fake.catalogID, "ver-missing", "a.py", &buf)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+
+	t.Run("unknown path in known version", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		_, _, err := fake.DownloadFile(fake.catalogID, "ver-1", "missing.py", &buf)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not in version")
+	})
+
+	t.Run("hash-only seed has no recorded content", func(t *testing.T) {
+		hashOnly := (&fakeFilesClient{
+			catalogID: "cid-2",
+			versionID: "ver-2",
+		}).withVersion("cid-2", "ver-2", map[string]filesapi.FileMeta{
+			"a.py": {Hash: sha256Hex([]byte("a")), Size: 1},
+		})
+
+		var buf bytes.Buffer
+
+		_, _, err := hashOnly.DownloadFile("cid-2", "ver-2", "a.py", &buf)
+		require.Error(t, err, "a version seeded with hashes only has no bytes to serve")
+		assert.Contains(t, err.Error(), "no recorded content")
+	})
+}
+
+// TestFakeDownload_ContentCarriedAcrossStageMerge verifies that applying a
+// stage over an existing version carries the prior version's recorded
+// content into the new version, so files the sync did not touch remain
+// downloadable — matching the real API's REPLACE-merge semantics.
+func TestFakeDownload_ContentCarriedAcrossStageMerge(t *testing.T) {
+	prior := map[string][]byte{
+		"a.py": []byte("alpha"),
+		"b.py": []byte("beta"),
+	}
+
+	fake := (&fakeFilesClient{
+		catalogID: "cid-1",
+		stageID:   "stage-1",
+		versionID: "ver-2",
+	}).withVersionContent("cid-1", "ver-1", prior)
+
+	stageUpload(t, fake, map[string][]byte{"c.py": []byte("gamma")})
+
+	all, err := fake.AllFiles(fake.catalogID, "ver-2")
+	require.NoError(t, err)
+	assert.Len(t, all, 3, "merge must keep prior paths and add the new one")
+
+	for path, want := range map[string][]byte{
+		"a.py": prior["a.py"],
+		"b.py": prior["b.py"],
+		"c.py": []byte("gamma"),
+	} {
+		var buf bytes.Buffer
+
+		_, _, err := fake.DownloadFile(fake.catalogID, "ver-2", path, &buf)
+		require.NoError(t, err, "download %s from merged version", path)
+
+		assert.Equal(t, string(want), buf.String(), "carried content for %s", path)
+	}
+}
+
+// TestFakeDownload_ContentCarriedAcrossDelete verifies that a remote delete
+// produces a new version whose surviving paths stay downloadable and whose
+// deleted path is gone.
+func TestFakeDownload_ContentCarriedAcrossDelete(t *testing.T) {
+	fake := (&fakeFilesClient{
+		catalogID: "cid-1",
+		versionID: "ver-1",
+	}).withVersionContent("cid-1", "ver-1", map[string][]byte{
+		"a.py": []byte("alpha"),
+		"b.py": []byte("beta"),
+	})
+
+	resp, err := fake.DeleteFiles("cid-1", []string{"a.py"})
+	require.NoError(t, err)
+
+	newVer := resp.CatalogVersionID
+	require.NotEmpty(t, newVer)
+
+	var buf bytes.Buffer
+
+	_, _, err = fake.DownloadFile("cid-1", newVer, "b.py", &buf)
+	require.NoError(t, err, "surviving path must stay downloadable after a delete")
+	assert.Equal(t, "beta", buf.String())
+
+	_, _, err = fake.DownloadFile("cid-1", newVer, "a.py", &buf)
+	require.Error(t, err, "deleted path must no longer be downloadable")
+}
+
+// TestFakeFaultInjection_FailDownload verifies the fail-download hook:
+// without it the same call succeeds (control), with it DownloadFile errors
+// and the call is still counted.
+func TestFakeFaultInjection_FailDownload(t *testing.T) {
+	seed := func() *fakeFilesClient {
+		return (&fakeFilesClient{
+			catalogID: "cid-1",
+			versionID: "ver-1",
+		}).withVersionContent("cid-1", "ver-1", map[string][]byte{
+			"app.py": []byte("content"),
+		})
+	}
+
+	// Control: no fault, download succeeds.
+	plain := seed()
+
+	var buf bytes.Buffer
+
+	_, _, err := plain.DownloadFile("cid-1", "ver-1", "app.py", &buf)
+	require.NoError(t, err, "without the fault the download must succeed")
+	assert.Equal(t, 1, plain.DownloadFileCalls())
+
+	// With the fault: the download fails and still counts as a call.
+	faulty := seed().withFailDownload("app.py")
+
+	_, _, err = faulty.DownloadFile("cid-1", "ver-1", "app.py", &buf)
+	require.Error(t, err, "the faulted download must fail")
+	assert.Contains(t, err.Error(), "injected failure")
+	assert.Equal(t, 1, faulty.DownloadFileCalls(), "a faulted call still counts")
+}
+
+// TestFakeFaultInjection_CorruptDownload verifies the corrupt-download
+// hook: the served bytes keep their length (so a size check passes) but
+// hash to something other than the advertised checksum, which is what lets
+// a test target the client-side checksum verification specifically. The
+// control pins that the unhooked fake serves bytes matching the advertised
+// checksum.
+func TestFakeFaultInjection_CorruptDownload(t *testing.T) {
+	content := []byte("genuine bytes")
+
+	seed := func() *fakeFilesClient {
+		return (&fakeFilesClient{
+			catalogID: "cid-1",
+			versionID: "ver-1",
+		}).withVersionContent("cid-1", "ver-1", map[string][]byte{
+			"app.py": content,
+		})
+	}
+
+	// Control: unhooked fake serves bytes whose hash matches AllFiles'.
+	plain := seed()
+
+	var plainBuf bytes.Buffer
+
+	_, _, err := plain.DownloadFile("cid-1", "ver-1", "app.py", &plainBuf)
+	require.NoError(t, err)
+	assert.Equal(t, sha256Hex(content), sha256Hex(plainBuf.Bytes()),
+		"without the fault the served bytes must match the advertised checksum")
+
+	// With the fault: same length, different bytes, different hash.
+	faulty := seed().withCorruptDownload("app.py")
+
+	var corruptBuf bytes.Buffer
+
+	_, n, err := faulty.DownloadFile("cid-1", "ver-1", "app.py", &corruptBuf)
+	require.NoError(t, err, "the corruption hook alters bytes, not the outcome")
+
+	all, err := faulty.AllFiles("cid-1", "ver-1")
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(len(content)), n, "corrupt bytes must keep the advertised size")
+	assert.Equal(t, len(content), corruptBuf.Len(), "corrupt bytes must be the same length")
+	assert.NotEqual(t, content, corruptBuf.Bytes(), "corrupt bytes must differ from the recorded content")
+	assert.NotEqual(t, all["app.py"].Hash, sha256Hex(corruptBuf.Bytes()),
+		"corrupt bytes must hash to something other than the advertised checksum")
+}
+
+// TestFakeRaceFree_ConcurrentDownloads verifies the download path is
+// race-free under the same concurrency the real downloader uses
+// (DownloadConcurrency = 4 workers over more files). Run with -race.
+func TestFakeRaceFree_ConcurrentDownloads(t *testing.T) {
+	const numFiles = 8
+
+	contents := make(map[string][]byte, numFiles)
+
+	for i := 0; i < numFiles; i++ {
+		contents["file"+string(rune('a'+i))+".py"] = []byte(strings.Repeat("x", i+1))
+	}
+
+	fake := (&fakeFilesClient{
+		catalogID: "cid-1",
+		versionID: "ver-1",
+	}).withVersionContent("cid-1", "ver-1", contents)
+
+	paths := make([]string, 0, numFiles)
+	for p := range contents {
+		paths = append(paths, p)
+	}
+
+	sort.Strings(paths)
+
+	var wg sync.WaitGroup
+
+	for _, path := range paths {
+		want := contents[path]
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			var buf bytes.Buffer
+
+			_, _, err := fake.DownloadFile("cid-1", "ver-1", path, &buf)
+			assert.NoError(t, err)
+			assert.Equal(t, string(want), buf.String(), "concurrent download bytes for %s", path)
+		}()
+	}
+
+	wg.Wait()
+
+	assert.Equal(t, numFiles, fake.DownloadFileCalls())
 }

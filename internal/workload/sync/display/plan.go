@@ -23,7 +23,10 @@ import (
 )
 
 // PrintPlan writes the human-readable sync plan to w. Empty plans print
-// "Up to date." and return.
+// "Up to date." and return — with one exception an applying run routes
+// through PrintEmptyPlanRepair instead, because a plan that is empty only
+// because a --verify run is repairing the manifest must not read as a
+// project with nothing wrong.
 func PrintPlan(w io.Writer, plan *sync.SyncPlan) error {
 	if plan == nil || plan.IsEmpty() {
 		_, err := fmt.Fprintln(w, "Up to date.")
@@ -49,6 +52,18 @@ func PrintPlan(w io.Writer, plan *sync.SyncPlan) error {
 	}
 
 	return nil
+}
+
+// PrintEmptyPlanRepair writes the one-line stdout account of an applying
+// run whose plan is empty but whose --verify findings force the manifest
+// repair: the plan has no rows to apply, and the repair happens as the
+// state write that rewrites manifest.json from the server's state. Printing
+// the ordinary "Up to date." immediately before that rewrite would claim
+// nothing is being fixed.
+func PrintEmptyPlanRepair(w io.Writer) error {
+	_, err := fmt.Fprintln(w, "The plan is empty, but manifest.json is being rewritten from the server's state to repair the divergences found by --verify.")
+
+	return err
 }
 
 func printGroup(w io.Writer, header string, files []sync.FileAction, marker func(sync.FileAction) string) error {

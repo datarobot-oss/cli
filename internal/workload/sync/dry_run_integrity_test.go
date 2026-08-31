@@ -109,11 +109,16 @@ func TestDryRun_LeavesStateUntouched(t *testing.T) {
 	require.NotNil(t, result, "dry-run must return a result")
 
 	// The plan must be non-empty — the positive control that proves the
-	// zero-call assertions below are not vacuously true.
-	plan, planErr := e.Plan()
-	require.NoError(t, planErr)
+	// zero-call assertions below are not vacuously true. Read the plan Run
+	// already computed (Plan stores it on the engine) rather than re-running
+	// Plan() after the fact: a second Plan is a full re-execution of phases
+	// 0-4 and could itself issue calls or touch state, which would silently
+	// couple the zero-call assertions to plan-phase purity. Reading the
+	// stored plan is passive and keeps the control independent of that
+	// assumption.
+	require.NotNil(t, e.plan, "Run must have computed a plan for the control to mean anything")
 
-	assert.False(t, plan.IsEmpty(),
+	assert.False(t, e.plan.IsEmpty(),
 		"plan must be non-empty (a file was modified) for the zero-call assertions to be meaningful")
 
 	// manifest.json content must be byte-identical.

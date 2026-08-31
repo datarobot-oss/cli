@@ -33,6 +33,13 @@ import (
 // server. Unlike a shallow stub, it records per-path content and its SHA-256
 // so tests can assert "what the server ended up holding" after an upload.
 //
+// Downloads are served from the same model: DownloadFile returns exactly the
+// bytes recorded for the requested path at the requested version, so a test
+// can assert the right bytes were pulled — not merely that no error was
+// returned. Versions carry content only when it was actually recorded (via
+// uploads or the withVersionContent builder); hash-only seeds honestly
+// report nothing to download.
+//
 // Server state is modeled as versions: each ApplyStage (or zip upload) creates
 // a new version whose files are the REPLACE-merge of the staged paths into the
 // prior version. AllFiles serves exactly what was recorded, keyed by version,
@@ -65,6 +72,15 @@ type fakeFilesClient struct {
 	// Current staging area: path → content bytes (stage path only).
 	stagedFiles map[string][]byte
 
+	// Content store: versionID → (path → the exact bytes recorded for that
+	// path in that version). DownloadFile serves from this map so a download
+	// returns byte-for-byte what an upload (or a withVersionContent seed)
+	// recorded, and AllFiles' checksums stay consistent with those bytes.
+	// Versions seeded through the hash-only withVersion builder carry no
+	// content, and DownloadFile reports them as not found rather than
+	// inventing bytes the server never held.
+	versionContents map[string]map[string][]byte
+
 	// Backward-compatible fields: recorded uploaded content and deleted
 	// paths, kept so existing tests that inspect them still work.
 	uploadedFiles map[string][]byte
@@ -77,16 +93,12 @@ type fakeFilesClient struct {
 	applyStageCalls    int
 	uploadFromZipCalls int
 	allFilesCalls      int
+	downloadFileCalls  int
 
 	// Configurable AllFiles page size. 0 = return all at once (no pagination
 	// simulation). When > 0, AllFiles internally splits files into pages and
 	// follows next links, mirroring the real client's pagination behavior.
 	allFilesPageSize int
-
-	// Downloadable content: versionID → (path → bytes served by DownloadFile).
-	// Opt-in: a test that never registers content gets the loud "not
-	// expected" failure, so unexpected download calls stay visible.
-	downloadContent map[string]map[string][]byte
 
 	// Fault-injection hooks (all opt-in; zero values are no-ops).
 	dropPathFromApply  string // omit this path from the resulting version after apply
@@ -95,12 +107,30 @@ type fakeFilesClient struct {
 	failNthUpload      int    // fail the Nth UploadToStage call (1-indexed; 0 = disabled)
 	failApplyStage     bool   // ApplyStage returns error after staging succeeded
 	numFilesOverride   *int   // if non-nil, ApplyStage returns this numFiles; otherwise real count
+
+	// Version-scoped checksum fault: served only when AllFiles is called
+	// for this version (see withWrongChecksumForVersion).
+	wrongChecksumForVersion *wrongChecksumFault
+
+	// Download faults, keyed by path. failDownloadPath makes DownloadFile
+	// return an error for that path; corruptDownloadPath makes it serve
+	// bytes whose SHA-256 differs from the advertised checksum (same
+	// length, so the size check passes and the checksum check is what
+	// catches the corruption).
+	failDownloadPath    string
+	corruptDownloadPath string
 }
 
 // --- Builder methods for test setup (chainable, mutex-safe) ---
 
 // withVersion pre-populates a version in the fake's server state. Useful for
 // testing REPLACE-merge semantics without going through the upload flow.
+//
+// The seed map is copied, not aliased: a caller that reuses or mutates its
+// map after handing it over must not silently rewrite server state mid-test.
+// (The fake used to store the caller's map directly, so a later mutation
+// changed an already-seeded version behind the test's back.
+// TestWithVersionCopiesTheSeed pins the copy.)
 func (f *fakeFilesClient) withVersion(catalogID, versionID string, files map[string]filesapi.FileMeta) *fakeFilesClient {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -113,25 +143,53 @@ func (f *fakeFilesClient) withVersion(catalogID, versionID string, files map[str
 		f.latestVersion = make(map[string]string)
 	}
 
-	f.versions[versionID] = files
+	copied := make(map[string]filesapi.FileMeta, len(files))
+
+	for path, fm := range files {
+		copied[path] = fm
+	}
+
+	f.versions[versionID] = copied
 	f.latestVersion[catalogID] = versionID
+
+	// This builder seeds metadata only; drop any content a previous seed
+	// may have left under the same version ID so the store never disagrees
+	// with the advertised checksums.
+	delete(f.versionContents, versionID)
 
 	return f
 }
 
-// withDownloadable registers the content bytes DownloadFile serves for a
-// version. The registered content must hash to the FileMeta the same test
-// put in the version state — the download path verifies the streamed bytes
-// against the plan's RemoteHash, exactly like the real server relationship.
-func (f *fakeFilesClient) withDownloadable(versionID string, files map[string][]byte) *fakeFilesClient {
+// withVersionContent pre-populates a version from raw bytes, computing each
+// path's SHA-256 hash and size the way the real server does. This is the
+// builder for download tests: DownloadFile later serves exactly these bytes
+// for this version, and AllFiles advertises the checksums those bytes hash
+// to. Use withVersion instead when only metadata is needed.
+func (f *fakeFilesClient) withVersionContent(catalogID, versionID string, contents map[string][]byte) *fakeFilesClient {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if f.downloadContent == nil {
-		f.downloadContent = make(map[string]map[string][]byte)
+	if f.versions == nil {
+		f.versions = make(map[string]map[string]filesapi.FileMeta)
 	}
 
-	f.downloadContent[versionID] = files
+	if f.versionContents == nil {
+		f.versionContents = make(map[string]map[string][]byte)
+	}
+
+	if f.latestVersion == nil {
+		f.latestVersion = make(map[string]string)
+	}
+
+	metas := make(map[string]filesapi.FileMeta, len(contents))
+
+	for path, content := range contents {
+		metas[path] = fileMetaOf(content)
+	}
+
+	f.versions[versionID] = metas
+	f.versionContents[versionID] = contents
+	f.latestVersion[catalogID] = versionID
 
 	return f
 }
@@ -166,6 +224,52 @@ func (f *fakeFilesClient) withWrongChecksum(path, checksum string) *fakeFilesCli
 
 	f.wrongChecksumPath = path
 	f.wrongChecksumValue = checksum
+
+	return f
+}
+
+// withWrongChecksumForVersion is the version-scoped form of withWrongChecksum:
+// the substitute checksum is served only when AllFiles is called for the given
+// version. The engine's post-apply verification reads the NEW version, which
+// Phase 2 never fetches, so a fault scoped to it models "the post-apply
+// listing disagrees" without corrupting the Phase-2 fetch or the plan.
+func (f *fakeFilesClient) withWrongChecksumForVersion(versionID, path, checksum string) *fakeFilesClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.wrongChecksumForVersion = &wrongChecksumFault{
+		versionID: versionID,
+		path:      path,
+		checksum:  checksum,
+	}
+
+	return f
+}
+
+// withFailDownload configures DownloadFile to return an error for the given
+// path, simulating a download that fails server-side or mid-transfer.
+func (f *fakeFilesClient) withFailDownload(path string) *fakeFilesClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.failDownloadPath = path
+
+	return f
+}
+
+// withCorruptDownload configures DownloadFile to serve, for the given path,
+// bytes of the same length as the recorded content but with every byte
+// flipped. The served bytes therefore hash to something other than the
+// checksum AllFiles advertises, which is what lets a test exercise the
+// client-side post-download checksum verification rather than the size
+// check. The hooked path must have non-empty recorded content: flipping an
+// empty byte string yields empty again, and the fake refuses to serve a
+// "corruption" indistinguishable from the real bytes.
+func (f *fakeFilesClient) withCorruptDownload(path string) *fakeFilesClient {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.corruptDownloadPath = path
 
 	return f
 }
@@ -247,6 +351,13 @@ func (f *fakeFilesClient) AllFilesCalls() int {
 	return f.allFilesCalls
 }
 
+func (f *fakeFilesClient) DownloadFileCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.downloadFileCalls
+}
+
 // --- filesapi.Client implementation ---
 
 func (f *fakeFilesClient) CreateCatalog() (*filesapi.CatalogResp, error) {
@@ -272,7 +383,13 @@ func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
 		return nil, errors.New("fakeFilesClient.CreateStage: no stageID configured")
 	}
 
-	// Initialize a fresh staging area for this stage.
+	// Initialize a fresh staging area for this stage. The fake models ONE
+	// active stage: the staging area is shared and wiped here, so anything
+	// staged but not yet applied is discarded when a test calls CreateStage
+	// again mid-flow. This matches production usage — exactly one
+	// CreateStage per sync, then the uploads, then ApplyStage — so a test
+	// that interleaves two stages exercises a flow the real server never
+	// sees.
 	f.stagedFiles = make(map[string][]byte)
 
 	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil
@@ -337,6 +454,29 @@ func (f *fakeFilesClient) mergeStagedFiles(catalogID string) map[string]filesapi
 	return newVersion
 }
 
+// mergeStagedContents is mergeStagedFiles' content-side twin: it starts from
+// the latest version's recorded bytes and overlays the staged files, so the
+// resulting version's content store matches the metadata merge exactly.
+// Prior paths with no recorded content (hash-only withVersion seeds) carry
+// no entry, keeping "no content recorded" truthful through the merge.
+func (f *fakeFilesClient) mergeStagedContents(catalogID string) map[string][]byte {
+	newContents := make(map[string][]byte)
+
+	if latest, ok := f.latestVersion[catalogID]; ok {
+		if contents, ok := f.versionContents[latest]; ok {
+			for k, v := range contents {
+				newContents[k] = v
+			}
+		}
+	}
+
+	for path, data := range f.stagedFiles {
+		newContents[path] = data
+	}
+
+	return newContents
+}
+
 func (f *fakeFilesClient) ApplyStage(catalogID, _, _ string) (*filesapi.ApplyStageResp, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -354,13 +494,20 @@ func (f *fakeFilesClient) ApplyStage(catalogID, _, _ string) (*filesapi.ApplySta
 
 	newVersion := f.mergeStagedFiles(catalogID)
 
+	newContents := f.mergeStagedContents(catalogID)
+
 	// Fault injection: drop a path from the resulting version.
 	if f.dropPathFromApply != "" {
 		delete(newVersion, f.dropPathFromApply)
+		delete(newContents, f.dropPathFromApply)
 	}
 
 	if f.versions == nil {
 		f.versions = make(map[string]map[string]filesapi.FileMeta)
+	}
+
+	if f.versionContents == nil {
+		f.versionContents = make(map[string]map[string][]byte)
 	}
 
 	if f.latestVersion == nil {
@@ -368,6 +515,7 @@ func (f *fakeFilesClient) ApplyStage(catalogID, _, _ string) (*filesapi.ApplySta
 	}
 
 	f.versions[f.versionID] = newVersion
+	f.versionContents[f.versionID] = newContents
 	f.latestVersion[catalogID] = f.versionID
 
 	// Clear the staging area for the next stage.
@@ -402,7 +550,7 @@ func (f *fakeFilesClient) UploadFromZipNew(_ string, _ int64, body io.Reader) (*
 		return nil, errors.New("fakeFilesClient.UploadFromZipNew: no catalogID configured")
 	}
 
-	zipFiles, err := extractZipFiles(data)
+	zipContents, err := extractZipEntries(data)
 	if err != nil {
 		return nil, err
 	}
@@ -411,11 +559,16 @@ func (f *fakeFilesClient) UploadFromZipNew(_ string, _ int64, body io.Reader) (*
 		f.versions = make(map[string]map[string]filesapi.FileMeta)
 	}
 
+	if f.versionContents == nil {
+		f.versionContents = make(map[string]map[string][]byte)
+	}
+
 	if f.latestVersion == nil {
 		f.latestVersion = make(map[string]string)
 	}
 
-	f.versions[f.versionID] = zipFiles
+	f.versions[f.versionID] = zipFileMetas(zipContents)
+	f.versionContents[f.versionID] = zipContents
 	f.latestVersion[f.catalogID] = f.versionID
 
 	// Inline completion (no StatusID), matching the real API for small archives.
@@ -436,28 +589,19 @@ func (f *fakeFilesClient) UploadFromZipExisting(catalogID, _, _ string, _ int64,
 
 	f.uploadFromZipCalls++
 
-	zipFiles, err := extractZipFiles(data)
+	zipContents, err := extractZipEntries(data)
 	if err != nil {
 		return nil, err
 	}
 
-	// REPLACE merge: start with the latest version's files, then merge.
-	newVersion := make(map[string]filesapi.FileMeta)
-
-	if latest, ok := f.latestVersion[catalogID]; ok {
-		if files, ok := f.versions[latest]; ok {
-			for k, v := range files {
-				newVersion[k] = v
-			}
-		}
-	}
-
-	for k, v := range zipFiles {
-		newVersion[k] = v
-	}
+	newVersion, newContents := f.mergeZipIntoExisting(catalogID, zipContents)
 
 	if f.versions == nil {
 		f.versions = make(map[string]map[string]filesapi.FileMeta)
+	}
+
+	if f.versionContents == nil {
+		f.versionContents = make(map[string]map[string][]byte)
 	}
 
 	if f.latestVersion == nil {
@@ -465,12 +609,60 @@ func (f *fakeFilesClient) UploadFromZipExisting(catalogID, _, _ string, _ int64,
 	}
 
 	f.versions[f.versionID] = newVersion
+	f.versionContents[f.versionID] = newContents
 	f.latestVersion[catalogID] = f.versionID
 
 	return &filesapi.FromFileResp{
 		CatalogID:        catalogID,
 		CatalogVersionID: f.versionID,
 	}, nil
+}
+
+// zipFileMetas derives the server's metadata map from extracted zip content,
+// the only checksum derivation for the zip path.
+func zipFileMetas(zipContents map[string][]byte) map[string]filesapi.FileMeta {
+	metas := make(map[string]filesapi.FileMeta, len(zipContents))
+
+	for path, content := range zipContents {
+		metas[path] = fileMetaOf(content)
+	}
+
+	return metas
+}
+
+// mergeZipIntoExisting builds the resulting version for an incremental zip
+// upload: the latest version's metadata and recorded content with the zip's
+// entries overlaid, matching the real API's REPLACE merge. Both maps stay in
+// lockstep so AllFiles' checksums always describe the bytes DownloadFile
+// serves.
+func (f *fakeFilesClient) mergeZipIntoExisting(catalogID string, zipContents map[string][]byte) (map[string]filesapi.FileMeta, map[string][]byte) {
+	newVersion := make(map[string]filesapi.FileMeta)
+
+	newContents := make(map[string][]byte)
+
+	if latest, ok := f.latestVersion[catalogID]; ok {
+		if files, ok := f.versions[latest]; ok {
+			for k, v := range files {
+				newVersion[k] = v
+			}
+		}
+
+		if contents, ok := f.versionContents[latest]; ok {
+			for k, v := range contents {
+				newContents[k] = v
+			}
+		}
+	}
+
+	for k, v := range zipFileMetas(zipContents) {
+		newVersion[k] = v
+	}
+
+	for k, v := range zipContents {
+		newContents[k] = v
+	}
+
+	return newVersion, newContents
 }
 
 func (f *fakeFilesClient) PollStatus(_ string) (*filesapi.StatusResp, error) {
@@ -487,6 +679,29 @@ func (f *fakeFilesClient) applyWrongChecksum(result map[string]filesapi.FileMeta
 	if fm, exists := result[f.wrongChecksumPath]; exists {
 		fm.Hash = f.wrongChecksumValue
 		result[f.wrongChecksumPath] = fm
+	}
+}
+
+// wrongChecksumFault is the version-scoped checksum fault record (see
+// withWrongChecksumForVersion).
+type wrongChecksumFault struct {
+	versionID string
+	path      string
+	checksum  string
+}
+
+// applyWrongChecksumForVersion applies the version-scoped checksum fault when
+// AllFiles was called for the fault's version, leaving every other version's
+// listing truthful.
+func (f *fakeFilesClient) applyWrongChecksumForVersion(versionID string, result map[string]filesapi.FileMeta) {
+	flt := f.wrongChecksumForVersion
+	if flt == nil || flt.versionID != versionID {
+		return
+	}
+
+	if fm, exists := result[flt.path]; exists {
+		fm.Hash = flt.checksum
+		result[flt.path] = fm
 	}
 }
 
@@ -547,6 +762,7 @@ func (f *fakeFilesClient) AllFiles(_, versionID string) (map[string]filesapi.Fil
 
 	// Fault injection: return a wrong checksum for a chosen path.
 	f.applyWrongChecksum(result)
+	f.applyWrongChecksumForVersion(versionID, result)
 
 	// Simulate pagination: split into pages and follow next links, mirroring
 	// the real client. A bug here (not following next links) would cause
@@ -556,26 +772,86 @@ func (f *fakeFilesClient) AllFiles(_, versionID string) (map[string]filesapi.Fil
 	return result, nil
 }
 
-// DownloadFile serves content registered via withDownloadable. Without
-// registered content it fails loudly, so a download the test did not plan
-// for surfaces as an error instead of a silent empty file.
+// DownloadFile serves the exact bytes recorded for path at versionID,
+// streaming them to w the way the real client streams the response body.
+// The string return is unused by the sync engine (the production client
+// returns "" for inline downloads); n is the number of bytes written.
+//
+// The fault hooks apply before the content lookup, so a faulted path fails
+// whether or not the version has recorded content, and every call is
+// counted whether it succeeds or fails.
 func (f *fakeFilesClient) DownloadFile(_, versionID, path string, w io.Writer) (string, int64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	files, ok := f.downloadContent[versionID]
-	if !ok {
-		return "", 0, fmt.Errorf("fakeFilesClient: no downloadable content registered for version %s", versionID)
-	}
-
-	data, ok := files[path]
-	if !ok {
-		return "", 0, fmt.Errorf("fakeFilesClient: no content registered for %s in version %s", path, versionID)
+	data, err := f.downloadPayload(versionID, path)
+	if err != nil {
+		return "", 0, err
 	}
 
 	n, err := w.Write(data)
+	if err != nil {
+		return "", int64(n), fmt.Errorf("fakeFilesClient.DownloadFile: write %s: %w", path, err)
+	}
 
-	return path, int64(n), err
+	return "", int64(n), nil
+}
+
+// downloadPayload gathers the bytes to serve for one download call. It takes
+// the mutex so the counter, fault decision, and content snapshot are atomic
+// with respect to concurrent uploads creating new versions, and returns a
+// copy so the caller's write happens without holding the lock (mirroring the
+// read-body-outside-the-mutex convention in UploadToStage).
+func (f *fakeFilesClient) downloadPayload(versionID, path string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.downloadFileCalls++
+
+	if path == f.failDownloadPath {
+		return nil, fmt.Errorf("fakeFilesClient.DownloadFile: injected failure for %s", path)
+	}
+
+	contents, ok := f.versionContents[versionID]
+	if !ok {
+		// A version can exist with metadata only (hash-only withVersion
+		// seed); report that honestly instead of serving empty bytes,
+		// which would hash like the empty string and silently pass
+		// checksum assertions.
+		if _, versionExists := f.versions[versionID]; versionExists {
+			return nil, fmt.Errorf(
+				"fakeFilesClient.DownloadFile: version %s has no recorded content (seeded via withVersion; use withVersionContent to make it downloadable)", versionID)
+		}
+
+		return nil, fmt.Errorf("fakeFilesClient.DownloadFile: version %s not found", versionID)
+	}
+
+	data, ok := contents[path]
+	if !ok {
+		return nil, fmt.Errorf("fakeFilesClient.DownloadFile: path %s not in version %s", path, versionID)
+	}
+
+	if path == f.corruptDownloadPath {
+		data = corruptBytes(data)
+	}
+
+	// Copy under the lock: the recorded content could otherwise be replaced
+	// by a concurrent version write between the snapshot and the write.
+	snapshot := make([]byte, len(data))
+	copy(snapshot, data)
+
+	return snapshot, nil
+}
+
+// corruptBytes returns a same-length copy of data with every byte flipped,
+// guaranteeing a different SHA-256 while keeping the advertised size intact.
+// Empty input is its own corruption (flipping nothing changes nothing), so
+// corrupt-download tests must hook a path with non-empty recorded content.
+func corruptBytes(data []byte) []byte {
+	out := make([]byte, len(data))
+
+	for i, b := range data {
+		out[i] = b ^ 0xFF
+	}
+
+	return out
 }
 
 func (f *fakeFilesClient) DeleteFiles(catalogID string, paths []string) (*filesapi.DeleteFilesResp, error) {
@@ -594,23 +870,16 @@ func (f *fakeFilesClient) DeleteFiles(catalogID string, paths []string) (*filesa
 		return &filesapi.DeleteFilesResp{}, nil
 	}
 
-	currentFiles, ok := f.versions[latest]
-	if !ok {
-		return &filesapi.DeleteFilesResp{}, nil
-	}
-
-	newVersion := make(map[string]filesapi.FileMeta, len(currentFiles))
-	for k, v := range currentFiles {
-		newVersion[k] = v
-	}
-
-	for _, p := range paths {
-		delete(newVersion, p)
-	}
+	newVersion, newContents := f.versionAfterDeletes(latest, paths)
 
 	newVerID := fmt.Sprintf("%s-del-%d", f.versionID, len(f.versions))
+
 	if f.versions == nil {
 		f.versions = make(map[string]map[string]filesapi.FileMeta)
+	}
+
+	if f.versionContents == nil {
+		f.versionContents = make(map[string]map[string][]byte)
 	}
 
 	if f.latestVersion == nil {
@@ -618,6 +887,7 @@ func (f *fakeFilesClient) DeleteFiles(catalogID string, paths []string) (*filesa
 	}
 
 	f.versions[newVerID] = newVersion
+	f.versionContents[newVerID] = newContents
 	f.latestVersion[catalogID] = newVerID
 
 	return &filesapi.DeleteFilesResp{
@@ -627,20 +897,50 @@ func (f *fakeFilesClient) DeleteFiles(catalogID string, paths []string) (*filesa
 	}, nil
 }
 
+// versionAfterDeletes builds the post-delete version's metadata and recorded
+// content: the latest version's state minus the deleted paths, so surviving
+// files keep their checksums and stay downloadable.
+func (f *fakeFilesClient) versionAfterDeletes(latest string, paths []string) (map[string]filesapi.FileMeta, map[string][]byte) {
+	newVersion := make(map[string]filesapi.FileMeta)
+
+	if files, ok := f.versions[latest]; ok {
+		for k, v := range files {
+			newVersion[k] = v
+		}
+	}
+
+	newContents := make(map[string][]byte)
+
+	if contents, ok := f.versionContents[latest]; ok {
+		for k, v := range contents {
+			newContents[k] = v
+		}
+	}
+
+	for _, p := range paths {
+		delete(newVersion, p)
+		delete(newContents, p)
+	}
+
+	return newVersion, newContents
+}
+
 func (f *fakeFilesClient) ListVersions(_ string, _ int) ([]filesapi.CatalogVersion, error) {
 	return nil, errors.New("fakeFilesClient: ListVersions not expected")
 }
 
-// extractZipFiles reads a zip archive from raw bytes and returns a map of
-// path → FileMeta with the SHA-256 hash and size of each entry's content.
-// This models what the server does when it extracts an uploaded archive.
-func extractZipFiles(data []byte) (map[string]filesapi.FileMeta, error) {
+// extractZipEntries reads a zip archive from raw bytes and returns a map of
+// path → the entry's uncompressed content. This models what the server does
+// when it extracts an uploaded archive: the extracted bytes are what the
+// server holds, so both the recorded checksums and later downloads must
+// derive from exactly these bytes.
+func extractZipEntries(data []byte) (map[string][]byte, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("open zip: %w", err)
 	}
 
-	files := make(map[string]filesapi.FileMeta)
+	files := make(map[string][]byte)
 
 	for _, zf := range zipReader.File {
 		content, err := readZipEntry(zf)
@@ -648,15 +948,21 @@ func extractZipFiles(data []byte) (map[string]filesapi.FileMeta, error) {
 			return nil, err
 		}
 
-		h := sha256.Sum256(content)
-		path := fileops.NormalizePath(zf.Name)
-		files[path] = filesapi.FileMeta{
-			Hash: hex.EncodeToString(h[:]),
-			Size: int64(len(content)),
-		}
+		files[fileops.NormalizePath(zf.Name)] = content
 	}
 
 	return files, nil
+}
+
+// fileMetaOf derives the server's FileMeta (SHA-256 hex + size) from file
+// content, the single derivation every version-recording path goes through.
+func fileMetaOf(content []byte) filesapi.FileMeta {
+	h := sha256.Sum256(content)
+
+	return filesapi.FileMeta{
+		Hash: hex.EncodeToString(h[:]),
+		Size: int64(len(content)),
+	}
 }
 
 // readZipEntry reads and closes a single zip file entry, returning its

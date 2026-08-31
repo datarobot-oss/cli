@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -104,20 +103,19 @@ func setupRollbackDiscardScenarioWithPatchHook(t *testing.T, patchHook func(arti
 
 	// The remote moved ahead: ver-remote holds the edited b.py. ApplyStage
 	// merges the staged a.py into this version, producing ver-new.
-	drHash, drSize, err := hashLocal(t, s.dir, ignore.FileName)
+	// withVersionContent seeds both the metadata and the downloadable
+	// bytes in one step, so the download of b.py serves the remote bytes.
+	drignoreBytes, err := os.ReadFile(filepath.Join(s.dir, ignore.FileName))
 	require.NoError(t, err)
 
 	s.fake = (&fakeFilesClient{
 		catalogID: catalogID,
 		stageID:   "stage-1",
 		versionID: newVersion,
-	}).withVersion(catalogID, remoteVer, map[string]filesapi.FileMeta{
-		"a.py":          {Hash: sha256Hex([]byte(s.origA)), Size: int64(len(s.origA))},
-		"b.py":          {Hash: sha256Hex([]byte(s.remoteB)), Size: int64(len(s.remoteB))},
-		ignore.FileName: {Hash: drHash, Size: drSize},
-	}).withDownloadable(remoteVer, map[string][]byte{
-		"a.py": []byte(s.origA),
-		"b.py": []byte(s.remoteB),
+	}).withVersionContent(catalogID, remoteVer, map[string][]byte{
+		"a.py":          []byte(s.origA),
+		"b.py":          []byte(s.remoteB),
+		ignore.FileName: drignoreBytes,
 	})
 
 	// The artifact's codeRef still points at ver-remote, so Phase 1 detects

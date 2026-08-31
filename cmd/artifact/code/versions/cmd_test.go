@@ -199,6 +199,29 @@ func TestVersions_TextOutput(t *testing.T) {
 	assert.Contains(t, out, "* v3aaaaaaaaaaaa")
 	assert.Contains(t, out, "v2bbbbbbbbbbbb")
 	assert.Contains(t, out, "* = current")
+	assert.Contains(t, out, "Local synced to: v2", "the config's LastSyncedVersionID must be reported in text mode")
+}
+
+// Text mode must stay silent about the synced version when the project has
+// never synced: the line is conditional on config.LastSyncedVersionID, and a
+// regression printing it empty would imply state the project does not have.
+func TestVersions_TextOutput_NoSyncedVersionOmitsLine(t *testing.T) {
+	dir := initLinkedDir(t, "cat-1", "")
+
+	deps := fakeDeps(
+		draftArtifact("art-abc-123", "my-agent", "v3aaaaaaaaaaaa"),
+		&fakeClient{
+			versions: []filesapi.CatalogVersion{
+				{ID: "v3aaaaaaaaaaaa", CreatedAt: "2026-04-10T14:30:00Z", NumFiles: 1, TotalSize: 10},
+			},
+		},
+	)
+
+	cmd, buf := newTestCmd(t, dir, deps)
+
+	require.NoError(t, cmd.Execute())
+
+	assert.NotContains(t, buf.String(), "Local synced to:")
 }
 
 func TestVersions_LimitFlagPropagates(t *testing.T) {

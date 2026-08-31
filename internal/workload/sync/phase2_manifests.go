@@ -16,6 +16,7 @@ package sync
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -44,15 +45,49 @@ func phase2Manifests(e *Engine) error {
 
 	warnIfLockfileIgnored(e, matcher)
 
-	var skippedSymlinks []string
+	// The walk's symlink arm returns before the ignore check (walk.go tests
+	// ModeSymlink before calling ignore), so filtering must happen here rather
+	// than in the walker. Without it, a symlink the user deliberately .drignore'd
+	// or that is system-excluded (e.g. named .git) would still be announced — the
+	// classic unfiltered-warning trap. matcher.Match applies both the user's
+	// .drignore patterns and the hardcoded system excludes, with the same
+	// case-folding rules used for regular files.
+	walkOnSymlink := func(rel, _ string, isDir bool) {
+		if matcher.Match(rel, isDir) {
+			return
+		}
 
-	walkOnSymlink := func(rel, _ string) {
-		skippedSymlinks = append(skippedSymlinks, rel)
+		e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: rel, IsDir: isDir})
 	}
 
 	entries, err := fileops.Walk(e.projectDir, matcher.Match, walkOnSymlink)
 	if err != nil {
 		return fmt.Errorf("walk project directory: %w", err)
+	}
+
+	// Sort the skipped symlinks by path so notices and the structured field
+	// are deterministic across runs, then emit the warning from within the
+	// phase via log.Warn. Like the .wapiignore shadow warning, logging here
+	// (rather than returning a notice for the display layer to render) means
+	// the user hears it even when a later phase fails before anything gets a
+	// chance to render. The prose is bounded at SymlinkNoticeBound entries;
+	// the structured field on the engine carries every symlink regardless.
+	sort.Slice(e.skippedSymlinks, func(i, j int) bool {
+		return e.skippedSymlinks[i].Path < e.skippedSymlinks[j].Path
+	})
+
+	for i, s := range e.skippedSymlinks {
+		if i >= SymlinkNoticeBound {
+			break
+		}
+
+		log.Warn(skippedSymlinkNotice(s))
+	}
+
+	if len(e.skippedSymlinks) > SymlinkNoticeBound {
+		log.Warn(fmt.Sprintf(
+			"skipped symlink: and %d more symlink(s) were not uploaded or synced (see the plan JSON for the full list)",
+			len(e.skippedSymlinks)-SymlinkNoticeBound))
 	}
 
 	local, err := hashEntries(entries)
@@ -66,9 +101,21 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
 	}
 
-	if !e.drifted {
+	return loadRemote(e)
+}
+
+// loadRemote decides where REMOTE comes from: copied from BASE by the
+// solo-developer fast path, empty on a first sync, or fetched from the
+// FilesAPI. It is split out of the phase body because the fast-path guard
+// and the divergence check each carry compound conditions, and the phase
+// function is at the complexity ceiling.
+func loadRemote(e *Engine) error {
+	if !e.drifted && !e.opts.Verify {
 		// Nobody else changed the remote since our last sync; skip the
-		// allFiles round-trip and reuse BASE.
+		// allFiles round-trip and reuse BASE. --verify opts out of this
+		// trust: its whole point is to check that BASE still describes the
+		// server, which requires actually asking the server. The bypass is
+		// unconditional on dry-run — a non-dry-run verify run must fetch too.
 		e.remote = copyManifest(e.base)
 
 		return nil
@@ -88,6 +135,13 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	e.remote = FromFilesAPI(remote)
+
+	// Only a verify-forced fetch on a non-drifted artifact checks BASE's
+	// claim: here — and only here — BASE claims to describe exactly the
+	// version just fetched, so a mismatch is a lie worth reporting. On a
+	// drifted artifact the remote is a newer version by design, and
+	// BASE-vs-REMOTE differences are ordinary drift, not findings.
+	maybeDetectDivergence(e)
 
 	return nil
 }

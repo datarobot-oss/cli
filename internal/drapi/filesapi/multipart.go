@@ -35,11 +35,12 @@ const multipartFormField = "file"
 // by the pipe (one chunk in flight) plus the small envelope, regardless
 // of file size — important because the engine may upload multi-GiB zips.
 //
-// Fields ride in the multipart body, not the URL query: some server
-// routes (fromFile) bind their validator fields from the parsed form
-// only and silently ignore query parameters. Fields are framed as
-// complete parts BEFORE the file part so a streaming parser collects
-// them without buffering the file.
+// requestURL is used as-is: callers build any query parameters into it
+// before calling. Fields ride in the multipart body, not the URL query:
+// some server routes (fromFile) bind their validator fields from the
+// parsed form only and silently ignore query parameters. Fields are
+// framed as complete parts BEFORE the file part so a streaming parser
+// collects them without buffering the file.
 //
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing
@@ -47,16 +48,11 @@ const multipartFormField = "file"
 // isn't seekable).
 func newStreamingMultipartRequest(
 	requestURL string,
-	query url.Values,
 	fields url.Values,
 	filename string,
 	size int64,
 	body io.Reader,
 ) (*http.Request, error) {
-	if len(query) > 0 {
-		requestURL += "?" + query.Encode()
-	}
-
 	contentType, prologue, epilogue, err := multipartFraming(fields, filename)
 	if err != nil {
 		return nil, err

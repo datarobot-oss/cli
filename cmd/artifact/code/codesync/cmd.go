@@ -22,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
@@ -50,6 +52,8 @@ type engineRunner interface {
 	StateMigrationNotice() string
 	IgnoreFileNotice() string
 	LockedNotice() string
+	Divergences() []sync.Divergence
+	SkippedSymlinks() []sync.SkippedSymlink
 	Fetcher() display.ContentFetcher
 }
 
@@ -71,11 +75,15 @@ type Deps struct {
 
 // runFlags is the parsed view of the boolean flags that gate
 // finishSync's render/prompt/execute decisions. Grouped so the inner
-// helpers don't carry a three-bool tail through every signature.
+// helpers don't carry a bool tail through every signature. Verify is
+// carried here for the engine Options and telemetry only: it must never
+// gate the render/prompt/execute decisions, because a verify run that
+// is not a preview still has to execute.
 type runFlags struct {
 	DryRun bool
 	Diff   bool
 	Yes    bool
+	Verify bool
 }
 
 func defaultDeps() Deps {
@@ -118,8 +126,11 @@ versioned step.
 
 Use --dry-run to preview the plan without writing anything; --diff to
 also print per-file unified diffs. Both modes exit before any remote
-write. --yes auto-confirms the post-plan prompt and skips any
-interactive directory prompt.
+write. --verify forces a remote round-trip and post-apply verification
+of what was uploaded, catching server-side divergence the ordinary fast
+path cannot see; it composes with --dry-run and --diff. --yes
+auto-confirms the post-plan prompt and skips any interactive directory
+prompt.
 
 Run 'dr artifact code init <artifact-id>' first to link a project
 directory to an artifact.
@@ -129,6 +140,7 @@ Example:
   dr artifact code sync --dry-run
   dr artifact code sync --diff
   dr artifact code sync --yes
+  dr artifact code sync --verify
   dr artifact code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -144,6 +156,15 @@ Example:
 	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
 	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
+
+	// Transient flag, like --yes: read straight from cobra in parseRunFlags,
+	// never bound into viper and never persisted to drconfig.yaml.
+	//
+	// It must not join the dry-run/diff mutual-exclusion group: verify is a
+	// diagnostic intensity switch, not a third preview mode, and a verify
+	// run without --dry-run still applies its plan.
+	c.Flags().Bool("verify", false, "Force a remote round-trip and post-apply verification of what was uploaded.")
+
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
@@ -153,6 +174,7 @@ Example:
 			"dry_run":       flags.DryRun,
 			"diff":          flags.Diff,
 			"yes":           flags.Yes,
+			"verify":        flags.Verify,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -174,7 +196,12 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
 	}
 
-	engine, err := deps.NewEngine(dir, sync.Options{DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes})
+	engine, err := deps.NewEngine(dir, sync.Options{
+		DryRun:    flags.DryRun,
+		ShowDiffs: flags.Diff,
+		Yes:       flags.Yes,
+		Verify:    flags.Verify,
+	})
 	if err != nil {
 		return err
 	}
@@ -195,6 +222,8 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	format.StateNotice(cmd.ErrOrStderr(), engine.StateMigrationNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.IgnoreFileNotice())
 	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
+	format.StateNotice(cmd.ErrOrStderr(), divergenceSummaryNotice(flags, plan, engine.Divergences()))
+	format.StateNotice(cmd.ErrOrStderr(), skippedSymlinkSummaryNotice(engine.SkippedSymlinks()))
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
@@ -205,16 +234,102 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 
 // parseRunFlags reads the cobra flags once and folds the
 // DATAROBOT_CLI_NON_INTERACTIVE env-var override into Yes, so the
-// downstream helpers see a single source of truth.
+// downstream helpers see a single source of truth. Every flag here is
+// transient: read directly from cobra, never through viper.
 func parseRunFlags(cmd *cobra.Command) runFlags {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	diff, _ := cmd.Flags().GetBool("diff")
+
+	verify, _ := cmd.Flags().GetBool("verify")
 
 	return runFlags{
 		DryRun: dryRun,
 		Diff:   diff,
 		Yes:    cli.IsNonInteractive(cmd),
+		Verify: verify,
 	}
+}
+
+// divergenceSummaryNotice renders the one-line --verify summary that runs
+// alongside the other state notices: what diverged and what happens next.
+// The per-path detail (with hashes) is logged from Phase 2 itself, so this
+// summary stays stream-agnostic and names every affected path.
+//
+// The "what happens next" half is mode- and plan-aware because the honest
+// answer differs by what the run actually does: a preview writes nothing, an
+// empty-plan repair reconciles through the Phase 6 manifest rewrite rather
+// than through plan rows, and only a non-empty applying plan reconciles the
+// divergences through its rows.
+func divergenceSummaryNotice(flags runFlags, plan *sync.SyncPlan, divergences []sync.Divergence) string {
+	if len(divergences) == 0 {
+		return ""
+	}
+
+	paths := make([]string, len(divergences))
+
+	for i, d := range divergences {
+		paths[i] = d.Path
+	}
+
+	head := fmt.Sprintf(
+		"--verify found %d divergence(s) between manifest.json (BASE) and the server (REMOTE): %s.",
+		len(divergences), strings.Join(paths, ", "))
+
+	switch {
+	case flags.DryRun:
+		return head + " This was a preview; nothing was written. Run without --dry-run to reconcile."
+	case flags.Diff:
+		return head + " This was a preview; nothing was written. Run without --diff to reconcile."
+	case plan.IsEmpty():
+		return head + " The plan is empty, but manifest.json is being rewritten from the server's state to repair them."
+	default:
+		return head + " The plan reconciles them."
+	}
+}
+
+// skippedSymlinkSummaryNotice renders the one-line summary of skipped
+// symlinks that runs alongside the other state notices. The per-symlink
+// detail (with kind-specific wording) is logged from Phase 2 itself, so
+// this summary stays stream-agnostic and names each symlink with its kind.
+// The prose is bounded at SymlinkNoticeBound entries; the structured JSON
+// field on the plan document carries every symlink regardless.
+func skippedSymlinkSummaryNotice(symlinks []sync.SkippedSymlink) string {
+	if len(symlinks) == 0 {
+		return ""
+	}
+
+	// Sort by path for deterministic output across runs.
+	sorted := make([]sync.SkippedSymlink, len(symlinks))
+	copy(sorted, symlinks)
+
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
+
+	shown := sorted
+
+	if len(sorted) > sync.SymlinkNoticeBound {
+		shown = sorted[:sync.SymlinkNoticeBound]
+	}
+
+	parts := make([]string, len(shown))
+
+	for i, s := range shown {
+		kind := "file"
+		if s.IsDir {
+			kind = "directory"
+		}
+
+		parts[i] = fmt.Sprintf("%s (%s)", s.Path, kind)
+	}
+
+	if len(sorted) > sync.SymlinkNoticeBound {
+		return fmt.Sprintf(
+			"%d symlink(s) were not uploaded or synced: %s, and %d more.",
+			len(sorted), strings.Join(parts, ", "), len(sorted)-sync.SymlinkNoticeBound)
+	}
+
+	return fmt.Sprintf(
+		"%d symlink(s) were not uploaded or synced: %s.",
+		len(sorted), strings.Join(parts, ", "))
 }
 
 // finishSync handles the render → optional prompt → execute → render
@@ -227,11 +342,11 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 		return finishJSON(engine, plan, out, flags)
 	}
 
-	if err := renderHumanPlan(cmd, engine, plan, flags.Diff); err != nil {
+	if err := renderHumanPlan(cmd, engine, plan, flags); err != nil {
 		return err
 	}
 
-	if flags.DryRun || flags.Diff || plan.IsEmpty() {
+	if skipsExecute(flags, plan, engine.Divergences()) {
 		return nil
 	}
 
@@ -255,18 +370,43 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 }
 
 // renderHumanPlan prints the plan and optional per-file diffs.
-func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, diffFlag bool) error {
+func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, flags runFlags) error {
 	out := cmd.OutOrStdout()
+
+	// An empty plan normally prints "Up to date." — truthful when disk and
+	// server genuinely agree. On an applying run whose --verify findings
+	// force the empty-plan repair, though, Execute is about to rewrite
+	// manifest.json from the server's state, and "Up to date." immediately
+	// before that rewrite would claim nothing is being fixed. Previews keep
+	// the ordinary line: nothing is written, so the divergence summary's
+	// preview wording is what carries the honesty there.
+	if plan.IsEmpty() && len(engine.Divergences()) > 0 && !flags.DryRun && !flags.Diff {
+		return display.PrintEmptyPlanRepair(out)
+	}
 
 	if err := display.PrintPlan(out, plan); err != nil {
 		return err
 	}
 
-	if !diffFlag {
+	if !flags.Diff {
 		return nil
 	}
 
 	return display.PrintDiffs(out, plan, engine.Fetcher())
+}
+
+// skipsExecute encapsulates the decision to stop after rendering the plan.
+// A preview always stops. An empty plan stops too — except when a --verify
+// run recorded BASE-vs-REMOTE divergences: then Execute must run, because
+// Phase 5 no-ops on an empty plan and the Execute is what drives Phase 6's
+// rewrite of the poisoned manifest from the real remote. Skipping Execute
+// there is how the poison survives the run that caught it.
+func skipsExecute(flags runFlags, plan *sync.SyncPlan, divergences []sync.Divergence) bool {
+	if flags.DryRun || flags.Diff {
+		return true
+	}
+
+	return plan.IsEmpty() && len(divergences) == 0
 }
 
 // shouldPromptConflicts encapsulates the decision: prompt only when
@@ -283,11 +423,14 @@ func shouldPromptConflicts(plan *sync.SyncPlan, yes bool) bool {
 // plan is emitted and no Execute is run, so callers can inspect the
 // plan and re-invoke with --yes if they want to proceed.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
-	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != ""); err != nil {
+	if err := display.RenderPlanJSON(out, plan, engine.LockedNotice() != "", engine.Divergences(), engine.SkippedSymlinks()); err != nil {
 		return err
 	}
 
-	if flags.DryRun || flags.Diff || plan.IsEmpty() {
+	// Same skip rule as the human path, including the empty-plan exception:
+	// divergence findings from --verify mean Execute must run so Phase 6
+	// repairs the manifest, even though the plan itself has no rows.
+	if skipsExecute(flags, plan, engine.Divergences()) {
 		return nil
 	}
 

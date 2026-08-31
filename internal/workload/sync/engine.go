@@ -30,6 +30,14 @@ type Options struct {
 	DryRun    bool
 	ShowDiffs bool
 	Yes       bool
+
+	// Verify opts into the network-cost integrity checks: a remote
+	// round-trip even when the artifact is not drifted, and post-apply
+	// verification that the server holds what was uploaded. It changes how
+	// much a run checks, not whether the run applies its plan, so it must
+	// never be treated as a preview mode: previewOnly must not consider it,
+	// and a Verify run without DryRun/ShowDiffs still reaches Execute.
+	Verify bool
 }
 
 // Result is the outcome of a successful sync.
@@ -101,6 +109,7 @@ type Engine struct {
 	local          LocalManifest
 	remote         RemoteManifest
 	plan           *SyncPlan
+	divergences    []Divergence
 	lock           *SyncLock
 	rollback       *Rollback
 	newCatalogID   string
@@ -113,6 +122,11 @@ type Engine struct {
 	migrationNote  string
 	ignoreNotice   string
 	lockedNote     string
+
+	// skippedSymlinks holds symlinks the walk did not follow, filtered
+	// through the ignore matcher so deliberately-ignored or system-excluded
+	// links are absent. Populated in Phase 2; exposed by the display layer.
+	skippedSymlinks []SkippedSymlink
 
 	lockfileFn        LockfileRunner
 	lockfileGenerated bool
@@ -198,13 +212,20 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 }
 
 // Run is Plan + Execute. With DryRun or ShowDiffs it stops after Plan.
+// An empty plan normally short-circuits before Execute too, but a --verify
+// run that recorded BASE-vs-REMOTE divergences must still run Phase 6: the
+// plan has nothing to apply, yet the manifest on disk is a lie about the
+// server, and Phase 6 is what rewrites it from the real remote now in hand.
+// The sharpest shape — BASE poisoned to A while disk and server both hold B
+// — classifies as CONVERGED and plans nothing, so without this the poison
+// survives the very run that detected it.
 func (e *Engine) Run() (*Result, error) {
 	plan, err := e.Plan()
 	if err != nil {
 		return nil, err
 	}
 
-	if e.previewOnly() || plan.IsEmpty() {
+	if e.previewOnly() || (plan.IsEmpty() && len(e.divergences) == 0) {
 		if relErr := e.releaseLock(); relErr != nil {
 			return nil, fmt.Errorf("release lock: %w", relErr)
 		}
@@ -247,6 +268,25 @@ func (e *Engine) IgnoreFileNotice() string { return e.ignoreNotice }
 // preview can reach it, and a preview that printed a plan without saying so
 // would read as a sync that is going to work.
 func (e *Engine) LockedNotice() string { return e.lockedNote }
+
+// Divergences reports the paths where BASE (manifest.json) and the real
+// REMOTE listing disagree, as detected in Phase 2 of a --verify run. A
+// non-drifted artifact without --verify never fetches the remote (the fast
+// path copies BASE into REMOTE), so an empty result can mean "checked and
+// clean", "nothing was checked", or "nothing can be checked" (first sync) —
+// only a --verify run with a fetched remote populates the slice.
+//
+// The findings are diagnostics, not errors: the plan already reconciles them
+// because the real remote is in hand, and the exit status must not change.
+func (e *Engine) Divergences() []Divergence { return e.divergences }
+
+// SkippedSymlinks reports the symlinks the walk did not follow, filtered
+// through the ignore matcher so deliberately-ignored or system-excluded
+// links are absent. Each entry distinguishes a single skipped file from an
+// entire omitted subtree (a directory symlink prunes all of its children).
+// The findings are diagnostics: the plan already excludes them, and the
+// exit status must not change.
+func (e *Engine) SkippedSymlinks() []SkippedSymlink { return e.skippedSymlinks }
 
 // previewOnly reports that this run stops after Plan and sends nothing to the
 // platform, which is what makes the artifact's own mutability beside the point

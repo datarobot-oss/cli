@@ -86,9 +86,21 @@ func TestWapiignoreShadowWarning_LegacyOnly(t *testing.T) {
 	assert.Contains(t, notice, ignore.FileName, "notice must name the current file to rename to")
 }
 
+// wantShadowWarning pins the exact ShadowWarning text emitted when both
+// ignore filenames are present. The warning is the only signal a user gets
+// that patterns they wrote are inert, so a wording change should be a
+// deliberate, reviewed act — pinning the full sentence makes it one. The
+// text lives in the ignore matcher; this constant is transcribed from it
+// (not produced through the same Sprintf, which would make the pin
+// self-fulfilling).
+const wantShadowWarning = "Both .drignore and .wapiignore are present. .drignore is the one in effect, " +
+	"and the patterns in .wapiignore are not applied. Merge them into .drignore and delete .wapiignore."
+
 // TestWapiignoreShadowWarning_BothPresent verifies that the shadow warning
 // fires when both .drignore and .wapiignore are present. The current name wins
-// and the legacy patterns are inert, which the warning must say.
+// and the legacy patterns are inert, which the warning must say. The warning
+// is emitted through log.Warn (never through IgnoreFileNotice), so the
+// capture seam is what pins the actual text.
 func TestWapiignoreShadowWarning_BothPresent(t *testing.T) {
 	dir := initProject(t, map[string]string{
 		ignore.FileName:       "*.new\n",
@@ -97,12 +109,38 @@ func TestWapiignoreShadowWarning_BothPresent(t *testing.T) {
 
 	e := lockfileEngine(t, dir, noLockfileRunner)
 
-	_, err := e.Plan()
-	require.NoError(t, err)
+	logged := captureWarnLog(t, func() {
+		_, err := e.Plan()
+		require.NoError(t, err)
+	})
 
 	// The shadow warning goes to log.Warn, not to IgnoreFileNotice. The
 	// notice is empty because the current name is in effect.
 	assert.Empty(t, e.IgnoreFileNotice(), "current name in effect has no deprecation notice")
+
+	assert.Contains(t, logged, wantShadowWarning,
+		"the shadow warning must actually be emitted, with this exact text")
+}
+
+// TestWapiignoreShadowWarning_NotFiredWithoutLegacyFile is the false-positive
+// control for the pinned warning: with only the current filename present
+// there is nothing being shadowed, and no shadow warning may reach the log.
+// Without this control an always-warn implementation would pass the positive
+// test above.
+func TestWapiignoreShadowWarning_NotFiredWithoutLegacyFile(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		ignore.FileName: "*.tmp\n",
+	})
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	logged := captureWarnLog(t, func() {
+		_, err := e.Plan()
+		require.NoError(t, err)
+	})
+
+	assert.NotContains(t, logged, wantShadowWarning,
+		"no shadow warning when the legacy file is absent")
 }
 
 // TestSystemExcludes_StillExcluded verifies that built-in system-excluded paths
@@ -226,12 +264,99 @@ func TestCaseCollision_FailsBeforeUpload(t *testing.T) {
 	assert.Contains(t, msg, "Config.yaml vs config.yaml")
 }
 
-// TestCaseCollision_ErrorIsBeforeUpload verifies that the case-collision check
-// runs in Phase 2 (manifests), before Phase 5 (execute) where uploads happen.
-// We cannot create case-colliding files on macOS, so we verify the check
-// position by confirming that a Plan with no case collisions succeeds and
-// the fake's upload counters are zero (Plan does not execute).
-func TestCaseCollision_ErrorIsBeforeUpload(t *testing.T) {
+// fsIsCaseInsensitive reports whether dir lives on a case-insensitive
+// filesystem, using a throwaway probe pair inside dir: on a
+// case-insensitive filesystem, os.Stat of the upper-case spelling resolves
+// to the lower-case file that was just written. The probe directory is
+// removed before the helper returns, so the probe never leaks into the
+// caller's fixture: a test that probes for case sensitivity must not change
+// the tree it is about to build its colliding pair in.
+func fsIsCaseInsensitive(t *testing.T, dir string) bool {
+	t.Helper()
+
+	probeDir := filepath.Join(dir, "case-probe")
+	require.NoError(t, os.MkdirAll(probeDir, 0o755))
+
+	lower := filepath.Join(probeDir, "probe.txt")
+	require.NoError(t, os.WriteFile(lower, []byte("x"), 0o644))
+
+	_, err := os.Stat(filepath.Join(probeDir, "PROBE.TXT"))
+
+	// Synchronous removal rather than t.Cleanup: the caller builds its
+	// fixture immediately after this call, and the probe must be gone by
+	// then — on the non-skip path the project dir must hold exactly the
+	// files the caller creates afterwards.
+	require.NoError(t, os.RemoveAll(probeDir))
+
+	return err == nil
+}
+
+// TestCaseCollision_EndToEnd_FailsBeforeUpload drives Plan() against a
+// genuinely colliding tree — two real files whose paths differ only in case —
+// and asserts the plan fails with the case-collision error before any
+// upload-side call. This is the end-to-end complement to
+// TestCaseCollision_FailsBeforeUpload, which must call
+// caseCollisionsFromManifest directly because a colliding tree cannot exist
+// on a case-insensitive filesystem: here the tree is real, so the exact
+// walk → hash → collision-check seam the production code runs is exercised.
+// The probe skips with a visible reason on macOS/Windows, where the two
+// files would collapse into one; Linux CI exercises this test for real.
+func TestCaseCollision_EndToEnd_FailsBeforeUpload(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	})
+
+	if fsIsCaseInsensitive(t, dir) {
+		t.Skip("case-insensitive filesystem: two paths differing only in case collapse into one file, so a genuinely colliding tree cannot be created here (TestCaseCollision_FailsBeforeUpload covers the collision check directly)")
+	}
+
+	// The colliding pair. Neither name is ignored or system-excluded, so the
+	// walk collects both and the local manifest carries both.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Greeting.txt"), []byte("hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "greeting.txt"), []byte("hi\n"), 0o644))
+
+	fake := &fakeFilesClient{}
+
+	e, err := newWithDeps(dir, Options{}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, "", ""), nil
+			},
+		},
+		Now:      time.Now,
+		Lockfile: noLockfileRunner,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e.Close() })
+
+	_, err = e.Plan()
+
+	require.Error(t, err, "a genuinely colliding tree must fail the plan")
+	assert.Contains(t, err.Error(), "case-only path collisions",
+		"the failure must be the case-collision error")
+	assert.Contains(t, err.Error(), "Greeting.txt", "the error must name the colliding paths")
+	assert.Contains(t, err.Error(), "greeting.txt", "the error must name the colliding paths")
+
+	// The collision check sits in Phase 2, so the failure must precede every
+	// upload-side call: nothing may reach the network from a plan that never
+	// became executable.
+	assert.Equal(t, 0, fake.CreateStageCalls(), "no stage may be created when the plan fails")
+	assert.Equal(t, 0, fake.UploadToStageCalls(), "nothing may be uploaded when the plan fails")
+	assert.Equal(t, 0, fake.ApplyStageCalls(), "no stage may be applied when the plan fails")
+	assert.Equal(t, 0, fake.UploadFromZipCalls(), "no zip upload may be issued when the plan fails")
+}
+
+// TestPlanWithoutCaseCollisions_MakesNoUploadCalls is the false-positive
+// control for the case-collision tests: with no colliding tree, Plan must
+// succeed with an empty plan and issue no upload-side calls. A colliding
+// tree cannot be created on a case-insensitive filesystem (macOS), so this
+// test observes no collision error at all — it does not verify where the
+// error fires; that is TestCaseCollision_EndToEnd_FailsBeforeUpload's job on
+// case-sensitive filesystems, and TestCaseCollision_FailsBeforeUpload's at
+// function level everywhere else.
+func TestPlanWithoutCaseCollisions_MakesNoUploadCalls(t *testing.T) {
 	dir := syncedProject(t, map[string]string{
 		"app.py": "print('hi')\n",
 	}, "cid-cc", "ver-cc")
@@ -630,10 +755,13 @@ func TestPlanAction_BothSidesDifferent(t *testing.T) {
 	assert.Equal(t, ClsConflict, conflicts[0].Classification)
 }
 
-// TestPlanAction_RemoteWinsResolution verifies that the remote-wins resolution
-// path downloads the remote version. When a conflict is resolved (remote
-// wins), the conflict path's manifest entry has the remote hash, not a
-// streamed upload hash. This is tested through Execute with the fake.
+// TestPlanAction_RemoteWinsResolution verifies that the remote-wins
+// resolution path downloads the remote version and that the remote bytes
+// actually land on disk. The plan-structure half pins that the conflict
+// row carries the server's hash (Phase 6's buildNewBaseManifest resolves
+// conflicts through fa.RemoteHash); the Execute half pins that the
+// resolution really wrote those bytes, kept the local side as a .LOCAL.
+// copy, and recorded the remote hash in the new BASE.
 func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	const (
 		catalogID   = "cid-rw"
@@ -646,32 +774,31 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	}, catalogID, versionID)
 
 	// Modify the file locally.
-	modifyFile(t, dir, "app.py", "print('local-change')\n")
+	localContent := "print('local-change')\n"
+	modifyFile(t, dir, "app.py", localContent)
 
 	// The server has a different version. The artifact's codeRef points at
 	// remoteVerID (different from the synced versionID) so the engine detects
-	// drift and fetches AllFiles for the remote version.
+	// drift and fetches AllFiles for the remote version. The remote version
+	// is seeded with recorded content so the fake can actually serve the
+	// conflict's download; .drignore is seeded with the disk's own bytes so
+	// it is unchanged on both sides and adds no plan rows.
 	remoteContent := "print('remote-change')\n"
 	remoteHash := sha256Hex([]byte(remoteContent))
+
+	drignoreBytes, err := os.ReadFile(filepath.Join(dir, ignore.FileName))
+	require.NoError(t, err)
 
 	fake := (&fakeFilesClient{
 		catalogID: catalogID,
 		stageID:   "stage-rw",
 		versionID: "ver-rw-next",
-	}).withVersion(catalogID, remoteVerID, map[string]filesapi.FileMeta{
-		"app.py":    {Hash: remoteHash, Size: int64(len(remoteContent))},
-		".drignore": {Hash: sha256Hex([]byte("")), Size: 0},
+	}).withVersionContent(catalogID, remoteVerID, map[string][]byte{
+		"app.py":        []byte(remoteContent),
+		ignore.FileName: drignoreBytes,
 	})
 
-	// The fake's DownloadFile fails with a specific
-	// "no downloadable content registered" error unless the test registers
-	// downloadable content via withDownloadable, so we cannot Execute a
-	// conflict resolution through the fake. Instead, verify the plan
-	// structure: the conflict is in the Conflicts list, and the conflict
-	// path's RemoteHash is the server's hash. Phase 6 (buildNewBaseManifest)
-	// uses fa.RemoteHash for conflict entries, which is the remote-wins
-	// resolution.
-	e, err := newWithDeps(dir, Options{DryRun: true, Yes: true}, Deps{
+	e, err := newWithDeps(dir, Options{Yes: true}, Deps{
 		Files: fake,
 		Artifacts: &fakeArtifactStore{
 			GetFn: func(id string) (*workload.Artifact, error) {
@@ -701,6 +828,46 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	require.Equal(t, "app.py", conflict.Path)
 	assert.Equal(t, remoteHash, conflict.RemoteHash,
 		"conflict's RemoteHash must be the server's hash (remote-wins resolution uses this)")
+
+	result, err := e.Execute(plan)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, result.ConflictCount)
+
+	// Remote wins: the server's exact bytes must now sit at the original
+	// path, hashing to the advertised checksum.
+	onDisk, readErr := os.ReadFile(filepath.Join(dir, "app.py"))
+	require.NoError(t, readErr)
+
+	assert.Equal(t, remoteContent, string(onDisk), "remote-wins resolution must write the remote bytes")
+	assert.Equal(t, remoteHash, sha256Hex(onDisk), "written bytes must hash to the server's checksum")
+
+	// The local side of the conflict survives as a .LOCAL.<ts> copy.
+	entries, readErr := os.ReadDir(dir)
+	require.NoError(t, readErr)
+
+	var localCopy string
+
+	for _, ent := range entries {
+		if strings.HasPrefix(ent.Name(), "app.py.LOCAL.") {
+			localCopy = ent.Name()
+		}
+	}
+
+	require.NotEmpty(t, localCopy, "local side of the conflict must be preserved as a .LOCAL. copy")
+
+	localBytes, readErr := os.ReadFile(filepath.Join(dir, localCopy))
+	require.NoError(t, readErr)
+	assert.Equal(t, localContent, string(localBytes), "the .LOCAL. copy must hold the pre-conflict local bytes")
+
+	// The new BASE records the remote hash for the conflicted path — the
+	// remote-wins rule made real by Phase 6.
+	manifest, manifestErr := wapi.LoadManifest(dir)
+	require.NoError(t, manifestErr)
+	assert.Equal(t, remoteHash, manifest.Files["app.py"].Hash,
+		"manifest must record the remote hash for the conflict-resolved path")
+
+	assert.Equal(t, 1, fake.DownloadFileCalls(), "conflict resolution must have pulled the remote bytes exactly once")
 }
 
 // ---------------------------------------------------------------------------
