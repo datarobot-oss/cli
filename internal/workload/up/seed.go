@@ -15,14 +15,8 @@
 package up
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"hash"
-	"io"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -30,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wizard"
 )
@@ -228,87 +223,22 @@ func pullCode(
 			fileops.FormatCaseCollisions(cs))
 	}
 
+	// The download itself is the sync pipeline's: it verifies each file against
+	// its catalog size and hash and removes the partial on any failure, so a
+	// half-written root marker never survives to make a retry skip seeding and
+	// build from a corrupt tree. Reused here rather than re-implemented.
+	actions := make([]sync.FileAction, 0, len(paths))
 	for _, path := range paths {
-		if err := downloadInto(client, codeRef, dir, path, files[path]); err != nil {
-			return err
-		}
+		meta := files[path]
+		actions = append(actions, sync.FileAction{Path: path, RemoteSize: meta.Size, RemoteHash: meta.Hash})
+	}
+
+	if err := sync.DownloadFiles(client, dir, codeRef.CatalogID, codeRef.CatalogVersionID, actions); err != nil {
+		return err
 	}
 
 	fmt.Fprintf(opts.Stderr, "  Pulled %d file(s) from %s's current version into %s\n",
 		len(paths), name(loaded, live), dir)
 
 	return nil
-}
-
-// downloadInto writes one file of the version into dir, creating parents, and
-// verifies it against the catalog's size and hash as it streams.
-//
-// A half-written file is removed on any failure rather than left on disk. The
-// pull writes in place (the directory was empty), so a partial survivor is not
-// staged away from the deploy: on a retry a truncated root marker (a cut-off
-// pyproject.toml) makes the directory look like a real project, seeding is
-// skipped, and the deploy builds from the corrupt tree — and a partial that is
-// not a marker refuses the next run with a message the user can only clear by
-// deleting files by hand. Verifying size and hash catches a silent truncation
-// the writer itself did not report. This mirrors the sync engine's downloadOne.
-func downloadInto(
-	client filesapi.Client,
-	codeRef *workload.DatarobotCodeRef,
-	dir, path string,
-	meta filesapi.FileMeta,
-) error {
-	dst := filepath.Join(dir, filepath.FromSlash(path))
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fmt.Errorf("cannot create the directory for %s: %w", path, err)
-	}
-
-	file, err := os.Create(dst)
-	if err != nil {
-		return fmt.Errorf("cannot create %s: %w", path, err)
-	}
-
-	hasher := sha256.New()
-
-	_, n, downloadErr := client.DownloadFile(
-		codeRef.CatalogID, codeRef.CatalogVersionID, path, io.MultiWriter(file, hasher))
-
-	closeErr := file.Close()
-
-	if failure := verifyDownload(path, meta, n, hasher, downloadErr, closeErr); failure != nil {
-		_ = os.Remove(dst)
-
-		return failure
-	}
-
-	return nil
-}
-
-// verifyDownload reports the first thing wrong with a file that was just
-// written: the download or close itself, a byte count short of the catalog's,
-// or a checksum that does not match. nil means the file on disk is the file
-// the catalog holds. The caller removes the partial when this returns non-nil.
-func verifyDownload(
-	path string,
-	meta filesapi.FileMeta,
-	n int64,
-	hasher hash.Hash,
-	downloadErr, closeErr error,
-) error {
-	switch {
-	case downloadErr != nil:
-		return errors.Join(fmt.Errorf("cannot download %s", path), downloadErr)
-
-	case closeErr != nil:
-		return fmt.Errorf("cannot finish writing %s: %w", path, closeErr)
-
-	case meta.Size > 0 && n != meta.Size:
-		return fmt.Errorf("download of %s is %d bytes, expected %d", path, n, meta.Size)
-
-	case meta.Hash != "" && hex.EncodeToString(hasher.Sum(nil)) != meta.Hash:
-		return fmt.Errorf("download of %s does not match its expected checksum", path)
-
-	default:
-		return nil
-	}
 }

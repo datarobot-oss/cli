@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -65,8 +66,11 @@ type fakeFiles struct {
 	filesapi.Client
 	files     map[string]filesapi.FileMeta
 	content   map[string]string
-	pulled    []string
 	failPaths map[string]bool
+
+	// The reused sync downloader pulls in parallel, so pulled is guarded.
+	mu     sync.Mutex
+	pulled []string
 }
 
 func (f *fakeFiles) AllFiles(string, string) (map[string]filesapi.FileMeta, error) {
@@ -74,7 +78,9 @@ func (f *fakeFiles) AllFiles(string, string) (map[string]filesapi.FileMeta, erro
 }
 
 func (f *fakeFiles) DownloadFile(_, _, path string, w io.Writer) (string, int64, error) {
+	f.mu.Lock()
 	f.pulled = append(f.pulled, path)
+	f.mu.Unlock()
 
 	// The bytes are written before the failure so the test exercises the
 	// partial-file-on-disk path, not a create that never wrote anything.
