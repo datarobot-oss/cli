@@ -24,6 +24,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -171,6 +172,14 @@ func endpointCheckAuthForURL(rawURL string) (endpointCheckAuthMode, error) {
 
 	matches, err := drapi.URLMatchesConfiguredBase(rawURL)
 	if err != nil || !matches {
+		// Public workload paths only receive credentials when they are on the
+		// configured DataRobot origin. Log the anonymous fallback so debug users
+		// can distinguish a gateway 401 from an intentional token-withheld check.
+		log.Debug("endpoint check: withholding token because endpoint URL does not match configured base",
+			"endpoint", rawURL,
+			"configured_base", config.GetBaseURL(),
+			"error", err)
+
 		return endpointCheckAnonymous, nil
 	}
 

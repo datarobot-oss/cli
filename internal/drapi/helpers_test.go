@@ -115,7 +115,7 @@ func TestAssertNextOnSameHost(t *testing.T) {
 
 	err := AssertNextOnSameHost("https://other.example.test/api/v2/files/?offset=100")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match API base host")
+	assert.Contains(t, err.Error(), `Next URL host "other.example.test" does not match API base "https://example.test"`)
 }
 
 // ErrFromResp interprets nothing: drapi serves APIs that disagree on their

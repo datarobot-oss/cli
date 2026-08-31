@@ -38,12 +38,7 @@ func AssertNextOnSameHost(rawNextURL string) error {
 	}
 
 	if !matches {
-		base, err := url.Parse(config.GetBaseURL())
-		if err != nil {
-			return fmt.Errorf("pagination: parse API base URL: %w", err)
-		}
-
-		return fmt.Errorf("pagination: Next URL host %q does not match API base host %q", next.Host, base.Host)
+		return fmt.Errorf("pagination: Next URL host %q does not match API base %q", next.Host, config.GetBaseURL())
 	}
 
 	return nil

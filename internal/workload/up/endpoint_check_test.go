@@ -19,12 +19,16 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
+	drlog "github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -166,6 +170,25 @@ func TestCheckEndpoint_SendsCredentialsToConfiguredWorkloadGateway(t *testing.T)
 	assert.Equal(t, "Bearer endpoint-test-token", gotAuth)
 }
 
+// A gateway-shaped URL on the wrong origin stays anonymous for credential
+// safety, but the fallback must leave a debug breadcrumb so a same-looking 401
+// can be diagnosed as a token intentionally withheld by the CLI.
+func TestEndpointCheckAuthForURL_LogsWhenGatewayOriginDoesNotMatchConfig(t *testing.T) {
+	installEndpointCheckAuth(t, "https://configured.example.test", "endpoint-test-token")
+
+	logDir := startEndpointCheckDebugLog(t)
+
+	mode, err := endpointCheckAuthForURL("https://returned.example.test/api/v2/endpoints/workloads/wl-1")
+	require.NoError(t, err)
+	assert.Equal(t, endpointCheckAnonymous, mode)
+
+	content, err := os.ReadFile(filepath.Join(logDir, ".dr-tui-debug.log"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "withholding token")
+	assert.Contains(t, string(content), "returned.example.test")
+	assert.Contains(t, string(content), "configured.example.test")
+}
+
 // A redirect is reported as the 3xx it is, never followed: a gateway that
 // 302s an anonymous GET to a login page would otherwise have the check
 // report the login page's 200 for a container serving nothing — the one
@@ -249,4 +272,22 @@ func installEndpointCheckAuth(t *testing.T, baseURL, token string) {
 		viperx.Set(config.DataRobotAPIKey, prevToken)
 		drapi.SetToken(prevCachedToken)
 	})
+}
+
+func startEndpointCheckDebugLog(t *testing.T) string {
+	t.Helper()
+
+	prevDebug := viperx.GetBool("debug")
+	logDir := t.TempDir()
+
+	testutil.SetTestHomeDir(t, logDir)
+	viperx.Set("debug", true)
+	drlog.Start()
+
+	t.Cleanup(func() {
+		drlog.Stop()
+		viperx.Set("debug", prevDebug)
+	})
+
+	return logDir
 }
