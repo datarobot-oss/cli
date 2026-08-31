@@ -33,10 +33,7 @@ Validate that pagination never crosses host boundaries.
 A flag shape that recurs across commands, or carries the same validation requirement wherever
 it appears (a count, a duration, an ID format), must register through one shared `pflag.Value`
 (see `internal/countflags`, `cmd/internal/pollflags`) — not a fresh ad hoc check hand-rolled in
-each command's `RunE`. A second command re-implementing the same "must be positive"/"must
-parse as a duration" logic instead of reusing the existing type is a sign the flag belongs in
-a shared package, not more copies of the check. Validating this way also moves the rejection to
-parse time, before the command runs.
+each command's `RunE`.
 
 ## Sentinel Defaults Are a Documented Exception
 
