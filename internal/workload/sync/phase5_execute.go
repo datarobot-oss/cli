@@ -177,14 +177,27 @@ func backupLocalFile(e *Engine, rb *Rollback, path, stamp string) error {
 
 // applyDownloads pulls remote bytes for downloads and conflicts (remote wins,
 // so remote bytes land at the original path, which backupOverwrittenLocals has
-// already freed). REMOTE_DELETED needs no download: its local file was renamed
-// aside and stays gone.
+// already freed for REMOTE_MODIFIED and conflicts). REMOTE_DELETED needs no
+// download: its local file was renamed aside and stays gone.
 func applyDownloads(e *Engine, rb *Rollback, codeRef codeRefRef) error {
 	if codeRef.CatalogID == "" || codeRef.CatalogVersionID == "" {
 		return nil
 	}
 
 	pulls := pullList(e.plan)
+
+	// Back up every pull target before writing it. For REMOTE_MODIFIED and
+	// conflicts this is a no-op (backupOverwrittenLocals already renamed the
+	// original aside), but a REMOTE_ADDED path can still hold a file the local
+	// manifest never saw — a .drignore'd file, or a symlink the walk skipped —
+	// and TrackCreated below would otherwise let a failed sync's Restore delete
+	// it with nothing to put back.
+	for _, fa := range pulls {
+		if err := rb.Backup(fa.Path); err != nil {
+			return err
+		}
+	}
+
 	if err := downloadFiles(e, codeRef.CatalogID, codeRef.CatalogVersionID, pulls); err != nil {
 		return err
 	}

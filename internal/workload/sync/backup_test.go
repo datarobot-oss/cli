@@ -15,6 +15,7 @@
 package sync
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,6 +24,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// downloadFake serves canned bytes for DownloadFile; the rest of the FilesAPI
+// surface comes from the erroring fakeFilesClient (engine_test.go).
+type downloadFake struct {
+	fakeFilesClient
+	content map[string]string
+}
+
+func (d *downloadFake) DownloadFile(_, _, path string, w io.Writer) (string, int64, error) {
+	n, _ := io.WriteString(w, d.content[path])
+
+	return "", int64(n), nil
+}
 
 // writeLocal creates a file under dir and returns its absolute path.
 func writeLocal(t *testing.T, dir, rel, content string) string {
@@ -93,6 +107,41 @@ func TestBackupOverwrittenLocals_BacksUpEveryDestructiveAction(t *testing.T) {
 	assert.Equal(t, "local edits\n", backups["app.py.LOCAL.20260102T030405Z"])
 	assert.Equal(t, "still wanted\n", backups["old.py.LOCAL.20260102T030405Z"])
 	assert.Equal(t, "mine\n", backups["conf.py.LOCAL.20260102T030405Z"])
+}
+
+// A REMOTE_ADDED path can still hold a file the local manifest never saw (a
+// .drignore'd file, a symlink the walk skipped). It gets no .LOCAL copy, so
+// applyDownloads must back it up for rollback: a failed sync's Restore then puts
+// it back instead of deleting it with nothing behind it (RAPTOR-19348 review).
+func TestApplyDownloads_RollbackRestoresAPreexistingRemoteAddedFile(t *testing.T) {
+	dir := t.TempDir()
+
+	target := writeLocal(t, dir, "ignored.py", "original\n")
+
+	rb := newTestRollback(t, dir)
+
+	e := &Engine{
+		projectDir: dir,
+		nowFn:      staticNow,
+		files:      &downloadFake{content: map[string]string{"ignored.py": "remote\n"}},
+		plan: &SyncPlan{
+			Downloads: []FileAction{{Path: "ignored.py", Action: ActDownloadAdd}},
+		},
+	}
+
+	require.NoError(t, backupOverwrittenLocals(e, rb)) // no-op: REMOTE_ADDED is not in the backup set
+	require.NoError(t, applyDownloads(e, rb, codeRefRef{CatalogID: "cat", CatalogVersionID: "ver"}))
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, "remote\n", string(got), "the download overwrote the pre-existing file")
+
+	// A later phase failing triggers this in production.
+	require.NoError(t, rb.Restore())
+
+	got, err = os.ReadFile(target)
+	require.NoError(t, err, "the pre-existing file must be restored, not deleted")
+	assert.Equal(t, "original\n", string(got))
 }
 
 // REMOTE_ADDED has no local file, so there is nothing to back up: the download

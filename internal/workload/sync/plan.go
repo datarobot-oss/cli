@@ -114,20 +114,16 @@ func (p *SyncPlan) ConflictPaths() []string {
 	return out
 }
 
-// OverwritesLocal reports whether applying this plan would replace or delete an
-// existing local file — every action that writes the working tree from the
-// remote side. These are the paths a run first copies to *.LOCAL, the ones the
-// interactive prompt asks about, and the ones a non-interactive run refuses
-// without --accept-remote (RAPTOR-19348).
-func (p *SyncPlan) OverwritesLocal() bool {
-	return len(p.OverwrittenLocalPaths()) > 0
-}
-
 // OverwrittenLocalPaths lists, sorted, the local files applying this plan would
-// replace or delete: REMOTE_MODIFIED downloads (remote bytes land over yours),
-// REMOTE_DELETED deletes (your file is removed), and every conflict (remote
-// wins). REMOTE_ADDED and EDIT_DEL are excluded — they have no local file to
-// lose.
+// replace or delete, so the engine can copy each to *.LOCAL before the remote
+// wins: REMOTE_MODIFIED downloads (remote bytes land over yours), REMOTE_DELETED
+// deletes (your file is removed), and every conflict. REMOTE_ADDED and EDIT_DEL
+// are excluded — they have no local file to lose.
+//
+// This is the backup set, not the confirmation set: only conflicts prompt or
+// refuse (see the command's gate), because a REMOTE_MODIFIED/REMOTE_DELETED file
+// matched the last sync and pulling it loses no unsaved work — it is backed up
+// all the same.
 func (p *SyncPlan) OverwrittenLocalPaths() []string {
 	var out []string
 

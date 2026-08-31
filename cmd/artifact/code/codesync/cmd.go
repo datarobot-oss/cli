@@ -134,10 +134,12 @@ applies the resulting plan in a single versioned step.
 
 Before the remote replaces or deletes any local file, your version is
 saved as a *.LOCAL.<timestamp> copy, so nothing local is ever lost
-without a recoverable backup. A run that would overwrite or delete local
-files asks first; run non-interactively (--yes or in CI) it is refused
-unless you pass --accept-remote, so an automated sync never silently
-rewrites your checkout.
+without a recoverable backup. When a file changed both locally and on
+the remote (a conflict), the run asks first; run non-interactively
+(--yes or in CI) a conflict is refused unless you pass --accept-remote,
+so an automated sync never silently overwrites your local changes. A
+plain pull of a remote change you had not touched applies without
+prompting (still backed up to *.LOCAL).
 
 Use --dry-run to preview the plan without writing anything; --diff to
 also print per-file unified diffs. Both modes exit before any remote
@@ -299,7 +301,14 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 // (RAPTOR-19348). Either way, the files it would replace are backed up to
 // *.LOCAL before the remote lands.
 func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, flags runFlags, deps Deps) (bool, error) {
-	if !plan.OverwritesLocal() {
+	// Only conflicts gate: a REMOTE_MODIFIED or REMOTE_DELETED file is
+	// byte-identical to the last sync (local == base), so pulling it is a
+	// fast-forward with no unsaved work to lose. Those still get a .LOCAL
+	// backup in the engine, but they do not prompt or refuse — otherwise a
+	// routine "pull a teammate's change" would block, and CI would reflexively
+	// paste --accept-remote and defeat the gate for the case that matters. A
+	// conflict is the case that matters: both sides changed the same file.
+	if !plan.HasConflicts() {
 		return true, nil
 	}
 
@@ -308,7 +317,7 @@ func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.Sync
 			return true, nil
 		}
 
-		return false, overwriteRefusedError(plan)
+		return false, conflictRefusedError(plan)
 	}
 
 	choice, err := promptOverwriteMenu(cmd, engine, plan, deps.ReadLine)
@@ -337,13 +346,13 @@ func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPla
 // overwriteRefusedError is the non-interactive refusal: it names the local
 // files the remote would replace or delete and the two ways forward, so a CI
 // log says exactly what went wrong and how to proceed on purpose.
-func overwriteRefusedError(plan *sync.SyncPlan) error {
-	paths := plan.OverwrittenLocalPaths()
+func conflictRefusedError(plan *sync.SyncPlan) error {
+	paths := plan.ConflictPaths()
 
 	return fmt.Errorf(
-		"refusing to overwrite local files: this sync would replace or delete %d local file(s) "+
-			"with the remote version, and no confirmation is possible non-interactively:\n%s\n"+
-			"Re-run with --accept-remote to allow it (your versions are saved as *.LOCAL copies), "+
+		"refusing to overwrite local changes: %d file(s) changed both locally and on the remote, "+
+			"and no confirmation is possible non-interactively:\n%s\n"+
+			"Re-run with --accept-remote to let the remote win (your versions are saved as *.LOCAL copies), "+
 			"or --dry-run to inspect the plan first",
 		len(paths), formatPathList(paths))
 }
@@ -391,18 +400,20 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 		return display.RenderSyncJSON(out, plan, nil, locked)
 	}
 
-	if plan.OverwritesLocal() {
+	if plan.HasConflicts() {
 		// Without --yes there is no confirmation channel in JSON mode, so the
-		// plan is emitted and nothing runs: a script inspects it and re-invokes
+		// plan is emitted and nothing runs. The document carries "refused": true
+		// so a consumer sees the run applied nothing — including its uploads —
+		// rather than inferring it from an absent "result"; a script re-invokes
 		// with --yes --accept-remote to proceed. With --yes but no opt-in, the
-		// run is refused loudly (non-zero exit) rather than silently rewriting
-		// local files (RAPTOR-19348).
+		// run is refused loudly (non-zero exit) rather than silently letting the
+		// remote win over local changes (RAPTOR-19348).
 		if !flags.Yes {
-			return display.RenderSyncJSON(out, plan, nil, locked)
+			return display.RenderRefusedJSON(out, plan, locked)
 		}
 
 		if !flags.AcceptRemote {
-			return overwriteRefusedError(plan)
+			return conflictRefusedError(plan)
 		}
 	}
 

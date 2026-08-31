@@ -35,22 +35,23 @@ const (
 	promptQuit                     // user aborted
 )
 
-// promptOverwriteMenu shows the [d] [Enter] [q] menu when the plan would
-// replace or delete local files and the user has not passed --yes. It first
-// names those files and says their local versions will be saved as *.LOCAL,
-// so the user knows what "Sync" costs before choosing it. Loops on [d] so they
-// can review diffs and then either confirm or abort. Prompts go to the cobra
-// command's stderr (so cmd.SetErr in tests can capture them and embedded
-// callers can redirect) to keep stdout clean for piped output. readLine is
-// injected so tests can drive input deterministically.
+// promptOverwriteMenu shows the [d] [Enter] [q] menu when the plan has
+// conflicts — files changed both locally and on the remote — and the user has
+// not passed --yes. It first names those files and says the remote wins while
+// the local version is saved as *.LOCAL, so the user knows what "Pull remote"
+// costs before choosing it. Loops on [d] so they can review diffs and then
+// either confirm or abort. Prompts go to the cobra command's stderr (so
+// cmd.SetErr in tests can capture them and embedded callers can redirect) to
+// keep stdout clean for piped output. readLine is injected so tests can drive
+// input deterministically.
 func promptOverwriteMenu(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, readLine func() (string, error)) (promptChoice, error) {
 	stderr := cmd.ErrOrStderr()
 
-	paths := plan.OverwrittenLocalPaths()
+	paths := plan.ConflictPaths()
 
 	fmt.Fprintf(stderr,
-		"  This sync replaces or deletes %d local file(s) with the remote version "+
-			"(your copies are saved as *.LOCAL):\n%s\n",
+		"  %d file(s) changed both locally and on the remote; the remote wins and "+
+			"your version is saved as *.LOCAL:\n%s\n",
 		len(paths), formatPathList(paths))
 
 	for {

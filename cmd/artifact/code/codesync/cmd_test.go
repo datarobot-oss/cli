@@ -461,7 +461,22 @@ func TestRunE_JSONOutput_ConflictWithoutYes(t *testing.T) {
 	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.False(t, fe.executed, "JSON path must not auto-execute on conflicts without --yes")
-	assert.Contains(t, stdout.String(), `"x.py"`, "plan JSON should still be emitted")
+
+	// The document carries refused:true so a consumer knows nothing was applied
+	// (uploads included), rather than inferring it from a missing "result".
+	var doc struct {
+		Conflicts []struct {
+			Path string `json:"path"`
+		} `json:"conflicts"`
+		Refused bool             `json:"refused"`
+		Result  *json.RawMessage `json:"result"`
+	}
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc))
+	require.Len(t, doc.Conflicts, 1)
+	assert.Equal(t, "x.py", doc.Conflicts[0].Path, "plan JSON should still be emitted")
+	assert.True(t, doc.Refused, "a plan withheld for confirmation is flagged refused")
+	assert.Nil(t, doc.Result, "nothing ran, so there is no result")
 }
 
 // TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote: in JSON mode,
@@ -477,7 +492,7 @@ func TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote(t *testing.T) {
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "refusing to overwrite local files")
+	assert.Contains(t, err.Error(), "refusing to overwrite local changes")
 	assert.False(t, fe.executed, "--yes without --accept-remote must not execute an overwriting plan")
 }
 
@@ -617,7 +632,7 @@ func TestRunE_NonInteractiveEnvVar(t *testing.T) {
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "refusing to overwrite local files")
+	assert.Contains(t, err.Error(), "refusing to overwrite local changes")
 	assert.False(t, fe.executed)
 }
 
@@ -640,19 +655,19 @@ func TestRunE_NonInteractiveEnvVar_UploadOnlyProceeds(t *testing.T) {
 	assert.True(t, fe.executed, "an upload-only plan needs no confirmation")
 }
 
-// TestRunE_Yes_RefusesOverwriteWithoutAcceptRemote: on the human path too,
-// --yes alone refuses an overwriting plan; --accept-remote is required.
-func TestRunE_Yes_RefusesOverwriteWithoutAcceptRemote(t *testing.T) {
+// TestRunE_Yes_RefusesConflictWithoutAcceptRemote: on the human path too,
+// --yes alone refuses a plan with conflicts; --accept-remote is required.
+func TestRunE_Yes_RefusesConflictWithoutAcceptRemote(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
 
 	fe := &fakeEngine{plan: &sync.SyncPlan{
-		Deletes: []sync.FileAction{{Path: "gone.py", Action: sync.ActDownloadDelete}},
+		Conflicts: []sync.FileAction{{Path: "x.py"}},
 	}}
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "yes": "true"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "gone.py", "the refusal names the files at risk")
+	assert.Contains(t, err.Error(), "x.py", "the refusal names the conflicting files")
 	assert.False(t, fe.executed)
 }
 
@@ -673,24 +688,45 @@ func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
 	assert.True(t, fe.executed)
 }
 
-// TestRunE_PromptsOnADownloadOverwrite: the interactive prompt now fires on a
-// plain REMOTE_MODIFIED download, not only on conflicts — pulling remote bytes
-// over a local file is the same data-loss risk (RAPTOR-19348). Typing 'q'
-// aborts before Execute.
-func TestRunE_PromptsOnADownloadOverwrite(t *testing.T) {
+// TestRunE_FastForwardPull_RunsWithoutConfirmation: a REMOTE_MODIFIED /
+// REMOTE_DELETED plan (no conflicts) is a fast-forward with no unsaved work, so
+// it runs under --yes with no --accept-remote and no prompt. The engine still
+// backs those files up to .LOCAL; only conflicts gate (RAPTOR-19348).
+func TestRunE_FastForwardPull_RunsWithoutConfirmation(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
 
-	fe := &fakeEngine{plan: &sync.SyncPlan{
-		Downloads: []sync.FileAction{{Path: "app.py", Action: sync.ActDownloadModify}},
-	}}
-	deps := fakeEngineDeps(fe)
-	deps.ReadLine = stubReader("q")
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{
+			Downloads: []sync.FileAction{{Path: "app.py", Action: sync.ActDownloadModify}},
+			Deletes:   []sync.FileAction{{Path: "gone.py", Action: sync.ActDownloadDelete}},
+		},
+		result: &sync.Result{NewVersion: "v3", DownloadedCount: 1, DeletedCount: 1},
+	}
 
-	_, _, stderr, err := runWithDeps(t, deps, map[string]string{"dir": dir})
+	// No --accept-remote, no reader stub: if this prompted or refused, it would
+	// panic on a nil ReadLine or error out.
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "yes": "true"})
 	require.NoError(t, err)
-	assert.False(t, fe.executed, "a download overwrite must be confirmed, and 'q' aborts")
-	assert.Contains(t, stderr.String(), "app.py", "the prompt names the file it would overwrite")
+	assert.True(t, fe.executed, "a fast-forward pull needs no confirmation")
+}
+
+// TestRunE_DownloadOverwrite_DoesNotPrompt: interactively too, a plain
+// REMOTE_MODIFIED download does not prompt — only conflicts do.
+func TestRunE_DownloadOverwrite_DoesNotPrompt(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{
+			Downloads: []sync.FileAction{{Path: "app.py", Action: sync.ActDownloadModify}},
+		},
+		result: &sync.Result{NewVersion: "v3", DownloadedCount: 1},
+	}
+	// No reader stub: a prompt would call a nil ReadLine and panic.
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir})
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "a download overwrite runs without a prompt")
 }
 
 // TestRunE_StaleRollbackHint: when the engine reports a recovered
