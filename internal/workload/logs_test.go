@@ -255,7 +255,7 @@ func TestGetWorkloadLogs_RejectsOffHostNext(t *testing.T) {
 
 	_, err := GetWorkloadLogs("wl-1", 10, "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match API base host")
+	assert.Contains(t, err.Error(), "does not match API base")
 }
 
 func TestGetWorkloadLogs_RejectsMalformedNext(t *testing.T) {

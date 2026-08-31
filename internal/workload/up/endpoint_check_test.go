@@ -19,9 +19,16 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
+	drlog "github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,6 +49,28 @@ func TestVerifyEndpoint_StatesTheStatusInWords(t *testing.T) {
 
 	assert.Contains(t, out.String(), "404 Not Found")
 	assert.Contains(t, out.String(), "anonymous GET")
+}
+
+// Gateway-routed workload URLs are DataRobot API URLs: the gateway consumes the
+// token before proxying, so the status can describe the workload instead of the
+// gateway's unauthenticated 401.
+func TestVerifyEndpoint_StatesAuthenticatedGatewayChecks(t *testing.T) {
+	installEndpointCheckAuth(t, "https://app.example.test", "endpoint-test-token")
+	force(t, &checkEndpointFn, func(url string) (int, error) {
+		assert.Equal(t, "https://app.example.test/api/v2/endpoints/workloads/wl-1?protonId=p-1", url)
+
+		return http.StatusOK, nil
+	})
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{
+		Endpoint:   "https://app.example.test/api/v2/endpoints/workloads/wl-1?protonId=p-1",
+		WorkloadID: "wl-1",
+	}, "", newReporter(&out, false))
+
+	assert.Contains(t, out.String(), "authenticated GET")
+	assert.Contains(t, out.String(), "200 OK")
 }
 
 // An endpoint that does not answer is the case this check exists for: with no
@@ -78,10 +107,32 @@ func TestVerifyEndpoint_SkipsWithoutAnEndpoint(t *testing.T) {
 	assert.Empty(t, out.String())
 }
 
-// The real GET is anonymous. The user's API token has no business in a
-// container's access log, and a 401 proves something is serving as well as a
-// 200 does.
-func TestCheckEndpoint_SendsNoCredentials(t *testing.T) {
+// A malformed endpoint is not evidence that the workload failed to answer: the
+// CLI never made a network request, so the report says the check was skipped.
+func TestVerifyEndpoint_SkipsMalformedEndpoint(t *testing.T) {
+	force(t, &checkEndpointFn, func(string) (int, error) {
+		t.Fatal("nothing may be fetched when the endpoint is not an absolute URL")
+
+		return 0, nil
+	})
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{
+		Endpoint:   "None/api/v2/endpoints/workloads/wl-1?protonId=p-1",
+		WorkloadID: "wl-1",
+	}, "", newReporter(&out, false))
+
+	text := out.String()
+	assert.Contains(t, text, "Skipping endpoint check")
+	assert.Contains(t, text, "not absolute")
+	assert.NotContains(t, text, "did not answer")
+}
+
+// A direct workload URL stays anonymous. The user's API token has no business
+// in a container's access log, and a 401 proves something is serving as well as
+// a 200 does when the request actually reaches the container.
+func TestCheckEndpoint_SendsNoCredentialsToDirectEndpoint(t *testing.T) {
 	var gotAuth string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +147,46 @@ func TestCheckEndpoint_SendsNoCredentials(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusTeapot, status)
 	assert.Empty(t, gotAuth, "the GET carries no credentials")
+}
+
+// The public workload endpoint is an API gateway URL. The CLI token is safe to
+// attach there because the gateway consumes it before proxying to the container.
+func TestCheckEndpoint_SendsCredentialsToConfiguredWorkloadGateway(t *testing.T) {
+	var gotAuth string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+
+		w.WriteHeader(http.StatusTeapot)
+	}))
+
+	defer srv.Close()
+
+	installEndpointCheckAuth(t, srv.URL, "endpoint-test-token")
+
+	status, err := checkEndpointFn(srv.URL + "/api/v2/endpoints/workloads/wl-1?protonId=p-1")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusTeapot, status)
+	assert.Equal(t, "Bearer endpoint-test-token", gotAuth)
+}
+
+// A gateway-shaped URL on the wrong origin stays anonymous for credential
+// safety, but the fallback must leave a debug breadcrumb so a same-looking 401
+// can be diagnosed as a token intentionally withheld by the CLI.
+func TestEndpointCheckAuthForURL_LogsWhenGatewayOriginDoesNotMatchConfig(t *testing.T) {
+	installEndpointCheckAuth(t, "https://configured.example.test", "endpoint-test-token")
+
+	logDir := startEndpointCheckDebugLog(t)
+
+	mode, err := endpointCheckAuthForURL("https://returned.example.test/api/v2/endpoints/workloads/wl-1")
+	require.NoError(t, err)
+	assert.Equal(t, endpointCheckAnonymous, mode)
+
+	content, err := os.ReadFile(filepath.Join(logDir, ".dr-tui-debug.log"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "withholding token")
+	assert.Contains(t, string(content), "returned.example.test")
+	assert.Contains(t, string(content), "configured.example.test")
 }
 
 // A redirect is reported as the 3xx it is, never followed: a gateway that
@@ -160,4 +251,43 @@ func TestRun_ReportsTheEndpointAnswer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "Endpoint check")
 	assert.Contains(t, stderr, "200 OK")
+}
+
+func installEndpointCheckAuth(t *testing.T, baseURL, token string) {
+	t.Helper()
+
+	prevBase := viperx.GetString(config.DataRobotURL)
+	prevSkip := viperx.GetBool(config.SkipAuthKey)
+	prevToken := viperx.GetString(config.DataRobotAPIKey)
+	prevCachedToken := drapi.GetToken()
+
+	viperx.Set(config.DataRobotURL, baseURL)
+	viperx.Set(config.SkipAuthKey, true)
+	viperx.Set(config.DataRobotAPIKey, token)
+	drapi.SetToken("")
+
+	t.Cleanup(func() {
+		viperx.Set(config.DataRobotURL, prevBase)
+		viperx.Set(config.SkipAuthKey, prevSkip)
+		viperx.Set(config.DataRobotAPIKey, prevToken)
+		drapi.SetToken(prevCachedToken)
+	})
+}
+
+func startEndpointCheckDebugLog(t *testing.T) string {
+	t.Helper()
+
+	prevDebug := viperx.GetBool("debug")
+	logDir := t.TempDir()
+
+	testutil.SetTestHomeDir(t, logDir)
+	viperx.Set("debug", true)
+	drlog.Start()
+
+	t.Cleanup(func() {
+		drlog.Stop()
+		viperx.Set("debug", prevDebug)
+	})
+
+	return logDir
 }
