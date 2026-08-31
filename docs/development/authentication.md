@@ -171,3 +171,7 @@ at `0644` by an older CLI would otherwise stay world-readable forever.
 When attaching credentials to an absolute URL returned by a server response,
 first check it with `drapi.URLMatchesConfiguredBase()`. URLs built locally with
 `config.GetEndpointURL()` already stay on the configured DataRobot host.
+
+For how the bearer token is attached to outgoing requests once you have
+it&mdash;and the timeout/error-handling conventions for any new authenticated
+API call&mdash;see [drapi client conventions](drapi-client.md).

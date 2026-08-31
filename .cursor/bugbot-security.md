@@ -12,6 +12,10 @@ Write tests that attempt to override security constraints and verify they fail.
 
 Validate input at every package boundary — don't assume upstream packages provide safe data.
 
+Worked example: `docs/development/drapi-client.md` — before attaching a bearer token to
+a server-supplied URL (pagination cursor, live endpoint), verify it with
+`drapi.URLMatchesConfiguredBase()` first.
+
 ## Validate Integration Points Explicitly
 
 Verify inter-package contracts with integration tests, not just assumptions.

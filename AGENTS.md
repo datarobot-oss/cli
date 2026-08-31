@@ -167,6 +167,14 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
+## Auth & API Client Conventions
+
+For OAuth/browser login internals, see [docs/development/authentication.md](docs/development/authentication.md).
+For wiring in a new authenticated DataRobot API call&mdash;timeout clamping,
+the `HTTPError`/`errors.As` contract, and the origin-safety check before
+attaching credentials to a server-supplied URL&mdash;see
+[docs/development/drapi-client.md](docs/development/drapi-client.md).
+
 ## Code Review Guidelines
 
 All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUGBOT.md). Rules are organized by risk level:
