@@ -128,6 +128,12 @@ for an image first, so the first deploy of such a project takes as long as the
 build does. A build the deploy believes would produce the image already on the
 artifact is skipped; --force-build says otherwise.
 
+An environment variable, a port, a probe or a route is read when the container
+starts, so a deploy that changes only those keeps the image the running one has
+and takes seconds rather than minutes. Anything else builds: the code, the
+Dockerfile, the execution environment, a container or group added, a change of
+workload kind, a current version that was never built, and --force-build.
+
 Deploying onto a workload that already exists rolls it: a new version is made
 from the file and swapped in, the endpoint does not change, and the version
 already serving keeps serving until the new one is ready. When that version is

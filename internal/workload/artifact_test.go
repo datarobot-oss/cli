@@ -580,6 +580,30 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 		assert.Equal(t, "provided", ibc["dockerfile"].(map[string]any)["source"])
 	})
 
+	t.Run("FindsPrimaryPastAnEmptyFirstGroup", func(t *testing.T) {
+		// The flagged primary is in containerGroups[1] and groups[0] holds no
+		// containers, a shape PatchArtifactCodeRef sends on every code sync.
+		raw := map[string]any{
+			"spec": map[string]any{
+				"containerGroups": []any{
+					map[string]any{"containers": []any{}},
+					map[string]any{
+						"containers": []any{
+							map[string]any{"primary": true},
+						},
+					},
+				},
+			},
+		}
+
+		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "cat-b", "ver-b"))
+
+		primary := raw["spec"].(map[string]any)["containerGroups"].([]any)[1].(map[string]any)["containers"].([]any)[0].(map[string]any)
+		dr := primary["imageBuildConfig"].(map[string]any)["codeRef"].(map[string]any)["datarobot"].(map[string]any)
+		assert.Equal(t, "cat-b", dr["catalogId"])
+		assert.Equal(t, "ver-b", dr["catalogVersionId"])
+	})
+
 	t.Run("FallsBackToFirstContainerWhenNoPrimary", func(t *testing.T) {
 		raw := map[string]any{
 			"spec": map[string]any{
@@ -636,6 +660,23 @@ func TestSetPrimaryCodeRefInRawArtifact(t *testing.T) {
 			"missing containerGroups",
 			map[string]any{"spec": map[string]any{}},
 			"containerGroups missing or empty",
+		},
+		{
+			"first group wrong type",
+			map[string]any{"spec": map[string]any{"containerGroups": []any{"not-a-map"}}},
+			"containerGroups[0] missing or wrong type",
+		},
+		{
+			"first group has no containers",
+			map[string]any{"spec": map[string]any{"containerGroups": []any{map[string]any{}}}},
+			"containerGroups[0].containers missing or empty",
+		},
+		{
+			"first container wrong type",
+			map[string]any{"spec": map[string]any{
+				"containerGroups": []any{map[string]any{"containers": []any{"not-a-map"}}},
+			}},
+			"containerGroups[0].containers[0] missing or wrong type",
 		},
 	}
 
@@ -701,6 +742,79 @@ func TestDeleteArtifact_409PropagatesAsHTTPError(t *testing.T) {
 	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 	assert.Contains(t, err.Error(), "Delete the workload(s) first")
+}
+
+func TestCloneArtifact_PostsTheNameAndReturnsTheCopy(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v2/artifacts/art-1/clone", r.URL.Path)
+
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, map[string]any{"name": "my-app-artifact"}, body)
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id":"art-2","name":"my-app-artifact","status":"draft","spec":{"containerGroups":[`+
+			`{"containers":[{"name":"primary","primary":true,"imageUri":"registry/app:sha-abc"}]}]}}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	artifact, err := CloneArtifact("art-1", "my-app-artifact")
+	require.NoError(t, err)
+	assert.Equal(t, "art-2", artifact.ID)
+	assert.Equal(t, ArtifactStatusDraft, artifact.Status)
+	assert.Equal(t, "registry/app:sha-abc", GetPrimaryContainerImageURI(*artifact),
+		"a copy keeps the image its source was built into, which is the whole reason to make one")
+}
+
+// The spec update sends the spec and nothing else. An empty one would be a
+// PATCH that changed nothing, which comes back 200 and looks like success, and
+// a locked artifact's refusal has to be tellable from anything else.
+func TestUpdateArtifactSpec(t *testing.T) {
+	installSkipAuth(t)
+
+	status := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			fmt.Fprint(w, `{"detail":"Cannot update artifact: artifact is locked"}`)
+
+			return
+		}
+
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/artifacts/art-2/", r.URL.Path)
+
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Len(t, body, 1)
+		assert.Contains(t, body, "spec")
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id":"art-2","status":"draft"}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	spec := json.RawMessage(`{"containerGroups":[]}`)
+
+	require.NoError(t, UpdateArtifactSpec("art-2", spec))
+	require.Error(t, UpdateArtifactSpec("art-2", nil), "an empty spec never reaches the platform")
+
+	status = http.StatusForbidden
+
+	err := UpdateArtifactSpec("art-2", spec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "artifact is locked")
 }
 
 func TestLockArtifact_SendsStatusLocked(t *testing.T) {
@@ -1002,4 +1116,42 @@ func TestListArtifacts_ClampsPageSizeToServerMax(t *testing.T) {
 
 	_, err := ListArtifacts(250, 0, "")
 	require.NoError(t, err)
+}
+
+// CodeRefInContainer and setPrimaryCodeRefInRawArtifact walk one path. A
+// reader spelling it for itself answers "no code" for a container that has some.
+func TestCodeRefInContainer(t *testing.T) {
+	t.Run("ReadsWhatTheWriterWrote", func(t *testing.T) {
+		raw := map[string]any{
+			"spec": map[string]any{
+				"containerGroups": []any{
+					map[string]any{"containers": []any{map[string]any{"primary": true}}},
+				},
+			},
+		}
+
+		require.NoError(t, setPrimaryCodeRefInRawArtifact(raw, "cat-1", "ver-1"))
+
+		ref := CodeRefInContainer(PrimaryContainerInDocument(raw))
+		require.NotNil(t, ref)
+		assert.Equal(t, "cat-1", ref.CatalogID)
+		assert.Equal(t, "ver-1", ref.CatalogVersionID)
+	})
+
+	t.Run("AnswersNilForEveryShapeThatHasNone", func(t *testing.T) {
+		cases := map[string]map[string]any{
+			"no container at all": nil,
+			"no imageBuildConfig": {"name": "app"},
+			"no codeRef":          {"imageBuildConfig": map[string]any{"dockerfile": map[string]any{}}},
+			"codeRef with no datarobot": {
+				"imageBuildConfig": map[string]any{"codeRef": map[string]any{"git": map[string]any{}}},
+			},
+		}
+
+		for name, container := range cases {
+			t.Run(name, func(t *testing.T) {
+				assert.Nil(t, CodeRefInContainer(container))
+			})
+		}
+	})
 }

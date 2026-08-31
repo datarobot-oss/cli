@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -66,11 +67,11 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 	// and died. Neither is distinguishable from the ordinary case by then: the
 	// link has already moved, so the only record of what happened is the
 	// catalog version in the project's own state, which is what this reads.
-	if err := inheritCode(loaded.ProjectDir, artifactID, synced, report); err != nil {
+	if err := inheritCode(loaded.ProjectDir, made, synced, report); err != nil {
 		return result, err
 	}
 
-	buildID, err := maybeBuild(artifactID, fresh, code, synced, opts, report)
+	buildID, err := maybeBuild(loaded.ProjectDir, made, code, synced, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
@@ -302,31 +303,21 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 // maybeBuild spends a build only when there is a reason to, and names the
 // build it ran so the caller can report it. An empty id means no build
 // happened, which is not the same as a build that produced nothing.
-//
-// A build is minutes, so skipping one that would produce the image already
-// sitting on the artifact is worth the two conditions it takes to be sure.
-// The reasons to build are: the artifact is new, so no image exists; the sync
-// moved something, so any image is now stale; or the user said to.
-//
-// Otherwise the tree matches what was synced and the only open question is
-// whether the previous run got as far as an image. That question is asked of
-// the platform rather than assumed, because the common way to arrive here is
-// a first deploy that failed after the sync.
 func maybeBuild(
-	artifactID string,
-	fresh bool,
+	projectDir string,
+	made version,
 	code CodeChange,
 	synced *sync.Result,
 	opts Options,
 	report *reporter,
 ) (string, error) {
-	if !fresh && !opts.ForceBuild && !changed(code, synced) {
-		builds, err := listBuildsFn(artifactID, buildHistoryLimit)
+	if !opts.ForceBuild && !changed(code, synced) {
+		built, builds, err := imageInHand(made)
 		if err != nil {
-			return "", fmt.Errorf("cannot tell whether artifact %s has been built: %w", artifactID, err)
+			return "", err
 		}
 
-		if hasImage(builds) {
+		if built {
 			report.say("  Image is up to date; no rebuild needed.\n")
 
 			return "", nil
@@ -341,11 +332,42 @@ func maybeBuild(
 		if running := runningBuild(builds, attachMaxAge(opts)); running != "" {
 			report.say("  A build of this code is already running; attaching to it (--force-build starts a new one).\n")
 
-			return buildImage(artifactID, running, opts, report)
+			return buildAndRecord(projectDir, made.ID, running, opts, report)
 		}
 	}
 
-	return buildImage(artifactID, "", opts, report)
+	return buildAndRecord(projectDir, made.ID, "", opts, report)
+}
+
+// imageInHand reports whether the candidate already has something to run, and
+// hands back the build history when it had to be fetched. Only a leftover
+// reaches the platform: a copy carries its image and a create has none.
+func imageInHand(made version) (bool, []workload.Build, error) {
+	if made.ImageURI != "" {
+		return true, nil, nil
+	}
+
+	if made.Fresh {
+		return false, nil, nil
+	}
+
+	builds, err := listBuildsFn(made.ID, buildHistoryLimit)
+	if err != nil {
+		return false, nil, fmt.Errorf("cannot tell whether artifact %s has been built: %w", made.ID, err)
+	}
+
+	return hasImage(builds), builds, nil
+}
+
+// buildAndRecord builds and notes what the image was made from, the one fact
+// nothing on the platform keeps.
+func buildAndRecord(projectDir, artifactID, attachTo string, opts Options, report *reporter) (string, error) {
+	buildID, err := buildImage(artifactID, attachTo, opts, report)
+	if err == nil && buildID != "" {
+		recordBuiltFn(projectDir)
+	}
+
+	return buildID, err
 }
 
 // runningBuild names the newest non-terminal build, "" when there is none
@@ -377,6 +399,27 @@ func attachMaxAge(opts Options) time.Duration {
 	return 30 * time.Minute
 }
 
+// recordBuiltVersion notes the code version the image was built from, which
+// nothing on the platform holds. Best effort: not writing it costs a build.
+func recordBuiltVersion(projectDir string) {
+	if !projectLinkedFn(projectDir) {
+		return
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || cfg.LastSyncedVersionID == nil {
+		return
+	}
+
+	built := *cfg.LastSyncedVersionID
+	cfg.LastBuiltVersionID = &built
+
+	if err := saveProjectFn(projectDir, cfg); err != nil {
+		log.Debug("cannot record the code version the image was built from",
+			"project_dir", projectDir, "err", err)
+	}
+}
+
 // changed reports whether anything moved. The sync's own count is preferred
 // over the plan's: the plan was computed before the upload and is a
 // prediction, while the result is what happened.
@@ -389,13 +432,9 @@ func changed(code CodeChange, synced *sync.Result) bool {
 }
 
 // hasImage reports whether the artifact has ever built successfully. Any
-// completed build answers it, without regard to which is newest: this is only
-// asked when the working tree matches what was last synced, so a build that
-// completed at all built the code about to be deployed.
-//
-// The exception is code pushed by `dr artifact code sync` between deploys,
-// which leaves a completed build of the previous version and a tree that
-// looks unchanged to `up`. That is what --force-build is for.
+// completed build answers it, whichever is newest: this is only asked when the
+// working tree matches what was last synced. Code pushed by `dr artifact code
+// sync` between deploys is the exception, answered by CodeChange.ImageStale.
 func hasImage(builds []workload.Build) bool {
 	for _, build := range builds {
 		if workload.IsBuildCompleted(build.Status) {

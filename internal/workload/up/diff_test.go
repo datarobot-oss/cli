@@ -458,3 +458,26 @@ func TestSubset_OnlyMemoryComparesAcrossTypes(t *testing.T) {
 
 	assert.Len(t, Subset(want, have), 1, "a port written as a string is still a difference")
 }
+
+// Siblings must not share a backing array: appending in place would have the
+// second overwrite the first's last segment, so a changed port would read as a
+// changed environment variable.
+func TestSubset_SiblingKeysDoNotShareStorage(t *testing.T) {
+	spec := func(port, cpu float64) map[string]any {
+		return map[string]any{"containerGroups": []any{map[string]any{
+			"name":       "default",
+			"containers": []any{map[string]any{"name": "primary", "port": port, "cpu": cpu}},
+		}}}
+	}
+
+	changes := Subset(spec(9000, 2), spec(8000, 1))
+	require.Len(t, changes, 2)
+
+	last := map[string]bool{}
+	for _, c := range changes {
+		last[c.Keys[len(c.Keys)-1]] = true
+	}
+
+	assert.Equal(t, map[string]bool{"port": true, "cpu": true}, last,
+		"each sibling keeps its own last segment")
+}

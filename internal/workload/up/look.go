@@ -42,6 +42,23 @@ const (
 	keySpec       = "spec"
 	keyType       = "type"
 
+	// Keys inside the artifact spec: the running image, and how the plan
+	// recognizes a changed field as one container's.
+	keyContainerGroups = "containerGroups"
+	keyContainers      = "containers"
+	keyImageURI        = "imageUri"
+
+	// The fields a container reads when it starts, which the plan's runtime
+	// allow-list is made of. manifest/keys.go spells the ones it renders; the
+	// duplication is deliberate, since this side reads the platform's spec.
+	keyA2AEnabled      = "a2aEnabled"
+	keyEnvironmentVars = "environmentVars"
+	keyLivenessProbe   = "livenessProbe"
+	keyPort            = "port"
+	keyReadinessProbe  = "readinessProbe"
+	keyRoutes          = "routes"
+	keyStartupProbe    = "startupProbe"
+
 	// keyArtifactRepositoryID is the repository an artifact belongs to. The
 	// platform assigns it, so it is read here and never written to the file;
 	// a create that sends it back is what makes successive versions land in
@@ -99,6 +116,12 @@ type Live struct {
 	// artifact means production, and its successor has to be locked too
 	// before the platform will accept a replacement.
 	Locked bool
+
+	// ImageURI is the image the running version was built into, read off the
+	// raw document because Spec has it stripped as a build output.
+	ImageURI string
+
+	CodeVersionID string
 }
 
 // liveArtifactType reads the discriminator off the artifact document, falling
@@ -173,6 +196,10 @@ func Look(workloadID string) (Live, error) {
 		return Live{}, err
 	}
 
+	// Walked once for both fields below: two walks that could disagree about
+	// which container is primary is how a plan promises a missing image.
+	primary := workload.PrimaryContainerInDocument(artifactDoc)
+
 	return Live{
 		Live:                 live,
 		State:                stateFor(status),
@@ -182,7 +209,26 @@ func Look(workloadID string) (Live, error) {
 		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
 		Endpoint:             workloadDoc.String(keyEndpoint),
 		Locked:               isLocked(artifactDoc.String(keyStatus)),
+		ImageURI:             containerImageURI(primary),
+		CodeVersionID:        containerCodeVersionID(primary),
 	}, nil
+}
+
+// containerCodeVersionID reads the catalog version a container points at,
+// which is what an inherited image is measured against.
+func containerCodeVersionID(container map[string]any) string {
+	ref := workload.CodeRefInContainer(container)
+	if ref == nil {
+		return ""
+	}
+
+	return ref.CatalogVersionID
+}
+
+func containerImageURI(container map[string]any) string {
+	uri, _ := container[keyImageURI].(string)
+
+	return uri
 }
 
 // artifactFor reads the artifact a workload runs. A workload without one is

@@ -39,13 +39,16 @@ type version struct {
 	// was left behind.
 	ID string
 
-	// Fresh reports that this run created it, which means it is certainly a
-	// draft and certainly has no image yet.
 	Fresh bool
 
 	// BuildID names the image build this run ran, "" when it ran none. A
 	// failed build sets it: it is the way to the logs.
 	BuildID string
+
+	ImageURI string
+
+	// HasCode reports that it points at the code its image was built from.
+	HasCode bool
 }
 
 // buildVersion produces the version a built project rolls onto: a new
@@ -63,12 +66,12 @@ type version struct {
 func buildVersion(
 	loaded Loaded,
 	live Live,
-	code CodeChange,
+	plan Plan,
 	repositoryID string,
 	opts Options,
 	report *reporter,
 ) (version, error) {
-	made, err := versionArtifact(loaded, live, repositoryID, report)
+	made, err := versionArtifact(loaded, live, plan, repositoryID, report)
 	if err != nil {
 		return made, err
 	}
@@ -82,30 +85,193 @@ func buildVersion(
 		return made, err
 	}
 
-	if err := inheritCode(loaded.ProjectDir, made.ID, synced, report); err != nil {
+	if err := inheritCode(loaded.ProjectDir, made, synced, report); err != nil {
 		return made, err
 	}
 
-	// A version minted here has no image whatever the working tree says, so
-	// Fresh is what stops maybeBuild from skipping the build and promoting an
-	// artifact with nothing to run. One picked up from an earlier attempt may
-	// already have its image, and that is the skip worth having.
-	buildID, err := maybeBuild(made.ID, made.Fresh, code, synced, opts, report)
+	buildID, err := maybeBuild(loaded.ProjectDir, made, plan.Code, synced, opts, report)
 	made.BuildID = buildID
 
 	return made, err
 }
 
-// versionArtifact returns the artifact to fill and build, reusing the one an
-// earlier attempt left behind rather than adding to a pile of drafts.
-func versionArtifact(loaded Loaded, live Live, repositoryID string, report *reporter) (version, error) {
-	if id, ok := abandoned(loaded, live, repositoryID); ok {
-		report.say("  Continuing with artifact %s from an earlier attempt.\n", id)
+func versionArtifact(
+	loaded Loaded,
+	live Live,
+	plan Plan,
+	repositoryID string,
+	report *reporter,
+) (version, error) {
+	if made, ok := abandoned(loaded, live, plan, repositoryID); ok {
+		report.say("  Continuing with artifact %s from an earlier attempt.\n", made.ID)
 
-		return version{ID: id}, nil
+		return made, nil
+	}
+
+	if plan.InheritsImage {
+		made, err := copiedVersion(loaded, live, report)
+		if err == nil {
+			return made, nil
+		}
+
+		// A copy still standing stops the fallback: creating past it would
+		// strand an artifact nothing points at. Every other failure left
+		// nothing behind, so the deploy that builds is taken.
+		if made.ID != "" {
+			return made, err
+		}
+
+		log.Debug("the running version could not be copied; creating the new one instead", "err", err)
+		report.say("  The running version could not be copied (%v), so the new version is built after all.\n", err)
 	}
 
 	return createVersion(loaded, repositoryID, labelNewVersion, report)
+}
+
+// inheritsImage reports whether this run may copy the running version rather
+// than create one, which decides whether it spends a build.
+//
+// The running image is the whole of the evidence: a build-from-source
+// container has its imageUri stripped at create and written back only once a
+// build completes. A build row would answer wrong the moment that version is
+// itself a copy, since a copy keeps the image and leaves the rows behind.
+func inheritsImage(live Live, plan Plan, opts Options, kind, artifactName string) bool {
+	return plan.RollsArtifact() &&
+		plan.Code.Applies &&
+		!opts.ForceBuild &&
+		!plan.RebuildsImage() &&
+		live.ImageURI != "" &&
+		artifactName != "" &&
+		sameArtifactTypeAs(kind, live.ArtifactType)
+}
+
+// copiedVersion is the version a runtime-only change rolls onto: a copy of the
+// running one, written over with what the file says and read back, since an
+// update replaces a container wholesale.
+func copiedVersion(loaded Loaded, live Live, report *reporter) (version, error) {
+	var made version
+
+	err := report.run(labelCopiedVersion, func() error {
+		spec, specErr := loaded.Compiled.ArtifactSpecPayload()
+		if specErr != nil {
+			return specErr
+		}
+
+		copied, cloneErr := copyArtifactFn(live.ArtifactID, loaded.Compiled.ArtifactName)
+		if cloneErr != nil {
+			return cloneErr
+		}
+
+		// Recorded before the update, so a failure below can name it.
+		made = version{ID: copied.ID, Fresh: true}
+
+		if err := sameLineage(copied, live); err != nil {
+			return err
+		}
+
+		spec, specErr = keepCodeRef(spec, copied)
+		if specErr != nil {
+			return specErr
+		}
+
+		if updateErr := updateArtifactSpecFn(copied.ID, spec); updateErr != nil {
+			return updateErr
+		}
+
+		hasCode, imageURI, matches := carried(loaded, copied.ID)
+		if !matches {
+			// Accepted and still not what the file says: promoting it would
+			// report a deploy that changed nothing.
+			return errors.New("the copy does not say what " + manifest.FileName + " asks for")
+		}
+
+		made.HasCode, made.ImageURI = hasCode, imageURI
+
+		return nil
+	})
+	if err != nil && made.ID != "" {
+		return discardCopy(made, live.ArtifactID, err)
+	}
+
+	return made, err
+}
+
+// sameLineage refuses a copy the platform put somewhere other than where the
+// running version lives: an artifact cannot be moved once it exists, so
+// promoting one from elsewhere forks the version history permanently. A copy
+// stating no repository is not refused, only one that disagrees.
+func sameLineage(copied *workload.Artifact, live Live) error {
+	if live.ArtifactRepositoryID == "" || copied.ArtifactRepositoryID == "" {
+		return nil
+	}
+
+	if copied.ArtifactRepositoryID == live.ArtifactRepositoryID {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"the copy landed in artifact repository %s rather than %s, which the running version cannot leave",
+		copied.ArtifactRepositoryID, live.ArtifactRepositoryID)
+}
+
+// discardCopy takes back a copy this run cannot use: nothing points at it, so
+// leaving it costs one artifact per failed attempt. The version it returns
+// says whether anything is still standing.
+func discardCopy(made version, sourceID string, cause error) (version, error) {
+	if err := deleteArtifactFn(made.ID); err != nil {
+		log.Debug("cannot remove the unusable copy", "artifact_id", made.ID, "err", err)
+
+		return made, fmt.Errorf(
+			"artifact %s was copied from %s, could not be made to match %s, and could not be removed, "+
+				"so it is left behind: %w",
+			made.ID, sourceID, manifest.FileName, cause)
+	}
+
+	return version{}, fmt.Errorf(
+		"the copy of artifact %s could not be made to match %s: %w",
+		sourceID, manifest.FileName, cause)
+}
+
+// carried reports what the artifact has once the write is done: code, image,
+// and whether it says what the file asks for. A read that fails answers no to
+// the first two and yes to the third, which is the safe way round.
+func carried(loaded Loaded, artifactID string) (hasCode bool, imageURI string, matches bool) {
+	doc, err := getArtifactDocFn(artifactID)
+	if err != nil {
+		log.Debug("cannot read back the copied artifact; treating it as carrying nothing",
+			"artifact_id", artifactID, "err", err)
+
+		return false, "", true
+	}
+
+	container := workload.PrimaryContainerInDocument(doc)
+	uri, _ := container[keyImageURI].(string)
+
+	matched, err := specMatches(loaded, doc)
+	if err != nil {
+		log.Debug("cannot tell whether the copy took the change", "artifact_id", artifactID, "err", err)
+
+		matched = true
+	}
+
+	return workload.CodeRefInContainer(container) != nil, uri, matched
+}
+
+// keepCodeRef puts the copy's own code reference into the spec about to be
+// written over it. The manifest states none, so the file's spec alone would
+// take it away, and the platform refuses a container that says how to build
+// itself but not from what. Nothing else puts it back: this deploy never builds.
+func keepCodeRef(spec json.RawMessage, copied *workload.Artifact) (json.RawMessage, error) {
+	if copied == nil {
+		return spec, nil
+	}
+
+	ref := workload.ExtractCodeRef(*copied)
+	if ref == nil {
+		return spec, nil
+	}
+
+	return workload.SpecWithPrimaryCodeRef(spec, ref.CatalogID, ref.CatalogVersionID)
 }
 
 // The two things a create can be. A project's first artifact is not a new
@@ -114,6 +280,8 @@ func versionArtifact(loaded Loaded, live Live, repositoryID string, report *repo
 const (
 	labelFirstArtifact = "Creating the artifact"
 	labelNewVersion    = "Creating the new version"
+
+	labelCopiedVersion = "Copying the running version"
 )
 
 // createVersion mints an artifact from the file's artifact block, into
@@ -306,30 +474,54 @@ func withoutRepository(payload json.RawMessage) (json.RawMessage, error) {
 // `dr artifact create` makes, both of which sit in a repository of their own.
 // Minting a fresh version costs the stray draft that reuse exists to avoid;
 // reusing costs the lineage, permanently.
-func abandoned(loaded Loaded, live Live, repositoryID string) (string, bool) {
+func abandoned(loaded Loaded, live Live, plan Plan, repositoryID string) (version, bool) {
 	if !projectLinkedFn(loaded.ProjectDir) {
-		return "", false
+		return version{}, false
 	}
 
 	cfg, err := loadProjectFn(loaded.ProjectDir)
 	if err != nil || cfg.ArtifactID == "" || cfg.ArtifactID == live.ArtifactID {
-		return "", false
+		return version{}, false
 	}
 
 	artifact, err := getArtifactFn(cfg.ArtifactID)
 	if err != nil || artifact.IsLocked() {
-		return "", false
+		return version{}, false
 	}
 
 	if !joinable(artifact, repositoryID) {
-		return "", false
+		return version{}, false
 	}
 
 	if !describes(loaded, cfg.ArtifactID) {
-		return "", false
+		return version{}, false
 	}
 
-	return cfg.ArtifactID, true
+	// A leftover keeps its code reference only when it also keeps the image
+	// that reference was built into.
+	image := inheritedImage(artifact, live, plan)
+
+	return version{
+		ID:       cfg.ArtifactID,
+		HasCode:  image != "",
+		ImageURI: image,
+	}, true
+}
+
+// inheritedImage is the leftover's image when it is the one the version now
+// serving runs, and "" otherwise. The plan decides first: without it, a
+// leftover minted before the dockerfile changed would skip the build.
+func inheritedImage(draft *workload.Artifact, live Live, plan Plan) string {
+	if !plan.InheritsImage {
+		return ""
+	}
+
+	uri := workload.GetPrimaryContainerImageURI(*draft)
+	if uri == "" || uri != live.ImageURI {
+		return ""
+	}
+
+	return uri
 }
 
 // joinable reports whether promoting this draft would leave the workload in
@@ -486,6 +678,17 @@ func sameArtifactTypeIn(want, have map[string]any) bool {
 	delete(want, keyType)
 	delete(have, keyType)
 
+	return sameArtifactTypeAs(wanted, running)
+}
+
+// sameArtifactTypeAs compares the kind a file states against the kind a
+// workload runs. Folded, because the platform disagrees with itself about the
+// casing of its enums, and with only the live side defaulted, because a file
+// stating no type has no opinion. One function rather than the same three
+// lines twice, which is how the plan and the copy path came apart for an agent
+// whose file leaves it out. Deliberately not sameRepository's question, which
+// is what kind of thing is about to be created, so both sides default there.
+func sameArtifactTypeAs(wanted, running string) bool {
 	if wanted == "" {
 		return true
 	}
@@ -567,7 +770,17 @@ func relinkFailure(artifactID, projectDir string, err error) error {
 // code reference at all, and the roll would promote something that cannot
 // start. Pointing it at the version last synced is what makes "a new version
 // of the same code" true.
-func inheritCode(projectDir, artifactID string, synced *sync.Result, report *reporter) error {
+//
+// A version already carrying the code its image was built from is left
+// pointing there: re-anchoring it at whatever the project last synced would
+// claim code the image was never built from. Anything else is re-anchored,
+// including a leftover with a reference of its own, since `dr artifact create`
+// and an abandoned attempt both point at code older than the last sync.
+func inheritCode(projectDir string, made version, synced *sync.Result, report *reporter) error {
+	if made.HasCode {
+		return nil
+	}
+
 	// A sync that moved anything has already pointed the artifact at what it
 	// produced, so only one that found nothing to do leaves a version with no
 	// code of its own. Minting a version is the usual proof of that, but not
@@ -588,15 +801,15 @@ func inheritCode(projectDir, artifactID string, synced *sync.Result, report *rep
 		return fmt.Errorf(
 			"artifact %s has no code and the working tree had nothing to upload, so there would be "+
 				"nothing to build. Check that %s holds the project's source",
-			artifactID, projectDir)
+			made.ID, projectDir)
 	}
 
 	err = report.run("Carrying the code over", func() error {
-		return patchCodeRefFn(artifactID, catalog, lastVersion)
+		return patchCodeRefFn(made.ID, catalog, lastVersion)
 	})
 	if err != nil {
 		return fmt.Errorf("cannot point artifact %s at the code it should build (%s): %w",
-			artifactID, lastVersion, err)
+			made.ID, lastVersion, err)
 	}
 
 	return nil

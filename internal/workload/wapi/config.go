@@ -30,11 +30,16 @@ import (
 // CatalogID and LastSyncedVersionID use pointer semantics so that an empty
 // value round-trips as JSON null rather than "".
 type Config struct {
-	ArtifactID          string    `json:"artifactId" validate:"required,dr_id"`
-	CatalogID           *string   `json:"catalogId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
-	LastSyncedVersionID *string   `json:"lastSyncedVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
-	CreatedAt           time.Time `json:"createdAt" validate:"required"`
-	CLIVersion          string    `json:"cliVersion" validate:"required"`
+	ArtifactID          string  `json:"artifactId" validate:"required,dr_id"`
+	CatalogID           *string `json:"catalogId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+	LastSyncedVersionID *string `json:"lastSyncedVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+
+	// LastBuiltVersionID is the code version the last image was built from, nil
+	// when none has been recorded. Nothing on the platform holds it, so without
+	// it a deploy that inherits an image cannot tell whether the code moved.
+	LastBuiltVersionID *string   `json:"lastBuiltVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+	CreatedAt          time.Time `json:"createdAt" validate:"required"`
+	CLIVersion         string    `json:"cliVersion" validate:"required"`
 }
 
 // LoadConfig reads and parses the project's config.json. Returns ErrNotInitialized if

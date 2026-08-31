@@ -14,7 +14,11 @@
 
 package up
 
-import "github.com/datarobot/cli/internal/workload/manifest"
+import (
+	"slices"
+
+	"github.com/datarobot/cli/internal/workload/manifest"
+)
 
 // Actions are what a run will do, and what the JSON envelope reports. A run
 // does exactly one of them, so when several could apply the most significant
@@ -50,6 +54,10 @@ type CodeChange struct {
 	// only part of a run that a --dry-run does, so carrying it here is what
 	// lets the preview mention it at all.
 	IgnoreNotice string
+
+	// ImageStale reports that the running image was built from code the
+	// artifact has since moved past, which `dr artifact code sync` does.
+	ImageStale bool
 
 	// LinkLocked reports that the artifact this project pushes into can no
 	// longer take code. The deploy answers by minting one that can and moving
@@ -92,6 +100,10 @@ type Plan struct {
 	Code     CodeChange
 	Artifact []Change
 	Runtime  []Change
+
+	// InheritsImage reports that the new version can take the running image.
+	// What the plan intends, not a promise; the envelope is corrected after.
+	InheritsImage bool
 
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
@@ -197,6 +209,65 @@ func (p Plan) RollsArtifact() bool {
 	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0)
 }
 
+// RebuildsImage reports whether anything this run changes is an input to the
+// image. runtimeFields are read when the container starts; everything else is
+// a rebuild, where being wrong the other way promotes a version with no image.
+func (p Plan) RebuildsImage() bool {
+	if p.Code.Changed() || p.Code.ImageStale {
+		return true
+	}
+
+	for _, change := range p.Artifact {
+		if !runtimeOnly(change.Keys) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// runtimeFields are the fields inside a container this release knows are read
+// when it starts. An allow-list, so a field the platform grows later does not
+// silently inherit a stale image.
+var runtimeFields = []string{
+	keyEnvironmentVars,
+	keyLivenessProbe,
+	keyPort,
+	keyReadinessProbe,
+	keyRoutes,
+	keyStartupProbe,
+}
+
+// specRuntimeFields is runtimeFields for the fields directly under the spec,
+// kept apart because the two sit at different depths.
+var specRuntimeFields = []string{keyA2AEnabled}
+
+// runtimeOnly reports whether a change names something a container reads at
+// start, from the walk's key segments rather than the rendered path.
+func runtimeOnly(keys []string) bool {
+	// A field directly under the spec, not in any container.
+	if len(keys) == 1 {
+		return slices.Contains(specRuntimeFields, keys[0])
+	}
+
+	for i := 0; i+2 < len(keys); i++ {
+		// The group's name sits between the two, which makes this a container
+		// group's list rather than a "containers" elsewhere.
+		if keys[i] != keyContainerGroups || keys[i+2] != keyContainers {
+			continue
+		}
+
+		// keys[i+3] is the container's name, so the field follows it.
+		if i+4 >= len(keys) {
+			return false
+		}
+
+		return slices.Contains(runtimeFields, keys[i+4])
+	}
+
+	return false
+}
+
 // MintsVersion reports whether this run will produce a new artifact. Only a
 // run that does can lock one, so it is what decides whether the plan says
 // anything about locking: a change that moves the sizing alone is applied in
@@ -259,8 +330,9 @@ func (p Plan) Action() string {
 // code is passed in rather than computed here so this package never acquires
 // the project lock the sync engine holds between plan and execute, and so the
 // tests never touch a filesystem. The caller runs the sync engine's own plan
-// and hands over the count.
-func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
+// and hands over the count. opts arrives the same way, because whether the
+// image can be inherited depends on --force-build as well as on the file.
+func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error) {
 	plan := Plan{
 		State:           live.State,
 		Creates:         creates(live.State),
@@ -296,6 +368,7 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 	if bound := loaded.Compiled.ArtifactID; bound != "" && bound != live.ArtifactID {
 		plan.Artifact = append(plan.Artifact, Change{
 			Path: keyArtifactID,
+			Keys: []string{keyArtifactID},
 			Have: live.ArtifactID,
 			Want: bound,
 		})
@@ -335,10 +408,14 @@ func Build(loaded Loaded, live Live, code CodeChange) (Plan, error) {
 		!manifest.SameArtifactType(kind, running) {
 		plan.Artifact = append(plan.Artifact, Change{
 			Path: keyArtifactType,
+			Keys: []string{keyArtifactType},
 			Have: running,
 			Want: kind,
 		})
 	}
+
+	// Last: every drift has to be in hand before RebuildsImage can answer.
+	plan.InheritsImage = inheritsImage(live, plan, opts, kind, loaded.Compiled.ArtifactName)
 
 	return plan, nil
 }

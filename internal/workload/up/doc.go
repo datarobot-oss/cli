@@ -66,6 +66,11 @@
 // minting a version and promoting it leaves a draft nothing points at, and
 // the next run continues with it rather than adding another to the pile.
 //
+// A build is the expensive part, and most of what a file can change is not an
+// input to one: environment, port, probes and routes are read when a container
+// starts, so the version carrying them is a copy of the one now serving with
+// the file's spec written over it. Everything else still builds.
+//
 // Locking is one-way, and it is the rule both deploy shapes have to obey the
 // same way: a locked artifact can take neither new code nor a new image, so
 // the next version of a locked thing is a new artifact rather than a change to

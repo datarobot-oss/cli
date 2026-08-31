@@ -185,15 +185,23 @@ type fakes struct {
 	// code, turn it into an image.
 	newArtifact func(any) (*workload.Artifact, error)
 	getArtifact func(string) (*workload.Artifact, error)
-	linked      func(string) bool
-	project     func(string) (wapi.Config, error)
-	link        func(string, wapi.InitOptions) error
-	save        func(string, wapi.Config) error
-	codeRef     func(string, string, string) error
-	sync        func(string) (*sync.Result, error)
-	build       func(string) (*workload.BuildTriggerResponse, error)
-	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
-	builds      func(string, int) ([]workload.Build, error)
+
+	// The copy track: a runtime-only change is made from the version now
+	// serving and written over, rather than created and built.
+	copyArtifact   func(string, string) (*workload.Artifact, error)
+	updateSpec     func(string, json.RawMessage) error
+	deleteArtifact func(string) error
+	recordBuilt    func(string)
+
+	linked    func(string) bool
+	project   func(string) (wapi.Config, error)
+	link      func(string, wapi.InitOptions) error
+	save      func(string, wapi.Config) error
+	codeRef   func(string, string, string) error
+	sync      func(string) (*sync.Result, error)
+	build     func(string) (*workload.BuildTriggerResponse, error)
+	waitBuild func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
+	builds    func(string, int) ([]workload.Build, error)
 
 	// checkEndpoint is the one GET a deploy ends with.
 	checkEndpoint func(string) (int, error)
@@ -276,8 +284,35 @@ func install(t *testing.T, f fakes) {
 		return nil, nil
 	})
 
+	force(t, &copyArtifactFn, func(id, _ string) (*workload.Artifact, error) {
+		t.Fatalf("the run copied artifact %s, which this test did not wire", id)
+
+		return nil, nil
+	})
+	force(t, &updateArtifactSpecFn, func(id string, _ json.RawMessage) error {
+		t.Fatalf("the run rewrote the spec of artifact %s, which this test did not wire", id)
+
+		return nil
+	})
+	force(t, &deleteArtifactFn, func(id string) error {
+		t.Fatalf("the run deleted artifact %s, which this test did not wire", id)
+
+		return nil
+	})
+
+	force(t, &recordBuiltFn, func(string) {})
+
+	// A leftover with no image sends the run to the build history, so a test
+	// that wired none would ask whatever tenant is logged in. Empty builds,
+	// which is the track those tests were written against.
+	force(t, &listBuildsFn, func(string, int) ([]workload.Build, error) { return nil, nil })
+
 	swap(t, &createArtifactFn, f.newArtifact)
 	swap(t, &getArtifactFn, f.getArtifact)
+	swap(t, &copyArtifactFn, f.copyArtifact)
+	swap(t, &updateArtifactSpecFn, f.updateSpec)
+	swap(t, &deleteArtifactFn, f.deleteArtifact)
+	swap(t, &recordBuiltFn, f.recordBuilt)
 	swap(t, &projectLinkedFn, f.linked)
 	swap(t, &loadProjectFn, f.project)
 	swap(t, &initProjectFn, f.link)
@@ -1238,6 +1273,9 @@ type track struct {
 	// rolledRuntime is the sizing that travelled with the swap, nil when the
 	// deploy changed only the version.
 	rolledRuntime json.RawMessage
+
+	copiedAs    string
+	updatedSpec json.RawMessage
 }
 
 // wiredBuild is a build path where every step works, over the track that
@@ -2655,4 +2693,44 @@ func TestRun_ArtifactCreatedWithoutAnIDIsRefusedBeforeLinking(t *testing.T) {
 	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "reported no id")
+}
+
+// The roll decides whether to build from plan.Code.Applies rather than reading
+// the file again, so the two must answer alike for every file.
+func TestDefaultCodeChange_AppliesMatchesTheFilesBuildMode(t *testing.T) {
+	generated := strings.Replace(unboundDockerfileManifest,
+		"                source: provided\n",
+		"                source: generated\n"+
+			"                executionEnvironmentId: 6890000000000000000000e1\n"+
+			"                executionEnvironmentVersionId: 6890000000000000000000e2\n"+
+			"                entrypoint: [\"python\", \"app.py\"]\n", 1)
+
+	cases := []struct {
+		name string
+		file string
+	}{
+		{name: "a dockerfile the platform builds", file: unboundDockerfileManifest},
+		{name: "an image the platform generates", file: generated},
+		{name: "an image someone else published", file: unboundImageManifest},
+		{name: "a manifest bound to an artifact by id", file: boundArtifactManifest},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeManifest(t, dir, c.file)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+
+			loaded, err := load(dir, Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			mode := loaded.Manifest.BuildMode()
+			builds := mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated
+
+			code, err := defaultCodeChange(loaded, Live{})
+			require.NoError(t, err)
+			assert.Equal(t, builds, code.Applies,
+				"the plan's answer and the file's have to be the same answer (build mode %q)", mode)
+		})
+	}
 }

@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -149,8 +150,52 @@ func TestLook_ReadsBothDocuments(t *testing.T) {
 	assert.Equal(t, "gpt-oss-20b-vllm-artifact", live.ArtifactName)
 	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/", live.Endpoint)
 	assert.True(t, live.Locked)
+	assert.Equal(t, "registry.internal/built-by-the-server:sha-abc123", live.ImageURI)
+	assert.Equal(t, "ver1", live.CodeVersionID,
+		"the code the running image was built from is what staleness is measured against")
 	assert.NotEmpty(t, live.Spec)
 	assert.NotEmpty(t, live.Runtime)
+}
+
+// Both fields are read off the primary container, and the sidecar beside it
+// carries an image of its own that a runtime-only deploy must not inherit.
+func TestLook_ReadsTheImageAndCodeOffThePrimaryContainer(t *testing.T) {
+	// The flagged primary is not the first, so a walk falling through to
+	// [0][0] would answer with the sidecar for both.
+	reordered := strings.Replace(liveArtifactJSON,
+		`          {
+            "name": "vllm-server",`,
+		`          {"name": "metrics-bridge", "imageUri": "registry/vllm-metrics-bridge:v1"},
+          {
+            "name": "vllm-server",`, 1)
+	reordered = strings.Replace(reordered,
+		`,
+          {"name": "metrics-bridge", "imageUri": "registry/vllm-metrics-bridge:v1"}
+        ]`, `
+        ]`, 1)
+
+	stubLive(t, liveWorkloadJSON, reordered)
+
+	live, err := Look("68b0c1d2e3f4a5b6c7d8e9f0")
+	require.NoError(t, err)
+
+	assert.Equal(t, "registry.internal/built-by-the-server:sha-abc123", live.ImageURI)
+	assert.Equal(t, "ver1", live.CodeVersionID)
+}
+
+// An artifact the platform builds nothing for has no code reference to read,
+// and imageStale reads it, so a wrong key path skips every staleness check.
+func TestLook_NoCodeReferenceReadsAsNone(t *testing.T) {
+	stubLive(t, liveWorkloadJSON, strings.Replace(liveArtifactJSON,
+		`,
+              "codeRef": {"datarobot": {"catalogId": "cat1", "catalogVersionId": "ver1"}}`, "", 1))
+
+	live, err := Look("68b0c1d2e3f4a5b6c7d8e9f0")
+	require.NoError(t, err)
+
+	assert.Empty(t, live.CodeVersionID)
+	assert.Equal(t, "registry.internal/built-by-the-server:sha-abc123", live.ImageURI,
+		"the image is still there; it is the code that is not")
 }
 
 // TestLook_StripsBuildOutputsFromTheSpec is the property that keeps a

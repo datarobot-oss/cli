@@ -190,6 +190,19 @@ func TestRender_ArtifactFromCodeAloneSaysWhy(t *testing.T) {
 	assert.Contains(t, out, "+ artifact   rebuilt from the synced code")
 }
 
+// A deploy that keeps the running image takes seconds where one that rebuilds
+// takes minutes, and --dry-run is the whole of the review a deploy gets.
+func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
+	change := Change{Path: "containerGroups[default].containers[primary].environmentVars[LOG_LEVEL]", Absent: true}
+
+	kept := render(t, appSummary, Plan{State: StateRunning, InheritsImage: true, Artifact: []Change{change}})
+	assert.Contains(t, kept, "new version, 1 spec change; keeps the running image, so no rebuild")
+
+	building := render(t, appSummary, Plan{State: StateRunning, Artifact: []Change{change}})
+	assert.Contains(t, building, "new version, 1 spec change")
+	assert.NotContains(t, building, "no rebuild", "a deploy about to build says nothing about keeping an image")
+}
+
 // TestRender_NeverPrintsEnvironmentVariableValues is the one hard rule in
 // here. A literal can be a secret someone pasted in plaintext, and a plan
 // that echoed it would put it in scrollback and CI logs.
