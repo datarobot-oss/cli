@@ -39,4 +39,4 @@ each command's `RunE`.
 
 A flag where a value like `0` means "unset, use a default" (a port, a replica count) must not
 be forced through a shared validator built for a different flag's semantics — but the exception
-must be called out at the flag definition, not left for a reviewer to guess.
+must be called out.
