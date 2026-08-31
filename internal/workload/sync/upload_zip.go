@@ -102,7 +102,7 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 		// original leak — so a discarded error here would hide exactly the
 		// recurrence this cleanup exists to prevent. Log it instead.
 		if rmErr := os.Remove(tmp.Name()); rmErr != nil {
-			log.Debug("zip temp cleanup failed; the archive may be stranded in the system temp dir",
+			log.Warn("zip temp cleanup failed; the archive may be stranded in the system temp dir",
 				"path", tmp.Name(), "err", rmErr)
 		}
 

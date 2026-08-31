@@ -314,3 +314,70 @@ func TestPhase2_Symlink_DanglingReported(t *testing.T) {
 	assert.False(t, symlinkIsDir(skipped, "dangling.lnk"),
 		"dangling symlink must report isDir false")
 }
+
+// TestPhase2_Symlink_DanglingDirectoryPatternFiltered verifies that a
+// dangling symlink whose target has been deleted is still filtered by a
+// directory-only ignore pattern ("node_modules/"). A dangling link's kind is
+// unknowable, so the filter must check both the file and directory spellings
+// of the pattern — otherwise "node_modules/" only matches a resolvable
+// directory symlink and the dangling one leaks into the warning stream.
+func TestPhase2_Symlink_DanglingDirectoryPatternFiltered(t *testing.T) {
+	skipNonWindowsSymlink(t)
+
+	dir := initProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	})
+
+	// node_modules -> a target that does not exist (a dangling directory link).
+	require.NoError(t, os.Symlink(
+		filepath.Join(dir, "missing_target"),
+		filepath.Join(dir, "node_modules")))
+
+	// The directory-only spelling is what used to miss dangling links.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.FileName),
+		[]byte("node_modules/\n"), 0o644))
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	logged := captureWarnLog(t, func() {
+		plan, err := e.Plan()
+		require.NoError(t, err)
+
+		// Not in the upload plan.
+		assert.NotContains(t, uploadPathsOf(plan), "node_modules")
+	})
+
+	// Not reported, and therefore not warned about.
+	assert.NotContains(t, symlinkPaths(e.skippedSymlinks), "node_modules",
+		"a dangling node_modules link filtered by 'node_modules/' must not be reported")
+	assert.NotContains(t, logged, "node_modules",
+		"a dangling node_modules link filtered by 'node_modules/' must not be warned")
+}
+
+// TestPhase2_Symlink_DanglingUncoveredStillWarned verifies that a dangling
+// symlink covered by no ignore pattern is still reported and warned about,
+// independent of the dangling-specific filter.
+func TestPhase2_Symlink_DanglingUncoveredStillWarned(t *testing.T) {
+	skipNonWindowsSymlink(t)
+
+	dir := initProject(t, map[string]string{
+		"app.py": "print('hi')\n",
+	})
+
+	// A dangling symlink no pattern covers.
+	require.NoError(t, os.Symlink(
+		filepath.Join(dir, "nonexistent"),
+		filepath.Join(dir, "dangling.lnk")))
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	logged := captureWarnLog(t, func() {
+		_, err := e.Plan()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, symlinkPaths(e.skippedSymlinks), "dangling.lnk",
+		"an uncovered dangling symlink must still be reported")
+	assert.Contains(t, logged, "dangling.lnk",
+		"an uncovered dangling symlink must still be warned")
+}

@@ -107,9 +107,10 @@ func TestWalk_SkipsSymlinkAndNotifies(t *testing.T) {
 
 	var seen []string
 
-	got, err := Walk(root, nil, func(rel, target string, isDir bool) {
+	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
 		_ = target
 		_ = isDir
+		_ = dangling
 
 		seen = append(seen, rel)
 	})

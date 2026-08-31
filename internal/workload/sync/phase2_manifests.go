@@ -52,8 +52,18 @@ func phase2Manifests(e *Engine) error {
 	// classic unfiltered-warning trap. matcher.Match applies both the user's
 	// .drignore patterns and the hardcoded system excludes, with the same
 	// case-folding rules used for regular files.
-	walkOnSymlink := func(rel, _ string, isDir bool) {
-		if matcher.Match(rel, isDir) {
+	walkOnSymlink := func(rel, _ string, isDir, dangling bool) {
+		matched := matcher.Match(rel, isDir)
+
+		// A dangling link's kind is unknowable, so a directory-only pattern
+		// ("node_modules/") cannot match through the isDir=false branch.
+		// Treat it as excluded when either spelling matches so a dangling
+		// node_modules link is still filtered rather than warned about.
+		if dangling {
+			matched = matcher.Match(rel, false) || matcher.Match(rel, true)
+		}
+
+		if matched {
 			return
 		}
 

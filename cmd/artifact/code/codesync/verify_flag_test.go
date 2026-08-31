@@ -462,3 +462,33 @@ func TestDivergenceSummaryNotice_EmptyWhenNoDivergences(t *testing.T) {
 		})
 	}
 }
+
+// The path list in the one-line summary is bounded at DivergenceNoticeBound,
+// mirroring the per-symlink summary: the first five paths are named and the
+// remainder is summarized as "and N more", while the full list still travels
+// in the plan JSON. The mode/branch wording stays byte-identical.
+func TestDivergenceSummaryNotice_BoundsPathListAtFive(t *testing.T) {
+	divs := make([]sync.Divergence, 0, 7)
+
+	for i := 0; i < 7; i++ {
+		divs = append(divs, sync.Divergence{
+			Path: fmt.Sprintf("%c.py", rune('a'+i)),
+			Kind: sync.DivergenceRemoteOnly,
+		})
+	}
+
+	plan := &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}
+
+	notice := divergenceSummaryNotice(runFlags{}, plan, divs)
+
+	assert.Contains(t, notice, "--verify found 7 divergence(s)",
+		"the full count must stay in the head")
+	assert.Contains(t, notice, "a.py")
+	assert.Contains(t, notice, "e.py", "the fifth path must be named")
+	assert.NotContains(t, notice, "f.py", "the sixth path must not be named")
+	assert.NotContains(t, notice, "g.py", "the seventh path must not be named")
+	assert.Contains(t, notice, ", and 2 more",
+		"the remainder must be summarized as a count")
+	assert.Contains(t, notice, "The plan reconciles them.",
+		"the applying sentence must stay intact")
+}

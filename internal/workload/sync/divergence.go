@@ -95,7 +95,10 @@ func detectDivergence(base, remote BaseManifest) []Divergence {
 //
 // Findings are stored on the engine for the display layer AND logged from
 // the phase via log.Warn: the log writes stderr immediately, so the findings
-// survive a later phase failing and never touch stdout in JSON mode.
+// survive a later phase failing and never touch stdout in JSON mode. The
+// prose is bounded at DivergenceNoticeBound entries with an "and N more"
+// tail; the structured field on the engine carries every divergence
+// regardless.
 func maybeDetectDivergence(e *Engine) {
 	if e.drifted || !e.opts.Verify {
 		return
@@ -103,10 +106,26 @@ func maybeDetectDivergence(e *Engine) {
 
 	e.divergences = detectDivergence(e.base, e.remote)
 
-	for _, d := range e.divergences {
+	for i, d := range e.divergences {
+		if i >= DivergenceNoticeBound {
+			break
+		}
+
 		log.Warn(divergenceNotice(d))
 	}
+
+	if len(e.divergences) > DivergenceNoticeBound {
+		log.Warn(fmt.Sprintf(
+			"divergence: and %d more divergence(s) were found (see the plan JSON for the full list)",
+			len(e.divergences)-DivergenceNoticeBound))
+	}
 }
+
+// DivergenceNoticeBound is the maximum number of divergences the stderr prose
+// lists individually before summarizing the remainder as a count. The plan
+// JSON always lists every divergence. Fixed at 5 so workers and validators
+// assert the same number rather than each choosing a bound.
+const DivergenceNoticeBound = 5
 
 // divergenceNotice renders one divergence as a self-contained stderr line.
 // Each kind gets its own wording: a reader must be able to tell "the server

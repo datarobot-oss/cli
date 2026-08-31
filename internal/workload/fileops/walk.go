@@ -15,6 +15,7 @@
 package fileops
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -29,10 +30,11 @@ type IgnoreFunc func(relPath string, isDir bool) bool
 //
 // isDir reports whether the link target resolves to a directory (resolved
 // via os.Stat, which follows the link). A dangling symlink reports an empty
-// target and isDir false; the caller can distinguish "lost one file" from
-// "lost an entire subtree" from the boolean, which is the whole reason it
-// exists.
-type SymlinkLogger func(relPath, target string, isDir bool)
+// target, isDir false, and dangling true: its target does not exist, so its
+// kind is unknowable rather than "not a directory". Callers that filter by
+// ignore patterns can use dangling to check both spellings of a pattern
+// (file and directory) instead of only the file spelling.
+type SymlinkLogger func(relPath, target string, isDir, dangling bool)
 
 type Entry struct {
 	AbsPath string
@@ -115,15 +117,17 @@ func notifySymlink(onSymlink SymlinkLogger, absPath, relPath string) {
 	target, _ := os.Readlink(absPath)
 
 	// Stat follows the link. A failure means the target does not exist
-	// (dangling) or is inaccessible: report an empty target and isDir
-	// false so the caller can label it without a walk error.
+	// (dangling) or is inaccessible. The two are kept apart: a dangling
+	// link's kind is unknowable (dangling=true), while other Stat errors
+	// keep the historical empty-target, isDir=false report.
 	info, err := os.Stat(absPath)
 	if err != nil {
-		onSymlink(relPath, "", false)
+		onSymlink(relPath, "", false, errors.Is(err, fs.ErrNotExist))
+
 		return
 	}
 
-	onSymlink(relPath, target, info.IsDir())
+	onSymlink(relPath, target, info.IsDir(), false)
 }
 
 func dirAction(relPath string, ignore IgnoreFunc) error {

@@ -42,11 +42,12 @@ func skipNonWindowsSymlink(t *testing.T) {
 }
 
 // symlinkReport captures what the SymlinkLogger callback observed, so a test
-// can assert on path, target, and isDir together.
+// can assert on path, target, isDir, and dangling together.
 type symlinkReport struct {
-	rel    string
-	target string
-	isDir  bool
+	rel      string
+	target   string
+	isDir    bool
+	dangling bool
 }
 
 // TestWalk_SymlinkedDirectory_Pruned verifies that a symlink to a directory
@@ -70,8 +71,8 @@ func TestWalk_SymlinkedDirectory_Pruned(t *testing.T) {
 
 	var reports []symlinkReport
 
-	got, err := Walk(root, nil, func(rel, target string, isDir bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir})
+	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
+		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
 	})
 	require.NoError(t, err)
 
@@ -79,6 +80,7 @@ func TestWalk_SymlinkedDirectory_Pruned(t *testing.T) {
 	require.Len(t, reports, 1, "a symlinked directory must produce exactly one callback")
 	assert.Equal(t, "link_to_dir", reports[0].rel)
 	assert.True(t, reports[0].isDir, "isDir must be true when the link target is a directory")
+	assert.False(t, reports[0].dangling, "a resolvable link must not be reported as dangling")
 
 	// No entry for the symlink or anything beneath it. The real directory's
 	// children ARE present (the symlink is a separate path).
@@ -115,8 +117,8 @@ func TestWalk_Symlink_ReportsIsDir(t *testing.T) {
 
 	var reports []symlinkReport
 
-	_, err := Walk(root, nil, func(rel, target string, isDir bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir})
+	_, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
+		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
 	})
 	require.NoError(t, err)
 
@@ -158,8 +160,8 @@ func TestWalk_DanglingSymlink(t *testing.T) {
 
 	var reports []symlinkReport
 
-	got, err := Walk(root, nil, func(rel, target string, isDir bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir})
+	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
+		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
 	})
 	require.NoError(t, err, "a dangling symlink must not cause a walk error")
 
@@ -167,6 +169,7 @@ func TestWalk_DanglingSymlink(t *testing.T) {
 	assert.Equal(t, "dangling.lnk", reports[0].rel)
 	assert.Empty(t, reports[0].target, "dangling symlink must report an empty target")
 	assert.False(t, reports[0].isDir, "dangling symlink must report isDir false")
+	assert.True(t, reports[0].dangling, "dangling symlink must report dangling true")
 
 	// The dangling symlink is not in entries.
 	paths := relPaths(got)
@@ -199,8 +202,8 @@ func TestWalk_SymlinkChain_NotFollowed(t *testing.T) {
 
 	var reports []symlinkReport
 
-	got, err := Walk(root, nil, func(rel, target string, isDir bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir})
+	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
+		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
 	})
 	require.NoError(t, err)
 
@@ -253,14 +256,15 @@ func TestWalk_SymlinkedDirectory_ExternalTarget(t *testing.T) {
 
 	var reports []symlinkReport
 
-	got, err := Walk(root, nil, func(rel, target string, isDir bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir})
+	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
+		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
 	})
 	require.NoError(t, err)
 
 	require.Len(t, reports, 1, "external-target symlink must be reported")
 	assert.Equal(t, "link_to_external", reports[0].rel)
 	assert.False(t, reports[0].isDir, "external file target must report isDir false")
+	assert.False(t, reports[0].dangling, "an external file target must not be reported as dangling")
 
 	// The symlink is not in entries; only the real project file is.
 	paths := relPaths(got)

@@ -15,6 +15,7 @@
 package sync
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,6 +119,45 @@ func TestDivergenceNoticeText(t *testing.T) {
 
 	assert.NotEqual(t, mismatch, baseOnly)
 	assert.NotEqual(t, baseOnly, remoteOnly)
+}
+
+// TestMaybeDetectDivergence_WarnBoundedAtFive verifies that the per-path
+// divergence warnings are bounded the same way the sibling symlink notices
+// are: the first DivergenceNoticeBound paths in deterministic order, then a
+// count of the remainder. The engine's divergences field still carries every
+// path (the plan JSON lists the full set).
+func TestMaybeDetectDivergence_WarnBoundedAtFive(t *testing.T) {
+	remote := BaseManifest{}
+
+	for i := 0; i < 7; i++ {
+		name := fmt.Sprintf("%c.py", rune('a'+i))
+		remote[name] = FileEntry{Hash: "h", Size: 1}
+	}
+
+	e := &Engine{opts: Options{Verify: true}, base: BaseManifest{}, remote: remote}
+
+	logged := captureWarnLog(t, func() { maybeDetectDivergence(e) })
+
+	// The structured field carries every divergence regardless of the prose
+	// bound.
+	require.Len(t, e.divergences, 7)
+
+	// The first five appear in the prose.
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("%c.py", rune('a'+i))
+		assert.Contains(t, logged, name,
+			"the first %d divergences must appear in the bounded prose", 5)
+	}
+
+	// The sixth and seventh do not appear individually.
+	assert.NotContains(t, logged, "f.py",
+		"the 6th divergence must not appear in the bounded prose")
+	assert.NotContains(t, logged, "g.py",
+		"the 7th divergence must not appear in the bounded prose")
+
+	// The count of the remainder appears.
+	assert.Contains(t, logged, "2 more divergence(s)",
+		"the count of the remainder must appear in the prose")
 }
 
 // engineFor returns an engine bound to dir with the given options and a fake

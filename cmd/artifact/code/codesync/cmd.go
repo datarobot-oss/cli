@@ -126,9 +126,9 @@ versioned step.
 
 Use --dry-run to preview the plan without writing anything; --diff to
 also print per-file unified diffs. Both modes exit before any remote
-write. --verify forces a remote round-trip and post-apply verification
-of what was uploaded, catching server-side divergence the ordinary fast
-path cannot see; it composes with --dry-run and --diff. --yes
+write. --verify forces a remote round-trip that surfaces BASE-vs-REMOTE
+divergence (composes with --dry-run and --diff); on an applying run it
+also re-fetches after upload to verify what was uploaded. --yes
 auto-confirms the post-plan prompt and skips any interactive directory
 prompt.
 
@@ -163,7 +163,7 @@ Example:
 	// It must not join the dry-run/diff mutual-exclusion group: verify is a
 	// diagnostic intensity switch, not a third preview mode, and a verify
 	// run without --dry-run still applies its plan.
-	c.Flags().Bool("verify", false, "Force a remote round-trip and post-apply verification of what was uploaded.")
+	c.Flags().Bool("verify", false, "Force a remote round-trip to surface BASE-vs-REMOTE divergence; on an applying run also re-fetch after upload to verify what was uploaded.")
 
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
 
@@ -253,7 +253,8 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 // divergenceSummaryNotice renders the one-line --verify summary that runs
 // alongside the other state notices: what diverged and what happens next.
 // The per-path detail (with hashes) is logged from Phase 2 itself, so this
-// summary stays stream-agnostic and names every affected path.
+// summary stays stream-agnostic and lists paths up to DivergenceNoticeBound,
+// summarizing any remainder as a count.
 //
 // The "what happens next" half is mode- and plan-aware because the honest
 // answer differs by what the run actually does: a preview writes nothing, an
@@ -271,9 +272,24 @@ func divergenceSummaryNotice(flags runFlags, plan *sync.SyncPlan, divergences []
 		paths[i] = d.Path
 	}
 
+	// Bound the joined path list the same way the per-symlink summary does:
+	// individual names up to DivergenceNoticeBound, then a count. The full
+	// list always travels in the plan JSON.
+	shown := paths
+
+	if len(paths) > sync.DivergenceNoticeBound {
+		shown = paths[:sync.DivergenceNoticeBound]
+	}
+
+	list := strings.Join(shown, ", ")
+
+	if len(paths) > sync.DivergenceNoticeBound {
+		list += fmt.Sprintf(", and %d more", len(paths)-sync.DivergenceNoticeBound)
+	}
+
 	head := fmt.Sprintf(
 		"--verify found %d divergence(s) between manifest.json (BASE) and the server (REMOTE): %s.",
-		len(divergences), strings.Join(paths, ", "))
+		len(divergences), list)
 
 	switch {
 	case flags.DryRun:
