@@ -308,12 +308,14 @@ func TestCmd_Combined_AllNotices_HumanMode(t *testing.T) {
 	outText := stdout.String()
 	errText := stderr.String()
 
-	// stdout carries only the plan (the upload row).
+	// stdout carries only the plan (the upload row). The negative checks pin
+	// the actual command-summary substrings (not the per-phase prose the
+	// fakeEngine never emits), so a StateNotice misrouted to stdout fails.
 	assert.Contains(t, outText, "a.py", "stdout must carry the plan")
 	assert.NotContains(t, outText, "Moved local state", "no migration notice on stdout")
 	assert.NotContains(t, outText, ".wapiignore", "no ignore notice on stdout")
-	assert.NotContains(t, outText, "was not uploaded", "no symlink notice on stdout")
-	assert.NotContains(t, outText, "divergence:", "no divergence notice on stdout")
+	assert.NotContains(t, outText, "were not uploaded or synced", "no symlink summary on stdout")
+	assert.NotContains(t, outText, "--verify found", "no divergence summary on stdout")
 
 	// stderr carries every notice — no notice suppresses another.
 	assert.Contains(t, errText, "Moved local state", "state migration notice must reach stderr")

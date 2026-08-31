@@ -50,13 +50,24 @@ func captureWarnLog(t *testing.T, fn func()) string {
 
 	log.StartStderr()
 
+	// Register the restore before fn runs: a require.* inside fn that
+	// FailNows unwinds via runtime.Goexit, skipping every statement after
+	// fn() but still running registered cleanups. If os.Stderr stayed
+	// swapped (and w open), the process-global stderr would point at a
+	// closed pipe for the rest of the package run. t.Cleanup runs even after
+	// Goexit, so one closure restores stderr, closes the pipe, and tears down
+	// the stderr logger regardless of how fn exits.
+	t.Cleanup(func() {
+		os.Stderr = origStderr
+
+		_ = w.Close()
+
+		log.StopStderr()
+	})
+
 	fn()
 
 	w.Close()
-
-	os.Stderr = origStderr
-
-	t.Cleanup(log.StopStderr)
 
 	var buf bytes.Buffer
 
