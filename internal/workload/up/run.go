@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -342,9 +343,17 @@ func lookSettled(workloadID string, opts Options) (Live, error) {
 		return Live{}, err
 	}
 
-	replaced, err := awaitReplaced(found, opts)
+	replaced, previewed, err := awaitReplaced(found, opts)
 	if err != nil {
 		return replaced, err
+	}
+
+	// A preview that has already said a deploy would wait for the rollout says
+	// nothing further. The settling state it hands back is synthetic — put there
+	// so an empty plan is not called up to date — and awaitSteady would read it
+	// as a second transition and print the same sentence about the same wait.
+	if previewed {
+		return replaced, nil
 	}
 
 	return awaitSteady(replaced, opts)
@@ -371,21 +380,32 @@ func lookSettled(workloadID string, opts Options) (Live, error) {
 //
 // A dry run never waits, for the reason it never waits on a settling workload:
 // blocking a preview for the poll timeout is the opposite of what a preview is
-// for.
-func awaitReplaced(live Live, opts Options) (Live, error) {
+// for. The bool it returns is that case and only that case: true means the
+// preview has already said a deploy would wait here, so the caller stops rather
+// than letting awaitSteady say it again about the settling state synthesised
+// below. A real run never returns true, because it waits instead of previewing.
+func awaitReplaced(live Live, opts Options) (Live, bool, error) {
 	if !replaceable(live) {
-		return live, nil
+		return live, false, nil
 	}
 
 	active, err := activeReplacementFn(live.WorkloadID)
 	if err != nil {
-		return live, fmt.Errorf(
+		return live, false, fmt.Errorf(
 			"cannot tell whether workload %s already has a rollout in progress, so nothing was deployed: %w",
 			live.WorkloadID, err)
 	}
 
 	if active == nil {
-		return live, nil
+		// The ordinary path, and the only one that says nothing to the user.
+		// Logged so a --debug transcript shows the route was asked at all: a
+		// deploy that planned against a stale artifact looks the same here
+		// whether the answer was "nothing in flight" or the question was never
+		// put, and those have different causes.
+		log.Debug("no rollout in flight; planning against the workload as read",
+			"workload_id", live.WorkloadID)
+
+		return live, false, nil
 	}
 
 	// A settled record stays readable for a while after the rollout ends, so
@@ -402,7 +422,16 @@ func awaitReplaced(live Live, opts Options) (Live, error) {
 	// Closing it means re-reading on every deploy, which doubles the workload
 	// GET on the quiet path to catch a window narrower than the one this covers.
 	if workload.IsTerminalReplacementStatus(active.Status) {
-		return Look(live.WorkloadID)
+		// The one decision here that is neither waited on nor said out loud, so
+		// the debug log is the only place it can be seen. It matters after the
+		// fact: a plan that looks like it rolled the wrong artifact is either
+		// this re-read having happened or it not having happened.
+		log.Debug("the rollout already settled; re-reading before planning",
+			"workload_id", live.WorkloadID, "replacement_id", active.ID, "status", active.Status)
+
+		refreshed, err := Look(live.WorkloadID)
+
+		return refreshed, false, err
 	}
 
 	report := newReporter(opts.Stderr, opts.Spinner)
@@ -426,7 +455,7 @@ func awaitReplaced(live Live, opts Options) (Live, error) {
 		// run never arrives here with it, because it waits and re-reads instead.
 		live.State = StateSettling
 
-		return live, nil
+		return live, true, nil
 	}
 
 	if opts.Detach {
@@ -451,7 +480,7 @@ func awaitReplaced(live Live, opts Options) (Live, error) {
 	})
 	if err != nil {
 		if failure := replacedFailed(live, settled, err); failure != nil {
-			return live, failure
+			return live, false, failure
 		}
 
 		report.say("  %s\n", tui.WarnStyle.Render(fmt.Sprintf(
@@ -459,7 +488,9 @@ func awaitReplaced(live Live, opts Options) (Live, error) {
 			settled.Status)))
 	}
 
-	return Look(live.WorkloadID)
+	refreshed, err := Look(live.WorkloadID)
+
+	return refreshed, false, err
 }
 
 // replaceable says whether there is a workload for the replacement route to

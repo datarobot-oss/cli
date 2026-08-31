@@ -1392,7 +1392,13 @@ func TestRun_DryRunWithARolloutInFlightDoesNotWait(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr, "is being replaced")
-	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Contains(t, stderr, "A deploy would wait for this rollout to finish")
+
+	// One wait pending, one sentence about it. The settling state this preview
+	// leaves behind is synthetic — awaitReplaced put it there so an empty plan
+	// is not called up to date — so awaitSteady must not read it as a second
+	// transition and print its own near-identical hint underneath.
+	assert.Equal(t, 1, strings.Count(stderr, "plan against where it lands"))
 }
 
 // --detach is about not waiting for the deploy to serve, and this wait comes
