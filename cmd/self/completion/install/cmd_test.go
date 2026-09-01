@@ -16,6 +16,7 @@ package install
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,8 +24,56 @@ import (
 
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
+
+// wireCommandPath attaches cmd to a synthetic "dr self completion" parent
+// chain matching the real registration (see cmd/self/cmd.go and
+// cmd/self/completion/cmd.go), so cmd.CommandPath() resolves exactly as it
+// does at runtime. This package can't import cmd/self/completion directly —
+// that package imports this one, so doing so would create an import cycle.
+func wireCommandPath(cmd *cobra.Command) {
+	root := &cobra.Command{Use: version.CliName}
+	selfCmd := &cobra.Command{Use: "self"}
+	completionCmd := &cobra.Command{Use: "completion"}
+
+	completionCmd.AddCommand(cmd)
+	selfCmd.AddCommand(completionCmd)
+	root.AddCommand(selfCmd)
+}
+
+// captureStdout redirects os.Stdout for the duration of fn and returns
+// everything written to it.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	orig := os.Stdout
+
+	t.Cleanup(func() { os.Stdout = orig })
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+
+	os.Stdout = w
+
+	fn()
+
+	os.Stdout = orig
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe: %v", err)
+	}
+
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+
+	return string(out)
+}
 
 func TestDetectShell(t *testing.T) {
 	// DetectShell() now prioritizes parent process detection over $SHELL.
@@ -258,6 +307,44 @@ func TestInstallCmd(t *testing.T) {
 
 	if cmd.Flags().Lookup("dry-run") == nil {
 		t.Error("dry-run flag not found")
+	}
+}
+
+// TestShowAlreadyInstalled guards against CFX-7958: the printed reinstall
+// hint must derive its command path from cmd.CommandPath() so it can never
+// drift from the real "dr self completion install" invocation.
+func TestShowAlreadyInstalled(t *testing.T) {
+	cmd := Cmd()
+	wireCommandPath(cmd)
+
+	out := captureStdout(t, func() {
+		showAlreadyInstalled(cmd, "/fake/path/_dr")
+	})
+
+	if !strings.Contains(out, "/fake/path/_dr") {
+		t.Errorf("output %q does not mention the install path", out)
+	}
+
+	wantHint := version.CliName + " self completion install --force --yes"
+	if !strings.Contains(out, wantHint) {
+		t.Errorf("output %q does not contain expected reinstall hint %q", out, wantHint)
+	}
+}
+
+// TestShowDryRunMessage guards against CFX-7958: the printed dry-run hint
+// must derive its command path from cmd.CommandPath() so it can never
+// drift from the real "dr self completion install" invocation.
+func TestShowDryRunMessage(t *testing.T) {
+	cmd := Cmd()
+	wireCommandPath(cmd)
+
+	out := captureStdout(t, func() {
+		showDryRunMessage(cmd, "zsh")
+	})
+
+	wantHint := version.CliName + " self completion install zsh --yes"
+	if !strings.Contains(out, wantHint) {
+		t.Errorf("output %q does not contain expected dry-run hint %q", out, wantHint)
 	}
 }
 
