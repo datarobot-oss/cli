@@ -509,6 +509,595 @@ func TestRun_DriftNoticeCapsTheList(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "SETTING_19")
 }
 
+// updating is a headless run that asks for the other half: the values of
+// names the manifest already declares.
+func updating(dir string, answers Answers) Options {
+	opts := headless(dir, answers)
+	opts.UpdateEnv = true
+
+	return opts
+}
+
+// A literal whose .env value changed is named, and the flag that applies it.
+func TestRun_NamesAChangedLiteral(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "LOG_LEVEL")
+	assert.Contains(t, stderr.String(), "--update-env")
+	// Names, never values: neither side of the comparison is printed.
+	assert.NotContains(t, stderr.String(), "trace")
+}
+
+// --update-env rewrites it, and leaves every other key alone.
+func TestUpdateEnv_RewritesAChangedLiteral(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Equal(t, 1, result.EnvValuesUpdated)
+
+	after := readManifest(t, dir)
+	assert.Contains(t, after, "trace")
+	assert.NotContains(t, after, "debug")
+	assert.Contains(t, after, "eu-west-1")
+}
+
+// A name .env does not define is not drift, so an update leaves it alone.
+func TestUpdateEnv_LeavesUndefinedNamesAlone(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\n")
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Contains(t, readManifest(t, dir), "eu-west-1")
+}
+
+// The case the original report was about: a rotated key reaches the workload,
+// through the credential the manifest already points at rather than a new one.
+func TestUpdateEnv_RotatesADeclaredSecret(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	stored := credentialStore(t)
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+	require.Len(t, *stored, 1)
+
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	sent := rotatingStore(t)
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+
+	// Sent to the credential the file already names, so no second credential
+	// is created and the manifest does not move.
+	require.Len(t, *sent, 1)
+	assert.Contains(t, before, (*sent)[0].Name)
+	assert.Equal(t, "fixture-key-after-rotation-b2b2", (*sent)[0].Value)
+	assert.Equal(t, before, readManifest(t, dir))
+	assert.Len(t, *stored, 1)
+}
+
+// A secret's stored value is never returned, so the notice has to say it
+// cannot be checked rather than let silence read as "that one is fine".
+func TestRun_SaysASecretCannotBeCompared(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err = Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "LLM_API_KEY")
+	assert.Contains(t, stderr.String(), "cannot be compared")
+	assert.NotContains(t, stderr.String(), "fixture-key-before-rotation-a1a1")
+}
+
+// A rotation that fails leaves the previous value serving, which nothing
+// downstream can notice, so it has to be said out loud.
+func TestUpdateEnv_NamesAFailedRotation(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	failingRotation(t, errors.New("platform unreachable"))
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, result.EnvSecretsRotated)
+	assert.Contains(t, stderr.String(), "LLM_API_KEY")
+	assert.Contains(t, stderr.String(), "keeps the value it has")
+}
+
+// A dry run promises to change nothing, and a re-sent secret is not something
+// a preview can take back.
+func TestUpdateEnv_DryRunSendsNothing(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\nSTRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nSTRIPE_API_KEY=fixture-not-a-real-key-9z8y7x6w\n")
+
+	sent := rotatingStore(t)
+
+	opts := updating(dir, Answers{})
+	opts.DryRun = true
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionPlanned, result.Action)
+	assert.Equal(t, before, readManifest(t, dir))
+	assert.Empty(t, *sent)
+}
+
+// Both flags together do both jobs in one run.
+func TestEditEnv_BothFlagsAddAndUpdate(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
+
+	opts := importing(dir, Answers{})
+	opts.UpdateEnv = true
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Equal(t, 1, result.EnvKeysListed)
+	assert.Equal(t, 1, result.EnvValuesUpdated)
+
+	after := readManifest(t, dir)
+	assert.Contains(t, after, "trace")
+	assert.Contains(t, after, "REGION")
+}
+
+// A rotation is a write to the credential store, and the file the reference
+// lives in does not move. Calling the run an update would have the command
+// report an edit to a manifest that is byte for byte what it was.
+func TestUpdateEnv_RotationIsNotAFileEdit(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+	rotatingStore(t)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	assert.Equal(t, before, readManifest(t, dir))
+
+	// The run did something, so the line for a run that found nothing to do
+	// must not also appear.
+	assert.Contains(t, stderr.String(), "Re-sent 1 secret")
+	assert.NotContains(t, stderr.String(), "already gives every variable")
+}
+
+// A preview of --update-env that said nothing about the secrets would leave
+// out the only part of it that reaches the tenant.
+func TestUpdateEnv_DryRunSaysWhatItWouldReSend(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+	sent := rotatingStore(t)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.DryRun = true
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionPlanned, result.Action)
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	assert.Empty(t, *sent)
+	assert.Equal(t, before, readManifest(t, dir))
+	assert.Contains(t, stderr.String(), "would be re-sent")
+}
+
+// A failed re-send leaves the old value serving, changes no file and stops
+// nothing, so a caller reading the result rather than the terminal needs a
+// count of its own to tell that run from a clean one.
+func TestUpdateEnv_CountsAFailedRotation(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	failingRotation(t, errors.New("platform unreachable"))
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, result.EnvSecretsRotated)
+	assert.Equal(t, 1, result.EnvSecretsNotRotated)
+
+	// The failure has just been named; saying everything already matches in
+	// the next breath would contradict it.
+	assert.NotContains(t, stderr.String(), "already gives every variable")
+}
+
+// The two flags do opposite things, so the run that found nothing to do says
+// which of the two it found nothing for.
+func TestUpdateEnv_NothingToDoIsAboutValues(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Contains(t, stderr.String(), "already gives every variable it declares the value .env does")
+	assert.NotContains(t, stderr.String(), "that can be imported")
+}
+
+// The values are read by the walk that resolves aliases and applied by the one
+// that refuses them, so a file can show its drift and still not take the edit.
+// Naming the flag there would send the user on an errand.
+func TestRun_ValueDriftNamesTheRefusalNotTheFlag(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvManifest), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "LOG_LEVEL")
+	assert.Contains(t, stderr.String(), "cannot be edited automatically")
+	assert.NotContains(t, stderr.String(), "--update-env")
+}
+
+// sharedEnvManifest is a valid manifest whose primary container shares its
+// environment with another through an anchor, which is the shape every edit
+// here refuses.
+const sharedEnvManifest = `name: shared
+artifact:
+  name: shared-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars: &sharedEnv
+              - name: LOG_LEVEL
+                value: debug
+          - name: sidecar
+            imageUri: registry/team/side:v1
+            environmentVars: *sharedEnv
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+        - name: sidecar
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
+// A value the classifier reads as local-only must never reach the tenant. It
+// is held back from the file everywhere else, and a credential is the one
+// place that holding back cannot be undone.
+func TestUpdateEnv_NeverRotatesALocalOnlyValue(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://user:pw@db.prod.example.com:5432/app\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+	require.Contains(t, readManifest(t, dir), manifest.CredentialShorthandPrefix)
+
+	// Repointed at the developer's own machine, which the classifier holds back.
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://localhost:5432/dev\n")
+
+	sent := rotatingStore(t)
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, result.EnvSecretsRotated)
+	assert.Empty(t, *sent)
+}
+
+// --skip-env says the file is not to be read, and a rotation reads it.
+func TestUpdateEnv_SkipEnvSendsNothing(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	sent := rotatingStore(t)
+
+	_, err = Run(updating(dir, Answers{SkipEnv: true}))
+	require.NoError(t, err)
+
+	assert.Empty(t, *sent)
+}
+
+// A reference to a field this command does not write points at a credential
+// other assets may share, so it is named rather than overwritten.
+func TestUpdateEnv_RefusesACredentialFieldItDoesNotWrite(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "DB_PASSWORD=fixture-not-a-real-key-1a2b3c4d\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	// Hand-repointed at the password field of a shared credential.
+	path := manifest.Path(dir)
+	on := readManifest(t, dir)
+	require.NoError(t, os.WriteFile(path, []byte(strings.Replace(on, "/apiToken", "/password", 1)), 0o600))
+
+	sent := rotatingStore(t)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Empty(t, *sent)
+	assert.Equal(t, 1, result.EnvSecretsNotRotated)
+	assert.Contains(t, stderr.String(), "DB_PASSWORD")
+}
+
+// The flag names a file to act on; without one the run stops rather than
+// running setup and minting for the whole .env.
+func TestUpdateEnv_RefusesWhenThereIsNoManifest(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+	writeEnvFile(t, dir, "STRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
+
+	stored := credentialStore(t)
+
+	_, err := Run(updating(dir, Answers{}))
+	require.Error(t, err)
+
+	// The verb is the one that was asked for: an --update-env run told about
+	// importing is being answered about a flag it did not pass.
+	assert.Contains(t, err.Error(), "nothing to update")
+	assert.NoFileExists(t, manifest.Path(dir))
+	assert.Empty(t, *stored)
+}
+
+// A .env that could not be read is not one with nothing to update.
+func TestUpdateEnv_RefusesAnUnparseableEnvFile(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\nBAD=\"unterminated\n")
+
+	_, err := Run(updating(dir, Answers{}))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), EnvFileName)
+}
+
+// A rotation writes to the credential store, not to the file, so it must not
+// report the manifest as edited.
+func TestUpdateEnv_RotationAloneIsNotAFileEdit(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+	rotatingStore(t)
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, before, readManifest(t, dir))
+}
+
+// The preview says what it would send, because that is the half of this flag
+// that cannot be undone by deleting a file.
+func TestUpdateEnv_DryRunCountsWhatItWouldSend(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	sent := rotatingStore(t)
+
+	opts := updating(dir, Answers{})
+	opts.DryRun = true
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	assert.Empty(t, *sent)
+}
+
+// An update alone still owes the names the manifest is missing.
+func TestUpdateEnv_StillNamesUndeclaredVariables(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "REGION")
+	assert.NotContains(t, stderr.String(), "already declares every variable")
+}
+
+// A value that changed enough to change the classifier's verdict is acted on
+// by neither half, so it has to be named.
+func TestRun_NamesAReclassifiedVariable(t *testing.T) {
+	dir := configured(t, "REGION=eu-west-1\n")
+	require.Contains(t, readManifest(t, dir), "eu-west-1")
+
+	writeEnvFile(t, dir, "REGION=fixture-not-a-real-key-1a2b3c4d\n")
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "REGION")
+	assert.Contains(t, stderr.String(), "different kind")
+	assert.NotContains(t, stderr.String(), "fixture-not-a-real-key-1a2b3c4d")
+}
+
+// A credential id pasted by hand may name one other workloads read, and the
+// store is tenant-wide. Overwriting it from a flag about this project's .env
+// is the damage the ownership check refuses.
+func TestUpdateEnv_RefusesACredentialThisProjectDidNotCreate(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-before-rotation-a1a1\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	// Repointed at an id the fake store does not know, the way a user pasting
+	// a shared credential's id would leave it.
+	path := manifest.Path(dir)
+	on := readManifest(t, dir)
+	require.NoError(t, os.WriteFile(path,
+		[]byte(strings.Replace(on, "66f000000000000000000001", "66f0aaaaaaaaaaaaaaaaaaaa", 1)), 0o600))
+
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	sent := rotatingStore(t)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Empty(t, *sent)
+	assert.Equal(t, 0, result.EnvSecretsRotated)
+	assert.Equal(t, 1, result.EnvSecretsNotRotated)
+	assert.Contains(t, stderr.String(), "LLM_API_KEY")
+}
+
+// An entry the CLI never finished has no stored value to compare or re-send,
+// so the value notice must not offer a flag that skips it.
+func TestRun_DoesNotOfferToRotateAPlaceholder(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\nSTRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
+
+	noCredentialStore(t, errors.New("platform unreachable"))
+
+	_, err := Run(importing(dir, Answers{}))
+	require.NoError(t, err)
+	require.Contains(t, readManifest(t, dir), manifest.CredentialPlaceholder)
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err = Run(opts)
+	require.NoError(t, err)
+
+	// warnEnvHeldBack owns this one; the value notice must not contradict it.
+	assert.Contains(t, stderr.String(), manifest.CredentialPlaceholder)
+	assert.NotContains(t, stderr.String(), "cannot be compared")
+}
+
 // A dry run must not report the state of not having done the work: nothing
 // was stored, so every secret still carries a placeholder.
 func TestImportEnv_DryRunDoesNotReportPendingSecrets(t *testing.T) {
@@ -528,6 +1117,50 @@ func TestImportEnv_DryRunDoesNotReportPendingSecrets(t *testing.T) {
 
 	assert.Equal(t, planned.EnvKeysListed, actual.EnvKeysListed)
 	assert.Equal(t, actual.EnvSecretsPending, planned.EnvSecretsPending)
+}
+
+// A value written as a mapping is not something either flag rewrites, so
+// calling it drift would send the user to a flag that changes nothing, every
+// run, for ever.
+func TestRun_StructuredValueIsNotReportedAsDrift(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "SETTINGS=plain\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(structuredValueManifest), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "SETTINGS")
+	assert.Contains(t, stderr.String(), "not a plain string")
+	assert.NotContains(t, stderr.String(), "Apply it with")
+}
+
+// The summary of a run that changed nothing must not claim an agreement the
+// notice above it has just denied.
+func TestUpdateEnv_NoOpDoesNotClaimAgreementItCannotVerify(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "SETTINGS=plain\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(structuredValueManifest), 0o600))
+
+	before := readManifest(t, dir)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, before, readManifest(t, dir))
+	assert.Contains(t, stderr.String(), "not a plain string")
+	assert.NotContains(t, stderr.String(), "already gives every variable")
 }
 
 // A deploy from a subdirectory reads the manifest above it, so a run told
@@ -604,4 +1237,224 @@ func TestRun_DriftRefusalDoesNotClaimTheManifestDeclaresNothing(t *testing.T) {
 
 	assert.Contains(t, stderr.String(), "cannot be added automatically")
 	assert.NotContains(t, stderr.String(), "does not declare")
+}
+
+// structuredValueManifest declares a variable whose value is a mapping, which
+// is a hand edit this CLI reads but will not overwrite.
+const structuredValueManifest = `name: structured
+artifact:
+  name: structured-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars:
+              - name: SETTINGS
+                value:
+                  nested: thing
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
+// A value borrowed from an anchor elsewhere in the file is drift the notice
+// can read and the edit must not apply: writing that scalar would change every
+// other name reading through it. Skipping it in silence was the worse half of
+// the choice, because the run then reported a file it had not touched as
+// already matching .env.
+func TestUpdateEnv_RefusesAValueBorrowedFromAnAnchor(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(aliasedValueManifest), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
+
+	assert.Equal(t, aliasedValueManifest, readManifest(t, dir))
+	assert.NotContains(t, stderr.String(), "already gives every variable")
+}
+
+// aliasedValueManifest declares its environment inline, in a block nothing
+// else shares, and gives one variable a value borrowed from an anchor the rest
+// of the file reads too.
+const aliasedValueManifest = `name: aliased
+x-defaults: &level debug
+artifact:
+  name: aliased-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars:
+              - name: LOG_LEVEL
+                value: *level
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
+// A declared variable whose .env value has turned local-only is one the
+// rotation is right to hold back and one no notice covered: the held-back line
+// is about names the manifest does not carry. Unsaid, the run reported a value
+// it had just declined to send as already agreeing with .env.
+func TestUpdateEnv_NamesADeclaredValueTurnedLocalOnly(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://user:pw@db.prod.example.com:5432/app\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	// Repointed at the developer's own machine, which the classifier holds back.
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://localhost:5432/dev\n")
+
+	sent := rotatingStore(t)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err = Run(opts)
+	require.NoError(t, err)
+
+	assert.Empty(t, *sent)
+	assert.Contains(t, stderr.String(), "DATABASE_URL")
+	assert.Contains(t, stderr.String(), "declared variable as local-only")
+	assert.NotContains(t, stderr.String(), "already gives every variable")
+}
+
+// The missing-name notice ends in the held-back one, so an update that found
+// nothing to do and printed both said the same name twice.
+func TestUpdateEnv_HeldBackNamesAreSaidOnce(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\nDATABASE_URL=postgres://localhost:5432/dev\n")
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, strings.Count(stderr.String(), "deliberately left out of the manifest"))
+}
+
+// A container whose environment another one reads through an anchor takes no
+// edit here, and a rotation is not one: it writes to the credential store and
+// leaves the file byte for byte what it was. Refusing it on the file's account
+// left a manifest of that shape no way to re-send a rotated key at all.
+func TestUpdateEnv_RotatesThroughASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	assert.Equal(t, sharedEnvSecretManifest, readManifest(t, dir))
+
+	require.Len(t, *sent, 1)
+	assert.Equal(t, "66f000000000000000000001", (*sent)[0].Name)
+	assert.Equal(t, "fixture-key-after-rotation-b2b2", (*sent)[0].Value)
+}
+
+// The other side of that line: once a literal in the shared block is one .env
+// would rewrite, the run is a write into the file after all, and the refusal
+// is about exactly that.
+func TestUpdateEnv_StillRefusesALiteralInASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvManifest), 0o600))
+
+	sent := rotatingStore(t)
+
+	_, err := Run(updating(dir, Answers{}))
+	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
+
+	assert.Empty(t, *sent)
+	assert.Equal(t, sharedEnvManifest, readManifest(t, dir))
+}
+
+// sharedEnvSecretManifest shares its environment the way sharedEnvManifest
+// does, and the one variable in the block is a secret: there is no literal
+// here for the refusal to be about.
+const sharedEnvSecretManifest = `name: shared
+artifact:
+  name: shared-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars: &sharedEnv
+              - name: LLM_API_KEY
+                value: dr-credential:66f000000000000000000001/apiToken
+          - name: sidecar
+            imageUri: registry/team/side:v1
+            environmentVars: *sharedEnv
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+        - name: sidecar
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
+// A shared environment stops the rewrite, not the rotation, so the notice
+// about secrets names the flag rather than the refusal: telling the user this
+// manifest cannot be edited would talk them out of the one command that works
+// on it.
+func TestRun_SecretDriftNamesTheFlagThroughASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "LLM_API_KEY")
+	assert.Contains(t, stderr.String(), "re-send it with 'dr workload config --update-env'")
 }
