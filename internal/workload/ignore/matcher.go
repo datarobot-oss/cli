@@ -18,7 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/datarobot/cli/internal/fsutil"
@@ -36,7 +38,23 @@ const (
 	// one, and ignoring it would upload the .venv, node_modules and .env it
 	// was written to keep out.
 	LegacyFileName = ".wapiignore"
+
+	// BackupInfix separates a path from the timestamp in the *.LOCAL backup the
+	// sync engine writes when remote wins over a local file. The engine builds
+	// "<path>" + BackupInfix + "<stamp>"; IsBackupCopy matches the same shape so
+	// those backups are never re-uploaded on the next sync.
+	BackupInfix = ".LOCAL."
 )
+
+// backupCopyPattern matches a *.LOCAL.<stamp> backup basename, where <stamp> is
+// the engine's ISO-8601 basic UTC format (20060102T150405Z). Kept tight so a
+// real file that merely contains ".LOCAL." is not swept up.
+var backupCopyPattern = regexp.MustCompile(`\.LOCAL\.[0-9]{8}T[0-9]{6}Z$`)
+
+// IsBackupCopy reports whether relPath is one of the engine's *.LOCAL backups.
+func IsBackupCopy(relPath string) bool {
+	return backupCopyPattern.MatchString(path.Base(relPath))
+}
 
 // systemExcludes are always-ignored paths, not overridable by .drignore.
 //
@@ -230,6 +248,13 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 	}
 
 	if matchesSystemExclude(relPath) {
+		return true
+	}
+
+	// The engine's own *.LOCAL backups are never sync input: uploading them
+	// would push a copy of the file that was just overwritten, and the next
+	// sync would see it as a new local file for ever.
+	if IsBackupCopy(relPath) {
 		return true
 	}
 

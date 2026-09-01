@@ -113,3 +113,37 @@ func (p *SyncPlan) ConflictPaths() []string {
 
 	return out
 }
+
+// OverwrittenLocalPaths lists, sorted, the local files applying this plan would
+// replace or delete, so the engine can copy each to *.LOCAL before the remote
+// wins: REMOTE_MODIFIED downloads (remote bytes land over yours), REMOTE_DELETED
+// deletes (your file is removed), and every conflict. REMOTE_ADDED and EDIT_DEL
+// are excluded — they have no local file to lose.
+//
+// This is the backup set, not the confirmation set: only conflicts prompt or
+// refuse (see the command's gate), because a REMOTE_MODIFIED/REMOTE_DELETED file
+// matched the last sync and pulling it loses no unsaved work — it is backed up
+// all the same.
+func (p *SyncPlan) OverwrittenLocalPaths() []string {
+	var out []string
+
+	for _, fa := range p.Downloads {
+		if fa.Action == ActDownloadModify {
+			out = append(out, fa.Path)
+		}
+	}
+
+	for _, fa := range p.Deletes {
+		if fa.Action == ActDownloadDelete {
+			out = append(out, fa.Path)
+		}
+	}
+
+	for _, fa := range p.Conflicts {
+		out = append(out, fa.Path)
+	}
+
+	sort.Strings(out)
+
+	return out
+}

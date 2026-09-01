@@ -35,17 +35,27 @@ const (
 	promptQuit                     // user aborted
 )
 
-// promptConflictMenu shows the [d] [Enter] [q] menu when conflicts
-// exist and the user has not passed --yes. Loops on [d] so the user
-// can review diffs and then either confirm or abort. Prompts go to
-// the cobra command's stderr (so cmd.SetErr in tests can capture them
-// and embedded callers can redirect) to keep stdout clean for piped
-// output. readLine is injected so tests can drive input deterministically.
-func promptConflictMenu(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, readLine func() (string, error)) (promptChoice, error) {
+// promptOverwriteMenu shows the [d] [Enter] [q] menu when the plan has
+// conflicts — files changed both locally and on the remote — and the user has
+// not passed --yes. It first names those files and says the remote wins while
+// the local version is saved as *.LOCAL, so the user knows what "Pull remote"
+// costs before choosing it. Loops on [d] so they can review diffs and then
+// either confirm or abort. Prompts go to the cobra command's stderr (so
+// cmd.SetErr in tests can capture them and embedded callers can redirect) to
+// keep stdout clean for piped output. readLine is injected so tests can drive
+// input deterministically.
+func promptOverwriteMenu(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, readLine func() (string, error)) (promptChoice, error) {
 	stderr := cmd.ErrOrStderr()
 
+	paths := plan.ConflictPaths()
+
+	fmt.Fprintf(stderr,
+		"  %d file(s) changed both locally and on the remote; the remote wins and "+
+			"your version is saved as *.LOCAL:\n%s\n",
+		len(paths), formatPathList(paths))
+
 	for {
-		fmt.Fprint(stderr, "  [d] Show diffs  [Enter] Sync  [q] Abort: ")
+		fmt.Fprint(stderr, "  [d] Show diffs  [Enter] Pull remote  [q] Abort: ")
 
 		raw, err := readLine()
 		if err != nil {
