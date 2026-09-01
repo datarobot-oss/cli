@@ -684,3 +684,73 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
 		"the lines that can name the workload still do")
 }
+
+// rotatedNothingElse is the run --update-env exists to make safe: the secret
+// reached the credential store, the manifest was already current, and so no
+// container was replaced on the way past.
+func rotatedNothingElse() up.Result {
+	result := deployed()
+	result.Action = up.ActionUnchanged
+	result.Env = up.EnvEdit{SecretsRotated: 1}
+
+	return result
+}
+
+// A rotation the deploy could not finish is true of the workload whatever the
+// output format. The warning used to sit below the JSON return, so the one run
+// that most needs it, a scripted rotation, was the one that never saw it.
+func TestCmd_JSONStillWarnsThatTheOldSecretIsServing(t *testing.T) {
+	stubRun(t, rotatedNothingElse(), nil)
+
+	stdout, stderr, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "still serves the value it started with")
+	assert.Contains(t, stderr, "dr workload stop --yes")
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope), "the advice goes to stderr, so stdout stays pure")
+}
+
+// The same run without --output-format json, so the two formats are known to
+// agree rather than assumed to.
+func TestCmd_TextWarnsThatTheOldSecretIsServing(t *testing.T) {
+	stubRun(t, rotatedNothingElse(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "still serves the value it started with")
+}
+
+// The envelope carries the names `dr workload config` reports under
+// envLiterals, and carries them as a list: a consumer that iterates should not
+// have to guard for null on the run that wrote nothing.
+func TestCmd_EnvLiteralsAreAlwaysAList(t *testing.T) {
+	result := deployed()
+	result.Env = up.EnvEdit{KeysAdded: 1, Literals: []string{"REGION"}}
+
+	stubRun(t, result, nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	env, ok := body["env"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"REGION"}, env["literals"])
+
+	stubRun(t, deployed(), nil)
+
+	stdout, _, err = runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ = envelope["up"].(map[string]any)
+	env, _ = body["env"].(map[string]any)
+	assert.Equal(t, []any{}, env["literals"], "a run with no .env flags names nothing, which is not null")
+}

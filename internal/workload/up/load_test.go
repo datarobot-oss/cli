@@ -17,9 +17,11 @@ package up
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -260,4 +262,88 @@ func TestLoad_ADirectoryAtThePathIsNotAManifest(t *testing.T) {
 	_, err := Load(dir)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNoManifest)
+}
+
+// The flag exists because the first run of this command already reads .env:
+// with no manifest `up` is the wizard. The edit has to happen before the file
+// is read, or the deploy would carry the version from before it.
+func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifest)
+
+	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
+		assert.True(t, opts.ImportEnv)
+		assert.Equal(t, dir, opts.Dir, "the edit lands next to the manifest being deployed")
+
+		// What the real wizard does: the variable is in the file by the time
+		// it returns.
+		edited := strings.Replace(boundManifest,
+			"              - name: LOG_LEVEL",
+			"              - name: REGION\n                value: eu-west-1\n              - name: LOG_LEVEL", 1)
+		require.NoError(t, os.WriteFile(path, []byte(edited), 0o600))
+
+		return wizard.Result{Path: path, Action: wizard.ActionUpdated, EnvKeysListed: 1}, nil
+	})
+
+	loaded, err := load(dir, Options{ImportEnv: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, loaded.Env.KeysAdded)
+	assert.Contains(t, loaded.Manifest.EnvVarNames(), "REGION",
+		"the deploy plans from the file as edited, not as it was")
+}
+
+// A rotation writes to the credential store and leaves the file alone, so the
+// count is the only trace of it: the plan below has nothing to show.
+func TestLoad_UpdateEnvCarriesTheRotationCount(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+
+	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
+		assert.True(t, opts.UpdateEnv)
+
+		return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 2}, nil
+	})
+
+	loaded, err := load(dir, Options{UpdateEnv: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, loaded.Env.SecretsRotated)
+	assert.Equal(t, 0, loaded.Env.KeysAdded)
+}
+
+// Without the flags nothing reads .env, which is what keeps a deploy a
+// function of the committed repo: a fresh CI clone has no .env at all.
+func TestLoad_WithoutTheFlagsTheWizardIsNotRun(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+
+	swap(t, &runWizardFn, func(wizard.Options) (wizard.Result, error) {
+		t.Fatal("the deploy read .env without being asked to")
+
+		return wizard.Result{}, nil
+	})
+
+	_, err := load(dir, Options{})
+	require.NoError(t, err)
+}
+
+// A dry run promises the file is not touched, and an import that minted a
+// credential and rewrote the manifest would have changed two things the plan
+// then says it is not going to do.
+func TestLoad_DryRunPreviewsTheEdit(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+
+	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
+		assert.True(t, opts.DryRun, "the preview must reach the wizard, or it writes")
+
+		return wizard.Result{Action: wizard.ActionPlanned, EnvKeysListed: 1}, nil
+	})
+
+	loaded, err := load(dir, Options{ImportEnv: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, loaded.Env.KeysAdded)
+	assert.NotContains(t, loaded.Manifest.EnvVarNames(), "REGION")
 }

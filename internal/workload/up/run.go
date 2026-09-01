@@ -109,6 +109,19 @@ type Options struct {
 	// fields the file moved, and the run would have to be read to know which.
 	Lock bool
 
+	// ImportEnv and UpdateEnv are the .env re-entry `dr workload config`
+	// takes, offered here because the first run of this command already does
+	// it: with no manifest `up` is the wizard, and the wizard reads .env,
+	// classifies it and mints the credentials. Without these the second run
+	// is the only one that cannot, which makes the file the deploy reads
+	// something you have to leave the command to change.
+	//
+	// Opt-in, and that is what keeps a deploy a function of the committed
+	// repo: a run without them reads nothing but the manifest, so a fresh CI
+	// clone with no .env deploys exactly what your laptop deploys.
+	ImportEnv bool
+	UpdateEnv bool
+
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
 	PollTimeout  time.Duration
@@ -138,6 +151,26 @@ type Result struct {
 	// the artifact was still current. A build that failed still sets it, so
 	// the caller can say which logs to read.
 	BuildID string
+
+	// Env is what --import-env and --update-env did to the manifest before
+	// the plan was computed, zero when neither was asked for. The counts
+	// travel because a rotation is the one edit the plan cannot show: it
+	// changes no file, so a run that re-sent a secret and deployed nothing
+	// would otherwise report itself as a deploy that did nothing at all.
+	Env EnvEdit
+}
+
+// EnvEdit is the .env re-entry's side of a deploy.
+type EnvEdit struct {
+	KeysAdded      int
+	ValuesUpdated  int
+	SecretsRotated int
+	SecretsFailed  int
+	SecretsPending int
+
+	// Literals names the variables this run left in the manifest in the
+	// clear, the same list `dr workload config` reports for the same edit.
+	Literals []string
 }
 
 // Run reads, plans, and applies as much of the plan as this release can.
@@ -152,25 +185,29 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// What a failure between here and the plan still has to report. The
+	// binding travels because losing the id is how a deploy becomes
+	// unfindable; the .env counts travel because that edit has already
+	// happened. A rotation in particular leaves no file behind, so a failure
+	// that dropped it would let the next bare run call the workload up to date
+	// while it goes on serving the old value.
+	early := Result{WorkloadID: loaded.WorkloadID(), Env: loaded.Env}
+
 	live, err := lookSettled(loaded.WorkloadID(), opts)
 	if err != nil {
-		// The binding travels with the failure. A run that dies before the plan
-		// exists still has to report which workload it was about: losing the id
-		// is how a deploy becomes unfindable, and it is the whole of what the
-		// JSON envelope can carry from here.
-		return Result{WorkloadID: loaded.WorkloadID()}, err
+		return early, err
 	}
 
 	code, err := codeChangeFn(loaded, live)
 	if err != nil {
-		return Result{}, err
+		return early, err
 	}
 
 	noteIgnoreFile(code, opts)
 
 	plan, err := Build(loaded, live, code, opts)
 	if err != nil {
-		return Result{}, err
+		return early, err
 	}
 
 	// Read here rather than in Build, which is kept off the filesystem so its
@@ -191,6 +228,10 @@ func Run(opts Options) (Result, error) {
 		// below this. What was wanted stays readable under plan.action.
 		Action: ActionUnchanged,
 		Locked: live.Locked,
+		// What the .env flags did before any of this, so a run that re-sent a
+		// secret and found nothing else to do can say so: that edit changes no
+		// file and appears in no plan.
+		Env: loaded.Env,
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
@@ -484,7 +525,11 @@ func noteUnusedForce(plan Plan, opts Options) {
 // is the one thing this command must never do.
 func load(dir string, opts Options) (Loaded, error) {
 	loaded, err := Load(dir)
-	if err == nil || !errors.Is(err, ErrNoManifest) {
+	if err == nil {
+		return opts.editEnv(loaded)
+	}
+
+	if !errors.Is(err, ErrNoManifest) {
 		return loaded, err
 	}
 
@@ -506,6 +551,120 @@ func load(dir string, opts Options) (Loaded, error) {
 	}
 
 	return Load(dir)
+}
+
+// editEnv applies the .env re-entry this run asked for, against the manifest
+// this deploy is about, and re-reads the file when the edit moved it.
+//
+// It runs before the plan rather than after, so what reaches the platform is
+// the file as edited: an import that landed and a deploy that did not carry it
+// would leave the variable in the manifest, absent from the container, and
+// nothing to say which of the two runs was wrong.
+//
+// The wizard is given the manifest's own directory rather than this command's,
+// because `up` searches upward for the file and the edit has to land on the one
+// being deployed, next to the .env that pairs with it.
+func (o Options) editEnv(loaded Loaded) (Loaded, error) {
+	if !o.ImportEnv && !o.UpdateEnv {
+		return loaded, nil
+	}
+
+	dir := filepath.Dir(loaded.Path)
+
+	// A dry run previews the edit and writes nothing, which is the only way
+	// `up --dry-run` can keep its promise: an import that minted a credential
+	// and rewrote the manifest would have changed two things the plan below
+	// then reports it is not going to do.
+	edit, err := runWizardFn(wizard.Options{
+		Dir:            dir,
+		NonInteractive: true,
+		DryRun:         o.DryRun,
+		ImportEnv:      o.ImportEnv,
+		UpdateEnv:      o.UpdateEnv,
+		Stderr:         o.Stderr,
+	})
+	if err != nil {
+		return Loaded{}, err
+	}
+
+	// Only a real write moves the file the plan reads. A dry run reports
+	// planned and leaves the manifest where it was, so the deploy below plans
+	// from what is on disk, which is what a dry run is for.
+	o.reportEnvEdit(edit)
+
+	if edit.Action != wizard.ActionUpdated {
+		return withEnvEdit(loaded, edit), nil
+	}
+
+	// The file the plan is about to be computed from is not the one already
+	// read, so it is read again rather than patched in memory: the deploy
+	// validates and compiles what is on disk, and that is what a later run
+	// will compare against.
+	reloaded, err := Load(dir)
+	if err != nil {
+		return Loaded{}, err
+	}
+
+	return withEnvEdit(reloaded, edit), nil
+}
+
+// reportEnvEdit says what the flags did to the manifest, before the plan that
+// was computed from the result of it.
+//
+// The wizard has already reported what it sent to the credential store, which
+// is the half that happens off this machine. What is left is the half that
+// happened to the file, and on a dry run the fact that the plan below knows
+// nothing about it: nothing was written, so the plan describes the manifest as
+// it stands rather than as the flags would leave it.
+func (o Options) reportEnvEdit(edit wizard.Result) {
+	if o.Stderr == nil {
+		return
+	}
+
+	var parts []string
+
+	if edit.EnvKeysListed > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s added from %s",
+			edit.EnvKeysListed, wizard.Plural(edit.EnvKeysListed, "variable", "variables"), wizard.EnvFileName))
+	}
+
+	if edit.EnvValuesUpdated > 0 {
+		parts = append(parts, fmt.Sprintf("%d declared %s updated to match %s",
+			edit.EnvValuesUpdated, wizard.Plural(edit.EnvValuesUpdated, "value", "values"), wizard.EnvFileName))
+	}
+
+	if len(parts) == 0 {
+		return
+	}
+
+	if o.DryRun {
+		fmt.Fprintf(o.Stderr, "  %s would have %s. The plan below is for %s as it stands.\n",
+			tui.HintStyle.Render("~"), strings.Join(parts, ", "), manifest.FileName)
+	} else {
+		fmt.Fprintf(o.Stderr, "  %s %s: %s.\n",
+			tui.SuccessStyle.Render("✓"), manifest.FileName, strings.Join(parts, ", "))
+	}
+
+	// The same disclosure `dr workload config` owes for the same act. These
+	// flags put values into a file headed for git, and which command carried
+	// them there does not change who needs to read the names before it is
+	// committed.
+	wizard.WarnLiterals(o.Stderr, edit.Draft.EnvVars)
+}
+
+// withEnvEdit carries the wizard's counts onto the load, so the run can report
+// an edit the plan has no way to show.
+func withEnvEdit(loaded Loaded, edit wizard.Result) Loaded {
+	loaded.Env = EnvEdit{
+		KeysAdded:      edit.EnvKeysListed,
+		ValuesUpdated:  edit.EnvValuesUpdated,
+		SecretsRotated: edit.EnvSecretsRotated,
+		SecretsFailed:  edit.EnvSecretsNotRotated,
+		SecretsPending: edit.EnvSecretsPending,
+		Literals:       wizard.LiteralNames(edit.Draft.EnvVars),
+	}
+
+	return loaded
 }
 
 // boundID is the workload this run is about, for the envelope and for a
