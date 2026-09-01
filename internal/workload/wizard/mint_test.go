@@ -368,3 +368,20 @@ func TestFlow_ConfirmKeepsAHandEditWhenSecretsAreStored(t *testing.T) {
 		"and the credential the run stored is still the one referenced")
 	assert.NotContains(t, string(accepted.content), "PLACEHOLDER")
 }
+
+// ownedCredential answers a read with a credential this project's setup would
+// have created, which is what a rotation checks before it writes.
+func ownedCredential(t *testing.T, name string) {
+	t.Helper()
+
+	original := getCredentialFn
+	getCredentialFn = func(id string) (*workload.Credential, error) {
+		return &workload.Credential{
+			CredentialID:   id,
+			Name:           name,
+			CredentialType: workload.CredentialTypeAPIToken,
+		}, nil
+	}
+
+	t.Cleanup(func() { getCredentialFn = original })
+}

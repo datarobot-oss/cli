@@ -685,8 +685,13 @@ func rewritable(entry *yaml.Node, wanted map[string]EnvVar) (EnvVar, *yaml.Node,
 		return EnvVar{}, nil, nil
 	}
 
-	value, _ := rawValue(entry, keyValue)
-	if value == nil || value.Kind != yaml.ScalarNode || value.Value == want.Value {
+	// What the entry means is read through the walk that resolves aliases,
+	// which is the walk the comparison against .env uses. Asking the raw node
+	// instead would compare an anchor's name with a value and read every
+	// borrowed value as already in agreement, so an entry the notice had just
+	// called drift would go by without a word.
+	current, isScalar := scalarString(mapValue(entry, keyValue))
+	if !isScalar || current == want.Value {
 		return EnvVar{}, nil, nil
 	}
 
@@ -694,7 +699,14 @@ func rewritable(entry *yaml.Node, wanted map[string]EnvVar) (EnvVar, *yaml.Node,
 		return EnvVar{}, nil, err
 	}
 
-	if value.Anchor != "" {
+	// Written through the walk that does not resolve, because a borrowed
+	// scalar is the one thing this must not write into: an alias, or an
+	// anchor others read through, carries the edit to a place the diff never
+	// shows. Refused rather than skipped for the same reason the entry above
+	// is, and because the value differs, so a skip would be silence about
+	// drift the run was asked to settle.
+	value, _ := rawValue(entry, keyValue)
+	if value == nil || value.Kind != yaml.ScalarNode || value.Anchor != "" {
 		return EnvVar{}, nil, ErrSharedEnvVars
 	}
 

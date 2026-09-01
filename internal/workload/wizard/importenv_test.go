@@ -1265,3 +1265,196 @@ runtime:
         - name: primary
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 `
+
+// A value borrowed from an anchor elsewhere in the file is drift the notice
+// can read and the edit must not apply: writing that scalar would change every
+// other name reading through it. Skipping it in silence was the worse half of
+// the choice, because the run then reported a file it had not touched as
+// already matching .env.
+func TestUpdateEnv_RefusesAValueBorrowedFromAnAnchor(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(aliasedValueManifest), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
+
+	assert.Equal(t, aliasedValueManifest, readManifest(t, dir))
+	assert.NotContains(t, stderr.String(), "already gives every variable")
+}
+
+// aliasedValueManifest declares its environment inline, in a block nothing
+// else shares, and gives one variable a value borrowed from an anchor the rest
+// of the file reads too.
+const aliasedValueManifest = `name: aliased
+x-defaults: &level debug
+artifact:
+  name: aliased-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars:
+              - name: LOG_LEVEL
+                value: *level
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
+// A declared variable whose .env value has turned local-only is one the
+// rotation is right to hold back and one no notice covered: the held-back line
+// is about names the manifest does not carry. Unsaid, the run reported a value
+// it had just declined to send as already agreeing with .env.
+func TestUpdateEnv_NamesADeclaredValueTurnedLocalOnly(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://user:pw@db.prod.example.com:5432/app\n")
+
+	credentialStore(t)
+
+	_, err := Run(headless(dir, Answers{Name: "my-app"}))
+	require.NoError(t, err)
+
+	// Repointed at the developer's own machine, which the classifier holds back.
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://localhost:5432/dev\n")
+
+	sent := rotatingStore(t)
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err = Run(opts)
+	require.NoError(t, err)
+
+	assert.Empty(t, *sent)
+	assert.Contains(t, stderr.String(), "DATABASE_URL")
+	assert.Contains(t, stderr.String(), "declared variable as local-only")
+	assert.NotContains(t, stderr.String(), "already gives every variable")
+}
+
+// The missing-name notice ends in the held-back one, so an update that found
+// nothing to do and printed both said the same name twice.
+func TestUpdateEnv_HeldBackNamesAreSaidOnce(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\nDATABASE_URL=postgres://localhost:5432/dev\n")
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, strings.Count(stderr.String(), "deliberately left out of the manifest"))
+}
+
+// A container whose environment another one reads through an anchor takes no
+// edit here, and a rotation is not one: it writes to the credential store and
+// leaves the file byte for byte what it was. Refusing it on the file's account
+// left a manifest of that shape no way to re-send a rotated key at all.
+func TestUpdateEnv_RotatesThroughASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	result, err := Run(updating(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	assert.Equal(t, sharedEnvSecretManifest, readManifest(t, dir))
+
+	require.Len(t, *sent, 1)
+	assert.Equal(t, "66f000000000000000000001", (*sent)[0].Name)
+	assert.Equal(t, "fixture-key-after-rotation-b2b2", (*sent)[0].Value)
+}
+
+// The other side of that line: once a literal in the shared block is one .env
+// would rewrite, the run is a write into the file after all, and the refusal
+// is about exactly that.
+func TestUpdateEnv_StillRefusesALiteralInASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvManifest), 0o600))
+
+	sent := rotatingStore(t)
+
+	_, err := Run(updating(dir, Answers{}))
+	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
+
+	assert.Empty(t, *sent)
+	assert.Equal(t, sharedEnvManifest, readManifest(t, dir))
+}
+
+// sharedEnvSecretManifest shares its environment the way sharedEnvManifest
+// does, and the one variable in the block is a secret: there is no literal
+// here for the refusal to be about.
+const sharedEnvSecretManifest = `name: shared
+artifact:
+  name: shared-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars: &sharedEnv
+              - name: LLM_API_KEY
+                value: dr-credential:66f000000000000000000001/apiToken
+          - name: sidecar
+            imageUri: registry/team/side:v1
+            environmentVars: *sharedEnv
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+        - name: sidecar
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`
+
+// A shared environment stops the rewrite, not the rotation, so the notice
+// about secrets names the flag rather than the refusal: telling the user this
+// manifest cannot be edited would talk them out of the one command that works
+// on it.
+func TestRun_SecretDriftNamesTheFlagThroughASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "LLM_API_KEY")
+	assert.Contains(t, stderr.String(), "re-send it with 'dr workload config --update-env'")
+}

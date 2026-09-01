@@ -415,13 +415,17 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 		return
 	}
 
-	changed, unverifiable, reclassified, structured := o.compareValues(parsed, detected)
+	changed, unverifiable, reclassified, structured, heldBack := o.compareValues(parsed, detected)
 
 	// The values are read by the walk that resolves aliases and applied by the
 	// one that refuses them, so a file can show its drift and still not accept
 	// the edit. Where it would not, the refusal takes the place of the advice:
 	// naming a flag that cannot run on this manifest is an errand, which is
 	// the rule the missing-name notice already follows.
+	//
+	// About the file only. A rotation writes to the credential store and
+	// leaves the file alone, so the line about secrets below stands whatever
+	// this says.
 	blocker := parsed.CanDeclareEnvVars()
 
 	if len(changed) > 0 {
@@ -443,6 +447,16 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 			Plural(len(reclassified), "entry", "entries"), Plural(len(reclassified), "it", "them"))
 	}
 
+	if len(heldBack) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%s now reads %d declared %s as local-only, so neither flag applies %s value and the manifest keeps "+
+				"the one it holds: %s.\n"+
+				"  Change the manifest by hand if the %s %s is meant to deploy.\n",
+			EnvFileName, len(heldBack), Plural(len(heldBack), "variable", "variables"),
+			Plural(len(heldBack), "its", "their"), JoinNames(heldBack),
+			EnvFileName, Plural(len(heldBack), "value", "values"))
+	}
+
 	if len(structured) > 0 {
 		fmt.Fprintf(o.Stderr,
 			"%s gives %d declared %s a value that is not a plain string, which neither flag rewrites: %s.\n"+
@@ -451,19 +465,24 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 			JoinNames(structured), Plural(len(structured), "it", "them"), EnvFileName)
 	}
 
+	// Advised unconditionally, because a re-send is not an edit to this file:
+	// the id stays what it was, so a manifest no rewrite can touch is still one
+	// whose secrets can be rotated. The names in this list were read off the
+	// declarations the rotation walks, so having any at all is proof it can run.
 	if len(unverifiable) > 0 {
 		fmt.Fprintf(o.Stderr,
-			"%d %s stored as %s, whose values cannot be compared with %s because the platform never returns them: %s.\n%s",
+			"%d %s stored as %s, whose values cannot be compared with %s because the platform never returns them: %s.\n"+
+				"  If one was rotated locally, re-send it with 'dr workload config --update-env'.\n",
 			len(unverifiable), Plural(len(unverifiable), "variable is", "variables are"),
 			Plural(len(unverifiable), "a credential", "credentials"), EnvFileName,
-			JoinNames(unverifiable),
-			applyLine(blocker, "If one was rotated locally, re-send it with 'dr workload config --update-env'."))
+			JoinNames(unverifiable))
 	}
 }
 
-// applyLine is the second line of a drift notice: what to run about it, or why
-// this manifest will not take it. The two flags refuse the same shapes before
-// they touch anything, so a file that blocks one blocks the other.
+// applyLine is the second line of a drift notice about the file: what to run
+// about it, or why this manifest will not take it. Both flags rewrite through
+// the same walk and refuse the same shapes before they touch anything, so a
+// file that blocks one blocks the other.
 func applyLine(blocker error, advice string) string {
 	if blocker != nil {
 		return fmt.Sprintf("  This manifest cannot be edited automatically: %v\n", blocker)
@@ -473,18 +492,25 @@ func applyLine(blocker error, advice string) string {
 }
 
 // compareValues sorts the declared variables .env also defines into the ones
-// whose value has moved and the ones nothing can answer for.
+// whose value has moved, the ones nothing can answer for, and the ones no flag
+// will settle.
 func (o Options) compareValues(
 	parsed *manifest.Manifest, detected Detected,
-) (changed, unverifiable, reclassified, structured []string) {
+) (changed, unverifiable, reclassified, structured, heldBack []string) {
 	local := make(map[string]manifest.EnvVar, len(detected.EnvVars))
 	for _, v := range o.Answers.envVars(detected) {
 		local[v.Name] = v
 	}
 
+	localOnly := o.localOnlyNames(detected)
+
 	for _, declared := range parsed.DeclaredEnvVars() {
 		want, defined := local[declared.Name]
 		if !defined {
+			if localOnly[declared.Name] {
+				heldBack = append(heldBack, declared.Name)
+			}
+
 			continue
 		}
 
@@ -512,7 +538,30 @@ func (o Options) compareValues(
 		}
 	}
 
-	return changed, unverifiable, reclassified, structured
+	return changed, unverifiable, reclassified, structured, heldBack
+}
+
+// localOnlyNames is the .env names the classifier held back. envVars drops
+// them, so without this a declared variable whose .env value has turned
+// local-only reaches the comparison as a name .env no longer mentions: not
+// compared, not re-sent, and named nowhere, because the held-back notice
+// covers only names the manifest does not carry.
+//
+// Empty under --skip-env, which is the user having said the file is not to be
+// read at all: a verdict on a file nobody asked to read is not news.
+func (o Options) localOnlyNames(detected Detected) map[string]bool {
+	names := make(map[string]bool, len(detected.EnvVars))
+	if o.Answers.SkipEnv {
+		return names
+	}
+
+	for _, v := range detected.EnvVars {
+		if v.Kind == EnvLocal {
+			names[v.Name] = true
+		}
+	}
+
+	return names
 }
 
 // warnEnvHeldBack covers the two ways a manifest can declare every name .env
@@ -647,40 +696,51 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 func (o Options) updateEnv(
 	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar, result *Result,
 ) error {
-	// The rewrite is proven before a single credential is re-sent. A PATCH is
-	// irreversible and the file edit can still refuse for reasons the parsed
-	// tree cannot see, so running it as a preview first is what stops a
-	// refused run from having already overwritten the tenant's secrets.
-	if _, _, err := manifest.UpdateEnvVars(path, wanted, true); err != nil {
+	rewrite, err := o.provenRewrite(path, parsed, detected, wanted)
+	if err != nil {
 		return err
 	}
 
 	rotated, failed := o.rotateSecrets(parsed, detected, wanted)
 
-	changed, content, err := manifest.UpdateEnvVars(path, wanted, o.DryRun)
-	if err != nil {
-		return err
+	var (
+		changed []manifest.EnvVar
+		content []byte
+	)
+
+	if rewrite {
+		if changed, content, err = manifest.UpdateEnvVars(path, wanted, o.DryRun); err != nil {
+			return err
+		}
 	}
 
 	result.EnvValuesUpdated = len(changed)
 	result.EnvSecretsRotated = rotated
 	result.EnvSecretsNotRotated = failed
 
-	if len(changed) == 0 && rotated == 0 && failed == 0 {
-		return nil
+	o.recordUpdate(changed, content, result)
+
+	return nil
+}
+
+// recordUpdate is what the run has to show for itself, once the counts are in.
+//
+// A rotation is a write to the credential store, not to the file, so it does
+// not make the run an edit: saying "updated .datarobot.yaml" about a file that
+// is byte for byte what it was is the kind of claim this command exists not to
+// make. A dry run is planned either way, because both are things it would have
+// done.
+func (o Options) recordUpdate(changed []manifest.EnvVar, content []byte, result *Result) {
+	if result.EnvValuesUpdated == 0 && result.EnvSecretsRotated == 0 && result.EnvSecretsNotRotated == 0 {
+		return
 	}
 
-	// A rotation is a write to the credential store, not to the file, so it
-	// does not make the run an edit: saying "updated .datarobot.yaml" about a
-	// file that is byte for byte what it was is the kind of claim this command
-	// exists not to make. A dry run is planned either way, because both are
-	// things it would have done.
 	if len(changed) > 0 || o.DryRun {
 		result.Action = o.editAction()
 	}
 
 	if len(changed) == 0 {
-		return nil
+		return
 	}
 
 	if len(content) > 0 {
@@ -688,8 +748,6 @@ func (o Options) updateEnv(
 	}
 
 	result.Draft.EnvVars = append(result.Draft.EnvVars, changed...)
-
-	return nil
 }
 
 // addEnv is the additive half: the names the manifest does not carry yet.
@@ -756,6 +814,47 @@ func (o Options) editAction() string {
 	}
 
 	return ActionUpdated
+}
+
+// provenRewrite runs the file edit as a preview and reports whether the real
+// one may follow.
+//
+// The rewrite is proven before a single credential is re-sent. A PATCH is
+// irreversible and the edit can still refuse for reasons the parsed tree
+// cannot see, so previewing it is what stops a refused run from having already
+// overwritten the tenant's secrets.
+//
+// A refusal about writing into the file only ends the run when the run was
+// going to write into the file. Sharing is that refusal: a container whose
+// environment another one reads through an anchor takes no edit here, while a
+// rotation writes to the credential store and leaves the file byte for byte
+// what it was. Ending on it would leave every manifest of that shape with no
+// way to re-send a rotated key at all, which is the case this command exists
+// for.
+func (o Options) provenRewrite(
+	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar,
+) (bool, error) {
+	_, _, err := manifest.UpdateEnvVars(path, wanted, true)
+	if err == nil {
+		return true, nil
+	}
+
+	// Any other refusal still stops everything, and so does a shared file the
+	// walk cannot read past: a run that rotated nothing because it saw no
+	// declarations would go on to report the file as agreeing with .env on the
+	// strength of the ones it never saw.
+	if !errors.Is(err, manifest.ErrSharedEnvVars) || len(parsed.DeclaredEnvVars()) == 0 {
+		return false, err
+	}
+
+	// A literal .env would rewrite makes this a write into the file after all,
+	// and the refusal is about exactly that.
+	changed, _, _, _, _ := o.compareValues(parsed, detected)
+	if len(changed) > 0 {
+		return false, err
+	}
+
+	return false, nil
 }
 
 // rotateSecrets re-sends each declared secret's current .env value to the
@@ -910,9 +1009,13 @@ func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detec
 
 	// An update alone says nothing about names the manifest is missing, so the
 	// drift notice still owes them: without it the run reads as a clean bill
-	// of health for a file that is short a variable.
+	// of health for a file that is short a variable. That notice ends in the
+	// held-back one itself, so this returns rather than falling through and
+	// printing a placeholder or a local-only name a second time.
 	if !o.ImportEnv {
 		o.warnEnvDrift(parsed, detected)
+
+		return
 	}
 
 	// nil because editEnv refuses a manifest whose declared names cannot be
@@ -922,9 +1025,10 @@ func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detec
 
 // hasUnappliedDrift reports whether an update that changed nothing left a
 // value behind that it was never going to settle: one the file holds as a
-// mapping or a list, or one whose kind no longer matches what the manifest
-// stores. Both are things --update-env skips on purpose, and both make
-// "already gives every variable the value .env does" a false summary.
+// mapping or a list, one whose kind no longer matches what the manifest
+// stores, and one .env now reads as local-only. All three are things
+// --update-env skips on purpose, and all three make "already gives every
+// variable the value .env does" a false summary.
 //
 // Only for a run that asked to update. A literal .env changed is the other
 // flag's business, and an import saying nothing to add is still true about it.
@@ -933,9 +1037,9 @@ func (o Options) hasUnappliedDrift(parsed *manifest.Manifest, detected Detected)
 		return false
 	}
 
-	_, _, reclassified, structured := o.compareValues(parsed, detected)
+	_, _, reclassified, structured, heldBack := o.compareValues(parsed, detected)
 
-	return len(reclassified)+len(structured) > 0
+	return len(reclassified)+len(structured)+len(heldBack) > 0
 }
 
 // editVerb names the act that found nothing to do, so a run that only asked
