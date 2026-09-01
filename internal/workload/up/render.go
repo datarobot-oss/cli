@@ -38,6 +38,14 @@ type Summary struct {
 	// interrupted are one state to the deploy and three quite different things
 	// to a reader, and only one of them can actually be started.
 	Status string
+
+	// Refused marks a plan that is not going to be applied, because the live
+	// workload is in a state no deploy can land on. The block still prints:
+	// knowing what drift exists is useful even when nothing can be done about
+	// it yet, and a reader who has just been refused is usually about to ask
+	// exactly that. What changes is that it has to read as a description, where
+	// every other plan this command prints is an announcement.
+	Refused bool
 }
 
 // shortIDLen is how much of an id is enough to label something with. The
@@ -66,6 +74,8 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 		b.WriteString(planTitleStyle.Render(head))
 		b.WriteString("\n")
 	}
+
+	writeRefusedNote(&b, s)
 
 	if plan.Empty() {
 		b.WriteString("\n" + settledVerdict(plan) + "\n")
@@ -104,6 +114,25 @@ func settledVerdict(plan Plan) string {
 	}
 
 	return tui.SuccessStyle.Render("✓ Already up to date")
+}
+
+// writeRefusedNote says that what follows is not going to happen.
+//
+// It goes above the changes rather than below them, because below is where the
+// error already is and the whole complaint is that the reader met the work
+// first and the refusal last.
+//
+// It says only that, in one line. The stateLine directly beneath it already
+// names what is wrong with the workload and the error directly below the block
+// already names the remedy, so a note that explained either would be the third
+// telling on one screen.
+func writeRefusedNote(b *strings.Builder, s Summary) {
+	if !s.Refused {
+		return
+	}
+
+	b.WriteString("\n  " + tui.HintStyle.Render(
+		"Nothing below will be applied; it is what differs, not what is about to happen.") + "\n")
 }
 
 // header names the workload being deployed onto and says what state it is in.

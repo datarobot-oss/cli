@@ -238,8 +238,7 @@ func Run(opts Options) (Result, error) {
 		return result, err
 	}
 
-	summary := Summary{Name: result.Name, WorkloadID: result.WorkloadID, Status: live.Status}
-	if err := Render(opts.Stderr, summary, plan); err != nil {
+	if err := announce(loaded, live, plan, result, opts); err != nil {
 		return result, err
 	}
 
@@ -713,6 +712,12 @@ func name(loaded Loaded, live Live) string {
 }
 
 // apply carries out the plan, or explains why it cannot.
+//
+// Most of the explaining happens earlier: Run refuses the states a deploy
+// cannot land on before it prints the plan, so a refusal no longer announces
+// work it will not attempt. deployable stays here as the backstop it always
+// was, and is the only thing that answers for a workload which was steady when
+// it was read and is moving again by the time it is acted on.
 func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
@@ -847,6 +852,71 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 	}
 
 	return loaded.Compiled.CredentialRefs
+}
+
+// announce prints the plan and says whether the run may carry it out, which is
+// one act rather than two: whether the plan is going to be applied changes how
+// it has to be written, so the question is asked before anything is printed.
+//
+// A refusal and a stderr that will not take a write are returned the same way,
+// because Run answers both identically: the result so far, and the error.
+//
+// Only a plan with something in it is judged. An empty plan says what it found
+// rather than listing work, so there is no announcement to correct, and
+// refusing here would turn today's exit 0 into a failure for a run that was
+// never going to change anything. --lock is the one empty plan that still
+// mutates, and lockOnly asks the same question for itself.
+func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) error {
+	var refused error
+
+	if !plan.Empty() {
+		refused = refusal(loaded, live, result.Name, opts.DryRun)
+	}
+
+	summary := Summary{
+		Name:       result.Name,
+		WorkloadID: result.WorkloadID,
+		Status:     live.Status,
+		Refused:    refused != nil,
+	}
+
+	if err := Render(opts.Stderr, summary, plan); err != nil {
+		return err
+	}
+
+	return refused
+}
+
+// refusal is why the state this plan was built against cannot take it, and nil
+// when it can.
+//
+// It is asked before the plan is printed. `up`'s contract is that the plan is
+// what is about to happen, so a block of changes above a refusal announces work
+// that is not going to be attempted, and the reader only finds that out on the
+// last line.
+//
+// Settling is exempt on a dry run alone, which is the one asymmetry here.
+//
+// A moving workload is waited out before the plan is built, so a dry run is
+// what ordinarily reaches a plan still settling: it does not wait, and it has
+// nothing to refuse, because it previews where the deploy would land rather
+// than acting on where the workload is. Refusing it would contradict the line
+// printed directly above the plan, which says a deploy would wait.
+//
+// A real run reaching here settling is a different thing entirely. awaitSteady
+// ends with a fresh Look, so the workload was steady when the wait landed and
+// is moving again one call later. That run is not previewing anything, and
+// deployable refuses it moments afterwards regardless -- so leaving it out of
+// the question here bought nothing and cost the plan its disclaimer, which is
+// the whole defect this change exists to fix, in the one state the report named
+// alongside errored. deployable keeps its settling branch as the backstop for
+// everything that reaches the apply by another route.
+func refusal(loaded Loaded, live Live, workloadName string, dryRun bool) error {
+	if live.State == StateSettling && dryRun {
+		return nil
+	}
+
+	return deployable(live, workloadName, dirFlagFor(loaded))
 }
 
 // deployable refuses the live states that cannot take a deploy, one message

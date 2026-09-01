@@ -110,6 +110,38 @@ func TestRender_TheThreeClasses(t *testing.T) {
 	assert.NotContains(t, out, "Already up to date")
 }
 
+// TestRender_RefusedPlanIsDescribedRatherThanAnnounced is the reported bug:
+// a state that cannot take a deploy still had its drift announced as work
+// about to happen, and the reader only found out on the last line. The block
+// survives, because knowing what differs is useful either way, but it is
+// introduced as a description.
+func TestRender_RefusedPlanIsDescribedRatherThanAnnounced(t *testing.T) {
+	plan := Plan{
+		State:    StateTerminated,
+		Artifact: []Change{{Path: "containerGroups[default].containers[primary].port", Have: 8080.0, Want: 9090.0}},
+	}
+
+	out := render(t, Summary{Name: "old-name", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Refused: true}, plan)
+
+	assert.Contains(t, out, "old-name (68b0c1d2), terminated")
+	assert.Contains(t, out, "Nothing below will be applied")
+	assert.Contains(t, out, "+ artifact   new version, 1 spec change",
+		"the drift is still worth reading; only its framing changes")
+
+	note := strings.Index(out, "Nothing below will be applied")
+	change := strings.Index(out, "+ artifact")
+	assert.Less(t, note, change,
+		"the note has to precede the work it disclaims: below it is where the error already is")
+}
+
+// A plan that is going to be applied says nothing of the sort, which is the
+// whole of what makes the note mean anything.
+func TestRender_AppliedPlanCarriesNoRefusedNote(t *testing.T) {
+	out := render(t, appSummary, Plan{State: StateRunning, Code: builtCode(3)})
+
+	assert.NotContains(t, out, "Nothing below will be applied")
+}
+
 // TestRender_SingleRuntimeChangeSitsOnItsOwnLine: the common case is one
 // number moving, and pushing it onto a sub-line for consistency's sake would
 // cost a line to say nothing.
