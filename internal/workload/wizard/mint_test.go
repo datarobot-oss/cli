@@ -45,12 +45,20 @@ func credentialStore(t *testing.T) *[]storedCredential {
 	t.Helper()
 
 	stored := make([]storedCredential, 0)
+	byID := map[string]workload.Credential{}
 
 	original := createCredentialFn
 	createCredentialFn = func(name, value string) (*workload.Credential, error) {
 		stored = append(stored, storedCredential{Name: name, Value: value})
 
-		return &workload.Credential{CredentialID: "66f0000000000000000000" + itoa(len(stored)), Name: name}, nil
+		cred := workload.Credential{
+			CredentialID:   "66f0000000000000000000" + itoa(len(stored)),
+			Name:           name,
+			CredentialType: workload.CredentialTypeAPIToken,
+		}
+		byID[cred.CredentialID] = cred
+
+		return &cred, nil
 	}
 
 	t.Cleanup(func() { createCredentialFn = original })

@@ -232,6 +232,24 @@ func (d Detected) SuspectDir() bool {
 	return len(d.RootMarkers) == 0
 }
 
+// NameListLimit caps how many names a listing prints. Past a handful they stop
+// being a summary and start being a wall, and the sentence saying what to do
+// about them scrolls away.
+const NameListLimit = 8
+
+// JoinNames renders a name list for a message, capped at NameListLimit with a
+// count of what was left out. One implementation, because three listings in
+// this feature area answer the same question and a reader should not have to
+// compare them character by character to see that they agree.
+func JoinNames(names []string) string {
+	if len(names) <= NameListLimit {
+		return strings.Join(names, ", ")
+	}
+
+	return fmt.Sprintf("%s and %d more",
+		strings.Join(names[:NameListLimit], ", "), len(names)-NameListLimit)
+}
+
 // Plural picks the singular or plural word for count. Exported so the
 // command's summary reads the same way the screens do.
 func Plural(count int, one, many string) string {
