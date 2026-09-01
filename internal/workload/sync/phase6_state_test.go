@@ -293,7 +293,7 @@ func TestManifestSchemaUnchanged(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTopLevelKeys(t, rawConfig, "config.json",
-		[]string{"artifactId", "catalogId", "lastSyncedVersionId", "createdAt", "cliVersion"})
+		[]string{"artifactId", "catalogId", "lastSyncedVersionId", "lastBuiltVersionId", "createdAt", "cliVersion"})
 
 	// syncedVersionId in manifest must equal the version in the result.
 	require.NotNil(t, manifest.SyncedVersionID)
