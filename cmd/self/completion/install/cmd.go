@@ -60,20 +60,20 @@ This command will:
 
 By default, this command runs in preview mode. Use '--yes' to install directly.`,
 		Example: `  # Preview what would be installed (default behavior):
-  ` + version.CliName + ` completion install
+  ` + version.CliName + ` self completion install
 
   # Install completions for your current shell:
-  ` + version.CliName + ` completion install --yes
+  ` + version.CliName + ` self completion install --yes
 
   # Install completions for a specific shell:
-  ` + version.CliName + ` completion install bash --yes
-  ` + version.CliName + ` completion install zsh --yes
+  ` + version.CliName + ` self completion install bash --yes
+  ` + version.CliName + ` self completion install zsh --yes
 
   # Preview installation for a specific shell:
-  ` + version.CliName + ` completion install bash
+  ` + version.CliName + ` self completion install bash
 
   # Force reinstall, even if completions are already installed:
-  ` + version.CliName + ` completion install --force --yes`,
+  ` + version.CliName + ` self completion install --force --yes`,
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -92,7 +92,7 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
 				effectiveDryRun = true
 			}
 
-			return runInstall(cmd.Root(), shell, force, yes, effectiveDryRun)
+			return runInstall(cmd, shell, force, yes, effectiveDryRun)
 		},
 	}
 
@@ -103,7 +103,12 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
 	return cmd
 }
 
-func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRun bool) error {
+// runInstall takes the invoked *cobra.Command (not just its root) so that
+// user-facing hints can derive the exact "dr self completion install" path
+// from cmd.CommandPath() instead of a hardcoded string. A hardcoded literal
+// silently drifts from the real command path if this command is ever
+// renamed or reparented — see CFX-7958.
+func runInstall(cmd *cobra.Command, specifiedShell string, force, yes, dryRun bool) error {
 	shell, err := internalShell.ResolveShell(specifiedShell)
 	if err != nil {
 		return fmt.Errorf("resolve shell: %w", err)
@@ -120,11 +125,11 @@ func runInstall(rootCmd *cobra.Command, specifiedShell string, force, yes, dryRu
 		return nil
 	}
 
-	return installForShell(rootCmd, shell, shellType, force, yes, dryRun)
+	return installForShell(cmd, shell, shellType, force, yes, dryRun)
 }
 
-func installForShell(rootCmd *cobra.Command, shell string, shellType internalShell.Shell, force, yes, dryRun bool) error {
-	installPath, installFunc, err := getInstallFunc(rootCmd, shellType, force)
+func installForShell(cmd *cobra.Command, shell string, shellType internalShell.Shell, force, yes, dryRun bool) error {
+	installPath, installFunc, err := getInstallFunc(cmd.Root(), shellType, force)
 	if err != nil {
 		return err
 	}
@@ -132,7 +137,7 @@ func installForShell(rootCmd *cobra.Command, shell string, shellType internalShe
 	// Check if already installed
 	alreadyInstalled := fsutil.FileExists(installPath)
 	if !force && alreadyInstalled {
-		showAlreadyInstalled(installPath)
+		showAlreadyInstalled(cmd, installPath)
 		return nil
 	}
 
@@ -141,7 +146,7 @@ func installForShell(rootCmd *cobra.Command, shell string, shellType internalShe
 
 	// Dry-run mode
 	if dryRun {
-		showDryRunMessage(shell)
+		showDryRunMessage(cmd, shell)
 		return nil
 	}
 
@@ -160,7 +165,7 @@ func installForShell(rootCmd *cobra.Command, shell string, shellType internalShe
 	fmt.Println()
 
 	// Install
-	if err := installFunc(rootCmd); err != nil {
+	if err := installFunc(cmd.Root()); err != nil {
 		return fmt.Errorf("Failed to install completions: %w", err)
 	}
 
@@ -173,10 +178,10 @@ func installForShell(rootCmd *cobra.Command, shell string, shellType internalShe
 	return nil
 }
 
-func showAlreadyInstalled(installPath string) {
+func showAlreadyInstalled(cmd *cobra.Command, installPath string) {
 	fmt.Printf("%s Completion already installed at: %s.\n", successStyle.Render("✓"), installPath)
 	fmt.Println()
-	fmt.Println(infoStyle.Render("To reinstall, use: " + version.CliName + " completion install --force --yes"))
+	fmt.Println(infoStyle.Render("To reinstall, use: " + cmd.CommandPath() + " --force --yes"))
 }
 
 func showInstallationPlan(shell, installPath string, alreadyInstalled bool) {
@@ -193,11 +198,11 @@ func showInstallationPlan(shell, installPath string, alreadyInstalled bool) {
 	fmt.Println()
 }
 
-func showDryRunMessage(shell string) {
+func showDryRunMessage(cmd *cobra.Command, shell string) {
 	fmt.Println(infoStyle.Render("🔍 Dry-run mode (no changes will be made)"))
 	fmt.Println()
 	fmt.Println("To proceed with installation, run:")
-	fmt.Println(infoStyle.Render("  " + version.CliName + " completion install " + shell + " --yes"))
+	fmt.Println(infoStyle.Render("  " + cmd.CommandPath() + " " + shell + " --yes"))
 }
 
 func promptForConfirmation() (bool, error) {

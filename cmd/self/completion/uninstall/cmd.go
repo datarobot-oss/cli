@@ -53,14 +53,14 @@ This command will:
 
 By default, runs in preview mode. Use '--yes' to uninstall directly.`,
 		Example: `  # Preview what would be removed (default behavior)
-  ` + version.CliName + ` completion uninstall
+  ` + version.CliName + ` self completion uninstall
 
   # Uninstall completions for your current shell
-  ` + version.CliName + ` completion uninstall --yes
+  ` + version.CliName + ` self completion uninstall --yes
 
   # Uninstall completions for a specific shell
-  ` + version.CliName + ` completion uninstall bash --yes
-  ` + version.CliName + ` completion uninstall zsh --yes`,
+  ` + version.CliName + ` self completion uninstall bash --yes
+  ` + version.CliName + ` self completion uninstall zsh --yes`,
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: internalShell.SupportedShells(),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -79,7 +79,7 @@ By default, runs in preview mode. Use '--yes' to uninstall directly.`,
 				effectiveDryRun = true
 			}
 
-			return runUninstall(shell, yes, effectiveDryRun)
+			return runUninstall(cmd, shell, yes, effectiveDryRun)
 		},
 	}
 
@@ -89,7 +89,11 @@ By default, runs in preview mode. Use '--yes' to uninstall directly.`,
 	return cmd
 }
 
-func runUninstall(specifiedShell string, yes, dryRun bool) error {
+// runUninstall takes the invoked *cobra.Command so the dry-run hint can
+// derive the exact "dr self completion uninstall" path from
+// cmd.CommandPath() instead of a hardcoded string — see CFX-7958, where a
+// hardcoded literal silently drifted from the real command path.
+func runUninstall(cmd *cobra.Command, specifiedShell string, yes, dryRun bool) error {
 	shell, err := resolveShellForUninstall(specifiedShell)
 	if err != nil {
 		return err
@@ -108,7 +112,7 @@ func runUninstall(specifiedShell string, yes, dryRun bool) error {
 
 	// Dry-run mode
 	if dryRun {
-		showUninstallDryRunMessage(shell)
+		showUninstallDryRunMessage(cmd, shell)
 		return nil
 	}
 
@@ -172,11 +176,11 @@ func showUninstallationPlan(shell string, existingPaths []string) {
 	fmt.Println()
 }
 
-func showUninstallDryRunMessage(shell string) {
+func showUninstallDryRunMessage(cmd *cobra.Command, shell string) {
 	fmt.Println(infoStyle.Render("🔍 Dry-run mode (no changes will be made)"))
 	fmt.Println()
 	fmt.Println("To proceed with uninstallation, run:")
-	fmt.Println(infoStyle.Render("  " + version.CliName + " completion uninstall " + shell + " --yes"))
+	fmt.Println(infoStyle.Render("  " + cmd.CommandPath() + " " + shell + " --yes"))
 }
 
 func performUninstall(shell internalShell.Shell) error {
