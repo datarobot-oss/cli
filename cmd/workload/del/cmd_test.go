@@ -29,6 +29,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// boundID is the id a manifest binds, matching the fixture the idargs and stop
+// packages keep under the same name.
+const boundID = "68b0c1d2e3f4a5b6c7d8e9f0"
+
 func TestCmd_ArgIsOptional(t *testing.T) {
 	cmd := Cmd()
 
@@ -366,4 +370,23 @@ func TestConfirmDelete_AmbientNeedsTheFlag(t *testing.T) {
 	assert.Contains(t, err.Error(), "pass --yes to run")
 	assert.NotContains(t, err.Error(), reader.NonInteractiveEnv,
 		"the remedy must not name the variable it just refused")
+}
+
+// Delete asks in the shape stop and start use, and adds the one thing they have
+// no equivalent of: what agreeing costs. The shared skeleton is covered in
+// idargs; this pins the verb and the consequence delete supplies to it.
+func TestDeleteQuestion_AsksInTheSharedShapeWithItsOwnConsequence(t *testing.T) {
+	ambient := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
+
+	assert.Equal(t,
+		"Delete workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
+			"rather than on the command line. This stops and removes a running workload. [y/N] ",
+		deleteQuestion(ambient))
+
+	typed := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceExplicit}
+
+	assert.Equal(t,
+		"Delete workload "+boundID+"? This stops and removes a running workload. [y/N] ",
+		deleteQuestion(typed),
+		"a typed id has no manifest to attribute it to")
 }

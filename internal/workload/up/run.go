@@ -713,8 +713,8 @@ func deployable(live Live, workloadName, dirFlag string) error {
 	case StateTerminated:
 		return fmt.Errorf(
 			"workload %s is terminated, which cannot be undone, and it still holds its name and artifact — "+
-				"%s, then deploy again",
-			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true))
+				"%s, then deploy again. %s",
+			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
 		// The refusal carries its own exit. Ending at "check the logs" left
@@ -723,8 +723,9 @@ func deployable(live Live, workloadName, dirFlag string) error {
 		// name conflict below or throws away the code catalog with it.
 		return fmt.Errorf(
 			"workload %s is errored, so there is nothing safe to deploy onto. "+
-				"%sIf it stays errored, %s, and deploy again to recreate it under the same name",
-			workloadName, erroredCaveat(live.WorkloadID), deleteRemedy(live.WorkloadID, dirFlag, true))
+				"%sIf it stays errored, %s, then deploy again. %s",
+			workloadName, erroredCaveat(live.WorkloadID),
+			deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateSettling:
 		// The backstop, not the answer. Every run waits a moving workload out
@@ -949,10 +950,10 @@ func nameTaken(createErr error, workloadName, path, dirFlag string) error {
 			return fmt.Errorf(
 				"a workload named %s already exists (%s), is %s, and nothing was deployed onto it. "+
 					"A deploy cannot act on it, so binding to it would only move this refusal. "+
-					"%sIf it is this project's dead workload, %s "+
-					"and deploy again to recreate the name. If it is not, rename this one in %s: %w",
+					"%sIf it is this project's dead workload, %s, then deploy again to take the name "+
+					"back. %s. If it is not, rename this one in %s: %w",
 				workloadName, existing[i].ID, strings.ToLower(existing[i].Status),
-				caveat, deleteRemedy(existing[i].ID, dirFlag, false), path, createErr)
+				caveat, deleteRemedy(existing[i].ID, dirFlag, false), recreateNote, path, createErr)
 		}
 
 		return fmt.Errorf(
@@ -979,6 +980,18 @@ func deleteRemedy(workloadID, dirFlag string, clearsBinding bool) string {
 
 	return remedy
 }
+
+// recreateNote is what a delete-and-deploy actually costs, said rather than
+// left to be discovered. The name survives, which is the whole reason
+// "recreate" sounds like continuity; the id and the endpoint URL do not, and a
+// URL that changes under live consumers is not something to find out about
+// afterwards.
+//
+// It carries the consequence only, not the "deploy again" that precedes it, so
+// each of the three refusals keeps its own imperative and all three can share
+// this. A fixed sentence is a const here, like the package's other message text.
+const recreateNote = "The replacement keeps the name, but it is a new workload with a new id " +
+	"and a new endpoint URL, so anything calling the old URL has to be pointed at the new one"
 
 // erroredCaveat is the hedge every message about an errored workload carries:
 // errored is the one dead-looking state that can still recover, so advising

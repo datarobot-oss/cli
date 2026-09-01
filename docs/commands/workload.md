@@ -151,7 +151,7 @@ dr workload delete [<workload-id>] [--dir <path>] [--yes]
 
 **Flags:**
 
-- `--yes`, `-y`: skip the confirmation prompt. `DATAROBOT_CLI_NON_INTERACTIVE=1` stands in for it only when you passed the workload id; a workload named by the manifest takes the explicit flag.
+- `--yes`, `-y`: skip the confirmation prompt. `DATAROBOT_CLI_NON_INTERACTIVE=1` stands in for it only when you passed the workload id; a workload whose id is specified in the manifest takes the explicit flag.
 - `--dir <path>`: project directory whose `.datarobot.yaml` names the workload, and holds the binding to clear, searched upward from there. Defaults to the current directory. Pass the same value you deployed with, since a manifest in a subdirectory is not visible from its parent.
 
 If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next `dr workload up` creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
@@ -169,7 +169,7 @@ dr workload start [<workload-id>] [--dir <path>] [--yes] [--output-format text|j
 dr workload stop  [<workload-id>] [--dir <path>] [--yes] [--output-format text|json]
 ```
 
-A workload named by the manifest rather than by you is confirmed first; `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) skips the question. A typed id is never questioned.
+A workload whose id is specified in the manifest rather than on the command line is confirmed first; `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) skips the question. A typed id is never questioned.
 
 ### `status`
 
@@ -224,9 +224,9 @@ A typed id always wins over the manifest. `--dir` is what reaches a project the 
 dr workload logs --dir site   # the project deployed with 'dr workload up --dir site'
 ```
 
-Because `stop`, `start` and `delete` change something, they ask for confirmation when the id came from a manifest rather than from you. Pass `--yes` to skip the prompt in a script; a typed id is never prompted.
+Because `stop`, `start` and `delete` change something, they ask for confirmation when the id is specified in a manifest rather than on the command line. Pass `--yes` to skip the prompt in a script; a typed id is never prompted.
 
-`stop` and `start` also accept `DATAROBOT_CLI_NON_INTERACTIVE=1` in place of `--yes`. `delete` does not, when the workload came from a manifest: that variable is usually set once across a whole CI pipeline, and deleting something nobody named is not what it was set for. Pass `--yes` explicitly there.
+`stop` and `start` also accept `DATAROBOT_CLI_NON_INTERACTIVE=1` in place of `--yes`. `delete` does not, when the id is specified in a manifest: that variable is usually set once across a whole CI pipeline, and deleting something nobody named is not what it was set for. Pass `--yes` explicitly there.
 
 ## Shared flags
 
@@ -236,7 +236,7 @@ Every subcommand accepts `--output-format json` for machine-parseable output. Th
 
 ### `--yes`
 
-`delete` prompts for confirmation unless you pass `--yes` / `-y` (or set `DATAROBOT_CLI_NON_INTERACTIVE=1`). The prompt is skipped automatically when stdin is not a terminal.
+`stop`, `start` and `delete` prompt for confirmation when the id is specified in the manifest rather than on the command line; `delete` prompts either way. `--yes` / `-y` answers the question in advance. `DATAROBOT_CLI_NON_INTERACTIVE=1` stands in for the flag on `stop` and `start`, and on a `delete` you passed the id to, but not on a `delete` whose id came from the manifest. With no terminal to ask on, the command fails with `confirmation required: pass --yes` rather than assuming an answer, so a script that needs to run unattended passes the flag.
 
 ### Global options
 

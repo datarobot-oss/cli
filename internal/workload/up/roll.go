@@ -252,8 +252,8 @@ func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 	// already in.
 	if opts.Confirm != nil {
 		return opts.Confirm(fmt.Sprintf(
-			"Workload %s is on a locked version, which means production.%s\n"+
-				"The new version will be locked too, and locking cannot be undone.\n"+
+			"Workload %s is on a locked version.%s\n"+
+				"The new version will be locked too, permanently.\n"+
 				"Type the workload name to roll it, anything else to stop: ",
 			tui.WarnStyle.Render("`"+workloadName+"`"), alsoStarting(live)), workloadName)
 	}
@@ -263,7 +263,7 @@ func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 	}
 
 	return false, errors.New(
-		"this rolls a locked, production version and there is no terminal to confirm on. " +
+		"this rolls a locked version and there is no terminal to confirm on. " +
 			"Re-run with --yes to say so explicitly")
 }
 

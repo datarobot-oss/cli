@@ -2734,3 +2734,58 @@ func TestDefaultCodeChange_AppliesMatchesTheFilesBuildMode(t *testing.T) {
 		})
 	}
 }
+
+// Both dead-workload refusals end at "delete it and deploy again", which keeps
+// the name and is what makes the advice sound like continuity. It is not: the
+// replacement is a different workload with a different id, so its endpoint URL
+// is different too, permanently. A caller pointed at the old URL finds out when
+// their traffic stops arriving, which is too late to be told.
+func TestDeployable_DeadWorkloadRemediesSayTheEndpointChanges(t *testing.T) {
+	cases := map[string]struct {
+		state  State
+		status string
+	}{
+		"errored":    {StateErrored, workload.WorkloadStatusErrored},
+		"terminated": {StateTerminated, workload.WorkloadStatusTerminated},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			live := Live{
+				Live:   manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
+				State:  c.state,
+				Status: c.status,
+			}
+
+			err := deployable(live, "my-app", " --dir ./svc")
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "'dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --dir ./svc'",
+				"the remedy this note qualifies, with the --dir the run was given")
+			assert.Contains(t, err.Error(), ", then deploy again. The replacement keeps the name",
+				"then, not and: the imperative must not read as another thing the delete does")
+			assert.Contains(t, err.Error(), "new endpoint URL")
+			assert.Contains(t, err.Error(), "anything calling the old URL has to be pointed at the new one")
+			assert.NotContains(t, err.Error(), "under the same name")
+		})
+	}
+}
+
+// The third refusal giving the same advice. It is reached by a create that 409s
+// on a name a dead workload still holds, and the sentence it qualifies opens
+// "If it is this project's dead workload", so its reader loses the same URL.
+func TestNameTaken_DeadHolderRemedySaysTheEndpointChanges(t *testing.T) {
+	swap(t, &listWorkloadsFn, func(int, int, []string, string) ([]workload.Workload, error) {
+		return []workload.Workload{{
+			ID: "68b0c1d2e3f4a5b6c7d8e9f0", Name: "my-app", Status: workload.WorkloadStatusErrored,
+		}}, nil
+	})
+
+	err := nameTaken(&drapi.HTTPError{StatusCode: http.StatusConflict}, "my-app", ".datarobot.yaml", "")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "then deploy again to take the name back")
+	assert.Contains(t, err.Error(), "new endpoint URL")
+	assert.NotContains(t, err.Error(), "deploy again to recreate the name",
+		"recreating the name is exactly what sounds like continuity and is not")
+}

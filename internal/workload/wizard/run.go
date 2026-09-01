@@ -605,9 +605,17 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 
 	found, err := manifest.Locate(parent)
 	if err != nil {
-		if !errors.Is(err, manifest.ErrNotFound) {
-			fmt.Fprintf(stderr, "Warning: cannot check for a manifest above %s: %v\n", dir, err)
+		// Both sentinels mean the same thing here: there is no manifest above
+		// to shadow this one. Not-a-directory says so because Locate refuses to
+		// start the walk, and it names the ancestor it was handed rather than
+		// the path the user typed, so a warning built from it reads as being
+		// about a directory the reader has never seen. The project directory is
+		// checked by the commands themselves, which name what the user typed.
+		if errors.Is(err, manifest.ErrNotFound) || errors.Is(err, manifest.ErrNotADirectory) {
+			return
 		}
+
+		fmt.Fprintf(stderr, "Warning: cannot check for a manifest above %s: %v\n", dir, err)
 
 		return
 	}

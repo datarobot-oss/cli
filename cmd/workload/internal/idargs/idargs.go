@@ -51,7 +51,7 @@ from --dir (the current directory by default).`
 // flag without offering it.
 func AddDirFlag(cmd *cobra.Command) {
 	cmd.Flags().String("dir", "",
-		"Project directory whose .datarobot.yaml names the workload, searched upward from here.")
+		"Project directory whose .datarobot.yaml specifies the workload id, searched upward from here.")
 }
 
 // Resolve returns the workload the command should act on, announcing one read
@@ -89,7 +89,7 @@ func announce(cmd *cobra.Command, ref Ref) {
 	}
 
 	fmt.Fprintln(cmd.ErrOrStderr(),
-		tui.DimStyle.Render("Using workload "+ref.ID+" from "+shortPath(ref.Path)))
+		tui.DimStyle.Render("Using workload "+ref.ID+" from "+DisplayPath(ref.Path)))
 }
 
 // emitsJSON reports whether this command renders a JSON document.
@@ -144,17 +144,64 @@ func ProjectDir(dir string) (string, error) {
 	return cwd, nil
 }
 
-// DisplayPath is Path as a reader would type it.
-func (r Ref) DisplayPath() string {
-	return DisplayPath(r.Path)
+// DisplayPath renders a path the way a reader would type it: relative when
+// that stays inside the working directory, absolute otherwise. Naming
+// /Users/me/some/long/project/.datarobot.yaml at someone standing in it spends
+// three lines saying "here".
+//
+// One rendering under one name, because two lines of the same output naming the
+// same file differently reads as two files.
+func DisplayPath(path string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return path
+	}
+
+	rel, err := filepath.Rel(cwd, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return path
+	}
+
+	return rel
 }
 
-// DisplayPath renders any path the way the messages in this feature do, for a
-// caller that holds one without a Ref around it. One rendering, because two
-// lines of the same output naming the same file differently reads as two
-// files.
-func DisplayPath(path string) string {
-	return shortPath(path)
+// specifiedIn is the phrase every message about an ambient target is built
+// from, so the wording cannot drift between them.
+//
+// "Specified in" rather than "named by". The manifest carries a real name: key,
+// so "named by .datarobot.yaml" reads just as naturally as "its name comes from
+// this file", and nothing in the sentence corrects that.
+func specifiedIn(path string) string {
+	return "specified in " + DisplayPath(path)
+}
+
+// Provenance is the sentence a confirmation adds about a workload the user did
+// not name, and the reason it is being asked at all: the file supplied the id.
+//
+// The contrast with the command line is the half that makes the clause say why
+// the question is being put; a prompt keeping only the first half is the one
+// that misleads.
+//
+// A typed id gets "", because there is no manifest to attribute it to and a
+// caller must not be able to tell someone their own argument came from a file.
+// The trailing space belongs to the clause so a caller can splice it without
+// asking whether it is there.
+func (r Ref) Provenance() string {
+	if !r.FromManifest() {
+		return ""
+	}
+
+	return "The id is " + specifiedIn(r.Path) + " rather than on the command line. "
+}
+
+// SpecifiedIn is the same fact as an appositive, for a message that has already
+// named the id. Empty for a typed id, on Provenance's reasoning.
+func (r Ref) SpecifiedIn() string {
+	if !r.FromManifest() {
+		return ""
+	}
+
+	return ", " + specifiedIn(r.Path)
 }
 
 const (
@@ -212,7 +259,7 @@ func resolve(args []string, dir string) (Ref, error) {
 			// Where it looked is only worth naming when --dir sent it somewhere
 			// other than where the reader is standing.
 			where := "here or in any parent"
-			if at := shortPath(dir); at != "." {
+			if at := DisplayPath(dir); at != "." {
 				where = "in " + at + " or any parent"
 			}
 
@@ -230,8 +277,8 @@ func resolve(args []string, dir string) (Ref, error) {
 	id := strings.TrimSpace(m.WorkloadID())
 	if id == "" {
 		return Ref{}, fmt.Errorf(
-			"%s names no workload yet. Run 'dr workload up%s', or pass an id",
-			shortPath(path), manifest.DirFlag(dir))
+			"%s specifies no workloadId yet. Run 'dr workload up%s', or pass an id",
+			DisplayPath(path), manifest.DirFlag(dir))
 	}
 
 	return Ref{ID: id, Source: WorkloadIDSourceManifest, Path: path, Dir: dir}, nil
@@ -258,31 +305,13 @@ func (r Ref) Wrap(err error) error {
 	// same manifest read against the wrong endpoint, organisation or token
 	// answers exactly this way, so the remedy names both.
 	if httpErr.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("no access to workload %s, named by %s: %w", r.ID, shortPath(r.Path), err)
+		return fmt.Errorf("no access to workload %s%s: %w", r.ID, r.SpecifiedIn(), err)
 	}
 
 	return fmt.Errorf(
-		"workload %s is not on this instance; %s names it. Check the endpoint and organisation, "+
+		"workload %s is not on this instance, though it is %s. Check the endpoint and organisation, "+
 			"or redeploy with 'dr workload up%s': %w",
-		r.ID, shortPath(r.Path), manifest.DirFlag(r.Dir), err)
-}
-
-// shortPath renders a path the way a reader would type it: relative when that
-// stays inside the working directory, absolute otherwise. Naming
-// /Users/me/some/long/project/.datarobot.yaml at someone standing in it spends
-// three lines saying "here".
-func shortPath(path string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return path
-	}
-
-	rel, err := filepath.Rel(cwd, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return path
-	}
-
-	return rel
+		r.ID, specifiedIn(r.Path), manifest.DirFlag(r.Dir), err)
 }
 
 // TelemetryID is the workload id to report: the resolved one, falling back to

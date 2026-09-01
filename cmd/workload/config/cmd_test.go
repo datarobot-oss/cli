@@ -332,3 +332,21 @@ func TestCmd_UnparseableEnvFileLeaksNoValues(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "sk-live-do-not-print")
 	assert.NotContains(t, stderr.String(), "hunter2")
 }
+
+// A --dir that is not a directory is refused by name, the way 'up' and 'delete'
+// already refuse it. This command used to walk on into a path that was not
+// there and report the missing Dockerfile instead, three messages after the one
+// fact that explains them, with a manifest-search warning in between naming an
+// ancestor the user never typed.
+func TestCmd_RefusesADirThatIsNotADirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope", "project")
+
+	_, stderr, err := runCmd(t, "--dir", missing, "--yes", "--name", "my-app")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--dir "+missing)
+	assert.Contains(t, err.Error(), "not a directory")
+	assert.NotContains(t, stderr.String(), "cannot check for a manifest above",
+		"the refusal is the whole answer; a warning about an ancestor is noise on top of it")
+	assert.NotContains(t, stderr.String(), "no Dockerfile")
+}
