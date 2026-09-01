@@ -12,6 +12,7 @@ scenario script (grep with `rg '^# Ticket:' smoke_test_scripts/workload`).
 | C — re-bind tuned | `RAPTOR-19533-C-rebind.sh` | RAPTOR-19533 | re-bind preserves live tuning; FileExists guard; delete-rebind restore |
 | D — built-workload rebuild | `RAPTOR-19533-D-built.sh` | RAPTOR-19533 | no ErrImagePull after re-bind; platform rebuilds from imageBuildConfig |
 | Artifact lifecycle | `artifact-lifecycle.sh` | none — basic acceptance | `dr artifact` create/get/list/code sync/versions/del CLI-side state |
+| diff/confirm live smoke | `RAPTOR-19538-diff-confirm.sh` | RAPTOR-19538 | staging: `--dry-run --diff` redaction, `--confirm` decline/accept (PTY), JSON diff envelope, cleanup. Run directly: interactive PTY + staging writes |
 
 ## Adding a scenario for a new ticket
 

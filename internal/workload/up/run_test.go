@@ -502,6 +502,152 @@ func TestRun_DryRunAppliesNothing(t *testing.T) {
 	assert.Contains(t, stderr, "+ workload")
 }
 
+// resizedManifest is the bound fixture with the sizing moved one step, which
+// is the one-change plan the wiring tests below diff. The binding line rides
+// on top, as it does wherever the tests deploy against the live fixtures.
+func resizedManifest() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "memory: 22GB", "memory: 24GB", 1)
+}
+
+// TestRun_DiffRendersTheUnifiedDiffInsteadOfTheSummary is the selector: the
+// flag swaps the renderer and nothing else. With it the plan is laid out as
+// a diff stating both sides of what moves; without it the summary keeps its
+// own spelling, because a flag nobody passed may not change a byte.
+func TestRun_DiffRendersTheUnifiedDiffInsteadOfTheSummary(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	sized := resizedManifest()
+
+	_, stderr, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "resourceAllocation.memory: 22GB -> 24GB",
+		"the default plan states a change as have -> want")
+	assert.NotContains(t, stderr, "\n+ ")
+	assert.NotContains(t, stderr, "\n- ", "the diff is opt-in; the default plan must not grow hunks")
+
+	_, diffStderr, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, diffStderr, "- containerGroups[default].containers[vllm-server].resourceAllocation.memory: 22GB")
+	assert.Contains(t, diffStderr, "+ containerGroups[default].containers[vllm-server].resourceAllocation.memory: 24GB")
+	assert.NotContains(t, diffStderr, "-> ",
+		"a diff states each side of a change on its own line, never the summary's arrow")
+}
+
+// TestRun_DryRunDiffMatchesTheWetDiffAndWritesNothing is the contract that
+// makes --dry-run --diff the look-without-touching combination: the dry run
+// prints the identical diff body the wet run prints for the same state, and
+// stops where the wet run continues into progress. The mutating seams are
+// wired to fail the test on the dry leg, so "prints the same body" and
+// "performs zero writes" are asserted by the same run.
+func TestRun_DryRunDiffMatchesTheWetDiffAndWritesNothing(t *testing.T) {
+	sized := resizedManifest()
+
+	liveDocs := fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+
+	dry := liveDocs
+	dry.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not touch the workload")
+
+		return nil, nil
+	}
+	dry.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not roll anything")
+
+		return nil, nil
+	}
+
+	install(t, dry)
+
+	dryResult, dryStderr, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUpdated, dryResult.Action, "the dry run's action is the plan's own")
+	assert.Contains(t, dryStderr, "+ containerGroups[default].containers[vllm-server].resourceAllocation.memory: 24GB")
+
+	// The wet leg runs the same plan far enough to act: the resize is
+	// requested, and --detach stops there so the leg needs no wait wiring.
+	var resized bool
+
+	wet := liveDocs
+	wet.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		resized = true
+
+		return nil, nil
+	}
+
+	install(t, wet)
+
+	_, wetStderr, err := runIn(t, sized, Options{NonInteractive: true, Diff: true, Detach: true})
+	require.NoError(t, err)
+	assert.True(t, resized, "the wet leg has to reach the mutation for the comparison to mean anything")
+
+	assert.True(t, strings.HasPrefix(wetStderr, dryStderr),
+		"the wet run must print the identical diff body before its progress;\ndry: %q\nwet: %q", dryStderr, wetStderr)
+}
+
+// TestRun_PlanJSONDiffIsTheSameDryAndWet is that equivalence for the machine
+// envelope: the diff section is computed from the pre-apply plan, so the dry
+// preview and the run that follows it hand a consumer the same changes and
+// the same unmanaged paths, in the same order. The action differs between
+// the two; the section must not, or a script diffing the two envelopes would
+// read drift into a deploy that fixed it.
+func TestRun_PlanJSONDiffIsTheSameDryAndWet(t *testing.T) {
+	sized := resizedManifest()
+
+	liveDocs := fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+
+	dry := liveDocs
+	dry.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not touch the workload")
+
+		return nil, nil
+	}
+	dry.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not roll anything")
+
+		return nil, nil
+	}
+
+	install(t, dry)
+
+	dryResult, _, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	dryDiff := dryResult.Plan.JSONWithDiff().Diff
+	require.NotNil(t, dryDiff)
+	require.NotEmpty(t, dryDiff.Changes,
+		"the fixture has to move something for the comparison to mean anything")
+
+	var resized bool
+
+	wet := liveDocs
+	wet.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		resized = true
+
+		return nil, nil
+	}
+
+	install(t, wet)
+
+	wetResult, _, err := runIn(t, sized, Options{NonInteractive: true, Diff: true, Detach: true})
+	require.NoError(t, err)
+	assert.True(t, resized, "the wet leg has to reach the mutation for the comparison to mean anything")
+
+	assert.Equal(t, dryDiff, wetResult.Plan.JSONWithDiff().Diff)
+}
+
 // TestRun_AlreadyUpToDate exits without touching anything, which is what
 // makes `up` cheap to run on every push.
 func TestRun_AlreadyUpToDate(t *testing.T) {

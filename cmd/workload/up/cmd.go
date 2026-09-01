@@ -82,12 +82,14 @@ func buildID(id string) *string {
 }
 
 type flags struct {
-	dir    string
-	yes    bool
-	dryRun bool
-	detach bool
-	lock   bool
-	force  bool
+	dir     string
+	yes     bool
+	dryRun  bool
+	diff    bool
+	confirm bool
+	detach  bool
+	lock    bool
+	force   bool
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -148,6 +150,13 @@ allocation, is applied in place instead. Nothing is built and no version is
 made, because what the workload runs has not changed. A deploy that moves both
 sends the sizing with the rollout, so the new version comes up with it.
 
+Two flags are for looking before leaping. --diff prints the plan as a unified
+diff, with context around each change and nothing truncated, instead of the
+changed-fields summary. --confirm asks '? Apply this deploy? (y/N)' on stderr
+after the plan is printed and deploys only on yes; when the run is
+non-interactive it is suppressed and behaves as if it was not given. To look
+without touching, --dry-run --diff is the combination.
+
 A workload that is not ready to be deployed onto is dealt with rather than
 refused. One still starting or stopping is waited out and then re-read, so the
 plan is built against where it landed. A stopped one is started and then
@@ -179,6 +188,8 @@ Examples:
 		return map[string]any{
 			"yes":           nonInteractive,
 			"dry_run":       f.dryRun,
+			"diff":          f.diff,
+			"confirm":       f.confirm,
 			"detach":        f.detach,
 			"lock":          f.lock,
 			"force_build":   f.force,
@@ -195,6 +206,22 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 		"Do not prompt. With no manifest this is an error rather than a wizard, "+
 			"and rolling a locked version is not confirmed.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
+	// The help says what changes about the rendering rather than leaving the
+	// reader to run it to find out: the default plan is the summary, the
+	// diff is the detail, and neither says anything the other does not.
+	cmd.Flags().BoolVar(&f.diff, "diff", false,
+		"Render the plan as a unified diff instead of the changed-fields list: "+
+			"every field the file names appears, unchanged ones as context that collapses when it runs long, "+
+			"and nothing is truncated. Combine with --dry-run to look without touching.")
+	// The suppression is documented in the flag itself because it is the one
+	// surprise the flag carries: someone piping output and passing --confirm
+	// would otherwise wait on a prompt that never comes, with no word of why.
+	cmd.Flags().BoolVar(&f.confirm, "confirm", false,
+		"Ask '? Apply this deploy? (y/N)' on stderr after printing the plan, and deploy only on yes; "+
+			"anything else, including an empty answer, declines and changes nothing. "+
+			"Suppressed when the run is non-interactive: --yes, --output-format json, "+
+			"DATAROBOT_CLI_NON_INTERACTIVE, or a stdin that is not a terminal. "+
+			"When suppressed it behaves as if the flag was not given.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
 		"Lock whichever artifact ends up live, making it permanent, even when this deploy minted no new "+
@@ -239,15 +266,26 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
+		Diff:           f.diff,
 		Detach:         f.detach,
 		Lock:           f.lock,
 		Confirm:        rollConfirm(cmd, yes),
+		ConfirmApply:   applyConfirm(cmd, f.confirm, nonInteractive),
 		ForceBuild:     f.force,
 		PollInterval:   poll.Interval,
 		PollTimeout:    poll.Timeout,
 		Stderr:         cmd.ErrOrStderr(),
 		Spinner:        !json && !nonInteractive,
 	})
+
+	if errors.Is(runErr, up.ErrDeclined) {
+		// The gate said no. Nothing has been touched, so there is no endpoint
+		// to print and no envelope to emit: the refusal itself is the whole
+		// outcome, and it reaches stderr through the same path every error
+		// takes. Falling through to render here would print the endpoint of a
+		// workload this run deliberately left alone.
+		return runErr
+	}
 
 	if runErr != nil && !reportable(result) {
 		return runErr
@@ -313,6 +351,43 @@ func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool
 	}
 
 	return typedConfirm(cmd)
+}
+
+// applyConfirm is the opt-in y/N gate behind --confirm, and nil when there is
+// nobody to answer it. Suppressed, not refused: a run that cannot be asked
+// behaves as if the flag was not given, which is the convention every prompt
+// on this command follows. --yes is already the answer, -o json and a piped
+// stdin mean nobody is reading, and DATAROBOT_CLI_NON_INTERACTIVE says the
+// same; refusing the combination would break a scripted caller to protect a
+// default that suppression already keeps safe. There is deliberately no cobra
+// mutual exclusivity with --yes for the same reason.
+//
+// The question goes to stderr and the answer comes from stdin, like the typed
+// confirm below: stdout is the endpoint, or one JSON document, and a question
+// printed into it would break whatever is parsing it.
+func applyConfirm(cmd *cobra.Command, confirm, nonInteractive bool) func(string) (bool, error) {
+	if !confirm || nonInteractive {
+		return nil
+	}
+
+	return func(question string) (bool, error) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "? %s (y/N) ", question)
+
+		scanner := bufio.NewScanner(cmd.InOrStdin())
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return false, fmt.Errorf("cannot read the answer: %w", err)
+			}
+
+			return false, nil
+		}
+
+		// The default is no, so an enter pressed twice in a row, a stray
+		// keystroke and a closed pipe can never deploy on their own.
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+
+		return answer == "y" || answer == "yes", nil
+	}
 }
 
 // typedConfirm asks a question that only the exact expected word answers.
@@ -399,6 +474,18 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 	return f.dryRun || result.WorkloadID != ""
 }
 
+// planEnvelope picks the plan's machine shape. --diff adds the structured
+// diff section to the same document; without the flag the envelope keeps the
+// exact shape it had before the flag existed, so a consumer that never asked
+// for a diff never has to learn about one.
+func planEnvelope(p up.Plan, diff bool) up.PlanJSON {
+	if diff {
+		return p.JSONWithDiff()
+	}
+
+	return p.JSON()
+}
+
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
@@ -410,7 +497,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			BuildID:    buildID(result.BuildID),
 			Action:     result.Action,
 			Locked:     result.Locked,
-			Plan:       result.Plan.JSON(),
+			Plan:       planEnvelope(result.Plan, f.diff),
 		})
 	}
 

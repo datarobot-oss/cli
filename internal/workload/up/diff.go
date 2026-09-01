@@ -281,6 +281,169 @@ func join(path, key string) string {
 	return path + "." + key
 }
 
+// DiffRow is one leaf of want as a unified diff needs it: every leaf the
+// file asks for gets a row, changed or not, so a diff can draw the context
+// around a change and not just the change. Subset stays the source of truth
+// for what differs; DiffRows is Subset's walk with the silent leaves kept.
+type DiffRow struct {
+	// Path is where the field sits, in the file's own spelling, with
+	// name-keyed lists addressed by name rather than by index. It is also
+	// the address the plan's redaction hook reads, so a value that must
+	// never print is refused here on the same terms.
+	Path string
+
+	// Want is the value the manifest asks for.
+	Want any
+
+	// Have is the live value, nil when Absent.
+	Have any
+
+	// Absent distinguishes a field the live object does not carry at all
+	// from one that carries a different value, exactly as it does for
+	// Change: adding a probe is not the same act as moving one.
+	Absent bool
+
+	// Changed reports whether the live side already agrees. Unchanged rows
+	// are the context a diff draws between changes, and a size written two
+	// ways is unchanged here for the same reason it is not drift in Subset.
+	Changed bool
+}
+
+// DiffRows walks every leaf of want, not just the differing ones, marking
+// each row changed or unchanged with the same comparison Subset applies:
+// name-keyed lists matched by name, memory-equivalent sizes read as equal,
+// keys visited in sorted order so two runs over the same inputs read the
+// same way.
+//
+// A leaf the live object does not have is one addition row, a whole element
+// at a time, exactly as Subset reports it: adding a container is one act,
+// not one per field. With no live side at all (a first deploy) every leaf
+// is an addition, walked out to its leaves so the diff can show what will
+// be created rather than summarise it.
+//
+// The unmanaged side is not walked here: what the live object carries that
+// the file never names is Extra's question, and the caller merges the two.
+func DiffRows(want, have map[string]any) []DiffRow {
+	var rows []DiffRow
+
+	if have == nil {
+		additionRows("", want, &rows)
+
+		return rows
+	}
+
+	walkRows("", want, have, true, &rows)
+
+	return rows
+}
+
+// walkRows compares one node, the way walk does, but answers with a row for
+// every leaf rather than only the disagreeing ones. present says whether
+// have was actually there, so a key holding an explicit null is not confused
+// with a key that is missing.
+func walkRows(path string, want, have any, present bool, out *[]DiffRow) {
+	if !present {
+		*out = append(*out, DiffRow{Path: path, Want: want, Absent: true, Changed: true})
+
+		return
+	}
+
+	switch w := want.(type) {
+	case map[string]any:
+		walkRowsMap(path, w, have, out)
+	case []any:
+		walkRowsList(path, w, have, out)
+	default:
+		*out = append(*out, DiffRow{Path: path, Want: want, Have: have, Changed: !equalAt(path, want, have)})
+	}
+}
+
+// walkRowsMap recurses into an object, in key order so the rows read the
+// same way twice. A have side that is not an object is one changed row: it
+// cannot be matched key by key, and guessing at a comparison would report
+// less than the truth.
+func walkRowsMap(path string, want map[string]any, have any, out *[]DiffRow) {
+	h, ok := have.(map[string]any)
+	if !ok {
+		*out = append(*out, DiffRow{Path: path, Want: want, Have: have, Changed: true})
+
+		return
+	}
+
+	for _, key := range slices.Sorted(maps.Keys(want)) {
+		hv, present := h[key]
+
+		walkRows(join(path, key), want[key], hv, present, out)
+	}
+}
+
+// walkRowsList compares a list under the same two shapes walkList knows:
+// containerGroups, containers and environmentVars are keyed by name and
+// matched by it, so a reordered live object moves no row, and everything
+// else, a resourceBundles of plain strings or an autoscaling policy with no
+// name to key on, is one leaf compared whole.
+func walkRowsList(path string, want []any, have any, out *[]DiffRow) {
+	h, ok := have.([]any)
+	if !ok {
+		*out = append(*out, DiffRow{Path: path, Want: want, Have: have, Changed: true})
+
+		return
+	}
+
+	if !nameKeyed(want) {
+		*out = append(*out, DiffRow{Path: path, Want: want, Have: h, Changed: !equal(want, h)})
+
+		return
+	}
+
+	live := byName(h)
+
+	for _, item := range want {
+		element, _ := item.(map[string]any)
+		name, _ := element["name"].(string)
+		at := fmt.Sprintf("%s[%s]", path, name)
+
+		counterpart, found := live[name]
+		if !found {
+			*out = append(*out, DiffRow{Path: at, Want: element, Absent: true, Changed: true})
+
+			continue
+		}
+
+		walkRowsMap(at, element, counterpart, out)
+	}
+}
+
+// additionRows walks want with no live side to compare against, as a first
+// deploy is: every leaf becomes an addition. Objects and name-keyed lists
+// are walked through to their leaves, so the diff can show what will be
+// created field by field; anything without a name to walk into, an unkeyed
+// list or a scalar, is one row as it stands.
+func additionRows(path string, want any, out *[]DiffRow) {
+	switch w := want.(type) {
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(w)) {
+			additionRows(join(path, key), w[key], out)
+		}
+	case []any:
+		if !nameKeyed(w) {
+			*out = append(*out, DiffRow{Path: path, Want: w, Absent: true, Changed: true})
+
+			return
+		}
+
+		for _, item := range w {
+			element, _ := item.(map[string]any)
+			name, _ := element["name"].(string)
+			at := fmt.Sprintf("%s[%s]", path, name)
+
+			additionRows(at, element, out)
+		}
+	default:
+		*out = append(*out, DiffRow{Path: path, Want: want, Absent: true, Changed: true})
+	}
+}
+
 // format renders a value for the plan. Composite values are summarised
 // rather than dumped: a plan is a summary, and a reader who wants the whole
 // object has the file open next to it.

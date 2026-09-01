@@ -68,6 +68,13 @@ var (
 	syncProjectFn        = defaultSync
 )
 
+// ErrDeclined is what a run answers when --confirm was given and the user
+// said no. It is returned before the first mutating branch runs, so a caller
+// can treat it as "nothing happened" rather than as a failure partway through
+// one: nothing was deployed, nothing was locked, and the plan it declined is
+// still the plan the next run will carry out.
+var ErrDeclined = errors.New("declined: nothing was deployed")
+
 // Options is everything a run needs from its caller.
 type Options struct {
 	// Dir is where to start looking for the manifest. The search walks
@@ -80,6 +87,13 @@ type Options struct {
 
 	// DryRun stops after the plan.
 	DryRun bool
+
+	// Diff renders the plan as a unified diff instead of the summary list:
+	// the same plan, laid out leaf by leaf with context around what moves.
+	// It changes how the plan is shown and nothing else -- the dry-run
+	// return and every apply branch read the plan exactly as they do
+	// without it, so a diff run and a summary run mutate the same things.
+	Diff bool
 
 	// Detach returns once the apply is requested, skipping the waits.
 	Detach bool
@@ -96,6 +110,16 @@ type Options struct {
 	// and nil when there is no terminal to ask on. Reading the answer is the
 	// caller's job because only it knows where the user's input comes from.
 	Confirm func(question, want string) (bool, error)
+
+	// ConfirmApply is the opt-in y/N gate behind --confirm, and nil when
+	// nobody is to be asked. It is separate from Confirm: that one is the
+	// locked-production question only the exact workload name answers, and
+	// this one is the ordinary "apply this?" asked of every run the flag was
+	// given to. The deploy calls it once, after the plan is printed and
+	// before the first mutating branch, and a no stops the run with
+	// ErrDeclined. Reading the answer is the caller's job because only it
+	// knows where the user's input comes from.
+	ConfirmApply func(question string) (bool, error)
 
 	// Lock makes the artifact that ends up live immutable and permanent.
 	// Locking is one-way, so it happens last, only after the workload is
@@ -198,12 +222,24 @@ func Run(opts Options) (Result, error) {
 	}
 
 	summary := Summary{Name: result.Name, WorkloadID: result.WorkloadID, Status: live.Status}
-	if err := Render(opts.Stderr, summary, plan); err != nil {
+
+	renderPlan := rendererFor(opts.Diff)
+
+	if err := renderPlan(opts.Stderr, summary, plan); err != nil {
 		return result, err
 	}
 
 	noteUnusedForce(plan, opts)
 
+	return carryOut(loaded, live, plan, result, opts)
+}
+
+// carryOut is everything a run does once the plan has been shown: stop for a
+// dry run, ask the confirm gate, then act on the plan through whichever path
+// applies. It is its own step because the ordering here is the contract the
+// --confirm gate rests on: the review is printed before the question is asked,
+// and the question is answered before the first mutation is attempted.
+func carryOut(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if opts.DryRun {
 		// The one run whose action is the plan's: it stops here, so printing
 		// the plan is the whole of what it did.
@@ -212,11 +248,64 @@ func Run(opts Options) (Result, error) {
 		return result, nil
 	}
 
+	if err := confirmGate(plan, result, opts); err != nil {
+		return result, err
+	}
+
 	if plan.Empty() {
 		return lockOnly(loaded, live, result, opts)
 	}
 
 	return apply(loaded, live, plan, result, opts)
+}
+
+// confirmGate asks the opt-in y/N question --confirm installs, and only when
+// answering yes would change something. The gate fires whenever the run would
+// otherwise mutate: a plan carrying changes, or an empty one with a --lock
+// waiting to make the serving artifact permanent. A wholly empty plan asks
+// nothing and returns as it always has, and unmanaged fields never arm the
+// gate: they survive every deploy untouched, so there is nothing to consent
+// to. "Empty" is therefore measured by pending mutation, not by how quiet the
+// plan looks.
+//
+// Everything that prints has printed by the time the question is asked, and
+// everything that mutates is still ahead of it. That placement is the whole
+// promise: a decline returns ErrDeclined from a run that has changed nothing,
+// and a dry run never gets here at all -- it returns above, because a preview
+// is not a mutation to consent to.
+func confirmGate(plan Plan, result Result, opts Options) error {
+	if opts.ConfirmApply == nil {
+		return nil
+	}
+
+	// lockOnly is the one mutation an empty plan can still carry out, and
+	// only when --lock was passed and the serving artifact is not already
+	// locked. Any other empty plan is the "Already up to date" run.
+	if plan.Empty() && (result.Locked || !opts.Lock) {
+		return nil
+	}
+
+	agreed, err := opts.ConfirmApply("Apply this deploy?")
+	if err != nil {
+		return fmt.Errorf("cannot ask to apply this deploy: %w", err)
+	}
+
+	if !agreed {
+		return ErrDeclined
+	}
+
+	return nil
+}
+
+// rendererFor picks how the plan is shown. --diff swaps the renderer and
+// nothing else: the plan goes out laid out as a diff rather than summarised,
+// and everything below reads it identically either way.
+func rendererFor(diff bool) func(io.Writer, Summary, Plan) error {
+	if diff {
+		return RenderDiff
+	}
+
+	return Render
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -1280,8 +1369,13 @@ func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) 
 	}
 
 	return CodeChange{
-		Applies:      true,
-		Files:        len(plan.Uploads) + len(plan.Deletes),
+		Applies: true,
+		Files:   len(plan.Uploads) + len(plan.Deletes),
+		// The plan rides along beside its count so --diff can name the files
+		// rather than only counting them, rendered by the sync command's own
+		// plan printer. It is data, not engine state, so it survives the
+		// Close below.
+		SyncPlan:     plan,
 		IgnoreNotice: notice,
 		ImageStale:   imageStale(loaded.ProjectDir, live),
 		// The engine says so rather than this asking a second time: it fetched

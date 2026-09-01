@@ -762,3 +762,151 @@ func allStates() []State {
 		StateErrored,
 	}
 }
+
+// TestBuild_DiffRowsMirrorTheArtifactRuntimeSplit: the diff rows come from
+// the same two walks the change lists do, split the same way, so a diff and
+// the plan beside it can never disagree about what differs or which block a
+// finding belongs to. The agreeing leaves are kept as context, which is what
+// makes the rows a diff rather than a second change list.
+func TestBuild_DiffRowsMirrorTheArtifactRuntimeSplit(t *testing.T) {
+	drifted := `{
+	  "name": "my-app",
+	  "artifact": {"name": "my-app-artifact", "spec": {"containerGroups": [
+	    {"name": "default", "containers": [{"name": "primary", "port": 9090}]}
+	  ]}},
+	  "runtime": {"containerGroups": [{"name": "default", "replicaCount": 3}]}
+	}`
+
+	plan, err := Build(
+		loadedFrom(drifted),
+		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
+		builtCode(0),
+		Options{},
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, paths(plan.Artifact), rowPaths(changedRows(plan.DiffArtifact)))
+	assert.Equal(t, paths(plan.Runtime), rowPaths(changedRows(plan.DiffRuntime)))
+
+	require.Greater(t, len(plan.DiffArtifact), len(plan.Artifact), "the spec rows keep the agreeing leaves")
+
+	var port DiffRow
+
+	for _, r := range plan.DiffArtifact {
+		if r.Path == "containerGroups[default].containers[primary].port" && !r.Changed {
+			port = r
+		}
+	}
+
+	assert.False(t, port.Changed, "a leaf the file and the workload agree on is context")
+}
+
+// TestBuild_CreatePathComputesAllAdditionRows: a create has no live side to
+// compare against, so the diff walks the file against nil and every leaf is
+// an addition, walked out per leaf. The default plan's halves stay empty,
+// because a create says so once rather than per field.
+func TestBuild_CreatePathComputesAllAdditionRows(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		Live{State: StateUnbound},
+		CodeChange{Applies: true, FirstDeploy: true},
+		Options{},
+	)
+	require.NoError(t, err)
+
+	require.NotEmpty(t, plan.DiffArtifact)
+
+	for _, r := range plan.DiffArtifact {
+		assert.True(t, r.Absent, "row %s", r.Path)
+		assert.True(t, r.Changed, "row %s", r.Path)
+		assert.Nil(t, r.Have, "row %s", r.Path)
+	}
+
+	require.NotEmpty(t, plan.DiffRuntime)
+
+	for _, r := range plan.DiffRuntime {
+		assert.True(t, r.Absent, "row %s", r.Path)
+		assert.True(t, r.Changed, "row %s", r.Path)
+	}
+
+	assert.Empty(t, plan.Unmanaged, "nothing is live, so nothing is unmanaged")
+	assert.Empty(t, plan.Artifact)
+	assert.Empty(t, plan.Runtime)
+}
+
+// TestBuild_UnmanagedComesFromExtra: what the live object carries that the
+// file never names lands on the plan as paths, so the diff can count it.
+// The same element is unmanaged in both documents here -- the metrics
+// sidecar exists in the artifact's spec and in the workload's runtime -- and
+// one element is one field to a reader, so the list holds the path once.
+func TestBuild_UnmanagedComesFromExtra(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(planPayload),
+		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
+		builtCode(0),
+		Options{},
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"containerGroups[default].containers[metrics]"},
+		plan.Unmanaged)
+}
+
+// TestBuild_SyntheticArtifactIDChangeEntersTheDiffRows: the artifact id is
+// not a leaf of the spec, so no walk of it can produce the change. It is
+// merged into the rows all the same, because a change the default plan
+// prints must not be invisible in the diff.
+func TestBuild_SyntheticArtifactIDChangeEntersTheDiffRows(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload:    json.RawMessage(`{"name": "my-app", "artifactId": "68b0bbbb0000000000000002"}`),
+		ArtifactID: "68b0bbbb0000000000000002",
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactID = "68a0000000000000000000a1"
+
+	plan, err := Build(loaded, live, builtCode(0), Options{})
+	require.NoError(t, err)
+
+	changed := changedRows(plan.DiffArtifact)
+
+	require.Len(t, changed, 1)
+	assert.Equal(t, "artifactId", changed[0].Path)
+	assert.Equal(t, "68a0000000000000000000a1", changed[0].Have)
+	assert.Equal(t, "68b0bbbb0000000000000002", changed[0].Want)
+
+	out := renderDiff(t, appSummary, plan)
+
+	assert.Contains(t, out, "- artifactId: 68a0000000000000000000a1")
+	assert.Contains(t, out, "+ artifactId: 68b0bbbb0000000000000002")
+}
+
+// The type sits beside the spec for the same reason, and lands in the rows
+// the same way, with the defaulted live value on the left of the pair.
+func TestBuild_SyntheticArtifactTypeChangeEntersTheDiffRows(t *testing.T) {
+	loaded := Loaded{Compiled: &manifest.Compiled{
+		Payload: json.RawMessage(`{
+		  "name": "my-app",
+		  "artifact": {"name": "my-app-artifact", "type": "agent", "spec": {}}
+		}`),
+	}}
+
+	live := liveFrom(t, StateRunning, "", planLiveRuntime)
+	live.ArtifactType = "service"
+
+	plan, err := Build(loaded, live, builtCode(0), Options{})
+	require.NoError(t, err)
+
+	changed := changedRows(plan.DiffArtifact)
+
+	require.Len(t, changed, 1)
+	assert.Equal(t, "artifact.type", changed[0].Path)
+	assert.Equal(t, "service", changed[0].Have)
+	assert.Equal(t, "agent", changed[0].Want)
+
+	out := renderDiff(t, appSummary, plan)
+
+	assert.Contains(t, out, "- artifact.type: service")
+	assert.Contains(t, out, "+ artifact.type: agent")
+}
