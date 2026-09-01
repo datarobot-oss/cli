@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"sort"
 
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -34,6 +35,12 @@ const multipartFormField = "file"
 // by the pipe (one chunk in flight) plus the small envelope, regardless
 // of file size — important because the engine may upload multi-GiB zips.
 //
+// Fields ride in the multipart body, not the URL query: some server
+// routes (fromFile) bind their validator fields from the parsed form
+// only and silently ignore query parameters. Fields are framed as
+// complete parts BEFORE the file part so a streaming parser collects
+// them without buffering the file.
+//
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing
 // retry must redo the call from scratch (re-opening the source if it
@@ -41,6 +48,7 @@ const multipartFormField = "file"
 func newStreamingMultipartRequest(
 	requestURL string,
 	query url.Values,
+	fields url.Values,
 	filename string,
 	size int64,
 	body io.Reader,
@@ -49,7 +57,7 @@ func newStreamingMultipartRequest(
 		requestURL += "?" + query.Encode()
 	}
 
-	contentType, prologue, epilogue, err := multipartFraming(filename)
+	contentType, prologue, epilogue, err := multipartFraming(fields, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +73,9 @@ func newStreamingMultipartRequest(
 		return nil, fmt.Errorf("build multipart request: %w", err)
 	}
 
+	// ContentLength stays exact because the form fields are folded into
+	// the prologue; the file bytes still contribute exactly size, and the
+	// epilogue is unchanged.
 	if size >= 0 {
 		req.ContentLength = int64(len(prologue)) + size + int64(len(epilogue))
 	}
@@ -80,13 +91,34 @@ func newStreamingMultipartRequest(
 	return req, nil
 }
 
-// multipartFraming returns the prologue and epilogue around a single
-// file part. Going through multipart.Writer keeps the framing
-// RFC-2046-correct even though we stream the body separately.
-func multipartFraming(filename string) (string, []byte, []byte, error) {
+// multipartFraming returns the prologue and epilogue around the streamed
+// file part, with any extra form fields framed as complete parts first.
+// Fields must precede the file part: streaming parsers read form fields
+// as they arrive, so a server can collect its parameters before
+// committing to an arbitrarily large file stream. Field names are sorted
+// so the framing is deterministic. Going through multipart.Writer keeps
+// the framing RFC-2046-correct even though we stream the file content
+// separately.
+func multipartFraming(fields url.Values, filename string) (string, []byte, []byte, error) {
 	var head bytes.Buffer
 
 	w := multipart.NewWriter(&head)
+
+	names := make([]string, 0, len(fields))
+
+	for name := range fields {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	for _, name := range names {
+		for _, value := range fields[name] {
+			if err := w.WriteField(name, value); err != nil {
+				return "", nil, nil, fmt.Errorf("write multipart field %s: %w", name, err)
+			}
+		}
+	}
 
 	hdr := make(textproto.MIMEHeader)
 	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, multipartFormField, filename))

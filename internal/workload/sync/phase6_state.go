@@ -21,10 +21,29 @@ import (
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
-// phase6State writes the new BASE manifest, config, history entry, and
-// discards the rollback. Failures here do NOT roll back Phase 5 since
-// the remote has already advanced; the next sync will reconcile.
+// phase6State writes the new BASE manifest, config, and history entry, and
+// discards the rollback at entry. Failures here do NOT roll back Phase 5
+// since the remote has already advanced; the next sync will reconcile. A
+// Discard failure is the one entry failure that leaves the rollback dir
+// behind, and it aborts before any state write so that leftover dir pairs
+// with un-advanced state — the safe mid-Phase-5 shape (see below).
 func phase6State(e *Engine) error {
+	// Discard the rollback BEFORE any state write, unconditionally. When this
+	// runs, Phase 5 executed the whole plan successfully (e.rollback is only
+	// assigned after executePlan returns nil; a Phase 5 failure restores and
+	// returns without reaching here), so the backup tree has no remaining
+	// purpose — and Phase 6 never restores on failure because the remote has
+	// already advanced. Discarding first makes the cleanup independent of
+	// write success: if SaveManifest or SaveConfig below fails, the early
+	// return must not strand the rollback dir, because the next run's
+	// stale-rollback recovery would blindly copy the pre-sync bytes back
+	// into the working tree. Against the manifest this run just wrote, those
+	// resurrected bytes look like local edits and are silently re-uploaded
+	// over the remote.
+	if err := discardRollback(e); err != nil {
+		return err
+	}
+
 	if e.plan == nil {
 		return nil
 	}
@@ -48,22 +67,53 @@ func phase6State(e *Engine) error {
 		cfg.LastSyncedVersionID = &versionForState
 	}
 
-	if err := wapi.SaveConfig(e.projectDir, cfg); err != nil {
-		return fmt.Errorf("save config: %w", err)
+	// Build and write the manifest BEFORE writing config. Both orders leave
+	// a one-file window on failure, and the safe direction is the one where
+	// the next sync detects drift and rebuilds from real remote data:
+	//
+	//   - SaveManifest fails: config has not been advanced yet, so the next
+	//     sync sees the old version in config, detects drift, fetches
+	//     AllFiles, and rebuilds BASE from the remote — safe and
+	//     self-healing. The manifest write is retried by that same sync.
+	//
+	//   - SaveConfig fails: the manifest is already advanced while config
+	//     still names the old version. The version mismatch makes every
+	//     later sync detect drift and fetch the real remote; BASE (the
+	//     advanced manifest) truthfully describes that remote, so those
+	//     syncs compute an empty plan. An empty plan never reaches this
+	//     phase — Run returns before Execute on empty plans — so Phase 6
+	//     is skipped and config.json stays stale on each of those runs,
+	//     converging only when a later sync has real work to execute.
+	//     The rollback dir is already gone by then — discarded at entry
+	//     above — so no stale-restore can resurrect pre-sync bytes as
+	//     false local edits. The asymmetry is safe because it is loud: a
+	//     manifest ahead of config re-triggers drift detection on every
+	//     sync, so the window self-heals at the first sync with actual
+	//     work; the reverse direction below is silent and never heals.
+	//
+	// The converse (config advanced, manifest stale) is the poisonous
+	// direction: the next sync sees no drift, fast-paths, copies the stale
+	// BASE to REMOTE, and reports "Up to date." forever.
+	//
+	// This is data-safe because nothing between the two writes reads config
+	// from disk. buildNewBaseManifest reads only e.remote, e.plan, and
+	// e.uploadOutcome (all in-memory). e.config and populateResult are
+	// touched only after both writes complete.
+	manifest, err := buildNewBaseManifest(e, versionForState, now)
+	if err != nil {
+		return fmt.Errorf("build manifest: %w", err)
 	}
 
-	manifest := buildNewBaseManifest(e, versionForState, now)
 	if err := wapi.SaveManifest(e.projectDir, manifest); err != nil {
 		return fmt.Errorf("save manifest: %w", err)
 	}
 
-	if err := wapi.AppendHistory(e.projectDir, syncHistoryEntry(e, now)); err != nil {
-		return fmt.Errorf("append history: %w", err)
+	if err := wapi.SaveConfig(e.projectDir, cfg); err != nil {
+		return fmt.Errorf("save config: %w", err)
 	}
 
-	if e.rollback != nil {
-		_ = e.rollback.Discard()
-		e.rollback = nil
+	if err := wapi.AppendHistory(e.projectDir, syncHistoryEntry(e, now)); err != nil {
+		return fmt.Errorf("append history: %w", err)
 	}
 
 	e.config = cfg
@@ -72,9 +122,36 @@ func phase6State(e *Engine) error {
 	return nil
 }
 
-// buildNewBaseManifest computes NEW_BASE = REMOTE + uploads (local hashes)
-// - deletes, with conflicts resolved as remote-wins.
-func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time) wapi.Manifest {
+// discardRollback removes the rollback tree at Phase 6 entry. A Discard
+// failure must abort the phase here, before any state write: nothing is
+// persisted yet, so returning an error leaves the next run with the rollback
+// dir AND un-advanced state — the recoverable mid-Phase-5 outcome. The stale
+// restore puts back bytes the un-advanced manifest still matches, and the
+// next diff schedules downloads, not false uploads. Swallowing the error
+// instead strands the rollback dir next to advanced state, where the same
+// stale restore resurrects pre-sync bytes as phantom local edits which the
+// next sync silently re-uploads over the remote.
+func discardRollback(e *Engine) error {
+	if e.rollback == nil {
+		return nil
+	}
+
+	if err := e.rollback.Discard(); err != nil {
+		return fmt.Errorf("discard rollback: %w", err)
+	}
+
+	e.rollback = nil
+
+	return nil
+}
+
+// buildNewBaseManifest computes NEW_BASE = REMOTE + uploads (streamed hashes)
+// - deletes, with conflicts resolved as remote-wins. Each uploaded path's
+// hash and size come from the UploadOutcome recorded in Phase 5 — the bytes
+// that actually crossed the wire, not the Phase-2 planned hash. A missing
+// Sent entry is a hard error naming the path: a per-path fallback to the
+// planned hash IS the original poisoning bug and must not exist here.
+func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time) (wapi.Manifest, error) {
 	files := make(map[string]wapi.FileMeta, len(e.remote))
 
 	for path, fe := range e.remote {
@@ -82,7 +159,20 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 	}
 
 	for _, fa := range e.plan.Uploads {
-		files[fa.Path] = wapi.FileMeta{Hash: fa.LocalHash, Size: fa.LocalSize}
+		if e.uploadOutcome == nil {
+			return wapi.Manifest{}, fmt.Errorf("internal: no upload outcome recorded for %s", fa.Path)
+		}
+
+		sent, ok := e.uploadOutcome.Sent[fa.Path]
+		if !ok {
+			// Refuse rather than fall back: phase6 overwrites unconditionally,
+			// so a per-path fallback to fa.LocalHash silently reintroduces
+			// the poisoning. Either every upload has a Sent entry, or the
+			// sync fails.
+			return wapi.Manifest{}, fmt.Errorf("internal: no streamed hash recorded for %s", fa.Path)
+		}
+
+		files[fa.Path] = wapi.FileMeta{Hash: sent.Hash, Size: sent.Size}
 	}
 
 	for _, fa := range e.plan.Deletes {
@@ -105,7 +195,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 		SyncedAt:        &syncedAtCopy,
 		SyncedVersionID: &versionCopy,
 		Files:           files,
-	}
+	}, nil
 }
 
 // syncHistoryEntry assembles the JSONL line written to history.log.

@@ -16,10 +16,8 @@ package sync
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	stdsync "sync"
 	"testing"
 	"time"
 
@@ -54,93 +52,6 @@ func (f *fakeArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionID
 	}
 
 	return f.PatchFn(artifactID, catalogID, catalogVersionID)
-}
-
-// fakeFilesClient is the in-memory FilesAPI fake used by engine tests.
-// Unexpected methods return errors so off-happy-path drift fails loudly.
-type fakeFilesClient struct {
-	allFiles      map[string]filesapi.FileMeta
-	catalogID     string
-	versionID     string
-	stageID       string
-	uploadedFiles map[string][]byte
-	deletedPaths  []string
-	mu            stdsync.Mutex
-}
-
-func (f *fakeFilesClient) CreateCatalog() (*filesapi.CatalogResp, error) {
-	if f.catalogID == "" {
-		return nil, errors.New("fakeFilesClient.CreateCatalog: no catalogID configured")
-	}
-
-	return &filesapi.CatalogResp{CatalogID: f.catalogID, CatalogVersionID: ""}, nil
-}
-
-func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
-	if f.stageID == "" {
-		return nil, errors.New("fakeFilesClient.CreateStage: no stageID configured")
-	}
-
-	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil
-}
-
-func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Reader) error {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.uploadedFiles == nil {
-		f.uploadedFiles = map[string][]byte{}
-	}
-
-	f.uploadedFiles[name] = data
-
-	return nil
-}
-
-func (f *fakeFilesClient) ApplyStage(_, _, _ string) (*filesapi.ApplyStageResp, error) {
-	if f.versionID == "" {
-		return nil, errors.New("fakeFilesClient.ApplyStage: no versionID configured")
-	}
-
-	return &filesapi.ApplyStageResp{
-		CatalogID:        f.catalogID,
-		CatalogVersionID: f.versionID,
-		NumFiles:         len(f.uploadedFiles),
-	}, nil
-}
-
-func (f *fakeFilesClient) UploadFromZipNew(_ string, _ int64, _ io.Reader) (*filesapi.FromFileResp, error) {
-	return nil, errors.New("fakeFilesClient: UploadFromZipNew not expected")
-}
-
-func (f *fakeFilesClient) UploadFromZipExisting(_, _, _ string, _ int64, _ io.Reader) (*filesapi.FromFileResp, error) {
-	return nil, errors.New("fakeFilesClient: UploadFromZipExisting not expected")
-}
-
-func (f *fakeFilesClient) PollStatus(_ string) (*filesapi.StatusResp, error) {
-	return nil, errors.New("fakeFilesClient: PollStatus not expected")
-}
-
-func (f *fakeFilesClient) AllFiles(_, _ string) (map[string]filesapi.FileMeta, error) {
-	return f.allFiles, nil
-}
-
-func (f *fakeFilesClient) DownloadFile(_, _, _ string, _ io.Writer) (string, int64, error) {
-	return "", 0, errors.New("fakeFilesClient: DownloadFile not expected")
-}
-
-func (f *fakeFilesClient) DeleteFiles(_ string, paths []string) (*filesapi.DeleteFilesResp, error) {
-	f.deletedPaths = append(f.deletedPaths, paths...)
-	return &filesapi.DeleteFilesResp{}, nil
-}
-
-func (f *fakeFilesClient) ListVersions(_ string, _ int) ([]filesapi.CatalogVersion, error) {
-	return nil, errors.New("fakeFilesClient: ListVersions not expected")
 }
 
 func initProject(t *testing.T, files map[string]string) string {

@@ -105,6 +105,7 @@ type Engine struct {
 	rollback       *Rollback
 	newCatalogID   string
 	newVersionID   string
+	uploadOutcome  *UploadOutcome
 	conflictCopies []string
 	result         *Result
 	startedAt      time.Time

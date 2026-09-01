@@ -364,25 +364,38 @@ func TestPollStatus_CompletedRedirect(t *testing.T) {
 	assert.True(t, IsTerminalStatus(resp.Status))
 }
 
+// TestUploadFromZipExisting proves the REPLACE request rides in the
+// multipart form body. The server's /files/<id>/fromFile/ route binds its
+// validator fields from the parsed form only and silently defaults to
+// RENAME when the overwrite field is absent — a query parameter is never
+// read, and RENAME would store re-uploaded paths as "name (2).ext" while
+// the original path keeps its stale bytes. Form fields must also precede
+// the file part: streaming parsers collect fields as they arrive, before
+// committing to a potentially huge file stream.
 func TestUploadFromZipExisting(t *testing.T) {
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/files/cid-1/fromFile/", r.URL.Path)
 		assert.Equal(t, "true", r.URL.Query().Get("useArchiveContents"))
-		assert.Equal(t, "REPLACE", r.URL.Query().Get("overwrite"))
+		assert.Empty(t, r.URL.Query().Get("overwrite"),
+			"overwrite in the URL query is silently ignored by the server")
 		assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
-		mr, err := r.MultipartReader()
+		parts, err := readMultipartParts(r)
 		if !assert.NoError(t, err) {
 			return
 		}
 
-		part, err := mr.NextPart()
-		if !assert.NoError(t, err) {
+		if !assert.Len(t, parts, 2) {
 			return
 		}
 
-		assert.Equal(t, "file", part.FormName())
-		assert.Equal(t, "changes.zip", part.FileName())
+		assert.Equal(t, "overwrite", parts[0].Name, "form fields must precede the file part")
+		assert.Equal(t, "REPLACE", string(parts[0].Content))
+		assert.Empty(t, parts[0].FileName)
+
+		assert.Equal(t, "file", parts[1].Name)
+		assert.Equal(t, "changes.zip", parts[1].FileName)
+		assert.Equal(t, "PK\x03\x04fake-zip", string(parts[1].Content))
 
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
