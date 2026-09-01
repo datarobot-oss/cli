@@ -107,9 +107,42 @@ type Options struct {
 	// signal is carried by the exit code rather than dropped.
 	JSONOutput bool
 	Answers    Answers
+	// Remedy is the command a drift notice names when it says how to apply
+	// what it found. Empty is `dr workload config`, the command this package
+	// is the flow behind. A deploy sets its own, because both flags are on it
+	// too: sending the reader to another command to reconcile a file the run
+	// has just read is a detour, and one that finds the manifest by a
+	// different rule than the deploy did.
+	Remedy string
+	// DriftOnly narrows the notices to what has moved between the two files,
+	// leaving out everything that is true of the project on every run: the
+	// values behind credential references, which nothing can compare; the
+	// names the classifier reads as local-only, which no flag will ever add;
+	// an entry left naming the credential placeholder; a manifest whose shape
+	// no flag can edit.
+	//
+	// A command about configuration says all of it, because that is what it
+	// is for and because it is the one place those verdicts are ever
+	// mentioned. A deploy says only what changed. None of the rest can be
+	// settled by anything the reader is about to run, so on a deploy they
+	// print on every run of every project that has them, and a line that
+	// always prints is one the reader stops seeing, taking the drift beside
+	// it down too.
+	DriftOnly bool
 	// Stderr carries the wizard and its summary. Nothing the wizard says
 	// belongs on stdout, which is the command's machine-readable channel.
 	Stderr io.Writer
+}
+
+// remedy renders the command a drift notice sends the reader to, quoted the
+// way every other command reference in this package is.
+func (o Options) remedy(flag string) string {
+	command := o.Remedy
+	if command == "" {
+		command = "dr workload config"
+	}
+
+	return "'" + command + " " + flag + "'"
 }
 
 // Result is what a run settled.
@@ -317,14 +350,80 @@ func (o Options) configured(path, dir string) (Result, error) {
 // design, so the drift it leaves behind is invisible until a container fails
 // at first use, and this is the one command in a position to mention it.
 func (o Options) existing(path string, parsed *manifest.Manifest, detected Detected) (Result, error) {
-	o.warnEnvDrift(parsed, detected)
-	o.warnValueDrift(parsed, detected)
+	o.reportDrift(parsed, detected)
 
 	return Result{
 		Path:   path,
 		Action: ActionUnchanged,
 		Draft:  draftOf(parsed),
 	}, nil
+}
+
+// reportDrift is the whole of what these two files have to say about each
+// other. Every caller goes through it, so a deploy and a `dr workload config`
+// cannot reach different conclusions about the same pair; what they differ in
+// is Options.DriftOnly, which is a question about register rather than about
+// which comparisons ran.
+func (o Options) reportDrift(parsed *manifest.Manifest, detected Detected) {
+	o.warnEnvDrift(parsed, detected)
+	o.warnValueDrift(parsed, detected)
+}
+
+// ReportEnvDrift says what .env and the manifest disagree about, for a command
+// that has not been asked to do anything about it. It reads the two files,
+// writes to neither, and reports only what has moved between them: see
+// Options.DriftOnly for what a deploy leaves to `dr workload config`.
+//
+// The comparison is the one existing() runs, reached through the same
+// reportDrift, so a deploy and a setup run cannot come to different
+// conclusions about the same pair.
+//
+// The parameters are spelled out rather than taken as Options because the
+// contract is narrow and an Options would invite a caller to fill in fields
+// this ignores. dir must be absolute: Run normalises its own, and this is
+// called with a path a manifest was already loaded from.
+//
+// remedy is the command whose flags settle what is found, without the flag:
+// "dr workload up", or that plus the --dir the caller was given.
+//
+// Nothing here can fail the caller. This is a courtesy on a command that was
+// asked to do something else, so a .env that will not parse is reported and
+// then left alone.
+func ReportEnvDrift(dir, remedy string, stderr io.Writer, parsed *manifest.Manifest) {
+	if stderr == nil || parsed == nil {
+		return
+	}
+
+	opts := Options{Dir: dir, Remedy: remedy, DriftOnly: true, Stderr: stderr}
+
+	detected := detectEnv(dir)
+
+	opts.warnEnvFile(detected)
+
+	// Nothing was read, so there is nothing to compare, and a silent drift
+	// notice means "the two files agree" everywhere else it appears.
+	if detected.EnvErr != nil {
+		return
+	}
+
+	opts.reportDrift(parsed, detected)
+}
+
+// detectEnv reads the one file a drift comparison is about.
+//
+// Detect answers a wizard's whole opening question: it stats the Dockerfile
+// and reads it for an EXPOSE, stats every root marker, and for a directory
+// carrying none of them scans the subdirectories for somewhere better to set
+// up, at a manifest stat plus a marker sweep per entry. That budget was
+// written for one interactive run. A notice that only wants to know what .env
+// holds should not spend it on every deploy, and the answers it would get are
+// all discarded here anyway.
+func detectEnv(dir string) Detected {
+	detected := Detected{Dir: dir}
+
+	detected.EnvVars, detected.EnvErr = envVars(filepath.Join(dir, EnvFileName))
+
+	return detected
 }
 
 // warnEnvDrift names the .env variables the manifest does not declare, and the
@@ -361,6 +460,15 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 	// count is of what .env offers rather than of a drift this cannot measure,
 	// and the refusal says what the shape is and what to do instead.
 	if blocked != nil {
+		// A shape no flag can edit is a fact about the file, not a difference
+		// between the two, and a deploy that names it names something the
+		// reader can only settle by hand. The count is of what .env offers
+		// rather than of a drift this cannot measure, so on a deploy it would
+		// also be reporting as missing names the container may already carry.
+		if o.DriftOnly {
+			return
+		}
+
 		if len(wanted) > 0 {
 			fmt.Fprintf(o.Stderr,
 				"%s defines %d %s, and %s cannot be added automatically: %v\n",
@@ -387,10 +495,10 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 
 	fmt.Fprintf(o.Stderr,
 		"%s defines %d %s the manifest does not declare, so %s would not reach the container: %s.\n"+
-			"  Add %s with 'dr workload config --import-env'.\n",
+			"  Add %s with %s.\n",
 		EnvFileName, len(missing), Plural(len(missing), "variable", "variables"),
 		Plural(len(missing), "it", "they"), JoinNames(missing),
-		Plural(len(missing), "it", "them"))
+		Plural(len(missing), "it", "them"), o.remedy("--import-env"))
 
 	// What the flag would not add is news whether or not it has something to
 	// add: a name held back is held back either way, and only saying so when
@@ -410,6 +518,10 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 // Names only, never values. Both sides of a comparison are the user's own
 // configuration and the classifier's verdict on which of them is sensitive is
 // a heuristic.
+//
+// Under Options.DriftOnly only the first of the five reports survives. The
+// other four name values no flag will settle, so they say the same thing on
+// every run until the file is edited by hand.
 func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 	if o.quiet() || o.Answers.SkipEnv {
 		return
@@ -433,8 +545,12 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 			"%s gives %d declared %s a different value from the manifest, and the manifest is what deploys: %s.\n%s",
 			EnvFileName, len(changed), Plural(len(changed), "variable", "variables"),
 			JoinNames(changed),
-			applyLine(blocker, fmt.Sprintf("Apply %s with 'dr workload config --update-env'.",
-				Plural(len(changed), "it", "them"))))
+			applyLine(blocker, fmt.Sprintf("Apply %s with %s.",
+				Plural(len(changed), "it", "them"), o.remedy("--update-env"))))
+	}
+
+	if o.DriftOnly {
+		return
 	}
 
 	if len(reclassified) > 0 {
@@ -465,17 +581,18 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 			JoinNames(structured), Plural(len(structured), "it", "them"), EnvFileName)
 	}
 
-	// Advised unconditionally, because a re-send is not an edit to this file:
-	// the id stays what it was, so a manifest no rewrite can touch is still one
-	// whose secrets can be rotated. The names in this list were read off the
-	// declarations the rotation walks, so having any at all is proof it can run.
+	// Advised without a blocker check, because a re-send is not an edit to
+	// this file: the id stays what it was, so a manifest no rewrite can touch
+	// is still one whose secrets can be rotated. The names in this list were
+	// read off the declarations the rotation walks, so having any at all is
+	// proof it can run.
 	if len(unverifiable) > 0 {
 		fmt.Fprintf(o.Stderr,
 			"%d %s stored as %s, whose values cannot be compared with %s because the platform never returns them: %s.\n"+
-				"  If one was rotated locally, re-send it with 'dr workload config --update-env'.\n",
+				"  If one was rotated locally, re-send it with %s.\n",
 			len(unverifiable), Plural(len(unverifiable), "variable is", "variables are"),
 			Plural(len(unverifiable), "a credential", "credentials"), EnvFileName,
-			JoinNames(unverifiable))
+			JoinNames(unverifiable), o.remedy("--update-env"))
 	}
 }
 
@@ -574,6 +691,11 @@ func (o Options) localOnlyNames(detected Detected) map[string]bool {
 // later import skips it: without this line the retry after the credential
 // store comes back reports "nothing to add" about a file a deploy refuses.
 //
+// Silent entirely under Options.DriftOnly. Every line here is a standing fact
+// about the pair rather than a change to them: a classifier verdict holds
+// until the file changes, and a placeholder is already the subject of the
+// refusal the deploy raises for itself when it reaches the credential.
+//
 // blocked is why the manifest's declared names cannot be read, or nil when
 // they can. The local-only line rests on that set and is dropped without it:
 // a container inheriting its environment may already carry every one of these
@@ -582,7 +704,7 @@ func (o Options) localOnlyNames(detected Detected) map[string]bool {
 // either way, because it resolves aliases and so reads the same entries the
 // deploy does.
 func (o Options) warnEnvHeldBack(parsed *manifest.Manifest, detected Detected, blocked error) {
-	if o.quiet() || o.Answers.SkipEnv {
+	if o.quiet() || o.Answers.SkipEnv || o.DriftOnly {
 		return
 	}
 
@@ -665,24 +787,61 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 		}
 	}
 
+	o.reportEnvOutcome(parsed, detected, result)
+
+	return result, nil
+}
+
+// reportEnvOutcome is what a run that asked for the flags has left to say once
+// they have done what they can.
+//
+// parsed predates any rewrite the run made, which is sound for all three
+// branches: every comparison they reach is of names, and neither flag's
+// rewrite adds or removes one.
+func (o Options) reportEnvOutcome(parsed *manifest.Manifest, detected Detected, result Result) {
 	// A rotation leaves the file untouched, so the action alone cannot tell a
 	// run that did nothing from one that re-sent every secret it found, and
 	// only the first of those has "nothing to do" to report.
 	if result.Action == ActionUnchanged && result.EnvSecretsRotated == 0 && result.EnvSecretsNotRotated == 0 {
 		o.reportNothingToImport(parsed, detected)
 
-		return result, nil
+		return
 	}
 
-	// What the flags would not touch is news whether or not they touched
-	// something: a name held back is held back either way, and a placeholder
-	// left by an earlier run is still what the next deploy refuses.
-	//
-	// nil because this path is downstream of the CanDeclareEnvVars above, so
-	// the declared names the local-only line rests on are readable.
-	o.warnEnvHeldBack(parsed, detected, nil)
+	o.warnNamesNotAdded(parsed, detected)
+}
 
-	return result, nil
+// warnNamesNotAdded is what a run that has finished with the flags owes about
+// the names it did not put in the file.
+//
+// An update adds no names, so one the manifest is missing is still missing
+// when it finishes, and without this the run that reconciled every value it
+// could reads as a clean bill of health for a file that is short a variable.
+// warnEnvDrift ends in the held-back notice itself, so the two branches are
+// exclusive rather than cumulative.
+//
+// An import is the other way round: it has just put those names in the file,
+// so naming them now would report as missing exactly what the run added.
+//
+// A manifest the flags cannot edit takes the held-back branch whichever flag
+// ran. warnEnvDrift's refusal there is add-shaped, counting the whole of .env
+// as un-addable, which is an errand to put in front of a run that was never
+// adding anything; and the blocker is passed on rather than replaced with nil,
+// because the local-only line rests on declared names this shape cannot read.
+//
+// parsed predates any rewrite this run made, which is sound here: every
+// comparison below is of names, and neither flag's rewrite adds or removes
+// one.
+func (o Options) warnNamesNotAdded(parsed *manifest.Manifest, detected Detected) {
+	blocked := parsed.CanDeclareEnvVars()
+
+	if !o.ImportEnv && blocked == nil {
+		o.warnEnvDrift(parsed, detected)
+
+		return
+	}
+
+	o.warnEnvHeldBack(parsed, detected, blocked)
 }
 
 // updateEnv brings declared variables back in line with .env: a literal is
@@ -1007,20 +1166,7 @@ func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detec
 		fmt.Fprintf(o.Stderr, "%s %s.\n", ShortPath(parsed.Path), o.nothingLeftToDo())
 	}
 
-	// An update alone says nothing about names the manifest is missing, so the
-	// drift notice still owes them: without it the run reads as a clean bill
-	// of health for a file that is short a variable. That notice ends in the
-	// held-back one itself, so this returns rather than falling through and
-	// printing a placeholder or a local-only name a second time.
-	if !o.ImportEnv {
-		o.warnEnvDrift(parsed, detected)
-
-		return
-	}
-
-	// nil because editEnv refuses a manifest whose declared names cannot be
-	// read before it ever gets as far as importing nothing.
-	o.warnEnvHeldBack(parsed, detected, nil)
+	o.warnNamesNotAdded(parsed, detected)
 }
 
 // hasUnappliedDrift reports whether an update that changed nothing left a
@@ -1510,6 +1656,23 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 // user declined the import, so a failed read is not news either.
 func (o Options) warnEnvFile(detected Detected) {
 	if o.Answers.SkipEnv {
+		return
+	}
+
+	// A caller that reads .env only to compare it has no import to report the
+	// failure of, and no hand edit to recommend: what it lost is the
+	// comparison, and the manifest it is about to deploy is complete without
+	// the file either way. Saying "nothing from it was imported" there
+	// describes an act that was never going to happen.
+	if o.DriftOnly {
+		if o.quiet() || detected.EnvErr == nil {
+			return
+		}
+
+		fmt.Fprintf(o.Stderr,
+			"Warning: %v. %s is what deploys and is unaffected, but the two cannot be compared "+
+				"until the file parses.\n", detected.EnvErr, manifest.FileName)
+
 		return
 	}
 

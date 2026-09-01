@@ -274,6 +274,8 @@ func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
 		assert.True(t, opts.ImportEnv)
 		assert.Equal(t, dir, opts.Dir, "the edit lands next to the manifest being deployed")
+		assert.Equal(t, "dr workload up"+manifest.DirFlag(dir), opts.Remedy,
+			"what the edit's own notices tell the reader to run next")
 
 		// What the real wizard does: the variable is in the file by the time
 		// it returns.
@@ -312,20 +314,104 @@ func TestLoad_UpdateEnvCarriesTheRotationCount(t *testing.T) {
 	assert.Equal(t, 0, loaded.Env.KeysAdded)
 }
 
-// Without the flags nothing reads .env, which is what keeps a deploy a
-// function of the committed repo: a fresh CI clone has no .env at all.
+// Without the flags nothing edits .env or the manifest, which is what keeps a
+// deploy a function of the committed repo: a fresh CI clone has no .env at
+// all. The notice below reads the file; the wizard, which is what would act on
+// it, is not run.
 func TestLoad_WithoutTheFlagsTheWizardIsNotRun(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, boundManifest)
 
 	swap(t, &runWizardFn, func(wizard.Options) (wizard.Result, error) {
-		t.Fatal("the deploy read .env without being asked to")
+		t.Fatal("the deploy edited .env without being asked to")
 
 		return wizard.Result{}, nil
 	})
 
 	_, err := load(dir, Options{})
 	require.NoError(t, err)
+}
+
+// Reading the file to say the two have parted is not deploying from it. The
+// silence this replaces let a run whose .env had just been edited answer
+// "Already up to date", which is a claim about being in sync made without
+// looking at the file the reader had in front of them.
+func TestLoad_DriftNoticeNamesTheDeploysOwnFlags(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	writeEnv(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
+
+	stderr := &strings.Builder{}
+
+	_, err := load(dir, Options{Stderr: stderr})
+	require.NoError(t, err)
+
+	out := stderr.String()
+
+	// With the --dir this run was given, because `config` looks only where it
+	// is pointed while `up` walks upward: a bare flag would name a command
+	// that cannot find the file the notice is about.
+	at := manifest.DirFlag(dir)
+
+	assert.Contains(t, out, "REGION", "a name .env has and the manifest does not")
+	assert.Contains(t, out, "LOG_LEVEL", "a declared value .env no longer agrees with")
+	assert.Contains(t, out, "'dr workload up"+at+" --import-env'")
+	assert.Contains(t, out, "'dr workload up"+at+" --update-env'")
+
+	assert.NotContains(t, out, "dr workload config",
+		"both flags are on this command, so another one is a detour")
+	assert.NotContains(t, out, "trace", "names, never values")
+}
+
+// None of these can be settled by anything the reader is about to run, so on a
+// deploy each would print on every run for the life of the project. The
+// command that is about configuration keeps them; this one drops them, or the
+// drift beside them is what the reader learns to skip.
+func TestLoad_DriftNoticeLeavesTheStandingLinesToConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, strings.Replace(boundManifest,
+		"dr-credential:68f0cccc0000000000000003/apiToken", "dr-credential:PLACEHOLDER/apiToken", 1))
+	writeEnv(t, dir, "LOG_LEVEL=debug\n"+
+		// A credential's value, which nothing can compare with .env.
+		"OPENAI_API_KEY=fixture-not-a-real-key-1a2b3c4d\n"+
+		// A classifier verdict: held back on purpose, and no flag adds it.
+		"DATABASE_URL=postgres://localhost:5432/dev\n")
+
+	stderr := &strings.Builder{}
+
+	_, err := load(dir, Options{Stderr: stderr})
+	require.NoError(t, err)
+
+	// The placeholder is the third: the deploy raises its own refusal when it
+	// reaches the credential, so saying it here is the same news twice.
+	assert.Empty(t, stderr.String(), "the two files agree about everything that has moved")
+}
+
+// A .env nobody can parse is worth saying, but not in the words setup uses for
+// it: a deploy has no import whose failure to report, and the manifest it
+// carries is complete without the file either way.
+func TestLoad_UnreadableEnvIsReportedInTheDeploysOwnTerms(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	writeEnv(t, dir, "LOG_LEVEL=debug\n\"BAD NAME\"=x\n")
+
+	stderr := &strings.Builder{}
+
+	_, err := load(dir, Options{Stderr: stderr})
+	require.NoError(t, err, "an unreadable .env is not the deploy's problem to fail on")
+
+	out := stderr.String()
+
+	assert.Contains(t, out, "cannot be compared until the file parses")
+	assert.NotContains(t, out, "Nothing from it was imported",
+		"a deploy has no import for that to be true of")
+}
+
+// writeEnv drops content at dir/.env, next to the manifest the deploy reads.
+func writeEnv(t *testing.T, dir, content string) {
+	t.Helper()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName), []byte(content), 0o600))
 }
 
 // A dry run promises the file is not touched, and an import that minted a

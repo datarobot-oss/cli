@@ -117,8 +117,10 @@ type Options struct {
 	// something you have to leave the command to change.
 	//
 	// Opt-in, and that is what keeps a deploy a function of the committed
-	// repo: a run without them reads nothing but the manifest, so a fresh CI
-	// clone with no .env deploys exactly what your laptop deploys.
+	// repo: a run without them changes neither file and sends nothing from
+	// .env, so a fresh CI clone with no .env deploys exactly what your laptop
+	// deploys. The file is still read, for the notice that says the two have
+	// parted.
 	ImportEnv bool
 	UpdateEnv bool
 
@@ -538,7 +540,15 @@ func load(dir string, opts Options) (Loaded, error) {
 			"%w. Run 'dr workload config' to create one, then deploy", err)
 	}
 
-	setup, err := runWizardFn(wizard.Options{Dir: dir, Stderr: opts.Stderr})
+	// Remedy for the same reason the deploy path sets it: nothing setup prints
+	// today names a flag, but the fallback is `dr workload config`, and a
+	// default that is wrong for this caller is one nobody will notice going
+	// wrong.
+	setup, err := runWizardFn(wizard.Options{
+		Dir:    dir,
+		Remedy: "dr workload up" + manifest.DirFlag(dir),
+		Stderr: opts.Stderr,
+	})
 	if err != nil {
 		return Loaded{}, err
 	}
@@ -554,7 +564,9 @@ func load(dir string, opts Options) (Loaded, error) {
 }
 
 // editEnv applies the .env re-entry this run asked for, against the manifest
-// this deploy is about, and re-reads the file when the edit moved it.
+// this deploy is about, and re-reads the file when the edit moved it. Asked
+// for nothing, it reports what the two files disagree about and changes
+// neither.
 //
 // It runs before the plan rather than after, so what reaches the platform is
 // the file as edited: an import that landed and a deploy that did not carry it
@@ -564,12 +576,29 @@ func load(dir string, opts Options) (Loaded, error) {
 // The wizard is given the manifest's own directory rather than this command's,
 // because `up` searches upward for the file and the edit has to land on the one
 // being deployed, next to the .env that pairs with it.
+//
+// The notice is the whole of what a bare deploy does with .env, and it keeps
+// the rule the flags were built around rather than bending it: a deploy stays
+// a function of the committed repo, and reading the file to say the two have
+// parted is not deploying from it. The alternative was the silence this
+// replaces, where a run whose .env had just been edited answered "Already up
+// to date", which is a claim about being in sync made without looking at the
+// file the reader had in front of them. `dr workload config` had the notice
+// all along, and nothing on the deploy path pointed at it.
 func (o Options) editEnv(loaded Loaded) (Loaded, error) {
+	dir := loaded.ProjectDir
+
+	// What a notice tells the reader to run, carrying this run's --dir.
+	// `config` looks only in the directory it is given while `up` walks upward
+	// for the manifest, so a bare flag on a deploy made from a subdirectory
+	// would name a command that cannot find the file the notice is about.
+	remedy := "dr workload up" + dirFlagFor(loaded)
+
 	if !o.ImportEnv && !o.UpdateEnv {
+		o.reportEnvDrift(dir, remedy, loaded.Manifest)
+
 		return loaded, nil
 	}
-
-	dir := filepath.Dir(loaded.Path)
 
 	// A dry run previews the edit and writes nothing, which is the only way
 	// `up --dry-run` can keep its promise: an import that minted a credential
@@ -581,6 +610,7 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 		DryRun:         o.DryRun,
 		ImportEnv:      o.ImportEnv,
 		UpdateEnv:      o.UpdateEnv,
+		Remedy:         remedy,
 		Stderr:         o.Stderr,
 	})
 	if err != nil {
@@ -606,6 +636,28 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 	}
 
 	return withEnvEdit(reloaded, edit), nil
+}
+
+// reportEnvDrift puts the drift notice on the deploy's own margin and
+// separates it from the plan below.
+//
+// Only the notice is moved. The wizard's status lines, the ones that report
+// what an import or a rotation did, already carry the deploy's two spaces
+// because they were written to sit beside its own; wrapping those as well
+// would put them at four while `up`'s own summary of the same edit stayed at
+// two. Its prose is the half that starts flush.
+func (o Options) reportEnvDrift(dir, remedy string, parsed *manifest.Manifest) {
+	if o.Stderr == nil {
+		return
+	}
+
+	// No separator after it. The plan supplies its own leading newline when it
+	// has no header to print and none when it has, so a blank line added here
+	// would be doubled on a create; and every other preamble this command
+	// prints, the ignore notice and the summary of an env edit, already sits
+	// straight above the plan. Whether the plan should lead with a blank line
+	// of its own is a question about all of them.
+	wizard.ReportEnvDrift(dir, remedy, indent(o.Stderr, deployMargin), parsed)
 }
 
 // reportEnvEdit says what the flags did to the manifest, before the plan that

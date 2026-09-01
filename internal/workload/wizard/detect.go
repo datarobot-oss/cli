@@ -40,8 +40,8 @@ const DockerfileName = "Dockerfile"
 const DefaultDockerfilePath = "./" + DockerfileName
 
 // EnvFileName is the local environment file the wizard looks for. It is read
-// in full: `up` deploys the manifest and never reads .env, so anything kept
-// only there would not reach the container. Ordinary settings are copied into
+// in full: a deploy carries the manifest and never sends anything from .env,
+// so anything kept only there would not reach the container. Ordinary settings are copied into
 // the manifest as literals and secrets become credential references, which is
 // why the values are classified rather than merely counted.
 const EnvFileName = ".env"
@@ -72,9 +72,9 @@ type Detected struct {
 	// EnvVars are the variables the project's .env defines, classified, in
 	// the order the file defines them; empty when there is no .env.
 	//
-	// `up` deploys the manifest and never reads .env, so a project that keeps
-	// its configuration there would otherwise deploy without any of it and
-	// find out at runtime. The classification decides how each one is
+	// A deploy carries the manifest and sends nothing from .env, so a project
+	// that keeps its configuration there would otherwise deploy without any of
+	// it and find out at runtime. The classification decides how each one is
 	// written: an ordinary value as a literal, a secret as a credential
 	// reference whose id the user fills in. Every row is overridable.
 	EnvVars []EnvVar
