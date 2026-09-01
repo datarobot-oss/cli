@@ -389,6 +389,57 @@ func TestRunE_WithoutForceStillRefusesAndNamesTheFlag(t *testing.T) {
 	assert.Equal(t, "68b0aaaa0000000000000001", cfg.ArtifactID, "a refusal changes nothing")
 }
 
+// The id being replaced is the undo, and it has to survive the format the
+// scripts use. --force returned before printRelinked, so JSON was the one way
+// to run this command that lost it.
+func TestRunE_ForceJSONCarriesTheArtifactItReplaced(t *testing.T) {
+	tmp := t.TempDir()
+
+	require.NoError(t, wapi.Initialize(tmp, wapi.InitOptions{ArtifactID: "68b0aaaa0000000000000001"}))
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "my-agent", "DRAFT", nil), nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{"68b0dddd0000000000000004"})
+	require.NoError(t, cmd.Flags().Set("force", "true"))
+	require.NoError(t, cmd.Flags().Set("output-format", "json"))
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, "68b0dddd0000000000000004", result["artifactId"])
+	assert.Equal(t, "68b0aaaa0000000000000001", result["previousArtifactId"],
+		"the id it stopped pushing to is how a mistaken --force is undone")
+}
+
+// A fresh link replaced nothing, so the field is present and null rather than
+// carrying an id from somewhere else.
+func TestRunE_JSONHasNoPreviousArtifactForAFreshLink(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "my-agent", "DRAFT", nil), nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{"68b0dddd0000000000000004"})
+	require.NoError(t, cmd.Flags().Set("output-format", "json"))
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	require.Contains(t, result, "previousArtifactId")
+	assert.Nil(t, result["previousArtifactId"])
+}
+
 func TestCmd_RegistersForceFlag(t *testing.T) {
 	assert.NotNil(t, Cmd().Flags().Lookup("force"))
 }

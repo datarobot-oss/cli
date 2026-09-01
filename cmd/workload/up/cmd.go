@@ -332,6 +332,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	result, runErr := runFn(up.Options{
 		Dir:            dir,
 		NonInteractive: nonInteractive,
+		Yes:            yes,
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,

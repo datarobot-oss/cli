@@ -78,7 +78,18 @@ type Options struct {
 
 	// NonInteractive forbids prompting. With no manifest it turns the setup
 	// wizard into an error naming the command that writes one.
+	//
+	// It is not consent. It is true for --output json and for a run with no
+	// terminal, neither of which is anyone saying yes, so a step that must be
+	// agreed to reads Yes instead.
 	NonInteractive bool
+
+	// Yes is the caller saying so explicitly: --yes, or the env var that
+	// stands in for it. It is the only thing that stands in for an answer the
+	// user would otherwise type, which is why it is separate from
+	// NonInteractive — a piped stdin means nobody can be asked, not that the
+	// answer is yes.
+	Yes bool
 
 	// DryRun stops after the plan.
 	DryRun bool

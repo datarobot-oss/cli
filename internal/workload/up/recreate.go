@@ -128,9 +128,19 @@ func clearBinding(loaded Loaded, live Live, report *reporter) {
 // question is answered by reflex, and the workload being deleted is the one
 // piece of information that makes the answer considered.
 //
-// The three-way shape mirrors confirmRoll exactly. Being able to ask settles it;
+// The three-way shape mirrors confirmRoll's. Being able to ask settles it;
 // --yes is a caller who has already said so; and no terminal with no --yes is
 // the case that must not proceed silently.
+//
+// Where it deliberately parts from confirmRoll is the middle branch, which
+// reads Yes rather than NonInteractive. NonInteractive is also true for a run
+// whose stdin is a pipe, so keying on it here meant
+// `dr workload up --recreate < /dev/null` deleted the workload with no prompt
+// and no --yes, and made the refusal below unreachable from the command.
+// `dr workload delete` settles the same question the same way, and the flag
+// help, the docs and the changelog all promise this one asks unless --yes.
+// Rolling a locked version can be waved through by a reviewed pipeline;
+// deleting cannot, because there is nothing on the other side of it.
 func confirmRecreate(loaded Loaded, live Live, opts Options) (bool, error) {
 	workloadName := name(loaded, live)
 
@@ -141,7 +151,7 @@ func confirmRecreate(loaded Loaded, live Live, opts Options) (bool, error) {
 			tui.WarnStyle.Render("`"+workloadName+"`"), live.Status), workloadName)
 	}
 
-	if opts.NonInteractive {
+	if opts.Yes {
 		return true, nil
 	}
 

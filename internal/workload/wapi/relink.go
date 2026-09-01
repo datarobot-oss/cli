@@ -41,7 +41,10 @@ import (
 // last synced into the artifact being left behind.
 //
 // CreatedAt is kept. It records when this directory became a linked project,
-// which re-pointing it does not change.
+// which re-pointing it does not change. CLIVersion is stamped fresh, because it
+// records which build last wrote the file, and this write is the one that did.
+// Those two and the three above are the whole of Config: nothing is dropped by
+// omission here, and a field added to Config later has to be settled here too.
 //
 // Returns ErrNotInitialized when there is no link to move. Relinking is not a
 // way to create one: Initialize is, and it can say what a fresh link needs.

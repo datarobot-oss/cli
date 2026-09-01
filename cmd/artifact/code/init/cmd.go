@@ -163,11 +163,18 @@ func relink(dir string, art workload.Artifact, opts wapi.InitOptions, outputForm
 		return err
 	}
 
-	// The JSON envelope is the same shape a fresh link produces: a caller
-	// parsing it is asking which artifact this directory pushes to, and the
-	// answer does not depend on whether it had a different one a moment ago.
+	// The JSON envelope is the shape a fresh link produces plus the one thing
+	// only a relink has: the artifact it came from. A caller parsing this is
+	// asking which artifact the directory pushes to, and the id it stopped
+	// pushing to is the undo — the same id the text path prints, which is why
+	// it cannot be the text path's alone.
 	if outputFormat == outputformat.OutputFormatJSON {
-		return renderInitResult(outputFormat, newInitResult(art, dir))
+		result := newInitResult(art, dir)
+		if previous != "" {
+			result.PreviousArtifactID = &previous
+		}
+
+		return renderInitResult(outputFormat, result)
 	}
 
 	printRelinked(previous, opts.ArtifactID, dir)

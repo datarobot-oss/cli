@@ -52,28 +52,34 @@ YAML
 # The deploy is expected to fail: the container exits and the workload lands
 # errored. What is under test is the message it fails with.
 wl::dr_capture workload up --dir "$work" --yes
-if [[ "$WL_RC" -eq 0 ]]; then
-    wl::skip "the workload came up; this scenario needs one that does not"
-    wl::stop_timer
-    exit 0
-fi
+up_rc="$WL_RC"
 
-# The create writes the binding before the wait, so a run that got as far as a
-# workload has an id in the file. One that failed earlier is a different bug
-# and cannot exercise this scenario.
+# Held now, before any other wl:: call reuses WL_OUT/WL_ERR. This is the
+# message printed at the moment the workload becomes stuck; E.2 reads it.
+printf '%s\n%s\n' "$WL_OUT" "$WL_ERR" > "$WL_SCRATCH/deploy-err.txt"
+
+# The create writes the binding before the wait, so any run that got as far as
+# a workload leaves an id in the file. Register it before deciding anything:
+# a scenario that bails still has to clean up what it made.
 wl_id="$(grep -oE '[0-9a-f]{24}' "$work/.datarobot.yaml" | head -1)"
-if [[ -z "$wl_id" ]]; then
-    wl::skip "the deploy failed before a workload existed; nothing to recover from"
-    wl::stop_timer
-    exit 0
+if [[ -n "$wl_id" ]]; then
+    wl::register_workload "$wl_id"
 fi
 
-wl::register_workload "$wl_id"
+# Both of these were skips, which the runner scores as a pass — a green E that
+# asserted nothing, --recreate included. Neither is a tolerable outcome: this
+# scenario exists to exercise recovery from a dead workload, and a run that
+# never reaches one has not tested the thing it is here to test.
+if [[ "$up_rc" -eq 0 ]]; then
+    wl::fail "the workload came up; this scenario needs an image that exits, and busybox no longer does"
+fi
+
+if [[ -z "$wl_id" ]]; then
+    wl::fail "the deploy failed before a workload existed; nothing to recover from (see deploy-err.txt)"
+fi
 
 # --- E.2 The refusal carries its own exit ----------------------------------
-# This is the message printed at the moment the workload becomes stuck. It
-# used to end at "check the logs", which is where recovery ran out.
-printf '%s\n%s\n' "$WL_OUT" "$WL_ERR" > "$WL_SCRATCH/deploy-err.txt"
+# It used to end at "check the logs", which is where recovery ran out.
 
 grep -q "dr workload delete" "$WL_SCRATCH/deploy-err.txt" \
     || wl::fail "the dead-deploy message must name the delete that clears the way"
@@ -85,8 +91,13 @@ wl::pass "the dead-deploy message names --recreate"
 
 # The regression that defines this ticket: no message may end at removing a
 # file or a directory the user has to find themselves.
+# The strings this guards against were "delete /abs/path/.datarobot/workload"
+# and "Delete /abs/path/.datarobot/workload to re-init." — a path sits between
+# the verb and the dot, so a pattern that expects them adjacent matches neither,
+# and grep -E is case-sensitive besides. Anchoring on the trailing slash keeps
+# it off ".datarobot.yaml", which several healthy messages do name.
 wl::assert_absent "$WL_SCRATCH/deploy-err.txt" \
-    'delete \.datarobot|delete the file|Delete the file|delete the state' \
+    '([Dd]elete|[Rr]emove|rm -rf).{0,80}\.datarobot/|[Dd]elete the (file|state)' \
     "recovery never ends at deleting state"
 
 # --- E.3 A second deploy refuses the same way ------------------------------
@@ -116,7 +127,7 @@ wl::pass "--dry-run --recreate left the workload alone (status: $still)"
 # A preview has to predict the run it previews. Planning against the workload
 # that is about to be deleted described a roll onto something the very next
 # check refuses, while the hint above it said a create would happen.
-previewed="$(printf '%s' "$preview_json" | jq -r '.action')"
+previewed="$(printf '%s' "$preview_json" | jq -r '.up.action')"
 [[ "$previewed" == "created" ]] \
     || wl::fail "--dry-run --recreate planned '$previewed'; the delete leaves a create"
 wl::pass "--dry-run --recreate plans the create the real run performs"

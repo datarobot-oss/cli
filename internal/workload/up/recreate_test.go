@@ -71,7 +71,7 @@ func TestRecreate_DeletesTheDeadWorkloadAndCreatesItAgain(t *testing.T) {
 			})
 
 			result, stderr, err := runIn(t, boundManifestFor(),
-				Options{NonInteractive: true, Recreate: true})
+				Options{NonInteractive: true, Yes: true, Recreate: true})
 			require.NoError(t, err)
 
 			assert.Equal(t, boundWorkloadID, deleted, "the dead workload is what gets deleted")
@@ -92,7 +92,7 @@ func TestRecreate_RefusesAWorkloadADeployCanActOn(t *testing.T) {
 		artifactD: func(string) (workload.Document, error) { return nil, nil },
 	})
 
-	_, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Recreate: true})
+	_, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Yes: true, Recreate: true})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--recreate")
@@ -111,7 +111,7 @@ func TestRecreate_NoOpsWhenThereIsNothingBound(t *testing.T) {
 		},
 	})
 
-	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, Recreate: true})
+	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, Yes: true, Recreate: true})
 	require.NoError(t, err)
 	assert.Equal(t, "wl-new", result.WorkloadID)
 }
@@ -126,7 +126,7 @@ func TestRecreate_DryRunDeletesNothing(t *testing.T) {
 	})
 
 	_, stderr, err := runIn(t, boundManifestFor(),
-		Options{NonInteractive: true, Recreate: true, DryRun: true})
+		Options{NonInteractive: true, Yes: true, Recreate: true, DryRun: true})
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr, "would delete workload "+boundWorkloadID)
@@ -146,7 +146,7 @@ func TestRecreate_DryRunPlansTheRunItWouldPerform(t *testing.T) {
 	})
 
 	previewed, stderr, err := runIn(t, boundManifestFor(),
-		Options{NonInteractive: true, Recreate: true, DryRun: true})
+		Options{NonInteractive: true, Yes: true, Recreate: true, DryRun: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionCreated, previewed.Plan.Action(),
@@ -169,7 +169,7 @@ func TestRecreate_DryRunPlansTheRunItWouldPerform(t *testing.T) {
 		},
 	})
 
-	performed, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Recreate: true})
+	performed, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Yes: true, Recreate: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, performed.Action, previewed.Plan.Action(),
@@ -178,17 +178,69 @@ func TestRecreate_DryRunPlansTheRunItWouldPerform(t *testing.T) {
 
 // Deleting is irreversible, so a run with nobody to ask and no --yes must stop
 // rather than assume consent.
+//
+// The piped case is the one the command actually produces: `up` passes no
+// Confirm when stdin is not a terminal and sets NonInteractive at the same
+// time, so keying consent on NonInteractive made `--recreate < /dev/null`
+// delete without a word and put this refusal out of reach. The unwired delete
+// seam is what fails the test if that comes back.
 func TestRecreate_WithoutATerminalOrYesRefuses(t *testing.T) {
+	for name, opts := range map[string]Options{
+		"no terminal":     {Recreate: true},
+		"stdin is a pipe": {Recreate: true, NonInteractive: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			install(t, fakes{
+				workloadD: deadWorkload(workload.WorkloadStatusErrored),
+				artifactD: func(string) (workload.Document, error) { return nil, nil },
+			})
+
+			_, _, err := runIn(t, boundManifestFor(), opts)
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "--yes", "name the way to say so explicitly")
+			assert.Contains(t, err.Error(), "cannot be undone")
+		})
+	}
+}
+
+// The safety story of the flag is that the workload's name has to be typed
+// back, and a prompt that accepts anything is not that. What the deploy hands
+// Confirm as the expected answer is the assertion: nothing else in the run
+// checks it, so a literal there would go unnoticed.
+func TestRecreate_AsksForTheWorkloadNameToBeTypedBack(t *testing.T) {
+	var (
+		asked  string
+		expect string
+	)
+
 	install(t, fakes{
-		workloadD: deadWorkload(workload.WorkloadStatusErrored),
-		artifactD: func(string) (workload.Document, error) { return nil, nil },
+		workloadD:      deadWorkload(workload.WorkloadStatusErrored),
+		artifactD:      func(string) (workload.Document, error) { return nil, nil },
+		deleteWorkload: func(string) error { return nil },
+		clearID:        func(string, string) (bool, error) { return true, nil },
+		create:         func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, workload.Serving, time.Duration, time.Duration,
+			func(*workload.Workload),
+		) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
 	})
 
-	_, _, err := runIn(t, boundManifestFor(), Options{Recreate: true})
-	require.Error(t, err)
+	result, _, err := runIn(t, boundManifestFor(), Options{
+		Recreate: true,
+		Confirm: func(question, want string) (bool, error) {
+			asked, expect = question, want
 
-	assert.Contains(t, err.Error(), "--yes", "name the way to say so explicitly")
-	assert.Contains(t, err.Error(), "cannot be undone")
+			return true, nil
+		},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "my-app", expect, "the workload name is what has to be typed")
+	assert.Contains(t, asked, "my-app", "the question names the workload being deleted")
+	assert.Contains(t, asked, "cannot be undone")
+	assert.Equal(t, "wl-new", result.WorkloadID, "agreeing carries the run into the create")
 }
 
 // Declining leaves the workload alone and the run does not proceed to create a
@@ -228,7 +280,7 @@ func TestRecreate_AFailedBindingClearDoesNotStopTheRun(t *testing.T) {
 		},
 	})
 
-	result, stderr, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Recreate: true})
+	result, stderr, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Yes: true, Recreate: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, "wl-new", result.WorkloadID)
@@ -244,7 +296,7 @@ func TestRecreate_AFailedDeleteStopsTheRun(t *testing.T) {
 		deleteWorkload: func(string) error { return errors.New("boom") },
 	})
 
-	_, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Recreate: true})
+	_, _, err := runIn(t, boundManifestFor(), Options{NonInteractive: true, Yes: true, Recreate: true})
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "still holds its name")

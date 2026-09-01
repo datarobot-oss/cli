@@ -25,9 +25,20 @@ import (
 )
 
 type initResult struct {
-	ArtifactID       string  `json:"artifactId"`
-	Name             string  `json:"name"`
-	Status           string  `json:"status"`
+	ArtifactID string `json:"artifactId"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+
+	// PreviousArtifactID is the artifact a --force run re-pointed away from,
+	// and nil for a fresh link, which had none.
+	//
+	// It is here because after the write nothing else remembers it: a caller
+	// that re-pointed the wrong directory has the id it needs to put the link
+	// back only if this field carried it out. The text path prints the same
+	// thing, so leaving it off JSON made --output-format json the one way to
+	// run the command that loses it.
+	PreviousArtifactID *string `json:"previousArtifactId"`
+
 	CatalogID        *string `json:"catalogId"`
 	CatalogVersionID *string `json:"catalogVersionId"`
 	Dir              string  `json:"dir"`
