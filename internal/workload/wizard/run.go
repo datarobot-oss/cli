@@ -315,24 +315,40 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 		return
 	}
 
+	// Asked once, up front, because it decides whether the comparison below
+	// means anything at all. EnvVarNames answers the empty set for exactly the
+	// shapes this refuses, and a container inheriting its environment through
+	// an alias or a merge key really is serving names the walk cannot see:
+	// compared against that empty set, an inherited block reads as a manifest
+	// declaring nothing, and every name in .env reads as drift.
+	blocked := parsed.CanDeclareEnvVars()
+
 	// Through envVars rather than detected.EnvVars directly, so the notice
 	// counts what --import-env would actually add: SkipEnv silences it, and a
 	// variable the classifier called local-only is held back on purpose, so it
 	// is reported separately below rather than as something the flag would fix.
-	fresh := undeclared(o.Answers.envVars(detected), parsed.EnvVarNames())
-	if len(fresh) == 0 {
-		o.warnEnvHeldBack(parsed, detected)
+	wanted := o.Answers.envVars(detected)
+
+	// Naming a flag that cannot run on this file would be an errand, not
+	// advice, and naming the variables it would add would be a guess. So the
+	// count is of what .env offers rather than of a drift this cannot measure,
+	// and the refusal says what the shape is and what to do instead.
+	if blocked != nil {
+		if len(wanted) > 0 {
+			fmt.Fprintf(o.Stderr,
+				"%s defines %d %s, and %s cannot be added automatically: %v\n",
+				EnvFileName, len(wanted), Plural(len(wanted), "variable", "variables"),
+				Plural(len(wanted), "it", "they"), blocked)
+		}
+
+		o.warnEnvHeldBack(parsed, detected, blocked)
 
 		return
 	}
 
-	// Naming a flag that cannot run on this file would be an errand, not
-	// advice. The refusal says what the shape is and what to do instead.
-	if err := parsed.CanDeclareEnvVars(); err != nil {
-		fmt.Fprintf(o.Stderr,
-			"%s defines %d %s the manifest does not declare, and %s cannot be added automatically: %v\n",
-			EnvFileName, len(fresh), Plural(len(fresh), "variable", "variables"),
-			Plural(len(fresh), "it", "they"), err)
+	fresh := undeclared(wanted, parsed.EnvVarNames())
+	if len(fresh) == 0 {
+		o.warnEnvHeldBack(parsed, detected, blocked)
 
 		return
 	}
@@ -352,7 +368,7 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 	// What the flag would not add is news whether or not it has something to
 	// add: a name held back is held back either way, and only saying so when
 	// the drift list happens to be empty makes it a matter of luck.
-	o.warnEnvHeldBack(parsed, detected)
+	o.warnEnvHeldBack(parsed, detected, blocked)
 }
 
 // warnEnvHeldBack covers the two ways a manifest can declare every name .env
@@ -364,29 +380,21 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 // wrote and never completed, and because the name counts as declared, every
 // later import skips it: without this line the retry after the credential
 // store comes back reports "nothing to add" about a file a deploy refuses.
-func (o Options) warnEnvHeldBack(parsed *manifest.Manifest, detected Detected) {
+//
+// blocked is why the manifest's declared names cannot be read, or nil when
+// they can. The local-only line rests on that set and is dropped without it:
+// a container inheriting its environment may already carry every one of these
+// names, and calling them deliberately omitted would send the user off to add
+// by hand a variable the deploy already has. The placeholder line stands
+// either way, because it resolves aliases and so reads the same entries the
+// deploy does.
+func (o Options) warnEnvHeldBack(parsed *manifest.Manifest, detected Detected, blocked error) {
 	if o.quiet() || o.Answers.SkipEnv {
 		return
 	}
 
-	var local []string
-
-	declared := parsed.EnvVarNames()
-
-	for _, v := range detected.EnvVars {
-		if v.Kind == EnvLocal && !declared[v.Name] {
-			local = append(local, v.Name)
-		}
-	}
-
-	if len(local) > 0 {
-		fmt.Fprintf(o.Stderr,
-			"%s defines %s that %s read as local-only, so %s deliberately left out of the manifest: %s.\n"+
-				"  Add %s by hand if the workload needs %s.\n",
-			EnvFileName, Plural(len(local), "a variable", "variables"),
-			Plural(len(local), "was", "were"), Plural(len(local), "it is", "they are"),
-			JoinNames(local),
-			Plural(len(local), "it", "them"), Plural(len(local), "it", "them"))
+	if blocked == nil {
+		o.warnEnvLocalOnly(parsed, detected)
 	}
 
 	if pending := parsed.PendingEnvNames(); len(pending) > 0 {
@@ -398,6 +406,35 @@ func (o Options) warnEnvHeldBack(parsed *manifest.Manifest, detected Detected) {
 			Plural(len(pending), "it", "them"), JoinNames(pending),
 			Plural(len(pending), "value", "values"))
 	}
+}
+
+// warnEnvLocalOnly names the .env variables the classifier held back and the
+// manifest does not carry either, because a verdict the user never sees is one
+// they have no way to overrule.
+//
+// Only sound where the manifest's declared names can be read: see warnEnvHeldBack.
+func (o Options) warnEnvLocalOnly(parsed *manifest.Manifest, detected Detected) {
+	var local []string
+
+	declared := parsed.EnvVarNames()
+
+	for _, v := range detected.EnvVars {
+		if v.Kind == EnvLocal && !declared[v.Name] {
+			local = append(local, v.Name)
+		}
+	}
+
+	if len(local) == 0 {
+		return
+	}
+
+	fmt.Fprintf(o.Stderr,
+		"%s defines %s that %s read as local-only, so %s deliberately left out of the manifest: %s.\n"+
+			"  Add %s by hand if the workload needs %s.\n",
+		EnvFileName, Plural(len(local), "a variable", "variables"),
+		Plural(len(local), "was", "were"), Plural(len(local), "it is", "they are"),
+		JoinNames(local),
+		Plural(len(local), "it", "them"), Plural(len(local), "it", "them"))
 }
 
 func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detected) (Result, error) {
@@ -430,7 +467,10 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 	// What the flags would not touch is news whether or not they touched
 	// something: a name held back is held back either way, and a placeholder
 	// left by an earlier run is still what the next deploy refuses.
-	o.warnEnvHeldBack(parsed, detected)
+	//
+	// nil because this path is downstream of the CanDeclareEnvVars above, so
+	// the declared names the local-only line rests on are readable.
+	o.warnEnvHeldBack(parsed, detected, nil)
 
 	return result, nil
 }
@@ -524,7 +564,9 @@ func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detec
 	fmt.Fprintf(o.Stderr, "%s already declares every variable in %s that can be imported.\n",
 		ShortPath(parsed.Path), EnvFileName)
 
-	o.warnEnvHeldBack(parsed, detected)
+	// nil because editEnv refuses a manifest whose declared names cannot be
+	// read before it ever gets as far as importing nothing.
+	o.warnEnvHeldBack(parsed, detected, nil)
 }
 
 // undeclared is the variables whose names the manifest does not already

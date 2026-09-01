@@ -545,3 +545,63 @@ func TestImportEnv_NamesTheManifestAboveTheDirectory(t *testing.T) {
 	assert.Contains(t, err.Error(), manifest.Path(root))
 	assert.Contains(t, err.Error(), "--dir "+root)
 }
+
+// A container that inherits its environment through a merge key is serving
+// names the edit's walk cannot see, and EnvVarNames answers the empty set for
+// exactly that shape. Read as "the manifest declares nothing", the notice
+// would name every local-only variable as deliberately omitted and send the
+// user off to hand-add one the inherited block may already carry.
+func TestRun_DriftNoticeDoesNotGuessAtAnInheritedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+	writeEnvFile(t, dir, "DATABASE_URL=postgres://localhost:5432/dev\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(`name: my-app
+x-defaults: &d
+  environmentVars:
+    - name: DATABASE_URL
+      value: postgres://db/prod
+artifact:
+  name: my-app-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            <<: *d
+`), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.NotContains(t, stderr.String(), "local-only")
+	assert.NotContains(t, stderr.String(), "DATABASE_URL")
+}
+
+// The count in the refusal is of what .env offers, not of a drift the walk
+// cannot measure: saying "N the manifest does not declare" about a file whose
+// declarations are unreadable states as fact the one thing that is unknown.
+func TestRun_DriftRefusalDoesNotClaimTheManifestDeclaresNothing(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+	writeEnvFile(t, dir, "REGION=eu-west-1\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir),
+		[]byte("name: by-id\nartifactId: 68b0bbbb0000000000000002\n"), 0o600))
+
+	stderr := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = stderr
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "cannot be added automatically")
+	assert.NotContains(t, stderr.String(), "does not declare")
+}
