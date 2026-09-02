@@ -230,12 +230,22 @@ func anyServingPredecessor(protons []Proton, wantArtifactID string) bool {
 			continue
 		}
 
-		if IsDrainingProtonStatus(p.Status) {
+		// Draining holds the wait only when nothing else can say the
+		// handover happened. With a role reported, the active generation is
+		// the one the router sends to, and a draining predecessor is
+		// finishing the requests it already had: measured on staging with the
+		// old generation draining and the new one active, the endpoint
+		// answered from the new build every time. Waiting for it to reach
+		// stopped as well costs the platform's whole termination grace, which
+		// ran to seven minutes on a swap whose handover took thirty seconds.
+		if IsDrainingProtonStatus(p.Status) && activeAt < 0 {
 			return true
 		}
 
-		// Running only counts as a predecessor once something identifies the
-		// successor, or every generation would look like one.
+		// Running is different: a predecessor still running has not been
+		// told to go, and the router may still be sending to it. It counts
+		// only once something identifies the successor, or every generation
+		// would look like one.
 		if IsRunningProtonStatus(p.Status) && (wantArtifactID != "" || activeAt >= 0) {
 			return true
 		}

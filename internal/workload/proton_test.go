@@ -96,6 +96,32 @@ func TestProtonsServing(t *testing.T) {
 			[]Proton{active("art-2"), {ArtifactID: "art-1", Status: "stopping"}},
 			roll("art-2"), true,
 		},
+		{
+			// Measured on staging with exactly this shape: the endpoint
+			// answered from the new build every time while the old one
+			// drained. The role is what says the router moved, and draining
+			// is the old generation finishing requests it already had, which
+			// the platform can take minutes over.
+			"the previous generation draining behind a promoted successor does not hold the wait",
+			[]Proton{active("art-2"), draining("art-1")},
+			roll("art-2"), true,
+		},
+		{
+			// A restart names no artifact, so the role is the only thing that
+			// separates the two generations; the same reading applies.
+			"a restart settles once its successor is promoted, whatever the old one is still finishing",
+			[]Proton{active("art-1"), draining("art-1")},
+			Serving{AwaitDrain: true},
+			true,
+		},
+		{
+			// Without a role, draining is the only thing that tells a
+			// predecessor from its replacement, so it still holds.
+			"a restart with no role reported still waits out the drain",
+			[]Proton{running("art-1"), draining("art-1")},
+			Serving{AwaitDrain: true},
+			false,
+		},
 	}
 
 	for _, c := range cases {

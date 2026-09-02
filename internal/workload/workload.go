@@ -405,6 +405,12 @@ type Serving struct {
 	// start do not.
 	AwaitDrain bool
 
+	// Restart says the generation being replaced serves the same version
+	// under the same settings, and is being replaced only so its successor
+	// reads a credential that changed. The wait is the one a resize gets;
+	// what it is called is not, because nothing about the settings moved.
+	Restart bool
+
 	// OnUnconfirmed, if set, is called once with a short reason when the
 	// proton list cannot be read and the wait falls back to the artifact
 	// alone. A caller that reports on the endpoint afterwards should say so,
