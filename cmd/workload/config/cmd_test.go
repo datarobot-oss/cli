@@ -396,7 +396,7 @@ func TestCmd_SyncEnvWithNothingToDo(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--sync-env")
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr.String(), "already declares every variable")
+	assert.Contains(t, stderr.String(), "already says what .env says")
 	assert.NotContains(t, stderr.String(), "Delete it to run setup again")
 }
 

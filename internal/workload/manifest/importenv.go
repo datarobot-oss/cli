@@ -116,62 +116,6 @@ func (m *Manifest) CanDeclareEnvVars() error {
 	return envVarsBlocker(container)
 }
 
-// ImportEnvVars adds the variables the primary container does not already
-// declare, and reports the names it added in the order it added them.
-//
-// Additive and one-directional, which is the whole contract. A name the file
-// already carries keeps whatever it was given, because the manifest is the
-// deployed truth and .env is a local copy allowed to drift; a name the file
-// carries and .env no longer does is left alone, because deleting a line from
-// a developer's own file says nothing about what the workload should run.
-//
-// preview renders without writing. The returned content is only meaningful
-// when something was added, and it differs from the real edit in one place:
-// a dry run stores no secret, so a secret's entry previews as the placeholder
-// the real run replaces with a credential id. That is the right way round, a
-// preview that minted credentials would not be one, but it means the preview
-// understates how finished the result is.
-//
-// The bytes are parsed and validated before they reach the disk. The file
-// belongs to the user, this is the only command that edits one in place, and a
-// manifest the next deploy would refuse must not be left behind under a
-// success message.
-func ImportEnvVars(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, error) {
-	var added []EnvVar
-
-	changed, rendered, err := renderEdit(path, "import environment variables", false,
-		func(root *yaml.Node) (bool, error) {
-			container, err := editableContainer(root)
-			if err != nil {
-				return false, err
-			}
-
-			entries, err := envVarsTarget(container)
-			if err != nil {
-				return false, err
-			}
-
-			added = appendEnvVars(entries, vars)
-
-			return len(added) > 0, nil
-		})
-	if err != nil || !changed {
-		return nil, nil, err
-	}
-
-	if err := checkImported(rendered, path); err != nil {
-		return nil, nil, err
-	}
-
-	if !preview {
-		if err := atomicWrite(path, rendered); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	return added, rendered, nil
-}
-
 // checkImported re-reads what the edit produced. Nothing downstream of here
 // looks at the file again before a deploy does, so a rendering that lost the
 // entries or reshaped the tree would otherwise reach the user as "✓ Updated".
@@ -478,11 +422,17 @@ type DeclaredEnvVar struct {
 	// it may safely rewrite.
 	CredentialKey string
 	// Structured is set when the value is neither a literal nor a reference
-	// but a mapping or a list somebody wrote by hand. The update path leaves
-	// those alone, so anything comparing this against .env has to leave them
-	// alone too: reporting one as drift would name a flag that then does
-	// nothing, every run, for ever.
+	// but a mapping or a list somebody wrote by hand. A reconciliation
+	// overwrites one with the string .env has, which is why it has to be
+	// visible to whatever builds the table the user agrees to.
 	Structured bool
+	// Unwritten is set when the entry spells out no scalar value at all: no
+	// value key, or one holding null. It is not the same as an empty value,
+	// and the difference matters because the reconciliation replaces the whole
+	// entry either way. Without it, an entry carrying a hand-written key this
+	// CLI does not know about reads as `value: ""` and agrees with an empty
+	// .env line, so the edit lands with no row in the table and nothing asked.
+	Unwritten bool
 }
 
 // CredentialKeyWritten is the credential field the wizard stores a .env secret
@@ -518,12 +468,15 @@ func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
 
 		id, key := credentialRefOf(entry)
 
+		_, hasScalar := scalarString(mapValue(entry, keyValue))
+
 		declared = append(declared, DeclaredEnvVar{
 			Name:          name,
 			Value:         literalOf(entry, id),
 			CredentialID:  id,
 			CredentialKey: key,
 			Structured:    structuredValue(entry, id),
+			Unwritten:     id == "" && !hasScalar && !structuredValue(entry, id),
 		})
 	}
 
@@ -579,136 +532,273 @@ func credentialRefOf(entry *yaml.Node) (id, key string) {
 	return id, key
 }
 
-// UpdateEnvVars rewrites the literal values of variables the manifest already
-// declares, and reports the ones it changed.
-//
-// The inverse of ImportEnvVars and deliberately a separate act: that one adds
-// names and never touches a value, this one touches values and never adds a
-// name. A run that wanted both asked for both.
-//
-// Only literals. A secret's entry is a reference, and rotating it means
-// sending a new value to the credential the reference names, which happens in
-// the store rather than in this file: the id does not change, so there is
-// nothing here to rewrite.
-func UpdateEnvVars(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, error) {
-	var changedVars []EnvVar
+// SyncChanges is what SyncEnvVars did, split by act because they read
+// differently to somebody checking a diff: a value that moved is an edit to a
+// line, a form that changed is a different line, and a name that went is a
+// line that is not there any more.
+type SyncChanges struct {
+	// Added is the names .env had that the manifest did not.
+	Added []EnvVar
+	// Updated is the declared literals whose value was rewritten in place.
+	Updated []EnvVar
+	// Replaced is the entries whose form changed: a literal that became a
+	// credential reference or the reverse, a value that was a mapping or a
+	// list and is now a string, and a reference whose placeholder was filled
+	// in with the credential that was minted for it.
+	Replaced []EnvVar
+	// Removed is the names the manifest declared and .env no longer has.
+	Removed []string
+}
 
-	changed, rendered, err := renderEdit(path, "update environment variables", false,
+// Any reports whether the sync touched the file at all.
+func (c SyncChanges) Any() bool {
+	return len(c.Added)+len(c.Updated)+len(c.Replaced)+len(c.Removed) > 0
+}
+
+// SyncEnvVars makes the primary container's environment say what .env says.
+//
+// It is the two-directional counterpart of ImportEnvVars, and the contract is
+// the opposite one: .env wins on every variable, on the value, on the form the
+// entry takes, and on whether the entry exists at all. A name the file no
+// longer mentions is removed. This is a deliberate reversal of the additive
+// rule the import follows, and it is why the caller shows the whole plan and
+// takes an answer before calling: with .env winning, a stale local copy is
+// enough to delete a variable a running workload depends on.
+//
+// Entry order is preserved for everything that survives, and a surviving
+// entry is edited rather than rebuilt wherever the edit is a value: an anchor,
+// a comment and the entry's place in the file all outlive a change that only
+// ever meant to move one string. An entry whose form changes is replaced
+// whole, because the two forms share no structure worth keeping.
+//
+// Anything shared through an anchor or a merge key is refused rather than
+// edited, the way every other edit in this file refuses it: rewriting or
+// dropping a node another container reads would change that container too, in
+// a place no diff of this one would show.
+//
+// Secrets arrive already stored: vars carries the credential id the caller
+// minted, and this only writes the reference. That split is what keeps a
+// credential from being created for a file this edit then refuses.
+func SyncEnvVars(path string, vars []EnvVar, preview bool) (SyncChanges, []byte, error) {
+	var changes SyncChanges
+
+	changed, rendered, err := renderEdit(path, "reconcile environment variables", false,
 		func(root *yaml.Node) (bool, error) {
 			container, err := editableContainer(root)
 			if err != nil {
 				return false, err
 			}
 
-			if err := envVarsBlocker(container); err != nil {
-				return false, err
-			}
-
-			entries, _ := rawValue(container, keyEnvironmentVars)
-
-			changedVars, err = rewriteLiterals(seqItems(entries), vars)
+			entries, err := envVarsTarget(container)
 			if err != nil {
 				return false, err
 			}
 
-			return len(changedVars) > 0, nil
+			changes, err = reconcileEnvVars(entries, vars)
+			if err != nil {
+				return false, err
+			}
+
+			return changes.Any(), nil
 		})
 	if err != nil || !changed {
-		return nil, nil, err
+		return SyncChanges{}, nil, err
 	}
 
 	if err := checkImported(rendered, path); err != nil {
-		return nil, nil, err
+		return SyncChanges{}, nil, err
 	}
 
 	if !preview {
+		// atomicWrite rather than Write: the file is already there, and Write
+		// reserves a new one. This is the same persistence ImportEnvVars uses
+		// for the same reason.
 		if err := atomicWrite(path, rendered); err != nil {
-			return nil, nil, err
+			return SyncChanges{}, nil, err
 		}
 	}
 
-	return changedVars, rendered, nil
+	return changes, rendered, nil
 }
 
-// rewriteLiterals sets each entry's value to what .env now says, skipping the
-// ones that already agree and the ones that defer to a credential, and
-// refusing any entry the rest of the file may be reading through another name.
+// reconcileEnvVars walks the entries once, settling each against .env, then
+// appends what .env has and the list does not.
 //
-// The scalar is edited rather than replaced, so an anchor, a comment and the
-// entry's place in the file all survive an edit that only ever meant to change
-// what one value is.
-func rewriteLiterals(entries []*yaml.Node, vars []EnvVar) ([]EnvVar, error) {
+// One pass in file order, because the result has to read like the file it came
+// from: rebuilding the list from .env would put the variables in the order a
+// dotenv parser happened to yield and call it a reconciliation.
+func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 	wanted := make(map[string]EnvVar, len(vars))
-
 	for _, v := range vars {
-		if !v.Secret {
-			wanted[v.Name] = v
-		}
+		wanted[v.Name] = v
 	}
 
-	changed := make([]EnvVar, 0, len(wanted))
+	var changes SyncChanges
 
-	for _, entry := range entries {
-		want, value, err := rewritable(entry, wanted)
-		if err != nil {
-			return nil, err
-		}
+	items := seqItems(entries)
+	kept := make([]*yaml.Node, 0, len(items))
 
-		if value == nil {
+	for _, entry := range items {
+		name, ok := scalarString(mapValue(entry, keyName))
+		if !ok {
+			// Nothing .env can address, so nothing this reconciles. Kept
+			// rather than dropped: an entry whose name cannot be read is not
+			// an entry the user asked to be rid of.
+			kept = append(kept, entry)
+
 			continue
 		}
 
-		// Styled the way a fresh write would style it, so a value that needs
-		// quoting to survive another parser gets it.
-		value.Value = want.Value
-		value.Style = scalar(want.Value).Style
-		value.Tag = "!!str"
+		want, asked := wanted[name]
+		if !asked {
+			if err := checkUnshared(entry); err != nil {
+				return SyncChanges{}, err
+			}
 
-		changed = append(changed, want)
+			changes.Removed = append(changes.Removed, name)
+
+			continue
+		}
+
+		settled, err := settleEnvEntry(entry, want, &changes)
+		if err != nil {
+			return SyncChanges{}, err
+		}
+
+		kept = append(kept, settled)
 	}
 
-	return changed, nil
+	entries.Content = kept
+	changes.Added = appendEnvVars(entries, vars)
+
+	return changes, nil
 }
 
-// rewritable is the scalar an entry's value may be written into, or nil when
-// this entry is not one the update touches. It refuses rather than skips when
-// the entry is shared, because rewriting a node another container reads would
-// change a value in a place the diff never shows.
-func rewritable(entry *yaml.Node, wanted map[string]EnvVar) (EnvVar, *yaml.Node, error) {
-	name, ok := scalarString(mapValue(entry, keyName))
-	if !ok {
-		return EnvVar{}, nil, nil
+// settlement is what an entry needs to become what .env says.
+type settlement int
+
+const (
+	// settleKeep is an entry that already says it.
+	settleKeep settlement = iota
+	// settleValue is a literal whose value moved, and only its value.
+	settleValue
+	// settleForm is an entry whose shape has to change, which means a new one.
+	settleForm
+)
+
+// settleEnvEntry brings one entry into line with what .env says, and returns
+// the node that stands in its place.
+func settleEnvEntry(entry *yaml.Node, want EnvVar, changes *SyncChanges) (*yaml.Node, error) {
+	switch settleFor(entry, want) {
+	case settleKeep:
+		return entry, nil
+
+	case settleValue:
+		return entry, rewriteEnvValue(entry, want, changes)
+
+	case settleForm:
+		if err := checkUnshared(entry); err != nil {
+			return nil, err
+		}
+
+		changes.Replaced = append(changes.Replaced, want)
+
+		return replaceEnvEntry(entry, want), nil
 	}
 
-	want, asked := wanted[name]
-	if id, _ := credentialRefOf(entry); !asked || id != "" {
-		return EnvVar{}, nil, nil
+	return entry, nil
+}
+
+// replaceEnvEntry builds the entry .env asks for and carries over what the
+// reader wrote around the old one.
+//
+// The two forms share no structure, so the node is rebuilt rather than edited,
+// but a comment is not structure: it is the reader's own note about this
+// variable, and it is as true of the new form as of the old. Losing it because
+// the value moved from a literal to a credential reference would take
+// something that was never this edit's to take.
+func replaceEnvEntry(entry *yaml.Node, want EnvVar) *yaml.Node {
+	replacement := envVarNode(want)
+
+	replacement.HeadComment = entry.HeadComment
+	replacement.LineComment = entry.LineComment
+	replacement.FootComment = entry.FootComment
+
+	return replacement
+}
+
+// settleFor reads what one entry needs.
+//
+// The value case is separated from the form case because only one of them can
+// be done in place: editing a scalar leaves the entry, its comment and its
+// position alone, while a literal and a credential reference share no
+// structure worth carrying across.
+func settleFor(entry *yaml.Node, want EnvVar) settlement {
+	id, _ := credentialRefOf(entry)
+
+	if want.Secret {
+		switch {
+		// A literal .env now reads as a secret.
+		case id == "":
+			return settleForm
+		// A reference the store already holds the value for. The file has
+		// nothing to say about it; the rotation carries the value.
+		case id != CredentialPlaceholder:
+			return settleKeep
+		// A placeholder with still nowhere to point. Left exactly as it was, so
+		// a run that could not reach the store reports no change rather than a
+		// change that changed nothing. A dry run lands here too, because it
+		// mints nothing on purpose; what it would have done is the caller's to
+		// report, and editEnv keeps the plan for that.
+		case want.CredentialID == "":
+			return settleKeep
+		// A placeholder an earlier run left, and a credential to finish it.
+		default:
+			return settleForm
+		}
 	}
 
-	// What the entry means is read through the walk that resolves aliases,
-	// which is the walk the comparison against .env uses. Asking the raw node
-	// instead would compare an anchor's name with a value and read every
-	// borrowed value as already in agreement, so an entry the notice had just
-	// called drift would go by without a word.
+	// A secret .env now reads as an ordinary value.
+	if id != "" {
+		return settleForm
+	}
+
 	current, isScalar := scalarString(mapValue(entry, keyValue))
-	if !isScalar || current == want.Value {
-		return EnvVar{}, nil, nil
-	}
 
+	switch {
+	// A value the file holds as a mapping or a list, which has to become the
+	// string .env has for it.
+	case !isScalar:
+		return settleForm
+	case current == want.Value:
+		return settleKeep
+	default:
+		return settleValue
+	}
+}
+
+// rewriteEnvValue moves a literal's value, in place.
+//
+// Written through the walk that does not resolve aliases, because a borrowed
+// scalar is the one thing this must not write into: an anchor others read
+// through carries the edit to a place no diff of this entry would show.
+func rewriteEnvValue(entry *yaml.Node, want EnvVar, changes *SyncChanges) error {
 	if err := checkUnshared(entry); err != nil {
-		return EnvVar{}, nil, err
+		return err
 	}
 
-	// Written through the walk that does not resolve, because a borrowed
-	// scalar is the one thing this must not write into: an alias, or an
-	// anchor others read through, carries the edit to a place the diff never
-	// shows. Refused rather than skipped for the same reason the entry above
-	// is, and because the value differs, so a skip would be silence about
-	// drift the run was asked to settle.
 	value, _ := rawValue(entry, keyValue)
 	if value == nil || value.Kind != yaml.ScalarNode || value.Anchor != "" {
-		return EnvVar{}, nil, ErrSharedEnvVars
+		return ErrSharedEnvVars
 	}
 
-	return want, value, nil
+	// Styled the way a fresh write would style it, so a value that needs
+	// quoting to survive another parser gets it.
+	value.Value = want.Value
+	value.Style = scalar(want.Value).Style
+	value.Tag = "!!str"
+
+	changes.Updated = append(changes.Updated, want)
+
+	return nil
 }

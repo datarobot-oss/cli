@@ -15,10 +15,12 @@
 package wizard
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
 )
@@ -28,6 +30,7 @@ const (
 	actAdd    = "add"
 	actUpdate = "update"
 	actResend = "re-send"
+	actRemove = "remove"
 	actSkip   = "skip"
 )
 
@@ -61,26 +64,25 @@ func (o Options) envPlan(parsed *manifest.Manifest, detected Detected, wanted []
 	declared := parsed.EnvVarNames()
 	blocked := parsed.CanDeclareEnvVars() != nil
 
-	actions := o.addActions(wanted, declared, blocked)
+	// A shape no edit can touch has one thing to say about every variable, and
+	// says it once. Running the other two would list a name under a verdict
+	// the run cannot carry out and again under the reason it cannot, which is
+	// two rows and one of them a lie.
+	if blocked {
+		return o.skipActions(parsed, detected)
+	}
+
+	actions := o.addActions(wanted, declared)
 	actions = append(actions, o.valueActions(parsed, detected)...)
 
-	return append(actions, o.skipActions(parsed, detected, declared)...)
+	return append(actions, removeActions(parsed, detected)...)
 }
 
 // addActions is the names .env has that the manifest does not.
-func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool, blocked bool) []envAction {
+func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool) []envAction {
 	actions := make([]envAction, 0, len(wanted))
 
 	for _, v := range undeclared(wanted, declared) {
-		if blocked {
-			actions = append(actions, envAction{
-				v.Name, actSkip,
-				"the manifest's environment is shared, so nothing can be added to it",
-			})
-
-			continue
-		}
-
 		detail := "written into " + manifest.FileName + " as a literal"
 		if v.Secret {
 			detail = "stored as a new credential, and referenced by id"
@@ -95,14 +97,14 @@ func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool, 
 // valueActions is the declared names whose value this run would move: a
 // literal rewritten in the file, and a secret sent to the store it came from.
 func (o Options) valueActions(parsed *manifest.Manifest, detected Detected) []envAction {
-	changed, unverifiable, _, _, _ := o.compareValues(parsed, detected)
+	changed, unverifiable := o.compareValues(parsed, detected)
 
 	actions := make([]envAction, 0, len(changed)+len(unverifiable))
 
 	for _, name := range changed {
 		actions = append(actions, envAction{
 			name, actUpdate,
-			"its value in " + manifest.FileName + " is rewritten to match " + EnvFileName,
+			"its entry in " + manifest.FileName + " is rewritten to match " + EnvFileName,
 		})
 	}
 
@@ -116,73 +118,68 @@ func (o Options) valueActions(parsed *manifest.Manifest, detected Detected) []en
 	return actions
 }
 
-// skipActions is everything the sync will leave exactly as it found it, and
-// why. A reconciliation is judged as much by what it does not touch.
-func (o Options) skipActions(parsed *manifest.Manifest, detected Detected, declared map[string]bool) []envAction {
-	_, _, reclassified, structured, heldBack := o.compareValues(parsed, detected)
+// skipActions is what a reconciliation still cannot carry, which is now one
+// thing: a manifest whose environment is shared through a YAML anchor has
+// nowhere to append and no entry that can be rewritten without changing it for
+// every container that reads it. Everything else .env says is applied.
+func (o Options) skipActions(parsed *manifest.Manifest, detected Detected) []envAction {
+	wanted := o.Answers.syncVars(detected)
 
-	actions := make([]envAction, 0, len(reclassified)+len(structured)+len(heldBack))
-
-	for _, name := range reclassified {
+	actions := make([]envAction, 0, len(wanted))
+	for _, v := range wanted {
 		actions = append(actions, envAction{
-			name, actSkip,
-			"a literal where the manifest holds a credential, or the reverse",
+			v.Name, actSkip,
+			"the manifest's environment is shared, so no entry in it can be rewritten",
 		})
 	}
 
-	for _, name := range structured {
-		actions = append(actions, envAction{
-			name, actSkip,
-			"the manifest holds it as a mapping or a list, which no rewrite touches",
-		})
-	}
-
-	for _, name := range heldBack {
-		actions = append(actions, envAction{
-			name, actSkip,
-			EnvFileName + " now reads its value as local-only",
-		})
-	}
-
-	for _, v := range detected.EnvVars {
-		if v.Kind == EnvLocal && !declared[v.Name] {
-			actions = append(actions, envAction{v.Name, actSkip, "read as local-only, so it is left out"})
-		}
-	}
-
-	for _, name := range parsed.PendingEnvNames() {
-		actions = append(actions, envAction{
-			name, actSkip,
-			"still names the credential placeholder, which a deploy refuses",
-		})
-	}
-
-	return append(actions, droppedActions(parsed, detected)...)
+	return actions
 }
 
-// droppedActions is the names the manifest declares that .env no longer
-// mentions. Nothing happens to them, and that is the answer to the question a
-// reconciliation raises loudest: removing a line from your own copy of a file
-// says nothing about what the workload should run, so the sync is
-// one-directional and says so out loud rather than by omission.
-func droppedActions(parsed *manifest.Manifest, detected Detected) []envAction {
+// removeActions is the names the manifest declares that .env no longer
+// mentions. They go, which is the half of a reconciliation that loses
+// configuration rather than gaining it, and is why the table is shown and
+// agreed to rather than applied on the strength of a flag.
+func removeActions(parsed *manifest.Manifest, detected Detected) []envAction {
+	gone := droppedNames(parsed, detected)
+	actions := make([]envAction, 0, len(gone))
+
+	for _, name := range gone {
+		actions = append(actions, envAction{
+			name, actRemove,
+			"gone from " + EnvFileName + ", so its entry goes too",
+		})
+	}
+
+	return actions
+}
+
+// droppedNames is the variables the manifest declares that .env no longer
+// names, which is the half of a reconciliation that loses configuration. Both
+// the table and the drift notice ask this, so they ask it in one place.
+func droppedNames(parsed *manifest.Manifest, detected Detected) []string {
+	// No file, nothing dropped. An absent .env names nothing, so every
+	// variable would read as removed, which is the reading that would have a
+	// bare deploy in a fresh CI clone announce the deletion of an environment
+	// nobody asked to change.
+	if !fsutil.FileExists(filepath.Join(detected.Dir, EnvFileName)) {
+		return nil
+	}
+
 	local := make(map[string]bool, len(detected.EnvVars))
 	for _, v := range detected.EnvVars {
 		local[v.Name] = true
 	}
 
-	var actions []envAction
+	var gone []string
 
 	for _, declared := range parsed.DeclaredEnvVars() {
 		if !local[declared.Name] {
-			actions = append(actions, envAction{
-				declared.Name, actSkip,
-				"not in " + EnvFileName + "; nothing is ever removed",
-			})
+			gone = append(gone, declared.Name)
 		}
 	}
 
-	return actions
+	return gone
 }
 
 // changes reports whether the plan would do anything at all, so a run with

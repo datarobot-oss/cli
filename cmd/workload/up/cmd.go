@@ -80,8 +80,14 @@ type upResult struct {
 
 // envJSON is the .env re-entry's side of a deploy.
 type envJSON struct {
-	KeysAdded      int `json:"keysAdded"`
-	ValuesUpdated  int `json:"valuesUpdated"`
+	KeysAdded     int `json:"keysAdded"`
+	ValuesUpdated int `json:"valuesUpdated"`
+	// NamesRemoved is how many entries the reconciliation took out because
+	// .env no longer names them. Reported apart from the rest because it is
+	// the one act that loses configuration: a pipeline reading this has to be
+	// able to tell a run that added three variables from one that added three
+	// and dropped four.
+	NamesRemoved   int `json:"namesRemoved"`
 	SecretsRotated int `json:"secretsRotated"`
 	SecretsFailed  int `json:"secretsNotRotated"`
 	SecretsPending int `json:"secretsPending"`
@@ -276,8 +282,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
 		"Before deploying, bring the manifest into line with .env: add the variables it does not declare, "+
 			"rewrite a literal whose value has moved, and re-send the credential behind a secret. Prints what "+
-			"it would do and asks first. Nothing is removed. A re-sent secret reaches the containers this "+
-			"deploy replaces; a deploy with nothing else to do replaces none, and says how to restart.")
+			"it would do and asks first, removals included: a name .env no longer carries is taken out. A "+
+			"re-sent secret reaches the containers this deploy replaces; a deploy with nothing else to do "+
+			"replaces none, and says how to restart.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -325,9 +332,17 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		// that suppresses wizards in CI is not consent to overwrite a value on
 		// the tenant, which is the line `dr workload delete` already draws.
 		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
-			Yes:         f.yes,
+			// The flag or the environment variable. --yes is consent and so is
+			// the variable a pipeline sets on purpose; what is not consent is
+			// the mere absence of a terminal, which is the case this refuses.
+			Yes: yes,
+			// A refusal has to reach somebody. Under JSON the wizard is given
+			// a writer but a question in a scripted run is a hang, and a
+			// prompt written to a redirected stderr is one nobody can see:
+			// idargs asks the same thing about an id.
 			DryRun:      f.dryRun,
-			Interactive: !json && isStdinTerminalFn(),
+			Interactive: !json && idargs.CanAsk(cmd),
+			Silent:      json,
 		}),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,
@@ -529,6 +544,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,
 				ValuesUpdated:  result.Env.ValuesUpdated,
+				NamesRemoved:   result.Env.NamesRemoved,
 				SecretsRotated: result.Env.SecretsRotated,
 				SecretsFailed:  result.Env.SecretsFailed,
 				SecretsPending: result.Env.SecretsPending,
