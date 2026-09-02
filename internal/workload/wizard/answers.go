@@ -324,6 +324,36 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 // envVars is the .env listing the file will carry: everything the classifier
 // found by default, none when the user opted out. Local-only variables are
 // dropped, because deploying them would be wrong rather than unnecessary.
+// syncVars is every variable .env defines, which is what a reconciliation
+// carries.
+//
+// The classifier still decides the form an entry takes, a literal or a
+// reference to a credential, and no longer decides whether the variable
+// travels at all. That is the difference between this and envVars, and it is
+// deliberate: setup offers its verdicts on a screen you can argue with, while
+// a sync shows a table and asks once, so a name held back there would be one
+// the reader agreed to without ever seeing it.
+//
+// --skip-env still empties it. "Do not read the file" is a statement the user
+// makes; "this looks local to me" is a guess the classifier makes.
+func (a Answers) syncVars(detected Detected) []manifest.EnvVar {
+	if a.SkipEnv {
+		return nil
+	}
+
+	out := make([]manifest.EnvVar, 0, len(detected.EnvVars))
+
+	for _, v := range detected.EnvVars {
+		out = append(out, manifest.EnvVar{
+			Name:   v.Name,
+			Value:  v.Value,
+			Secret: v.Kind == EnvSecret,
+		})
+	}
+
+	return out
+}
+
 func (a Answers) envVars(detected Detected) []manifest.EnvVar {
 	if a.SkipEnv {
 		return nil

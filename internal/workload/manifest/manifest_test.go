@@ -251,7 +251,7 @@ func TestDirFlag_QuotesAPathWithASpace(t *testing.T) {
 
 	spaced := filepath.Join(cwd, "My Projects", "app")
 
-	assert.Equal(t, ` --dir "My Projects/app"`, DirFlag(spaced))
+	assert.Equal(t, ` --dir 'My Projects/app'`, DirFlag(spaced))
 }
 
 // Quoting an ordinary path would be noise on every message that carries one.
@@ -271,4 +271,28 @@ func TestDirFlag_SaysNothingAboutTheCurrentDirectory(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, DirFlag(cwd))
+}
+
+// A shell does something with far more than a space. An allowlist is what
+// keeps the list from having to be guessed at.
+func TestDirFlag_QuotesWhatAShellWouldActOn(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	for _, name := range []string{"a&b", "proj$HOME", "back`tick`", "semi;colon", "sub*shell", "quo'te"} {
+		flag := DirFlag(filepath.Join(cwd, name))
+
+		assert.True(t, strings.HasPrefix(flag, " --dir '"), "%s was left bare: %s", name, flag)
+		assert.True(t, strings.HasSuffix(flag, "'"), "%s was not closed: %s", name, flag)
+	}
+}
+
+// An ordinary path stays bare, or every message that carries one is littered
+// with quotes it does not need.
+func TestDirFlag_LeavesAnOrdinaryPathUnquoted(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, " --dir services/api-2_v1.0",
+		DirFlag(filepath.Join(cwd, "services", "api-2_v1.0")))
 }
