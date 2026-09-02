@@ -27,3 +27,16 @@ Prefer `outputformat.PrintJSONEnvelope` for structured output so the payload is 
 ## Pagination Safety
 
 Validate that pagination never crosses host boundaries.
+
+## Repeated Flag Shapes Register Through a Shared pflag.Value
+
+A flag shape that recurs across commands, or carries the same validation requirement wherever
+it appears (a count, a duration, an ID format), must register through one shared `pflag.Value`
+(see `internal/countflags`, `cmd/internal/pollflags`) — not a fresh ad hoc check hand-rolled in
+each command's `RunE`.
+
+## Sentinel Defaults Are a Documented Exception
+
+A flag where a value like `0` means "unset, use a default" (a port, a replica count) must not
+be forced through a shared validator built for a different flag's semantics — but the exception
+must be called out.
