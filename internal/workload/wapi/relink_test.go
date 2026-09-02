@@ -80,6 +80,28 @@ func TestRelink_ResetsTheBaseManifest(t *testing.T) {
 	assert.Empty(t, m.Files, "the new artifact has never seen these files")
 }
 
+// The recorded build refers to a code version in the catalog of the artifact
+// being left, so it says nothing about what the new one is serving. Clearing it
+// leaves imageStale with nil, which it reads as stale, and the next deploy pays
+// for one rebuild rather than inheriting an image from another lineage.
+func TestRelink_ClearsTheLastBuiltVersion(t *testing.T) {
+	tmp := linked(t)
+
+	cfg, err := LoadConfig(tmp)
+	require.NoError(t, err)
+
+	built := "68b0ffff0000000000000006"
+	cfg.LastBuiltVersionID = &built
+	require.NoError(t, SaveConfig(tmp, cfg))
+
+	require.NoError(t, Relink(tmp, InitOptions{ArtifactID: "68b0dddd0000000000000004"}))
+
+	after, err := LoadConfig(tmp)
+	require.NoError(t, err)
+	assert.Nil(t, after.LastBuiltVersionID,
+		"an image built against the old artifact's code cannot vouch for the new one")
+}
+
 // The whole reason this exists rather than "delete the state directory": the
 // things a deletion would take with it survive.
 func TestRelink_KeepsTheHistoryAndTheIgnoreFile(t *testing.T) {

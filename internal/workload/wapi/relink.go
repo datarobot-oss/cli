@@ -40,11 +40,20 @@ import (
 // The BASE manifest goes back to empty for the same reason: it records the tree
 // last synced into the artifact being left behind.
 //
+// LastBuiltVersionID is dropped rather than carried, which leaves imageStale
+// with nil and costs the next deploy a rebuild. That is the answer, not a
+// side effect: the id records a code version in the catalog of the artifact
+// being left, so comparing it against whatever the new artifact is serving
+// compares two different lineages. imageStale already treats every answer it
+// cannot establish as stale, and this is one of them.
+//
 // CreatedAt is kept. It records when this directory became a linked project,
 // which re-pointing it does not change. CLIVersion is stamped fresh, because it
 // records which build last wrote the file, and this write is the one that did.
-// Those two and the three above are the whole of Config: nothing is dropped by
-// omission here, and a field added to Config later has to be settled here too.
+//
+// Those six are the whole of Config. A field added to it later has to be
+// settled here by name too: this literal is the file after the write, so a
+// field left out of it is a field cleared, whether or not that was meant.
 //
 // It is therefore not idempotent, and callers must not hand it the artifact the
 // project is already linked to. Resetting the baseline is the whole point when
