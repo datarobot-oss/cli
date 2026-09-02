@@ -152,16 +152,7 @@ func readYAMLNode(path string) (*yaml.Node, error) {
 // and non-allowlisted keys. It navigates to nested keys using dotted notation
 // (e.g. "foo.bar.baz").
 func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
-	candidates := keys
-	if len(candidates) == 0 {
-		candidates = make([]string, 0, len(PersistableKeys))
-
-		for k := range PersistableKeys {
-			candidates = append(candidates, k)
-		}
-	}
-
-	for _, key := range candidates {
+	for _, key := range candidateKeys(keys) {
 		if _, ok := PersistableKeys[key]; !ok {
 			continue
 		}
@@ -170,8 +161,66 @@ func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
 			continue
 		}
 
-		setNestedKeyInNode(node, key, viper.Get(key))
+		setNestedKeyInNode(node, profileDestPath(key), viper.Get(key))
 	}
+}
+
+// candidateKeys expands the keys UpdateConfigFile should consider writing.
+// Explicit keys always pass through unchanged.
+//
+// For a bare sweep (keys is empty) with no profile active, every allowlisted
+// key is a candidate, as before.
+//
+// For a bare sweep with a profile active, profile-scoped candidates are
+// restricted to keys the profile's own section already defines. Without
+// this, the sweep would copy every inherited top-level value (including
+// endpoint and token belonging to a *different* instance) down into the
+// profile and permanently fork it. Global (non-profile-scoped) keys sweep
+// as usual.
+func candidateKeys(keys []string) []string {
+	if len(keys) > 0 {
+		return keys
+	}
+
+	candidates := make([]string, 0, len(PersistableKeys))
+
+	activeProfile := ActiveProfile()
+
+	var owned map[string]any
+
+	if activeProfile != "" {
+		owned, _ = profileSection(activeProfile)
+	}
+
+	for key := range PersistableKeys {
+		_, scoped := ProfileScopedKeys[key]
+		_, owns := owned[key]
+
+		if scoped && activeProfile != "" && !owns {
+			continue
+		}
+
+		candidates = append(candidates, key)
+	}
+
+	return candidates
+}
+
+// profileDestPath returns the YAML path a persistable key should be written
+// to: the key itself for the default profile, or profiles.<name>.<key> when
+// a named profile is active and the key is profile-scoped. PersistableKeys
+// is always matched against the logical key, never against this path.
+func profileDestPath(key string) string {
+	name := ActiveProfile()
+	if name == "" {
+		return key
+	}
+
+	if _, scoped := ProfileScopedKeys[key]; !scoped {
+		return key
+	}
+
+	return profilesKey + "." + name + "." + key
 }
 
 // Note: Keys NOT in candidates are preserved as-is from the existing node.

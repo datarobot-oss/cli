@@ -75,10 +75,63 @@ yq -i 'del(.plugin_update_checks.assist)' ~/.config/datarobot/state.yaml
 The state file respects `XDG_CONFIG_HOME`. If that variable is set, the file is written to
 `$XDG_CONFIG_HOME/datarobot/state.yaml` rather than `~/.config/datarobot/state.yaml`.
 
+### Named profiles
+
+If you work with multiple DataRobot installations (EU/US/JP cloud, an on-premise
+instance, a second account), store each one as a named profile inside the same
+`drconfig.yaml` rather than juggling separate config files:
+
+```yaml
+# Default profile (used when no --profile is given)
+endpoint: https://app.datarobot.com/api/v2
+token: default-api-key
+
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-api-key
+  onprem:
+    endpoint: https://dr.corp.example.com/api/v2
+    token: onprem-api-key
+    ca-cert: /etc/ssl/onprem-ca.pem
+```
+
+Select a profile with `--profile <name>` on any command, or set it for a whole
+shell session with `DATAROBOT_CLI_PROFILE`:
+
+```bash
+# Per-invocation
+dr --profile eu-mtsaas templates list
+
+# Per-session
+export DATAROBOT_CLI_PROFILE=eu-mtsaas
+dr templates list
+```
+
+Only `endpoint`, `token`, `ca-cert`, and `ssl_verify` are profile-scoped. A
+profile that doesn't define `ca-cert` or `ssl_verify` inherits the default
+profile's value. Every other setting (e.g. `default-llm-id`) is global and
+shared by all profiles.
+
+There's no `create` or `delete` subcommand: a profile is created the first
+time you run `dr --profile <name> auth login` (or `auth set-url`) for a name
+that doesn't exist yet. Inspect what's configured with:
+
+```bash
+dr auth profile list
+dr auth profile show eu-mtsaas
+```
+
+An explicit `DATAROBOT_ENDPOINT`/`DATAROBOT_API_TOKEN` environment variable
+pair still takes precedence over any profile, exactly as it does over the
+default profile — see [Environment variables](#environment-variables) below.
+
 ### Environment-specific configs
 
 > [!TIP]
-> If you work with multiple DataRobot environments (development, staging, production), you can maintain separate configuration files for each. For example:
+> Named profiles (above) are usually the better fit for multiple DataRobot
+> environments. `--config` selects an entirely different *file* instead,
+> which is still useful for e.g. a self-contained CI config:
 >
 > ```bash
 > # Development
@@ -97,6 +150,9 @@ Switch between them:
 export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
 dr templates list
 ```
+
+`--config` and `--profile` compose: `--config` picks the file, `--profile`
+picks a section within it.
 
 ## Configuration options
 
@@ -129,6 +185,9 @@ export DATAROBOT_API_TOKEN=your_api_token
 ```bash
 # Custom config file path
 export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
+
+# Named profile to use (see Named profiles above)
+export DATAROBOT_CLI_PROFILE=eu-mtsaas
 
 # Editor for text editing
 export EDITOR=nano
@@ -190,10 +249,11 @@ dr --plugin-discovery-timeout 2s --help
 
 When the CLI needs configuration settings, it looks for them in this order (highest to lowest priority):
 
-1. **Command-line flags** (e.g., `--config <path>`)&mdash;overrides everything.
-2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`)&mdash;overrides config files.
-3. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default location.
-4. **Built-in defaults**&mdash;fallback values.
+1. **Command-line flags** (e.g., `--config <path>`, `--profile <name>`)&mdash;overrides everything.
+2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`, `DATAROBOT_CLI_PROFILE`)&mdash;overrides config files.
+3. **The active named profile's own settings**&mdash;shadows the default profile's `endpoint`/`token`/`ca-cert`/`ssl_verify`.
+4. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default (top-level) profile.
+5. **Built-in defaults**&mdash;fallback values.
 
 This means if you set an environment variable, it will take precedence over what's in your config file. This is useful for temporarily overriding settings without editing files.
 
