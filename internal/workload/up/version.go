@@ -19,13 +19,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/workload/wapi"
+
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
-	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
 // keyArtifactName is the artifact block's own name field, dropped before the
@@ -85,7 +87,8 @@ func buildVersion(
 		return made, err
 	}
 
-	if err := inheritCode(loaded.ProjectDir, made, synced, report); err != nil {
+	synced, err = inheritCode(loaded.ProjectDir, made, synced, report)
+	if err != nil {
 		return made, err
 	}
 
@@ -776,43 +779,156 @@ func relinkFailure(artifactID, projectDir string, err error) error {
 // claim code the image was never built from. Anything else is re-anchored,
 // including a leftover with a reference of its own, since `dr artifact create`
 // and an abandoned attempt both point at code older than the last sync.
-func inheritCode(projectDir string, made version, synced *sync.Result, report *reporter) error {
-	if made.HasCode {
-		return nil
-	}
-
-	// A sync that moved anything has already pointed the artifact at what it
-	// produced, so only one that found nothing to do leaves a version with no
-	// code of its own. Minting a version is the usual proof of that, but not
-	// the only one: a sync whose whole plan was remote deletes can move the
-	// code store without the engine reporting a new version, and inheriting
-	// then would pin the artifact at the state before those deletes.
-	if synced != nil && (synced.NewVersion != "" || synced.UploadedCount > 0 || synced.DeletedCount > 0) {
-		return nil
+func inheritCode(
+	projectDir string, made version, synced *sync.Result, report *reporter,
+) (*sync.Result, error) {
+	if hasCodeAlready(made, synced) {
+		return synced, nil
 	}
 
 	cfg, err := loadProjectFn(projectDir)
 	if err != nil {
-		return fmt.Errorf("cannot read the code this project last pushed: %w", err)
+		return synced, fmt.Errorf("cannot read the code this project last pushed: %w", err)
 	}
 
 	catalog, lastVersion := deref(cfg.CatalogID), deref(cfg.LastSyncedVersionID)
 	if catalog == "" || lastVersion == "" {
-		return fmt.Errorf(
-			"artifact %s has no code and the working tree had nothing to upload, so there would be "+
-				"nothing to build. Check that %s holds the project's source",
-			made.ID, projectDir)
+		// No catalog on record, and still nothing to upload. With no catalog
+		// the engine has no remote, and against an empty remote every file on
+		// disk is an upload, so nothing uploaded means the engine's index
+		// still describes a push the project no longer records: the state a
+		// recovery that died between forgetting the catalog and emptying the
+		// index leaves behind. Pushing from an empty index settles it either
+		// way; a tree with nothing in it uploads nothing a second time too,
+		// and that is the error.
+		return repush(projectDir, made, cfg, report,
+			"  The project records no code catalog, but its sync index says the tree was already pushed, "+
+				"so it is pushed again.\n",
+			fmt.Sprintf("artifact %s has no code", made.ID))
 	}
 
 	err = report.run("Carrying the code over", func() error {
 		return patchCodeRefFn(made.ID, catalog, lastVersion)
 	})
-	if err != nil {
-		return fmt.Errorf("cannot point artifact %s at the code it should build (%s): %w",
+	if err == nil {
+		return synced, nil
+	}
+
+	if !catalogGone(err) {
+		return synced, fmt.Errorf("cannot point artifact %s at the code it should build (%s): %w",
 			made.ID, lastVersion, err)
 	}
 
-	return nil
+	return repush(projectDir, made, cfg, report,
+		fmt.Sprintf("  The code this project last pushed (catalog %s) is gone from the platform, "+
+			"so it is uploaded again.\n", catalog),
+		fmt.Sprintf("artifact %s has no code, the catalog it would have inherited (%s) is gone", made.ID, catalog))
+}
+
+// hasCodeAlready reports a version that needs nothing carried over: one born
+// with code, or one a sync has just pointed at what it produced.
+//
+// A sync that moved anything has already pointed the artifact at the result,
+// so only one that found nothing to do leaves a version with no code of its
+// own. Minting a version is the usual proof of movement, but not the only one:
+// a sync whose whole plan was remote deletes can move the code store without
+// the engine reporting a new version, and inheriting then would pin the
+// artifact at the state before those deletes.
+func hasCodeAlready(made version, synced *sync.Result) bool {
+	if made.HasCode {
+		return true
+	}
+
+	return synced != nil && (synced.NewVersion != "" || synced.UploadedCount > 0 || synced.DeletedCount > 0)
+}
+
+// repush is the recovery for a sync that found nothing to upload when the
+// artifact has no code: the engine compared the tree against its own record
+// of what was pushed, and that record is no longer true.
+//
+// The record was true when it was written; nothing in the sync's fast path
+// asks whether the catalog it names is still there, or whether the project
+// still records one. The one place a dead catalog is found out is the write
+// in inheritCode, and by then the project has already been pointed at a fresh
+// artifact with no code. Left there, that artifact is a dead end: every later
+// run finds nothing to upload and the same catalog to carry over, and fails
+// the same way.
+//
+// The files are on disk, so the answer is to push them again. Forgetting the
+// catalog is what makes the sync stage a new one, and emptying the index is
+// what makes it upload every file into it. The built-from record goes too,
+// because whatever image was built from the old catalog can no longer be
+// tied to anything.
+//
+// The two strings are the caller's account of why: a line for the reader
+// before the push, and the start of the sentence a push that still uploads
+// nothing ends with.
+func repush(
+	projectDir string, made version, cfg wapi.Config, report *reporter, why, stillNoCode string,
+) (*sync.Result, error) {
+	report.say("%s", why)
+
+	// Written only when there is something to forget: a project that never
+	// recorded a push has nothing to clear, and a first deploy with an empty
+	// tree should fail on the tree, not on a write it did not need.
+	if cfg.CatalogID != nil || cfg.LastSyncedVersionID != nil || cfg.LastBuiltVersionID != nil {
+		cfg.CatalogID, cfg.LastSyncedVersionID, cfg.LastBuiltVersionID = nil, nil, nil
+
+		if err := saveProjectFn(projectDir, cfg); err != nil {
+			return nil, fmt.Errorf("cannot forget the code this project last pushed, in %s: %w", projectDir, err)
+		}
+	}
+
+	// The engine's own index goes too, or the push finds nothing to do. With
+	// no catalog there is no remote to have drifted, and on that path the
+	// engine takes the remote to be whatever its index says was last pushed;
+	// an index still describing the tree makes every file unchanged, and an
+	// unchanged file is not uploaded. An empty index is what a project has
+	// before its first push, which is the state this project is in.
+	if err := resetSyncIndexFn(projectDir); err != nil {
+		return nil, fmt.Errorf("cannot forget what this project last pushed, in %s: %w", projectDir, err)
+	}
+
+	synced, err := syncCode(projectDir, report)
+	if err != nil {
+		return nil, fmt.Errorf("%s, and uploading the tree again failed: %w", stillNoCode, err)
+	}
+
+	if synced == nil || (synced.NewVersion == "" && synced.UploadedCount == 0) {
+		return synced, fmt.Errorf("%s, and the working tree uploaded nothing, so there would be nothing to build. "+
+			"Check that %s holds the project's source", stillNoCode, projectDir)
+	}
+
+	return synced, nil
+}
+
+// resetSyncIndex puts the sync engine's index back to the state a project has
+// before its first push, so the next sync sees every file as new.
+func resetSyncIndex(projectDir string) error {
+	return wapi.SaveManifest(projectDir, wapi.Manifest{Version: wapi.ManifestVersion})
+}
+
+// catalogGone reports the platform saying the code store no longer exists,
+// which it does two ways: 410 on the catalog itself, and a 422 on the artifact
+// write whose body says the files were previously deleted.
+func catalogGone(err error) bool {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+
+	switch httpErr.StatusCode {
+	case http.StatusGone:
+		return true
+	case http.StatusUnprocessableEntity, http.StatusNotFound:
+		// The detail when the client lifted one, the raw body when it did not:
+		// which of the two carries the sentence depends on the envelope.
+		said := strings.ToLower(httpErr.Detail + " " + string(httpErr.Body))
+
+		return strings.Contains(said, "previously deleted")
+	default:
+		return false
+	}
 }
 
 // deref reads an optional recorded id.

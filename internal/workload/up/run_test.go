@@ -317,6 +317,9 @@ func install(t *testing.T, f fakes) {
 	swap(t, &loadProjectFn, f.project)
 	swap(t, &initProjectFn, f.link)
 	swap(t, &saveProjectFn, f.save)
+
+	// The index reset writes into the project's state dir, which no test has.
+	force(t, &resetSyncIndexFn, func(string) error { return nil })
 	swap(t, &patchCodeRefFn, f.codeRef)
 	swap(t, &syncProjectFn, f.sync)
 	swap(t, &triggerBuildFn, f.build)
