@@ -46,6 +46,14 @@ type Summary struct {
 	// exactly that. What changes is that it has to read as a description, where
 	// every other plan this command prints is an announcement.
 	Refused bool
+
+	// SecretsRotated is how many credentials this run re-sent before the plan
+	// was computed. A rotation writes to the credential store and to no file,
+	// so it can move nothing the plan is able to show, and an empty plan is
+	// still the truth about the manifest. It is not the whole truth about the
+	// workload: the run is about to restart it so the new value is served, and
+	// a bare "Already up to date" above that reads as a contradiction.
+	SecretsRotated int
 }
 
 // shortIDLen is how much of an id is enough to label something with. The
@@ -78,7 +86,7 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	writeRefusedNote(&b, s)
 
 	if plan.Empty() {
-		b.WriteString("\n" + settledVerdict(plan) + "\n")
+		b.WriteString("\n" + settledVerdict(s, plan) + "\n")
 
 		_, err := io.WriteString(w, b.String())
 
@@ -107,10 +115,19 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 // until it finishes, at which point the deploy that follows starts it again.
 // Saying nothing differs, without saying it will differ, is how a preview comes
 // to read as the opposite of what the deploy will do.
-func settledVerdict(plan Plan) string {
+func settledVerdict(s Summary, plan Plan) string {
 	if plan.State == StateSettling {
 		return tui.WarnStyle.Render("Nothing differs yet, but this workload is still settling") + "\n" +
 			tui.HintStyle.Render("  What a deploy does depends on where it lands, so it waits first.")
+	}
+
+	// About the manifest, which is what a plan is about. The restart below is
+	// about the credential store, which no plan can show, so the verdict says
+	// which of the two it is answering for rather than claiming both.
+	if s.SecretsRotated > 0 {
+		return tui.SuccessStyle.Render("✓ Already up to date") + "\n" +
+			tui.HintStyle.Render(fmt.Sprintf("  Apart from the %s just re-sent, which needs a restart to reach the container.",
+				plural(s.SecretsRotated, "secret", "secrets")))
 	}
 
 	return tui.SuccessStyle.Render("✓ Already up to date")

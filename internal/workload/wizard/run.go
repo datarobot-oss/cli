@@ -86,20 +86,25 @@ type Options struct {
 	NonInteractive bool
 	// DryRun renders the manifest and writes nothing.
 	DryRun bool
-	// ImportEnv re-reads .env over a manifest that already exists and adds
-	// the variables it does not declare. It is the one answer that survives
-	// the existing-manifest guard, and it has to be asked for: setup stays a
-	// one-time act, and a deploy that quietly picked up whatever .env grew
-	// since is the behaviour this command was built not to have.
-	ImportEnv bool
-	// UpdateEnv brings the variables the manifest already declares back in
-	// line with .env: a literal is rewritten, and the credential behind a
-	// secret is re-sent. It is separate from ImportEnv because it is the
-	// opposite act, changing what a name is worth rather than adding a name,
-	// and because a secret cannot be checked first: the platform never hands a
-	// stored value back, so this cannot tell a rotated key from an unchanged
-	// one and re-sends either way.
-	UpdateEnv bool
+	// SyncEnv re-reads .env over a manifest that already exists and brings the
+	// two into line: a name the file does not declare is added, a literal
+	// whose value has moved is rewritten, and the credential behind a secret
+	// is re-sent. It is the one answer that survives the existing-manifest
+	// guard, and it has to be asked for: setup stays a one-time act, and a
+	// deploy that quietly picked up whatever .env grew since is the behaviour
+	// this command was built not to have.
+	//
+	// One flag rather than one per act, because "make these two agree" is the
+	// thing people want and splitting it made them read a table of which half
+	// does what. A secret is re-sent without being compared, because it cannot
+	// be: the platform never hands a stored value back, so nothing here can
+	// tell a rotated key from an unchanged one.
+	//
+	// It never removes. A name dropped from .env says nothing about what the
+	// workload should run, and the file is a local copy that is allowed to
+	// drift; the preview names what it is leaving alone so the omission is
+	// visible rather than silent.
+	SyncEnv bool
 	// JSONOutput says the run's answer is a machine-readable envelope. Under
 	// it the command hands the wizard no Stderr at all, because stdout purity
 	// is only half the contract and `2>&1 | jq .` has to parse too; what a
@@ -129,6 +134,22 @@ type Options struct {
 	// always prints is one the reader stops seeing, taking the drift beside
 	// it down too.
 	DriftOnly bool
+	// Confirm answers whether to carry out the sync whose table has just been
+	// printed. It is asked once, before anything is written to the file or
+	// sent to the credential store, because neither can be taken back: a
+	// rewrite lands in a committed file, and a re-send overwrites a value on
+	// the tenant with whatever the local copy of .env happens to hold.
+	//
+	// nil means do not ask, which is --yes, a run with no terminal, a
+	// machine-readable one, and a dry run. It does not mean do not show: the
+	// table is printed either way, and on a dry run it is the whole point of
+	// the run. Tying the two together made --dry-run --sync-env the one
+	// command that previewed everything except the thing it was asked about.
+	//
+	// A refusal is not an error: the sync does not happen and the run carries
+	// on with the file as it stands, which is what the same command without
+	// the flag would have deployed.
+	Confirm func() (bool, error)
 	// Stderr carries the wizard and its summary. Nothing the wizard says
 	// belongs on stdout, which is the command's machine-readable channel.
 	Stderr io.Writer
@@ -181,7 +202,7 @@ type Result struct {
 // Run executes setup: it answers the questions from the flags, the project
 // and, on a terminal, the user, then writes the manifest.
 //
-// An existing manifest ends the run untouched unless Options.ImportEnv asks
+// An existing manifest ends the run untouched unless Options.SyncEnv asks
 // for the one edit setup makes to a configured project. That is the whole of
 // setup's relationship with one: the file is the interface, every other change
 // is a hand edit, and deleting the file re-arms the wizard.
@@ -272,13 +293,12 @@ func (o Options) create(dir string) (Result, error) {
 }
 
 // editsEnv reports that this run acts on the .env of a manifest that already
-// exists. Both flags read the file and both write something as a result, so
-// every guard that turns on one of them turns on both.
+// exists.
 func (o Options) editsEnv() bool {
-	return o.ImportEnv || o.UpdateEnv
+	return o.SyncEnv
 }
 
-// checkNothingToImport refuses --import-env in a directory with no manifest.
+// checkNothingToImport refuses --sync-env in a directory with no manifest.
 // The flag names an existing file to add to, and falling through to setup
 // would create one instead, in a directory the flag says was already
 // configured, and mint credentials for the whole .env on the way.
@@ -295,13 +315,13 @@ func (o Options) checkNothingToImport(dir string) error {
 		return fmt.Errorf(
 			"no %s in %s, so there is nothing to %s. The one at %s is what a deploy from here reads: "+
 				"run this with --dir %s",
-			manifest.FileName, dir, o.editVerb(), above, filepath.Dir(above))
+			manifest.FileName, dir, "reconcile", above, filepath.Dir(above))
 	}
 
 	return fmt.Errorf(
 		"no %s in %s, so there is nothing to %s. "+
 			"Run 'dr workload config' to create one, or point --dir at the project that has one",
-		manifest.FileName, dir, o.editVerb())
+		manifest.FileName, dir, "reconcile")
 }
 
 // configured handles a project that has been set up already: the one edit that
@@ -450,7 +470,7 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 	blocked := parsed.CanDeclareEnvVars()
 
 	// Through envVars rather than detected.EnvVars directly, so the notice
-	// counts what --import-env would actually add: SkipEnv silences it, and a
+	// counts what a sync would actually add: SkipEnv silences it, and a
 	// variable the classifier called local-only is held back on purpose, so it
 	// is reported separately below rather than as something the flag would fix.
 	wanted := o.Answers.envVars(detected)
@@ -498,7 +518,7 @@ func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
 			"  Add %s with %s.\n",
 		EnvFileName, len(missing), Plural(len(missing), "variable", "variables"),
 		Plural(len(missing), "it", "they"), JoinNames(missing),
-		Plural(len(missing), "it", "them"), o.remedy("--import-env"))
+		Plural(len(missing), "it", "them"), o.remedy("--sync-env"))
 
 	// What the flag would not add is news whether or not it has something to
 	// add: a name held back is held back either way, and only saying so when
@@ -546,7 +566,7 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 			EnvFileName, len(changed), Plural(len(changed), "variable", "variables"),
 			JoinNames(changed),
 			applyLine(blocker, fmt.Sprintf("Apply %s with %s.",
-				Plural(len(changed), "it", "them"), o.remedy("--update-env"))))
+				Plural(len(changed), "it", "them"), o.remedy("--sync-env"))))
 	}
 
 	if o.DriftOnly {
@@ -592,7 +612,7 @@ func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
 				"  If one was rotated locally, re-send it with %s.\n",
 			len(unverifiable), Plural(len(unverifiable), "variable is", "variables are"),
 			Plural(len(unverifiable), "a credential", "credentials"), EnvFileName,
-			JoinNames(unverifiable), o.remedy("--update-env"))
+			JoinNames(unverifiable), o.remedy("--sync-env"))
 	}
 }
 
@@ -640,7 +660,7 @@ func (o Options) compareValues(
 			reclassified = append(reclassified, declared.Name)
 		// A placeholder has no stored value to compare or re-send.
 		// warnEnvHeldBack already names it, and saying "rotate it with
-		// --update-env" would be advice for a command that skips it.
+		// --sync-env" would be advice for a command that skips it.
 		case declared.CredentialID == manifest.CredentialPlaceholder:
 			continue
 		case declared.Secret():
@@ -761,27 +781,35 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 	//
 	// configured has already refused a .env this could not read, so what
 	// reaches here is a parsed file and a parsed environment.
-	// Only the additive half needs somewhere to append. A rotation writes to
-	// the credential store and a literal rewrite edits an entry already there,
-	// so refusing those for "nowhere to add a variable" would be an
-	// add-shaped refusal of a run that adds nothing.
-	if o.ImportEnv {
-		if err := parsed.CanDeclareEnvVars(); err != nil {
-			return Result{}, err
-		}
-	}
-
 	wanted := o.Answers.envVars(detected)
 
 	result := Result{Path: path, Action: ActionUnchanged, Draft: draftOf(parsed)}
 
-	if o.UpdateEnv {
-		if err := o.updateEnv(path, parsed, detected, wanted, &result); err != nil {
-			return Result{}, err
-		}
+	agreed, err := o.confirmEnvPlan(parsed, detected, wanted)
+	if err != nil {
+		return Result{}, err
 	}
 
-	if o.ImportEnv {
+	if !agreed {
+		return result, nil
+	}
+
+	// Values before names. Adding a name writes it with the value .env holds,
+	// so an add that ran first would leave the update nothing to do and the
+	// counts would report one act as the other.
+	if err := o.updateEnv(path, parsed, detected, wanted, &result); err != nil {
+		return Result{}, err
+	}
+
+	// Asked before addEnv rather than at the top, because the two halves need
+	// different things of the file. Adding a name needs somewhere to append,
+	// and asking first is what stops a credential being created on the tenant
+	// for a reference this manifest was never going to accept. A rotation
+	// needs nothing: it writes to the credential store against an id the file
+	// already carries. Refusing the whole run for the half it cannot do would
+	// make a rotation impossible on a shape the rest of the CLI supports, and
+	// the notices name what was held back.
+	if parsed.CanDeclareEnvVars() == nil {
 		if err := o.addEnv(path, parsed, detected, wanted, &result); err != nil {
 			return Result{}, err
 		}
@@ -808,40 +836,63 @@ func (o Options) reportEnvOutcome(parsed *manifest.Manifest, detected Detected, 
 		return
 	}
 
-	o.warnNamesNotAdded(parsed, detected)
+	o.warnNamesHeldBack(parsed, detected)
 }
 
-// warnNamesNotAdded is what a run that has finished with the flags owes about
-// the names it did not put in the file.
+// warnNamesHeldBack is what a sync owes about the names it did not put in the
+// file. It adds every name it can, so what is left is what it will not touch:
+// a classifier verdict, and an entry an earlier run left naming the credential
+// placeholder.
 //
-// An update adds no names, so one the manifest is missing is still missing
-// when it finishes, and without this the run that reconciled every value it
-// could reads as a clean bill of health for a file that is short a variable.
-// warnEnvDrift ends in the held-back notice itself, so the two branches are
-// exclusive rather than cumulative.
-//
-// An import is the other way round: it has just put those names in the file,
-// so naming them now would report as missing exactly what the run added.
-//
-// A manifest the flags cannot edit takes the held-back branch whichever flag
-// ran. warnEnvDrift's refusal there is add-shaped, counting the whole of .env
-// as un-addable, which is an errand to put in front of a run that was never
-// adding anything; and the blocker is passed on rather than replaced with nil,
-// because the local-only line rests on declared names this shape cannot read.
-//
-// parsed predates any rewrite this run made, which is sound here: every
-// comparison below is of names, and neither flag's rewrite adds or removes
-// one.
-func (o Options) warnNamesNotAdded(parsed *manifest.Manifest, detected Detected) {
-	blocked := parsed.CanDeclareEnvVars()
+// The blocker is read here rather than assumed away. editEnv refuses a
+// manifest with nowhere to append before anything is stored, so on that path
+// it is nil; reportNothingToImport reaches this from a run that got no
+// further, and the local-only line rests on declared names a shared block
+// cannot read.
+func (o Options) warnNamesHeldBack(parsed *manifest.Manifest, detected Detected) {
+	o.warnEnvHeldBack(parsed, detected, parsed.CanDeclareEnvVars())
+}
 
-	if !o.ImportEnv && blocked == nil {
-		o.warnEnvDrift(parsed, detected)
-
-		return
+// confirmEnvPlan shows what the sync would do, and asks whether to do it when
+// there is anybody to ask.
+//
+// Nothing to do needs neither, so a plan whose every row is a skip goes
+// through in silence: the reporting below already says the two files agree,
+// and stopping to ask about work that is not going to happen teaches people to
+// answer without reading.
+//
+// A refusal returns false rather than an error. The run has been told not to
+// reconcile, which is a decision rather than a failure, and for a deploy it
+// leaves exactly what the same command without the flag would have carried.
+func (o Options) confirmEnvPlan(
+	parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar,
+) (bool, error) {
+	actions := o.envPlan(parsed, detected, wanted)
+	if !changes(actions) {
+		return true, nil
 	}
 
-	o.warnEnvHeldBack(parsed, detected, blocked)
+	if !o.quiet() {
+		fmt.Fprintf(o.Stderr, "\n%s\n", renderEnvPlan(actions))
+	}
+
+	// Shown to everyone, asked of whoever is there to answer. A dry run has
+	// nobody to ask and nothing to apply, and the table is what it came for.
+	if o.Confirm == nil {
+		return true, nil
+	}
+
+	agreed, err := o.Confirm()
+	if err != nil {
+		return false, err
+	}
+
+	if !agreed && !o.quiet() {
+		fmt.Fprintf(o.Stderr, "%s was left as it is, and nothing was sent to the credential store.\n",
+			ShortPath(parsed.Path))
+	}
+
+	return agreed, nil
 }
 
 // updateEnv brings declared variables back in line with .env: a literal is
@@ -1065,7 +1116,7 @@ func (o Options) rotateSecrets(
 
 		// A dry run counts what it would send and sends nothing. Saying
 		// nothing about the secrets instead would leave the one part of
-		// --update-env that reaches the tenant out of the preview of it.
+		// a sync that reaches the tenant out of the preview of it.
 		if o.DryRun {
 			rotated++
 
@@ -1152,7 +1203,7 @@ func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detec
 	// and telling them it does not exist points them at the wrong fix.
 	if !fsutil.FileExists(filepath.Join(dir, EnvFileName)) {
 		fmt.Fprintf(o.Stderr, "No %s in %s, so there is nothing to %s.\n",
-			EnvFileName, dir, o.editVerb())
+			EnvFileName, dir, "reconcile")
 
 		return
 	}
@@ -1166,53 +1217,25 @@ func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detec
 		fmt.Fprintf(o.Stderr, "%s %s.\n", ShortPath(parsed.Path), o.nothingLeftToDo())
 	}
 
-	o.warnNamesNotAdded(parsed, detected)
+	o.warnNamesHeldBack(parsed, detected)
 }
 
-// hasUnappliedDrift reports whether an update that changed nothing left a
-// value behind that it was never going to settle: one the file holds as a
-// mapping or a list, one whose kind no longer matches what the manifest
-// stores, and one .env now reads as local-only. All three are things
-// --update-env skips on purpose, and all three make "already gives every
-// variable the value .env does" a false summary.
-//
-// Only for a run that asked to update. A literal .env changed is the other
-// flag's business, and an import saying nothing to add is still true about it.
+// hasUnappliedDrift reports whether a sync that changed nothing left a value
+// behind that it was never going to settle: one the file holds as a mapping or
+// a list, one whose kind no longer matches what the manifest stores, and one
+// .env now reads as local-only. All three are skipped on purpose, and all
+// three make "already agrees with .env" a false summary.
 func (o Options) hasUnappliedDrift(parsed *manifest.Manifest, detected Detected) bool {
-	if !o.UpdateEnv {
-		return false
-	}
-
 	_, _, reclassified, structured, heldBack := o.compareValues(parsed, detected)
 
 	return len(reclassified)+len(structured)+len(heldBack) > 0
 }
 
-// editVerb names the act that found nothing to do, so a run that only asked
-// for one of the two flags is not told about the other.
-func (o Options) editVerb() string {
-	if !o.ImportEnv {
-		return "update"
-	}
-
-	return "import"
-}
-
-// nothingLeftToDo is what a file already in the state the flags would put it
-// in has to say for itself, which is a different sentence per flag: one is
-// about the names it carries, the other about the values behind them.
+// nothingLeftToDo is what a file already in the state a sync would put it in
+// has to say for itself.
 func (o Options) nothingLeftToDo() string {
-	declares := fmt.Sprintf("already declares every variable in %s that can be imported", EnvFileName)
-	matches := fmt.Sprintf("already gives every variable it declares the value %s does", EnvFileName)
-
-	switch {
-	case o.ImportEnv && o.UpdateEnv:
-		return declares + ", and " + matches
-	case o.UpdateEnv:
-		return matches
-	default:
-		return declares
-	}
+	return fmt.Sprintf("already declares every variable in %s that can be added, and gives each the value %s does",
+		EnvFileName, EnvFileName)
 }
 
 // undeclared is the variables whose names the manifest does not already

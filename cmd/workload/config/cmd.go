@@ -25,10 +25,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -47,18 +49,18 @@ type configResult struct {
 	BuildMode  string `json:"buildMode"`
 	// Action is created, updated, unchanged or planned. A caller keying on it
 	// has to be able to tell a dry run's planned from a file that now exists,
-	// and an --import-env edit from the run that wrote the file.
+	// and a --sync-env edit from the run that wrote the file.
 	Action string `json:"action"`
 	// EnvKeysListed is how many .env variables this run put in the file and
 	// EnvSecretsPending how many of those still name the placeholder instead
 	// of a credential id. Without them a pipeline reading only this envelope
 	// would see a created manifest and no sign that it cannot deploy yet. A
 	// create writes the whole list, so there the count is also what the file
-	// carries; an --import-env run adds to a list already there, so there it
+	// carries; a --sync-env run adds to a list already there, so there it
 	// is only what it added.
 	EnvKeysListed     int `json:"envKeysListed"`
 	EnvSecretsPending int `json:"envSecretsPending"`
-	// EnvValuesUpdated is how many declared literals an --update-env run
+	// EnvValuesUpdated is how many declared literals a --sync-env run
 	// rewrote, and EnvSecretsRotated how many credentials it re-sent. Counted
 	// apart from the added variables because they are different acts: one adds
 	// a name, the other changes what a name is worth.
@@ -72,7 +74,7 @@ type configResult struct {
 	// EnvLiterals names the variables this run wrote into the file in the
 	// clear, so an audit step can check them without parsing the YAML. A
 	// create writes the whole list, so there it is every literal the file
-	// carries; an --import-env or --update-env run touches part of one, so
+	// carries; a --sync-env run touches part of one, so
 	// there it is only what that run put there.
 	EnvLiterals []string `json:"envLiterals"`
 }
@@ -84,8 +86,7 @@ type flags struct {
 	dockerfile string
 	dryRun     bool
 	yes        bool
-	importEnv  bool
-	updateEnv  bool
+	syncEnv    bool
 	answers    wizard.Answers
 }
 
@@ -107,12 +108,13 @@ already present, this command prints its path and exits, because editing
 twelve lines of YAML beats re-answering eight questions. Delete the file to
 start over.
 
-The exceptions are the two .env flags. --import-env adds the variables the
-manifest does not declare yet; --update-env brings the ones it does declare
-back in line, rewriting a literal and re-sending the credential behind a
-secret. Both are opt-in because .env is your local copy and is allowed to
-drift: a deploy that silently picked up whatever it grew since is what this
-command is built not to do.
+The exception is --sync-env. It brings the manifest into line with .env in one
+act: a name the file does not declare is added, a literal whose value has moved
+is rewritten, and the credential behind a secret is re-sent. It prints a table
+of what it would do to every variable, and why, and asks before it writes a
+line or sends a value. Nothing is ever removed. It is opt-in because .env is
+your local copy and is allowed to drift: a deploy that silently picked up
+whatever it grew since is what this command is built not to do.
 
 A secret is re-sent without being compared. The platform never returns a
 stored value, so nothing can tell a rotated key from an untouched one, and a
@@ -135,8 +137,7 @@ Examples:
   dr workload config --yes --build-mode generated \
     --execution-environment "[DataRobot] Python 3.12 Applications Base" \
     --entrypoint "uvicorn app:app --host 0.0.0.0 --port 8080"
-  dr workload config --import-env
-  dr workload config --update-env`,
+  dr workload config --sync-env`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -162,8 +163,7 @@ Examples:
 			"type":          f.answers.Type,
 			"build_mode":    f.answers.BuildMode,
 			"bound":         f.answers.WorkloadID != "",
-			"import_env":    f.importEnv,
-			"update_env":    f.updateEnv,
+			"sync_env":      f.syncEnv,
 			"dry_run":       f.dryRun,
 			"output_format": string(outputFormat),
 		}
@@ -190,17 +190,11 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	// is opt-in: re-reading .env on every run would carry whatever the file
 	// grew since into a deploy nobody asked to change. Exclusive with
 	// --skip-env, which says the opposite about the same file.
-	cmd.Flags().BoolVar(&f.importEnv, "import-env", false,
-		"Add the .env variables the manifest does not declare yet, and change nothing else. "+
-			"Names already in the file keep their values; a name dropped from .env is left alone. "+
-			"Secrets are stored as credentials the same way setup stores them.")
-	// The other half of the same question, kept apart because it is the
-	// opposite act: --import-env adds names and never touches a value,
-	// --update-env touches values and never adds a name.
-	cmd.Flags().BoolVar(&f.updateEnv, "update-env", false,
-		"Bring the variables the manifest already declares back in line with .env: a literal is rewritten, "+
-			"and the credential behind a secret is re-sent. Secrets are re-sent without being compared, "+
-			"because the platform never returns a stored value, so a rotated key cannot be told from an untouched one.")
+	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
+		"Bring the manifest into line with .env: add the variables it does not declare, rewrite a literal "+
+			"whose value has moved, and re-send the credential behind a secret. Prints what it would do and "+
+			"asks first. Nothing is removed: a name dropped from .env is left alone. Secrets are re-sent "+
+			"without being compared, because the platform never returns a stored value.")
 
 	cmd.Flags().StringVar(&f.answers.WorkloadID, "workload-id", "", "Bind an existing workload by id. Exclusive with --name.")
 	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first `dr workload up`.")
@@ -250,7 +244,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		return err
 	}
 
-	if err := checkImportEnvFlags(cmd, f); err != nil {
+	if err := checkSyncEnvFlags(cmd, f); err != nil {
 		return err
 	}
 
@@ -283,10 +277,17 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		Dir:            dir,
 		NonInteractive: yes || asJSON,
 		DryRun:         f.dryRun,
-		ImportEnv:      f.importEnv,
-		UpdateEnv:      f.updateEnv,
-		JSONOutput:     asJSON,
-		Answers:        f.answers,
+		SyncEnv:        f.syncEnv,
+		// f.yes rather than the merged signal: the environment variable that
+		// suppresses wizards in CI is not consent to overwrite a value on the
+		// tenant, which is the line `dr workload delete` already draws.
+		Confirm: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+			Yes:         f.yes,
+			DryRun:      f.dryRun,
+			Interactive: !asJSON && isStdinTerminalFn(),
+		}),
+		JSONOutput: asJSON,
+		Answers:    f.answers,
 		// With the --dir this run was given: this command looks only where it
 		// is pointed, so a remedy without it is one the reader cannot run from
 		// where they are standing.
@@ -310,7 +311,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 // exists, which is the question four sites here and one in the wizard were
 // each spelling out for themselves.
 func (f flags) editsEnv() bool {
-	return f.importEnv || f.updateEnv
+	return f.syncEnv
 }
 
 // setupOnlyFlags are the answers that only a run writing a manifest can act
@@ -321,19 +322,24 @@ var setupOnlyFlags = []string{
 	"no-readiness-probe", "replicas", "cpu", "memory", "importance",
 }
 
-// checkImportEnvFlags refuses the combinations --import-env cannot honour,
+// isStdinTerminalFn answers whether a person is there to be asked. A test
+// harness always pipes stdin, so the tests that are about what happens on a
+// terminal replace it.
+var isStdinTerminalFn = reader.IsStdinTerminal
+
+// checkSyncEnvFlags refuses the combinations --sync-env cannot honour,
 // rather than accepting them and reporting a success that did none of it.
 //
 // Silently dropping them is the trap worth closing: a CI line that gains
-// --import-env alongside its existing --workload-id would stop binding the
+// --sync-env alongside its existing --workload-id would stop binding the
 // workload and still exit 0.
-func checkImportEnvFlags(cmd *cobra.Command, f flags) error {
+func checkSyncEnvFlags(cmd *cobra.Command, f flags) error {
 	if !f.editsEnv() {
 		return nil
 	}
 
 	if f.answers.SkipEnv {
-		return errors.New("--import-env and --update-env both read .env, and --skip-env says not to read it at all: " +
+		return errors.New("--sync-env reads .env, and --skip-env says not to read it at all: " +
 			"pass one or the other")
 	}
 
@@ -346,7 +352,7 @@ func checkImportEnvFlags(cmd *cobra.Command, f flags) error {
 	}
 
 	if len(ignored) > 0 {
-		return fmt.Errorf("--import-env and --update-env act on the .env variables of a manifest that already "+
+		return fmt.Errorf("--sync-env acts on the .env variables of a manifest that already "+
 			"exists, so they cannot also apply %s. Edit %s directly for those, and run the env flags on their own",
 			strings.Join(ignored, ", "), manifest.FileName)
 	}
