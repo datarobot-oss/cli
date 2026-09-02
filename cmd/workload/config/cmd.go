@@ -287,7 +287,11 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		UpdateEnv:      f.updateEnv,
 		JSONOutput:     asJSON,
 		Answers:        f.answers,
-		Stderr:         stderr,
+		// With the --dir this run was given: this command looks only where it
+		// is pointed, so a remedy without it is one the reader cannot run from
+		// where they are standing.
+		Remedy: "dr workload config" + manifest.DirFlag(dir),
+		Stderr: stderr,
 	})
 	if err != nil {
 		if errors.Is(err, wizard.ErrCancelled) {

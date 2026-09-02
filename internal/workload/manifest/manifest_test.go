@@ -240,3 +240,33 @@ func TestLocate_IgnoresDirectory(t *testing.T) {
 
 	assert.Equal(t, path, found)
 }
+
+// The suffix is printed inside commands the reader is meant to copy, so a
+// project directory with a space in it has to survive the paste. Unquoted it
+// becomes a --dir that stops at the space with a stray argument behind it,
+// pointed at a directory nobody has.
+func TestDirFlag_QuotesAPathWithASpace(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	spaced := filepath.Join(cwd, "My Projects", "app")
+
+	assert.Equal(t, ` --dir "My Projects/app"`, DirFlag(spaced))
+}
+
+// Quoting an ordinary path would be noise on every message that carries one.
+func TestDirFlag_LeavesAnOrdinaryPathBare(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, " --dir services/api", DirFlag(filepath.Join(cwd, "services", "api")))
+}
+
+// The project directory is the one the command was run from, so there is
+// nothing to point it at.
+func TestDirFlag_SaysNothingAboutTheCurrentDirectory(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Empty(t, DirFlag(cwd))
+}
