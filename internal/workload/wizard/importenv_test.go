@@ -536,6 +536,45 @@ func TestRun_NamesAChangedLiteral(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "trace")
 }
 
+// An update adds no names, so one the manifest is missing is still missing
+// when it finishes. This used to be said only on the run that found nothing to
+// do, which left the run that reconciled every value it could reading as a
+// clean bill of health for a file short a variable.
+func TestUpdateEnv_NamesUndeclaredVariablesAfterRewritingOne(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
+
+	stderr := &bytes.Buffer{}
+	opts := updating(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.EnvValuesUpdated, "the run has to have changed something")
+
+	assert.Contains(t, stderr.String(), "does not declare")
+	assert.Contains(t, stderr.String(), "REGION")
+	assert.Contains(t, stderr.String(), "--import-env")
+}
+
+// The other half of the same branch: an import puts the missing names in the
+// file, so naming them afterwards would report as missing exactly what the run
+// just added.
+func TestImportEnv_DoesNotNameWhatItJustAdded(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
+
+	stderr := &bytes.Buffer{}
+	opts := importing(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.EnvKeysListed, "the run has to have added something")
+
+	assert.NotContains(t, stderr.String(), "does not declare")
+}
+
 // --update-env rewrites it, and leaves every other key alone.
 func TestUpdateEnv_RewritesAChangedLiteral(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
@@ -1238,6 +1277,131 @@ func TestRun_DriftRefusalDoesNotClaimTheManifestDeclaresNothing(t *testing.T) {
 	assert.Contains(t, stderr.String(), "cannot be added automatically")
 	assert.NotContains(t, stderr.String(), "does not declare")
 }
+
+// The notice a command that was asked to do something else prints about these
+// two files: the same drifts setup reports, in terms of the caller's own flags
+// rather than another command's.
+func TestReportEnvDrift_NamesBothDriftsAndTheCallersOwnCommand(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
+
+	parsed, err := manifest.Load(manifest.Path(dir))
+	require.NoError(t, err)
+
+	stderr := &bytes.Buffer{}
+
+	ReportEnvDrift(dir, "dr workload up", stderr, parsed)
+
+	out := stderr.String()
+
+	assert.Contains(t, out, "REGION", "a name .env has and the manifest does not")
+	assert.Contains(t, out, "LOG_LEVEL", "a declared value .env no longer agrees with")
+	assert.Contains(t, out, "'dr workload up --import-env'")
+	assert.Contains(t, out, "'dr workload up --update-env'")
+
+	assert.NotContains(t, out, "dr workload config", "the caller named its own command")
+	assert.NotContains(t, out, "trace", "names, never values")
+}
+
+// Nothing to say is said with silence. A caller prints this above its own
+// output, where a line meaning "the two files agree" would be noise on every
+// run of every project.
+func TestReportEnvDrift_SilentWhenTheFilesAgree(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+
+	parsed, err := manifest.Load(manifest.Path(dir))
+	require.NoError(t, err)
+
+	stderr := &bytes.Buffer{}
+
+	ReportEnvDrift(dir, "dr workload up", stderr, parsed)
+
+	assert.Empty(t, stderr.String())
+}
+
+// The standing facts stay with the command that is about configuration. None
+// of them can be settled by anything the reader of a deploy is about to run,
+// so said there each would print on every run for the life of the project, and
+// the drift beside them is what gets skipped along with them.
+func TestReportEnvDrift_LeavesTheStandingLinesToConfig(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(credentialEnvManifest), 0o600))
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\n"+
+		// A credential's value, which nothing can compare with .env.
+		"STRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n"+
+		// A classifier verdict: held back on purpose, and no flag adds it.
+		"DATABASE_URL=postgres://localhost:5432/dev\n")
+
+	parsed, err := manifest.Load(manifest.Path(dir))
+	require.NoError(t, err)
+
+	setup := &bytes.Buffer{}
+	opts := headless(dir, Answers{})
+	opts.Stderr = setup
+
+	_, err = Run(opts)
+	require.NoError(t, err)
+	require.Contains(t, setup.String(), "cannot be compared",
+		"setup says them, and the point of this test is the command that does not")
+	require.Contains(t, setup.String(), "local-only")
+
+	notice := &bytes.Buffer{}
+
+	ReportEnvDrift(dir, "dr workload up", notice, parsed)
+
+	assert.Empty(t, notice.String(), "everything that has moved agrees")
+}
+
+// A manifest whose environment is shared through a YAML anchor takes neither
+// flag. That refusal counts the whole of .env as un-addable, because the walk
+// that would read the declared names is the one the shape defeats, so on a
+// deploy it would report as missing the names the container already carries
+// through the alias, on every run, with nothing that clears it. What has
+// actually moved is still said, with the refusal in place of the remedy.
+func TestReportEnvDrift_DoesNotCountAllOfEnvAsMissingOnAManifestNoFlagCanEdit(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvManifest), 0o600))
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
+
+	parsed, err := manifest.Load(manifest.Path(dir))
+	require.NoError(t, err)
+	require.Error(t, parsed.CanDeclareEnvVars(), "the fixture has to be a manifest the flags refuse")
+
+	notice := &bytes.Buffer{}
+
+	ReportEnvDrift(dir, "dr workload up", notice, parsed)
+
+	out := notice.String()
+
+	assert.NotContains(t, out, "cannot be added automatically")
+	assert.NotContains(t, out, "2 variables", "LOG_LEVEL is declared, through the alias")
+
+	assert.Contains(t, out, "LOG_LEVEL", "a value that really has moved is still drift")
+	assert.Contains(t, out, "cannot be edited automatically",
+		"and the refusal takes the place of a remedy that would not run")
+}
+
+// credentialEnvManifest declares one literal and one credential-backed
+// variable, which is the pair a drift notice has to treat differently: one
+// value can be compared with .env and the other never can.
+const credentialEnvManifest = `name: my-app
+artifact:
+  name: my-app-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars:
+              - name: LOG_LEVEL
+                value: debug
+              - name: STRIPE_API_KEY
+                value: dr-credential:68f0cccc0000000000000003/apiToken
+`
 
 // structuredValueManifest declares a variable whose value is a mapping, which
 // is a hand edit this CLI reads but will not overwrite.

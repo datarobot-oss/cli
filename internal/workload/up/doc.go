@@ -16,11 +16,15 @@
 // live workload, work out what differs, and later apply only that.
 //
 // A deploy is a function of the repository checkout and nothing else. This
-// package never reads .env and never expands shell variables into a deploy.
-// Anything a container needs at runtime is in the manifest, as a literal or
-// as a credential reference; anything kept only in .env would not reach the
-// container, which is why importing it is the setup wizard's job and happens
-// once, not on every deploy.
+// package never deploys from .env and never expands shell variables into a
+// deploy. Anything a container needs at runtime is in the manifest, as a
+// literal or as a credential reference; anything kept only in .env would not
+// reach the container, which is why importing it is the setup wizard's job and
+// happens once, not on every deploy.
+//
+// The file is read for one thing: to say that it and the manifest have parted,
+// which is a notice rather than an input. Nothing it holds reaches the
+// platform without one of the two flags that asks for it by name.
 //
 // Drift is measured against the running object, not against a record of the
 // last deploy, and it is one-directional. Whatever the file says, `up` makes
