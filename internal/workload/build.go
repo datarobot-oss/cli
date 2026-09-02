@@ -374,31 +374,58 @@ func WaitForBuild(
 	onTick func(*Build),
 ) (*Build, error) {
 	deadline := time.Now().Add(timeout)
+	budget := transientBudget{}
+
+	var last *Build
 
 	for {
 		build, err := fetchArtifactBuild(artifactID, buildID, "")
 		if err != nil {
-			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
-		}
+			// A blip mid-wait is not a failed build. This wait runs for the
+			// whole of an image build, minutes at a time, and a single status
+			// request timing out at the end of one used to throw the finished
+			// image away with "poll build: context deadline exceeded" while
+			// the platform's own log said COMPLETED. The same budget the
+			// workload poll has: a few consecutive misses, reset by a hit.
+			if !budget.forgive(err) {
+				return last, fmt.Errorf("poll build %s: %w", buildID, err)
+			}
+		} else {
+			last = build
 
-		if onTick != nil {
-			onTick(build)
-		}
+			budget.reset()
 
-		if IsTerminalBuildStatus(build.Status) {
-			if IsBuildErrorStatus(build.Status) {
-				return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
+			if onTick != nil {
+				onTick(build)
 			}
 
-			return build, nil
+			if done, outcome := buildOutcome(build); done {
+				return build, outcome
+			}
 		}
 
 		if time.Now().After(deadline) {
-			return build, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
+			return last, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
 		}
 
 		time.Sleep(interval)
 	}
+}
+
+// buildOutcome reports whether a build has finished, and how: a terminal
+// status ends the wait, and an error status ends it with the message that
+// names where the logs are.
+func buildOutcome(build *Build) (bool, error) {
+	if !IsTerminalBuildStatus(build.Status) {
+		return false, nil
+	}
+
+	if IsBuildErrorStatus(build.Status) {
+		return true, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect",
+			build.ID, build.Status, build.ID)
+	}
+
+	return true, nil
 }
 
 // BuildSummaryFor composes the terminal-state summary RenderBuildSummary

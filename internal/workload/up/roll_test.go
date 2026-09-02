@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -1932,4 +1933,187 @@ func TestRun_ALeftoverWithItsOwnCodeIsStillReAnchored(t *testing.T) {
 	assert.Contains(t, tr.steps, "build")
 	assert.Equal(t, []string{"art-abandoned", "cat1", "ver1"}, tr.carried,
 		"the version the project last synced is what it is pointed at")
+}
+
+// The record the inherit rule reads used to be written only by a build this
+// run ran. A build it found in the artifact's history left it empty, so every
+// roll after a recovery spent a build again, and the fresh version it minted
+// needed a code catalog the recovery may no longer have had.
+func TestMaybeBuild_RecordsABuildItFound(t *testing.T) {
+	var recorded int
+
+	swap(t, &recordBuiltFn, func(string) { recorded++ })
+	swap(t, &listBuildsFn, func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-1", Status: workload.BuildStatusCompleted}}, nil
+	})
+
+	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-2"}, CodeChange{}, &sync.Result{},
+		Options{}, newReporter(io.Discard, false))
+	require.NoError(t, err)
+
+	assert.Empty(t, buildID, "found, not run")
+	assert.Equal(t, 1, recorded)
+}
+
+// A copy carries its image and never consults the history. The record it
+// would rewrite is the one that let it copy, so it is left alone.
+func TestMaybeBuild_LeavesTheRecordAloneOnACopy(t *testing.T) {
+	var recorded int
+
+	swap(t, &recordBuiltFn, func(string) { recorded++ })
+	swap(t, &listBuildsFn, func(string, int) ([]workload.Build, error) {
+		t.Fatal("a copy has its image; nothing should ask for the history")
+
+		return nil, nil
+	})
+
+	_, err := maybeBuild(t.TempDir(), version{ID: "art-2", ImageURI: "registry/app:v1"}, CodeChange{},
+		&sync.Result{}, Options{}, newReporter(io.Discard, false))
+	require.NoError(t, err)
+
+	assert.Zero(t, recorded)
+}
+
+// Measured on staging: the sync found nothing to upload, the fresh version was
+// pointed at the catalog the project last pushed, and the platform said that
+// catalog was previously deleted. The run died with the project already
+// re-pointed at a codeless artifact, and every later run found the same
+// nothing to upload and the same dead catalog. The files are on disk, so the
+// recovery is to forget the catalog and push them again.
+func TestRun_RollReuploadsWhenTheCatalogIsGone(t *testing.T) {
+	var (
+		tr    track
+		saved []wapi.Config
+		syncs int
+	)
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.save = func(_ string, cfg wapi.Config) error {
+		saved = append(saved, cfg)
+
+		return nil
+	}
+	f.sync = func(string) (*sync.Result, error) {
+		syncs++
+
+		tr.steps = append(tr.steps, "sync")
+
+		// The first sync compares the tree against its record and finds
+		// nothing; the second, with the record forgotten, pushes everything.
+		if syncs == 1 {
+			return &sync.Result{}, nil
+		}
+
+		return &sync.Result{NewVersion: "ver2", UploadedCount: 4}, nil
+	}
+
+	f.codeRef = func(string, string, string) error {
+		tr.steps = append(tr.steps, "carry-code")
+
+		return &drapi.HTTPError{
+			StatusCode: http.StatusUnprocessableEntity,
+			Detail:     "Failed to get files info for catalogId cat1: Requested Files cat1 was previously deleted.",
+		}
+	}
+
+	install(t, f)
+
+	force(t, &resetSyncIndexFn, func(string) error {
+		tr.steps = append(tr.steps, "forget-index")
+
+		return nil
+	})
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, syncs, "once against the record, once with the record forgotten")
+	assert.Contains(t, stderr, "gone from the platform, so it is uploaded again")
+	assert.Contains(t, strings.Join(tr.steps, ","), "carry-code,forget-index,sync",
+		"the engine's index is emptied before the second sync, or the tree reads as already pushed")
+
+	require.NotEmpty(t, saved)
+
+	forgotten := saved[len(saved)-1]
+	assert.Nil(t, forgotten.CatalogID, "the dead catalog is forgotten so the sync stages a new one")
+	assert.Nil(t, forgotten.LastSyncedVersionID)
+	assert.Nil(t, forgotten.LastBuiltVersionID, "whatever was built from it can no longer be tied to anything")
+
+	assert.Contains(t, tr.steps, "build", "the re-uploaded code is what gets built")
+	assert.Equal(t, "bld-2", result.BuildID)
+}
+
+// A recovery that died between forgetting the catalog and emptying the
+// engine's index leaves a project with no catalog on record and an index that
+// still describes the tree as pushed. With no catalog the engine has no
+// remote, so against that index every file reads as unchanged and nothing is
+// uploaded; the run has to push from an empty index rather than call the tree
+// empty.
+func TestRun_RollRepushesWhenTheIndexOutlivedTheCatalog(t *testing.T) {
+	var (
+		tr    track
+		syncs int
+	)
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) {
+		return wapi.Config{ArtifactID: "68a0000000000000000000a1"}, nil
+	}
+	f.sync = func(string) (*sync.Result, error) {
+		syncs++
+
+		tr.steps = append(tr.steps, "sync")
+
+		if syncs == 1 {
+			return &sync.Result{}, nil
+		}
+
+		return &sync.Result{NewVersion: "ver2", UploadedCount: 4}, nil
+	}
+	f.codeRef = func(string, string, string) error {
+		t.Fatal("with no catalog on record there is nothing to carry over")
+
+		return nil
+	}
+
+	install(t, f)
+
+	force(t, &resetSyncIndexFn, func(string) error {
+		tr.steps = append(tr.steps, "forget-index")
+
+		return nil
+	})
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, syncs)
+	assert.Contains(t, stderr, "sync index says the tree was already pushed")
+	assert.Contains(t, strings.Join(tr.steps, ","), "sync,forget-index,sync,build")
+	assert.Equal(t, "bld-2", result.BuildID)
+}
+
+// Any other failure to carry the code is still fatal, with the id the reader
+// has to go and look at.
+func TestRun_RollStillFailsOnACarryOverItCannotExplain(t *testing.T) {
+	var tr track
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.sync = emptySync(&tr)
+	f.codeRef = func(string, string, string) error {
+		return &drapi.HTTPError{StatusCode: http.StatusInternalServerError}
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "cannot point artifact")
+	assert.NotContains(t, tr.steps, "build")
 }

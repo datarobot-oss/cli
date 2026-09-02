@@ -64,6 +64,7 @@ var (
 	loadProjectFn        = wapi.LoadConfig
 	initProjectFn        = wapi.Initialize
 	saveProjectFn        = wapi.SaveConfig
+	resetSyncIndexFn     = resetSyncIndex
 	patchCodeRefFn       = workload.PatchArtifactCodeRef
 	syncProjectFn        = defaultSync
 )

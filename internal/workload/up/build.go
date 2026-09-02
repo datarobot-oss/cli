@@ -67,7 +67,8 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 	// and died. Neither is distinguishable from the ordinary case by then: the
 	// link has already moved, so the only record of what happened is the
 	// catalog version in the project's own state, which is what this reads.
-	if err := inheritCode(loaded.ProjectDir, made, synced, report); err != nil {
+	synced, err = inheritCode(loaded.ProjectDir, made, synced, report)
+	if err != nil {
 		return result, err
 	}
 
@@ -312,15 +313,9 @@ func maybeBuild(
 	report *reporter,
 ) (string, error) {
 	if !opts.ForceBuild && !changed(code, synced) {
-		built, builds, err := imageInHand(made)
-		if err != nil {
+		built, builds, err := imageAlreadyBuilt(projectDir, made, report)
+		if err != nil || built {
 			return "", err
-		}
-
-		if built {
-			report.say("  Image is up to date; no rebuild needed.\n")
-
-			return "", nil
 		}
 
 		// The tree matches what was synced and no image exists yet — if a
@@ -337,6 +332,32 @@ func maybeBuild(
 	}
 
 	return buildAndRecord(projectDir, made.ID, "", opts, report)
+}
+
+// imageAlreadyBuilt settles the deploy that has nothing to build: the image is
+// in hand, and the run says so and records where it came from.
+//
+// A build this run found in the artifact's history is recorded the same as
+// one it ran. The inherit rule treats an absent record as stale and spends a
+// build to open it, which is right once; but a found build never wrote the
+// record, so every roll after a recovery spent a build again, and the fresh
+// version it minted then needed a code catalog to build from, which is the
+// one thing a recovery may no longer have. A copy is left alone: it carries
+// its image, the history was never consulted, and the record it would rewrite
+// is the one that let it copy in the first place.
+func imageAlreadyBuilt(projectDir string, made version, report *reporter) (bool, []workload.Build, error) {
+	built, builds, err := imageInHand(made)
+	if err != nil || !built {
+		return false, builds, err
+	}
+
+	if builds != nil {
+		recordBuiltFn(projectDir)
+	}
+
+	report.say("  Image is up to date; no rebuild needed.\n")
+
+	return true, builds, nil
 }
 
 // imageInHand reports whether the candidate already has something to run, and
