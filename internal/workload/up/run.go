@@ -261,10 +261,25 @@ func Run(opts Options) (Result, error) {
 	}
 
 	if plan.Empty() {
-		return lockOnly(loaded, live, result, opts)
+		return settleEmptyPlan(loaded, live, result, opts)
 	}
 
 	return apply(loaded, live, plan, result, opts)
+}
+
+// settleEmptyPlan is what a run with nothing to deploy still owes the
+// workload: the restart a re-sent secret needs before a container will read
+// it, and the lock --lock asks for whether or not this run changed anything.
+//
+// The restart goes first, so an artifact is made permanent only once the
+// workload is serving what this run put in the credential store.
+func settleEmptyPlan(loaded Loaded, live Live, result Result, opts Options) (Result, error) {
+	result, err := restartForRotation(loaded, live, result, opts)
+	if err != nil {
+		return result, err
+	}
+
+	return lockOnly(loaded, live, result, opts)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -945,6 +960,7 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 		WorkloadID: result.WorkloadID,
 		Status:     live.Status,
 		Refused:    refused != nil,
+		DryRun:     opts.DryRun,
 		// Carried through announce rather than read by the renderer, because
 		// it is what this run already did to the credential store and the plan
 		// is what it is about to do to the workload. The verdict needs both:
@@ -1416,6 +1432,10 @@ func awaitRunning(
 func waitLabel(want workload.Serving, result Result) string {
 	if !want.AwaitDrain {
 		return "Waiting for the workload to run"
+	}
+
+	if want.Restart {
+		return "Waiting for the restarted workload to serve"
 	}
 
 	if want.ArtifactID == "" {

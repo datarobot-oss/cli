@@ -47,6 +47,13 @@ type Summary struct {
 	// every other plan this command prints is an announcement.
 	Refused bool
 
+	// DryRun says the run stops after this plan, which changes the tense every
+	// line below is allowed to use: a dry run counts the secrets it would
+	// re-send without sending any, and never reaches the restart, so a
+	// verdict written for the real run would announce two things that did not
+	// happen and are not going to.
+	DryRun bool
+
 	// SecretsRotated is how many credentials this run re-sent before the plan
 	// was computed. A rotation writes to the credential store and to no file,
 	// so it can move nothing the plan is able to show, and an empty plan is
@@ -126,9 +133,14 @@ func settledVerdict(s Summary, plan Plan) string {
 	// about the credential store, which no plan can show, so the verdict says
 	// which of the two it is answering for rather than claiming both.
 	if s.SecretsRotated > 0 {
-		return tui.SuccessStyle.Render("✓ Already up to date") + "\n" +
-			tui.HintStyle.Render(fmt.Sprintf("  Apart from the %s just re-sent, which needs a restart to reach the container.",
-				plural(s.SecretsRotated, "secret", "secrets")))
+		note := fmt.Sprintf("  Apart from the %s just re-sent, which this run restarts the workload to serve.",
+			plural(s.SecretsRotated, "secret", "secrets"))
+		if s.DryRun {
+			note = fmt.Sprintf("  Apart from the %s this would re-send, which would need a restart to serve.",
+				plural(s.SecretsRotated, "secret", "secrets"))
+		}
+
+		return tui.SuccessStyle.Render("✓ Already up to date") + "\n" + tui.HintStyle.Render(note)
 	}
 
 	return tui.SuccessStyle.Render("✓ Already up to date")

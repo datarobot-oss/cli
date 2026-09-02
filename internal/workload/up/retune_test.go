@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -381,4 +382,197 @@ func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
 		"await-resize", "settle:+drain", "lock:68a0000000000000000000a1",
 	}, tr.steps, "the lock comes last, once the workload is serving again")
 	assert.True(t, result.Locked)
+}
+
+// rotationOnly is a run that re-sent a secret and found nothing else to do:
+// the credential store has the new value and the manifest is byte for byte
+// what it was, so the plan is empty and no container is replaced on the way
+// past.
+func rotationOnly(t *testing.T, tr *track, f fakes) fakes {
+	t.Helper()
+
+	swap(t, &runWizardFn, func(wizard.Options) (wizard.Result, error) {
+		return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 1}, nil
+	})
+
+	if f.workloadD == nil {
+		f.workloadD = func(string) (workload.Document, error) { return docOf(liveWorkloadJSON), nil }
+	}
+
+	if f.artifactD == nil {
+		f.artifactD = func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil }
+	}
+
+	if f.guard == nil {
+		f.guard = func(workloadID string) error {
+			tr.steps = append(tr.steps, "guard:"+workloadID)
+
+			return nil
+		}
+	}
+
+	if f.settings == nil {
+		f.settings = func(workloadID string, _ json.RawMessage) (*workload.Replacement, error) {
+			tr.steps = append(tr.steps, "settings:"+workloadID)
+
+			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID}, nil
+		}
+	}
+
+	if f.waitReplace == nil {
+		f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			tr.steps = append(tr.steps, "await-restart")
+			started.Status = workload.ReplacementStatusCompleted
+
+			return started, nil
+		}
+	}
+
+	// A restart moves no version, so the wait must not be told to expect one:
+	// a wait on an artifact that never changes runs to its timeout.
+	if f.wait == nil {
+		f.wait = func(id string, want workload.Serving, _, _ time.Duration,
+			_ func(*workload.Workload),
+		) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, servingLabel(want))
+
+			return &workload.Workload{
+				ID: id, Name: "gpt-oss-20b-vllm", Status: workload.WorkloadStatusRunning,
+				ArtifactID: "68a0000000000000000000a1", Endpoint: "https://app.datarobot.com/workloads/68b0/",
+			}, nil
+		}
+	}
+
+	return f
+}
+
+// A container reads its credentials when it starts, so a re-sent secret only
+// reaches the workload on a new generation. The deploy makes one rather than
+// printing two commands for the user to run: the platform carries a settings
+// change out by rolling onto the artifact already running, so the endpoint
+// answers throughout.
+func TestRun_RotationWithNothingElseRestartsTheWorkload(t *testing.T) {
+	var tr track
+
+	install(t, rotationOnly(t, &tr, fakes{}))
+
+	result, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{
+			"guard:68b0c1d2e3f4a5b6c7d8e9f0", "settings:68b0c1d2e3f4a5b6c7d8e9f0",
+			"await-restart", "settle:+drain",
+		},
+		tr.steps,
+		"the same rolling swap a resize gets, waited for the same way: the replacement completing says the "+
+			"new generation came up, and the drain is what says the old one stopped serving the replaced value")
+
+	assert.Equal(t, ActionUpdated, result.Action,
+		"a run that reports itself unchanged is one the next bare run will call up to date")
+	assert.Equal(t, 1, result.Env.SecretsRotated)
+}
+
+// The restart exists for the rotation. A run that found nothing to do and
+// re-sent nothing must stay the cheap no-op that makes `up` safe on every
+// push.
+func TestRun_NoRotationLeavesAnEmptyPlanAlone(t *testing.T) {
+	var tr track
+
+	f := rotationOnly(t, &tr, fakes{})
+	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("nothing was re-sent, so there is nothing for a restart to carry")
+
+		return nil, nil
+	}
+
+	swap(t, &runWizardFn, func(wizard.Options) (wizard.Result, error) {
+		t.Fatal("no flag was passed")
+
+		return wizard.Result{}, nil
+	})
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Contains(t, stderr, "Already up to date")
+	assert.Empty(t, tr.steps)
+}
+
+// --detach returns once the swap is requested, the same as every other wait
+// this command performs. The value still lands, just not before the command
+// returns.
+func TestRun_DetachedRotationRestartDoesNotWait(t *testing.T) {
+	var tr track
+
+	install(t, rotationOnly(t, &tr, fakes{}))
+
+	result, stderr, err := runIn(t, retuned("cpu: 3", "cpu: 3"),
+		Options{NonInteractive: true, SyncEnv: true, Detach: true})
+	require.NoError(t, err)
+
+	assert.NotContains(t, tr.steps, "await-restart")
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Contains(t, stderr, "not waiting")
+}
+
+// A restart that could not be requested leaves the store holding a value the
+// workload is not serving, which is the one state this whole path exists to
+// avoid. It has to be an error and it has to say which half happened.
+func TestRun_FailedRotationRestartSaysTheOldValueIsStillServing(t *testing.T) {
+	var tr track
+
+	f := rotationOnly(t, &tr, fakes{})
+	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		return nil, errors.New("boom")
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "1 secret was re-sent to the credential store")
+	assert.Contains(t, err.Error(), "still serving the value it had")
+}
+
+// The failure sentence describes the run that was asked for. Borrowing the
+// resize's machinery must not borrow its wording, or a rotation that fails
+// reports itself as a sizing change nobody made.
+func TestRun_FailedRotationRestartDoesNotCallItselfAResize(t *testing.T) {
+	var tr track
+
+	f := rotationOnly(t, &tr, fakes{})
+	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+		_ func(*workload.Replacement),
+	) (*workload.Replacement, error) {
+		started.Status = workload.ReplacementStatusFailed
+
+		return started, errors.New("boom")
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "the restart of workload")
+	assert.Contains(t, err.Error(), "still serving the value it had")
+	assert.NotContains(t, err.Error(), "the sizing it had")
+}
+
+// The drain after a restart is the one a resize gets, but it must not be
+// called one: nothing about the settings moved, and a spinner saying "new
+// settings" over a rotation is the mechanism's name leaking into the user's
+// run. Caught on staging, where it read exactly that way.
+func TestWaitLabel_RestartIsNotCalledAResize(t *testing.T) {
+	assert.Equal(t, "Waiting for the restarted workload to serve",
+		waitLabel(workload.Serving{AwaitDrain: true, Restart: true}, Result{}))
+	assert.Equal(t, "Waiting for the new settings to serve",
+		waitLabel(workload.Serving{AwaitDrain: true}, Result{}))
 }
