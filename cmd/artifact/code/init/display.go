@@ -111,6 +111,22 @@ func printAlreadyLinked(artifactID, dir string) {
 		"Pass --force to point this directory at another artifact instead."))
 }
 
+// printLinkUnchanged reports the link that was already what it was asked to
+// be, and says what was deliberately not touched.
+//
+// The second line is there because "nothing to change" invites the reader to
+// re-run with something that does change it. What a relink would have changed
+// is the sync baseline, and losing that is how an unsynced local edit ends up
+// renamed to a .LOCAL copy with the remote downloaded over it.
+func printLinkUnchanged(artifactID, dir string) {
+	fmt.Println(tui.SuccessStyle.Render(
+		fmt.Sprintf("%s already points at artifact %s; nothing to change.", dir, artifactID),
+	))
+	fmt.Println(tui.DimStyle.Render(
+		"The sync baseline was left alone. Rebuilding it against the same artifact would make every " +
+			"local edit not yet synced lose to the copy already there."))
+}
+
 // printRelinked says what moved, and from where.
 func printRelinked(previous, artifactID, dir string) {
 	if previous == "" {

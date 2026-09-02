@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
@@ -438,6 +439,93 @@ func TestRunE_JSONHasNoPreviousArtifactForAFreshLink(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
 	require.Contains(t, result, "previousArtifactId")
 	assert.Nil(t, result["previousArtifactId"])
+}
+
+// --force at the artifact already linked is not a re-point, and performing one
+// anyway would be pure loss: Relink rebuilds the sync baseline from the
+// artifact named, so BASE and lastSyncedVersionId would be discarded and the
+// next sync would see every unsynced local edit as an ADD_CONFLICT — renamed
+// to <path>.LOCAL.<timestamp>, with the remote copy downloaded over it.
+func TestRunE_ForceWithTheArtifactAlreadyLinkedChangesNothing(t *testing.T) {
+	tmp := t.TempDir()
+	artifactID := "68b0aaaa0000000000000001"
+
+	require.NoError(t, wapi.Initialize(tmp, wapi.InitOptions{
+		ArtifactID:          artifactID,
+		CatalogID:           "68b0bbbb0000000000000002",
+		LastSyncedVersionID: "68b0cccc0000000000000003",
+	}))
+
+	// A baseline with something in it. An empty one would pass this test
+	// whether or not the guard exists.
+	syncedVersion := "68b0cccc0000000000000003"
+
+	syncedAt := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	base := wapi.Manifest{
+		Version:         1,
+		SyncedAt:        &syncedAt,
+		SyncedVersionID: &syncedVersion,
+		Files: map[string]wapi.FileMeta{
+			"app.py": {Hash: strings.Repeat("a", 64), Size: 12},
+		},
+	}
+	require.NoError(t, wapi.SaveManifest(tmp, base))
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "my-agent", "DRAFT", nil), nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{artifactID})
+	require.NoError(t, cmd.Flags().Set("force", "true"))
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	assert.Contains(t, out, "nothing to change")
+
+	after, err := wapi.LoadManifest(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, base.Files, after.Files, "the sync baseline is what a needless relink destroys")
+
+	require.NotNil(t, after.SyncedVersionID)
+	assert.Equal(t, syncedVersion, *after.SyncedVersionID)
+
+	cfg, err := wapi.LoadConfig(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, artifactID, cfg.ArtifactID)
+
+	require.NotNil(t, cfg.LastSyncedVersionID)
+	assert.Equal(t, syncedVersion, *cfg.LastSyncedVersionID,
+		"clearing this alone would send the next sync into a full three-way diff")
+}
+
+// The no-op reports the link it left in place, and claims to have replaced
+// nothing — because it did not.
+func TestRunE_ForceWithTheSameArtifactJSONReportsNoPrevious(t *testing.T) {
+	tmp := t.TempDir()
+	artifactID := "68b0aaaa0000000000000001"
+
+	require.NoError(t, wapi.Initialize(tmp, wapi.InitOptions{ArtifactID: artifactID}))
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "my-agent", "DRAFT", nil), nil
+	})
+
+	cmd := newTestCmd(t, tmp, true, []string{artifactID})
+	require.NoError(t, cmd.Flags().Set("force", "true"))
+	require.NoError(t, cmd.Flags().Set("output-format", "json"))
+
+	out := captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, artifactID, result["artifactId"])
+	assert.Nil(t, result["previousArtifactId"], "nothing was replaced")
 }
 
 func TestCmd_RegistersForceFlag(t *testing.T) {

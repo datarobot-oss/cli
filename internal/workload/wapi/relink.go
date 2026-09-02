@@ -46,6 +46,17 @@ import (
 // Those two and the three above are the whole of Config: nothing is dropped by
 // omission here, and a field added to Config later has to be settled here too.
 //
+// It is therefore not idempotent, and callers must not hand it the artifact the
+// project is already linked to. Resetting the baseline is the whole point when
+// the artifact changes and pure loss when it does not: with BASE empty and
+// LastSyncedVersionID cleared, sync classifies a file that exists on both sides
+// with different bytes as ADD_CONFLICT rather than LOCAL_MODIFIED, so the next
+// run renames the local edit to <path>.LOCAL.<timestamp> and downloads the
+// remote copy over it — an edit that would otherwise have uploaded cleanly.
+// The check belongs to the caller because only it knows whether being handed
+// the current id is a mistake or a deliberate baseline reset; the one caller
+// there is, `artifact code init --force`, treats it as the former and no-ops.
+//
 // Returns ErrNotInitialized when there is no link to move. Relinking is not a
 // way to create one: Initialize is, and it can say what a fresh link needs.
 func Relink(projectDir string, opts InitOptions) error {

@@ -159,6 +159,29 @@ func relink(dir string, art workload.Artifact, opts wapi.InitOptions, outputForm
 		previous = cfg.ArtifactID
 	}
 
+	// Re-pointing at the artifact already linked is not a re-point, and doing
+	// it anyway is pure loss rather than a harmless rewrite. Relink rebuilds
+	// the sync baseline from the artifact named, which is correct when that is
+	// a different one and destructive when it is not: with BASE emptied and
+	// lastSyncedVersionId cleared, the next sync sees a file that exists on
+	// both sides with different bytes as an ADD_CONFLICT rather than a plain
+	// local edit, renames it to <path>.LOCAL.<timestamp>, and downloads the
+	// remote copy over it. The same edit uploads cleanly against the baseline
+	// this call would have discarded.
+	//
+	// So the answer being already correct makes this a no-op, not an error:
+	// --force says do not refuse, and the end state it asks for is the one the
+	// directory is in.
+	if previous == opts.ArtifactID {
+		if outputFormat == outputformat.OutputFormatJSON {
+			return renderInitResult(outputFormat, newInitResult(art, dir))
+		}
+
+		printLinkUnchanged(opts.ArtifactID, dir)
+
+		return nil
+	}
+
 	if err := wapi.Relink(dir, opts); err != nil {
 		return err
 	}
