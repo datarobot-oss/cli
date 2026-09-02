@@ -161,7 +161,7 @@ func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
 			continue
 		}
 
-		setNestedKeyInNode(node, profileDestPath(key), viper.Get(key))
+		setNestedKeyInNode(node, profileDestPath(node, key), viper.Get(key))
 	}
 }
 
@@ -210,7 +210,7 @@ func candidateKeys(keys []string) []string {
 // to: the key itself for the default profile, or profiles.<name>.<key> when
 // a named profile is active and the key is profile-scoped. PersistableKeys
 // is always matched against the logical key, never against this path.
-func profileDestPath(key string) string {
+func profileDestPath(node *yaml.Node, key string) string {
 	name := ActiveProfile()
 	if name == "" {
 		return key
@@ -220,7 +220,57 @@ func profileDestPath(key string) string {
 		return key
 	}
 
-	return profilesKey + "." + name + "." + key
+	return profilesKey + "." + profileSectionName(node, name) + "." + key
+}
+
+func profileSectionName(node *yaml.Node, name string) string {
+	profilesNode := profilesMappingNode(node)
+	if profilesNode == nil {
+		return name
+	}
+
+	return existingProfileName(profilesNode, name)
+}
+
+func profilesMappingNode(node *yaml.Node) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	for i := 0; i < len(node.Content)-1; i += 2 {
+		keyNode := node.Content[i]
+		if keyNode.Value != profilesKey {
+			continue
+		}
+
+		profilesNode := node.Content[i+1]
+		if profilesNode.Kind == yaml.MappingNode {
+			return profilesNode
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func existingProfileName(profilesNode *yaml.Node, name string) string {
+	for i := 0; i < len(profilesNode.Content)-1; i += 2 {
+		sectionKey := profilesNode.Content[i]
+		if sectionKey.Value == name {
+			return name
+		}
+
+		if sectionKey.Value == "" {
+			continue
+		}
+
+		if NormalizeProfileName(sectionKey.Value) == name {
+			return sectionKey.Value
+		}
+	}
+
+	return name
 }
 
 // Note: Keys NOT in candidates are preserved as-is from the existing node.

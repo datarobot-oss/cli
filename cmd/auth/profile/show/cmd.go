@@ -145,6 +145,7 @@ func resolveDetail(name string, own, def config.ProfileInfo, active bool) profil
 	detail.HasToken = own.HasToken
 
 	if !detail.HasTokenOwn {
+		detail.Endpoint = def.Endpoint
 		detail.HasToken = def.HasToken
 	}
 

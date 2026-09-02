@@ -183,3 +183,29 @@ func TestUpdateConfigFile_ProfileNameWrittenLowercase(t *testing.T) {
 	_, hasLowercase := profiles["eu-mtsaas"]
 	assert.True(t, hasLowercase, "the profile section must be written lowercase so ReadConfigFile's case-insensitive lookup finds it again")
 }
+
+func TestUpdateConfigFile_ReusesExistingMixedCaseProfileSection(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	initial := "profiles:\n  EU-MTSaaS:\n    endpoint: https://app.eu.datarobot.com/api/v2\n    token: old-token\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(initial), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+
+	viper.Set(ProfileKey, "EU-MTSaaS")
+	viper.Set(DataRobotURL, "https://app.eu.datarobot.com/api/v2")
+	viper.Set(DataRobotAPIKey, "new-token")
+
+	require.NoError(t, UpdateConfigFile(DataRobotURL, DataRobotAPIKey))
+
+	raw := readRawYAML(t, configFile)
+
+	profiles, ok := raw["profiles"].(map[string]any)
+	require.True(t, ok)
+	require.Len(t, profiles, 1)
+
+	_, hasOriginalCase := profiles["EU-MTSaaS"]
+	assert.True(t, hasOriginalCase, "an existing mixed-case profile section must be reused instead of creating a lowercase duplicate")
+
+	_, hasLowercase := profiles["eu-mtsaas"]
+	assert.False(t, hasLowercase, "a second lowercase profile section must not be created when the existing section uses a different case")
+}
