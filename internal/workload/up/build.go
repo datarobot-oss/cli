@@ -55,7 +55,7 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 
 	artifactID, fresh := made.ID, made.Fresh
 
-	synced, err := syncCode(loaded.ProjectDir, report)
+	synced, err := syncOrRepush(loaded.ProjectDir, made, report)
 	if err != nil {
 		return result, err
 	}
