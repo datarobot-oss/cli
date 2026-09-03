@@ -106,6 +106,30 @@ func TestSyncEnv_RemovesWhatEnvDropped(t *testing.T) {
 	assert.NotContains(t, after, "REGION", "a name .env lost")
 }
 
+// A .env that is there and declares nothing is not an instruction to delete
+// the environment. A touch, or a secrets step that wrote an empty file before
+// a scheduled run passed --yes on its behalf, would otherwise strip every
+// variable the manifest carries, with a table nobody was reading as the only
+// guard.
+func TestSyncEnv_EmptyEnvFileLeavesTheManifestAlone(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "# nothing yet\n")
+
+	stderr := &bytes.Buffer{}
+	opts := syncing(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, 0, result.EnvNamesRemoved)
+	assert.Equal(t, before, readManifest(t, dir), "the file is byte for byte what it was")
+	assert.Contains(t, stderr.String(), "declares no variables")
+}
+
 // The file belongs to the user. An edit that dropped their comments or
 // reordered their keys would be a worse trade than the hand edit it replaces.
 func TestImportEnv_PreservesCommentsAndHandTunedKeys(t *testing.T) {
@@ -1269,6 +1293,23 @@ func TestReportEnvDrift_SilentWhenTheFilesAgree(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+// An empty .env is not drift either: the sync leaves such a file alone, so a
+// notice announcing the removals it would make would be advertising something
+// the flag is not going to do.
+func TestReportEnvDrift_EmptyEnvFileReportsNoRemovals(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "# nothing yet\n")
+
+	parsed, err := manifest.Load(manifest.Path(dir))
+	require.NoError(t, err)
+
+	stderr := &bytes.Buffer{}
+
+	ReportEnvDrift(dir, "dr workload up", stderr, parsed)
+
+	assert.Empty(t, stderr.String())
+}
+
 // The standing facts stay with the command that is about configuration. None
 // of them can be settled by anything the reader of a deploy is about to run,
 // so said there each would print on every run for the life of the project, and
@@ -1507,6 +1548,31 @@ func TestUpdateEnv_RotatesThroughASharedEnvironment(t *testing.T) {
 	require.Len(t, *sent, 1)
 	assert.Equal(t, "66f000000000000000000001", (*sent)[0].Name)
 	assert.Equal(t, "fixture-key-after-rotation-b2b2", (*sent)[0].Value)
+}
+
+// Nobody to ask is a refusal, not a pass. Without a terminal and without --yes
+// the question the deploy hands over errors, and a rotation through a shared
+// block is behind it like every other write to the tenant.
+func TestUpdateEnv_NobodyToAskMeansNoRotationThroughASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		return false, errors.New("there is nowhere here to ask you about it")
+	}
+
+	_, err := Run(opts)
+	require.ErrorContains(t, err, "nowhere here to ask")
+
+	assert.Empty(t, *sent, "nothing reached the store")
+	assert.Equal(t, sharedEnvSecretManifest, readManifest(t, dir))
 }
 
 // The other side of that line: once a literal in the shared block is one .env

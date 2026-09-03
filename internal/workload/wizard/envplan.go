@@ -64,12 +64,12 @@ func (o Options) envPlan(parsed *manifest.Manifest, detected Detected, wanted []
 	declared := parsed.EnvVarNames()
 	blocked := parsed.CanDeclareEnvVars() != nil
 
-	// A shape no edit can touch has one thing to say about every variable, and
-	// says it once. Running the other two would list a name under a verdict
-	// the run cannot carry out and again under the reason it cannot, which is
-	// two rows and one of them a lie.
+	// A shape no edit can touch has one thing to say about the file, and says
+	// it once per name. Running the other three would list a name under a
+	// verdict the run cannot carry out and again under the reason it cannot,
+	// which is two rows and one of them a lie.
 	if blocked {
-		return o.skipActions(parsed, detected)
+		return o.sharedPlan(parsed, detected, wanted)
 	}
 
 	actions := o.addActions(wanted, declared)
@@ -109,24 +109,47 @@ func (o Options) valueActions(parsed *manifest.Manifest, detected Detected) []en
 	}
 
 	for _, name := range unverifiable {
-		actions = append(actions, envAction{
-			name, actResend,
-			"its value goes to the credential store; " + manifest.FileName + " is not changed",
-		})
+		actions = append(actions, resendRow(name))
 	}
 
 	return actions
 }
 
-// skipActions is what a reconciliation still cannot carry, which is now one
-// thing: a manifest whose environment is shared through a YAML anchor has
-// nowhere to append and no entry that can be rewritten without changing it for
-// every container that reads it. Everything else .env says is applied.
-func (o Options) skipActions(parsed *manifest.Manifest, detected Detected) []envAction {
-	wanted := o.Answers.syncVars(detected)
+// resendRow is a secret on its way to the credential store, which is the one
+// act a plan lists whatever shape the file takes: it writes to the store and
+// never to the file, so the file's own refusals say nothing about it.
+func resendRow(name string) envAction {
+	return envAction{
+		name, actResend,
+		"its value goes to the credential store; " + manifest.FileName + " is not changed",
+	}
+}
 
+// sharedPlan is the table for the one shape a reconciliation cannot write to:
+// a manifest whose environment is shared through a YAML anchor has nowhere to
+// append and no entry that can be rewritten or dropped without changing it for
+// every container that reads it, so every name .env carries is a skip. Every
+// name but the secrets. Those are re-sent, which is a write to the tenant
+// whatever the file allows, and a row for it is what makes the run stop and
+// ask: a table of nothing but skips is one the run walks through in silence,
+// and the rotation behind it was reaching the store with nobody having agreed.
+func (o Options) sharedPlan(parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar) []envAction {
+	_, unverifiable := o.compareValues(parsed, detected)
+
+	resent := make(map[string]bool, len(unverifiable))
 	actions := make([]envAction, 0, len(wanted))
+
+	for _, name := range unverifiable {
+		resent[name] = true
+
+		actions = append(actions, resendRow(name))
+	}
+
 	for _, v := range wanted {
+		if resent[v.Name] {
+			continue
+		}
+
 		actions = append(actions, envAction{
 			v.Name, actSkip,
 			"the manifest's environment is shared, so no entry in it can be rewritten",
@@ -158,11 +181,13 @@ func removeActions(parsed *manifest.Manifest, detected Detected) []envAction {
 // names, which is the half of a reconciliation that loses configuration. Both
 // the table and the drift notice ask this, so they ask it in one place.
 func droppedNames(parsed *manifest.Manifest, detected Detected) []string {
-	// No file, nothing dropped. An absent .env names nothing, so every
-	// variable would read as removed, which is the reading that would have a
-	// bare deploy in a fresh CI clone announce the deletion of an environment
-	// nobody asked to change.
-	if !fsutil.FileExists(filepath.Join(detected.Dir, EnvFileName)) {
+	// No file, nothing dropped, and a file naming nothing is the same. An
+	// absent .env names nothing, so every variable would read as removed,
+	// which is the reading that would have a bare deploy in a fresh CI clone
+	// announce the deletion of an environment nobody asked to change; an
+	// empty one is what a touch or a secrets step that wrote nothing leaves,
+	// and the sync it advertises leaves such a file alone.
+	if !fsutil.FileExists(filepath.Join(detected.Dir, EnvFileName)) || len(detected.EnvVars) == 0 {
 		return nil
 	}
 
