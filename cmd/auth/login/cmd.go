@@ -131,11 +131,11 @@ This command will:
 If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 --no-browser to skip the browser launch entirely, which is useful over SSH.
 
-Deployments that front their own OAuth2 authorization server — such as a
-self-hosted inference stack — can be logged into with --oauth, which runs a
-standard authorization-code flow with PKCE instead of the DataRobot hand-off.
-The access token then never travels in a URL. Set DATAROBOT_OAUTH_ENABLED=true
-to make that the default for a shell; --no-oauth forces the hand-off back on.`,
+Deployments that front their own OAuth2 authorization server can be logged
+into with --oauth, which runs a standard authorization-code flow with PKCE
+instead of the DataRobot hand-off. The access token then never travels in a
+URL. Set DATAROBOT_OAUTH_ENABLED=true to make that the default for a shell;
+--no-oauth forces the hand-off back on.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          RunE,

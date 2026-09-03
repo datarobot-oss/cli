@@ -28,6 +28,11 @@ import (
 func RunE(_ *cobra.Command, _ []string) error {
 	viperx.Set(config.DataRobotAPIKey, "")
 
+	// Clearing the access token alone would leave a working refresh token on
+	// disk — logout has to drop the means of getting a new one too, or it does
+	// not log anyone out.
+	auth.ClearOAuthState()
+
 	err := auth.WriteConfigFile()
 	if err != nil {
 		log.Error(fmt.Errorf("failed to write config: %w", err))

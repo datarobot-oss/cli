@@ -80,6 +80,10 @@ type BrowserFlow struct {
 	// Wait), so errors cannot be signalled that way.
 	errCh chan error
 
+	// refreshToken is whatever the token exchange returned, for the caller to
+	// persist. Empty in legacy mode and whenever the server issues none.
+	refreshToken string
+
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -170,11 +174,10 @@ func newBrowserFlowOAuthOn(addr string, meta *OAuthMetadata) (*BrowserFlow, erro
 	// The redirect URI must keep addr's HOSTNAME and take the listener's PORT.
 	//
 	// Both halves matter. listener.Addr() resolves "localhost" to 127.0.0.1, and
-	// authorization servers match redirect_uri as an exact string — Hydra
-	// registers http://localhost:51164/, so sending the IP literal instead gets
-	// the request rejected outright. The port has to come from the listener
-	// because tests bind :0 and the code must come back to the port actually
-	// bound.
+	// authorization servers match redirect_uri as an exact string — a server
+	// that registered http://localhost:51164/ rejects the IP literal outright.
+	// The port has to come from the listener because tests bind :0 and the code
+	// must come back to the port actually bound.
 	redirectHost, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		listener.Close()
@@ -224,6 +227,22 @@ func newBrowserFlowOAuthOn(addr string, meta *OAuthMetadata) (*BrowserFlow, erro
 // AuthURL is the DataRobot URL the user must visit to authorize the CLI.
 func (f *BrowserFlow) AuthURL() string {
 	return f.authURL
+}
+
+// RefreshToken is the refresh token from the OAuth exchange, or "" when the
+// login took the legacy path or the server issued none. Only meaningful after
+// Wait has returned successfully.
+func (f *BrowserFlow) RefreshToken() string {
+	return f.refreshToken
+}
+
+// TokenEndpoint is where a renewal should be sent, or "" in legacy mode.
+func (f *BrowserFlow) TokenEndpoint() string {
+	if f.oauthMeta == nil {
+		return ""
+	}
+
+	return f.oauthMeta.TokenEndpoint
 }
 
 // localAddr reports the address the listener actually bound, which differs from
@@ -367,6 +386,11 @@ func (f *BrowserFlow) handleOAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Kept for the caller to persist after Wait returns. Without a refresh
+	// token the credential simply expires and the user logs in again — the
+	// same behavior as the legacy flow.
+	f.refreshToken = tok.RefreshToken
+
 	if tok.RefreshToken == "" {
 		log.Debug("Authorization server issued no refresh token; the credential expires without renewal")
 	}
@@ -497,6 +521,16 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	if err != nil {
 		return "", err
+	}
+
+	// Record what a later renewal needs — or clear any stale material when this
+	// login took the legacy path, so a refresh token from a previous OAuth
+	// login is never renewed against a different instance. Persisting is the
+	// caller's job; both call sites write the config immediately after.
+	if flow.TokenEndpoint() != "" && flow.RefreshToken() != "" {
+		StoreOAuthState(flow.RefreshToken(), flow.TokenEndpoint())
+	} else {
+		ClearOAuthState()
 	}
 
 	return apiKey, nil

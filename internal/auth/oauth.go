@@ -1,8 +1,8 @@
 package auth
 
 // OAuth2 authorization-code + PKCE login, for DataRobot deployments that front
-// their own OAuth2 authorization server (e.g. the inference stack's Hydra)
-// rather than the SaaS `/account/developer-tools?cliRedirect=true` hand-off.
+// their own OAuth2 authorization server rather than the SaaS
+// `/account/developer-tools?cliRedirect=true` hand-off.
 //
 // Why this exists alongside the legacy flow rather than replacing it: the SaaS
 // path returns the credential as a `?key=<token>` query parameter, which means
@@ -32,6 +32,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 )
 
@@ -264,6 +266,123 @@ func exchangeCode(ctx context.Context, meta *OAuthMetadata, p *pkce, redirectURI
 
 	if tok.AccessToken == "" {
 		return nil, errors.New("token endpoint returned no access_token")
+	}
+
+	return &tok, nil
+}
+
+// ErrNoRefreshToken means this profile has nothing to renew with — either it
+// was authenticated by the legacy hand-off, or the authorization server did not
+// issue a refresh token.
+var ErrNoRefreshToken = errors.New("no refresh token stored for this profile")
+
+// RefreshAccessToken renews the stored access token without a browser.
+//
+// This is the whole point of asking for `offline_access`: an authorization
+// server that issues short-lived access tokens would otherwise force a full
+// interactive login every time one expired.
+//
+// It writes the new credential into viper but does NOT persist it — the caller
+// owns writing drconfig.yaml, matching how the login flow behaves. Returns
+// ErrNoRefreshToken when the profile has nothing to renew with, which callers
+// should treat as "fall back to interactive login", not as a failure.
+func RefreshAccessToken(ctx context.Context) (string, error) {
+	refresh := viperx.GetString(config.OAuthRefreshToken)
+	endpoint := viperx.GetString(config.OAuthTokenEndpoint)
+
+	if refresh == "" || endpoint == "" {
+		return "", ErrNoRefreshToken
+	}
+
+	tok, err := postRefresh(ctx, endpoint, refresh)
+	if err != nil {
+		return "", err
+	}
+
+	viperx.Set(config.DataRobotAPIKey, tok.AccessToken)
+
+	// Servers that rotate refresh tokens invalidate the old one on use, so a
+	// rotated value MUST replace what is stored or the next renewal fails.
+	// Servers that do not rotate simply omit it, and the stored one stays good.
+	if tok.RefreshToken != "" {
+		viperx.Set(config.OAuthRefreshToken, tok.RefreshToken)
+	}
+
+	return tok.AccessToken, nil
+}
+
+// StoreOAuthState records what a successful OAuth login needs for later
+// renewal. Persisting is the caller's job.
+func StoreOAuthState(refreshToken, tokenEndpoint string) {
+	viperx.Set(config.OAuthRefreshToken, refreshToken)
+	viperx.Set(config.OAuthTokenEndpoint, tokenEndpoint)
+}
+
+// ClearOAuthState drops the renewal material.
+//
+// Called on logout, and whenever a login takes the legacy path: a refresh token
+// left beside a hand-off credential would later be renewed against whatever
+// instance issued it, which is not necessarily the one now configured.
+func ClearOAuthState() {
+	viperx.Set(config.OAuthRefreshToken, "")
+	viperx.Set(config.OAuthTokenEndpoint, "")
+}
+
+// postRefresh performs the refresh_token grant and returns the parsed response.
+//
+// A non-200 clears the stored material before returning: a rejected refresh
+// token is spent — revoked, expired, or already rotated — so keeping it would
+// make every later command retry something that cannot work.
+func postRefresh(ctx context.Context, endpoint, refresh string) (*tokenResponse, error) {
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refresh)
+	form.Set("client_id", OAuthClientID)
+
+	ctx, cancel := context.WithTimeout(ctx, tokenExchangeTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("building refresh request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refreshing access token at %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("reading refresh response: %w", err)
+	}
+
+	var tok tokenResponse
+
+	// Decode before checking the status: OAuth2 error replies are JSON too, and
+	// their error_description is the actionable half.
+	unmarshalErr := json.Unmarshal(body, &tok)
+
+	if resp.StatusCode != http.StatusOK {
+		ClearOAuthState()
+
+		if tok.Error != "" {
+			return nil, fmt.Errorf("refresh rejected: %s: %s", tok.Error, tok.ErrorDescription)
+		}
+
+		return nil, fmt.Errorf("refresh failed with HTTP %d", resp.StatusCode)
+	}
+
+	if unmarshalErr != nil {
+		return nil, fmt.Errorf("refresh endpoint returned unparseable JSON: %w", unmarshalErr)
+	}
+
+	if tok.AccessToken == "" {
+		return nil, errors.New("refresh endpoint returned no access_token")
 	}
 
 	return &tok, nil

@@ -371,6 +371,20 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return true
 	}
 
+	// A stored token that was actually REJECTED may be renewable without a
+	// browser. Try that before the interactive flow: an authorization server
+	// with short access-token lifetimes would otherwise send the user through
+	// Okta every few minutes, which is the whole reason `offline_access` is
+	// requested at login.
+	//
+	// Only on a judged rejection. An unjudged failure (404, 5xx, a network
+	// blip) is not evidence the token expired, and burning a
+	// rotation-on-use refresh token against a server that never rejected
+	// anything would turn a transient outage into a forced re-login.
+	if tokenWasRejected(viperErr) && renewStoredToken(ctx) {
+		return true
+	}
+
 	skipAuthFlow := false
 
 	// Everything this gate prints goes to stderr: PreRunE runs before the command,
@@ -647,4 +661,60 @@ func GetBaseURLOrAsk() string {
 	}
 
 	return datarobotHost
+}
+
+// renewStoredToken tries to swap an expired access token for a fresh one using
+// the stored refresh token, and reports whether the profile ends up usable.
+//
+// false means "carry on to the interactive login" — including the ordinary case
+// of a profile that has nothing to renew with.
+func renewStoredToken(ctx context.Context) bool {
+	if _, err := RefreshAccessToken(ctx); err != nil {
+		if !errors.Is(err, ErrNoRefreshToken) {
+			log.Debugf("Could not renew the access token: %v", err)
+		}
+
+		return false
+	}
+
+	// Verify rather than trust: the renewed credential has to satisfy the same
+	// check the stored one just failed, or a server handing back a token it
+	// will not accept would loop us silently.
+	if _, err := config.GetAPIKey(ctx); err != nil {
+		log.Debug("Renewed token did not verify; falling back to interactive login")
+		ClearOAuthState()
+
+		return false
+	}
+
+	if err := WriteConfigFileSilent(); err != nil {
+		log.Error("Failed to write config file.", "error", err)
+
+		return false
+	}
+
+	log.Debug("Renewed the access token with the stored refresh token")
+
+	return true
+}
+
+// tokenWasRejected reports whether a verification failure was the server
+// judging the credential (401/403) rather than being unable to answer.
+//
+// The distinction is the same one fprintServerStatus makes: a 404, 429, 5xx or
+// transport error says nothing about the token, and treating it as expiry would
+// spend a refresh token — possibly a rotate-on-use one — on a server that never
+// rejected anything.
+func tokenWasRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var statusErr *config.HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+
+	return statusErr.StatusCode == http.StatusUnauthorized ||
+		statusErr.StatusCode == http.StatusForbidden
 }

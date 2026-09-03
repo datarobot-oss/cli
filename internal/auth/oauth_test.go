@@ -114,9 +114,9 @@ func TestDiscoverOAuth_Success(t *testing.T) {
 		assert.Equal(t, discoveryPath, r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"issuer":"http://hydra",
-			"authorization_endpoint":"http://hydra/oauth2/auth",
-			"token_endpoint":"http://hydra/oauth2/token"
+			"issuer":"https://as.example",
+			"authorization_endpoint":"https://as.example/oauth2/auth",
+			"token_endpoint":"https://as.example/oauth2/token"
 		}`))
 	}))
 	defer srv.Close()
@@ -124,16 +124,16 @@ func TestDiscoverOAuth_Success(t *testing.T) {
 	meta, err := DiscoverOAuth(context.Background(), srv.URL)
 
 	require.NoError(t, err)
-	assert.Equal(t, "http://hydra/oauth2/auth", meta.AuthorizationEndpoint)
-	assert.Equal(t, "http://hydra/oauth2/token", meta.TokenEndpoint)
+	assert.Equal(t, "https://as.example/oauth2/auth", meta.AuthorizationEndpoint)
+	assert.Equal(t, "https://as.example/oauth2/token", meta.TokenEndpoint)
 }
 
 // The authorize URL must carry PKCE and state, and the redirect URI must name
 // the port actually bound or the code comes back to nothing.
 func TestOAuthFlow_AuthURLCarriesPKCEAndState(t *testing.T) {
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
-		TokenEndpoint:         "http://hydra/oauth2/token",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
+		TokenEndpoint:         "https://as.example/oauth2/token",
 	})
 
 	u, err := url.Parse(flow.AuthURL())
@@ -152,14 +152,14 @@ func TestOAuthFlow_AuthURLCarriesPKCEAndState(t *testing.T) {
 }
 
 // Regression: listener.Addr() resolves "localhost" to 127.0.0.1, and
-// authorization servers compare redirect_uri as an exact string. Hydra
-// registers http://localhost:51164/, so emitting the IP literal gets the
-// authorize request rejected before the user ever sees a login page. The
+// authorization servers compare redirect_uri as an exact string. A server that
+// registered http://localhost:51164/ rejects the IP literal outright, before
+// the user ever sees a login page. The
 // hostname must come from the configured address, the port from the listener.
 func TestOAuthFlow_RedirectURIKeepsConfiguredHostname(t *testing.T) {
 	flow, err := newBrowserFlowOAuthOn("localhost:0", &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
-		TokenEndpoint:         "http://hydra/oauth2/token",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
+		TokenEndpoint:         "https://as.example/oauth2/token",
 	})
 	require.NoError(t, err)
 
@@ -177,10 +177,10 @@ func TestOAuthFlow_RedirectURIKeepsConfiguredHostname(t *testing.T) {
 }
 
 func TestOAuthFlow_ExchangesCodeForToken(t *testing.T) {
-	srv := tokenServer(t, http.StatusOK, `{"access_token":"hydra-token","token_type":"bearer","refresh_token":"r"}`)
+	srv := tokenServer(t, http.StatusOK, `{"access_token":"issued-token","token_type":"bearer","refresh_token":"r"}`)
 
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
 		TokenEndpoint:         srv.URL,
 	})
 
@@ -194,7 +194,7 @@ func TestOAuthFlow_ExchangesCodeForToken(t *testing.T) {
 	token, err := flow.Wait(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, "hydra-token", token, "Wait must return the exchanged access token, not the code")
+	assert.Equal(t, "issued-token", token, "Wait must return the exchanged access token, not the code")
 }
 
 // A callback this login did not start must be refused: the listener is open to
@@ -203,7 +203,7 @@ func TestOAuthFlow_RejectsStateMismatch(t *testing.T) {
 	srv := tokenServer(t, http.StatusOK, `{"access_token":"should-never-be-used"}`)
 
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
 		TokenEndpoint:         srv.URL,
 	})
 
@@ -228,7 +228,7 @@ func TestOAuthFlow_SurfacesTokenEndpointRejection(t *testing.T) {
 		`{"error":"invalid_grant","error_description":"code already used"}`)
 
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
 		TokenEndpoint:         srv.URL,
 	})
 
@@ -250,8 +250,8 @@ func TestOAuthFlow_SurfacesTokenEndpointRejection(t *testing.T) {
 // user declining consent. That must not wait out the five-minute timeout.
 func TestOAuthFlow_SurfacesAuthorizationError(t *testing.T) {
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
-		TokenEndpoint:         "http://hydra/oauth2/token",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
+		TokenEndpoint:         "https://as.example/oauth2/token",
 	})
 
 	go func() {
@@ -275,7 +275,7 @@ func TestOAuthFlow_CodeCallbackIsNotSwallowedBySentinel(t *testing.T) {
 	srv := tokenServer(t, http.StatusOK, `{"access_token":"survived"}`)
 
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
 		TokenEndpoint:         srv.URL,
 	})
 
@@ -297,8 +297,8 @@ func TestOAuthFlow_CodeCallbackIsNotSwallowedBySentinel(t *testing.T) {
 // never be asked to release the port.
 func TestOAuthFlow_KeylessCallbackStillInterrupts(t *testing.T) {
 	flow := newTestOAuthFlow(t, &OAuthMetadata{
-		AuthorizationEndpoint: "http://hydra/oauth2/auth",
-		TokenEndpoint:         "http://hydra/oauth2/token",
+		AuthorizationEndpoint: "https://as.example/oauth2/auth",
+		TokenEndpoint:         "https://as.example/oauth2/token",
 	})
 
 	go func() {
