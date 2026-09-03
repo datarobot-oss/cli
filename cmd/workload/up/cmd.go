@@ -98,40 +98,6 @@ type envJSON struct {
 	Literals []string `json:"literals"`
 }
 
-// warnSecretStillServing covers the one thing --sync-env can do that a
-// deploy cannot finish: re-send a secret.
-//
-// The credential store takes the new value immediately, but a container reads
-// its credentials when it starts, so the workload keeps serving the old one
-// until it is replaced. A deploy that had something else to do replaces it on
-// the way past; a deploy that found nothing else leaves the rotation sitting
-// in the store, under a summary that says the workload is up to date. It is,
-// about the manifest, which is why this says the other half out loud.
-func warnSecretStillServing(stderr io.Writer, result up.Result, f flags) {
-	if f.dryRun || result.Env.SecretsRotated == 0 || result.Action != up.ActionUnchanged {
-		return
-	}
-
-	dir := manifest.DirFlag(f.dir)
-
-	fmt.Fprintf(stderr,
-		"\n  %s %d re-sent %s reached the credential store, and this deploy replaced no container, "+
-			"so the workload still serves the value it started with.\n    Restart it to pick %s up:\n"+
-			"      dr workload stop --yes%s\n      dr workload start --yes%s\n",
-		tui.WarnStyle.Render("!"), result.Env.SecretsRotated,
-		plural(result.Env.SecretsRotated, "secret", "secrets"),
-		plural(result.Env.SecretsRotated, "it", "them"), dir, dir)
-}
-
-// plural picks the word for count, the way the wizard's own reporting does.
-func plural(count int, one, many string) string {
-	if count == 1 {
-		return one
-	}
-
-	return many
-}
-
 // envLiterals keeps the envelope's list a list. A run with no .env flags has
 // nothing to name, and an absent key encoded as null would make every consumer
 // guard for it before iterating.
@@ -283,8 +249,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 		"Before deploying, bring the manifest into line with .env: add the variables it does not declare, "+
 			"rewrite a literal whose value has moved, and re-send the credential behind a secret. Prints what "+
 			"it would do and asks first, removals included: a name .env no longer carries is taken out. A "+
-			"re-sent secret reaches the containers this deploy replaces; a deploy with nothing else to do "+
-			"replaces none, and says how to restart.")
+			"re-sent secret reaches the containers this deploy replaces, and the deploy restarts the workload "+
+			"when it would otherwise replace none.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -521,12 +487,6 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 }
 
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
-	// Above the envelope, because a rotation this deploy could not finish is
-	// true of the workload whatever the output format, and the JSON return
-	// below ends the function. It writes to stderr only, so stdout stays the
-	// envelope and nothing else.
-	warnSecretStillServing(cmd.ErrOrStderr(), result, f)
-
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
 			WorkloadID: result.WorkloadID,

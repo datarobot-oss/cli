@@ -58,9 +58,8 @@ type Summary struct {
 	// was computed. A rotation writes to the credential store and to no file,
 	// so it can move nothing the plan is able to show, and an empty plan is
 	// still the truth about the manifest. It is not the whole truth about the
-	// workload, which goes on serving the value it started with until it is
-	// restarted, and a bare "Already up to date" above that reads as a
-	// contradiction.
+	// workload: the run is about to restart it so the new value is served, and
+	// a bare "Already up to date" above that reads as a contradiction.
 	SecretsRotated int
 }
 
@@ -129,7 +128,7 @@ func settledVerdict(s Summary, plan Plan) string {
 			tui.HintStyle.Render("  What a deploy does depends on where it lands, so it waits first.")
 	}
 
-	// About the manifest, which is what a plan is about. The note under it is
+	// About the manifest, which is what a plan is about. The restart below is
 	// about the credential store, which no plan can show, so the verdict says
 	// which of the two it is answering for rather than claiming both.
 	if s.SecretsRotated > 0 {
