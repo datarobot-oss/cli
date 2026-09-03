@@ -67,17 +67,15 @@ type BrowserFlow struct {
 	timeout  time.Duration
 
 	// OAuth mode only (nil for the legacy ?key= hand-off). When set, the
-	// callback carries an authorization code that handleCallback exchanges for
-	// a token before publishing it on keyCh, so Wait's contract — "returns the
-	// credential" — is identical in both modes and callers need not care.
+	// callback carries a code that handleCallback exchanges before publishing
+	// on keyCh, so Wait's contract is identical in both modes.
 	oauthMeta   *OAuthMetadata
 	oauthPKCE   *pkce
 	redirectURI string
 
-	// errCh reports a failure that happened inside the callback handler, e.g. a
-	// state mismatch or a rejected token exchange. It exists because an empty
-	// string on keyCh already means "another process wants this port" (see
-	// Wait), so errors cannot be signalled that way.
+	// errCh reports failures from inside the callback handler. It exists
+	// because an empty string on keyCh already means "another process wants
+	// this port" (see Wait), so errors cannot be signalled that way.
 	errCh chan error
 
 	// refreshToken is whatever the token exchange returned, for the caller to
@@ -89,27 +87,20 @@ type BrowserFlow struct {
 }
 
 // NewBrowserFlow binds the callback listener and prepares the browser login for
-// datarobotHost. The caller must Close the returned flow.
-//
-// Prefer NewBrowserFlowContext where a context is available; this exists for
-// callers that have none, and only matters when the OAuth flow is enabled, where
-// it bounds the discovery probe on its own.
+// datarobotHost. The caller must Close the returned flow. Prefer
+// NewBrowserFlowContext where a context is available.
 func NewBrowserFlow(datarobotHost string) (*BrowserFlow, error) {
 	return NewBrowserFlowContext(context.Background(), datarobotHost, nil)
 }
 
-// NewBrowserFlowContext binds the callback listener, choosing between the legacy
-// `?key=` hand-off and OAuth2 authorization-code + PKCE.
+// NewBrowserFlowContext binds the callback listener, choosing between the
+// legacy `?key=` hand-off and PKCE.
 //
-// oauthOverride comes from an explicit --oauth/--no-oauth flag and wins; nil
-// defers to DATAROBOT_OAUTH_ENABLED, which is off by default. So unless someone
-// opts in, this binds exactly the listener it always has and issues no discovery
-// request at all — which is what keeps deployments that serve a discovery
-// document without a login service behind it working as before.
-//
-// When OAuth IS requested and discovery does not produce a usable document this
-// returns ErrOAuthNotSupported rather than falling back. Falling back would hand
-// the user a different kind of credential while looking like success.
+// Unless someone opts in this issues no discovery request at all, which keeps
+// hosts that serve a discovery document without supporting the flow working as
+// before. Opted in but undiscoverable returns ErrOAuthNotSupported rather than
+// falling back, which would hand over a different credential while looking
+// like success.
 func NewBrowserFlowContext(ctx context.Context, datarobotHost string, oauthOverride *bool) (*BrowserFlow, error) {
 	if !OAuthRequested(oauthOverride) {
 		return newBrowserFlowOn(CallbackAddr, datarobotHost)
@@ -133,8 +124,14 @@ func newBrowserFlowOn(addr, datarobotHost string) (*BrowserFlow, error) {
 		return nil, err
 	}
 
+	return newFlow(addr, listener, AuthCallbackURL(datarobotHost)), nil
+}
+
+// newFlow assembles a flow and its callback server. Both constructors go
+// through here, differing only in the URL and the OAuth fields set after.
+func newFlow(addr string, listener net.Listener, authURL string) *BrowserFlow {
 	flow := &BrowserFlow{
-		authURL:  AuthCallbackURL(datarobotHost),
+		authURL:  authURL,
 		listener: listener,
 		keyCh:    make(chan string, 1),
 		errCh:    make(chan error, 1),
@@ -150,16 +147,12 @@ func newBrowserFlowOn(addr, datarobotHost string) (*BrowserFlow, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	return flow, nil
+	return flow
 }
 
-// newBrowserFlowOAuthOn binds the callback listener for an OAuth2
-// authorization-code + PKCE login against the server described by meta.
-//
-// The redirect URI is the loopback listener itself, which is what lets the code
-// come back to this process; RFC 8252 blesses exactly this shape for native
-// apps. The port is still CallbackAddr's, so the authorization server must have
-// http://localhost:51164/ registered as a redirect URI for OAuthClientID.
+// newBrowserFlowOAuthOn binds the listener for a PKCE login. The redirect URI
+// is the loopback listener itself (RFC 8252) on CallbackAddr's port, so the
+// server must have http://localhost:51164/ registered for OAuthClientID.
 func newBrowserFlowOAuthOn(addr string, meta *OAuthMetadata) (*BrowserFlow, error) {
 	p, err := newPKCE()
 	if err != nil {
@@ -171,13 +164,10 @@ func newBrowserFlowOAuthOn(addr string, meta *OAuthMetadata) (*BrowserFlow, erro
 		return nil, err
 	}
 
-	// The redirect URI must keep addr's HOSTNAME and take the listener's PORT.
-	//
-	// Both halves matter. listener.Addr() resolves "localhost" to 127.0.0.1, and
-	// authorization servers match redirect_uri as an exact string — a server
-	// that registered http://localhost:51164/ rejects the IP literal outright.
-	// The port has to come from the listener because tests bind :0 and the code
-	// must come back to the port actually bound.
+	// Hostname from addr, port from the listener. listener.Addr() resolves
+	// "localhost" to 127.0.0.1 and servers match redirect_uri exactly, so the
+	// IP literal is rejected; the port must be the one actually bound because
+	// tests bind :0.
 	redirectHost, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		listener.Close()
@@ -201,25 +191,10 @@ func newBrowserFlowOAuthOn(addr string, meta *OAuthMetadata) (*BrowserFlow, erro
 		return nil, err
 	}
 
-	flow := &BrowserFlow{
-		authURL:     authURL,
-		listener:    listener,
-		keyCh:       make(chan string, 1),
-		errCh:       make(chan error, 1),
-		timeout:     DefaultLoginTimeout,
-		oauthMeta:   meta,
-		oauthPKCE:   p,
-		redirectURI: redirectURI,
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", flow.handleCallback)
-
-	flow.server = &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	flow := newFlow(addr, listener, authURL)
+	flow.oauthMeta = meta
+	flow.oauthPKCE = p
+	flow.redirectURI = redirectURI
 
 	return flow, nil
 }
@@ -229,14 +204,13 @@ func (f *BrowserFlow) AuthURL() string {
 	return f.authURL
 }
 
-// RefreshToken is the refresh token from the OAuth exchange, or "" when the
-// login took the legacy path or the server issued none. Only meaningful after
-// Wait has returned successfully.
+// RefreshToken is from the OAuth exchange, or "" in legacy mode / when the
+// server issued none. Only meaningful after Wait succeeds.
 func (f *BrowserFlow) RefreshToken() string {
 	return f.refreshToken
 }
 
-// TokenEndpoint is where a renewal should be sent, or "" in legacy mode.
+// TokenEndpoint is where a renewal is sent, or "" in legacy mode.
 func (f *BrowserFlow) TokenEndpoint() string {
 	if f.oauthMeta == nil {
 		return ""
@@ -320,17 +294,13 @@ func (f *BrowserFlow) Close() error {
 	return f.closeErr
 }
 
-// handleCallback receives the redirect that ends the browser login.
+// handleCallback receives the redirect that ends the browser login: either
+// `?key=<token>` (legacy) or `?code=…&state=…`, which this exchanges so Wait
+// returns a usable credential either way.
 //
-// Two shapes arrive here. The legacy DataRobot web app sends the credential
-// outright as `?key=<token>`. An OAuth2 authorization server sends
-// `?code=<code>&state=<state>`, which this exchanges for a token before
-// publishing it, so Wait returns a usable credential either way.
-//
-// Order matters: the OAuth branch is checked FIRST. A keyless request is the
-// port-reclaim interrupt sentinel (see Wait and listenReclaimingPort), so an
-// OAuth callback falling through to that check would read as "another CLI wants
-// this port" and abort the login instead of completing it.
+// ORDER MATTERS. The OAuth branch is checked first because a keyless request is
+// the port-reclaim interrupt sentinel (see Wait and listenReclaimingPort) — an
+// OAuth callback falling through to it would abort the login.
 func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
@@ -368,11 +338,11 @@ func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleOAuthCallback validates the redirect and performs the code exchange.
+// handleOAuthCallback validates the redirect and exchanges the code.
 func (f *BrowserFlow) handleOAuthCallback(w http.ResponseWriter, r *http.Request, code, state string) {
-	// Constant-time is unnecessary — state is single-use, generated seconds ago,
-	// and an attacker who can read it already has the code. What matters is that
-	// a mismatch is fatal: this callback is otherwise open to any local process.
+	// Constant-time is unnecessary: state is single-use and anyone who can read
+	// it already has the code. What matters is that a mismatch is fatal — this
+	// callback is otherwise open to any local process.
 	if state != f.oauthPKCE.state {
 		f.failCallback(w, errors.New("OAuth state mismatch — ignoring a callback this login did not start"))
 
@@ -386,9 +356,7 @@ func (f *BrowserFlow) handleOAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Kept for the caller to persist after Wait returns. Without a refresh
-	// token the credential simply expires and the user logs in again — the
-	// same behavior as the legacy flow.
+	// For the caller to persist after Wait.
 	f.refreshToken = tok.RefreshToken
 
 	if tok.RefreshToken == "" {
@@ -409,9 +377,8 @@ func (f *BrowserFlow) handleOAuthCallback(w http.ResponseWriter, r *http.Request
 }
 
 // failCallback tells the browser the login failed and hands the reason to Wait.
-//
-// It deliberately does NOT publish an empty string on keyCh: that value means
-// "release the port" and would turn a real failure into a silent interruption.
+// It deliberately does not publish an empty string on keyCh: that means
+// "release the port" and would turn a failure into a silent interruption.
 func (f *BrowserFlow) failCallback(w http.ResponseWriter, err error) {
 	log.Debugf("Auth callback failed: %v", err)
 
@@ -523,10 +490,9 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 		return "", err
 	}
 
-	// Record what a later renewal needs — or clear any stale material when this
-	// login took the legacy path, so a refresh token from a previous OAuth
-	// login is never renewed against a different instance. Persisting is the
-	// caller's job; both call sites write the config immediately after.
+	// Record what a later renewal needs, or clear stale material when this
+	// login took the legacy path so an old refresh token is never renewed
+	// against a different instance. Both call sites persist straight after.
 	if flow.TokenEndpoint() != "" && flow.RefreshToken() != "" {
 		StoreOAuthState(flow.RefreshToken(), flow.TokenEndpoint())
 	} else {
