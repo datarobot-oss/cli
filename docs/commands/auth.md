@@ -185,6 +185,10 @@ Check DATAROBOT_ENDPOINT, and the instance's status if it persists.
 $ dr auth check
 ❌ DATAROBOT_ENDPOINT environment variable is invalid: unsupported URL scheme "ftp", use https://
 Set it to a valid DataRobot URL and try again.
+
+# Authentication intentionally disabled (--skip-auth or DATAROBOT_CLI_SKIP_AUTH=true)
+$ DATAROBOT_CLI_SKIP_AUTH=true dr auth check
+✅ Authentication checks skipped (DATAROBOT_CLI_SKIP_AUTH).
 ```
 
 > [!TIP]

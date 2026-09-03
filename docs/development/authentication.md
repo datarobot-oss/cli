@@ -95,8 +95,9 @@ DATAROBOT_CLI_SKIP_AUTH=true dr templates setup
 When `--skip-auth` is enabled, it expect the following behavior:
 
 1. **Bypass all authentication checks**: The `EnsureAuthenticated()` function returns `true` immediately without validating credentials.
-2. **Emit a warning**: Logs a warning message: `Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail`.
-3. **May cause API failures**: Commands that make API calls will likely fail if no valid credentials are present.
+2. **`dr auth check` reports skipped**: It short-circuits before any credential check and prints that authentication was skipped, so gates that run `dr auth check` (for example the generated agent app's `task dev`) pass on a no-auth stack.
+3. **Emit a warning**: Logs a warning message: `Authentication checks are disabled via --skip-auth flag. This may cause API calls to fail`.
+4. **May cause API failures**: Commands that make API calls will likely fail if no valid credentials are present.
 
 #### When to use skip-auth
 
