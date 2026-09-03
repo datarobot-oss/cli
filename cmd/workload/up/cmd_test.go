@@ -819,20 +819,42 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 		"the lines that can name the workload still do")
 }
 
-// The deploy restarts the workload itself now, so the two commands it used to
-// print for the user to run by hand would be advice for work already done.
-func TestCmd_DoesNotSendYouOffToRestartByHand(t *testing.T) {
+// rotatedNothingElse is the run --sync-env exists to make safe: the secret
+// reached the credential store, the manifest was already current, and so no
+// container was replaced on the way past.
+func rotatedNothingElse() up.Result {
 	result := deployed()
-	result.Action = up.ActionUpdated
+	result.Action = up.ActionUnchanged
 	result.Env = up.EnvEdit{SecretsRotated: 1}
 
-	stubRun(t, result, nil)
+	return result
+}
+
+// A rotation the deploy could not finish is true of the workload whatever the
+// output format. The warning used to sit below the JSON return, so the one run
+// that most needs it, a scripted rotation, was the one that never saw it.
+func TestCmd_JSONStillWarnsThatTheOldSecretIsServing(t *testing.T) {
+	stubRun(t, rotatedNothingElse(), nil)
+
+	stdout, stderr, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "still serves the value it started with")
+	assert.Contains(t, stderr, "dr workload stop --yes")
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope), "the advice goes to stderr, so stdout stays pure")
+}
+
+// The same run without --output-format json, so the two formats are known to
+// agree rather than assumed to.
+func TestCmd_TextWarnsThatTheOldSecretIsServing(t *testing.T) {
+	stubRun(t, rotatedNothingElse(), nil)
 
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
-
-	assert.NotContains(t, stderr, "still serves the value it started with")
-	assert.NotContains(t, stderr, "dr workload stop --yes")
+	assert.Contains(t, stderr, "still serves the value it started with")
 }
 
 // The envelope carries the names `dr workload config` reports under

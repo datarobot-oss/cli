@@ -1525,11 +1525,51 @@ func TestUpdateEnv_StillRefusesALiteralInASharedEnvironment(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	_, err := Run(syncing(dir, Answers{}))
+	// Refused before the question: a table listing the rewrite as an update
+	// would be asking for agreement to something the run was never going to do.
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		t.Fatal("the rewrite was never going to be taken, so there was nothing to agree to")
+
+		return false, nil
+	}
+
+	_, err := Run(opts)
 	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
 
 	assert.Empty(t, *sent)
 	assert.Equal(t, sharedEnvManifest, readManifest(t, dir))
+}
+
+// A rotation through a shared block is still a write to the tenant, so it is
+// still asked about: the re-send is a row of the table whether or not the file
+// takes an edit, and a refusal leaves the store as it was.
+func TestUpdateEnv_SharedEnvironmentStillAsksBeforeARotation(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	asked := false
+
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		asked = true
+
+		return false, nil
+	}
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.True(t, asked, "a re-send overwrites a value on the tenant, and is agreed to like every other")
+	assert.Equal(t, 0, result.EnvSecretsRotated)
+	assert.Empty(t, *sent, "a refusal sends nothing")
+	assert.Equal(t, sharedEnvSecretManifest, readManifest(t, dir))
 }
 
 // sharedEnvSecretManifest shares its environment the way sharedEnvManifest

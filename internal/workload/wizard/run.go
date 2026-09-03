@@ -785,6 +785,15 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 
 	result := Result{Path: path, Action: ActionUnchanged, Draft: draftOf(parsed)}
 
+	// Whether the file takes a rewrite is settled before the question, because
+	// the table is what the reader agrees to. Settled after it, a literal in a
+	// block no edit may touch was listed as an update, agreed to and then
+	// refused, and the re-send the same table had promised never happened.
+	rewrite, err := o.provenRewrite(path, parsed, detected, wanted)
+	if err != nil {
+		return Result{}, err
+	}
+
 	agreed, err := o.confirmEnvPlan(parsed, detected, wanted)
 	if err != nil {
 		return Result{}, err
@@ -797,7 +806,7 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 	// Values before names. Adding a name writes it with the value .env holds,
 	// so an add that ran first would leave the update nothing to do and the
 	// counts would report one act as the other.
-	if err := o.updateEnv(path, parsed, detected, wanted, &result); err != nil {
+	if err := o.updateEnv(path, parsed, detected, wanted, rewrite, &result); err != nil {
 		return Result{}, err
 	}
 
@@ -903,19 +912,18 @@ func (o Options) confirmEnvPlan(
 // Re-sending a value that was already stored changes nothing, so the cost of
 // the unnecessary case is one request, and the cost of not doing it is a
 // container serving a key its owner has already rotated.
+//
+// rewrite is provenRewrite's answer, taken before the run was agreed to.
 func (o Options) updateEnv(
-	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar, result *Result,
+	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar,
+	rewrite bool, result *Result,
 ) error {
-	rewrite, err := o.provenRewrite(path, parsed, detected, wanted)
-	if err != nil {
-		return err
-	}
-
 	rotated, failed := o.rotateSecrets(parsed, detected, wanted)
 
 	var (
 		changed []manifest.EnvVar
 		content []byte
+		err     error
 	)
 
 	if rewrite {
