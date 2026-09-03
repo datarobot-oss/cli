@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
@@ -212,6 +213,13 @@ func checkDotenvCredentials(repoRoot string) bool {
 }
 
 func RunE(_ *cobra.Command, _ []string) error {
+	// skip-auth disables auth (DR Lite / CI / offline); honor it here like login and EnsureAuthenticated do.
+	if viperx.GetBool(config.SkipAuthKey) {
+		fmt.Fprintln(os.Stdout, tui.BaseTextStyle.Render("✅ Authentication checks skipped (DATAROBOT_CLI_SKIP_AUTH)."))
+
+		return nil
+	}
+
 	// Check .env credentials if in a repo
 	// If not, check the CLI credentials only
 	repoRoot, err := repo.FindRepoRoot()
