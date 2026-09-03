@@ -23,6 +23,8 @@ import (
 
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
+	"github.com/datarobot/cli/internal/testutil"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -258,6 +260,40 @@ func TestInstallCmd(t *testing.T) {
 
 	if cmd.Flags().Lookup("dry-run") == nil {
 		t.Error("dry-run flag not found")
+	}
+}
+
+// TestShowAlreadyInstalled guards against CFX-7958 command path drift.
+func TestShowAlreadyInstalled(t *testing.T) {
+	cmd := Cmd()
+	testutil.WireCompletionCommandPath(cmd)
+
+	out := testutil.CaptureStdout(t, func() {
+		showAlreadyInstalled(cmd, "/fake/path/_dr")
+	})
+
+	if !strings.Contains(out, "/fake/path/_dr") {
+		t.Errorf("output %q does not mention the install path", out)
+	}
+
+	wantHint := version.CliName + " self completion install --force --yes"
+	if !strings.Contains(out, wantHint) {
+		t.Errorf("output %q does not contain expected reinstall hint %q", out, wantHint)
+	}
+}
+
+// TestShowDryRunMessage guards against CFX-7958 command path drift.
+func TestShowDryRunMessage(t *testing.T) {
+	cmd := Cmd()
+	testutil.WireCompletionCommandPath(cmd)
+
+	out := testutil.CaptureStdout(t, func() {
+		showDryRunMessage(cmd, "zsh")
+	})
+
+	wantHint := version.CliName + " self completion install zsh --yes"
+	if !strings.Contains(out, wantHint) {
+		t.Errorf("output %q does not contain expected dry-run hint %q", out, wantHint)
 	}
 }
 
@@ -505,16 +541,7 @@ func TestInstallPowerShell(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// On Windows, os.UserHomeDir() reads USERPROFILE, not HOME.
-	// Set both so the test isolates the profile path on all platforms.
-	origHome := os.Getenv("HOME")
-	origUserProfile := os.Getenv("USERPROFILE")
-
-	os.Setenv("HOME", tmpDir)
-	os.Setenv("USERPROFILE", tmpDir)
-
-	defer os.Setenv("HOME", origHome)
-	defer os.Setenv("USERPROFILE", origUserProfile)
+	testutil.SetTestHomeDir(t, tmpDir)
 
 	profilePath, installFn := installPowerShell(rootCmd, false)
 
