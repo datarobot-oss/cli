@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -197,6 +198,50 @@ func TestOAuthFlow_CodeCallbackIsNotSwallowedBySentinel(t *testing.T) {
 	assert.Equal(t, "survived", token)
 }
 
+// In OAuth mode a `?key=` must never be accepted. Falling through to the legacy
+// handler would let any local process inject a credential during the login
+// window, bypassing the `state` check this flow exists to provide.
+func TestOAuthFlow_RefusesInjectedKey(t *testing.T) {
+	srv := tokenServer(t, http.StatusOK, `{"access_token":"issued-token"}`)
+	flow := newTestOAuthFlow(t, testMeta(srv.URL))
+
+	// Wait starts the callback server, so both requests have to be made while
+	// it is running — hence the result channel rather than a plain call.
+	result := make(chan string, 1)
+
+	go func() {
+		token, err := flow.Wait(context.Background())
+		if err != nil {
+			t.Errorf("Wait: %v", err)
+		}
+
+		result <- token
+	}()
+
+	// The injected callback must be refused outright.
+	resp, err := http.Get(callbackURL(t, flow, "?key=injected-by-a-local-process"))
+	require.NoError(t, err)
+
+	_ = resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	// ...and the genuine one must still complete the login.
+	genuine, err := http.Get(callbackURL(t, flow, "?code=abc&state="+flow.oauthPKCE.state))
+	require.NoError(t, err)
+
+	_ = genuine.Body.Close()
+
+	select {
+	case token := <-result:
+		assert.Equal(t, "issued-token", token)
+		assert.NotEqual(t, "injected-by-a-local-process", token,
+			"an injected key must never become the stored credential")
+	case <-time.After(5 * time.Second):
+		t.Fatal("login did not complete; the injected key may have consumed it")
+	}
+}
+
 // Gate off must not reach out at all — this protects hosts that serve a
 // discovery document without supporting the flow.
 func TestNewBrowserFlowContext_GateOffIssuesNoDiscovery(t *testing.T) {
@@ -247,6 +292,7 @@ func newRefreshServer(t *testing.T, status int, body string) *refreshServer {
 
 	rs := &refreshServer{}
 	rs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		_ = r.ParseForm()
 		rs.gotForm = r.PostForm
 

@@ -319,6 +319,21 @@ func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 			return
 		}
+
+		// A `key` cannot authenticate THIS flow. Falling through to the legacy
+		// handler would let any local process inject a credential during the
+		// login window, bypassing the `state` check that is the whole reason
+		// this flow exists.
+		//
+		// Refused without publishing on either channel, so the login keeps
+		// waiting for the real callback: neither an injection nor a way to
+		// cancel someone else's login.
+		if query.Get("key") != "" {
+			log.Debug("Ignoring a ?key= callback: this login is an OAuth flow")
+			http.Error(w, "Unexpected credential on an OAuth callback.", http.StatusBadRequest)
+
+			return
+		}
 	}
 
 	apiKey := query.Get("key")

@@ -82,9 +82,13 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// DATAROBOT_OAUTH_ENABLED decides, and its default is off.
 	var oauthOverride *bool
 
-	if cmd.Flags().Changed("oauth") {
+	switch {
+	case cmd.Flags().Changed("oauth"):
 		oauth, _ := cmd.Flags().GetBool("oauth")
 		oauthOverride = &oauth
+	case cmd.Flags().Changed("no-oauth"):
+		off := false
+		oauthOverride = &off
 	}
 
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
@@ -145,10 +149,15 @@ URL. Set DATAROBOT_OAUTH_ENABLED=true to make that the default for a shell;
 	// per-invocation flag and must never be persisted to drconfig.yaml.
 	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
 
-	// Same reasoning as --no-browser: transient, never persisted. Registered as
-	// one boolean so cobra gives us --oauth and --no-oauth for free, and read
-	// via Flags().Changed so "unset" stays distinguishable from "--no-oauth".
+	// Same reasoning as --no-browser: transient, never persisted.
+	//
+	// Two separate booleans, because pflag does not synthesise --no- variants
+	// for a bool flag. Read via Flags().Changed so "unset" stays
+	// distinguishable from an explicit --no-oauth, which is what lets the flag
+	// override DATAROBOT_OAUTH_ENABLED in both directions.
 	cmd.Flags().Bool("oauth", false, "log in with OAuth2 authorization-code + PKCE (default: DATAROBOT_OAUTH_ENABLED)")
+	cmd.Flags().Bool("no-oauth", false, "force the DataRobot hand-off even if DATAROBOT_OAUTH_ENABLED is set")
+	cmd.MarkFlagsMutuallyExclusive("oauth", "no-oauth")
 
 	return cmd
 }
