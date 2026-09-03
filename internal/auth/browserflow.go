@@ -66,14 +66,59 @@ type BrowserFlow struct {
 	keyCh    chan string
 	timeout  time.Duration
 
+	// OAuth mode only (nil for the legacy ?key= hand-off). When set, the
+	// callback carries an authorization code that handleCallback exchanges for
+	// a token before publishing it on keyCh, so Wait's contract — "returns the
+	// credential" — is identical in both modes and callers need not care.
+	oauthMeta   *OAuthMetadata
+	oauthPKCE   *pkce
+	redirectURI string
+
+	// errCh reports a failure that happened inside the callback handler, e.g. a
+	// state mismatch or a rejected token exchange. It exists because an empty
+	// string on keyCh already means "another process wants this port" (see
+	// Wait), so errors cannot be signalled that way.
+	errCh chan error
+
 	closeOnce sync.Once
 	closeErr  error
 }
 
 // NewBrowserFlow binds the callback listener and prepares the browser login for
 // datarobotHost. The caller must Close the returned flow.
+//
+// Prefer NewBrowserFlowContext where a context is available; this exists for
+// callers that have none, and only matters when the OAuth flow is enabled, where
+// it bounds the discovery probe on its own.
 func NewBrowserFlow(datarobotHost string) (*BrowserFlow, error) {
-	return newBrowserFlowOn(CallbackAddr, datarobotHost)
+	return NewBrowserFlowContext(context.Background(), datarobotHost, nil)
+}
+
+// NewBrowserFlowContext binds the callback listener, choosing between the legacy
+// `?key=` hand-off and OAuth2 authorization-code + PKCE.
+//
+// oauthOverride comes from an explicit --oauth/--no-oauth flag and wins; nil
+// defers to DATAROBOT_OAUTH_ENABLED, which is off by default. So unless someone
+// opts in, this binds exactly the listener it always has and issues no discovery
+// request at all — which is what keeps deployments that serve a discovery
+// document without a login service behind it working as before.
+//
+// When OAuth IS requested and discovery does not produce a usable document this
+// returns ErrOAuthNotSupported rather than falling back. Falling back would hand
+// the user a different kind of credential while looking like success.
+func NewBrowserFlowContext(ctx context.Context, datarobotHost string, oauthOverride *bool) (*BrowserFlow, error) {
+	if !OAuthRequested(oauthOverride) {
+		return newBrowserFlowOn(CallbackAddr, datarobotHost)
+	}
+
+	meta, err := DiscoverOAuth(ctx, datarobotHost)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Debugf("Using OAuth2 authorization-code + PKCE against %s", meta.Issuer)
+
+	return newBrowserFlowOAuthOn(CallbackAddr, meta)
 }
 
 // newBrowserFlowOn is NewBrowserFlow with a configurable address so tests can
@@ -88,7 +133,80 @@ func newBrowserFlowOn(addr, datarobotHost string) (*BrowserFlow, error) {
 		authURL:  AuthCallbackURL(datarobotHost),
 		listener: listener,
 		keyCh:    make(chan string, 1),
+		errCh:    make(chan error, 1),
 		timeout:  DefaultLoginTimeout,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", flow.handleCallback)
+
+	flow.server = &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	return flow, nil
+}
+
+// newBrowserFlowOAuthOn binds the callback listener for an OAuth2
+// authorization-code + PKCE login against the server described by meta.
+//
+// The redirect URI is the loopback listener itself, which is what lets the code
+// come back to this process; RFC 8252 blesses exactly this shape for native
+// apps. The port is still CallbackAddr's, so the authorization server must have
+// http://localhost:51164/ registered as a redirect URI for OAuthClientID.
+func newBrowserFlowOAuthOn(addr string, meta *OAuthMetadata) (*BrowserFlow, error) {
+	p, err := newPKCE()
+	if err != nil {
+		return nil, err
+	}
+
+	listener, err := listenReclaimingPort(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	// The redirect URI must keep addr's HOSTNAME and take the listener's PORT.
+	//
+	// Both halves matter. listener.Addr() resolves "localhost" to 127.0.0.1, and
+	// authorization servers match redirect_uri as an exact string — Hydra
+	// registers http://localhost:51164/, so sending the IP literal instead gets
+	// the request rejected outright. The port has to come from the listener
+	// because tests bind :0 and the code must come back to the port actually
+	// bound.
+	redirectHost, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		listener.Close()
+
+		return nil, fmt.Errorf("parsing callback address %q: %w", addr, err)
+	}
+
+	_, boundPort, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		listener.Close()
+
+		return nil, fmt.Errorf("reading bound callback port: %w", err)
+	}
+
+	redirectURI := "http://" + net.JoinHostPort(redirectHost, boundPort) + "/"
+
+	authURL, err := authorizeURL(meta, p, redirectURI)
+	if err != nil { //nolint:wsl // grouped with the construction above
+		listener.Close()
+
+		return nil, err
+	}
+
+	flow := &BrowserFlow{
+		authURL:     authURL,
+		listener:    listener,
+		keyCh:       make(chan string, 1),
+		errCh:       make(chan error, 1),
+		timeout:     DefaultLoginTimeout,
+		oauthMeta:   meta,
+		oauthPKCE:   p,
+		redirectURI: redirectURI,
 	}
 
 	mux := http.NewServeMux()
@@ -148,6 +266,13 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 
 		return apiKey, nil
 
+	case err := <-f.errCh:
+		// The callback arrived but could not be turned into a credential — a
+		// state mismatch, a refused authorization, or a rejected token
+		// exchange. Distinct from the empty-key sentinel above so a real
+		// failure does not masquerade as an interruption.
+		return "", err
+
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return "", fmt.Errorf("timed out after %s waiting for browser authorization: %w", f.timeout, ctx.Err())
@@ -176,10 +301,38 @@ func (f *BrowserFlow) Close() error {
 	return f.closeErr
 }
 
-// handleCallback receives the redirect from the DataRobot web app, which carries
-// the API key as the "key" query parameter.
+// handleCallback receives the redirect that ends the browser login.
+//
+// Two shapes arrive here. The legacy DataRobot web app sends the credential
+// outright as `?key=<token>`. An OAuth2 authorization server sends
+// `?code=<code>&state=<state>`, which this exchanges for a token before
+// publishing it, so Wait returns a usable credential either way.
+//
+// Order matters: the OAuth branch is checked FIRST. A keyless request is the
+// port-reclaim interrupt sentinel (see Wait and listenReclaimingPort), so an
+// OAuth callback falling through to that check would read as "another CLI wants
+// this port" and abort the login instead of completing it.
 func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
-	apiKey := r.URL.Query().Get("key")
+	query := r.URL.Query()
+
+	if f.oauthMeta != nil {
+		if code := query.Get("code"); code != "" {
+			f.handleOAuthCallback(w, r, code, query.Get("state"))
+
+			return
+		}
+
+		// The authorization server can also report a failure on the redirect,
+		// e.g. the user declining consent. Surface it rather than sitting until
+		// the five-minute timeout.
+		if oauthErr := query.Get("error"); oauthErr != "" {
+			f.failCallback(w, fmt.Errorf("authorization was refused: %s: %s", oauthErr, query.Get("error_description")))
+
+			return
+		}
+	}
+
+	apiKey := query.Get("key")
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -196,11 +349,66 @@ func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleOAuthCallback validates the redirect and performs the code exchange.
+func (f *BrowserFlow) handleOAuthCallback(w http.ResponseWriter, r *http.Request, code, state string) {
+	// Constant-time is unnecessary — state is single-use, generated seconds ago,
+	// and an attacker who can read it already has the code. What matters is that
+	// a mismatch is fatal: this callback is otherwise open to any local process.
+	if state != f.oauthPKCE.state {
+		f.failCallback(w, errors.New("OAuth state mismatch — ignoring a callback this login did not start"))
+
+		return
+	}
+
+	tok, err := exchangeCode(r.Context(), f.oauthMeta, f.oauthPKCE, f.redirectURI, code)
+	if err != nil {
+		f.failCallback(w, err)
+
+		return
+	}
+
+	if tok.RefreshToken == "" {
+		log.Debug("Authorization server issued no refresh token; the credential expires without renewal")
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if writeErr := assets.Write(w, "templates/success.html"); writeErr != nil {
+		log.Debugf("Failed to render auth success page: %v", writeErr)
+	}
+
+	select {
+	case f.keyCh <- tok.AccessToken:
+	default:
+		log.Debug("Discarding duplicate auth callback; a credential was already received")
+	}
+}
+
+// failCallback tells the browser the login failed and hands the reason to Wait.
+//
+// It deliberately does NOT publish an empty string on keyCh: that value means
+// "release the port" and would turn a real failure into a silent interruption.
+func (f *BrowserFlow) failCallback(w http.ResponseWriter, err error) {
+	log.Debugf("Auth callback failed: %v", err)
+
+	http.Error(w, "Login failed: "+err.Error()+"\n\nReturn to the terminal for details.", http.StatusBadRequest)
+
+	select {
+	case f.errCh <- err:
+	default:
+		log.Debug("Discarding duplicate auth failure; one was already reported")
+	}
+}
+
 // LoginOptions tunes the interactive browser login.
 type LoginOptions struct {
 	// NoBrowser skips launching a browser and shows the link instead. Useful over
 	// SSH or anywhere the CLI cannot reach a usable browser.
 	NoBrowser bool
+
+	// OAuth forces the OAuth2 authorization-code + PKCE flow on or off. nil
+	// means "not specified", deferring to DATAROBOT_OAUTH_ENABLED (default off).
+	OAuth *bool
 }
 
 // RunBrowserLogin opens the browser, tells the user what is happening, and blocks
@@ -217,7 +425,7 @@ func RunBrowserLogin(ctx context.Context, datarobotHost string) (string, error) 
 
 // RunBrowserLoginWith is RunBrowserLogin with explicit options.
 func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOptions) (string, error) {
-	flow, err := NewBrowserFlow(datarobotHost)
+	flow, err := NewBrowserFlowContext(ctx, datarobotHost, opts.OAuth)
 	if err != nil {
 		return "", err
 	}
