@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
@@ -70,7 +71,7 @@ type upResult struct {
 	Action     string      `json:"action"`
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
-	// Env is what --import-env and --update-env did before the plan was
+	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
 	// these a run that re-sent a secret is indistinguishable from one that
 	// did nothing at all.
@@ -91,7 +92,7 @@ type envJSON struct {
 	Literals []string `json:"literals"`
 }
 
-// warnSecretStillServing covers the one thing --update-env can do that a
+// warnSecretStillServing covers the one thing --sync-env can do that a
 // deploy cannot finish: re-send a secret.
 //
 // The credential store takes the new value immediately, but a container reads
@@ -147,14 +148,13 @@ func buildID(id string) *string {
 }
 
 type flags struct {
-	dir       string
-	yes       bool
-	dryRun    bool
-	detach    bool
-	lock      bool
-	force     bool
-	importEnv bool
-	updateEnv bool
+	dir     string
+	yes     bool
+	dryRun  bool
+	detach  bool
+	lock    bool
+	force   bool
+	syncEnv bool
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -273,13 +273,11 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	// this command already reads .env: with no manifest it is the wizard. A
 	// deploy stays a function of the committed repo, since neither flag does
 	// anything unless it is passed.
-	cmd.Flags().BoolVar(&f.importEnv, "import-env", false,
-		"Before deploying, add the .env variables the manifest does not declare yet. "+
-			"Secrets are stored as credentials, the same way setup stores them.")
-	cmd.Flags().BoolVar(&f.updateEnv, "update-env", false,
-		"Before deploying, bring the variables the manifest already declares back in line with .env: "+
-			"a literal is rewritten and the credential behind a secret is re-sent. A re-sent secret reaches "+
-			"the containers this deploy replaces; if the deploy has nothing else to do, it will not replace them.")
+	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
+		"Before deploying, bring the manifest into line with .env: add the variables it does not declare, "+
+			"rewrite a literal whose value has moved, and re-send the credential behind a secret. Prints what "+
+			"it would do and asks first. Nothing is removed. A re-sent secret reaches the containers this "+
+			"deploy replaces; a deploy with nothing else to do replaces none, and says how to restart.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -322,12 +320,19 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Lock:           f.lock,
 		Confirm:        rollConfirm(cmd, yes),
 		ForceBuild:     f.force,
-		ImportEnv:      f.importEnv,
-		UpdateEnv:      f.updateEnv,
-		PollInterval:   poll.Interval,
-		PollTimeout:    poll.Timeout,
-		Stderr:         cmd.ErrOrStderr(),
-		Spinner:        !json && !nonInteractive,
+		SyncEnv:        f.syncEnv,
+		// The flag alone, not cli.IsNonInteractive: the environment variable
+		// that suppresses wizards in CI is not consent to overwrite a value on
+		// the tenant, which is the line `dr workload delete` already draws.
+		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+			Yes:         f.yes,
+			DryRun:      f.dryRun,
+			Interactive: !json && isStdinTerminalFn(),
+		}),
+		PollInterval: poll.Interval,
+		PollTimeout:  poll.Timeout,
+		Stderr:       cmd.ErrOrStderr(),
+		Spinner:      !json && !nonInteractive,
 	})
 
 	if runErr != nil && !reportable(result) {

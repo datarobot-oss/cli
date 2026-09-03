@@ -2972,7 +2972,7 @@ func TestRun_EnvEditSurvivesAFailureBeforeThePlan(t *testing.T) {
 
 	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
 
-	result, _, err := runIn(t, bound, Options{NonInteractive: true, UpdateEnv: true})
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, SyncEnv: true})
 	require.Error(t, err)
 
 	assert.Equal(t, 2, result.Env.SecretsRotated, "the failure has to carry what already reached the store")
@@ -2984,7 +2984,7 @@ func TestRun_EnvEditSurvivesAFailureBeforeThePlan(t *testing.T) {
 // `dr workload config` writes them. The classifier is a heuristic, so naming
 // them is the only chance to catch a misread before the commit, and it cannot
 // depend on which command carried the edit.
-func TestRun_ImportEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
+func TestRun_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
 	install(t, fakes{
 		wizard: func(wizard.Options) (wizard.Result, error) {
 			return wizard.Result{
@@ -3002,7 +3002,7 @@ func TestRun_ImportEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
 
 	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
 
-	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, ImportEnv: true})
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, SyncEnv: true})
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr, "Values written in the clear: REGION.")
