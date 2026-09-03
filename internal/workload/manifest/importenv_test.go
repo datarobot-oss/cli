@@ -59,12 +59,53 @@ artifact:
                 value: debug
 `
 
+// syncAdding is what the import tests became when one flag replaced two: the
+// same call, expressed as a reconciliation that keeps what the fixture already
+// declares. Without carrying those names the sync would remove them, which is
+// correct and is not what these tests are about.
+func syncAdding(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, error) {
+	changes, content, err := SyncEnvVars(path, append(declaredIn(path), vars...), preview)
+
+	return changes.Added, content, err
+}
+
+// syncUpdating is the same for the tests about moving a value.
+func syncUpdating(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, error) {
+	changes, content, err := SyncEnvVars(path, vars, preview)
+
+	return append(changes.Updated, changes.Replaced...), content, err
+}
+
+// declaredIn is the manifest's own entries as .env would have to state them
+// for a reconciliation to leave them alone. A file the reader refuses declares
+// nothing, which is the right answer for the tests that hand one over.
+func declaredIn(path string) []EnvVar {
+	parsed, err := Load(path)
+	if err != nil {
+		return nil
+	}
+
+	declared := parsed.DeclaredEnvVars()
+	vars := make([]EnvVar, 0, len(declared))
+
+	for _, d := range declared {
+		vars = append(vars, EnvVar{
+			Name:         d.Name,
+			Value:        d.Value,
+			Secret:       d.Secret(),
+			CredentialID: d.CredentialID,
+		})
+	}
+
+	return vars
+}
+
 // The key has to be created when the container has none, and the banner
 // comment has to survive the edit.
 func TestImportEnvVars_CreatesTheKeyAndKeepsComments(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), noEnvManifest)
 
-	added, content, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
+	added, content, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"REGION"}, names(added))
@@ -82,21 +123,25 @@ func TestImportEnvVars_CreatesTheKeyAndKeepsComments(t *testing.T) {
 	require.NoError(t, parsed.Validate())
 }
 
-// A name the file already declares keeps whatever it was given.
-func TestImportEnvVars_SkipsDeclaredNames(t *testing.T) {
+// A name the file already declares is counted as moved rather than added, and
+// .env wins on its value. This used to be the opposite: the import left a
+// declared name exactly as it found it, because adding a name and changing one
+// were two different flags.
+func TestSyncEnvVars_DeclaredNameIsUpdatedNotAdded(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), withEnvManifest)
 
-	added, _, err := ImportEnvVars(path, []EnvVar{
+	changes, _, err := SyncEnvVars(path, []EnvVar{
 		{Name: "LOG_LEVEL", Value: "trace"},
 		{Name: "REGION", Value: "eu-west-1"},
 	}, false)
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"REGION"}, names(added))
+	assert.Equal(t, []string{"REGION"}, names(changes.Added))
+	assert.Equal(t, []string{"LOG_LEVEL"}, names(changes.Updated))
 
 	on := readFile(t, path)
-	assert.Contains(t, on, "debug")
-	assert.NotContains(t, on, "trace")
+	assert.Contains(t, on, "trace")
+	assert.NotContains(t, on, "debug")
 }
 
 // A .env is a text file and may repeat a name. The first wins, and the second
@@ -104,7 +149,7 @@ func TestImportEnvVars_SkipsDeclaredNames(t *testing.T) {
 func TestImportEnvVars_DoesNotDuplicateWithinOneCall(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), noEnvManifest)
 
-	added, _, err := ImportEnvVars(path, []EnvVar{
+	added, _, err := syncAdding(path, []EnvVar{
 		{Name: "REGION", Value: "eu-west-1"},
 		{Name: "REGION", Value: "us-east-1"},
 	}, false)
@@ -114,15 +159,15 @@ func TestImportEnvVars_DoesNotDuplicateWithinOneCall(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(readFile(t, path), "REGION"))
 }
 
-// Nothing to add is not an edit: the file is left byte-for-byte alone rather
+// Nothing to do is not an edit: the file is left byte-for-byte alone rather
 // than rewritten to the same meaning with different formatting.
-func TestImportEnvVars_NothingToAddLeavesTheFileAlone(t *testing.T) {
+func TestSyncEnvVars_NothingToDoLeavesTheFileAlone(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), withEnvManifest)
 
-	added, content, err := ImportEnvVars(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
+	changes, content, err := SyncEnvVars(path, []EnvVar{{Name: "LOG_LEVEL", Value: "debug"}}, false)
 	require.NoError(t, err)
 
-	assert.Empty(t, added)
+	assert.False(t, changes.Any())
 	assert.Empty(t, content)
 	assert.Equal(t, withEnvManifest, readFile(t, path))
 }
@@ -132,7 +177,7 @@ func TestImportEnvVars_NothingToAddLeavesTheFileAlone(t *testing.T) {
 func TestImportEnvVars_PreviewWritesNothing(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), withEnvManifest)
 
-	added, content, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, true)
+	added, content, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, true)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"REGION"}, names(added))
@@ -145,7 +190,7 @@ func TestImportEnvVars_PreviewWritesNothing(t *testing.T) {
 func TestImportEnvVars_WritesCredentialReferences(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), noEnvManifest)
 
-	_, _, err := ImportEnvVars(path, []EnvVar{
+	_, _, err := syncAdding(path, []EnvVar{
 		{Name: "STORED", Secret: true, CredentialID: "66f0c1d2e3f4a5b6c7d8e9f0"},
 		{Name: "PENDING", Secret: true},
 	}, false)
@@ -161,7 +206,7 @@ func TestImportEnvVars_WritesCredentialReferences(t *testing.T) {
 func TestImportEnvVars_RefusesAFileWithNoSpec(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), "name: by-id\nartifactId: 68b0bbbb0000000000000002\n")
 
-	_, _, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
+	_, _, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
 	require.ErrorIs(t, err, ErrNoPrimaryContainer)
 
 	assert.Equal(t, "name: by-id\nartifactId: 68b0bbbb0000000000000002\n", readFile(t, path))
@@ -223,7 +268,7 @@ artifact:
 func TestImportEnvVars_FillsAnEmptiedList(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), container("            environmentVars:\n"))
 
-	added, _, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
+	added, _, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"REGION"}, names(added))
@@ -269,7 +314,7 @@ func TestImportEnvVars_RefusesShapesItCannotAppendTo(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := writeManifest(t, t.TempDir(), test.source)
 
-			_, _, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
+			_, _, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
 			require.ErrorIs(t, err, test.want)
 
 			assert.Equal(t, test.source, readFile(t, path))
@@ -316,7 +361,7 @@ func TestPendingEnvNames(t *testing.T) {
 func TestImportEnvVars_QuotesSexagesimalValues(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), noEnvManifest)
 
-	_, _, err := ImportEnvVars(path, []EnvVar{{Name: "CRON_WINDOW", Value: "12:30"}}, false)
+	_, _, err := syncAdding(path, []EnvVar{{Name: "CRON_WINDOW", Value: "12:30"}}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, readFile(t, path), `"12:30"`)
@@ -334,7 +379,7 @@ func TestImportEnvVars_RefusesTheAnchorSideOfASharedBlock(t *testing.T) {
 
 	path := writeManifest(t, t.TempDir(), source)
 
-	_, _, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
+	_, _, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
 	require.ErrorIs(t, err, ErrSharedEnvVars)
 
 	assert.Equal(t, source, readFile(t, path))
@@ -386,7 +431,7 @@ artifact:
 		t.Run(name, func(t *testing.T) {
 			path := writeManifest(t, t.TempDir(), source)
 
-			_, _, err := ImportEnvVars(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
+			_, _, err := syncAdding(path, []EnvVar{{Name: "REGION", Value: "eu-west-1"}}, false)
 			require.ErrorIs(t, err, ErrSharedEnvVars)
 
 			assert.Equal(t, source, readFile(t, path))
@@ -434,7 +479,7 @@ func TestUpdateEnvVars_RefusesASharedEntry(t *testing.T) {
 
 	path := writeManifest(t, t.TempDir(), source)
 
-	_, _, err := UpdateEnvVars(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
+	_, _, err := syncUpdating(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
 	require.ErrorIs(t, err, ErrSharedEnvVars)
 
 	assert.Equal(t, source, readFile(t, path))
@@ -450,7 +495,7 @@ func TestUpdateEnvVars_RefusesAnAnchoredValue(t *testing.T) {
 
 	path := writeManifest(t, t.TempDir(), source)
 
-	_, _, err := UpdateEnvVars(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
+	_, _, err := syncUpdating(path, []EnvVar{{Name: "LOG_LEVEL", Value: "trace"}}, false)
 	require.ErrorIs(t, err, ErrSharedEnvVars)
 
 	assert.Equal(t, source, readFile(t, path))
@@ -468,7 +513,7 @@ func TestUpdateEnvVars_KeepsCommentsAndQuotesWhatNeedsIt(t *testing.T) {
 
 	path := writeManifest(t, t.TempDir(), source)
 
-	changed, _, err := UpdateEnvVars(path, []EnvVar{
+	changed, _, err := syncUpdating(path, []EnvVar{
 		{Name: "LOG_LEVEL", Value: "trace"},
 		{Name: "CRON_WINDOW", Value: "12:30"},
 	}, false)
@@ -481,9 +526,10 @@ func TestUpdateEnvVars_KeepsCommentsAndQuotesWhatNeedsIt(t *testing.T) {
 	assert.Contains(t, on, `"12:30"`)
 }
 
-// A credential-backed entry has no literal to rewrite: its value lives in the
-// store, and the id in the file stays the id in the file.
-func TestUpdateEnvVars_LeavesCredentialReferencesAlone(t *testing.T) {
+// A credential-backed entry .env still reads as a secret has no literal to
+// rewrite: its value lives in the store, and the id in the file stays the id
+// in the file. The rotation carries the new value, not this.
+func TestSyncEnvVars_LeavesAStillSecretReferenceAlone(t *testing.T) {
 	source := container(`            environmentVars:
               - name: STRIPE_API_KEY
                 value: ` + CredentialShorthandPrefix + `66f0c1d2e3f4a5b6c7d8e9f0/apiToken
@@ -491,10 +537,15 @@ func TestUpdateEnvVars_LeavesCredentialReferencesAlone(t *testing.T) {
 
 	path := writeManifest(t, t.TempDir(), source)
 
-	changed, _, err := UpdateEnvVars(path, []EnvVar{{Name: "STRIPE_API_KEY", Value: "fixture-key-new-e5e5"}}, false)
+	changes, _, err := SyncEnvVars(path, []EnvVar{{
+		Name:         "STRIPE_API_KEY",
+		Value:        "fixture-key-new-e5e5",
+		Secret:       true,
+		CredentialID: "66f0c1d2e3f4a5b6c7d8e9f0",
+	}}, false)
 	require.NoError(t, err)
 
-	assert.Empty(t, changed)
+	assert.False(t, changes.Any())
 	assert.Equal(t, source, readFile(t, path))
 }
 

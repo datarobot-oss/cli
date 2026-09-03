@@ -355,35 +355,31 @@ func TestLoad_DriftNoticeNamesTheDeploysOwnFlags(t *testing.T) {
 
 	assert.Contains(t, out, "REGION", "a name .env has and the manifest does not")
 	assert.Contains(t, out, "LOG_LEVEL", "a declared value .env no longer agrees with")
-	assert.Equal(t, 2, strings.Count(out, "'dr workload up"+at+" --sync-env'"),
-		"one flag reconciles both, so both findings send the reader to the same command")
+	// The fixture's manifest also declares OPENAI_API_KEY, which this .env does
+	// not name: a removal is drift too, and gets the same remedy.
+	assert.Contains(t, out, "OPENAI_API_KEY", "a name the manifest carries and .env dropped")
+	assert.Equal(t, 3, strings.Count(out, "'dr workload up"+at+" --sync-env'"),
+		"one flag reconciles all of it, so every finding sends the reader to the same command")
 
 	assert.NotContains(t, out, "dr workload config",
 		"both flags are on this command, so another one is a detour")
 	assert.NotContains(t, out, "trace", "names, never values")
 }
 
-// None of these can be settled by anything the reader is about to run, so on a
-// deploy each would print on every run for the life of the project. The
-// command that is about configuration keeps them; this one drops them, or the
-// drift beside them is what the reader learns to skip.
-func TestLoad_DriftNoticeLeavesTheStandingLinesToConfig(t *testing.T) {
+// The one standing fact left: a credential's value cannot be compared with
+// .env whatever either file says, so on a deploy it would print on every run
+// of every project that keeps a secret. Everything else the classifier used to
+// withhold is now drift with a remedy, and is named as such.
+func TestLoad_DriftNoticeLeavesTheStandingLineToConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeManifest(t, dir, strings.Replace(boundManifest,
-		"dr-credential:68f0cccc0000000000000003/apiToken", "dr-credential:PLACEHOLDER/apiToken", 1))
-	writeEnv(t, dir, "LOG_LEVEL=debug\n"+
-		// A credential's value, which nothing can compare with .env.
-		"OPENAI_API_KEY=fixture-not-a-real-key-1a2b3c4d\n"+
-		// A classifier verdict: held back on purpose, and no flag adds it.
-		"DATABASE_URL=postgres://localhost:5432/dev\n")
+	writeManifest(t, dir, boundManifest)
+	writeEnv(t, dir, "LOG_LEVEL=debug\nOPENAI_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
 
 	stderr := &strings.Builder{}
 
 	_, err := load(dir, Options{Stderr: stderr})
 	require.NoError(t, err)
 
-	// The placeholder is the third: the deploy raises its own refusal when it
-	// reaches the credential, so saying it here is the same news twice.
 	assert.Empty(t, stderr.String(), "the two files agree about everything that has moved")
 }
 

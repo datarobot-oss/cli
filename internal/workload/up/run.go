@@ -171,6 +171,7 @@ type Result struct {
 type EnvEdit struct {
 	KeysAdded      int
 	ValuesUpdated  int
+	NamesRemoved   int
 	SecretsRotated int
 	SecretsFailed  int
 	SecretsPending int
@@ -689,6 +690,14 @@ func (o Options) reportEnvEdit(edit wizard.Result) {
 			edit.EnvValuesUpdated, wizard.Plural(edit.EnvValuesUpdated, "value", "values"), wizard.EnvFileName))
 	}
 
+	// Said out loud, and last, because it is the one act that loses
+	// configuration rather than gaining it. A run that added three variables
+	// and dropped four would otherwise report only the three.
+	if edit.EnvNamesRemoved > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s removed, gone from %s",
+			edit.EnvNamesRemoved, wizard.Plural(edit.EnvNamesRemoved, "variable", "variables"), wizard.EnvFileName))
+	}
+
 	if len(parts) == 0 {
 		return
 	}
@@ -714,6 +723,7 @@ func withEnvEdit(loaded Loaded, edit wizard.Result) Loaded {
 	loaded.Env = EnvEdit{
 		KeysAdded:      edit.EnvKeysListed,
 		ValuesUpdated:  edit.EnvValuesUpdated,
+		NamesRemoved:   edit.EnvNamesRemoved,
 		SecretsRotated: edit.EnvSecretsRotated,
 		SecretsFailed:  edit.EnvSecretsNotRotated,
 		SecretsPending: edit.EnvSecretsPending,
