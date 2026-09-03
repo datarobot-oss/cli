@@ -167,11 +167,17 @@ func DirFlag(dir string) string {
 	// Relative when it is shorter to read and still lands in the same place;
 	// absolute otherwise, which is what a project on another branch of the tree
 	// gets rather than a ../../.. chain.
+	//
+	// Forward slashes on every platform. The CLI accepts them on Windows too,
+	// since resolving --dir goes through filepath.Abs, which normalizes them;
+	// what it would not survive is a backslash pasted into a POSIX shell, where
+	// it is an escape rather than a separator, and quoting it away would take
+	// quotes cmd.exe does not read.
 	if rel, err := filepath.Rel(cwd, project); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
-		return " --dir " + shellArg(rel)
+		return " --dir " + shellArg(filepath.ToSlash(rel))
 	}
 
-	return " --dir " + shellArg(project)
+	return " --dir " + shellArg(filepath.ToSlash(project))
 }
 
 // shellArg quotes a path that would not survive being pasted into a shell.

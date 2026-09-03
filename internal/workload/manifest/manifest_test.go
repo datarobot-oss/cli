@@ -255,6 +255,8 @@ func TestDirFlag_QuotesAPathWithASpace(t *testing.T) {
 }
 
 // Quoting an ordinary path would be noise on every message that carries one.
+// The path is built with the OS separator and comes out with forward slashes,
+// which is the one spelling every shell hands over as it is.
 func TestDirFlag_LeavesAnOrdinaryPathBare(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
