@@ -966,7 +966,7 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 		// it is what this run already did to the credential store and the plan
 		// is what it is about to do to the workload. The verdict needs both:
 		// an empty plan is the truth about the manifest and not about the
-		// value the workload goes on serving until it is restarted.
+		// value the restart below is on its way to serve.
 		SecretsRotated: result.Env.SecretsRotated,
 	}
 
