@@ -251,7 +251,7 @@ func TestDirFlag_QuotesAPathWithASpace(t *testing.T) {
 
 	spaced := filepath.Join(cwd, "My Projects", "app")
 
-	assert.Equal(t, ` --dir 'My Projects/app'`, DirFlag(spaced))
+	assert.Equal(t, ` --dir "My Projects/app"`, DirFlag(spaced))
 }
 
 // Quoting an ordinary path would be noise on every message that carries one.
@@ -282,9 +282,22 @@ func TestDirFlag_QuotesWhatAShellWouldActOn(t *testing.T) {
 	for _, name := range []string{"a&b", "proj$HOME", "back`tick`", "semi;colon", "sub*shell", "quo'te"} {
 		flag := DirFlag(filepath.Join(cwd, name))
 
-		assert.True(t, strings.HasPrefix(flag, " --dir '"), "%s was left bare: %s", name, flag)
-		assert.True(t, strings.HasSuffix(flag, "'"), "%s was not closed: %s", name, flag)
+		assert.True(t, strings.HasPrefix(flag, ` --dir "`), "%s was left bare: %s", name, flag)
+		assert.True(t, strings.HasSuffix(flag, `"`), "%s was not closed: %s", name, flag)
 	}
+}
+
+// Double quotes so the path survives the single quotes around the whole
+// command, and cmd.exe, which reads no other kind. Inside them a POSIX shell
+// still expands a dollar and a backtick and reads a backslash as an escape, so
+// those are escaped rather than merely wrapped.
+func TestDirFlag_EscapesWhatDoubleQuotesLeaveLive(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, ` --dir "proj\$HOME"`, DirFlag(filepath.Join(cwd, "proj$HOME")))
+	assert.Equal(t, " --dir \"back\\`tick\\`\"", DirFlag(filepath.Join(cwd, "back`tick`")))
+	assert.Equal(t, ` --dir "say \"hi\""`, DirFlag(filepath.Join(cwd, `say "hi"`)))
 }
 
 // An ordinary path stays bare, or every message that carries one is littered

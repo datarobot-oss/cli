@@ -230,6 +230,39 @@ runtime:
 	assert.ErrorIs(t, err, ErrSharedEnvVars)
 }
 
+// The sharing can sit below the entry: a value anchored for another entry to
+// read through goes out with its entry, and the alias is left pointing at
+// nothing, in a file that then no longer parses. The rewrite already refuses
+// that shape, and a removal loses more.
+func TestSyncEnvVars_RefusesToDropAnEntryWhoseValueIsAnchored(t *testing.T) {
+	path := syncFixture(t, container(`            environmentVars:
+              - name: REGION
+                value: &region eu-west-1
+              - name: BACKUP_REGION
+                value: *region
+`))
+
+	_, _, err := SyncEnvVars(path, []EnvVar{{Name: "BACKUP_REGION", Value: "eu-west-1"}}, false)
+	require.ErrorIs(t, err, ErrSharedEnvVars)
+}
+
+// A change of form rebuilds the entry, which drops what was anchored inside
+// the old one just as a removal would.
+func TestSyncEnvVars_RefusesToRebuildAnEntryWhoseValueIsAnchored(t *testing.T) {
+	path := syncFixture(t, container(`            environmentVars:
+              - name: API_KEY
+                value: &key fixture-not-a-real-key-1a2b3c4d
+              - name: API_KEY_COPY
+                value: *key
+`))
+
+	_, _, err := SyncEnvVars(path, []EnvVar{
+		{Name: "API_KEY", Secret: true, CredentialID: "68f0cccc0000000000000003"},
+		{Name: "API_KEY_COPY", Value: "fixture-not-a-real-key-1a2b3c4d"},
+	}, false)
+	require.ErrorIs(t, err, ErrSharedEnvVars)
+}
+
 // A comment is the reader's note about a variable, and it is as true of the
 // new form as of the old. The entry is rebuilt because a literal and a
 // reference share no structure, but a comment is not structure, and losing it

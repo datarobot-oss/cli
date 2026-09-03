@@ -287,10 +287,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		// suppresses wizards in CI is not consent to overwrite a value on the
 		// tenant, which is the line `dr workload delete` already draws.
 		Confirm: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
-			// The flag or the environment variable, matching what the rest of
-			// this command treats as an answer. What is not an answer is the
-			// mere absence of a terminal, which is the case this refuses.
-			Yes:         yes,
+			Yes:         f.yes,
 			DryRun:      f.dryRun,
 			Interactive: !asJSON && idargs.CanAsk(cmd),
 			Silent:      asJSON,

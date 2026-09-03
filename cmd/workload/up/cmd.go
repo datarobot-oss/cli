@@ -332,10 +332,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		// that suppresses wizards in CI is not consent to overwrite a value on
 		// the tenant, which is the line `dr workload delete` already draws.
 		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
-			// The flag or the environment variable. --yes is consent and so is
-			// the variable a pipeline sets on purpose; what is not consent is
-			// the mere absence of a terminal, which is the case this refuses.
-			Yes: yes,
+			Yes: f.yes,
 			// A refusal has to reach somebody. Under JSON the wizard is given
 			// a writer but a question in a scripted run is a hang, and a
 			// prompt written to a redirected stderr is one nobody can see:

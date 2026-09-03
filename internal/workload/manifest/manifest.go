@@ -193,15 +193,19 @@ func DirFlag(dir string) string {
 // letters, digits and the handful of punctuation marks a path normally
 // carries is left bare, so the ordinary message is not littered with quotes.
 //
-// Single quotes, because inside them a shell expands nothing at all. The one
-// character they cannot carry is a single quote, which is closed, escaped and
-// reopened in the usual way.
+// Double quotes rather than single. The notices carrying these wrap the whole
+// command in single quotes, which a single-quoted path would close early, and
+// cmd.exe reads double quotes and nothing else. Inside double quotes a POSIX
+// shell still acts on four characters, so those are escaped: the quote
+// itself, a backslash, a dollar and a backtick.
 func shellArg(path string) string {
 	if path != "" && !strings.ContainsFunc(path, needsQuoting) {
 		return path
 	}
 
-	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(path)
+
+	return `"` + escaped + `"`
 }
 
 // needsQuoting reports a character a shell would not hand over as itself.

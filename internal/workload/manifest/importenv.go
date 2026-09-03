@@ -327,6 +327,37 @@ func checkUnshared(node *yaml.Node) error {
 	return nil
 }
 
+// checkRemovable refuses an entry the file cannot lose whole: one shared on
+// checkUnshared's terms, or one carrying an anchor somewhere inside it. The
+// rewrite already refuses a value that is anchored, because an edit to it
+// would land wherever else the file reads through the anchor; taking the
+// entry out, or rebuilding it for a change of form, loses more, since the
+// alias is left pointing at nothing and the file no longer parses.
+func checkRemovable(node *yaml.Node) error {
+	if err := checkUnshared(node); err != nil {
+		return err
+	}
+
+	if anchoredWithin(node) {
+		return ErrSharedEnvVars
+	}
+
+	return nil
+}
+
+// anchoredWithin reports an anchor anywhere under node, which is a name the
+// rest of the file may be reading through. Aliases inside the node are not
+// counted: what it borrows is not its to keep, and goes with it harmlessly.
+func anchoredWithin(node *yaml.Node) bool {
+	for _, child := range node.Content {
+		if child.Anchor != "" || anchoredWithin(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // hasMergeKey reports whether a mapping folds another one into itself, which
 // makes every key it appears to lack a question this walk cannot answer.
 func hasMergeKey(node *yaml.Node) bool {
@@ -651,7 +682,7 @@ func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 
 		want, asked := wanted[name]
 		if !asked {
-			if err := checkUnshared(entry); err != nil {
+			if err := checkRemovable(entry); err != nil {
 				return SyncChanges{}, err
 			}
 
@@ -697,7 +728,7 @@ func settleEnvEntry(entry *yaml.Node, want EnvVar, changes *SyncChanges) (*yaml.
 		return entry, rewriteEnvValue(entry, want, changes)
 
 	case settleForm:
-		if err := checkUnshared(entry); err != nil {
+		if err := checkRemovable(entry); err != nil {
 			return nil, err
 		}
 

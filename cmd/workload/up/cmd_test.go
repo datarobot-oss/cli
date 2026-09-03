@@ -888,3 +888,32 @@ func TestCmd_EnvLiteralsAreAlwaysAList(t *testing.T) {
 	env, _ = body["env"].(map[string]any)
 	assert.Equal(t, []any{}, env["literals"], "a run with no .env flags names nothing, which is not null")
 }
+
+// The same line on the deploy: --yes is consent to a reconciliation, and the
+// variable that suppresses wizards in CI is not. A run with it set and no --yes
+// hands the deploy a question that refuses and names the flag, rather than no
+// question at all.
+func TestCmd_SyncEnvWithoutYesHandsTheDeployARefusal(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env")
+	require.NoError(t, err)
+
+	require.NotNil(t, seen.ConfirmEnv, "nil is consent, and nobody gave any")
+
+	_, err = seen.ConfirmEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--yes", "the refusal names the way out of it")
+}
+
+// --yes is the consent, so the deploy gets no question to ask.
+func TestCmd_SyncEnvWithYesHandsTheDeployNoQuestion(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env", "--yes")
+	require.NoError(t, err)
+
+	assert.Nil(t, seen.ConfirmEnv)
+}

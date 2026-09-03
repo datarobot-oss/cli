@@ -728,15 +728,8 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 
 	result := Result{Path: path, Action: ActionUnchanged, Draft: draftOf(parsed)}
 
-	// No file, no reconciliation. .env winning on every variable means an
-	// empty set of them would empty the manifest, so a project that simply
-	// has no .env, which is the ordinary CI checkout, would have its whole
-	// environment deleted by a flag that promised to bring the two into line.
-	// Asked of the filesystem rather than of the parse: a .env holding only
-	// comments is a file the user is looking at and can answer for, and the
-	// table shows them what emptying it would cost.
-	if !fsutil.FileExists(filepath.Join(filepath.Dir(path), EnvFileName)) {
-		o.reportNothingToReconcile(parsed)
+	if !hasEnvToReconcile(path, detected) {
+		o.reportNothingToReconcile(parsed, detected)
 
 		return result, nil
 	}
@@ -746,26 +739,24 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 	// file even where the real run would.
 	actions := o.envPlan(parsed, detected, wanted)
 
+	// Refused before the question rather than after it. A manifest whose
+	// environment is shared through a YAML anchor takes no edit, so a run with
+	// file work on one is not going to happen, and asking for agreement to it
+	// first would be asking about nothing.
+	if err := o.refuseUneditable(parsed, detected, wanted); err != nil {
+		return Result{}, err
+	}
+
 	agreed, err := o.confirmEnvPlan(actions)
 	if err != nil || !agreed {
 		return result, err
 	}
 
-	// A manifest whose environment is shared through a YAML anchor takes no
-	// edit: rewriting or dropping an entry would change it for every container
-	// reading through the same node.
-	//
-	// The rotation above still happened, because it writes to the credential
-	// store and never to the file, so a run with nothing else to do is a run
-	// that did what it came for. One with file work to do is not, and gets the
-	// refusal rather than a silent half: the user asked for the two files to
-	// agree, and they are not going to.
-	//
-	// Narrowed to the sharing. Every other thing CanDeclareEnvVars refuses is
-	// a manifest that cannot carry an environment at all, which is an error
-	// whether or not this run had anything to write.
-	if done, err := o.rotateOnlyIfUneditable(parsed, detected, actions, wanted, &result); done || err != nil {
-		return result, err
+	// What a shared environment can still take is the rotation, which writes
+	// to the credential store and never to the file, and which has just been
+	// agreed to on the same table as any other re-send.
+	if o.rotateOnlyIfShared(parsed, detected, actions, wanted, &result) {
+		return result, nil
 	}
 
 	// The edit rendered and thrown away, before anything reaches the tenant.
@@ -789,7 +780,7 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 		return Result{}, err
 	}
 
-	o.recordSync(parsed, actions, changes, content, &result)
+	o.recordSync(parsed, detected, actions, changes, content, &result)
 
 	// Re-read rather than reported from parsed: this run may have finished the
 	// very placeholder the notice is about, and saying a deploy will refuse an
@@ -808,37 +799,62 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 	return result, nil
 }
 
-// rotateOnlyIfUneditable settles the one manifest shape a reconciliation
-// cannot write to, and reports whether it handled the run.
+// hasEnvToReconcile is whether .env gives a reconciliation anything to go on.
+//
+// No variables, no reconciliation. .env winning on every question means an
+// empty set of them would empty the manifest, so a project with no .env, which
+// is the ordinary CI checkout, would have its whole environment deleted by a
+// flag that promised to bring the two into line. A .env that is there and
+// declares nothing is the same case with another cause: a touch, or a secrets
+// step that wrote nothing before a scheduled run passed --yes on its behalf.
+// The table is no guard on that run, because nobody is reading it.
+func hasEnvToReconcile(path string, detected Detected) bool {
+	return fsutil.FileExists(filepath.Join(filepath.Dir(path), EnvFileName)) && len(detected.EnvVars) > 0
+}
+
+// refuseUneditable is the refusal a manifest no reconciliation can write to
+// gets, before anybody is asked to agree to one.
 //
 // An environment shared through a YAML anchor takes no edit: rewriting or
 // dropping an entry would change it for every container reading the same node.
-// A run with nothing but secrets to re-send is still a run that can do what it
-// came for, because that writes to the credential store and never to the file.
-// One with file work to do is not, and gets the refusal rather than a silent
-// half: the user asked for the two files to agree, and they are not going to.
+// A run with nothing but secrets to re-send can still do what it came for,
+// because that writes to the credential store and never to the file. One with
+// file work to do cannot, and gets the refusal rather than a silent half: the
+// user asked for the two files to agree, and they are not going to.
 //
 // Narrowed to the sharing. Everything else CanDeclareEnvVars refuses is a
 // manifest that cannot carry an environment at all, which is an error whether
 // or not this run had anything to write.
-func (o Options) rotateOnlyIfUneditable(
-	parsed *manifest.Manifest, detected Detected, actions []envAction,
-	wanted []manifest.EnvVar, result *Result,
-) (bool, error) {
+func (o Options) refuseUneditable(parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar) error {
 	blocked := parsed.CanDeclareEnvVars()
 	if blocked == nil {
-		return false, nil
+		return nil
 	}
 
 	if !errors.Is(blocked, manifest.ErrSharedEnvVars) || o.hasFileWork(parsed, detected, wanted) {
-		return false, blocked
+		return blocked
+	}
+
+	return nil
+}
+
+// rotateOnlyIfShared carries out the one thing a shared environment can take,
+// and reports whether it handled the run. refuseUneditable has already turned
+// away every shape this cannot answer for, so what reaches it blocked is a
+// shared block with nothing but secrets to re-send.
+func (o Options) rotateOnlyIfShared(
+	parsed *manifest.Manifest, detected Detected, actions []envAction,
+	wanted []manifest.EnvVar, result *Result,
+) bool {
+	if parsed.CanDeclareEnvVars() == nil {
+		return false
 	}
 
 	result.EnvSecretsRotated, result.EnvSecretsNotRotated = o.rotateSecrets(parsed, detected, wanted)
 
-	o.recordSync(parsed, actions, manifest.SyncChanges{}, nil, result)
+	o.recordSync(parsed, detected, actions, manifest.SyncChanges{}, nil, result)
 
-	return true, nil
+	return true
 }
 
 // hasFileWork reports whether the reconciliation has anything to write, which
@@ -941,7 +957,8 @@ func usableCredentials(parsed *manifest.Manifest) map[string]string {
 // edit. Saying "updated .datarobot.yaml" about a file nothing touched is the
 // claim this command exists not to make.
 func (o Options) recordSync(
-	parsed *manifest.Manifest, actions []envAction, edit manifest.SyncChanges, content []byte, result *Result,
+	parsed *manifest.Manifest, detected Detected, actions []envAction,
+	edit manifest.SyncChanges, content []byte, result *Result,
 ) {
 	result.EnvKeysListed = len(edit.Added)
 	result.EnvValuesUpdated = len(edit.Updated) + len(edit.Replaced)
@@ -958,7 +975,7 @@ func (o Options) recordSync(
 			return
 		}
 
-		o.reportNothingToReconcile(parsed)
+		o.reportNothingToReconcile(parsed, detected)
 
 		return
 	}
@@ -1171,28 +1188,29 @@ func rotatable(
 // no line of its own for this case, because only here is it known whether the
 // file was complete, absent, or complete only because the names that are
 // reportNothingToReconcile is what a run that changed nothing has to say for
-// itself, which is one of two things: there was no file to read, or the two
-// already agree.
+// itself, which is one of three things: there was no file to read, the file
+// declares nothing, or the two already agree.
 //
 // It used to be four sentences, one per combination of two flags. One flag
 // asks one question, so there is one answer.
-func (o Options) reportNothingToReconcile(parsed *manifest.Manifest) {
+func (o Options) reportNothingToReconcile(parsed *manifest.Manifest, detected Detected) {
 	if o.quiet() {
 		return
 	}
 
 	dir := filepath.Dir(parsed.Path)
 
-	// Asked of the filesystem rather than of the parse: a .env holding only
-	// comments yields no variables and is still a file the user is looking at,
-	// and telling them it does not exist points them at the wrong fix.
-	if !fsutil.FileExists(filepath.Join(dir, EnvFileName)) {
+	// The two empty cases are told apart, because they have different fixes:
+	// a .env holding only comments is a file the user is looking at, and
+	// telling them it does not exist points them at the wrong one.
+	switch {
+	case !fsutil.FileExists(filepath.Join(dir, EnvFileName)):
 		fmt.Fprintf(o.Stderr, "No %s in %s, so there is nothing to reconcile.\n", EnvFileName, dir)
-
-		return
+	case len(detected.EnvVars) == 0:
+		fmt.Fprintf(o.Stderr, "%s in %s declares no variables, so there is nothing to reconcile.\n", EnvFileName, dir)
+	default:
+		fmt.Fprintf(o.Stderr, "%s already says what %s says.\n", ShortPath(parsed.Path), EnvFileName)
 	}
-
-	fmt.Fprintf(o.Stderr, "%s already says what %s says.\n", ShortPath(parsed.Path), EnvFileName)
 }
 
 // undeclared is the variables whose names the manifest does not already
