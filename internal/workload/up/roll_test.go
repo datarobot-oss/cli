@@ -2117,3 +2117,87 @@ func TestRun_RollStillFailsOnACarryOverItCannotExplain(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot point artifact")
 	assert.NotContains(t, tr.steps, "build")
 }
+
+// A tree with changes meets the dead catalog one step earlier than a tree
+// without them: on the upload, which is the first request to name it. The
+// recovery is the same one, and it has to start from there.
+func TestRun_RollReuploadsWhenTheUploadFindsTheCatalogGone(t *testing.T) {
+	var (
+		tr    track
+		syncs int
+	)
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.save = func(string, wapi.Config) error { return nil }
+	f.sync = func(string) (*sync.Result, error) {
+		syncs++
+
+		tr.steps = append(tr.steps, "sync")
+
+		// Wrapped the way the engine wraps what the platform said: by the
+		// phase that heard it, and the request it was making.
+		if syncs == 1 {
+			return nil, fmt.Errorf("phase execute: %w", fmt.Errorf("create stage: %w", &drapi.HTTPError{
+				StatusCode: http.StatusUnprocessableEntity,
+				Detail:     "Failed to get files info for catalogId cat1: Requested Files cat1 was previously deleted.",
+			}))
+		}
+
+		return &sync.Result{NewVersion: "ver2", UploadedCount: 4}, nil
+	}
+	f.codeRef = func(string, string, string) error {
+		t.Fatal("the second push pointed the artifact at its code, so there was nothing to carry over")
+
+		return nil
+	}
+
+	install(t, f)
+
+	force(t, &resetSyncIndexFn, func(string) error {
+		tr.steps = append(tr.steps, "forget-index")
+
+		return nil
+	})
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, syncs, "once into the dead catalog, once with it forgotten")
+	assert.Contains(t, stderr, "gone from the platform, so the tree is uploaded again")
+	assert.Contains(t, strings.Join(tr.steps, ","), "sync,forget-index,sync,build",
+		"the engine's index is emptied before the second push, and the re-uploaded code is what gets built")
+	assert.Equal(t, "bld-2", result.BuildID)
+}
+
+// Any other refusal from the upload is still a refusal. Only the catalog being
+// gone has a recovery, and reading every 422 as that would push the tree again
+// on top of whatever actually went wrong.
+func TestRun_RollDoesNotReuploadOnAnOrdinarySyncFailure(t *testing.T) {
+	var (
+		tr    track
+		syncs int
+	)
+
+	f := builtRoll(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.sync = func(string) (*sync.Result, error) {
+		syncs++
+
+		return nil, fmt.Errorf("phase execute: %w", &drapi.HTTPError{
+			StatusCode: http.StatusUnprocessableEntity,
+			Detail:     "A file exceeds the size limit.",
+		})
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "size limit")
+	assert.Equal(t, 1, syncs, "one push, refused, and no second")
+	assert.NotContains(t, tr.steps, "forget-index")
+}

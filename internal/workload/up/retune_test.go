@@ -576,3 +576,52 @@ func TestWaitLabel_RestartIsNotCalledAResize(t *testing.T) {
 	assert.Equal(t, "Waiting for the new settings to serve",
 		waitLabel(workload.Serving{AwaitDrain: true}, Result{}))
 }
+
+// A refusal between the rotation and the restart still has to say the store
+// moved. The secret is re-sent whatever stops the restart afterwards, and a
+// bare refusal reads as a run that did nothing.
+func TestRun_RotationRestartRefusalStillNamesTheReSentSecret(t *testing.T) {
+	var tr track
+
+	f := rotationOnly(t, &tr, fakes{})
+	f.guard = func(string) error { return workload.ErrReplacementInFlight }
+
+	install(t, f)
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "1 secret was re-sent to the credential store")
+	assert.Contains(t, err.Error(), "not being served yet")
+	assert.NotContains(t, tr.steps, "settings:68b0c1d2e3f4a5b6c7d8e9f0", "nothing was patched")
+}
+
+// A manifest that leaves sizing to the platform has no runtime block to send,
+// and the settings PATCH is the restart. The block the workload already runs
+// with is what goes: no sizing moves, and the new generation still comes up.
+func TestRun_RotationRestartWithoutARuntimeBlockSendsTheLiveOne(t *testing.T) {
+	var (
+		tr   track
+		sent json.RawMessage
+	)
+
+	f := rotationOnly(t, &tr, fakes{
+		settings: func(workloadID string, runtime json.RawMessage) (*workload.Replacement, error) {
+			tr.steps = append(tr.steps, "settings:"+workloadID)
+			sent = runtime
+
+			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID}, nil
+		},
+	})
+
+	install(t, f)
+
+	withoutRuntime := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + strings.SplitN(boundLiveManifest, "runtime:", 2)[0]
+
+	result, _, err := runIn(t, withoutRuntime, Options{NonInteractive: true, SyncEnv: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "settings:68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, string(sent), "vllm-server", "the live block, since the file has none")
+	assert.Equal(t, ActionUpdated, result.Action)
+}

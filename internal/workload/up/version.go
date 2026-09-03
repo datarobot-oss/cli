@@ -82,7 +82,7 @@ func buildVersion(
 		return made, err
 	}
 
-	synced, err := syncCode(loaded.ProjectDir, report)
+	synced, err := syncOrRepush(loaded.ProjectDir, made, report)
 	if err != nil {
 		return made, err
 	}
@@ -900,6 +900,38 @@ func repush(
 	}
 
 	return synced, nil
+}
+
+// syncOrRepush is syncCode with the one recovery a sync can need: the catalog
+// the project last pushed to is gone, and the tree has changes to upload into
+// it.
+//
+// A tree without changes never touches the catalog here, and finds it dead one
+// step later, on the carry-over in inheritCode. A tree with changes is refused
+// on the upload itself, which is the first request to name the catalog. Same
+// catalog, same answer from the platform, same way out; what differs is where
+// the run is standing when it hears it, and the recovery has to start from
+// either place or the project is left pointed at a codeless artifact exactly
+// as before.
+func syncOrRepush(projectDir string, made version, report *reporter) (*sync.Result, error) {
+	synced, err := syncCode(projectDir, report)
+	if err == nil || !catalogGone(err) {
+		return synced, err
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("the platform says the code catalog this project last pushed to is gone, "+
+			"and the record of it cannot be read: %w", err)
+	}
+
+	catalog := deref(cfg.CatalogID)
+
+	return repush(projectDir, made, cfg, report,
+		fmt.Sprintf("  The code this project last pushed (catalog %s) is gone from the platform, "+
+			"so the tree is uploaded again.\n", catalog),
+		fmt.Sprintf("artifact %s has no code, the catalog the tree would have been pushed to (%s) is gone",
+			made.ID, catalog))
 }
 
 // resetSyncIndex puts the sync engine's index back to the state a project has

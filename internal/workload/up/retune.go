@@ -169,6 +169,51 @@ func rollRuntime(loaded Loaded, plan Plan) (json.RawMessage, error) {
 	return loaded.Compiled.RuntimePayload()
 }
 
+// notRestarted is what a refusal between the rotation and the restart has to
+// say. The store has already taken the new value, the workload has not, and
+// the error is the only account of that the run gives: a bare refusal would
+// read as a run that did nothing, and the next bare run calls the workload up
+// to date while it serves the old value.
+func notRestarted(result Result, err error) error {
+	return fmt.Errorf(
+		"%d %s re-sent to the credential store, but workload %s was not restarted to pick %s up, "+
+			"so the new value is not being served yet: %w",
+		result.Env.SecretsRotated,
+		plural(result.Env.SecretsRotated, "secret was", "secrets were"),
+		result.WorkloadID, plural(result.Env.SecretsRotated, "it", "them"), err)
+}
+
+// restartRuntime is the runtime block a restart sends: the file's, so no
+// sizing moves, and the live workload's when the file names none.
+//
+// The settings PATCH is the restart, and it has to carry a block. A manifest
+// without one leaves sizing to the platform, which is a shape a deploy accepts
+// and a resize never reaches, since there is nothing in the file to have
+// drifted; a rotation-only run reaches it, and what the platform settled on is
+// what the workload already runs with, so sending it back moves nothing.
+func restartRuntime(loaded Loaded, live Live) (json.RawMessage, error) {
+	runtime, err := loaded.Runtime()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(runtime) == 0 {
+		runtime = live.Runtime
+	}
+
+	if len(runtime) == 0 {
+		return nil, fmt.Errorf("neither the manifest nor workload %s carries a runtime block, and a restart "+
+			"has to send one", live.WorkloadID)
+	}
+
+	raw, err := json.Marshal(runtime)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the runtime block to JSON: %w", err)
+	}
+
+	return raw, nil
+}
+
 // restartForRotation replaces the workload with itself, so a secret this run
 // re-sent to the credential store is the one actually being served.
 //
@@ -184,8 +229,9 @@ func rollRuntime(loaded Loaded, plan Plan) (json.RawMessage, error) {
 // change out by rolling the workload onto the artifact it is already running,
 // so this is the same rolling swap a resize gets: a new generation comes up,
 // the old one drains, and the endpoint answers throughout. The runtime sent is
-// the one the file already asks for, so no sizing moves; what the call buys is
-// the new generation.
+// the one the file already asks for, or the one the workload already runs with
+// when the file leaves sizing to the platform, so no sizing moves; what the
+// call buys is the new generation.
 //
 // The alternative is the stop and start this used to print for the user to run
 // by hand. That is a real outage, on a workload they asked only to reconcile,
@@ -196,19 +242,21 @@ func restartForRotation(loaded Loaded, live Live, result Result, opts Options) (
 	}
 
 	// A workload that cannot take a deploy cannot take a restart either, and
-	// the refusal names what to do about the state it is in.
+	// the refusal names what to do about the state it is in. Every refusal
+	// from here to the PATCH is wrapped the same way, because the store has
+	// already moved by now, and a bare refusal reads as a run that did nothing.
 	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
-		return result, err
+		return result, notRestarted(result, err)
 	}
 
-	sizing, err := loaded.Compiled.RuntimePayload()
+	sizing, err := restartRuntime(loaded, live)
 	if err != nil {
-		return result, err
+		return result, notRestarted(result, err)
 	}
 
 	if err := guardRollout(result.WorkloadID,
 		"the re-sent secret is in the credential store and not yet serving"); err != nil {
-		return result, err
+		return result, notRestarted(result, err)
 	}
 
 	report := newReporter(opts.Stderr, opts.Spinner)
