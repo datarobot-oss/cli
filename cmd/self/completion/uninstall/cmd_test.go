@@ -15,7 +15,6 @@
 package uninstall
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,55 +25,7 @@ import (
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/version"
-	"github.com/spf13/cobra"
 )
-
-// wireCommandPath attaches cmd to a synthetic "dr self completion" parent
-// chain matching the real registration (see cmd/self/cmd.go and
-// cmd/self/completion/cmd.go), so cmd.CommandPath() resolves exactly as it
-// does at runtime. This package can't import cmd/self/completion directly —
-// that package imports this one, so doing so would create an import cycle.
-func wireCommandPath(cmd *cobra.Command) {
-	root := &cobra.Command{Use: version.CliName}
-	selfCmd := &cobra.Command{Use: "self"}
-	completionCmd := &cobra.Command{Use: "completion"}
-
-	completionCmd.AddCommand(cmd)
-	selfCmd.AddCommand(completionCmd)
-	root.AddCommand(selfCmd)
-}
-
-// captureStdout redirects os.Stdout for the duration of fn and returns
-// everything written to it.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	orig := os.Stdout
-
-	t.Cleanup(func() { os.Stdout = orig })
-
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create pipe: %v", err)
-	}
-
-	os.Stdout = w
-
-	fn()
-
-	os.Stdout = orig
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close pipe: %v", err)
-	}
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read pipe: %v", err)
-	}
-
-	return string(out)
-}
 
 func TestFindExistingCompletions(t *testing.T) {
 	// Create temporary directory structure
@@ -181,14 +132,12 @@ func TestUninstallCmd(t *testing.T) {
 	}
 }
 
-// TestShowUninstallDryRunMessage guards against CFX-7958: the printed
-// dry-run hint must derive its command path from cmd.CommandPath() so it
-// can never drift from the real "dr self completion uninstall" invocation.
+// TestShowUninstallDryRunMessage guards against CFX-7958 command path drift.
 func TestShowUninstallDryRunMessage(t *testing.T) {
 	cmd := Cmd()
-	wireCommandPath(cmd)
+	testutil.WireCompletionCommandPath(cmd)
 
-	out := captureStdout(t, func() {
+	out := testutil.CaptureStdout(t, func() {
 		showUninstallDryRunMessage(cmd, "zsh")
 	})
 

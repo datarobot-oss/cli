@@ -89,10 +89,7 @@ By default, runs in preview mode. Use '--yes' to uninstall directly.`,
 	return cmd
 }
 
-// runUninstall takes the invoked *cobra.Command so the dry-run hint can
-// derive the exact "dr self completion uninstall" path from
-// cmd.CommandPath() instead of a hardcoded string — see CFX-7958, where a
-// hardcoded literal silently drifted from the real command path.
+// runUninstall keeps user-facing hints tied to the invoked command path.
 func runUninstall(cmd *cobra.Command, specifiedShell string, yes, dryRun bool) error {
 	shell, err := resolveShellForUninstall(specifiedShell)
 	if err != nil {

@@ -103,11 +103,7 @@ By default, this command runs in preview mode. Use '--yes' to install directly.`
 	return cmd
 }
 
-// runInstall takes the invoked *cobra.Command (not just its root) so that
-// user-facing hints can derive the exact "dr self completion install" path
-// from cmd.CommandPath() instead of a hardcoded string. A hardcoded literal
-// silently drifts from the real command path if this command is ever
-// renamed or reparented — see CFX-7958.
+// runInstall keeps user-facing hints tied to the invoked command path.
 func runInstall(cmd *cobra.Command, specifiedShell string, force, yes, dryRun bool) error {
 	shell, err := internalShell.ResolveShell(specifiedShell)
 	if err != nil {
