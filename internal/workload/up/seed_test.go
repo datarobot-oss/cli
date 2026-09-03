@@ -302,14 +302,34 @@ func TestSeed_DoesNotReadTheArtifactForARecognisedProject(t *testing.T) {
 // A directory with files but no recognised project, not linked to the
 // workload, is refused rather than rolled: deploying it would replace the
 // workload's code with whatever this is.
-// A directory whose only residue is the workload state config wrote
-// (.datarobot/workload) counts as empty and is pulled into. That state is this
-// command's own; nothing else is there to preserve.
-func TestSeed_PullsWhenOnlyWorkloadStateIsPresent(t *testing.T) {
+// A directory that already holds workload sync state (.datarobot/workload) is
+// linked, so the real projectLinkedFn (wapi.Exists) makes seedApplies skip it —
+// the sync engine owns a linked project's base. projectLinkedFn is left
+// unstubbed here so the check runs against the directory on disk, not a stub.
+func TestSeed_SkipsWhenWorkloadStateExistsOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".datarobot", "workload"), 0o755))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, ".datarobot", "workload", "config.json"), []byte("{}"), 0o644))
+
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		t.Fatal("a linked project is not seeded, so its artifact is never read")
+
+		return nil, nil
+	})
+
+	fake := &fakeFiles{}
+	stubFiles(t, fake)
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.NoError(t, err)
+	assert.Empty(t, fake.pulled, "a linked project is left to the sync engine")
+}
+
+// A directory whose only residue is a pre-rename .wapiignore is as empty as one
+// with a .drignore, so it is pulled into rather than wrongly refused.
+func TestSeed_PullsWhenOnlyLegacyIgnoreIsPresent(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".wapiignore"), []byte("__pycache__\n"), 0o644))
 
 	force(t, &projectLinkedFn, func(string) bool { return false })
 	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
@@ -324,6 +344,57 @@ func TestSeed_PullsWhenOnlyWorkloadStateIsPresent(t *testing.T) {
 		Options{Stderr: io.Discard})
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(dir, "app.py"))
+}
+
+// .datarobot/ tool state that leaked into the catalog is never written locally,
+// so seeding cannot leave a .datarobot the next `up` would refuse. Real code
+// alongside it is still pulled.
+func TestSeed_DoesNotPullDatarobotToolStateFromCatalog(t *testing.T) {
+	dir := t.TempDir()
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+	stubFiles(t, &fakeFiles{
+		files: map[string]filesapi.FileMeta{
+			"app.py":                    {},
+			".datarobot/cli/state.yaml": {},
+		},
+		content: map[string]string{
+			"app.py":                    "print('hi')\n",
+			".datarobot/cli/state.yaml": "k: v\n",
+		},
+	})
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(dir, "app.py"))
+	assert.NoDirExists(t, filepath.Join(dir, ".datarobot", "cli"),
+		"tool state from the catalog must not be seeded into the fresh directory")
+}
+
+// A catalog carrying nothing but CLI residue — the ignore file and .datarobot/
+// tool state — has no code worth pulling, so an empty directory is left empty.
+func TestSeed_SkipsWhenCatalogIsOnlyCLIResidue(t *testing.T) {
+	dir := t.TempDir()
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+
+	fake := &fakeFiles{files: map[string]filesapi.FileMeta{
+		".drignore":                 {},
+		".datarobot/cli/state.yaml": {},
+	}}
+	stubFiles(t, fake)
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.NoError(t, err)
+	assert.Empty(t, fake.pulled, "a catalog of only residue has no real code to pull")
 }
 
 // Sibling state under .datarobot that is not the workload state — .datarobot/cli

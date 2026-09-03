@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
@@ -154,16 +155,37 @@ func artifactCodeRef(artifactID string) (*workload.DatarobotCodeRef, error) {
 	return workload.ExtractCodeRef(*artifact), nil
 }
 
-// hasRealCode reports whether the file set is more than the CLI's own ignore
-// file. An artifact carrying only .drignore has no code worth pulling.
+// hasRealCode reports whether the file set is more than CLI residue: the
+// project's ignore file, or tool state under .datarobot/. An artifact carrying
+// only those has no code worth pulling.
 func hasRealCode(files map[string]filesapi.FileMeta) bool {
 	for path := range files {
-		if path != ignore.FileName {
+		if !isCLIResidue(path) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// isCLIResidue reports whether a catalog path is the CLI's own residue rather
+// than project code: the ignore file (current or legacy) or anything under
+// .datarobot/. The sync only excludes .datarobot/workload, so a catalog can
+// capture sibling tool state such as .datarobot/cli/ — never code — which seed
+// must neither count as real code nor write locally, or the next `up` would see
+// a .datarobot it refuses as non-empty.
+func isCLIResidue(path string) bool {
+	return path == ignore.FileName ||
+		path == ignore.LegacyFileName ||
+		strings.HasPrefix(path, wapi.RootDirName+"/")
+}
+
+// underDatarobot reports whether a catalog path is tool state under
+// .datarobot/. Such state is filtered from the pull so seeding never writes it
+// into the fresh directory. The ignore files are not filtered — they are legit
+// project content the user wants pulled.
+func underDatarobot(path string) bool {
+	return strings.HasPrefix(path, wapi.RootDirName+"/")
 }
 
 // looksEmpty reports whether the directory holds nothing but the files the CLI
@@ -178,7 +200,7 @@ func looksEmpty(dir string) (bool, error) {
 
 	for _, entry := range entries {
 		switch entry.Name() {
-		case manifest.FileName, ignore.FileName, ".git":
+		case manifest.FileName, ignore.FileName, ignore.LegacyFileName, ".git":
 			continue
 		case wapi.RootDirName:
 			// A .datarobot directory is residue only when it holds nothing but
@@ -201,10 +223,16 @@ func looksEmpty(dir string) (bool, error) {
 }
 
 // datarobotHoldsOnlyWorkloadState reports whether a .datarobot directory
-// contains nothing but the workload sync state (wapi.StateDirName). That state
-// is this command's own residue and only it; anything else under .datarobot —
-// .datarobot/cli/ tool state, for one — is content the sync would upload, so
-// its presence means the directory is not empty to pull into.
+// contains nothing but the workload sync state (wapi.StateDirName). Anything
+// else under .datarobot — .datarobot/cli/ tool state, for one — is content the
+// sync would upload, so its presence means the directory is not empty to pull
+// into.
+//
+// In practice a .datarobot holding the workload state does not reach here at
+// all: that state is what projectLinkedFn (wapi.Exists) keys on, so seedApplies
+// has already skipped a linked project — the sync engine owns its base. The
+// tolerance is kept as defense in depth; the decision that matters on the live
+// path is refusing a .datarobot that carries non-workload state.
 func datarobotHoldsOnlyWorkloadState(datarobotDir string) (bool, error) {
 	entries, err := os.ReadDir(datarobotDir)
 	if err != nil {
@@ -234,7 +262,14 @@ func pullCode(
 	opts Options,
 ) error {
 	paths := make([]string, 0, len(files))
+
 	for path := range files {
+		// .datarobot/ tool state that leaked into the catalog is never written
+		// locally: seeding it would leave a .datarobot the next `up` refuses.
+		if underDatarobot(path) {
+			continue
+		}
+
 		paths = append(paths, path)
 	}
 
