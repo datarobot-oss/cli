@@ -178,9 +178,41 @@ func looksEmpty(dir string) (bool, error) {
 
 	for _, entry := range entries {
 		switch entry.Name() {
-		case wapi.RootDirName, manifest.FileName, ignore.FileName, ".git":
+		case manifest.FileName, ignore.FileName, ".git":
 			continue
+		case wapi.RootDirName:
+			// A .datarobot directory is residue only when it holds nothing but
+			// the workload state; sibling state like .datarobot/cli/ is real
+			// content the sync uploads, so a directory carrying it is not empty.
+			onlyState, err := datarobotHoldsOnlyWorkloadState(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				return false, err
+			}
+
+			if !onlyState {
+				return false, nil
+			}
 		default:
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// datarobotHoldsOnlyWorkloadState reports whether a .datarobot directory
+// contains nothing but the workload sync state (wapi.StateDirName). That state
+// is this command's own residue and only it; anything else under .datarobot —
+// .datarobot/cli/ tool state, for one — is content the sync would upload, so
+// its presence means the directory is not empty to pull into.
+func datarobotHoldsOnlyWorkloadState(datarobotDir string) (bool, error) {
+	entries, err := os.ReadDir(datarobotDir)
+	if err != nil {
+		return false, fmt.Errorf("cannot read %s: %w", datarobotDir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.Name() != wapi.StateDirName {
 			return false, nil
 		}
 	}

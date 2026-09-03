@@ -302,6 +302,54 @@ func TestSeed_DoesNotReadTheArtifactForARecognisedProject(t *testing.T) {
 // A directory with files but no recognised project, not linked to the
 // workload, is refused rather than rolled: deploying it would replace the
 // workload's code with whatever this is.
+// A directory whose only residue is the workload state config wrote
+// (.datarobot/workload) counts as empty and is pulled into. That state is this
+// command's own; nothing else is there to preserve.
+func TestSeed_PullsWhenOnlyWorkloadStateIsPresent(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".datarobot", "workload"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, ".datarobot", "workload", "config.json"), []byte("{}"), 0o644))
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+	stubFiles(t, &fakeFiles{
+		files:   map[string]filesapi.FileMeta{"app.py": {}},
+		content: map[string]string{"app.py": "print('hi')\n"},
+	})
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(dir, "app.py"))
+}
+
+// Sibling state under .datarobot that is not the workload state — .datarobot/cli
+// tool state, which the sync uploads — means the directory is not empty: it is
+// refused rather than pulled over, and nothing is downloaded.
+func TestSeed_RefusesWhenDatarobotHoldsNonWorkloadState(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".datarobot", "cli"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, ".datarobot", "cli", "state.yaml"), []byte("k: v\n"), 0o644))
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+
+	fake := &fakeFiles{files: map[string]filesapi.FileMeta{"app.py": {}}}
+	stubFiles(t, fake)
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to deploy")
+	assert.Empty(t, fake.pulled, "nothing is downloaded when the run is refused")
+}
+
 func TestSeed_RefusesANonEmptyUnlinkedDir(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("scratch"), 0o644))
