@@ -22,6 +22,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,4 +74,32 @@ func TestVerifyDotenvToken_StatusErrorKeepsMessage(t *testing.T) {
 
 	require.False(t, valid)
 	assert.Contains(t, string(out), "DATAROBOT_API_TOKEN in '.env' is invalid or expired")
+}
+
+// skip-auth must short-circuit RunE with no error and no credential check, so a
+// no-auth stack (DR Lite) passes the `task dev` auth-check gate.
+func TestRunE_SkipAuthShortCircuits(t *testing.T) {
+	viperx.Set(config.SkipAuthKey, true)
+	t.Cleanup(func() { viperx.Set(config.SkipAuthKey, false) })
+	t.Setenv("DATAROBOT_API_TOKEN", "")
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+
+	orig := os.Stdout
+	t.Cleanup(func() { os.Stdout = orig })
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	os.Stdout = w
+
+	runErr := RunE(&cobra.Command{}, nil)
+
+	os.Stdout = orig
+	require.NoError(t, w.Close())
+
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	require.NoError(t, runErr)
+	assert.Contains(t, string(out), "Authentication checks skipped")
 }
