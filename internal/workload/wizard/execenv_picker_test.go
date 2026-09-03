@@ -25,6 +25,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// forceColor makes lipgloss styles emit ANSI in a test that otherwise runs
+// under the no-colour profile, then restores the previous profile.
+//
+// It sets the profile on the default renderer in place rather than swapping the
+// renderer (the CLICOLOR_FORCE + SetDefaultRenderer trick): lipgloss pins each
+// style to the renderer that was default when NewStyle ran (Style{r: r}), so
+// the package-level styles here are bound to the default renderer built at init.
+// Only mutating that renderer's profile reaches them; replacing the global
+// default leaves them on the old renderer, whose profile earlier tests have
+// already cached as Ascii. Naming the profile needs termenv, hence the import.
+func forceColor(t *testing.T) {
+	t.Helper()
+
+	prev := lipgloss.ColorProfile()
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+}
+
 func TestExecEnvPicker_ShowsTheLanguageColumn(t *testing.T) {
 	picker := newExecEnvPicker([]workload.ExecutionEnvironment{
 		{
@@ -83,10 +102,7 @@ func TestExecEnvPicker_TagsAndLiftsTheInUseEnvironment(t *testing.T) {
 // style renders as plain text and a regression would hide; this one forces
 // TrueColor so it cannot.
 func TestExecEnvPicker_InUseTagCarriesNoAnsiUnderColour(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+	forceColor(t)
 
 	picker := newExecEnvPicker([]workload.ExecutionEnvironment{
 		{
