@@ -148,6 +148,70 @@ func TestUpdateConfigFile_BareSweepDoesNotForkInheritedKeyIntoProfile(t *testing
 	assert.Empty(t, eu, "inherited default-profile values must not be forked into the profile by a bare sweep")
 }
 
+// TestUpdateConfigFile_BareSweepWritesFlagOverriddenKeyIntoProfile covers
+// `dr --profile eu-mtsaas --ca-cert /etc/ssl/eu.pem auth login`: ca-cert is
+// not yet in the profile's section, but the flag value differs from the
+// default profile's, so it is the profile's own value and must persist.
+func TestUpdateConfigFile_BareSweepWritesFlagOverriddenKeyIntoProfile(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	initial := "endpoint: https://app.datarobot.com/api/v2\ntoken: default-token\nca-cert: /etc/ssl/corp.pem\nprofiles:\n  eu-mtsaas: {}\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(initial), 0o600))
+
+	viper.Set(ProfileKey, "eu-mtsaas")
+	require.NoError(t, ReadConfigFile(""))
+
+	viper.Set("ca-cert", "/etc/ssl/eu.pem")
+
+	require.NoError(t, UpdateConfigFile())
+
+	raw := readRawYAML(t, configFile)
+
+	assert.Equal(t, "/etc/ssl/corp.pem", raw["ca-cert"], "the default profile's ca-cert must be left alone")
+
+	profiles, ok := raw["profiles"].(map[string]any)
+	require.True(t, ok)
+
+	eu, ok := profiles["eu-mtsaas"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "/etc/ssl/eu.pem", eu["ca-cert"])
+}
+
+// TestUpdateConfigFile_BareSweepSeesSectionWrittenEarlierInProcess covers the
+// two-call sequence in auth.WriteConfigFileSilent: the explicit endpoint/token
+// write creates the profile section on disk, but the process-global viper
+// profiles map is still the startup snapshot, so ownership must be resolved
+// from the file rather than from viper.
+func TestUpdateConfigFile_BareSweepSeesSectionWrittenEarlierInProcess(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	initial := "endpoint: https://app.datarobot.com/api/v2\ntoken: default-token\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(initial), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+
+	// Mirror defaultConfigInitializer's brand-new-profile path: the section
+	// does not exist yet, so viper never learns about it and the inherited
+	// credentials are cleared before auth login supplies its own.
+	viper.Set(ProfileKey, "onprem")
+	viper.Set(DataRobotURL, "https://onprem.example.com/api/v2")
+	viper.Set(DataRobotAPIKey, "onprem-token")
+	require.NoError(t, UpdateConfigFile(DataRobotURL, DataRobotAPIKey))
+
+	viper.Set(DataRobotAPIKey, "rotated-onprem-token")
+	require.NoError(t, UpdateConfigFile())
+
+	raw := readRawYAML(t, configFile)
+
+	assert.Equal(t, "default-token", raw[DataRobotAPIKey], "the default profile's token must be left alone")
+
+	profiles, ok := raw["profiles"].(map[string]any)
+	require.True(t, ok)
+
+	onprem, ok := profiles["onprem"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "rotated-onprem-token", onprem[DataRobotAPIKey])
+}
+
 func TestUpdateConfigFile_GlobalKeyWritesTopLevelUnderActiveProfile(t *testing.T) {
 	configFile := setupWriteTest(t)
 

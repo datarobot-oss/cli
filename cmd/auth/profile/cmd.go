@@ -32,7 +32,7 @@ func Cmd() *cobra.Command {
 		Long: `Inspect the named profiles stored in drconfig.yaml.
 
 A profile is a named set of credentials (endpoint + token, optionally
-ca-cert and ssl_verify) alongside the default one, so you can work against
+ca-cert) alongside the default one, so you can work against
 several DataRobot installations without re-authenticating each time.
 Select one with --profile <name> or DATAROBOT_CLI_PROFILE=<name> on any
 command.

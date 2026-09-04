@@ -108,10 +108,10 @@ export DATAROBOT_CLI_PROFILE=eu-mtsaas
 dr templates list
 ```
 
-Only `endpoint`, `token`, `ca-cert`, and `ssl_verify` are profile-scoped. A
-profile that doesn't define `ca-cert` or `ssl_verify` inherits the default
-profile's value. Every other setting (e.g. `default-llm-id`) is global and
-shared by all profiles.
+Only `endpoint`, `token`, and `ca-cert` are profile-scoped. A profile that
+doesn't define `ca-cert` inherits the default profile's value. Every other
+setting (e.g. `default-llm-id`, `ssl_verify`) is global and shared by all
+profiles.
 
 There's no `create` or `delete` subcommand: a profile is created the first
 time you run `dr --profile <name> auth login` (or `auth set-url`) for a name
@@ -251,7 +251,7 @@ When the CLI needs configuration settings, it looks for them in this order (high
 
 1. **Command-line flags** (e.g., `--config <path>`, `--profile <name>`)&mdash;overrides everything.
 2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`, `DATAROBOT_CLI_PROFILE`)&mdash;overrides config files.
-3. **The active named profile's own settings**&mdash;shadows the default profile's `endpoint`/`token`/`ca-cert`/`ssl_verify`.
+3. **The active named profile's own settings**&mdash;shadows the default profile's `endpoint`/`token`/`ca-cert`.
 4. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default (top-level) profile.
 5. **Built-in defaults**&mdash;fallback values.
 

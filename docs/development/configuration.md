@@ -147,9 +147,12 @@ mechanism lives in `internal/config/profile.go`:
   Deliberately **not** `viperx.Set`: `Set` writes the override layer, which
   outranks flags and env, so a profile's `endpoint` would beat an explicit
   `DATAROBOT_CLI_ENDPOINT` instead of losing to it.
-- Only `config.ProfileScopedKeys` (`endpoint`, `token`, `ca-cert`,
-  `ssl_verify`) may live under a profile; every other persistable key stays
-  global at the top level, shared by all profiles.
+- Only `config.ProfileScopedKeys` (`endpoint`, `token`, `ca-cert`) may live
+  under a profile; every other persistable key stays global at the top level,
+  shared by all profiles. `ssl_verify` is deliberately excluded: nothing in
+  the CLI reads it (TLS is driven by `--ca-cert` and
+  `--skip-certificate-check`), so it stays a global passthrough value that
+  `UpdateConfigFile` preserves.
 - `endpoint`/`token` merge atomically: if a profile defines either one, both
   are merged (substituting `""` for the one it omits), so a profile can
   never end up pairing its own endpoint with the default profile's token.

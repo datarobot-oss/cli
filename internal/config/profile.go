@@ -17,10 +17,12 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 )
 
@@ -38,11 +40,15 @@ const DefaultProfileLabel = "default"
 // ProfileScopedKeys are the persistable keys a named profile may override.
 // Every other persistable key (e.g. default-llm-id) is global: it lives only
 // at the top level and is shared by every profile.
+//
+// ssl_verify is deliberately absent: nothing in the CLI reads it (TLS is
+// driven by --ca-cert and --skip-certificate-check), so it stays a global
+// passthrough value the config writer preserves rather than a profile knob
+// that would imply it gates this CLI's TLS behaviour.
 var ProfileScopedKeys = map[string]struct{}{
 	DataRobotURL:    {},
 	DataRobotAPIKey: {},
 	"ca-cert":       {},
-	"ssl_verify":    {},
 }
 
 // profileNamePattern is what viper can address as a dotted-path key segment:
@@ -109,10 +115,24 @@ func profileSection(name string) (map[string]any, bool) {
 
 // ProfileNames returns the sorted profile names present in the config file.
 func ProfileNames() []string {
-	profiles := viper.GetStringMap(profilesKey)
+	return namedProfileKeys(viper.GetStringMap(profilesKey))
+}
+
+// namedProfileKeys returns the sorted, addressable section names in a raw
+// profiles map. A hand-edited "profiles.default" section is dropped:
+// ValidateProfileName reserves that name for the top-level profile, so such a
+// section can never be selected and must not be listed as if it could.
+func namedProfileKeys(profiles map[string]any) []string {
 	names := make([]string, 0, len(profiles))
 
 	for name := range profiles {
+		if NormalizeProfileName(name) == DefaultProfileLabel {
+			log.Debugf("ignoring %s.%s section in drconfig.yaml: %q is reserved for the top-level default profile",
+				profilesKey, name, DefaultProfileLabel)
+
+			continue
+		}
+
 		names = append(names, name)
 	}
 
@@ -182,11 +202,10 @@ func stringOrEmpty(v any) string {
 // profile. A field is the zero value when the profile does not define it
 // (it inherits from the default profile at merge time; see applyProfile).
 type ProfileInfo struct {
-	Name      string
-	Endpoint  string
-	HasToken  bool
-	CACert    string
-	SSLVerify *bool
+	Name     string
+	Endpoint string
+	HasToken bool
+	CACert   string
 }
 
 // LoadProfiles re-reads the config file drconfig.yaml is currently pointed
@@ -209,8 +228,11 @@ func LoadProfiles() (ProfileInfo, []ProfileInfo, error) {
 	v.SetConfigFile(configFile)
 	v.SetConfigType("yaml")
 
+	// SetConfigFile bypasses viper's search, so a missing file surfaces as a
+	// plain os.ErrNotExist rather than viper.ConfigFileNotFoundError. Treat it
+	// as "no profiles configured" so a config deleted mid-session still lists.
 	err := v.ReadInConfig()
-	if err != nil && errors.As(err, &viper.ConfigFileNotFoundError{}) {
+	if err != nil && errors.Is(err, os.ErrNotExist) {
 		return ProfileInfo{}, nil, nil
 	}
 
@@ -227,12 +249,7 @@ func LoadProfiles() (ProfileInfo, []ProfileInfo, error) {
 	// via applyProfile (which uses the same GetStringMap access pattern).
 	rawProfiles := v.GetStringMap(profilesKey)
 
-	names := make([]string, 0, len(rawProfiles))
-	for name := range rawProfiles {
-		names = append(names, name)
-	}
-
-	sort.Strings(names)
+	names := namedProfileKeys(rawProfiles)
 
 	profiles := make([]ProfileInfo, 0, len(names))
 
@@ -247,24 +264,10 @@ func LoadProfiles() (ProfileInfo, []ProfileInfo, error) {
 // profileInfoFromSection builds a ProfileInfo from a profile's own raw
 // section (or, for the default profile, the config file's top-level map).
 func profileInfoFromSection(name string, section map[string]any) ProfileInfo {
-	info := ProfileInfo{
+	return ProfileInfo{
 		Name:     name,
 		Endpoint: stringOrEmpty(section[DataRobotURL]),
 		HasToken: stringOrEmpty(section[DataRobotAPIKey]) != "",
 		CACert:   stringOrEmpty(section["ca-cert"]),
 	}
-
-	raw, ok := section["ssl_verify"]
-	if !ok {
-		return info
-	}
-
-	b, ok := raw.(bool)
-	if !ok {
-		return info
-	}
-
-	info.SSLVerify = &b
-
-	return info
 }

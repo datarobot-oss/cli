@@ -31,23 +31,21 @@ const defaultProfileLabel = config.DefaultProfileLabel
 // profileDetail is the JSON representation of a single profile's resolved
 // settings for --output-format json.
 type profileDetail struct {
-	Name         string `json:"name"`
-	Active       bool   `json:"active"`
-	Endpoint     string `json:"endpoint"`
-	EndpointOwn  bool   `json:"endpoint_own"`
-	HasToken     bool   `json:"has_token"`
-	HasTokenOwn  bool   `json:"has_token_own"`
-	CACert       string `json:"ca_cert,omitempty"`
-	CACertOwn    bool   `json:"ca_cert_own"`
-	SSLVerify    *bool  `json:"ssl_verify,omitempty"`
-	SSLVerifyOwn bool   `json:"ssl_verify_own"`
+	Name        string `json:"name"`
+	Active      bool   `json:"active"`
+	Endpoint    string `json:"endpoint"`
+	EndpointOwn bool   `json:"endpoint_own"`
+	HasToken    bool   `json:"has_token"`
+	HasTokenOwn bool   `json:"has_token_own"`
+	CACert      string `json:"ca_cert,omitempty"`
+	CACertOwn   bool   `json:"ca_cert_own"`
 }
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show [name]",
 		Short: "🔍 Show a profile's resolved settings",
-		Long: `Show a profile's resolved settings: its own endpoint/token/ca-cert/ssl_verify,
+		Long: `Show a profile's resolved settings: its own endpoint/token/ca-cert,
 falling back to the default profile's values for anything it doesn't define.
 
 Defaults to the active profile (selected via --profile or
@@ -134,17 +132,16 @@ func resolveDetail(name string, own, def config.ProfileInfo, active bool) profil
 	detail := profileDetail{Name: name, Active: active}
 	isDefault := name == defaultProfileLabel
 
-	detail.EndpointOwn = isDefault || own.Endpoint != ""
+	// config.applyProfile merges endpoint and token atomically, so a profile
+	// that defines either one owns both and never inherits the other.
+	credOwn := isDefault || own.Endpoint != "" || own.HasToken
+
+	detail.EndpointOwn = credOwn
+	detail.HasTokenOwn = credOwn
 	detail.Endpoint = own.Endpoint
-
-	if !detail.EndpointOwn {
-		detail.Endpoint = def.Endpoint
-	}
-
-	detail.HasTokenOwn = isDefault || own.HasToken
 	detail.HasToken = own.HasToken
 
-	if !detail.HasTokenOwn {
+	if !credOwn {
 		detail.Endpoint = def.Endpoint
 		detail.HasToken = def.HasToken
 	}
@@ -154,13 +151,6 @@ func resolveDetail(name string, own, def config.ProfileInfo, active bool) profil
 
 	if !detail.CACertOwn {
 		detail.CACert = def.CACert
-	}
-
-	detail.SSLVerifyOwn = isDefault || own.SSLVerify != nil
-	detail.SSLVerify = own.SSLVerify
-
-	if !detail.SSLVerifyOwn {
-		detail.SSLVerify = def.SSLVerify
 	}
 
 	return detail
@@ -177,7 +167,6 @@ func printDetail(d profileDetail) {
 	printField("endpoint", valueOrDash(d.Endpoint), d.EndpointOwn)
 	printField("token", tokenStatus(d.HasToken), d.HasTokenOwn)
 	printField("ca-cert", valueOrDash(d.CACert), d.CACertOwn)
-	printField("ssl_verify", sslVerifyStatus(d.SSLVerify), d.SSLVerifyOwn)
 }
 
 func printField(label, value string, own bool) {
@@ -203,16 +192,4 @@ func tokenStatus(hasToken bool) string {
 	}
 
 	return "not set"
-}
-
-func sslVerifyStatus(v *bool) string {
-	if v == nil {
-		return "-"
-	}
-
-	if *v {
-		return "true"
-	}
-
-	return "false"
 }

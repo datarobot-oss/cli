@@ -52,6 +52,8 @@ profiles:
     endpoint: https://onprem.example.com/api/v2
     token: onprem-token
     ca-cert: /etc/ssl/onprem.pem
+  staging:
+    endpoint: https://staging.example.com/api/v2
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "drconfig.yaml"), []byte(raw), 0o600))
 	require.NoError(t, config.ReadConfigFile(""))
@@ -127,6 +129,22 @@ func TestShow_NamedProfile_InheritsCACertFromDefault(t *testing.T) {
 	assert.Equal(t, "eu-mtsaas", detail.Name)
 	assert.Equal(t, "/etc/ssl/corp.pem", detail.CACert, "ca-cert should fall back to the default profile's value")
 	assert.False(t, detail.CACertOwn)
+}
+
+// TestShow_EndpointOnlyProfileDoesNotInheritCredentials mirrors
+// config.applyProfile, which merges endpoint and token atomically: a profile
+// created by `auth set-url` alone owns its endpoint and an empty token, and
+// must never be shown pairing its own endpoint with the default's token (or
+// the default's endpoint under its own name).
+func TestShow_EndpointOnlyProfileDoesNotInheritCredentials(t *testing.T) {
+	writeTestConfig(t)
+
+	detail, _ := runShowJSON(t, "staging")
+
+	assert.Equal(t, "https://staging.example.com/api/v2", detail.Endpoint)
+	assert.True(t, detail.EndpointOwn)
+	assert.False(t, detail.HasToken, "a profile that owns an endpoint but no token must not borrow the default's")
+	assert.True(t, detail.HasTokenOwn)
 }
 
 func TestShow_NoArgsDefaultsToActiveProfile(t *testing.T) {

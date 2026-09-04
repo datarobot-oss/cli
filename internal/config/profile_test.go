@@ -164,6 +164,64 @@ profiles:
 	assert.Equal(t, []string{"empty-profile", "eu-mtsaas"}, names)
 }
 
+// TestLoadProfiles_ReservedDefaultSectionIgnored covers a hand-edited
+// "profiles.default" section: ValidateProfileName reserves that name for the
+// top-level profile, so listing it would render an unreachable second
+// "default" row in `dr auth profile list`.
+func TestLoadProfiles_ReservedDefaultSectionIgnored(t *testing.T) {
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	require.NoError(t, CreateConfigFileDirIfNotExists())
+
+	configFile := filepath.Join(tempDir, ".config", "datarobot", "drconfig.yaml")
+	rawYAML := `endpoint: https://default.example.com/api/v2
+token: default-token
+profiles:
+  default:
+    endpoint: https://impostor.example.com/api/v2
+  eu-mtsaas:
+    endpoint: https://eu.example.com/api/v2
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(rawYAML), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+
+	_, profiles, err := LoadProfiles()
+	require.NoError(t, err)
+
+	names := make([]string, len(profiles))
+	for i, p := range profiles {
+		names[i] = p.Name
+	}
+
+	assert.Equal(t, []string{"eu-mtsaas"}, names)
+	assert.Equal(t, []string{"eu-mtsaas"}, ProfileNames())
+}
+
+// TestLoadProfiles_MissingFileIsNotAnError covers a config file deleted after
+// viper recorded it: SetConfigFile bypasses viper's search, so the failure is
+// a plain os.ErrNotExist rather than viper.ConfigFileNotFoundError.
+func TestLoadProfiles_MissingFileIsNotAnError(t *testing.T) {
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	require.NoError(t, CreateConfigFileDirIfNotExists())
+
+	configFile := filepath.Join(tempDir, ".config", "datarobot", "drconfig.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte("endpoint: https://default.example.com/api/v2\n"), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+	require.NoError(t, os.Remove(configFile))
+
+	def, profiles, err := LoadProfiles()
+	require.NoError(t, err)
+	assert.Empty(t, def.Endpoint)
+	assert.Empty(t, profiles)
+}
+
 func TestApplyProfile_EndpointTokenAtomicity(t *testing.T) {
 	tempDir := t.TempDir()
 	testutil.SetTestHomeDir(t, tempDir)

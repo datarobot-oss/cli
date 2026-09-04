@@ -152,7 +152,7 @@ func readYAMLNode(path string) (*yaml.Node, error) {
 // and non-allowlisted keys. It navigates to nested keys using dotted notation
 // (e.g. "foo.bar.baz").
 func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
-	for _, key := range candidateKeys(keys) {
+	for _, key := range candidateKeys(node, keys) {
 		if _, ok := PersistableKeys[key]; !ok {
 			continue
 		}
@@ -171,13 +171,13 @@ func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
 // For a bare sweep (keys is empty) with no profile active, every allowlisted
 // key is a candidate, as before.
 //
-// For a bare sweep with a profile active, profile-scoped candidates are
-// restricted to keys the profile's own section already defines. Without
-// this, the sweep would copy every inherited top-level value (including
-// endpoint and token belonging to a *different* instance) down into the
-// profile and permanently fork it. Global (non-profile-scoped) keys sweep
-// as usual.
-func candidateKeys(keys []string) []string {
+// For a bare sweep with a profile active, a profile-scoped key is a candidate
+// only when it belongs to the profile rather than being inherited (see
+// profileOwnsKey). Without this, the sweep would copy every inherited
+// top-level value (including endpoint and token belonging to a *different*
+// instance) down into the profile and permanently fork it. Global
+// (non-profile-scoped) keys sweep as usual.
+func candidateKeys(node *yaml.Node, keys []string) []string {
 	if len(keys) > 0 {
 		return keys
 	}
@@ -186,17 +186,10 @@ func candidateKeys(keys []string) []string {
 
 	activeProfile := ActiveProfile()
 
-	var owned map[string]any
-
-	if activeProfile != "" {
-		owned, _ = profileSection(activeProfile)
-	}
-
 	for key := range PersistableKeys {
 		_, scoped := ProfileScopedKeys[key]
-		_, owns := owned[key]
 
-		if scoped && activeProfile != "" && !owns {
+		if scoped && activeProfile != "" && !profileOwnsKey(node, activeProfile, key) {
 			continue
 		}
 
@@ -204,6 +197,30 @@ func candidateKeys(keys []string) []string {
 	}
 
 	return candidates
+}
+
+// profileOwnsKey reports whether a bare sweep should write key into the active
+// profile's section. Ownership is resolved against node -- the config file as
+// it currently exists on disk -- rather than against the process-global viper
+// instance, whose profiles map is a snapshot from startup and so never sees a
+// section an earlier UpdateConfigFile call in the same process just created.
+//
+// A key is owned when the profile's section already defines it, or when the
+// live viper value differs from the default profile's on-disk value, which
+// means a flag or environment variable overrode what would otherwise have been
+// inherited (e.g. `dr --profile onprem --ca-cert ... auth login`).
+func profileOwnsKey(node *yaml.Node, profile, key string) bool {
+	section := mappingValueNode(profilesMappingNode(node), profileSectionName(node, profile))
+	if mappingValueNode(section, key) != nil {
+		return true
+	}
+
+	inherited := ""
+	if valNode := mappingValueNode(node, key); valNode != nil {
+		inherited = valNode.Value
+	}
+
+	return fmt.Sprintf("%v", viper.Get(key)) != inherited
 }
 
 // profileDestPath returns the YAML path a persistable key should be written
@@ -233,22 +250,24 @@ func profileSectionName(node *yaml.Node, name string) string {
 }
 
 func profilesMappingNode(node *yaml.Node) *yaml.Node {
+	profilesNode := mappingValueNode(node, profilesKey)
+	if profilesNode == nil || profilesNode.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	return profilesNode
+}
+
+// mappingValueNode returns the value node for key in a mapping node, or nil.
+func mappingValueNode(node *yaml.Node, key string) *yaml.Node {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return nil
 	}
 
 	for i := 0; i < len(node.Content)-1; i += 2 {
-		keyNode := node.Content[i]
-		if keyNode.Value != profilesKey {
-			continue
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
 		}
-
-		profilesNode := node.Content[i+1]
-		if profilesNode.Kind == yaml.MappingNode {
-			return profilesNode
-		}
-
-		return nil
 	}
 
 	return nil

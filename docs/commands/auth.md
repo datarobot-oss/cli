@@ -402,7 +402,6 @@ eu-mtsaas
   endpoint: https://app.eu.datarobot.com/api/v2
   token: set
   ca-cert: - (inherited from default)
-  ssl_verify: - (inherited from default)
 ```
 
 Both support `--output-format json`. To work against a specific profile with any command,

@@ -437,10 +437,8 @@ func WriteConfigFileSilent() error {
 
 	// Also sweep the rest of config.PersistableKeys (e.g. ca-cert), same as
 	// before named profiles existed, so a flag like --ca-cert still persists
-	// across invocations. The bare sweep still restricts any OTHER
-	// profile-scoped key (ca-cert, ssl_verify) to ones the active profile's
-	// section already owns, so this can't fork an inherited value into a
-	// brand-new profile the way passing them explicitly here would.
+	// across invocations. The bare sweep still refuses to fork a merely
+	// inherited profile-scoped value down into the active profile's section.
 	if err := config.UpdateConfigFile(); err != nil {
 		log.Error(err)
 		return err
