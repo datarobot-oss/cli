@@ -57,7 +57,7 @@ dr artifact lock <artifact-id>
 | `dr artifact lock`    | `PATCH  /api/v2/artifacts/{id}/`       | Promote a draft to locked (immutable).                                     |
 | `dr artifact delete`  | `DELETE /api/v2/artifacts/{id}/`       | Delete an artifact.                                                        |
 | `dr artifact build …` | `…/artifacts/{id}/builds[/{build-id}]` | Trigger, inspect, and read logs from image builds.                         |
-| `dr artifact code …`  | DataRobot catalog (Files API)          | Sync local code with an artifact (`init`, `sync`, `versions`, `checkout`). |
+| `dr artifact code …`  | DataRobot catalog (Files API)          | Sync local code with an artifact (`init`, `sync`, `versions`, `checkout`, `doctor`). |
 
 ## Subcommands
 
@@ -171,6 +171,7 @@ dr artifact code init     [<artifact-id>] [--dir <path>] [--yes]
 dr artifact code sync     [--dir <path>] [--dry-run | --diff] [--yes]
 dr artifact code versions [--dir <path>] [--limit N]
 dr artifact code checkout [<ver>] [--dir <path>] [--clean]
+dr artifact code doctor   [--dir <path>] [--output-format text|json] [--fix | --relink <artifact-id>]
 ```
 
 - `init` creates the `.datarobot/workload/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle. It also drops a starter `.drignore` at the project root, in gitignore syntax, listing what `sync` should leave out. Edit it and commit it. A project that already has an ignore file under either name keeps it, and no new one is written.
@@ -179,6 +180,7 @@ dr artifact code checkout [<ver>] [--dir <path>] [--clean]
 - For Python projects, the image build requires a `uv.lock` next to `pyproject.toml`. When your project has `pyproject.toml` but no `uv.lock`, `sync` generates one automatically by running your local `uv lock` (your uv configuration, private indexes, and credentials apply) and uploads it with the rest of your code — commit the generated file to your repo. If `uv` is not installed or lock generation fails, sync still completes and prints what to do (`uv lock`, then re-sync); the image build will fail until a lock file is added. This also happens on `--dry-run`/`--diff`, so the preview matches what a real sync would upload. An existing `uv.lock` is never modified, and sync warns if your `.drignore` excludes it.
 - `versions` lists the artifact's catalog versions, marking the one the artifact currently points at (`*`) and noting the one you last synced.
 - `checkout` downloads a version into `.datarobot/workload/.checkouts/<version-id>/` for read-only inspection; your working directory is left untouched. `--clean` removes checkout directories instead of downloading.
+- `doctor` is a read-only diagnostic of a linked project's sync state. It runs local checks (linked artifact, `config.json`/`manifest.json` health, config/manifest agreement, interrupted rollbacks, the sync lock) and, when credentials resolve, remote checks against the linked artifact, reporting each as `OK`, `WARN`, `FAIL`, or `SKIP` with a concrete remedy. Pass `--fix` to run the safe local auto-repairs (rebuild the manifest from config, restore an interrupted rollback, clear a stale lock) and re-run the suite so the report and exit code reflect the post-fix state; pass `--relink <new-artifact-id>` to repoint the project at a different artifact with a fresh sync baseline. The two flags are mutually exclusive, and a live process holding the sync lock gates all repairs. Exit code is `1` when any check `FAIL`s. See the [architecture and check-authoring guide](../development/doctor.md) for contributor details.
 
 ## Shared flags
 
