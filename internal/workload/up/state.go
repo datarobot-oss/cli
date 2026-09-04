@@ -66,8 +66,16 @@ const (
 	// to be running.
 	StateStopped
 
-	// StateSettling is a workload still moving under its own power. `up`
-	// waits for it rather than acting on a state that is about to change.
+	// StateSettling is a workload still moving. `up` waits for it rather than
+	// acting on a state that is about to change.
+	//
+	// Mostly that is a workload moving under its own power, which is what
+	// stateFor reads off the status. A swap already in flight is the other
+	// case and cannot be read that way, because a workload being replaced
+	// reports itself running throughout; awaitReplaced asks the replacement
+	// route and reduces it to this state on the one path that does not wait,
+	// so a preview says what a deploy would do rather than calling a workload
+	// mid-transition up to date.
 	StateSettling
 
 	// StateRunning is the ordinary case: reconcile against it.

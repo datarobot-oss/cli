@@ -217,9 +217,11 @@ sends the sizing with the rollout, so the new version comes up with it.
 
 A workload that is not ready to be deployed onto is dealt with rather than
 refused. One still starting or stopping is waited out and then re-read, so the
-plan is built against where it landed. A stopped one is started and then
-reconciled in the same run, which is one command whether the file asks for a
-start alone or for a start and a new version.
+plan is built against where it landed, and so is one already being rolled onto
+a new version, which reports itself running for the whole of the swap. A
+stopped one is started and then reconciled in the same run, which is one
+command whether the file asks for a start alone or for a start and a new
+version.
 
 Examples:
   dr workload up
