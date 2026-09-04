@@ -183,7 +183,7 @@ func (f *flow) enterPicker(at screen) {
 		// the list again. On a first visit there is nothing yet, and emptying
 		// the shared table means a failed load cannot leave the previous
 		// screen's workload rows on display under a base-image heading.
-		f.picker = newExecEnvPicker(f.execEnvs, f.width, f.height)
+		f.picker = newExecEnvPicker(f.execEnvs, f.liveExecEnvID(), f.width, f.height)
 
 		if id := f.draft.Build.ExecutionEnvironmentID; id != "" {
 			f.picker.selectValue(func(v any) bool {
@@ -1175,8 +1175,17 @@ func newWorkloadPicker(workloads []workload.Workload, width, height int) rowTabl
 	return newRowTable([]string{"WORKLOAD", "STATUS", "UPDATED"}, rows, true, width, height)
 }
 
-func newExecEnvPicker(environments []workload.ExecutionEnvironment, width, height int) rowTable {
+// inUseSuffix tags the option a bound workload already uses, the same phrase
+// the menu screens append to their live option.
+const inUseSuffix = "  · in use"
+
+func newExecEnvPicker(environments []workload.ExecutionEnvironment, liveID string, width, height int) rowTable {
 	rows := make([]tableRow, 0, len(environments))
+
+	var (
+		inUse     tableRow
+		haveInUse bool
+	)
 
 	for _, ee := range environments {
 		// An environment with nothing built is not offered: picking it would
@@ -1187,13 +1196,47 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, width, heigh
 			continue
 		}
 
-		rows = append(rows, tableRow{
+		row := tableRow{
 			cells: []string{ee.Name, languageLabel(ee.ProgrammingLanguage), ee.ID},
 			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID},
-		})
+		}
+
+		// The one a bound workload is already built on is tagged and lifted to
+		// the top: the list runs long, and the option most likely to be kept
+		// should not have to be scrolled for.
+		//
+		// The tag is plain text, not styled. It rides a table cell, and
+		// bubbles/table sizes columns and truncates cells by display width with
+		// no awareness of ANSI: a styled tag's escape bytes would inflate the
+		// column's measured width and, on a narrow terminal, be cut mid-escape,
+		// bleeding colour across the row. The green live-value tag stays on the
+		// menu screens, which render their own lines and never truncate.
+		if liveID != "" && ee.ID == liveID {
+			last := len(row.cells) - 1
+			row.cells[last] += inUseSuffix
+			inUse, haveInUse = row, true
+
+			continue
+		}
+
+		rows = append(rows, row)
+	}
+
+	if haveInUse {
+		rows = append([]tableRow{inUse}, rows...)
 	}
 
 	return newRowTable([]string{"BASE IMAGE", "LANGUAGE", "ID"}, rows, true, width, height)
+}
+
+// liveExecEnvID is the execution environment the bound workload is built on,
+// "" for a fresh setup. It marks the "in use" row in the base-image picker.
+func (f flow) liveExecEnvID() string {
+	if f.live == nil {
+		return ""
+	}
+
+	return f.live.Defaults().Build.ExecutionEnvironmentID
 }
 
 // languageLabel renders the language column: the platform's value as it came

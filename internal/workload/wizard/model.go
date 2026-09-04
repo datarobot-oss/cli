@@ -1156,7 +1156,7 @@ func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
 		f.failed = errors.New("no execution environments are available; go back and pick another image source")
 	default:
 		f.execEnvs = msg.environments
-		f.picker = newExecEnvPicker(msg.environments, f.width, f.height)
+		f.picker = newExecEnvPicker(msg.environments, f.liveExecEnvID(), f.width, f.height)
 	}
 
 	return f, nil
