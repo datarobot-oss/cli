@@ -84,7 +84,7 @@ func buildZip(projectDir string, files []FileAction) (string, error) {
 	for _, fa := range files {
 		abs := filepath.Join(projectDir, filepath.FromSlash(fa.Path))
 
-		if err := addToZip(zw, abs, fa.Path); err != nil {
+		if err := addToZip(zw, abs, fa.Path, os.FileMode(fa.LocalMode)); err != nil {
 			_ = os.Remove(tmp.Name())
 			return "", err
 		}
@@ -98,7 +98,11 @@ func buildZip(projectDir string, files []FileAction) (string, error) {
 	return tmp.Name(), nil
 }
 
-func addToZip(zw *zip.Writer, src, archivePath string) error {
+// addToZip writes one file into the archive with its Unix permission bits
+// preserved as the zip's standard Info-ZIP external-attributes encoding
+// (mode.Perm() is already masked to the low 9 bits by the caller -- see
+// FileEntry/FileAction.Mode -- so no further masking is needed here).
+func addToZip(zw *zip.Writer, src, archivePath string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open %s for zip: %w", src, err)
@@ -107,6 +111,7 @@ func addToZip(zw *zip.Writer, src, archivePath string) error {
 	defer func() { _ = in.Close() }()
 
 	hdr := &zip.FileHeader{Name: archivePath, Method: zip.Deflate}
+	hdr.SetMode(mode.Perm())
 
 	w, err := zw.CreateHeader(hdr)
 	if err != nil {

@@ -118,6 +118,7 @@ func TestUploadToStage_Multipart(t *testing.T) {
 		assert.Equal(t, "/api/v2/files/cid-1/stages/st-1/upload/", r.URL.Path)
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
+		assert.Equal(t, "0755", r.URL.Query().Get("mode"))
 
 		mr, err := r.MultipartReader()
 		if !assert.NoError(t, err) {
@@ -146,7 +147,24 @@ func TestUploadToStage_Multipart(t *testing.T) {
 
 	c := New()
 	body := strings.NewReader("print('hi')\n")
-	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), body)
+	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), 0o755, body)
+	require.NoError(t, err)
+}
+
+// A zero mode means "unknown" (see FileEntry.Mode) and must omit the query
+// param entirely, not send mode=0 -- a server that doesn't understand the
+// param yet must see exactly what it saw before mode existed.
+func TestUploadToStage_ZeroModeOmitsQueryParam(t *testing.T) {
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.URL.RawQuery)
+
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
+	}))
+
+	c := New()
+	body := strings.NewReader("print('hi')\n")
+	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), 0, body)
 	require.NoError(t, err)
 }
 
@@ -176,7 +194,7 @@ func TestUploadToStage_AdvertisesContentLength(t *testing.T) {
 
 	c := New()
 	body := strings.NewReader(payload)
-	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), body))
+	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), 0, body))
 
 	assert.Greater(t, gotContentLength, int64(len(payload)),
 		"Content-Length should include multipart envelope, not just payload")

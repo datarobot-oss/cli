@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	gosync "sync"
 	"testing"
 
@@ -43,6 +44,7 @@ type fakeClient struct {
 
 	versions []filesapi.CatalogVersion
 	content  map[string][]byte
+	modes    map[string]uint32
 
 	allFilesErr error
 	downloadErr error
@@ -69,7 +71,7 @@ func (f *fakeClient) AllFiles(_, _ string) (map[string]filesapi.FileMeta, error)
 
 	for path, data := range f.content {
 		sum := sha256.Sum256(data)
-		out[path] = filesapi.FileMeta{Hash: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+		out[path] = filesapi.FileMeta{Hash: hex.EncodeToString(sum[:]), Size: int64(len(data)), Mode: f.modes[path]}
 	}
 
 	return out, nil
@@ -103,9 +105,12 @@ func (f *fakeClient) callCounts() (all, dl int) {
 }
 
 // Panicking stubs for the rest of filesapi.Client.
-func (*fakeClient) CreateCatalog() (*filesapi.CatalogResp, error)                { panic("unused") }
-func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error)              { panic("unused") }
-func (*fakeClient) UploadToStage(string, string, string, int64, io.Reader) error { panic("unused") }
+func (*fakeClient) CreateCatalog() (*filesapi.CatalogResp, error)   { panic("unused") }
+func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error) { panic("unused") }
+func (*fakeClient) UploadToStage(string, string, string, int64, uint32, io.Reader) error {
+	panic("unused")
+}
+
 func (*fakeClient) ApplyStage(string, string, string) (*filesapi.ApplyStageResp, error) {
 	panic("unused")
 }
@@ -201,6 +206,41 @@ func TestCheckout_ReportsStateMigration(t *testing.T) {
 	assert.Contains(t, buf.String(), wapi.LegacyDirName)
 	assert.Contains(t, buf.String(), path.Join(wapi.RootDirName, wapi.StateDirName))
 	assert.NoDirExists(t, legacy, "and the move actually happened")
+}
+
+func TestCheckout_RestoresMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not meaningful on Windows")
+	}
+
+	dir := initLinkedDir(t, "cat-1")
+
+	fc := &fakeClient{
+		versions: []filesapi.CatalogVersion{{ID: verA}},
+		content: map[string][]byte{
+			"entrypoint.sh": []byte("#!/bin/sh\n"),
+			"README.md":     []byte("hi"),
+		},
+		modes: map[string]uint32{
+			"entrypoint.sh": 0o755,
+			// README.md deliberately absent -- mode unknown, default stands.
+		},
+	}
+
+	deps := fakeDeps(draftArtifact("art-abc-123"), fc)
+
+	cmd, _ := newTestCmd(t, dir, deps, []string{verA})
+	require.NoError(t, cmd.Execute())
+
+	checkoutDir := wapi.CheckoutDir(dir, verA)
+
+	entrypointInfo, err := os.Stat(filepath.Join(checkoutDir, "entrypoint.sh"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), entrypointInfo.Mode().Perm())
+
+	readmeInfo, err := os.Stat(filepath.Join(checkoutDir, "README.md"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), readmeInfo.Mode().Perm(), "unknown mode leaves the os.Create default untouched")
 }
 
 func TestCheckout_NoCatalog(t *testing.T) {

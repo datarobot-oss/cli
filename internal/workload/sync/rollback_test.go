@@ -17,6 +17,7 @@ package sync
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -70,6 +71,32 @@ func TestRollback_BackupAndRestore(t *testing.T) {
 
 	_, err = os.Stat(filepath.Join(dir, "newly-created.txt"))
 	assert.ErrorIs(t, err, os.ErrNotExist, "tracked-created file should be removed")
+}
+
+func TestRollback_BackupAndRestore_PreservesMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not meaningful on Windows")
+	}
+
+	dir := setupProject(t)
+	writeProjectFile(t, dir, "entrypoint.sh", "#!/bin/sh\n")
+
+	scriptPath := filepath.Join(dir, "entrypoint.sh")
+	require.NoError(t, os.Chmod(scriptPath, 0o755))
+
+	r, err := NewRollback(dir)
+	require.NoError(t, err)
+
+	require.NoError(t, r.Backup("entrypoint.sh"))
+
+	// Simulate Phase 5 overwriting the file with a different mode.
+	require.NoError(t, os.WriteFile(scriptPath, []byte("BROKEN"), 0o644))
+
+	require.NoError(t, r.Restore())
+
+	info, err := os.Stat(scriptPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
 }
 
 func TestRollback_MissingFileNoop(t *testing.T) {
