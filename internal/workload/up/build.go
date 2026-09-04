@@ -105,6 +105,12 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 // up new ones. When it goes stale, the platform's own message names an
 // artifact id and nothing about where that id came from, which leaves the
 // reader with a conflict and no idea what chose the thing that conflicted.
+//
+// The way out is a command rather than the directory. Telling the reader to
+// delete the link was accurate and still wrong: it throws away the code catalog
+// and the last-synced version along with the one field being changed, so the
+// next sync re-uploads a tree the platform already holds, and it taught deleting
+// state as the cure for a project that will not deploy.
 func reusedArtifactConflict(createErr error, artifactID, projectDir string) error {
 	if !isConflict(createErr) {
 		return createErr
@@ -125,10 +131,11 @@ func reusedArtifactConflict(createErr error, artifactID, projectDir string) erro
 			"  The link lives in %s and is what makes repeated deploys update one artifact rather than "+
 			"making a new one each time.\n"+
 			"  To deploy to that workload, set 'workloadId: %s' in %s, replacing any already there.\n"+
-			"  To deploy a separate workload from this directory, delete %s: the next run then creates "+
-			"an artifact of its own.\n"+
+			"  To deploy a separate workload from this directory, make an artifact of its own with "+
+			"'dr artifact create' and point this project at it with "+
+			"'dr artifact code init --force <new-artifact-id>'.\n"+
 			"  %w",
-		artifactID, owner, wapi.Dir(projectDir), owner, manifest.FileName, wapi.Dir(projectDir), createErr)
+		artifactID, owner, wapi.Dir(projectDir), owner, manifest.FileName, createErr)
 }
 
 // workloadOn names the workload already using artifactID, "" when the lookup

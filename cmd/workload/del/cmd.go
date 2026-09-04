@@ -259,12 +259,14 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 // refuse instead, and a manifest naming a published image or an artifactId
 // never consults the link at all.
 //
-// The remedy is the state directory, not `dr artifact delete`. Deleting the
-// artifact is refused outright while it is locked, and for an unlocked one it
-// leaves the link pointing at something gone, which the next deploy reports as
-// a bare 404 naming no fix. Removing the directory is what `up` itself already
-// tells the user to do when a locked artifact blocks a deploy, so this says
-// the same thing rather than inventing a second answer.
+// The remedy is `dr artifact code init --force`, not `dr artifact delete` and
+// not the directory. Deleting the artifact is refused outright while it is
+// locked, and for an unlocked one it leaves the link pointing at something gone,
+// which the next deploy reports as a bare 404 naming no fix. Deleting the state
+// directory does work, and is what this used to say, but it takes the code
+// catalog and the last-synced version with it for the sake of one field — and a
+// delete that ends by recommending a second deletion is how removing state
+// became the folk cure for a project that will not deploy.
 func noteLinkedArtifact(w io.Writer, projectDir string) {
 	if !wapi.Exists(projectDir) {
 		return
@@ -277,5 +279,5 @@ func noteLinkedArtifact(w io.Writer, projectDir string) {
 
 	fmt.Fprintln(w, tui.DimStyle.Render(
 		"This project is still linked to artifact "+cfg.ArtifactID+", which was not deleted with the workload. "+
-			"To unlink it, delete "+wapi.Dir(projectDir)+"."))
+			"To point it at a different one, run 'dr artifact code init --force <artifact-id>'."))
 }

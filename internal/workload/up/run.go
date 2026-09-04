@@ -66,6 +66,8 @@ var (
 	saveProjectFn        = wapi.SaveConfig
 	patchCodeRefFn       = workload.PatchArtifactCodeRef
 	syncProjectFn        = defaultSync
+	deleteWorkloadFn     = workload.DeleteWorkload
+	clearWorkloadIDFn    = manifest.ClearWorkloadID
 )
 
 // Options is everything a run needs from its caller.
@@ -76,7 +78,18 @@ type Options struct {
 
 	// NonInteractive forbids prompting. With no manifest it turns the setup
 	// wizard into an error naming the command that writes one.
+	//
+	// It is not consent. It is true for --output json and for a run with no
+	// terminal, neither of which is anyone saying yes, so a step that must be
+	// agreed to reads Yes instead.
 	NonInteractive bool
+
+	// Yes is the caller saying so explicitly: --yes, or the env var that
+	// stands in for it. It is the only thing that stands in for an answer the
+	// user would otherwise type, which is why it is separate from
+	// NonInteractive — a piped stdin means nobody can be asked, not that the
+	// answer is yes.
+	Yes bool
 
 	// DryRun stops after the plan.
 	DryRun bool
@@ -132,6 +145,27 @@ type Options struct {
 
 	// Spinner is true only when Stderr is the terminal the user is watching.
 	Spinner bool
+
+	// Recreate deletes the bound workload and creates it again under the same
+	// name, for the one case the dead-state refusals have no other answer to:
+	// an errored or terminated workload still holding its name. It is the
+	// exit those refusals name, performed rather than described.
+	//
+	// It acts on nothing else. A workload a deploy can act on is deployed
+	// onto, not deleted and rebuilt, so every other state refuses rather than
+	// silently widening what the flag means.
+	Recreate bool
+
+	// dirFlag is the " --dir <path>" a remedy printed deep in a run has to
+	// carry to reach this project. Filled in by Run once the manifest is
+	// located, and unexported because it is derived from the load rather than
+	// chosen by the caller.
+	//
+	// Carried on Options because the waits that need it are several calls below
+	// the last function holding a Loaded, and threading a directory through
+	// settle and awaitRunning for one message would widen four signatures that
+	// have nothing else to do with the manifest.
+	dirFlag string
 }
 
 // Result is what happened, and the material for the JSON envelope.
@@ -193,7 +227,12 @@ func Run(opts Options) (Result, error) {
 	// while it goes on serving the old value.
 	early := Result{WorkloadID: loaded.WorkloadID(), Env: loaded.Env}
 
-	live, err := lookSettled(loaded.WorkloadID(), opts)
+	// Filled in once, here, because every remedy printed below this line has to
+	// name a command that reaches this project rather than the one the shell
+	// happens to be standing in.
+	opts.dirFlag = dirFlagFor(loaded)
+
+	live, err := lookLive(loaded, opts)
 	if err != nil {
 		return early, err
 	}
@@ -688,6 +727,26 @@ func boundID(live Live) string {
 	return live.WorkloadID
 }
 
+// lookLive is what the plan is built against: the workload as it stands, after
+// the run has been given its one chance to clear away a workload that cannot be
+// deployed onto at all.
+//
+// The two belong together because the answer to "what is live" is not settled
+// until --recreate has had its say. Asking them separately in Run put a deleted
+// workload and the plan describing it one statement apart, which is close enough
+// for a later edit to slip between.
+func lookLive(loaded Loaded, opts Options) (Live, error) {
+	live, err := lookSettled(loaded.WorkloadID(), opts)
+	if err != nil {
+		return live, err
+	}
+
+	// Before the plan, so the plan is built and rendered against what the run
+	// will actually find: once the dead workload is gone this is a create, and
+	// a plan describing a roll onto something already deleted would be fiction.
+	return recreate(loaded, live, opts)
+}
+
 // dirFlagFor is the " --dir <path>" a remedy has to carry to reach this
 // project, and empty when the working directory already does.
 //
@@ -949,7 +1008,7 @@ func deployable(live Live, workloadName, dirFlag string) error {
 	case StateTerminated:
 		return fmt.Errorf(
 			"workload %s is terminated, which cannot be undone, and it still holds its name and artifact — "+
-				"%s, then deploy again. %s",
+				"%s, then deploy again, or re-run with --recreate to do both in one step. %s",
 			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
@@ -959,7 +1018,8 @@ func deployable(live Live, workloadName, dirFlag string) error {
 		// name conflict below or throws away the code catalog with it.
 		return fmt.Errorf(
 			"workload %s is errored, so there is nothing safe to deploy onto. "+
-				"%sIf it stays errored, %s, then deploy again. %s",
+				"%sIf it stays errored, %s, then deploy again, or re-run with --recreate to do both "+
+				"in one step. %s",
 			workloadName, erroredCaveat(live.WorkloadID),
 			deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
@@ -1328,9 +1388,26 @@ func awaitRunning(
 		return result, err
 	}
 
+	// The refusal carries its own exit, the same way deployable's does. This is
+	// the message that gets there first: deployable speaks for the run after
+	// the workload is already stuck, while this one is printed at the moment it
+	// becomes stuck. Ending it at "check the logs" is what left recovery to
+	// folklore, and the folk remedy — hand-deleting the workloadId, or the whole
+	// state directory — either loops through the name conflict or throws away
+	// the code catalog with it.
 	if workload.IsWorkloadErrorStatus(result.Status) {
-		return result, fmt.Errorf("workload %s finished as %s; check 'dr workload logs %s'",
-			workloadID, result.Status, workloadID)
+		// Errored is the one dead-looking state that can still recover, so it is
+		// hedged with diagnosis first; terminated really is final.
+		caveat := ""
+		if !strings.EqualFold(result.Status, workload.WorkloadStatusTerminated) {
+			caveat = erroredCaveat(workloadID)
+		}
+
+		return result, fmt.Errorf(
+			"workload %s finished as %s, so it never came up. %sIf it stays %s, %s, then deploy again, "+
+				"or re-run with --recreate to do both in one step. %s",
+			workloadID, result.Status, caveat, result.Status,
+			deleteRemedy(workloadID, opts.dirFlag, true), recreateNote)
 	}
 
 	return result, nil

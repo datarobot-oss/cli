@@ -29,7 +29,7 @@ RESULTS=""
 if [[ $# -gt 0 ]]; then
     scenarios=("$@")
 else
-    scenarios=(a b c artifact)
+    scenarios=(a b c e artifact)
     if [[ "${WORKLOAD_SMOKE_INCLUDE_D:-0}" == "1" ]]; then
         scenarios+=(d)
     fi
@@ -43,6 +43,7 @@ scenario_script() {
         b|B)        printf '%s/RAPTOR-19533-B-sweep.sh'      "$WL_DIR" ;;
         c|C)        printf '%s/RAPTOR-19533-C-rebind.sh'     "$WL_DIR" ;;
         d|D)        printf '%s/RAPTOR-19533-D-built.sh'      "$WL_DIR" ;;
+        e|E)        printf '%s/RAPTOR-19729-E-recovery.sh'   "$WL_DIR" ;;
         artifact)   printf '%s/artifact-lifecycle.sh'       "$WL_DIR" ;;
         *) echo "❌ unknown scenario: $1" >&2; return 1 ;;
     esac

@@ -25,9 +25,20 @@ import (
 )
 
 type initResult struct {
-	ArtifactID       string  `json:"artifactId"`
-	Name             string  `json:"name"`
-	Status           string  `json:"status"`
+	ArtifactID string `json:"artifactId"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+
+	// PreviousArtifactID is the artifact a --force run re-pointed away from,
+	// and nil for a fresh link, which had none.
+	//
+	// It is here because after the write nothing else remembers it: a caller
+	// that re-pointed the wrong directory has the id it needs to put the link
+	// back only if this field carried it out. The text path prints the same
+	// thing, so leaving it off JSON made --output-format json the one way to
+	// run the command that loses it.
+	PreviousArtifactID *string `json:"previousArtifactId"`
+
 	CatalogID        *string `json:"catalogId"`
 	CatalogVersionID *string `json:"catalogVersionId"`
 	Dir              string  `json:"dir"`
@@ -86,13 +97,49 @@ func printLinkedEmptyArtifact(name, artifactID string) {
 	fmt.Println(tui.DimStyle.Render("Run 'dr artifact code sync' to upload your files."))
 }
 
+// printAlreadyLinked refuses, and names the command that changes the link.
+//
+// It used to end at "delete the state directory", which is filesystem surgery
+// standing in for a command: it takes the project's ignore file and its history
+// along with the one field being changed, and it is the same advice that made
+// deleting state the folk cure for every stuck project.
 func printAlreadyLinked(artifactID, dir string) {
-	stateDir := wapi.Dir(dir)
-
 	fmt.Println(tui.ErrorStyle.Render(
-		fmt.Sprintf("Already linked to artifact %s; state exists at %s.", artifactID, stateDir),
+		fmt.Sprintf("Already linked to artifact %s; state exists at %s.", artifactID, wapi.Dir(dir)),
 	))
-	fmt.Println(tui.DimStyle.Render(fmt.Sprintf("Delete %s to re-init.", stateDir)))
+	fmt.Println(tui.DimStyle.Render(
+		"Pass --force to point this directory at another artifact instead."))
+}
+
+// printLinkUnchanged reports the link that was already what it was asked to
+// be, and says what was deliberately not touched.
+//
+// The second line is there because "nothing to change" invites the reader to
+// re-run with something that does change it. What a relink would have changed
+// is the sync baseline, and losing that is how an unsynced local edit ends up
+// renamed to a .LOCAL copy with the remote downloaded over it.
+func printLinkUnchanged(artifactID, dir string) {
+	fmt.Println(tui.SuccessStyle.Render(
+		fmt.Sprintf("%s already points at artifact %s; nothing to change.", dir, artifactID),
+	))
+	fmt.Println(tui.DimStyle.Render(
+		"The sync baseline was left alone. Rebuilding it against the same artifact would make every " +
+			"local edit not yet synced lose to the copy already there."))
+}
+
+// printRelinked says what moved, and from where.
+func printRelinked(previous, artifactID, dir string) {
+	if previous == "" {
+		fmt.Println(tui.SuccessStyle.Render(
+			fmt.Sprintf("Pointed %s at artifact %s.", dir, artifactID)))
+
+		return
+	}
+
+	fmt.Println(tui.SuccessStyle.Render(
+		fmt.Sprintf("Re-pointed %s from artifact %s to %s.", dir, previous, artifactID)))
+	fmt.Println(tui.DimStyle.Render(
+		"The next sync uploads whatever the new artifact does not already hold."))
 }
 
 func shortVer(s string) string {
