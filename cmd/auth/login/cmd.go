@@ -78,8 +78,22 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
+	// Only pass an override when the user actually said something. Left nil,
+	// DATAROBOT_OAUTH_ENABLED decides, and its default is off.
+	var oauthOverride *bool
+
+	switch {
+	case cmd.Flags().Changed("oauth"):
+		oauth, _ := cmd.Flags().GetBool("oauth")
+		oauthOverride = &oauth
+	case cmd.Flags().Changed("no-oauth"):
+		off := false
+		oauthOverride = &off
+	}
+
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
 		NoBrowser: noBrowser,
+		OAuth:     oauthOverride,
 	})
 	if err != nil {
 		log.Error(err)
@@ -119,7 +133,13 @@ This command will:
   3. Securely store your API key for future CLI operations.
 
 If the browser cannot be opened, the CLI prints a link to open yourself. Pass
---no-browser to skip the browser launch entirely, which is useful over SSH.`,
+--no-browser to skip the browser launch entirely, which is useful over SSH.
+
+Deployments that front their own OAuth2 authorization server can be logged
+into with --oauth, which runs a standard authorization-code flow with PKCE
+instead of the DataRobot hand-off. The access token then never travels in a
+URL. Set DATAROBOT_OAUTH_ENABLED=true to make that the default for a shell;
+--no-oauth forces the hand-off back on.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          RunE,
@@ -128,6 +148,16 @@ If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 	// Read directly from cobra rather than binding to viper: this is a transient
 	// per-invocation flag and must never be persisted to drconfig.yaml.
 	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
+
+	// Same reasoning as --no-browser: transient, never persisted.
+	//
+	// Two separate booleans, because pflag does not synthesise --no- variants
+	// for a bool flag. Read via Flags().Changed so "unset" stays
+	// distinguishable from an explicit --no-oauth, which is what lets the flag
+	// override DATAROBOT_OAUTH_ENABLED in both directions.
+	cmd.Flags().Bool("oauth", false, "log in with OAuth2 authorization-code + PKCE (default: DATAROBOT_OAUTH_ENABLED)")
+	cmd.Flags().Bool("no-oauth", false, "force the DataRobot hand-off even if DATAROBOT_OAUTH_ENABLED is set")
+	cmd.MarkFlagsMutuallyExclusive("oauth", "no-oauth")
 
 	return cmd
 }
