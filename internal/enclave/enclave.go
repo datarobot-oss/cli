@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package enclave talks to the public Outposts API under /covalent/api/v2/outposts.
-// The platform calls these resources "outposts" on the wire; the CLI and the
-// RBAC layer surface them as "enclaves", so the command tree and this package
-// use the enclave name while the request paths stay /outposts.
+// Package enclave talks to the public Enclaves API at /api/v2/enclaves.
+//
+// Both halves of that path are new in CMPT-7347 (covalent-cloud-server#681,
+// merged 2026-09-04, so the first release after v11.12.0). The API used to sit
+// behind a /covalent ingress prefix, and its RBAC and lifecycle routes used to
+// answer under /outposts; it is now registered at the canonical DataRobot path,
+// so a single base path covers the whole surface.
+//
+// The old spellings still answer server-side as deprecated aliases, but this
+// package uses only the new ones -- against a Covalent older than that change
+// every enclave command 404s.
 package enclave
 
 import (
@@ -27,7 +34,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 )
 
-// Enclave statuses as serialized by the server (OutpostStatus StrEnum). CREATED
+// Enclave statuses as serialized by the server (EnclaveStatus StrEnum). CREATED
 // is a transient pre-registration state the public API never returns on its own.
 const (
 	StatusCreated    = "CREATED"
@@ -38,12 +45,13 @@ const (
 	StatusMaint      = "MAINT"
 )
 
-// basePath is the collection route. The server route is "/outposts" (no
-// trailing slash); requests must match it exactly to avoid a 307 redirect.
-const basePath = "/covalent/api/v2/outposts"
+// basePath is the collection route, and the prefix every sub-resource hangs off.
+// There is no trailing slash; requests must match the route exactly to avoid a
+// 307 redirect.
+const basePath = "/api/v2/enclaves"
 
-// Enclave is the projection of an outpost record returned by GET /outposts and
-// GET /outposts/{id}. Those responses are serialized snake_case (no alias
+// Enclave is the projection of an enclave record returned by GET /enclaves and
+// GET /enclaves/{id}. Those responses are serialized snake_case (no alias
 // generator on the server schema), hence the dispatch_url tag.
 type Enclave struct {
 	ID          string `json:"id"`
@@ -60,10 +68,10 @@ type InstallationSecret struct {
 	Data map[string]string `json:"data"`
 }
 
-// RegistrationResult is the POST /outposts response. Unlike the GET schema it
+// RegistrationResult is the POST /enclaves response. Unlike the GET schema it
 // is serialized camelCase (the server schema sets explicit aliases).
 type RegistrationResult struct {
-	EnclaveID           string                        `json:"outpostId"`
+	EnclaveID           string                        `json:"enclaveId"`
 	Name                string                        `json:"name"`
 	Status              string                        `json:"status"`
 	InstallationSecrets map[string]InstallationSecret `json:"installationSecrets"`
@@ -80,10 +88,10 @@ func escapeID(id string) string {
 	return url.PathEscape(id)
 }
 
-// RegisterEnclave registers a new enclave (outpost) and returns the created
-// record together with its one-shot installation secrets. The server replies
-// 201 with the full registration document inline. A name already registered
-// for the tenant yields a 409.
+// RegisterEnclave registers a new enclave and returns the created record
+// together with its one-shot installation secrets. The server replies 201 with
+// the full registration document inline. A name already registered for the
+// tenant yields a 409.
 func RegisterEnclave(name string, labels map[string]string) (*RegistrationResult, error) {
 	url, err := config.GetEndpointURL(basePath)
 	if err != nil {

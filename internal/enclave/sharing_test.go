@@ -121,7 +121,7 @@ func TestGrantAccessSendsPatch(t *testing.T) {
 	err := GrantAccess("abc-123", RoleUser, Recipient{Type: RecipientOrg, ID: "org-1"})
 	require.NoError(t, err)
 
-	assert.Equal(t, "/covalent/api/v2/outposts/abc-123/sharedRoles", gotPath)
+	assert.Equal(t, "/api/v2/enclaves/abc-123/sharedRoles", gotPath)
 	assert.Equal(t, "updateRoles", gotBody.Operation)
 	require.Len(t, gotBody.Roles, 1)
 	assert.Equal(t, sharedRole{ShareRecipientType: RecipientOrg, Role: RoleUser, ID: "org-1"}, gotBody.Roles[0])

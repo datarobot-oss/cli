@@ -25,7 +25,7 @@ import (
 )
 
 // createAccessPath is the collection-level permission sub-resource:
-// PATCH /covalent/api/v2/outposts/createAccess. Unlike sharedRoles it targets no
+// PATCH /api/v2/enclaves/createAccess. Unlike sharedRoles it targets no
 // single enclave — it governs who may create them.
 const createAccessPath = "/createAccess"
 
@@ -146,7 +146,7 @@ func RevokeCreatePermission(r Recipient) error {
 }
 
 // permissionsSuffix is the effective-permissions sub-resource on an enclave:
-// GET /covalent/api/v2/outposts/{id}/permissions.
+// GET /api/v2/enclaves/{id}/permissions.
 const permissionsSuffix = "/permissions"
 
 // EnclavePermissions is the effective permission set a subject holds on an

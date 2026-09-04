@@ -50,22 +50,26 @@ Pin a workload to an enclave with [`dr workload create --enclave <name>`](worklo
 
 | Command                        | Endpoint                                          | Purpose                                          |
 | ------------------------------ | ------------------------------------------------- | ------------------------------------------------ |
-| `dr enclave register`          | `POST   /api/v2/outposts`                         | Register an enclave, returning install secrets.  |
-| `dr enclave get`               | `GET    /api/v2/outposts/{id}`                    | Show a single enclave.                           |
-| `dr enclave list`              | `GET    /api/v2/outposts`                         | List the enclaves you can see.                   |
-| `dr enclave deactivate`        | `POST   /api/v2/outposts/{id}/deactivate`         | Take an active enclave out of scheduling.        |
-| `dr enclave reactivate`        | `POST   /api/v2/outposts/{id}/reactivate`         | Return a deactivated enclave to service.         |
-| `dr enclave delete`            | `DELETE /api/v2/outposts/{id}`                    | Delete an enclave.                               |
-| `dr enclave access grant`      | `PATCH  /api/v2/outposts/{id}/sharedRoles`        | Grant a role on one enclave.                     |
-| `dr enclave access revoke`     | `PATCH  /api/v2/outposts/{id}/sharedRoles`        | Revoke a recipient's role on one enclave.        |
-| `dr enclave access list`       | `GET    /api/v2/outposts/{id}/sharedRoles`        | List who holds a role on one enclave.            |
-| `dr enclave access show`       | `GET    /api/v2/outposts/{id}/permissions`        | Show effective permissions on one enclave.       |
-| `dr enclave permission grant`  | `PATCH  /api/v2/outposts/createAccess`            | Allow a recipient to create enclaves.            |
-| `dr enclave permission revoke` | `PATCH  /api/v2/outposts/createAccess`            | Stop a recipient from creating enclaves.         |
-| `dr enclave permission list`   | `GET    /api/v2/outposts/createAccess`            | List who may create enclaves.                    |
-| `dr enclave permission show`   | `GET    /api/v2/outposts/permissions`             | Show your own collection-level permissions.      |
+| `dr enclave register`          | `POST   /api/v2/enclaves`                         | Register an enclave, returning install secrets.  |
+| `dr enclave get`               | `GET    /api/v2/enclaves/{id}`                    | Show a single enclave.                           |
+| `dr enclave list`              | `GET    /api/v2/enclaves`                         | List the enclaves you can see.                   |
+| `dr enclave deactivate`        | `POST   /api/v2/enclaves/{id}/deactivate`         | Take an active enclave out of scheduling.        |
+| `dr enclave reactivate`        | `POST   /api/v2/enclaves/{id}/reactivate`         | Return a deactivated enclave to service.         |
+| `dr enclave delete`            | `DELETE /api/v2/enclaves/{id}`                    | Delete an enclave.                               |
+| `dr enclave access grant`      | `PATCH  /api/v2/enclaves/{id}/sharedRoles`        | Grant a role on one enclave.                     |
+| `dr enclave access revoke`     | `PATCH  /api/v2/enclaves/{id}/sharedRoles`        | Revoke a recipient's role on one enclave.        |
+| `dr enclave access list`       | `GET    /api/v2/enclaves/{id}/sharedRoles`        | List who holds a role on one enclave.            |
+| `dr enclave access show`       | `GET    /api/v2/enclaves/{id}/permissions`        | Show effective permissions on one enclave.       |
+| `dr enclave permission grant`  | `PATCH  /api/v2/enclaves/createAccess`            | Allow a recipient to create enclaves.            |
+| `dr enclave permission revoke` | `PATCH  /api/v2/enclaves/createAccess`            | Stop a recipient from creating enclaves.         |
+| `dr enclave permission list`   | `GET    /api/v2/enclaves/createAccess`            | List who may create enclaves.                    |
+| `dr enclave permission show`   | `GET    /api/v2/enclaves/permissions`             | Show your own collection-level permissions.      |
 
-All paths are served under the `/covalent` prefix on your DataRobot host.
+All paths are served at the root of your DataRobot host. They are new: the API
+previously sat behind a `/covalent` prefix, and its access routes answered under
+`/outposts`. Those spellings still work server-side as deprecated aliases, but
+the CLI calls only the paths above, so `dr enclave` needs a DataRobot whose
+Covalent carries that change — it landed just after Covalent 11.12.0.
 
 ## Subcommands
 

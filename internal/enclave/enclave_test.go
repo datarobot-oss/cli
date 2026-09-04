@@ -102,14 +102,14 @@ func TestRegisterEnclave(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/covalent/api/v2/outposts", r.URL.Path)
+		assert.Equal(t, "/api/v2/enclaves", r.URL.Path)
 
 		raw, _ := io.ReadAll(r.Body)
 		assert.NoError(t, json.Unmarshal(raw, &gotBody))
 
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{
-			"outpostId": "abc-123",
+			"enclaveId": "abc-123",
 			"name": "my-enclave",
 			"status": "REGISTERED",
 			"installationSecrets": {
@@ -161,7 +161,7 @@ func TestGetEnclave(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/covalent/api/v2/outposts/abc-123", r.URL.Path)
+		assert.Equal(t, "/api/v2/enclaves/abc-123", r.URL.Path)
 
 		_, _ = w.Write([]byte(`{
 			"id": "abc-123",
@@ -198,7 +198,7 @@ func TestGetEnclaveEscapesID(t *testing.T) {
 
 	_, err := GetEnclave("a/b?c")
 	require.NoError(t, err)
-	assert.Equal(t, "/covalent/api/v2/outposts/a%2Fb%3Fc", gotPath)
+	assert.Equal(t, "/api/v2/enclaves/a%2Fb%3Fc", gotPath)
 }
 
 func TestListEnclaves(t *testing.T) {
@@ -206,7 +206,7 @@ func TestListEnclaves(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/covalent/api/v2/outposts", r.URL.Path)
+		assert.Equal(t, "/api/v2/enclaves", r.URL.Path)
 
 		_, _ = w.Write([]byte(`[
 			{"id": "1", "name": "a", "dispatch_url": "", "status": "REGISTERED"},
@@ -229,7 +229,7 @@ func TestDeactivateEnclave(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/covalent/api/v2/outposts/abc-123/deactivate", r.URL.Path)
+		assert.Equal(t, "/api/v2/enclaves/abc-123/deactivate", r.URL.Path)
 
 		_, _ = w.Write([]byte(`{"id": "abc-123", "name": "n", "status": "DRAIN"}`))
 	}))
@@ -247,7 +247,7 @@ func TestReactivateEnclave(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/covalent/api/v2/outposts/abc-123/reactivate", r.URL.Path)
+		assert.Equal(t, "/api/v2/enclaves/abc-123/reactivate", r.URL.Path)
 
 		_, _ = w.Write([]byte(`{"id": "abc-123", "name": "n", "status": "ACTIVE"}`))
 	}))
@@ -265,7 +265,7 @@ func TestDeleteEnclave(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/covalent/api/v2/outposts/abc-123", r.URL.Path)
+		assert.Equal(t, "/api/v2/enclaves/abc-123", r.URL.Path)
 
 		w.WriteHeader(http.StatusNoContent)
 	}))

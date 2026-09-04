@@ -24,7 +24,7 @@ import (
 )
 
 // sharedRolesSuffix is appended to an enclave's path to reach the sharedRoles
-// sub-resource: PATCH /covalent/api/v2/outposts/{id}/sharedRoles.
+// sub-resource: PATCH /api/v2/enclaves/{id}/sharedRoles.
 const sharedRolesSuffix = "/sharedRoles"
 
 // updateRolesOperation is the only operation the sharedRoles endpoint accepts.
