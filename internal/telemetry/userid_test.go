@@ -15,7 +15,6 @@
 package telemetry
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -58,7 +57,7 @@ func TestRetrieveAccountInfo_FreshAPI(t *testing.T) {
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "fresh-uid", result.UID)
@@ -100,7 +99,7 @@ func TestRetrieveAccountInfo_FilePermissions(t *testing.T) {
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 
-	_, _ = retrieveAccountInfo(context.Background())
+	_, _ = retrieveAccountInfo()
 
 	cachePath := filepath.Join(tmpDir, "datarobot", userIDFileName)
 	info, err := os.Stat(cachePath)
@@ -146,7 +145,7 @@ func TestRetrieveAccountInfo_CacheHit(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "cached-uid-123", result.UID)
@@ -191,7 +190,7 @@ func TestRetrieveAccountInfo_CacheMiss_EndpointChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "new-uid-456", result.UID)
@@ -236,7 +235,7 @@ func TestRetrieveAccountInfo_CacheMiss_TokenChanged(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "new-uid-789", result.UID)
@@ -260,7 +259,7 @@ func TestRetrieveAccountInfo_CacheMiss_NoFile(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "api-uid-000", result.UID)
@@ -294,7 +293,7 @@ func TestRetrieveAccountInfo_CacheMiss_CorruptJSON(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "recovery-uid", result.UID)
@@ -340,7 +339,7 @@ func TestRetrieveAccountInfo_TokenChange_UpdatesCache(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "new-token-uid", result.UID)
@@ -378,7 +377,7 @@ func TestRetrieveAccountInfo_APIFailureReturnsError(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.Error(t, err)
 	assert.Empty(t, result.UID)
@@ -399,7 +398,7 @@ func TestGetAccountInfo_Success(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	info, err := GetAccountInfo(context.Background())
+	info, err := GetAccountInfo()
 	require.NoError(t, err)
 	assert.Equal(t, "account-uid-123", info.UID)
 	assert.Equal(t, "parakeet", info.OrgID)
@@ -418,7 +417,7 @@ func TestGetAccountInfo_Unauthorized(t *testing.T) {
 
 	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
 
-	info, err := GetAccountInfo(context.Background())
+	info, err := GetAccountInfo()
 	require.Error(t, err)
 	assert.Nil(t, info)
 }
@@ -462,7 +461,7 @@ func TestRetrieveAccountInfo_PartialCache_RefetchesAndUpgrades(t *testing.T) {
 
 	require.NoError(t, err)
 
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "cached-uid-123", result.UID)
@@ -529,7 +528,7 @@ func TestRetrieveAccountInfo_PartialCache_NetworkErrorReturnsUID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call should succeed and return the cached UID even though the API call fails.
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "cached-uid-123", result.UID)
@@ -583,7 +582,7 @@ func TestRetrieveAccountInfo_CompleteCache_NetworkErrorReturnsAllCachedFields(t 
 	require.NoError(t, err)
 
 	// Call should succeed and return all cached fields despite API call failure.
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.NoError(t, err)
 	assert.Equal(t, "cached-uid-456", result.UID)
@@ -633,7 +632,7 @@ func TestRetrieveAccountInfo_StaleCache_NetworkErrorReturnsError(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call should fail because the stale cache does not match endpoint/token.
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 
 	require.Error(t, err)
 	assert.Empty(t, result.UID)
