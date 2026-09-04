@@ -15,12 +15,17 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/amplitude/analytics-go/amplitude"
 	"github.com/datarobot/cli/internal/cli"
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,4 +131,127 @@ func TestPersistentPreRunStampsInteractionMode(t *testing.T) {
 	require.NoError(t, root.Execute())
 
 	assert.True(t, props.NonInteractive, "persistentPreRun must stamp non_interactive for --yes invocations")
+}
+
+// buildProfileAwareTree builds a tree with the real ConfigInitializer and
+// ViperBinder (so --profile/--config are actually bound to viper and
+// drconfig.yaml is actually read), while keeping every other dependency
+// isolated the way NewIsolatedRootFactory does.
+func buildProfileAwareTree() *cli.CommandAdder {
+	return NewRootFactory(
+		WithConfigInitializer(defaultConfigInitializer),
+		WithViperBinder(bindViperFlags),
+		WithTLSSetup(func(_ *cobra.Command) error { return nil }),
+		WithTelemetryProps(func() *telemetry.CommonProperties { return nil }),
+		WithTelemetryClient(func(_ *telemetry.CommonProperties) *telemetry.Client {
+			return telemetry.NewTestClient(nil, nil)
+		}),
+		WithAnimation(func() {}),
+		WithPluginRegistrar(func(_ *cobra.Command) {}),
+	).Build()
+}
+
+// writeProfileConfig writes a drconfig.yaml under a fresh temp home dir with
+// a default profile plus one named "eu-mtsaas", and points HOME/XDG at it.
+func writeProfileConfig(t *testing.T) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+
+	configDir := filepath.Join(tempDir, ".config", "datarobot")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+
+	raw := `endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "drconfig.yaml"), []byte(raw), 0o600))
+}
+
+func addNoopStub(root *cli.CommandAdder) {
+	stub := &cobra.Command{
+		Use:  "stub",
+		RunE: func(_ *cobra.Command, _ []string) error { return nil },
+	}
+
+	root.AddCommand(stub)
+}
+
+func TestProfileFlag_RegisteredAndUniversal(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	root := buildProfileAwareTree()
+
+	flag := root.PersistentFlags().Lookup(config.ProfileKey)
+	require.NotNil(t, flag, "--profile must be registered as a persistent flag")
+
+	suffixes, ok := flag.Annotations[config.UniversalAnnotationKey]
+	require.True(t, ok, "--profile must carry the universal annotation so it forwards to plugins")
+	assert.Equal(t, []string{"PROFILE"}, suffixes)
+}
+
+func TestProfileFlag_FlagBeatsEnv(t *testing.T) {
+	writeProfileConfig(t)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	t.Setenv("DATAROBOT_CLI_PROFILE", "does-not-exist")
+
+	root := buildProfileAwareTree()
+	addNoopStub(root)
+
+	root.SetArgs([]string{"--profile", "eu-mtsaas", "stub"})
+	require.NoError(t, root.Execute(), "the explicit --profile flag must win over DATAROBOT_CLI_PROFILE")
+
+	assert.Equal(t, "https://app.eu.datarobot.com/api/v2", viperx.GetString(config.DataRobotURL))
+}
+
+func TestProfileFlag_UnknownProfileFailsWithCandidateList(t *testing.T) {
+	writeProfileConfig(t)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	root := buildProfileAwareTree()
+	addNoopStub(root)
+
+	root.SetArgs([]string{"--profile", "nope", "stub"})
+	err := root.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `"nope"`)
+	assert.Contains(t, err.Error(), "eu-mtsaas")
+}
+
+func TestProfileFlag_CreateAnnotationSurvivesUnknownProfile(t *testing.T) {
+	writeProfileConfig(t)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	root := buildProfileAwareTree()
+
+	var sawEndpoint, sawToken string
+
+	creator := &cobra.Command{
+		Use: "creator",
+		Annotations: map[string]string{
+			config.ProfileCreateAnnotationKey: "true",
+		},
+		RunE: func(_ *cobra.Command, _ []string) error {
+			sawEndpoint = viperx.GetString(config.DataRobotURL)
+			sawToken = viperx.GetString(config.DataRobotAPIKey)
+
+			return nil
+		},
+	}
+	root.AddCommand(creator)
+
+	root.SetArgs([]string{"--profile", "brand-new", "creator"})
+	require.NoError(t, root.Execute(), "a profile-creating command must survive an unknown --profile")
+
+	assert.Empty(t, sawEndpoint, "credentials must be cleared so a new profile doesn't inherit the default's endpoint")
+	assert.Empty(t, sawToken, "credentials must be cleared so a new profile doesn't inherit the default's token")
 }

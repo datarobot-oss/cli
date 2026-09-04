@@ -109,6 +109,157 @@ func (suite *ConfigTestSuite) TestCreateConfigFileDirWithXDGConfigHome() {
 	suite.FileExists(filepath.Join(expectedDir, expectedFileName), "Expected config file to be created in XDG_CONFIG_HOME")
 }
 
+// writeConfigFile writes yamlContent to the suite's default drconfig.yaml
+// path and returns that path.
+func (suite *ConfigTestSuite) writeConfigFile(yamlContent string) string {
+	suite.Require().NoError(CreateConfigFileDirIfNotExists())
+
+	configFile := filepath.Join(suite.tempDir, ".config", "datarobot", "drconfig.yaml")
+	suite.Require().NoError(os.WriteFile(configFile, []byte(yamlContent), 0o600))
+
+	return configFile
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_FlatConfigNoProfilesBlock_BackwardCompat() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: flat-token
+`)
+
+	suite.Require().NoError(ReadConfigFile(""))
+
+	suite.Equal("https://app.datarobot.com/api/v2", viper.GetString(DataRobotURL))
+	suite.Equal("flat-token", viper.GetString(DataRobotAPIKey))
+	suite.Empty(ActiveProfile())
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_ProfilesBlockPresentButNoneSelected() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`)
+
+	suite.Require().NoError(ReadConfigFile(""))
+
+	suite.Equal("https://app.datarobot.com/api/v2", viper.GetString(DataRobotURL))
+	suite.Equal("default-token", viper.GetString(DataRobotAPIKey))
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_ActiveProfileShadowsEndpointAndToken() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`)
+
+	viper.Set(ProfileKey, "eu-mtsaas")
+
+	suite.Require().NoError(ReadConfigFile(""))
+
+	suite.Equal("https://app.eu.datarobot.com/api/v2", viper.GetString(DataRobotURL))
+	suite.Equal("eu-token", viper.GetString(DataRobotAPIKey))
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_ProfileOmittingCACertInheritsTopLevel() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: default-token
+ca-cert: /etc/ssl/corp.pem
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`)
+
+	viper.Set(ProfileKey, "eu-mtsaas")
+
+	suite.Require().NoError(ReadConfigFile(""))
+
+	suite.Equal("/etc/ssl/corp.pem", viper.GetString("ca-cert"), "ca-cert should be inherited from the top level")
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_EnvVarPairStillWinsOverActiveProfile() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`)
+
+	viper.Set(ProfileKey, "eu-mtsaas")
+
+	// DATAROBOT_CLI_ENDPOINT / DATAROBOT_CLI_TOKEN are automatically mapped
+	// by AutomaticEnv + SetEnvPrefix once bindViperFlags-equivalent setup has
+	// run; reproduce that here since this test reads ReadConfigFile in
+	// isolation from cmd/root_factory.go.
+	viper.SetEnvPrefix("DATAROBOT_CLI")
+	viper.AutomaticEnv()
+	suite.T().Setenv("DATAROBOT_CLI_ENDPOINT", "https://override.example.com/api/v2")
+
+	suite.Require().NoError(ReadConfigFile(""))
+
+	suite.Equal("https://override.example.com/api/v2", viper.GetString(DataRobotURL),
+		"an explicit env var must still beat the active profile's merged value")
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_ProfileNameIsCaseInsensitive() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  EU-MTSaaS:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`)
+
+	viper.Set(ProfileKey, "eu-mtsaas")
+
+	suite.Require().NoError(ReadConfigFile(""))
+
+	suite.Equal("https://app.eu.datarobot.com/api/v2", viper.GetString(DataRobotURL))
+}
+
+func (suite *ConfigTestSuite) TestReadConfigFile_UnknownProfileReturnsTypedError() {
+	suite.writeConfigFile(`endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  staging:
+    endpoint: https://staging.example.com/api/v2
+    token: staging-token
+`)
+
+	viper.Set(ProfileKey, "eu-mtsaas")
+
+	err := ReadConfigFile("")
+	suite.Require().Error(err)
+
+	var unknown *UnknownProfileError
+
+	suite.Require().ErrorAs(err, &unknown)
+	suite.Equal("eu-mtsaas", unknown.Name)
+	suite.Equal([]string{"staging"}, unknown.Known)
+}
+
+func TestDebugViperConfig_RedactsNestedProfileToken(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	viper.Set("profiles", map[string]any{
+		"eu-mtsaas": map[string]any{
+			"endpoint": "https://app.eu.datarobot.com/api/v2",
+			"token":    "SUPER_SECRET_EU_TOKEN",
+		},
+	})
+
+	output, err := DebugViperConfig()
+	require.NoError(t, err)
+	assert.Contains(t, output, "****")
+	assert.NotContains(t, output, "SUPER_SECRET_EU_TOKEN")
+}
+
 func TestDebugViperConfig_RedactsPulumiConfigPassphrase(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)

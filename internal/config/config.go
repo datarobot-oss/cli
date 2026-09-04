@@ -135,20 +135,8 @@ func ReadConfigFile(filePath string) error {
 		return err
 	}
 
-	viper.SetConfigType("yaml")
-
-	if filePath != "" {
-		if !strings.HasSuffix(filePath, ".yaml") && !strings.HasSuffix(filePath, ".yml") {
-			return fmt.Errorf("Config file must have .yaml or .yml extension: %s.", filePath)
-		}
-
-		dir := filepath.Dir(filePath)
-		filename := filepath.Base(filePath)
-		viper.SetConfigName(filename)
-		viper.AddConfigPath(dir)
-	} else {
-		viper.SetConfigName(configFileName)
-		viper.AddConfigPath(defaultConfigFileDir)
+	if err := configureViperSearchPath(filePath, defaultConfigFileDir); err != nil {
+		return err
 	}
 
 	// Read in the config file
@@ -163,14 +151,50 @@ func ReadConfigFile(filePath string) error {
 		}
 	}
 
-	if viper.GetBool("debug") {
-		output, err := DebugViperConfig()
-		if err != nil {
-			return fmt.Errorf("Failed to generate debug config output: %w", err)
+	if name := ActiveProfile(); name != "" {
+		if err := applyProfile(name); err != nil {
+			return err
 		}
-
-		fmt.Print(output)
 	}
+
+	return printDebugConfigIfEnabled()
+}
+
+// configureViperSearchPath points viper at filePath, or at
+// defaultConfigFileDir/configFileName when filePath is empty.
+func configureViperSearchPath(filePath, defaultConfigFileDir string) error {
+	viper.SetConfigType("yaml")
+
+	if filePath == "" {
+		viper.SetConfigName(configFileName)
+		viper.AddConfigPath(defaultConfigFileDir)
+
+		return nil
+	}
+
+	if !strings.HasSuffix(filePath, ".yaml") && !strings.HasSuffix(filePath, ".yml") {
+		return fmt.Errorf("Config file must have .yaml or .yml extension: %s.", filePath)
+	}
+
+	viper.SetConfigName(filepath.Base(filePath))
+	viper.AddConfigPath(filepath.Dir(filePath))
+
+	return nil
+}
+
+// printDebugConfigIfEnabled prints the effective viper configuration when
+// --debug is set.
+func printDebugConfigIfEnabled() error {
+	if !viper.GetBool("debug") {
+		return nil
+	}
+
+	output, err := DebugViperConfig()
+	if err != nil {
+		return fmt.Errorf("Failed to generate debug config output: %w", err)
+	}
+
+	fmt.Print(output)
 
 	return nil
 }
@@ -196,27 +220,104 @@ func DebugViperConfig() (string, error) {
 
 	sb.WriteString("Configuration initialized. Using config file: ")
 	sb.WriteString(configFile)
+	sb.WriteString("\n")
+
+	activeProfile := ActiveProfile()
+	if activeProfile == "" {
+		activeProfile = "default"
+	}
+
+	sb.WriteString("Active profile: ")
+	sb.WriteString(activeProfile)
 	sb.WriteString("\n\n")
 
-	// Print out the viper configuration for debugging
-	// Alphabetically, and redacting sensitive information
-	keys := make([]string, 0, len(viper.AllSettings()))
-	for key := range viper.AllSettings() {
+	// Print out the viper configuration for debugging, alphabetically, and
+	// redacting sensitive information at any nesting depth: a named
+	// profile's endpoint/token/etc. live under "profiles.<name>.*", below
+	// the top level, so a top-level-only redaction check would print a
+	// non-default profile's token in the clear.
+	settings := redactSettings(viper.AllSettings())
+
+	keys := make([]string, 0, len(settings))
+	for key := range settings {
 		keys = append(keys, key)
 	}
 
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		value := viper.Get(key)
-
-		// Redact sensitive keys
-		if _, sensitive := sensitiveDebugKeys[key]; sensitive {
-			fmt.Fprintf(&sb, "  %s: %s\n", key, "****")
-		} else {
-			fmt.Fprintf(&sb, "  %s: %v\n", key, value)
-		}
+		fmt.Fprintf(&sb, "  %s: %v\n", key, settings[key])
 	}
 
 	return sb.String(), nil
+}
+
+// redactSettings returns a deep copy of m with the value of every key in
+// sensitiveDebugKeys replaced by "****", at any nesting depth. Nested named
+// profiles put credentials below the top level, so a shallow check would
+// print them in the clear.
+func redactSettings(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+
+	for key, value := range m {
+		if _, sensitive := sensitiveDebugKeys[key]; sensitive {
+			out[key] = "****"
+			continue
+		}
+
+		out[key] = redactValue(value)
+	}
+
+	return out
+}
+
+// redactValue recurses into nested maps and slices so redactSettings can
+// redact sensitive keys regardless of depth. Viper's YAML decoding path can
+// produce either map[string]any or map[any]any for nested maps.
+func redactValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return redactSettings(v)
+
+	case map[any]any:
+		asStringMap, _ := toStringKeyedMap(v)
+
+		return redactSettings(asStringMap)
+
+	case []any:
+		redacted := make([]any, len(v))
+
+		for i, item := range v {
+			redacted[i] = redactValue(item)
+		}
+
+		return redacted
+
+	default:
+		return value
+	}
+}
+
+// toStringKeyedMap normalizes a value that is either map[string]any or
+// map[any]any into map[string]any, or reports false for anything else.
+// Viper's YAML decoding path can produce either shape for a nested map
+// depending on how deeply it is nested, so both redactValue and profile.go's
+// normalizeSectionMap need this same conversion.
+func toStringKeyedMap(v any) (map[string]any, bool) {
+	if asMap, ok := v.(map[string]any); ok {
+		return asMap, true
+	}
+
+	rawMap, ok := v.(map[any]any)
+	if !ok {
+		return nil, false
+	}
+
+	normalized := make(map[string]any, len(rawMap))
+
+	for key, val := range rawMap {
+		normalized[fmt.Sprintf("%v", key)] = val
+	}
+
+	return normalized, true
 }

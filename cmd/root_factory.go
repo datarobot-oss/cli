@@ -27,6 +27,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -511,6 +512,7 @@ func (f *RootFactory) registerFlags(adder *cli.CommandAdder, outputFormat *outpu
 
 	flags.String("config", "",
 		"path to config file (default location: $HOME/.config/datarobot/drconfig.yaml)")
+	flags.String(config.ProfileKey, "", "named profile from drconfig.yaml to use")
 	flags.BoolP("version", "V", false, "display the version")
 	flags.BoolP("verbose", "v", false, "verbose output")
 	flags.Bool("debug", false, "debug output")
@@ -560,6 +562,7 @@ func bindViperFlags(adder *cli.CommandAdder) {
 	bindUniversalOn("verbose")
 	bindUniversalOn("skip-certificate-check")
 	bindUniversalOn("ca-cert")
+	bindUniversalOn(config.ProfileKey)
 
 	// Non-universal flags: bound to viper only (not forwarded to plugins).
 	pflags := adder.PersistentFlags()
@@ -663,11 +666,33 @@ func defaultConfigInitializer(cmd *cobra.Command) error {
 		resolved = viperx.GetString("config")
 	}
 
-	if err := config.ReadConfigFile(resolved); err != nil {
+	// --profile and DATAROBOT_CLI_PROFILE are already resolved through the
+	// standard flag/env viper bindings (see bindViperFlags), so
+	// config.ReadConfigFile picks up the active profile via
+	// config.ActiveProfile() with no extra wiring here.
+	err := config.ReadConfigFile(resolved)
+	if err == nil {
+		return nil
+	}
+
+	var unknownProfile *config.UnknownProfileError
+	if !errors.As(err, &unknownProfile) {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	return nil
+	// Commands that create a profile (auth login, auth set-url) are allowed
+	// to name one that doesn't exist yet. Clear any inherited credentials so
+	// the new profile doesn't silently authenticate against the default
+	// profile's instance; the profile's section is created on first write.
+	if cmd.Annotations[config.ProfileCreateAnnotationKey] != "" {
+		log.Debugf("profile %q does not exist yet; %s is expected to create it", unknownProfile.Name, cmd.CommandPath())
+		viperx.Set(config.DataRobotURL, "")
+		viperx.Set(config.DataRobotAPIKey, "")
+
+		return nil
+	}
+
+	return unknownProfile
 }
 
 // ---------------------------------------------------------------------------

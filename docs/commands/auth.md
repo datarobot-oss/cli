@@ -363,15 +363,69 @@ Error: Invalid URL format
 > - Malformed domain names
 > - For self-managed instances, ensure the URL includes the full domain (e.g., `https://datarobot.company.com`)
 
+### `profile`
+
+Inspect the named profiles stored in `drconfig.yaml`. Read-only: there is no `create` or
+`delete` subcommand. A profile is created the first time `dr --profile <name> auth login`
+(or `auth set-url`) is run for a name that doesn't exist yet; remove one by editing
+`drconfig.yaml` directly.
+
+```bash
+dr auth profile list
+dr auth profile show [name]
+```
+
+**`profile list`** shows the default profile plus every named profile, marking the active
+one (selected via `--profile` or `DATAROBOT_CLI_PROFILE`):
+
+```bash
+$ dr auth profile list
+DataRobot Profiles
+──────────────────
+╭───────────┬───────────────────────────────────────┬───────┬────────╮
+│ NAME      │ ENDPOINT                               │ TOKEN │ ACTIVE │
+├───────────┼───────────────────────────────────────┼───────┼────────┤
+│ default   │ https://app.datarobot.com/api/v2       │ set   │ ✓      │
+│ eu-mtsaas │ https://app.eu.datarobot.com/api/v2    │ set   │        │
+╰───────────┴───────────────────────────────────────┴───────┴────────╯
+```
+
+**`profile show [name]`** shows one profile's resolved settings &mdash; its own values, falling
+back to the default profile's for anything it doesn't define. Defaults to the active
+profile when no name is given; pass `default` to see the top-level profile explicitly. The
+token value itself is never printed, only whether one is set.
+
+```bash
+$ dr auth profile show eu-mtsaas
+eu-mtsaas
+─────────
+  endpoint: https://app.eu.datarobot.com/api/v2
+  token: set
+  ca-cert: - (inherited from default)
+```
+
+Both support `--output-format json`. To work against a specific profile with any command,
+not just `auth profile`, use `--profile <name>` or `DATAROBOT_CLI_PROFILE=<name>`:
+
+```bash
+dr --profile eu-mtsaas auth login
+dr --profile eu-mtsaas templates list
+DATAROBOT_CLI_PROFILE=eu-mtsaas dr templates list
+```
+
+See [Named profiles](../user-guide/configuration.md#named-profiles) for the full
+`drconfig.yaml` shape and precedence rules.
+
 ## Global options
 
 These options work with all `auth` commands:
 
 ```bash
-  -v, --verbose      Enable verbose output
-      --debug        Enable debug output
-      --skip-auth    Skip authentication checks (for advanced users)
-  -h, --help         Show help for command
+  -v, --verbose        Enable verbose output
+      --debug          Enable debug output
+      --skip-auth      Skip authentication checks (for advanced users)
+      --profile string Named profile from drconfig.yaml to use
+  -h, --help           Show help for command
 ```
 
 > [!WARNING]
@@ -451,6 +505,18 @@ Opening browser for authentication...
 # Switch to different DataRobot instance
 $ dr auth set-url https://staging.datarobot.com
 $ dr auth login
+```
+
+If you switch back and forth between the same instances often, a
+[named profile](#profile) avoids re-authenticating each time:
+
+```bash
+$ dr --profile staging auth set-url https://staging.datarobot.com
+$ dr --profile staging auth login
+$ dr --profile staging templates list
+
+# Later, back to the default instance — no re-login needed:
+$ dr templates list
 ```
 
 ### Debug authentication issues
@@ -535,12 +601,19 @@ After authentication, credentials are stored in:
 
 **Format:**
 
-Keys are flat and top-level; there is no `datarobot:` or `preferences:` nesting:
+Keys are flat and top-level (the default profile); there is no `datarobot:` or
+`preferences:` nesting. The only nested key is `profiles:`, one section per
+[named profile](#profile):
 
 ```yaml
 endpoint: https://app.datarobot.com/api/v2
 token: <plaintext_api_key>
 api-consumer-tracking-enabled: true
+
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: <plaintext_api_key>
 ```
 
 Only allowlisted keys are ever written back (see `config.PersistableKeys`), so transient
@@ -581,15 +654,28 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 
 ### Use per-environment authentication
 
+Prefer a [named profile](#profile) for multiple DataRobot environments &mdash; one
+`drconfig.yaml`, no re-authenticating when you switch back:
+
 ```bash
 # Development
-export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
-dr auth set-url https://dev.datarobot.com --config $DATAROBOT_CLI_CONFIG
-dr auth login
+dr --profile dev auth set-url https://dev.datarobot.com
+dr --profile dev auth login
 
 # Production
-export DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml
-dr auth set-url https://prod.datarobot.com --config $DATAROBOT_CLI_CONFIG
+dr --profile prod auth set-url https://prod.datarobot.com
+dr --profile prod auth login
+
+dr --profile dev templates list
+dr --profile prod templates list
+```
+
+Separate config files remain available via `--config`/`DATAROBOT_CLI_CONFIG` for cases
+that genuinely need a different file, such as a self-contained CI config:
+
+```bash
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/ci-config.yaml
+dr auth set-url https://app.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 ```
 
@@ -616,6 +702,9 @@ export DATAROBOT_API_TOKEN=your-api-token
 
 # Custom config file location
 export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
+
+# Named profile to use (see 'profile' above)
+export DATAROBOT_CLI_PROFILE=eu-mtsaas
 ```
 
 To go the other way — take the credentials the CLI already has and put them in your shell environment for the DataRobot SDKs and other tools — use [`dr auth export`](#export):

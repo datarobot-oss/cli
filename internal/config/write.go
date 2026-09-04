@@ -152,16 +152,7 @@ func readYAMLNode(path string) (*yaml.Node, error) {
 // and non-allowlisted keys. It navigates to nested keys using dotted notation
 // (e.g. "foo.bar.baz").
 func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
-	candidates := keys
-	if len(candidates) == 0 {
-		candidates = make([]string, 0, len(PersistableKeys))
-
-		for k := range PersistableKeys {
-			candidates = append(candidates, k)
-		}
-	}
-
-	for _, key := range candidates {
+	for _, key := range candidateKeys(node, keys) {
 		if _, ok := PersistableKeys[key]; !ok {
 			continue
 		}
@@ -170,8 +161,135 @@ func applyAllowedKeysToNode(node *yaml.Node, keys []string) {
 			continue
 		}
 
-		setNestedKeyInNode(node, key, viper.Get(key))
+		setNestedKeyInNode(node, profileDestPath(node, key), viper.Get(key))
 	}
+}
+
+// candidateKeys expands the keys UpdateConfigFile should consider writing.
+// Explicit keys always pass through unchanged.
+//
+// For a bare sweep (keys is empty) with no profile active, every allowlisted
+// key is a candidate, as before.
+//
+// For a bare sweep with a profile active, a profile-scoped key is a candidate
+// only when it belongs to the profile rather than being inherited (see
+// profileOwnsKey). Without this, the sweep would copy every inherited
+// top-level value (including endpoint and token belonging to a *different*
+// instance) down into the profile and permanently fork it. Global
+// (non-profile-scoped) keys sweep as usual.
+func candidateKeys(node *yaml.Node, keys []string) []string {
+	if len(keys) > 0 {
+		return keys
+	}
+
+	candidates := make([]string, 0, len(PersistableKeys))
+
+	activeProfile := ActiveProfile()
+
+	for key := range PersistableKeys {
+		_, scoped := ProfileScopedKeys[key]
+
+		if scoped && activeProfile != "" && !profileOwnsKey(node, activeProfile, key) {
+			continue
+		}
+
+		candidates = append(candidates, key)
+	}
+
+	return candidates
+}
+
+// profileOwnsKey reports whether a bare sweep should write key into the active
+// profile's section. Ownership is resolved against node -- the config file as
+// it currently exists on disk -- rather than against the process-global viper
+// instance, whose profiles map is a snapshot from startup and so never sees a
+// section an earlier UpdateConfigFile call in the same process just created.
+//
+// A key is owned when the profile's section already defines it, or when the
+// live viper value differs from the default profile's on-disk value, which
+// means a flag or environment variable overrode what would otherwise have been
+// inherited (e.g. `dr --profile onprem --ca-cert ... auth login`).
+func profileOwnsKey(node *yaml.Node, profile, key string) bool {
+	section := mappingValueNode(profilesMappingNode(node), profileSectionName(node, profile))
+	if mappingValueNode(section, key) != nil {
+		return true
+	}
+
+	inherited := ""
+	if valNode := mappingValueNode(node, key); valNode != nil {
+		inherited = valNode.Value
+	}
+
+	return fmt.Sprintf("%v", viper.Get(key)) != inherited
+}
+
+// profileDestPath returns the YAML path a persistable key should be written
+// to: the key itself for the default profile, or profiles.<name>.<key> when
+// a named profile is active and the key is profile-scoped. PersistableKeys
+// is always matched against the logical key, never against this path.
+func profileDestPath(node *yaml.Node, key string) string {
+	name := ActiveProfile()
+	if name == "" {
+		return key
+	}
+
+	if _, scoped := ProfileScopedKeys[key]; !scoped {
+		return key
+	}
+
+	return profilesKey + "." + profileSectionName(node, name) + "." + key
+}
+
+func profileSectionName(node *yaml.Node, name string) string {
+	profilesNode := profilesMappingNode(node)
+	if profilesNode == nil {
+		return name
+	}
+
+	return existingProfileName(profilesNode, name)
+}
+
+func profilesMappingNode(node *yaml.Node) *yaml.Node {
+	profilesNode := mappingValueNode(node, profilesKey)
+	if profilesNode == nil || profilesNode.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	return profilesNode
+}
+
+// mappingValueNode returns the value node for key in a mapping node, or nil.
+func mappingValueNode(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	for i := 0; i < len(node.Content)-1; i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+
+	return nil
+}
+
+func existingProfileName(profilesNode *yaml.Node, name string) string {
+	for i := 0; i < len(profilesNode.Content)-1; i += 2 {
+		sectionKey := profilesNode.Content[i]
+		if sectionKey.Value == name {
+			return name
+		}
+
+		if sectionKey.Value == "" {
+			continue
+		}
+
+		if NormalizeProfileName(sectionKey.Value) == name {
+			return sectionKey.Value
+		}
+	}
+
+	return name
 }
 
 // Note: Keys NOT in candidates are preserved as-is from the existing node.

@@ -191,7 +191,7 @@ func TestEnsureAuthenticated_EnvInvalidStoredValid(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result,
-		"Expected EnsureAuthenticated to fail instead of falling back to the valid stored profile")
+		"Expected EnsureAuthenticated to fail instead of falling back to the valid stored credentials")
 }
 
 // TestEnsureAuthenticated_EnvMalformedEndpointStoredValid covers the malformed
@@ -207,7 +207,7 @@ func TestEnsureAuthenticated_EnvMalformedEndpointStoredValid(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result,
-		"Expected EnsureAuthenticated to fail on a malformed endpoint instead of using the stored profile")
+		"Expected EnsureAuthenticated to fail on a malformed endpoint instead of using the stored credentials")
 }
 
 func TestReportEnvCredentialsError(t *testing.T) {
@@ -451,7 +451,7 @@ func TestEnsureAuthenticated_StoredProfileServerError(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 
-	assert.False(t, result, "Expected EnsureAuthenticated to fail on a 503 from the stored profile")
+	assert.False(t, result, "Expected EnsureAuthenticated to fail on a 503 from the stored credentials")
 	assert.Equal(t, "valid-token", viperx.GetString(config.DataRobotAPIKey),
 		"Expected the stored token to survive a status the instance never judged it with")
 }
@@ -518,7 +518,7 @@ func TestEnsureAuthenticated_EnvUnreachableStoredValid(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result,
-		"Expected EnsureAuthenticated to fail on an unreachable endpoint instead of using the stored profile")
+		"Expected EnsureAuthenticated to fail on an unreachable endpoint instead of using the stored credentials")
 }
 
 func TestReportStoredProfileNotUsed(t *testing.T) {
@@ -527,20 +527,20 @@ func TestReportStoredProfileNotUsed(t *testing.T) {
 
 	creds := &EnvCredentials{Endpoint: "https://requested.example.com/api/v2", Token: "bad-token"}
 
-	t.Run("names both endpoints when a stored profile exists", func(t *testing.T) {
+	t.Run("names both endpoints when stored credentials exist", func(t *testing.T) {
 		var buf bytes.Buffer
 
-		reportStoredProfileNotUsed(&buf, creds)
+		reportStoredCredentialsNotUsed(&buf, creds)
 
 		assert.Contains(t, buf.String(), "https://requested.example.com")
-		assert.Contains(t, buf.String(), "not falling back to the stored profile")
+		assert.Contains(t, buf.String(), "not falling back to the stored credentials")
 	})
 
-	t.Run("silent without a stored profile", func(t *testing.T) {
+	t.Run("silent without a stored credentials", func(t *testing.T) {
 		var buf bytes.Buffer
 
 		viperx.Set(config.DataRobotURL, "")
-		reportStoredProfileNotUsed(&buf, creds)
+		reportStoredCredentialsNotUsed(&buf, creds)
 
 		assert.Empty(t, buf.String())
 	})

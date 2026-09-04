@@ -24,6 +24,10 @@ dr auth check
 
 # Export credentials into the current shell session
 eval "$(dr auth export)"
+
+# Work against another DataRobot installation without re-authenticating
+dr --profile eu-mtsaas templates list
+dr auth profile list
 ```
 
 ## Templates
@@ -174,6 +178,9 @@ dr run --parallel [task1] [task2]
 
 # Custom config file
 dr --config /path/to/config.yaml [command]
+
+# Named profile (multiple DataRobot installations, one config file)
+dr --profile eu-mtsaas [command]
 ```
 
 ## File locations
