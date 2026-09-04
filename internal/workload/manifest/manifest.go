@@ -168,10 +168,28 @@ func DirFlag(dir string) string {
 	// absolute otherwise, which is what a project on another branch of the tree
 	// gets rather than a ../../.. chain.
 	if rel, err := filepath.Rel(cwd, project); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
-		return " --dir " + rel
+		return " --dir " + shellArg(rel)
 	}
 
-	return " --dir " + project
+	return " --dir " + shellArg(project)
+}
+
+// shellArg quotes a path that would not survive being pasted into a shell.
+//
+// These suffixes are printed inside commands the reader is meant to copy and
+// run, and a project under "My Projects" unquoted becomes a --dir that stops
+// at the space with a stray argument after it, pointed at a directory that
+// does not exist.
+//
+// Double quotes rather than single, because the notices carrying these wrap
+// the whole command in single quotes already, and because a path may itself
+// hold an apostrophe.
+func shellArg(path string) string {
+	if !strings.ContainsAny(path, " \t\"") {
+		return path
+	}
+
+	return `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
 }
 
 // Locate searches for the manifest in startDir and each ancestor, the way
