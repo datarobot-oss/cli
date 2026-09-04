@@ -15,7 +15,6 @@
 package telemetry
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -84,7 +83,7 @@ type accountInfoResult struct {
 // GetAccountInfo fetches the DataRobot account info from GET /api/v2/account/info/.
 // It returns the full AccountInfo on success, or (*AccountInfo, error) on non-200 status,
 // empty uid, or network failure.
-func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
+func GetAccountInfo() (*AccountInfo, error) {
 	url, err := config.GetEndpointURL("/api/v2/account/info/")
 	if err != nil {
 		return nil, err
@@ -92,7 +91,7 @@ func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 
 	var info AccountInfo
 
-	if err := drapi.GetJSON(url, "", &info); err != nil { //nolint:contextcheck // GetJSON does not yet accept context; ctx is reserved for future use
+	if err := drapi.GetJSON(url, "", &info); err != nil {
 		return nil, err
 	}
 
@@ -103,13 +102,13 @@ func GetAccountInfo(_ context.Context) (*AccountInfo, error) {
 	return &info, nil
 }
 
-func retrieveAccountInfo(ctx context.Context) (accountInfoResult, error) {
+func retrieveAccountInfo() (accountInfoResult, error) {
 	cached, hasMatchingCache := loadMatchingCache()
 	if hasMatchingCache && cached.isComplete() {
 		return cached.toResult(), nil
 	}
 
-	info, err := GetAccountInfo(ctx)
+	info, err := GetAccountInfo()
 	if err != nil {
 		log.Debugf("Failed to retrieve account info: %v", err)
 
