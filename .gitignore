@@ -52,3 +52,7 @@ docs/uv.lock
 *.vscode/
 *.claude/
 __pycache__/
+
+# Local smoke-test scaffolding (example workloads deployed by hand); kept out
+# of the repo so a `git add` never sweeps it into an unrelated change.
+/examples/
