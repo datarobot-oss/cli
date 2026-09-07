@@ -130,6 +130,49 @@ tool-b:
 	assert.Len(t, prereqs, 2)
 }
 
+func TestGetRequirementsFromDir_PreservesDeclarationOrder(t *testing.T) {
+	// Regression test: entries were previously decoded into a map, which randomizes
+	// iteration order and could install prerequisites (e.g. a plugin before the tool
+	// it depends on) out of the order declared in versions.yaml.
+	const yaml = `tool-z:
+  name: Tool Z
+  minimum-version: "1.0.0"
+  command: "echo z"
+  url: https://example.com/z
+  install:
+    macos: "echo install"
+    linux: "echo install"
+tool-a:
+  name: Tool A
+  minimum-version: "1.0.0"
+  command: "echo a"
+  url: https://example.com/a
+  install:
+    macos: "echo install"
+    linux: "echo install"
+tool-m:
+  name: Tool M
+  minimum-version: "1.0.0"
+  command: "echo m"
+  url: https://example.com/m
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+	dir := t.TempDir()
+
+	writeVersionsYAML(t, dir, yaml)
+
+	for range 20 {
+		prereqs, _, err := GetRequirementsFromDir(dir)
+
+		require.NoError(t, err)
+		require.Len(t, prereqs, 3)
+		assert.Equal(t, []string{"tool-z", "tool-a", "tool-m"}, []string{prereqs[0].Key, prereqs[1].Key, prereqs[2].Key})
+	}
+}
+
 func TestGetRequirementsFromDir_EmptyYamlReturnsNoPrereqs(t *testing.T) {
 	dir := t.TempDir()
 
