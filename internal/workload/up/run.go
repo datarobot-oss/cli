@@ -58,6 +58,7 @@ var (
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
+	activeProtonFn       = workload.ActiveProtonID
 	writeWorkloadIDFn    = manifest.WriteWorkloadID
 	codeChangeFn         = defaultCodeChange
 	projectLinkedFn      = wapi.Exists

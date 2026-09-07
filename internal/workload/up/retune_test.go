@@ -625,3 +625,70 @@ func TestRun_RotationRestartWithoutARuntimeBlockSendsTheLiveOne(t *testing.T) {
 	assert.Contains(t, string(sent), "vllm-server", "the live block, since the file has none")
 	assert.Equal(t, ActionUpdated, result.Action)
 }
+
+// The block that goes is the workload's own, not the file's. A manifest that
+// manages only part of the sizing sends a container without its allocation,
+// and the platform answers that with a replacement that starts nothing.
+func TestRun_RotationRestartSendsTheBlockTheWorkloadRunsWith(t *testing.T) {
+	var (
+		tr   track
+		sent json.RawMessage
+	)
+
+	install(t, rotationOnly(t, &tr, fakes{
+		settings: func(workloadID string, runtime json.RawMessage) (*workload.Replacement, error) {
+			tr.steps = append(tr.steps, "settings:"+workloadID)
+			sent = runtime
+
+			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID}, nil
+		},
+	}))
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, string(sent), "metrics-bridge",
+		"the live block names the sidecar the file leaves to the platform")
+}
+
+// The settings route answers 202 whether or not it starts a generation, and
+// a replacement can complete with none. Measured on staging: the run reported
+// the restart done and the workload went on serving the old value.
+func TestRun_RotationRestartThatStartsNoGenerationIsAnError(t *testing.T) {
+	var tr track
+
+	install(t, rotationOnly(t, &tr, fakes{}))
+	force(t, &activeProtonFn, func(string) (string, error) { return "gen-1", nil })
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "1 secret was re-sent to the credential store")
+	assert.Contains(t, err.Error(), "without starting a new generation")
+	assert.NotContains(t, tr.steps, "settle:+drain", "there is no new generation to wait for")
+}
+
+// A generation that changed is the restart having happened, and the drain
+// wait then follows as it did.
+func TestRun_RotationRestartSettlesOnceTheGenerationChanged(t *testing.T) {
+	var (
+		tr    track
+		reads int
+	)
+
+	install(t, rotationOnly(t, &tr, fakes{}))
+	force(t, &activeProtonFn, func(string) (string, error) {
+		reads++
+		if reads == 1 {
+			return "gen-1", nil
+		}
+
+		return "gen-2", nil
+	})
+
+	result, _, err := runIn(t, retuned("cpu: 3", "cpu: 3"), Options{NonInteractive: true, SyncEnv: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "settle:+drain")
+	assert.Equal(t, ActionUpdated, result.Action)
+}

@@ -183,26 +183,33 @@ func notRestarted(result Result, err error) error {
 		result.WorkloadID, plural(result.Env.SecretsRotated, "it", "them"), err)
 }
 
-// restartRuntime is the runtime block a restart sends: the file's, so no
-// sizing moves, and the live workload's when the file names none.
+// restartRuntime is the runtime block a restart sends: the one the workload
+// already runs with, so no sizing moves, and the file's only when the platform
+// reports none.
 //
-// The settings PATCH is the restart, and it has to carry a block. A manifest
-// without one leaves sizing to the platform, which is a shape a deploy accepts
-// and a resize never reaches, since there is nothing in the file to have
-// drifted; a rotation-only run reaches it, and what the platform settled on is
-// what the workload already runs with, so sending it back moves nothing.
+// The settings PATCH is the restart, and what it carries decides whether a new
+// generation is started at all. Measured on staging: a block naming a
+// container without its resourceAllocation, which is what a manifest that
+// manages only the replica count would send, is answered 202 with a
+// replacement that completes without a candidate, and the workload goes on
+// serving the old value under a run that reported the restart done. The block
+// the workload runs with is complete by definition, and on an empty plan it is
+// what the file asks for, so sending it back moves nothing and still starts
+// the generation the run is here for.
 func restartRuntime(loaded Loaded, live Live) (json.RawMessage, error) {
-	runtime, err := loaded.Runtime()
-	if err != nil {
-		return nil, err
+	runtime := live.Runtime
+
+	if len(runtime) == 0 {
+		fromFile, err := loaded.Runtime()
+		if err != nil {
+			return nil, err
+		}
+
+		runtime = fromFile
 	}
 
 	if len(runtime) == 0 {
-		runtime = live.Runtime
-	}
-
-	if len(runtime) == 0 {
-		return nil, fmt.Errorf("neither the manifest nor workload %s carries a runtime block, and a restart "+
+		return nil, fmt.Errorf("neither workload %s nor the manifest carries a runtime block, and a restart "+
 			"has to send one", live.WorkloadID)
 	}
 
@@ -259,6 +266,13 @@ func restartForRotation(loaded Loaded, live Live, result Result, opts Options) (
 		return result, notRestarted(result, err)
 	}
 
+	// The generation serving before the swap, so a replacement that completes
+	// without starting another can be told from one that did.
+	before, err := activeProtonFn(result.WorkloadID)
+	if err != nil {
+		return result, notRestarted(result, err)
+	}
+
 	report := newReporter(opts.Stderr, opts.Spinner)
 
 	var started *workload.Replacement
@@ -302,6 +316,10 @@ func restartForRotation(loaded Loaded, live Live, result Result, opts Options) (
 		return result, err
 	}
 
+	if err := restarted(result, before, opts); err != nil {
+		return result, err
+	}
+
 	// The same drain a resize waits for, and for a sharper reason. The
 	// replacement completing says the new generation came up; it does not say
 	// the old one stopped answering, and the old one is the one still serving
@@ -311,4 +329,44 @@ func restartForRotation(loaded Loaded, live Live, result Result, opts Options) (
 	// of the reader, instead of exit 0 and a workload that is not running.
 	return settle(result.WorkloadID, workload.Serving{AwaitDrain: true, Restart: true},
 		result, budgetLeft(opts, waitFrom), report)
+}
+
+// restartReads is how many times the active generation is re-read after a
+// completed replacement before the restart is declared not to have happened.
+const restartReads = 3
+
+// restarted refuses a restart the platform accepted and did not perform.
+//
+// The settings route answers 202 with a replacement either way, and the
+// replacement can complete without ever naming a candidate, which the wait
+// above reads as a swap that finished. The generation marked active is the one
+// thing a restart has to have changed, so it is read again once the
+// replacement is done. A platform that reports no role gives nothing to
+// compare, and the drain wait is then the whole of the evidence.
+//
+// Read more than once because the promotion and the replacement's completion
+// are two records of one event, and a poll can land between them.
+func restarted(result Result, before string, opts Options) error {
+	if before == "" {
+		return nil
+	}
+
+	for attempt := 0; attempt < restartReads; attempt++ {
+		if attempt > 0 {
+			time.Sleep(opts.PollInterval)
+		}
+
+		active, err := activeProtonFn(result.WorkloadID)
+		if err != nil {
+			return notRestarted(result, err)
+		}
+
+		if active != before {
+			return nil
+		}
+	}
+
+	return notRestarted(result, fmt.Errorf(
+		"the settings replacement completed without starting a new generation, and %s is still the one marked active",
+		before))
 }

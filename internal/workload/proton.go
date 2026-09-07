@@ -206,7 +206,10 @@ type protonVerdict struct {
 //
 // Draining and running both count. Measured at t+27s of a rollout, both
 // generations were running and the endpoint was still on the old build, so
-// treating running as settled would return before the handover.
+// treating running as settled would return before the handover. Draining
+// counts for longer than its name suggests: a generation marked draining was
+// measured answering the endpoint for five minutes afterwards, while its
+// promoted successor was sent nothing for the first minutes of its role.
 //
 // The successor is identified by artifact when one is named, and otherwise by
 // the active role, which is what makes this work for a resize: a resize
@@ -230,28 +233,51 @@ func anyServingPredecessor(protons []Proton, wantArtifactID string) bool {
 			continue
 		}
 
-		// Draining holds the wait only when nothing else can say the
-		// handover happened. With a role reported, the active generation is
-		// the one the router sends to, and a draining predecessor is
-		// finishing the requests it already had: measured on staging with the
-		// old generation draining and the new one active, the endpoint
-		// answered from the new build every time. Waiting for it to reach
-		// stopped as well costs the platform's whole termination grace, which
-		// ran to seven minutes on a swap whose handover took thirty seconds.
-		if IsDrainingProtonStatus(p.Status) && activeAt < 0 {
+		// Draining holds the wait whatever the roles say. The role is the
+		// platform's bookkeeping, and the endpoint lags it by minutes in both
+		// directions: measured on staging, a generation marked draining went
+		// on answering the endpoint for five minutes, and a successor marked
+		// active was sent nothing for the first one to four minutes after its
+		// promotion. Draining is the only state that says the outgoing
+		// generation is on its way out, and leaving it while it still answers
+		// reports a swap as finished while the old build, or the old
+		// credential, is still being handed out. The termination grace it
+		// costs, ten minutes on staging, is the price of the report being true.
+		if IsDrainingProtonStatus(p.Status) {
 			return true
 		}
 
-		// Running is different: a predecessor still running has not been
-		// told to go, and the router may still be sending to it. It counts
-		// only once something identifies the successor, or every generation
-		// would look like one.
+		// Running only counts as a predecessor once something identifies the
+		// successor, or every generation would look like one.
 		if IsRunningProtonStatus(p.Status) && (wantArtifactID != "" || activeAt >= 0) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// ActiveProtonID names the generation the platform marks as serving, "" when
+// no role is reported or the route refuses in a way the waits already
+// forgive. A restart compares it before and after its swap: the settings
+// route answers 202 with a replacement whether or not it starts a new
+// generation, and a replacement that completes with the same generation
+// still marked active is a restart that did not happen.
+func ActiveProtonID(workloadID string) (string, error) {
+	protons, err := ListProtons(workloadID)
+	if err != nil {
+		if refusedRoute(err) {
+			return "", nil
+		}
+
+		return "", err
+	}
+
+	if at := activeProtonIndex(protons); at >= 0 {
+		return protons[at].ID, nil
+	}
+
+	return "", nil
 }
 
 // activeProtonIndex is where the generation marked as serving sits, or -1 when

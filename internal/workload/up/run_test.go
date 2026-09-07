@@ -333,6 +333,11 @@ func install(t *testing.T, f fakes) {
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)
+
+	// A restart reads the active generation before and after its swap. With
+	// no role reported there is nothing to compare, which is what every test
+	// not about that comparison wants.
+	force(t, &activeProtonFn, func(string) (string, error) { return "", nil })
 }
 
 // servingLabel renders what a wait was asked to confirm, so a trace shows the
