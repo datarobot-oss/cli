@@ -819,7 +819,7 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 		"the lines that can name the workload still do")
 }
 
-// rotatedNothingElse is the run --update-env exists to make safe: the secret
+// rotatedNothingElse is the run --sync-env exists to make safe: the secret
 // reached the credential store, the manifest was already current, and so no
 // container was replaced on the way past.
 func rotatedNothingElse() up.Result {

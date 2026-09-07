@@ -109,20 +109,25 @@ type Options struct {
 	// fields the file moved, and the run would have to be read to know which.
 	Lock bool
 
-	// ImportEnv and UpdateEnv are the .env re-entry `dr workload config`
-	// takes, offered here because the first run of this command already does
-	// it: with no manifest `up` is the wizard, and the wizard reads .env,
-	// classifies it and mints the credentials. Without these the second run
-	// is the only one that cannot, which makes the file the deploy reads
-	// something you have to leave the command to change.
+	// SyncEnv is the .env re-entry `dr workload config` takes, offered here
+	// because the first run of this command already does it: with no manifest
+	// `up` is the wizard, and the wizard reads .env, classifies it and mints
+	// the credentials. Without it the second run is the only one that cannot,
+	// which makes the file the deploy reads something you have to leave the
+	// command to change.
 	//
 	// Opt-in, and that is what keeps a deploy a function of the committed
-	// repo: a run without them changes neither file and sends nothing from
-	// .env, so a fresh CI clone with no .env deploys exactly what your laptop
+	// repo: a run without it changes neither file and sends nothing from .env,
+	// so a fresh CI clone with no .env deploys exactly what your laptop
 	// deploys. The file is still read, for the notice that says the two have
 	// parted.
-	ImportEnv bool
-	UpdateEnv bool
+	SyncEnv bool
+
+	// ConfirmEnv is shown what the sync would do and answers whether to do it,
+	// nil when there is nobody to ask. It reaches the wizard unchanged: the
+	// deploy has no opinion about the question, only about when it is safe to
+	// put one in front of somebody.
+	ConfirmEnv func() (bool, error)
 
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
@@ -154,7 +159,7 @@ type Result struct {
 	// the caller can say which logs to read.
 	BuildID string
 
-	// Env is what --import-env and --update-env did to the manifest before
+	// Env is what --sync-env did to the manifest before
 	// the plan was computed, zero when neither was asked for. The counts
 	// travel because a rotation is the one edit the plan cannot show: it
 	// changes no file, so a run that re-sent a secret and deployed nothing
@@ -593,7 +598,7 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 	// would name a command that cannot find the file the notice is about.
 	remedy := "dr workload up" + dirFlagFor(loaded)
 
-	if !o.ImportEnv && !o.UpdateEnv {
+	if !o.SyncEnv {
 		o.reportEnvDrift(dir, remedy, loaded.Manifest)
 
 		return loaded, nil
@@ -607,8 +612,8 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 		Dir:            dir,
 		NonInteractive: true,
 		DryRun:         o.DryRun,
-		ImportEnv:      o.ImportEnv,
-		UpdateEnv:      o.UpdateEnv,
+		SyncEnv:        true,
+		Confirm:        o.ConfirmEnv,
 		Remedy:         remedy,
 		Stderr:         o.Stderr,
 	})
@@ -930,6 +935,12 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 		WorkloadID: result.WorkloadID,
 		Status:     live.Status,
 		Refused:    refused != nil,
+		// Carried through announce rather than read by the renderer, because
+		// it is what this run already did to the credential store and the plan
+		// is what it is about to do to the workload. The verdict needs both:
+		// an empty plan is the truth about the manifest and not about the
+		// value the workload goes on serving until it is restarted.
+		SecretsRotated: result.Env.SecretsRotated,
 	}
 
 	if err := Render(opts.Stderr, summary, plan); err != nil {
