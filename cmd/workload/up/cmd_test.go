@@ -778,8 +778,13 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir)
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr, "dr workload logs --dir "+dir)
-	assert.Contains(t, stderr, "dr workload up --lock --dir "+dir,
+	// Forward slashes, which is the spelling the suffix is printed in on every
+	// platform: the CLI takes them on Windows too, and a backslash pasted into
+	// a POSIX shell is an escape rather than a separator.
+	at := filepath.ToSlash(dir)
+
+	assert.Contains(t, stderr, "dr workload logs --dir "+at)
+	assert.Contains(t, stderr, "dr workload up --lock --dir "+at,
 		"every line in the block has to run as printed, --lock included")
 }
 
