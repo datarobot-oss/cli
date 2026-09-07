@@ -56,10 +56,10 @@ func TestEnvPlan_SortsEveryVariableIntoWhatHappensToIt(t *testing.T) {
 	assert.Contains(t, shown.String(), "STRIPE_API_KEY", "a new name the classifier reads as a secret")
 	assert.Contains(t, shown.String(), "DATABASE_URL", "a name held back as local-only")
 
-	// The question a reconciliation raises loudest, answered in writing rather
-	// than by the row not being there.
+	// The half that loses configuration rather than gaining it, named rather
+	// than left to be discovered in the diff.
 	assert.Contains(t, shown.String(), "OLD")
-	assert.Contains(t, shown.String(), "nothing is ever removed")
+	assert.Contains(t, shown.String(), "remove")
 }
 
 // A refusal is a decision, not a failure: neither file is touched, nothing
@@ -100,7 +100,7 @@ func TestConfirmEnvPlan_AgreementAppliesBothHalves(t *testing.T) {
 // to answer without reading.
 func TestConfirmEnvPlan_NothingToDoIsNotWorthAsking(t *testing.T) {
 	dir := configured(t, "GREETING=hello\n")
-	writeEnvFile(t, dir, "GREETING=hello\nDATABASE_URL=postgres://localhost:5432/dev\n")
+	writeEnvFile(t, dir, "GREETING=hello\n")
 
 	opts := syncing(dir, Answers{})
 	opts.Confirm = func() (bool, error) {

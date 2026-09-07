@@ -49,8 +49,16 @@ type Policy struct {
 	// is the whole of what the run was for.
 	DryRun bool
 
-	// Interactive says there is a terminal to put the question on.
+	// Interactive says there is somebody at both ends: a terminal to read the
+	// answer from and one to write the question to.
 	Interactive bool
+
+	// Silent says the run has no writer for the table, which is what a
+	// machine-readable one hands the wizard so that `2>&1 | jq .` parses. The
+	// refusal has to say something different there: the reason it cannot ask
+	// is the output format, not the absence of a terminal, and pointing at a
+	// table nobody printed is no help at all.
+	Silent bool
 }
 
 // Ask returns the function `wizard.Options.Confirm` expects.
@@ -71,6 +79,10 @@ func Ask(stderr io.Writer, stdin io.Reader, policy Policy) func() (bool, error) 
 	}
 
 	if !policy.Interactive {
+		if policy.Silent {
+			return refuseSilently
+		}
+
 		return refuse
 	}
 
@@ -100,7 +112,18 @@ func Ask(stderr io.Writer, stdin io.Reader, policy Policy) func() (bool, error) 
 // report a reconciliation it never carried out.
 func refuse() (bool, error) {
 	return false, errors.New(
-		"--sync-env rewrites a file you commit and sends values to the credential store, and there is no " +
-			"terminal here to confirm that on. Add --yes to say so explicitly, or run it where you can answer. " +
-			"The table above is what it would have done")
+		"--sync-env rewrites a file you commit and sends values to the credential store, and there is nowhere " +
+			"here to ask you about it. Add --yes to say so explicitly, or run it where the question can reach " +
+			"you. The table above is what it would have done")
+}
+
+// refuseSilently is the same refusal for a run that printed no table, because
+// a machine-readable one is handed no writer to print it on. Naming a terminal
+// there would be wrong twice: the run may well be on one, and what refused is
+// the output format.
+func refuseSilently() (bool, error) {
+	return false, errors.New(
+		"--sync-env rewrites a file you commit and sends values to the credential store, and a machine-readable " +
+			"run cannot show you what it would do or ask whether to. Add --yes to say so explicitly, or run it " +
+			"without --output-format json to see the table first")
 }
