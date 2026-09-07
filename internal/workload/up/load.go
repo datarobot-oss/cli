@@ -44,7 +44,7 @@ type Loaded struct {
 	// shell happened to be sitting in.
 	ProjectDir string
 
-	// Env is what a --import-env or --update-env run did to this file before
+	// Env is what a --sync-env run did to this file before
 	// it was read, zero when neither was asked for.
 	Env EnvEdit
 

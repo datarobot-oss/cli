@@ -562,3 +562,29 @@ func TestRender_LinkedProjectOnAPublishedImageStillGetsANewArtifact(t *testing.T
 	assert.Contains(t, out, "with its first artifact")
 	assert.NotContains(t, out, "linked to")
 }
+
+// A rotation moves nothing a plan can show, so an empty plan is the truth
+// about the manifest and not about the workload: the run is about to restart
+// it, and a bare verdict above that reads as a contradiction.
+func TestRender_EmptyPlanSaysWhatTheRotationStillNeeds(t *testing.T) {
+	out := &strings.Builder{}
+
+	summary := Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: "running", SecretsRotated: 1}
+
+	require.NoError(t, Render(out, summary, Plan{State: StateRunning}))
+
+	assert.Contains(t, out.String(), "Already up to date")
+	assert.Contains(t, out.String(), "Apart from the secret just re-sent")
+}
+
+// The line belongs to the rotation, not to every run that finds nothing to do.
+func TestRender_EmptyPlanWithoutARotationSaysOnlyThat(t *testing.T) {
+	out := &strings.Builder{}
+
+	summary := Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: "running"}
+
+	require.NoError(t, Render(out, summary, Plan{State: StateRunning}))
+
+	assert.Contains(t, out.String(), "Already up to date")
+	assert.NotContains(t, out.String(), "re-sent")
+}
