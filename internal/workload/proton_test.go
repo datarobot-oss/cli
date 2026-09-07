@@ -96,6 +96,31 @@ func TestProtonsServing(t *testing.T) {
 			[]Proton{active("art-2"), {ArtifactID: "art-1", Status: "stopping"}},
 			roll("art-2"), true,
 		},
+		{
+			// The role does not settle it. Measured on staging with exactly
+			// this shape: the generation marked draining went on answering the
+			// endpoint for five minutes, and the promoted one was sent nothing
+			// for the first minutes after its promotion.
+			"the previous generation draining behind a promoted successor still holds the wait",
+			[]Proton{active("art-2"), draining("art-1")},
+			roll("art-2"), false,
+		},
+		{
+			// A restart names no artifact, so both generations carry the same
+			// one; the drain is still what says the old one has gone.
+			"a restart holds while the generation it replaced is still draining",
+			[]Proton{active("art-1"), draining("art-1")},
+			Serving{AwaitDrain: true},
+			false,
+		},
+		{
+			// Without a role, draining is the only thing that tells a
+			// predecessor from its replacement, so it still holds.
+			"a restart with no role reported still waits out the drain",
+			[]Proton{running("art-1"), draining("art-1")},
+			Serving{AwaitDrain: true},
+			false,
+		},
 	}
 
 	for _, c := range cases {

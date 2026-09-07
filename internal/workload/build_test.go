@@ -820,3 +820,58 @@ func TestBuildSummaryFor_FailureLogFetch502(t *testing.T) {
 	assert.Empty(t, summary.ImageURI, "imageUri must not be set on error-status builds")
 	assert.Nil(t, summary.LogTail, "LogTail stays nil so callers can detect 'no logs available'")
 }
+
+// A status request that times out is not a build that failed. Measured on
+// staging: a two-minute build reached COMPLETED in its own log, and the one
+// poll after it hit the client timeout, so the deploy died with the image
+// built and no workload created. The workload poll already forgives a few of
+// these in a row; the build poll now does too.
+func TestWaitForBuild_ForgivesATransientError(t *testing.T) {
+	installSkipAuth(t)
+
+	var hits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch atomic.AddInt32(&hits, 1) {
+		case 1:
+			fmt.Fprint(w, `{"id":"b-1","artifactId":"art-1","status":"IN_PROGRESS",
+				"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:01Z"}`)
+		case 2, 3:
+			// The blip: the kind of answer a proxy gives while the platform is
+			// slow, which the client reads as transient.
+			w.WriteHeader(http.StatusBadGateway)
+		default:
+			fmt.Fprint(w, `{"id":"b-1","artifactId":"art-1","status":"COMPLETED",
+				"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:08Z"}`)
+		}
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, BuildStatusCompleted, build.Status)
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(4), "it polled through the blip rather than giving up on it")
+}
+
+// Forgiveness has a limit, or a platform that is actually down would hold a
+// deploy open until the overall timeout with nothing to say for itself.
+func TestWaitForBuild_GivesUpAfterTooManyTransientErrors(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "poll build b-1")
+}

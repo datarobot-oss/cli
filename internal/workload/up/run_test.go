@@ -317,6 +317,9 @@ func install(t *testing.T, f fakes) {
 	swap(t, &loadProjectFn, f.project)
 	swap(t, &initProjectFn, f.link)
 	swap(t, &saveProjectFn, f.save)
+
+	// The index reset writes into the project's state dir, which no test has.
+	force(t, &resetSyncIndexFn, func(string) error { return nil })
 	swap(t, &patchCodeRefFn, f.codeRef)
 	swap(t, &syncProjectFn, f.sync)
 	swap(t, &triggerBuildFn, f.build)
@@ -330,6 +333,11 @@ func install(t *testing.T, f fakes) {
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)
+
+	// A restart reads the active generation before and after its swap. With
+	// no role reported there is nothing to compare, which is what every test
+	// not about that comparison wants.
+	force(t, &activeProtonFn, func(string) (string, error) { return "", nil })
 }
 
 // servingLabel renders what a wait was asked to confirm, so a trace shows the
