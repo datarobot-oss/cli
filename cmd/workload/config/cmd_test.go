@@ -396,7 +396,7 @@ func TestCmd_SyncEnvWithNothingToDo(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--sync-env")
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr.String(), "already declares every variable")
+	assert.Contains(t, stderr.String(), "already says what .env says")
 	assert.NotContains(t, stderr.String(), "Delete it to run setup again")
 }
 
@@ -479,4 +479,33 @@ func TestCmd_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
 
 	// Nothing left to add by now, but the envelope must still be well formed.
 	assert.True(t, json.Valid(stdout.Bytes()))
+}
+
+// The environment variable that suppresses wizards in CI is not consent to
+// overwrite a value on the tenant, which is the line `dr workload delete`
+// already draws. A scheduled run that reaches a reconciliation with it set and
+// no --yes is refused, the refusal names the flag, and the file is left alone.
+func TestCmd_SyncEnvWithoutYesIsRefusedWhereNobodyCanAnswer(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	// .env drops the one name the manifest declares, which is the half of a
+	// reconciliation that loses configuration.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("REGION=eu-west-1\n"), 0o600))
+
+	before, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+
+	_, _, err = runCmd(t, "--dir", dir, "--sync-env")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--yes", "the refusal names the way out of it")
+
+	after, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after), "nothing was written")
 }
