@@ -15,7 +15,10 @@
 package workload
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -265,4 +268,162 @@ func anyRunning(protons []Proton, wantArtifactID string) bool {
 	}
 
 	return false
+}
+
+// ProtonStatusDetails is GET /workloads/{id}/protons/{protonId}/statusDetails,
+// the one place the platform says why a generation is not running. Only the
+// fields a failure reason is read from are decoded.
+type ProtonStatusDetails struct {
+	Replicas []ReplicaStatus `json:"replicas"`
+}
+
+// ReplicaStatus is one pod of a generation.
+type ReplicaStatus struct {
+	Containers []ContainerStatus `json:"containers"`
+}
+
+// ContainerStatus is one container of a replica. A container waiting between
+// restarts reports the wait (CrashLoopBackOff) as its own reason and the exit
+// that caused it under LastState; one that never started has only the current
+// reason (ErrImagePull) and no last state.
+type ContainerStatus struct {
+	Name      string          `json:"name"`
+	Reason    string          `json:"reason"`
+	Message   string          `json:"message"`
+	LastState *ContainerState `json:"lastState"`
+}
+
+// ContainerState is a container's previous state, recorded when it terminates.
+type ContainerState struct {
+	Reason   string `json:"reason"`
+	ExitCode *int   `json:"exitCode"`
+}
+
+// GetProtonStatusDetails fetches the snapshot for one generation. The route
+// answers 204 before the monitor has reported, which is nil rather than an
+// error.
+func GetProtonStatusDetails(workloadID, protonID string) (*ProtonStatusDetails, error) {
+	url, err := config.GetEndpointURL(
+		"/api/v2/workloads/" + escapeID(workloadID) + "/protons/" + escapeID(protonID) + "/statusDetails")
+	if err != nil {
+		return nil, err
+	}
+
+	var details ProtonStatusDetails
+
+	if err := drapi.GetJSON(url, "proton status details", &details); err != nil {
+		var httpErr *drapi.HTTPError
+
+		// drapi.Get reports every status other than 200 as an error.
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNoContent {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return &details, nil
+}
+
+// FailureReason is why a workload's serving generation is not running, in the
+// platform's words, and "" when it cannot say. It reads the generation marked
+// active and the first container reporting a reason. Every failure answers "",
+// because this decorates a state already known.
+func FailureReason(workloadID string) string {
+	protons, err := ListProtons(workloadID)
+	if err != nil || len(protons) == 0 {
+		return ""
+	}
+
+	proton := protons[0]
+	if at := activeProtonIndex(protons); at >= 0 {
+		proton = protons[at]
+	}
+
+	details, err := GetProtonStatusDetails(workloadID, proton.ID)
+	if err != nil || details == nil {
+		return ""
+	}
+
+	for _, replica := range details.Replicas {
+		for _, container := range replica.Containers {
+			if line := container.failure(proton.ID); line != "" {
+				return line
+			}
+		}
+	}
+
+	return ""
+}
+
+// imagePullReasons are the waiting reasons whose message is the registry's
+// answer, which is what tells a pruned tag from a mistyped one. A crash loop's
+// message names the back-off timer and the pod, which the reason and the exit
+// code say better.
+var imagePullReasons = []string{"ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
+
+// failure is the container's verdict as one line: its name, the reason, and
+// the detail that reason needs.
+func (c ContainerStatus) failure(protonID string) string {
+	// The cluster names containers lrs-<protonId>-<name>.
+	name := strings.TrimPrefix(c.Name, "lrs-"+protonID+"-")
+	if name == "" {
+		name = c.Name
+	}
+
+	last := c.lastRun()
+
+	switch {
+	case c.Reason != "":
+		line := name + ": " + c.Reason
+
+		if c.Message != "" && slices.Contains(imagePullReasons, c.Reason) {
+			line += ": " + trimRPCPrefix(c.Message)
+		}
+
+		if last != "" {
+			line += "; " + last
+		}
+
+		return line
+
+	case last != "":
+		return name + ": " + last
+
+	default:
+		return ""
+	}
+}
+
+// lastRun names how the previous run ended, "" when there was none. The
+// reason is kept only when it says more than "Error", which a plain non-zero
+// exit is recorded as.
+func (c ContainerStatus) lastRun() string {
+	if c.LastState == nil || c.LastState.ExitCode == nil {
+		return ""
+	}
+
+	line := fmt.Sprintf("last run exited %d", *c.LastState.ExitCode)
+
+	if reason := c.LastState.Reason; reason != "" && !strings.EqualFold(reason, "Error") {
+		line += " (" + reason + ")"
+	}
+
+	return line
+}
+
+// trimRPCPrefix drops the container runtime's "rpc error: code = X desc = "
+// framing from a pull error, which is the transport talking rather than the
+// registry.
+func trimRPCPrefix(message string) string {
+	if !strings.HasPrefix(message, "rpc error:") {
+		return message
+	}
+
+	_, after, found := strings.Cut(message, "desc = ")
+	if !found {
+		return message
+	}
+
+	return after
 }

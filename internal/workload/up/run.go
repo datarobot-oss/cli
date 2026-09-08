@@ -285,7 +285,7 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 	// workload is cleared by `dr workload delete`, and that command only finds
 	// this project's manifest if the message carries the same --dir the deploy
 	// was given.
-	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := deployable(live, result.Plan, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
@@ -500,24 +500,17 @@ func bindLocked(loaded Loaded, plan Plan, result *Result) error {
 // happened. A dry run is excluded: it changes nothing by definition, and the
 // flag not having been used is the least of what it did not do.
 //
-// There are two ways for the flag to be idle. A run that deploys nothing is
-// the loud one. The quiet one is a manifest naming a published image: the
-// deploy goes ahead and succeeds, so nothing invites a second look at the
-// image it is actually serving, and the flag asked for a rebuild of something
-// this project never builds.
+// The flag is idle in one case only now that the plan carries it: a manifest
+// whose image the platform does not build. The deploy goes ahead and may well
+// succeed, so nothing invites a second look at the image it is serving. On a
+// built project the flag always deploys.
 func noteUnusedForce(plan Plan, opts Options) {
-	if !opts.ForceBuild || opts.DryRun {
+	if !opts.ForceBuild || opts.DryRun || plan.Code.Applies {
 		return
 	}
 
-	switch {
-	case plan.Empty():
-		fmt.Fprintf(opts.Stderr, "  --force-build had no effect: nothing is being deployed.\n")
-
-	case !plan.Code.Applies:
-		fmt.Fprintf(opts.Stderr,
-			"  --force-build had no effect: this manifest names an image the platform does not build.\n")
-	}
+	fmt.Fprintf(opts.Stderr,
+		"  --force-build had no effect: this manifest does not build its image, so there is nothing to rebuild.\n")
 }
 
 // load finds the manifest, running the setup wizard when there is none and a
@@ -771,7 +764,7 @@ func name(loaded Loaded, live Live) string {
 // was, and is the only thing that answers for a workload which was steady when
 // it was read and is moving again by the time it is acted on.
 func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
-	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
@@ -816,6 +809,8 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		if err != nil || plan.OnlyStarts() {
 			return result, err
 		}
+
+		plan = afterStart(plan, result, report)
 	}
 
 	// A runtime-only change is applied to the workload in place, with no new
@@ -929,7 +924,7 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 	var refused error
 
 	if !plan.Empty() {
-		refused = refusal(loaded, live, result.Name, opts.DryRun)
+		refused = refusal(loaded, live, plan, result.Name, opts.DryRun)
 	}
 
 	summary := Summary{
@@ -970,18 +965,19 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // the whole defect this change exists to fix, in the one state the report named
 // alongside errored. deployable keeps its settling branch as the backstop for
 // everything that reaches the apply by another route.
-func refusal(loaded Loaded, live Live, workloadName string, dryRun bool) error {
+func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bool) error {
 	if live.State == StateSettling && dryRun {
 		return nil
 	}
 
-	return deployable(live, workloadName, dirFlagFor(loaded))
+	return deployable(live, plan, workloadName, dirFlagFor(loaded))
 }
 
-// deployable refuses the live states that cannot take a deploy, one message
-// each. None is a guess: an unsettled workload may still be on its way
-// somewhere, an errored one has nothing safe underneath it, and a terminated
-// one is not coming back.
+// deployable refuses the live states that cannot take this deploy, one
+// message each. None is a guess: an unsettled workload may still be on its
+// way somewhere, a terminated one is not coming back, and an errored one has
+// nothing safe underneath it, which only matters to a deploy that would leave
+// what it is running in place.
 //
 // Missing is not among them. A binding that resolves to nothing is drift, and
 // the apply for it is a create; the plan says which id went missing so a
@@ -996,7 +992,11 @@ func refusal(loaded Loaded, live Live, workloadName string, dryRun bool) error {
 // being deployable, and `up` means "make the file true", which for something
 // that is not running means starting it, and then applying whatever else the
 // file asks for onto the workload that is now up.
-func deployable(live Live, workloadName, dirFlag string) error {
+//
+// Errored is refused only for a plan that replaces nothing: a roll or a resize
+// is the recovery, with no serving generation for the swap to endanger, while
+// a run with nothing new to deploy could only put the same failure back.
+func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 	switch live.State {
 	case StateTerminated:
 		return fmt.Errorf(
@@ -1005,15 +1005,11 @@ func deployable(live Live, workloadName, dirFlag string) error {
 			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
-		// The refusal carries its own exit. Ending at "check the logs" left
-		// recovery to folklore, and the folk remedy — hand-deleting the
-		// workloadId, or the whole state directory — either loops through the
-		// name conflict below or throws away the code catalog with it.
-		return fmt.Errorf(
-			"workload %s is errored, so there is nothing safe to deploy onto. "+
-				"%sIf it stays errored, %s, then deploy again. %s",
-			workloadName, erroredCaveat(live.WorkloadID),
-			deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
+		if plan.Replaces() {
+			return nil
+		}
+
+		return erroredRefusal(live, plan, workloadName, dirFlag)
 
 	case StateSettling:
 		// The backstop, not the answer. Every run waits a moving workload out
@@ -1035,6 +1031,44 @@ func deployable(live Live, workloadName, dirFlag string) error {
 	default:
 		return nil
 	}
+}
+
+// erroredRefusal is the errored workload with nothing new to roll onto it.
+// Deploying the same thing again could only reproduce the failure, so the run
+// stops and names what would not: --force-build for an image the platform
+// builds, since the registry losing it is what the flag is for, a change to
+// the image or artifact otherwise, and the delete as the last resort it was.
+func erroredRefusal(live Live, plan Plan, workloadName, dirFlag string) error {
+	return fmt.Errorf(
+		"workload %s is errored%s, and nothing here would change what it runs. "+
+			"%s%s. If it stays errored, %s, then deploy again. %s",
+		workloadName, reasonClause(plan.Reason), erroredCaveat(live.WorkloadID),
+		erroredRemedy(plan, dirFlag), deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
+}
+
+// erroredRemedy is what would give the errored workload something new to run.
+func erroredRemedy(plan Plan, dirFlag string) string {
+	if plan.Code.Applies {
+		return fmt.Sprintf(
+			"Run 'dr workload up --force-build%s' to build the image again and roll a new version onto it, "+
+				"which is the fix when the registry no longer has the image it was built into; "+
+				"for anything else, change the code or %s and deploy again",
+			dirFlag, manifest.FileName)
+	}
+
+	return fmt.Sprintf(
+		"This manifest does not build its image, so change the image or the artifact %s names and deploy again",
+		manifest.FileName)
+}
+
+// reasonClause is the platform's reason in parentheses, ready to follow the
+// word "errored", and empty when there is none to add.
+func reasonClause(reason string) string {
+	if reason == "" {
+		return ""
+	}
+
+	return " (" + reason + ")"
 }
 
 // startable refuses the one status that cannot be started. The platform
@@ -1149,7 +1183,42 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 		return settle(result.WorkloadID, workload.Serving{}, result, opts, report)
 	}
 
-	return awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
+	result, err := awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
+	if err != nil && workload.IsErroredWorkloadStatus(result.Status) {
+		// The start is a prerequisite rather than the deploy, and what follows
+		// replaces the generation that just failed. Failing here closed a loop:
+		// a stopped workload whose image is gone cannot be started, so a deploy
+		// that insisted on starting it first never reached the rebuild.
+		report.say("  Workload %s came up errored; the deploy goes on, since what follows replaces what it is running.\n",
+			result.WorkloadID)
+
+		return result, nil
+	}
+
+	return result, err
+}
+
+// afterStart is the plan with the one answer in it that the start can change.
+//
+// Everything else was decided about the file and the artifact, which a start
+// does not touch. Inheriting the image is the exception: inheritsImage read a
+// stopped workload's image as trustworthy because nothing had said otherwise,
+// and a start that came up errored is the thing that says otherwise. It is the
+// same evidence on which an already-errored workload never inherits. Left
+// standing, the copy would carry the image that just failed onto the version
+// this run promotes, and under --lock lock it there for good, leaving a
+// permanently locked artifact pointing at an image that does not work.
+func afterStart(plan Plan, result Result, report *reporter) Plan {
+	if !plan.InheritsImage || !workload.IsErroredWorkloadStatus(result.Status) {
+		return plan
+	}
+
+	plan.InheritsImage = false
+
+	report.say("  The image it failed to come up on cannot be trusted, " +
+		"so the new version is built rather than copied.\n")
+
+	return plan
 }
 
 // requestStart POSTs the start and passes on the one thing the platform says
@@ -1221,27 +1290,18 @@ func nameTaken(createErr error, workloadName, path, dirFlag string) error {
 		}
 
 		// A workload a deploy cannot act on must not be recommended for
-		// binding. Advising 'set workloadId' against an errored or terminated
-		// holder sends the next run straight into that state's refusal — and
-		// for the user who cleared the binding by hand because their workload
-		// was stuck, it closes a loop: the 409 recommending the exact line
-		// they just deleted. The advice is the one those refusals give:
-		// delete what holds the name.
-		if workload.IsWorkloadErrorStatus(existing[i].Status) {
-			// Errored gets the same hedge deployable's own refusal carries;
-			// terminated really is final, so it keeps the certainty.
-			caveat := ""
-			if !strings.EqualFold(existing[i].Status, workload.WorkloadStatusTerminated) {
-				caveat = erroredCaveat(existing[i].ID)
-			}
-
+		// binding: advising 'set workloadId' against a terminated holder sends
+		// the next run straight into that state's refusal, so the advice is the
+		// one that refusal gives. An errored holder is not that any more: a
+		// deploy onto it replaces what it is running, so binding is the way back.
+		if workload.IsTerminatedWorkloadStatus(existing[i].Status) {
 			return fmt.Errorf(
 				"a workload named %s already exists (%s), is %s, and nothing was deployed onto it. "+
 					"A deploy cannot act on it, so binding to it would only move this refusal. "+
-					"%sIf it is this project's dead workload, %s, then deploy again to take the name "+
+					"If it is this project's dead workload, %s, then deploy again to take the name "+
 					"back. %s. If it is not, rename this one in %s: %w",
 				workloadName, existing[i].ID, strings.ToLower(existing[i].Status),
-				caveat, deleteRemedy(existing[i].ID, dirFlag, false), recreateNote, path, createErr)
+				deleteRemedy(existing[i].ID, dirFlag, false), recreateNote, path, createErr)
 		}
 
 		return fmt.Errorf(

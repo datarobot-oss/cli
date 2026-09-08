@@ -255,7 +255,7 @@ func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 			"Workload %s is on a locked version.%s\n"+
 				"The new version will be locked too, permanently.\n"+
 				"Type the workload name to roll it, anything else to stop: ",
-			tui.WarnStyle.Render("`"+workloadName+"`"), alsoStarting(live)), workloadName)
+			tui.WarnStyle.Render("`"+workloadName+"`"), stateClause(live)), workloadName)
 	}
 
 	if opts.NonInteractive {
@@ -267,22 +267,26 @@ func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 			"Re-run with --yes to say so explicitly")
 }
 
-// alsoStarting is the clause the question needs when the workload is switched
-// off, and empty when it is not.
+// stateClause is the clause the question needs when the workload is not
+// simply running, and empty when it is.
 //
 // The prompt used to open "is running a locked version", which was safe while a
 // stopped workload with drift was refused long before anyone was asked. It is
 // asked of one now, and telling somebody their switched-off workload is running
 // is exactly the wrong thing to say in the one prompt that guards production.
 // The version being locked is the fact that holds either way; that the run will
-// also switch the workload on is material to the answer, so it is said rather
-// than left to be discovered.
-func alsoStarting(live Live) string {
-	if live.State != StateStopped {
-		return ""
+// also switch the workload on, or replace a generation that has failed, is
+// material to the answer, so it is said rather than left to be discovered.
+func stateClause(live Live) string {
+	if live.State == StateStopped {
+		return " It is not running, and this deploy starts it."
 	}
 
-	return " It is not running, and this deploy starts it."
+	if live.State == StateErrored {
+		return " It is errored, and this deploy replaces what it is running."
+	}
+
+	return ""
 }
 
 // replace starts the rollout and follows it to the end. sizing is nil unless

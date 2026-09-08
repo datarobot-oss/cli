@@ -135,11 +135,16 @@ func versionArtifact(
 // container has its imageUri stripped at create and written back only once a
 // build completes. A build row would answer wrong the moment that version is
 // itself a copy, since a copy keeps the image and leaves the rows behind.
-func inheritsImage(live Live, plan Plan, opts Options, kind, artifactName string) bool {
+//
+// An errored workload never inherits: its image is the one thing about it that
+// cannot be trusted, and on a locked workload the copy would be locked too,
+// permanently, pointing at an image the registry may no longer have. A forced
+// build is covered by RebuildsImage.
+func inheritsImage(live Live, plan Plan, kind, artifactName string) bool {
 	return plan.RollsArtifact() &&
 		plan.Code.Applies &&
-		!opts.ForceBuild &&
 		!plan.RebuildsImage() &&
+		live.State != StateErrored &&
 		live.ImageURI != "" &&
 		artifactName != "" &&
 		sameArtifactTypeAs(kind, live.ArtifactType)

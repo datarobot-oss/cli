@@ -235,6 +235,28 @@ func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
 	assert.NotContains(t, building, "no rebuild", "a deploy about to build says nothing about keeping an image")
 }
 
+// An errored workload's line says what the deploy does about the failure,
+// with the platform's reason beside the state, and the reason travels in the
+// envelope too.
+func TestRender_ErroredSaysWhetherTheDeployReplacesTheFailure(t *testing.T) {
+	reason := "primary: ErrImagePull: failed to resolve image: not found"
+
+	rolled := Plan{State: StateErrored, Reason: reason, Code: builtCode(0), ForceBuild: true}
+	assert.Contains(t, render(t, appSummary, rolled),
+		"~ workload   errored (primary: ErrImagePull: failed to resolve image: not found); this deploy replaces what it is running")
+	assert.Contains(t, render(t, appSummary, rolled), "+ artifact   rebuilt from the synced code")
+	assert.Equal(t, reason, rolled.JSON().StateReason)
+
+	refused := render(t, appSummary, Plan{State: StateErrored, Reason: reason, Code: builtCode(0)})
+	assert.Contains(t, refused,
+		"! workload   errored (primary: ErrImagePull: failed to resolve image: not found), and nothing here would change what it runs")
+	assert.NotContains(t, refused, "Already up to date")
+
+	unexplained := render(t, appSummary, Plan{State: StateErrored, Code: builtCode(0)})
+	assert.Contains(t, unexplained, "! workload   errored, and nothing here would change what it runs",
+		"no reason is no parentheses, rather than empty ones")
+}
+
 // TestRender_NeverPrintsEnvironmentVariableValues is the one hard rule in
 // here. A literal can be a secret someone pasted in plaintext, and a plan
 // that echoed it would put it in scrollback and CI logs.
