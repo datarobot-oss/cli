@@ -221,6 +221,11 @@ plan is built against where it landed. A stopped one is started and then
 reconciled in the same run, which is one command whether the file asks for a
 start alone or for a start and a new version.
 
+An errored workload is rolled onto like any other when the deploy gives it
+something new to run: a code change, a change to the file, or --force-build,
+which is the fix when the registry no longer has the image. The plan names the
+platform's reason for the failure. With nothing new to deploy the run is refused.
+
 Examples:
   dr workload up
   dr workload up --dry-run
@@ -267,7 +272,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 		"Lock whichever artifact ends up live, making it permanent, even when this deploy minted no new "+
 			"version. Locking is one-way.")
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
-		"Rebuild the image even when the working tree matches what was last synced.")
+		"Rebuild the image even when the working tree matches what was last synced, and roll the "+
+			"result out. This is how to recover a workload whose image is gone from the registry.")
 
 	// The same two flags `dr workload config` takes, because the first run of
 	// this command already reads .env: with no manifest it is the wizard. A
@@ -497,7 +503,11 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 		// the artifact of something that is never coming back. followUps drops
 		// its whole list for the same state, and the two must agree: a warning
 		// with no follow-ups reads as advice the command forgot to give.
-		return result.Action == up.ActionStarted && !terminated(result)
+		//
+		// Errored is excluded for the first of those reasons only: a start that
+		// came up errored leaves nothing running, so there is no draft on the
+		// air to warn about. followUps keeps its list for it.
+		return result.Action == up.ActionStarted && !workload.IsWorkloadErrorStatus(result.Status)
 	}
 
 	return f.dryRun || result.WorkloadID != ""

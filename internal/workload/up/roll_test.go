@@ -904,6 +904,289 @@ func stoppedRoll(tr *track) fakes {
 	return f
 }
 
+// erroredLive puts the live workload into errored, whichever fixture the
+// fakes read it from.
+func erroredLive(f fakes) fakes {
+	inner := f.workloadD
+
+	f.workloadD = func(id string) (workload.Document, error) {
+		d, err := inner(id)
+		if err != nil {
+			return nil, err
+		}
+
+		d["status"] = workload.WorkloadStatusErrored
+
+		return d, nil
+	}
+
+	return f
+}
+
+// erroredBuiltRoll is builtRoll against a workload whose generation has
+// failed, with the platform's reason wired.
+func erroredBuiltRoll(tr *track) fakes {
+	f := erroredLive(builtRoll(tr))
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+	f.reason = func(string) string { return "vllm-server: ErrImagePull: failed to resolve image: not found" }
+
+	return f
+}
+
+// unchangedTree is a linked project whose working tree matches what was last
+// synced, which is the state where --force-build has to be the reason to
+// deploy.
+func unchangedTree(f fakes, tr *track) fakes {
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	f.sync = emptySync(tr)
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("68a0000000000000000000a1")
+
+	return f
+}
+
+// An errored workload with drift is rolled onto like a running one, and the
+// plan is announced rather than disclaimed, with the platform's reason beside
+// the state.
+func TestRun_ErroredWorkloadWithDriftIsRolledOnto(t *testing.T) {
+	var tr track
+
+	install(t, erroredBuiltRoll(&tr))
+
+	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+		tr.steps, "the same roll a running workload gets")
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.NotContains(t, stderr, "Nothing below will be applied")
+	assert.Contains(t, stderr, "errored (vllm-server: ErrImagePull: failed to resolve image: not found); this deploy replaces what it is running")
+}
+
+// The reported deadlock and its healthy cousin. --force-build used to be read
+// only by the build step, so on an unchanged tree the plan came out empty and
+// the flag did nothing; an errored workload was refused before that. The flag
+// is a reason to deploy now, and errored is a state a deploy that replaces the
+// failed generation may act on, locked or not.
+func TestRun_ForceBuildRollsARebuiltVersion(t *testing.T) {
+	cases := []struct {
+		name   string
+		live   func(*track) fakes
+		locked bool
+	}{
+		{"a running workload with nothing else to do", builtRoll, false},
+		{"an errored workload with nothing else to do", erroredBuiltRoll, false},
+		{"a locked errored workload", erroredBuiltRoll, true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var tr track
+
+			f := unchangedTree(c.live(&tr), &tr)
+			if c.locked {
+				f.artifactD = func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil }
+			}
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			result, stderr, err := runIn(t, bound, Options{NonInteractive: true, ForceBuild: true})
+			require.NoError(t, err)
+
+			assert.Contains(t, tr.steps, "carry-code", "a rebuild of the code the version already runs")
+			assert.Contains(t, tr.steps, "build")
+			assert.Contains(t, tr.steps, "replace:art-2")
+			assert.Equal(t, ActionRolled, result.Action, "rolled, not unchanged")
+			assert.Equal(t, "bld-2", result.BuildID)
+			assert.False(t, result.Plan.InheritsImage)
+			assert.Equal(t, c.locked, result.Locked, "locked replaces locked")
+			assert.Contains(t, stderr, "rebuilt from the synced code")
+			assert.NotContains(t, stderr, "--force-build had no effect")
+			assert.NotContains(t, stderr, "Already up to date")
+		})
+	}
+}
+
+// A runtime-only change copies the running version on a healthy workload. On
+// an errored one the image is the one thing that cannot be trusted, and on a
+// locked one the copy would be locked too, permanently, pointing at an image
+// the registry may no longer have. So the version is built.
+func TestRun_ErroredWorkloadNeverInheritsTheImage(t *testing.T) {
+	var tr track
+
+	f := unchangedTree(erroredBuiltRoll(&tr), &tr)
+	f.copyArtifact = func(id, _ string) (*workload.Artifact, error) {
+		t.Fatalf("the failed version %s was copied, which is the fault this deploy exists to clear", id)
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, envDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "build")
+	assert.False(t, result.Plan.InheritsImage)
+	assert.NotContains(t, stderr, "keeps the running image")
+}
+
+// The production confirm is asked of an errored workload now, and says so.
+func TestRun_LockedProductionPromptSaysTheWorkloadIsErrored(t *testing.T) {
+	var asked string
+
+	install(t, lockedLive(erroredLive(wiredRoll(&track{}))))
+
+	_, _, err := runIn(t, newImage(), Options{
+		Confirm: func(question, _ string) (bool, error) {
+			asked = question
+
+			return false, nil
+		},
+	})
+	require.Error(t, err)
+
+	assert.Contains(t, asked, "It is errored, and this deploy replaces what it is running")
+	assert.NotContains(t, asked, "starts it")
+}
+
+// A stopped workload whose image is gone cannot be started, and the deploy
+// used to fail there, which closed the reported loop from the other side. A
+// start that comes up errored ahead of a roll is a landing now: what follows
+// replaces the generation that just failed. Terminated is not errored, and a
+// start that ends there fails whatever follows.
+func TestRun_StoppedWorkloadThatStartsErroredIsStillRolled(t *testing.T) {
+	for _, landed := range []string{workload.WorkloadStatusErrored, workload.WorkloadStatusTerminated} {
+		t.Run(landed, func(t *testing.T) {
+			var tr track
+
+			f := stoppedRoll(&tr)
+
+			started := false
+			f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+				if started {
+					tr.steps = append(tr.steps, servingLabel(want))
+
+					return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning, ArtifactID: want.ArtifactID}, nil
+				}
+
+				started = true
+
+				tr.steps = append(tr.steps, "await-start")
+
+				return &workload.Workload{ID: id, Status: landed, ArtifactID: "68a0000000000000000000a1"},
+					errors.New("workload " + id + " ended with status " + landed)
+			}
+
+			install(t, f)
+
+			result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
+
+			if landed == workload.WorkloadStatusTerminated {
+				require.Error(t, err)
+				assert.Equal(t, []string{"guard", "start", "await-start"}, tr.steps)
+				assert.Equal(t, ActionStarted, result.Action)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, []string{
+				"guard", "start", "await-start", "guard", "create-artifact", "guard",
+				"replace:art-2", "await-rollout", "settle:art-2+drain",
+			}, tr.steps)
+			assert.Equal(t, ActionRolled, result.Action)
+			assert.Contains(t, stderr, "came up errored; the deploy goes on")
+		})
+	}
+}
+
+// The plan of a stopped workload is drawn before anything has tried to run its
+// image, so a runtime-only change reads as a copy. A start that comes up
+// errored is that attempt, and it disqualifies the copy for the same reason an
+// already-errored workload never inherits: the image the copy carries forward
+// is the one that just failed, and the roll would promote it, permanently under
+// --lock.
+func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.workloadD = func(string) (workload.Document, error) {
+		d := docOf(liveWorkloadJSON)
+		d["status"] = workload.WorkloadStatusStopped
+
+		return d, nil
+	}
+
+	f.start = func(id string) (*workload.WorkloadOperationResponse, error) {
+		tr.steps = append(tr.steps, "start")
+
+		return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+	}
+
+	f.copyArtifact = func(id, _ string) (*workload.Artifact, error) {
+		t.Fatalf("the image the start failed on (%s) was copied forward", id)
+
+		return nil, nil
+	}
+
+	started := false
+	f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		if started {
+			tr.steps = append(tr.steps, servingLabel(want))
+
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning, ArtifactID: want.ArtifactID}, nil
+		}
+
+		started = true
+
+		tr.steps = append(tr.steps, "await-start")
+
+		return &workload.Workload{ID: id, Status: workload.WorkloadStatusErrored},
+			errors.New("workload " + id + " ended with status errored")
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, envDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact")
+	assert.Contains(t, tr.steps, "build")
+	assert.Equal(t, "bld-2", result.BuildID)
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.False(t, result.Plan.InheritsImage)
+	assert.Contains(t, stderr, "so the new version is built rather than copied")
+}
+
+// A start that is the whole run keeps failing on errored: nothing follows it
+// to replace the failed generation.
+func TestRun_StartAloneThatLandsErroredStillFails(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusErrored},
+				errors.New("workload " + id + " ended with status errored")
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.NotContains(t, stderr, "the deploy goes on")
+}
+
 // withCredential hangs a stored-credential reference off the primary
 // container, which is the one thing in a manifest no local check can judge.
 func withCredential(file string) string {
@@ -1837,7 +2120,7 @@ func TestInheritsImage_ArtifactType(t *testing.T) {
 		"service": false,
 	} {
 		t.Run("file says "+kind, func(t *testing.T) {
-			assert.Equal(t, want, inheritsImage(live, plan, Options{}, kind, "an-artifact"))
+			assert.Equal(t, want, inheritsImage(live, plan, kind, "an-artifact"))
 		})
 	}
 }

@@ -605,6 +605,23 @@ func TestCmd_FailedDeployThatStartedTheWorkloadStillWarns(t *testing.T) {
 	assert.True(t, draftWarned(stderr))
 }
 
+// A start that came up errored leaves nothing running, so there is no draft on
+// the air to warn about; the follow-ups stay.
+func TestCmd_FailureAfterAStartThatErroredDoesNotWarn(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+	result.Status = "errored"
+
+	stubRun(t, result, errors.New("the rollout of workload wl-1 ended as errored"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.False(t, draftWarned(stderr))
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
 // A run that changed nothing still leaves a draft serving on the same clock.
 // "Already up to date" is not the same as "this will still be here tomorrow".
 func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {

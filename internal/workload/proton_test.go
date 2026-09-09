@@ -105,6 +105,78 @@ func TestProtonsServing(t *testing.T) {
 	}
 }
 
+// The route answers 204 before the monitor has reported, which drapi.Get
+// reports as an error like every status other than 200.
+func TestGetProtonStatusDetails_NoSnapshotIsNil(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/workloads/wl-1/protons/p1/statusDetails", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	details, err := GetProtonStatusDetails("wl-1", "p1")
+	require.NoError(t, err)
+	assert.Nil(t, details)
+}
+
+// FailureReason reads the generation marked active, not the first listed, and
+// renders the first container reason it finds the way the deploy prints it. A
+// read that fails answers "", because it decorates a state already known.
+func TestFailureReason(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v2/workloads/wl-1/protons/", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"count":2,"totalCount":2,"next":null,"data":[
+			{"id":"p-old","artifactId":"art-1","status":"stopped"},
+			{"id":"p-active","artifactId":"art-2","status":"errored","role":"active"}]}`)
+	})
+	mux.HandleFunc("/api/v2/workloads/wl-1/protons/p-active/statusDetails", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"replicas":[{"containers":[{"name":"lrs-p-active-primary","reason":"ErrImagePull",
+			"message":"rpc error: code = NotFound desc = failed to resolve image: docker.io/team/app:v9: not found"}]}]}`)
+	})
+	mux.HandleFunc("/api/v2/workloads/wl-2/protons/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	serveAPI(t, mux)
+
+	assert.Equal(t, "primary: ErrImagePull: failed to resolve image: docker.io/team/app:v9: not found", FailureReason("wl-1"))
+	assert.Empty(t, FailureReason("wl-2"))
+}
+
+func TestContainerStatus_Failure(t *testing.T) {
+	one, oom := 1, 137
+
+	cases := []struct {
+		name      string
+		container ContainerStatus
+		want      string
+	}{
+		{
+			"a crash loop names the exit code rather than the back-off timer",
+			ContainerStatus{
+				Name: "lrs-p1-primary", Reason: "CrashLoopBackOff", Message: "back-off 1m20s restarting failed container",
+				LastState: &ContainerState{Reason: "Error", ExitCode: &one},
+			},
+			"primary: CrashLoopBackOff; last run exited 1",
+		},
+		{
+			"a last reason that says more than Error is kept",
+			ContainerStatus{Name: "primary", Reason: "CrashLoopBackOff", LastState: &ContainerState{Reason: "OOMKilled", ExitCode: &oom}},
+			"primary: CrashLoopBackOff; last run exited 137 (OOMKilled)",
+		},
+		{
+			"only a previous state to go on",
+			ContainerStatus{Name: "sidecar", LastState: &ContainerState{Reason: "OOMKilled", ExitCode: &oom}},
+			"sidecar: last run exited 137 (OOMKilled)",
+		},
+		{"nothing to say", ContainerStatus{Name: "lrs-p1-primary"}, ""},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, c.container.failure("p1"))
+		})
+	}
+}
+
 func TestListProtons_ParsesTheList(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/workloads/wl-1/protons/", r.URL.Path)

@@ -188,7 +188,7 @@ func lines(s Summary, plan Plan) []string {
 	// The plans whose reason to act is the state rather than a difference.
 	// Without a line the body is empty and the block reads as though nothing
 	// is about to happen, while the JSON beside it says otherwise.
-	if line := stateLine(plan.State, s.Status); line != "" {
+	if line := stateLine(plan, s.Status); line != "" {
 		out = append(out, line)
 	}
 
@@ -217,8 +217,12 @@ func lines(s Summary, plan Plan) []string {
 // the platform ignores a start of a suspended workload, so promising one here
 // would preview an act the apply is about to refuse, and a dry run never gets
 // as far as the refusal.
-func stateLine(state State, status string) string {
-	switch state {
+//
+// Errored reads two ways, by the rule deployable applies: a plan that replaces
+// the failed generation announces the recovery, one with nothing to replace it
+// with is the refusal. The platform's reason goes beside the word either way.
+func stateLine(plan Plan, status string) string {
+	switch plan.State {
 	case StateStopped:
 		if workload.IsSuspendedWorkloadStatus(status) {
 			return entry("!", "workload", "suspended, which a deploy cannot undo")
@@ -227,7 +231,11 @@ func stateLine(state State, status string) string {
 		return entry("~", "workload", "started, having been "+stoppedAs(status))
 
 	case StateErrored:
-		return entry("!", "workload", "errored, so there is nothing healthy to deploy onto")
+		if plan.Replaces() {
+			return entry("~", "workload", "errored"+reasonClause(plan.Reason)+"; this deploy replaces what it is running")
+		}
+
+		return entry("!", "workload", "errored"+reasonClause(plan.Reason)+", and nothing here would change what it runs")
 
 	case StateTerminated:
 		return entry("!", "workload", "terminated, and it still holds its name and artifact")
@@ -483,9 +491,15 @@ func plural(n int, one, many string) string {
 // secret would be worse than a human-readable one, since it ends up in CI
 // artifacts.
 type PlanJSON struct {
-	Action  string `json:"action"`
-	State   string `json:"state"`
-	Creates bool   `json:"creates"`
+	Action string `json:"action"`
+	State  string `json:"state"`
+
+	// StateReason is the platform's account of why the workload is errored,
+	// "" for every other state, so a pipeline can tell a pruned image from a
+	// crashing container without parsing stderr.
+	StateReason string `json:"stateReason"`
+
+	Creates bool `json:"creates"`
 
 	// Locked reports that this run will permanently lock the version it
 	// deploys, because the one it replaces is locked and the platform will not
@@ -538,6 +552,7 @@ func (p Plan) JSON() PlanJSON {
 	return PlanJSON{
 		Action:          p.Action(),
 		State:           p.State.String(),
+		StateReason:     p.Reason,
 		Creates:         p.Creates,
 		Locked:          p.Locked && mints,
 		PriorWorkloadID: p.PriorWorkloadID,

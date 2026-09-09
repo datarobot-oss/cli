@@ -139,6 +139,13 @@ func IsTerminatedWorkloadStatus(s string) bool {
 	return strings.EqualFold(s, WorkloadStatusTerminated)
 }
 
+// IsErroredWorkloadStatus reports the one failed status a workload can be
+// deployed onto, apart from IsWorkloadErrorStatus, which also covers terminated,
+// and a terminated workload is never coming back.
+func IsErroredWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusErrored)
+}
+
 // IsStoppedWorkloadStatus reports whether s is one of the three ways a
 // workload can be switched off. They are grouped because a deploy treats them
 // alike, and named here because three files ask the same question: this one,

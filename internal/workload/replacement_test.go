@@ -472,6 +472,22 @@ func TestWaitForReplacement_FailedReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "reverted")
 }
 
+// A failed rollout's message is the platform's own account of why, and the
+// one place it says so: a candidate that never became healthy has its
+// container's reason folded into the record, and without it the caller is
+// told that a swap failed and left to find out from the logs that the image
+// could not be pulled.
+func TestWaitForReplacement_FailedCarriesThePlatformsReason(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"errored",`+
+			`"message":"Candidate proton failed: ErrImagePull: not found"}`)
+	})
+
+	_, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "errored (Candidate proton failed: ErrImagePull: not found)")
+}
+
 // TestWaitForReplacement_ErroredClearedViaNotFound guards the exact bug found
 // against staging: a candidate can settle as "errored", which is not one of
 // the two documented terminal statuses, and then have its record cleared with
