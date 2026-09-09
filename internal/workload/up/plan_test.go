@@ -16,6 +16,8 @@ package up
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -23,8 +25,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// loadedFrom builds a Loaded around a compiled payload, which is the only
-// part of it Build reads.
+// loadedFrom builds a Loaded around a compiled payload. The parse tree is nil
+// on purpose: Build reads the file through the payload alone.
 func loadedFrom(payload string) Loaded {
 	return Loaded{Compiled: &manifest.Compiled{Payload: json.RawMessage(payload)}}
 }
@@ -86,10 +88,36 @@ func TestPlan_EmptyIsExactlyNothingToDo(t *testing.T) {
 		{"sizing differs", Plan{State: StateRunning, Runtime: []Change{{Path: "replicaCount"}}}, false},
 		{"nothing exists yet", Plan{State: StateUnbound, Creates: true}, false},
 		{"stopped and identical", Plan{State: StateStopped, Code: builtCode(0)}, false},
+		{"errored and identical", Plan{State: StateErrored, Code: builtCode(0)}, false},
+		{"a forced build of an unchanged tree", Plan{State: StateRunning, Code: builtCode(0), ForceBuild: true}, false},
+		{"a forced build of a published image", Plan{State: StateRunning, ForceBuild: true}, true},
 	}
 
 	for _, c := range cases {
 		assert.Equal(t, c.want, c.plan.Empty(), c.name)
+	}
+}
+
+// Replaces is the question an errored workload is deployable on: a roll and a
+// resize both swap the failed generation for a new one, a create and a bare
+// start do not.
+func TestPlan_Replaces(t *testing.T) {
+	cases := []struct {
+		name string
+		plan Plan
+		want bool
+	}{
+		{"code differs", Plan{State: StateErrored, Code: builtCode(2)}, true},
+		{"sizing differs", Plan{State: StateErrored, Runtime: []Change{{Path: "replicaCount"}}}, true},
+		{"a forced build", Plan{State: StateErrored, Code: builtCode(0), ForceBuild: true}, true},
+		{"nothing differs", Plan{State: StateErrored, Code: builtCode(0)}, false},
+		{"a forced build of a published image", Plan{State: StateErrored, ForceBuild: true}, false},
+		{"a create replaces nothing", Plan{State: StateMissing, Creates: true, Code: builtCode(2)}, false},
+		{"a bare start replaces nothing", Plan{State: StateStopped, Code: builtCode(0)}, false},
+	}
+
+	for _, c := range cases {
+		assert.Equal(t, c.want, c.plan.Replaces(), c.name)
 	}
 }
 
@@ -113,12 +141,103 @@ func TestPlan_RollsArtifact(t *testing.T) {
 		{"spec differs", Plan{Artifact: []Change{{Path: "port"}}}, true},
 		{"sizing alone never mints a version", Plan{Runtime: []Change{{Path: "replicaCount"}}}, false},
 		{"a creation is not a roll", Plan{Creates: true, Code: builtCode(2)}, false},
+		{
+			// A rendered path would cut at the name's bracket and read "b]".
+			"a container name holding a bracket cannot steer the answer",
+			Plan{Artifact: []Change{{
+				Path: "containerGroups[default].containers[a]b].imageUri",
+				Keys: []string{keyContainerGroups, "default", keyContainers, "a]b", "imageUri"},
+			}}},
+			true,
+		},
 		{"nothing differs", Plan{Code: builtCode(0)}, false},
+		{"a forced build of an unchanged tree", Plan{Code: builtCode(0), ForceBuild: true}, true},
+		{"a forced build of a published image", Plan{ForceBuild: true}, false},
 	}
 
 	for _, c := range cases {
 		assert.Equal(t, c.want, c.plan.RollsArtifact(), c.name)
 	}
+}
+
+func TestPlan_RebuildsImage(t *testing.T) {
+	// A container name holding a bracket: a rendered path would cut at it and
+	// read "b]" as the field, which is in no allow-list.
+	bracketed := Change{
+		Path: "containerGroups[default].containers[a]b].imageUri",
+		Keys: []string{keyContainerGroups, "default", keyContainers, "a]b", "imageUri"},
+	}
+
+	cases := []struct {
+		name string
+		plan Plan
+		want bool
+	}{
+		{"changed code is a new image", Plan{Code: builtCode(2)}, true},
+		{"nothing differs", Plan{Code: builtCode(0)}, false},
+		{
+			"an environment variable is read at start",
+			Plan{Artifact: []Change{inPrimary("environmentVars", "LOG_LEVEL", "value")}},
+			false,
+		},
+		// The wizard's agent card flag sits under the spec, not a container.
+		{
+			"a spec-level field the CLI writes is read at start too",
+			Plan{Artifact: []Change{{Path: "a2aEnabled", Keys: []string{"a2aEnabled"}}}},
+			false,
+		},
+		{
+			"the dockerfile is what a build reads",
+			Plan{Artifact: []Change{inPrimary("imageBuildConfig", "dockerfile", "source")}},
+			true,
+		},
+		{"and the image itself", Plan{Artifact: []Change{inPrimary("imageUri")}}, true},
+		{
+			"a field this release has never heard of is a build input until it is known not to be",
+			Plan{Artifact: []Change{inPrimary("buildArgs", "VERSION")}},
+			true,
+		},
+		{
+			"a whole container added is not a change to how one runs",
+			Plan{Artifact: []Change{absent(inContainer("sidecar"))}},
+			true,
+		},
+		{
+			"a change of kind starts a lineage with nothing to inherit from",
+			Plan{Artifact: []Change{{Path: keyArtifactType, Keys: []string{keyArtifactType}}}},
+			true,
+		},
+		{
+			"a container name holding a bracket cannot steer the answer",
+			Plan{Artifact: []Change{bracketed}},
+			true,
+		},
+	}
+
+	for _, c := range cases {
+		assert.Equal(t, c.want, c.plan.RebuildsImage(), c.name)
+	}
+}
+
+func inPrimary(field ...string) Change {
+	return inContainer("primary", field...)
+}
+
+func inContainer(name string, field ...string) Change {
+	keys := append([]string{keyContainerGroups, "default", keyContainers, name}, field...)
+
+	path := fmt.Sprintf("containerGroups[default].containers[%s]", name)
+	if len(field) > 0 {
+		path += "." + strings.Join(field, ".")
+	}
+
+	return Change{Path: path, Keys: keys}
+}
+
+func absent(change Change) Change {
+	change.Absent = true
+
+	return change
 }
 
 // TestPlan_ActionPicksTheMostSignificant pins the priority order that the
@@ -204,6 +323,7 @@ func TestBuild_MatchingLiveStateIsEmpty(t *testing.T) {
 		loadedFrom(planPayload),
 		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -233,6 +353,7 @@ func TestBuild_SplitsDriftIntoItsTwoHalves(t *testing.T) {
 		loadedFrom(drifted),
 		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -258,7 +379,7 @@ func TestBuild_BoundToAnotherArtifactIsARoll(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactID = "68a0000000000000000000a1"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"artifactId"}, paths(plan.Artifact))
@@ -277,7 +398,7 @@ func TestBuild_BoundToTheRunningArtifactIsEmpty(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactID = "68a0000000000000000000a1"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, plan.Artifact)
@@ -304,6 +425,7 @@ func TestBuild_RuntimeOnlyDriftDoesNotRoll(t *testing.T) {
 		loadedFrom(resized),
 		liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime),
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -319,6 +441,7 @@ func TestBuild_UnboundDoesNotDiff(t *testing.T) {
 		loadedFrom(planPayload),
 		Live{State: StateUnbound},
 		CodeChange{Applies: true, FirstDeploy: true},
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -340,6 +463,7 @@ func TestBuild_MissingWorkloadPlansACreate(t *testing.T) {
 		loadedFrom(planPayload),
 		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateMissing},
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -358,6 +482,7 @@ func TestBuild_MissingWorkloadKeepsTheDeadID(t *testing.T) {
 		loadedFrom(planPayload),
 		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateMissing},
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -373,6 +498,7 @@ func TestBuild_TerminatedWorkloadIsNotACreate(t *testing.T) {
 		loadedFrom(planPayload),
 		Live{Live: manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, State: StateTerminated},
 		builtCode(0),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -383,7 +509,7 @@ func TestBuild_TerminatedWorkloadIsNotACreate(t *testing.T) {
 // TestBuild_FirstDeployHasNoPriorBinding: a create only names an id when it is
 // replacing a binding, so an unbound manifest must not print one.
 func TestBuild_FirstDeployHasNoPriorBinding(t *testing.T) {
-	plan, err := Build(loadedFrom(planPayload), Live{State: StateUnbound}, builtCode(0))
+	plan, err := Build(loadedFrom(planPayload), Live{State: StateUnbound}, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.True(t, plan.Creates)
@@ -395,6 +521,7 @@ func TestBuild_CarriesCodeAndStateThrough(t *testing.T) {
 		loadedFrom(planPayload),
 		liveFrom(t, StateStopped, planLiveSpec, planLiveRuntime),
 		builtCode(7),
+		Options{},
 	)
 	require.NoError(t, err)
 
@@ -404,7 +531,7 @@ func TestBuild_CarriesCodeAndStateThrough(t *testing.T) {
 }
 
 func TestBuild_BadPayloadIsReported(t *testing.T) {
-	_, err := Build(loadedFrom("{not json"), Live{State: StateRunning}, builtCode(0))
+	_, err := Build(loadedFrom("{not json"), Live{State: StateRunning}, builtCode(0), Options{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "compiled manifest")
 }
@@ -426,7 +553,7 @@ func TestBuild_TypeInsideTheSpecIsNotPerpetualDrift(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "service"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, paths(plan.Artifact), "the file and the workload agree about the type")
@@ -447,7 +574,7 @@ func TestBuild_TypeChangeInsideTheSpecIsStillARoll(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "service"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
@@ -467,7 +594,7 @@ func TestBuild_TypeBesideTheSpecWinsOverTypeWithinIt(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "agent"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, paths(plan.Artifact), "the type beside the spec is the one that counts")
@@ -487,7 +614,7 @@ func TestBuild_TypeChangeAgainstAnUnstatedLiveTypeReadsAsService(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = ""
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	require.Len(t, plan.Artifact, 1)
@@ -509,7 +636,7 @@ func TestBuild_LiveArtifactWithNoStatedTypeIsAService(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = ""
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, paths(plan.Artifact))
@@ -530,7 +657,7 @@ func TestBuild_ArtifactTypeChangeIsARoll(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "service"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"artifact.type"}, paths(plan.Artifact))
@@ -551,7 +678,7 @@ func TestBuild_MatchingArtifactTypeIsEmpty(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "agent"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, plan.Artifact)
@@ -574,7 +701,7 @@ func TestBuild_ArtifactTypeSpellingIsNotAChange(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "service"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, plan.Artifact)
@@ -595,7 +722,7 @@ func TestBuild_NoTypeInTheFileIsNotDrift(t *testing.T) {
 	live := liveFrom(t, StateRunning, "", planLiveRuntime)
 	live.ArtifactType = "agent"
 
-	plan, err := Build(loaded, live, builtCode(0))
+	plan, err := Build(loaded, live, builtCode(0), Options{})
 	require.NoError(t, err)
 
 	assert.Empty(t, plan.Artifact)
@@ -619,7 +746,7 @@ func TestCreates_IsASubsetOfWhatDeployableAllows(t *testing.T) {
 			continue
 		}
 
-		err := deployable(Live{State: state}, "my-app", "")
+		err := deployable(Live{State: state}, Plan{}, "my-app", "")
 		assert.NoError(t, err, "%s creates but is refused, so nothing can act on the plan", state)
 	}
 }

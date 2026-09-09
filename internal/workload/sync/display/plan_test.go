@@ -82,7 +82,7 @@ func TestPrintResult_FullCounts(t *testing.T) {
 
 	out := stripANSI(buf.String())
 	assert.Contains(t, out, "Sync complete: abcdefgh → 12345678  (↑3 ↓2 ✕1 ⚠1)")
-	assert.Contains(t, out, "Conflict copies saved:")
+	assert.Contains(t, out, "Local copies saved before the remote overwrote them:")
 	assert.Contains(t, out, "shared.py.LOCAL.20260410T143052Z")
 }
 

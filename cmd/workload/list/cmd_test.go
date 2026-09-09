@@ -37,7 +37,7 @@ func TestCmd_InvalidLimit(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid --limit")
+	assert.Contains(t, err.Error(), "must be a positive integer")
 }
 
 func TestCmd_InvalidStatus(t *testing.T) {
@@ -58,6 +58,16 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `invalid output format "yaml"`)
+}
+
+func TestCmd_InvalidOffset(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--offset", "-1"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a non-negative integer")
 }
 
 func TestCmd_BlankEnclave(t *testing.T) {

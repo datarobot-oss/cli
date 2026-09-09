@@ -49,7 +49,7 @@ Detailed documentation for each command:
 - [task](commands/task.md)&mdash;Taskfile composition and management, including task listing and execution.
 - [dotenv](commands/dotenv.md)&mdash;environment variable management with interactive wizard and validation.
 - [completion](commands/completion.md)&mdash;shell completion setup (install/uninstall or generate for bash, zsh, fish, PowerShell).
-- [self](commands/self.md)&mdash;CLI utility commands (version, update, config, completion, and plugin authoring: add, publish, package).
+- [self](commands/self.md)&mdash;CLI utility commands (version, update &mdash; including installing a specific released version, config, completion, and plugin authoring: add, publish, package).
 - [plugins](commands/plugins.md)&mdash;plugin system documentation.
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
 - [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines; see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.

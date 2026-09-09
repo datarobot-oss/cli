@@ -45,8 +45,11 @@ func PrintResult(w io.Writer, r *sync.Result) error {
 		return err
 	}
 
+	// ConflictCopies now carries every *.LOCAL backup — a remote-modified or
+	// remote-deleted file the remote won as well as a conflict — so the label is
+	// about the local copies, not conflicts specifically.
 	if len(r.ConflictCopies) > 0 {
-		_, _ = fmt.Fprintln(w, tui.DimStyle.Render("Conflict copies saved:"))
+		_, _ = fmt.Fprintln(w, tui.DimStyle.Render("Local copies saved before the remote overwrote them:"))
 
 		for _, p := range r.ConflictCopies {
 			_, _ = fmt.Fprintln(w, tui.DimStyle.Render("  "+p))

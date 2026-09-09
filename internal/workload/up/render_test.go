@@ -110,6 +110,38 @@ func TestRender_TheThreeClasses(t *testing.T) {
 	assert.NotContains(t, out, "Already up to date")
 }
 
+// TestRender_RefusedPlanIsDescribedRatherThanAnnounced is the reported bug:
+// a state that cannot take a deploy still had its drift announced as work
+// about to happen, and the reader only found out on the last line. The block
+// survives, because knowing what differs is useful either way, but it is
+// introduced as a description.
+func TestRender_RefusedPlanIsDescribedRatherThanAnnounced(t *testing.T) {
+	plan := Plan{
+		State:    StateTerminated,
+		Artifact: []Change{{Path: "containerGroups[default].containers[primary].port", Have: 8080.0, Want: 9090.0}},
+	}
+
+	out := render(t, Summary{Name: "old-name", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Refused: true}, plan)
+
+	assert.Contains(t, out, "old-name (68b0c1d2), terminated")
+	assert.Contains(t, out, "Nothing below will be applied")
+	assert.Contains(t, out, "+ artifact   new version, 1 spec change",
+		"the drift is still worth reading; only its framing changes")
+
+	note := strings.Index(out, "Nothing below will be applied")
+	change := strings.Index(out, "+ artifact")
+	assert.Less(t, note, change,
+		"the note has to precede the work it disclaims: below it is where the error already is")
+}
+
+// A plan that is going to be applied says nothing of the sort, which is the
+// whole of what makes the note mean anything.
+func TestRender_AppliedPlanCarriesNoRefusedNote(t *testing.T) {
+	out := render(t, appSummary, Plan{State: StateRunning, Code: builtCode(3)})
+
+	assert.NotContains(t, out, "Nothing below will be applied")
+}
+
 // TestRender_SingleRuntimeChangeSitsOnItsOwnLine: the common case is one
 // number moving, and pushing it onto a sub-line for consistency's sake would
 // cost a line to say nothing.
@@ -161,8 +193,8 @@ func TestRender_RecreateNamesTheDeadBinding(t *testing.T) {
 		Code:            CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "+ workload   my-app will be created: .datarobot.yaml is bound to 68b0c1d2, "+
-		"which no longer exists")
+	assert.Contains(t, out, "+ workload   my-app will be created: "+
+		".datarobot.yaml is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.NotContains(t, out, "with its first artifact",
 		"this is a replacement for something that existed, not a first deploy")
 }
@@ -188,6 +220,41 @@ func TestRender_ArtifactFromCodeAloneSaysWhy(t *testing.T) {
 	out := render(t, appSummary, Plan{State: StateRunning, Code: builtCode(3)})
 
 	assert.Contains(t, out, "+ artifact   rebuilt from the synced code")
+}
+
+// A deploy that keeps the running image takes seconds where one that rebuilds
+// takes minutes, and --dry-run is the whole of the review a deploy gets.
+func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
+	change := Change{Path: "containerGroups[default].containers[primary].environmentVars[LOG_LEVEL]", Absent: true}
+
+	kept := render(t, appSummary, Plan{State: StateRunning, InheritsImage: true, Artifact: []Change{change}})
+	assert.Contains(t, kept, "new version, 1 spec change; keeps the running image, so no rebuild")
+
+	building := render(t, appSummary, Plan{State: StateRunning, Artifact: []Change{change}})
+	assert.Contains(t, building, "new version, 1 spec change")
+	assert.NotContains(t, building, "no rebuild", "a deploy about to build says nothing about keeping an image")
+}
+
+// An errored workload's line says what the deploy does about the failure,
+// with the platform's reason beside the state, and the reason travels in the
+// envelope too.
+func TestRender_ErroredSaysWhetherTheDeployReplacesTheFailure(t *testing.T) {
+	reason := "primary: ErrImagePull: failed to resolve image: not found"
+
+	rolled := Plan{State: StateErrored, Reason: reason, Code: builtCode(0), ForceBuild: true}
+	assert.Contains(t, render(t, appSummary, rolled),
+		"~ workload   errored (primary: ErrImagePull: failed to resolve image: not found); this deploy replaces what it is running")
+	assert.Contains(t, render(t, appSummary, rolled), "+ artifact   rebuilt from the synced code")
+	assert.Equal(t, reason, rolled.JSON().StateReason)
+
+	refused := render(t, appSummary, Plan{State: StateErrored, Reason: reason, Code: builtCode(0)})
+	assert.Contains(t, refused,
+		"! workload   errored (primary: ErrImagePull: failed to resolve image: not found), and nothing here would change what it runs")
+	assert.NotContains(t, refused, "Already up to date")
+
+	unexplained := render(t, appSummary, Plan{State: StateErrored, Code: builtCode(0)})
+	assert.Contains(t, unexplained, "! workload   errored, and nothing here would change what it runs",
+		"no reason is no parentheses, rather than empty ones")
 }
 
 // TestRender_NeverPrintsEnvironmentVariableValues is the one hard rule in
@@ -452,7 +519,7 @@ func TestRender_RecreateOnALinkedProjectSaysBoth(t *testing.T) {
 		Code:            CodeChange{Applies: true, FirstDeploy: true},
 	})
 
-	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.Contains(t, out, "it comes up on the artifact this project is linked to")
 }
 
@@ -466,7 +533,7 @@ func TestRender_RecreateOnAPublishedImageMentionsNoLink(t *testing.T) {
 		Code:            CodeChange{Applies: false},
 	})
 
-	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.NotContains(t, out, "linked to")
 }
 
@@ -499,7 +566,7 @@ func TestRender_RecreateOnALockedLinkClaimsNoReuse(t *testing.T) {
 		Code:            CodeChange{Applies: true, FirstDeploy: true, LinkLocked: true},
 	})
 
-	assert.Contains(t, out, "is bound to 68b0c1d2, which no longer exists")
+	assert.Contains(t, out, "is bound to 68b0c1d2e3f4a5b6c7d8e9f0, which no longer exists")
 	assert.NotContains(t, out, "it comes up on the artifact this project is linked to")
 }
 

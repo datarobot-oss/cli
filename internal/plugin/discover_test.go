@@ -393,8 +393,13 @@ func (s *ManifestTestSuite) SetupTest() {
 	s.tempDir, err = os.MkdirTemp("", "plugin-manifest-test")
 	s.Require().NoError(err)
 
-	// Reset viper state for each test
+	// Reset viper state for each test, then raise the manifest timeout the
+	// way the other suites in this file do: these tests are about parsing
+	// and error paths, not about the deadline, and under a loaded full-suite
+	// run (or Windows CI) merely spawning the mock script can take longer
+	// than the 500ms production default.
 	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
 }
 
 func (s *ManifestTestSuite) TearDownTest() {
@@ -431,8 +436,10 @@ func (s *ManifestTestSuite) TestGetManifestNonExistent() {
 }
 
 func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
-	// Set a custom timeout via viper
-	viperx.Set("plugin.manifest_timeout_ms", 1000)
+	// A custom timeout via viper. The value only has to prove the configured
+	// branch is honored, so it is generous: a tight one races the process
+	// spawn under load, which is not what this test is about.
+	viperx.Set("plugin.manifest_timeout_ms", 15000)
 
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 

@@ -167,3 +167,7 @@ at `0644` by an older CLI would otherwise stay world-readable forever.
 - `config.SkipAuthKey`&mdash;the viper key for `--skip-auth`. Use the constant at every
   bind and read site: viper does not treat `-` and `_` as equivalent for lookups, and
   reading `"skip_auth"` silently ignored the bound flag.
+
+When attaching credentials to an absolute URL returned by a server response,
+first check it with `drapi.URLMatchesConfiguredBase()`. URLs built locally with
+`config.GetEndpointURL()` already stay on the configured DataRobot host.

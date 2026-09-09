@@ -55,3 +55,16 @@ func TestCmd_HasExpectedFlags(t *testing.T) {
 
 	assert.Nil(t, cmd.Flags().Lookup("version"), "unexpected --version flag after removal")
 }
+
+func TestCmd_RejectsInvalidLimit(t *testing.T) {
+	// Rejected at parse time by countflags.PositiveInt, before any request.
+	err := runCmd(t, "--pipeline", "p", "--limit", "0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a positive integer")
+}
+
+func TestCmd_RejectsInvalidOffset(t *testing.T) {
+	err := runCmd(t, "--pipeline", "p", "--offset", "-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a non-negative integer")
+}

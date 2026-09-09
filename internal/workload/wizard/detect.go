@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/joho/godotenv"
 )
@@ -39,8 +40,8 @@ const DockerfileName = "Dockerfile"
 const DefaultDockerfilePath = "./" + DockerfileName
 
 // EnvFileName is the local environment file the wizard looks for. It is read
-// in full: `up` deploys the manifest and never reads .env, so anything kept
-// only there would not reach the container. Ordinary settings are copied into
+// in full: a deploy carries the manifest and never sends anything from .env,
+// so anything kept only there would not reach the container. Ordinary settings are copied into
 // the manifest as literals and secrets become credential references, which is
 // why the values are classified rather than merely counted.
 const EnvFileName = ".env"
@@ -71,9 +72,9 @@ type Detected struct {
 	// EnvVars are the variables the project's .env defines, classified, in
 	// the order the file defines them; empty when there is no .env.
 	//
-	// `up` deploys the manifest and never reads .env, so a project that keeps
-	// its configuration there would otherwise deploy without any of it and
-	// find out at runtime. The classification decides how each one is
+	// A deploy carries the manifest and sends nothing from .env, so a project
+	// that keeps its configuration there would otherwise deploy without any of
+	// it and find out at runtime. The classification decides how each one is
 	// written: an ordinary value as a literal, a secret as a credential
 	// reference whose id the user fills in. Every row is overridable.
 	EnvVars []EnvVar
@@ -82,11 +83,171 @@ type Detected struct {
 	// but it must be reported: silence here reads as "there was nothing to
 	// import" and the missing variables surface as a runtime failure instead.
 	EnvErr error
+	// RootMarkers is which of the usual project files the directory itself
+	// carries. See SuspectDir for what an empty list means.
+	RootMarkers []string
+	// Candidates are immediate subdirectories that do carry project files,
+	// looked for only when the directory itself carries none: the offer the
+	// wrong-directory question makes instead of assuming ".".
+	Candidates []DirCandidate
+	// MoreCandidates reports that the candidate scan stopped early — at the
+	// offer cap or the entry budget — so the offer must say the list is not
+	// the whole answer: a project whose name sorts late would otherwise
+	// vanish without a trace, --dir unmentioned.
+	MoreCandidates bool
+}
+
+// DirCandidate is a subdirectory that looks like a project root when the
+// directory setup ran from does not.
+type DirCandidate struct {
+	// Rel is the candidate relative to the checked directory.
+	Rel string
+	// Markers is which project files it carries, so the offer says why it is
+	// being offered rather than presenting a bare path.
+	Markers []string
+}
+
+// rootMarkers are the files a project root usually carries. The list is for
+// suspicion, not proof, in both directions: a directory with none can still
+// be a deployable project, which is why nothing here refuses.
+var rootMarkers = []string{
+	DockerfileName, "pyproject.toml", "uv.lock", "requirements.txt", "package.json", "go.mod", "setup.py",
+}
+
+// maxDirCandidates caps the offer. Past a handful the list stops being an
+// answer and --dir is the tool.
+const maxDirCandidates = 6
+
+// maxDirEntriesScanned caps the work, not just the offer: every entry
+// examined costs a manifest stat plus one per root marker, synchronously
+// before the wizard's first screen, and a directory with thousands of
+// entries (running setup from $HOME by mistake being the classic) must not
+// hang the wizard on stats.
+const maxDirEntriesScanned = 256
+
+// markersIn is which of the usual project files dir carries.
+func markersIn(dir string) []string {
+	var found []string
+
+	for _, marker := range rootMarkers {
+		if fsutil.FileExists(filepath.Join(dir, marker)) {
+			found = append(found, marker)
+		}
+	}
+
+	return found
+}
+
+// dirCandidates lists the immediate subdirectories carrying project files.
+// Hidden directories are never the project, and one already holding a
+// manifest is skipped too: it is entered with --dir, not set up afresh.
+// truncated reports that the scan stopped before the listing did, at either
+// cap, so a caller can say the offer is incomplete.
+//
+// The home directory is never scanned, same as repo.FindRepoRoot and
+// manifest.Locate stop there: everything under $HOME "carrying project
+// files" is not an offer, it is an inventory.
+func dirCandidates(dir string) (candidates []DirCandidate, truncated bool) {
+	if home, err := os.UserHomeDir(); err == nil && dir == home {
+		log.Debug("wizard: not scanning the home directory for project candidates")
+
+		return nil, false
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Debug("wizard: cannot list directory for project candidates", "dir", dir, "err", err)
+
+		return nil, false
+	}
+
+	for i, entry := range entries {
+		if i == maxDirEntriesScanned {
+			return candidates, true
+		}
+
+		candidate, ok := candidateFrom(dir, entry)
+		if !ok {
+			continue
+		}
+
+		if len(candidates) == maxDirCandidates {
+			return candidates, true
+		}
+
+		candidates = append(candidates, candidate)
+	}
+
+	return candidates, false
+}
+
+// candidateFrom examines one directory entry and reports the candidate it
+// yields, if any.
+func candidateFrom(dir string, entry os.DirEntry) (DirCandidate, bool) {
+	if !isSubdirectory(dir, entry) || strings.HasPrefix(entry.Name(), ".") {
+		return DirCandidate{}, false
+	}
+
+	sub := filepath.Join(dir, entry.Name())
+	if fsutil.FileExists(manifest.Path(sub)) {
+		return DirCandidate{}, false
+	}
+
+	markers := markersIn(sub)
+	if len(markers) == 0 {
+		return DirCandidate{}, false
+	}
+
+	return DirCandidate{Rel: entry.Name(), Markers: markers}, true
+}
+
+// isSubdirectory reports whether entry is a directory, following one level of
+// symlink: DirEntry.IsDir reflects the entry's own on-disk type, so a project
+// reached through a symlink would otherwise be invisible to the offer.
+func isSubdirectory(dir string, entry os.DirEntry) bool {
+	if entry.IsDir() {
+		return true
+	}
+
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+
+	info, err := os.Stat(filepath.Join(dir, entry.Name()))
+
+	return err == nil && info.IsDir()
 }
 
 // HasEnvFile reports whether the project has a .env worth asking about.
 func (d Detected) HasEnvFile() bool {
 	return len(d.EnvVars) > 0
+}
+
+// SuspectDir reports that the directory carries none of the usual project
+// files, which is what running setup from the wrong place — the app's
+// parent, most often — looks like. It is a suspicion, never a verdict: a
+// valid project cannot be reliably recognized, so the absence only ever
+// produces a warning and an offer, not a refusal.
+func (d Detected) SuspectDir() bool {
+	return len(d.RootMarkers) == 0
+}
+
+// NameListLimit caps how many names a listing prints. Past a handful they stop
+// being a summary and start being a wall, and the sentence saying what to do
+// about them scrolls away.
+const NameListLimit = 8
+
+// JoinNames renders a name list for a message, capped at NameListLimit with a
+// count of what was left out. One implementation, because three listings in
+// this feature area answer the same question and a reader should not have to
+// compare them character by character to see that they agree.
+func JoinNames(names []string) string {
+	if len(names) <= NameListLimit {
+		return strings.Join(names, ", ")
+	}
+
+	return fmt.Sprintf("%s and %d more",
+		strings.Join(names[:NameListLimit], ", "), len(names)-NameListLimit)
 }
 
 // Plural picks the singular or plural word for count. Exported so the
@@ -112,6 +273,16 @@ func Detect(dir string) Detected {
 	}
 
 	detected.EnvVars, detected.EnvErr = envVars(filepath.Join(dir, EnvFileName))
+
+	detected.RootMarkers = markersIn(dir)
+	if detected.SuspectDir() {
+		// The subdirectory scan runs only when there is something to suspect:
+		// a directory that looks like a project needs no offer.
+		detected.Candidates, detected.MoreCandidates = dirCandidates(dir)
+
+		log.Debug("wizard: directory carries no project markers",
+			"dir", dir, "candidates", len(detected.Candidates), "more", detected.MoreCandidates)
+	}
 
 	if !detected.HasDockerfile {
 		return detected

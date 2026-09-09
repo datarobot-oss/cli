@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -99,4 +100,23 @@ func createScript(t *testing.T, path, content string) {
 
 	err := os.WriteFile(path, []byte(content), 0o755)
 	require.NoError(t, err)
+}
+
+// waitForFile polls until path exists, failing the test after ten seconds.
+// It replaces the fixed sleeps the subprocess tests used to guess at shell
+// startup with, which a loaded machine routinely outran.
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("file %s did not appear within 10s", path)
 }

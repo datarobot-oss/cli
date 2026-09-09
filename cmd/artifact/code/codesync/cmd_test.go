@@ -148,6 +148,65 @@ func TestCmd_NotLinked(t *testing.T) {
 	assert.Contains(t, err.Error(), "not linked")
 }
 
+// TestRunE_DryRun_DoesNotPromptForDirectory: --dry-run writes nothing, so it
+// resolves the directory without the prompt that used to block it forever
+// before the plan (RAPTOR-19348). No --dir and no --yes: the old code prompted.
+func TestRunE_DryRun_DoesNotPromptForDirectory(t *testing.T) {
+	asked := false
+
+	deps := fakeEngineDeps(&fakeEngine{plan: &sync.SyncPlan{}})
+	deps.AskDir = func(_, defaultVal string) (string, error) {
+		asked = true
+
+		return defaultVal, nil
+	}
+
+	// The resolved "." is not a linked project, so the run ends in a "not
+	// linked" error; the point of the test is that it got there without asking.
+	_, _, _, _ = runWithDeps(t, deps, map[string]string{"dry-run": "true"})
+
+	assert.False(t, asked, "--dry-run must not prompt for the project directory")
+}
+
+// TestRunE_Diff_DoesNotPromptForDirectory: --diff is the same no-write preview
+// and must not block on the directory prompt either.
+func TestRunE_Diff_DoesNotPromptForDirectory(t *testing.T) {
+	asked := false
+
+	deps := fakeEngineDeps(&fakeEngine{plan: &sync.SyncPlan{}})
+	deps.AskDir = func(_, defaultVal string) (string, error) {
+		asked = true
+
+		return defaultVal, nil
+	}
+
+	_, _, _, _ = runWithDeps(t, deps, map[string]string{"diff": "true"})
+
+	assert.False(t, asked, "--diff must not prompt for the project directory")
+}
+
+// TestRunE_Interactive_PromptsForDirectory is the control for the two preview
+// tests above: a normal run with neither --dir nor --yes does reach the
+// directory prompt, so those tests prove the preview modes skip it rather than
+// the seam being dead.
+func TestRunE_Interactive_PromptsForDirectory(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	asked := false
+
+	deps := fakeEngineDeps(&fakeEngine{plan: &sync.SyncPlan{}})
+	deps.AskDir = func(_, _ string) (string, error) {
+		asked = true
+
+		return dir, nil
+	}
+
+	_, _, _, err := runWithDeps(t, deps, map[string]string{})
+	require.NoError(t, err)
+	assert.True(t, asked, "an interactive run with no --dir must prompt for the directory")
+}
+
 // TestCmd_DryRunDiffMutuallyExclusive confirms cobra's
 // MarkFlagsMutuallyExclusive wiring is in place.
 func TestCmd_DryRunDiffMutuallyExclusive(t *testing.T) {
@@ -266,10 +325,10 @@ func TestRunE_IgnoreFileNotice_GoesToStderrAndLeavesStdoutParseable(t *testing.T
 	}
 }
 
-// assertOnlyJSON drains r as a stream of JSON documents and fails if anything
-// else is in there. The command emits the plan and then the result, so the
-// count is not fixed, but "parses to EOF" is the property the repo's
-// JSON-purity rule actually states.
+// assertOnlyJSON drains r and requires it to be exactly one JSON document. The
+// command emits a single object — the plan, with the result nested under
+// "result" when one ran — so a consumer's json.loads sees one document and no
+// longer needs a splitter (RAPTOR-19348).
 func assertOnlyJSON(t *testing.T, r io.Reader) {
 	t.Helper()
 
@@ -290,11 +349,12 @@ func assertOnlyJSON(t *testing.T, r io.Reader) {
 		docs++
 	}
 
-	assert.Positive(t, docs, "expected at least one JSON document on stdout")
+	assert.Equal(t, 1, docs, "stdout must be exactly one JSON document")
 }
 
-// TestRunE_JSONOutput emits the plan plus result as two JSON
-// documents on the non-conflict, non-dry-run path.
+// TestRunE_JSONOutput emits exactly one JSON document on the non-conflict,
+// non-dry-run path: the plan at the top level with the executed result nested
+// under "result", parseable in a single Unmarshal (RAPTOR-19348).
 func TestRunE_JSONOutput(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -309,9 +369,43 @@ func TestRunE_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, fe.executed, "non-dry-run JSON path must Execute")
 
-	out := stdout.String()
-	assert.Contains(t, out, `"a.py"`)
-	assert.Contains(t, out, `"v2"`)
+	assertOnlyJSON(t, bytes.NewReader(stdout.Bytes()))
+
+	var doc struct {
+		Uploads []struct {
+			Path string `json:"path"`
+		} `json:"uploads"`
+		Result *struct {
+			NewVersion string `json:"newVersion"`
+		} `json:"result"`
+	}
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc), "stdout must be one JSON object")
+	require.Len(t, doc.Uploads, 1)
+	assert.Equal(t, "a.py", doc.Uploads[0].Path)
+	require.NotNil(t, doc.Result, "an executed run carries its result under \"result\"")
+	assert.Equal(t, "v2", doc.Result.NewVersion)
+}
+
+// A sync that fails during Execute leaves stdout empty and surfaces the error,
+// rather than the old behavior of leaving a plan document on stdout. stdout
+// carries a document only when there is a result to report; a consumer keys off
+// the exit status (RAPTOR-19348).
+func TestRunE_JSONOutput_ExecuteError_LeavesStdoutEmpty(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:       &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		executeErr: errors.New("upload failed mid-sync"),
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.True(t, fe.executed, "the error must come from Execute, not an earlier gate")
+	assert.Empty(t, stdout.String(), "a failed JSON sync writes no document to stdout")
 }
 
 // Exit is 0 and the upload list reads as a sync that will work, so this flag
@@ -367,12 +461,44 @@ func TestRunE_JSONOutput_ConflictWithoutYes(t *testing.T) {
 	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.False(t, fe.executed, "JSON path must not auto-execute on conflicts without --yes")
-	assert.Contains(t, stdout.String(), `"x.py"`, "plan JSON should still be emitted")
+
+	// The document carries refused:true so a consumer knows nothing was applied
+	// (uploads included), rather than inferring it from a missing "result".
+	var doc struct {
+		Conflicts []struct {
+			Path string `json:"path"`
+		} `json:"conflicts"`
+		Refused bool             `json:"refused"`
+		Result  *json.RawMessage `json:"result"`
+	}
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc))
+	require.Len(t, doc.Conflicts, 1)
+	assert.Equal(t, "x.py", doc.Conflicts[0].Path, "plan JSON should still be emitted")
+	assert.True(t, doc.Refused, "a plan withheld for confirmation is flagged refused")
+	assert.Nil(t, doc.Result, "nothing ran, so there is no result")
 }
 
-// TestRunE_JSONOutput_ConflictWithYes: --yes opts into auto-execute
-// even on conflicts in JSON mode, matching the human-path Enter branch.
-func TestRunE_JSONOutput_ConflictWithYes(t *testing.T) {
+// TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote: in JSON mode,
+// --yes alone must not silently overwrite local files — it is refused loudly so
+// CI fails red instead of rewriting its checkout (RAPTOR-19348).
+func TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to overwrite local changes")
+	assert.False(t, fe.executed, "--yes without --accept-remote must not execute an overwriting plan")
+}
+
+// TestRunE_JSONOutput_AcceptRemoteExecutes: --yes --accept-remote is the
+// explicit opt-in that lets a non-interactive run overwrite local files.
+func TestRunE_JSONOutput_AcceptRemoteExecutes(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
 
@@ -381,11 +507,11 @@ func TestRunE_JSONOutput_ConflictWithYes(t *testing.T) {
 		result: &sync.Result{NewVersion: "v3", ConflictCount: 1},
 	}
 
-	flags := map[string]string{"dir": dir, "yes": "true", "output-format": "json"}
+	flags := map[string]string{"dir": dir, "yes": "true", "accept-remote": "true", "output-format": "json"}
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
-	assert.True(t, fe.executed, "--yes must allow auto-execute on conflicts")
+	assert.True(t, fe.executed, "--accept-remote opts into overwriting local files")
 }
 
 // TestRunE_ConflictPromptQuit: with conflicts present and no --yes,
@@ -489,25 +615,118 @@ func TestRunE_ConflictPromptShowDiffsThenSync(t *testing.T) {
 	assert.Contains(t, stdout.String(), "x.py", "diff render must mention the conflict path")
 }
 
-// TestRunE_NonInteractiveEnvVar: DATAROBOT_CLI_NON_INTERACTIVE=true
-// skips the conflict prompt entirely (no reader stub installed; if
-// the prompt were reached the test would hang or read os.Stdin).
+// TestRunE_NonInteractiveEnvVar: DATAROBOT_CLI_NON_INTERACTIVE=true is treated
+// as non-interactive, so an overwriting plan takes the refuse-without-opt-in
+// path rather than the prompt. No reader stub is installed; if it had gone
+// interactive, promptOverwriteMenu would call a nil ReadLine and panic, so a
+// clean refusal proves the env var routed to the non-interactive branch.
 func TestRunE_NonInteractiveEnvVar(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
 
 	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
 
-	fe := &fakeEngine{
-		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
-		result: &sync.Result{NewVersion: "v3"},
-	}
+	fe := &fakeEngine{plan: &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}}}
 
 	flags := map[string]string{"dir": dir}
 
 	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to overwrite local changes")
+	assert.False(t, fe.executed)
+}
+
+// TestRunE_NonInteractiveEnvVar_UploadOnlyProceeds: the same non-interactive
+// env var runs an upload-only plan straight through — the refusal is specific
+// to plans that would destroy local files, not to non-interactive runs.
+func TestRunE_NonInteractiveEnvVar_UploadOnlyProceeds(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
+
+	fe := &fakeEngine{
+		plan:   &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}},
+		result: &sync.Result{NewVersion: "v3", UploadedCount: 1},
+	}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir})
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "an upload-only plan needs no confirmation")
+}
+
+// TestRunE_Yes_RefusesConflictWithoutAcceptRemote: on the human path too,
+// --yes alone refuses a plan with conflicts; --accept-remote is required.
+func TestRunE_Yes_RefusesConflictWithoutAcceptRemote(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{
+		Conflicts: []sync.FileAction{{Path: "x.py"}},
+	}}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "yes": "true"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "x.py", "the refusal names the conflicting files")
+	assert.False(t, fe.executed)
+}
+
+// TestRunE_Yes_AcceptRemoteExecutes: --yes --accept-remote proceeds.
+func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan:   &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "x.py"}}},
+		result: &sync.Result{NewVersion: "v3", ConflictCount: 1},
+	}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "accept-remote": "true"}
+
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
 	require.NoError(t, err)
 	assert.True(t, fe.executed)
+}
+
+// TestRunE_FastForwardPull_RunsWithoutConfirmation: a REMOTE_MODIFIED /
+// REMOTE_DELETED plan (no conflicts) is a fast-forward with no unsaved work, so
+// it runs under --yes with no --accept-remote and no prompt. The engine still
+// backs those files up to .LOCAL; only conflicts gate (RAPTOR-19348).
+func TestRunE_FastForwardPull_RunsWithoutConfirmation(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{
+			Downloads: []sync.FileAction{{Path: "app.py", Action: sync.ActDownloadModify}},
+			Deletes:   []sync.FileAction{{Path: "gone.py", Action: sync.ActDownloadDelete}},
+		},
+		result: &sync.Result{NewVersion: "v3", DownloadedCount: 1, DeletedCount: 1},
+	}
+
+	// No --accept-remote, no reader stub: if this prompted or refused, it would
+	// panic on a nil ReadLine or error out.
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "yes": "true"})
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "a fast-forward pull needs no confirmation")
+}
+
+// TestRunE_DownloadOverwrite_DoesNotPrompt: interactively too, a plain
+// REMOTE_MODIFIED download does not prompt — only conflicts do.
+func TestRunE_DownloadOverwrite_DoesNotPrompt(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{
+		plan: &sync.SyncPlan{
+			Downloads: []sync.FileAction{{Path: "app.py", Action: sync.ActDownloadModify}},
+		},
+		result: &sync.Result{NewVersion: "v3", DownloadedCount: 1},
+	}
+	// No reader stub: a prompt would call a nil ReadLine and panic.
+	_, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir})
+	require.NoError(t, err)
+	assert.True(t, fe.executed, "a download overwrite runs without a prompt")
 }
 
 // TestRunE_StaleRollbackHint: when the engine reports a recovered

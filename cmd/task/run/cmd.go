@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/cli"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/task"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -183,7 +184,7 @@ Examples:
 
 	cmd.Flags().StringVarP(&opts.Dir, "dir", "d", ".", "📁 Specify project directory (default: current directory)")
 	cmd.Flags().BoolVarP(&opts.taskOpts.Parallel, "parallel", "p", false, "⚡ Run multiple tasks simultaneously for faster execution")
-	cmd.Flags().IntVarP(&opts.taskOpts.Concurrency, "concurrency", "C", 2, "🔢 Number of concurrent tasks to run in parallel")
+	cmd.Flags().VarP(countflags.PositiveInt(&opts.taskOpts.Concurrency, 2), "concurrency", "C", "🔢 Number of concurrent tasks to run in parallel")
 	cmd.Flags().BoolVarP(&opts.taskOpts.WatchTask, "watch", "w", false, "👀 Watch files and re-run task on changes")
 	cmd.Flags().BoolVarP(&opts.taskOpts.AnswerYes, "yes", "y", false, "🚀 Skip confirmation prompts (useful for automation)")
 	cmd.Flags().BoolVarP(&opts.taskOpts.ExitCode, "exit-code", "x", false, "🔄 Pass through the exact exit code from task")

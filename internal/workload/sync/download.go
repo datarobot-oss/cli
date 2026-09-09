@@ -23,15 +23,27 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
-// downloadFiles pulls files in parallel up to DownloadConcurrency. Each
-// download streams to disk and computes SHA-256 in the same pass so
-// post-download verification is free. The first error closes done to
-// stop other workers from picking up the next file.
+// downloadFiles is the Engine-bound entry the sync pipeline uses; the reusable
+// work lives in DownloadFiles, which needs only a client and a destination.
 func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) error {
+	return DownloadFiles(e.files, e.projectDir, catalogID, versionID, files)
+}
+
+// DownloadFiles pulls files into dir in parallel up to DownloadConcurrency.
+// Each download streams to disk and computes SHA-256 in the same pass so
+// post-download verification is free. The first error closes done to stop
+// other workers from picking up the next file.
+//
+// It takes a client and a destination rather than an *Engine so callers
+// outside the sync pipeline can reuse it: the first-bind seed in
+// internal/workload/up pulls a workload's current code with the same
+// verified, partial-safe download the pipeline uses.
+func DownloadFiles(client filesapi.Client, dir, catalogID, versionID string, files []FileAction) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -65,7 +77,7 @@ func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) e
 
 			defer func() { <-sem }()
 
-			if err := downloadOne(e, catalogID, versionID, fa); err != nil {
+			if err := DownloadOne(client, dir, catalogID, versionID, fa); err != nil {
 				select {
 				case errCh <- err:
 					cancel()
@@ -85,9 +97,16 @@ func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) e
 	return nil
 }
 
-// downloadOne streams the remote file to disk, hashing as it writes.
-// Empty RemoteHash skips verification (e.g. synthesized EDIT_DEL_CONFLICT).
+// downloadOne is the Engine-bound entry; the reusable work lives in DownloadOne.
 func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
+	return DownloadOne(e.files, e.projectDir, catalogID, versionID, fa)
+}
+
+// DownloadOne streams the remote file into dir, hashing as it writes, and
+// removes the partial file on any failure so a half-written file is never left
+// on disk. Empty RemoteHash skips checksum verification (e.g. a synthesized
+// EDIT_DEL_CONFLICT, or a caller whose listing carries no hash).
+func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa FileAction) error {
 	// phase5Execute already rejected unsafe server paths up front via
 	// validateServerPaths; re-check here so the per-call-site invariant
 	// survives future refactors that might bypass the phase entry point.
@@ -95,7 +114,7 @@ func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
 		return fmt.Errorf("server returned unsafe download path %q: %w", fa.Path, err)
 	}
 
-	dst := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
+	dst := filepath.Join(dir, filepath.FromSlash(fa.Path))
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("mkdir parent for %s: %w", fa.Path, err)
@@ -109,7 +128,7 @@ func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
 	h := sha256.New()
 	mw := io.MultiWriter(out, h)
 
-	_, n, err := e.files.DownloadFile(catalogID, versionID, fa.Path, mw)
+	_, n, err := client.DownloadFile(catalogID, versionID, fa.Path, mw)
 
 	closeErr := out.Close()
 

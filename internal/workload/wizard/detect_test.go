@@ -16,6 +16,7 @@ package wizard
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -221,4 +222,108 @@ func TestParseProblem_UnrecognizablePayloadYieldsNoLine(t *testing.T) {
 	err := errors.New(`unexpected character "-" in variable name near "not-from-this-file"`)
 
 	assert.Equal(t, `unexpected character "-" in variable name`, parseProblem(err, "A=1\n"))
+}
+
+// A directory with none of the usual project files is suspect, and the offer
+// is its marker-bearing subdirectories: hidden ones are never the project,
+// empty ones say nothing, and one already holding a manifest is entered with
+// --dir rather than set up afresh.
+func TestDetect_SuspectDirOffersItsProjectLookingSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+
+	app := filepath.Join(dir, "my-app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "pyproject.toml"), []byte("[project]\n"), 0o644))
+
+	hidden := filepath.Join(dir, ".cache")
+	require.NoError(t, os.MkdirAll(hidden, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hidden, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "docs"), 0o755))
+
+	configured := filepath.Join(dir, "configured")
+	require.NoError(t, os.MkdirAll(configured, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configured, "go.mod"), []byte("module x\n"), 0o644))
+	require.NoError(t, os.WriteFile(manifest.Path(configured), []byte("name: x\n"), 0o644))
+
+	detected := Detect(dir)
+
+	assert.True(t, detected.SuspectDir())
+	require.Len(t, detected.Candidates, 1)
+	assert.Equal(t, "my-app", detected.Candidates[0].Rel)
+	assert.Equal(t, []string{"Dockerfile", "pyproject.toml"}, detected.Candidates[0].Markers)
+}
+
+// A directory carrying any project file is not suspect, and the subdirectory
+// scan never runs: a directory that looks like a project needs no offer.
+func TestDetect_MarkerBearingDirIsNotSuspect(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+
+	// A subdirectory the scan would offer, so the empty Candidates below
+	// proves the scan was skipped rather than that there was nothing to find.
+	app := filepath.Join(dir, "nested-app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "package.json"), []byte("{}"), 0o644))
+
+	detected := Detect(dir)
+
+	assert.False(t, detected.SuspectDir())
+	assert.Contains(t, detected.RootMarkers, "Dockerfile")
+	assert.Empty(t, detected.Candidates)
+}
+
+// A project reached through a symlink is still an offer: the entry's own
+// on-disk type is a link, so the scan has to follow it one level to see the
+// directory behind it.
+func TestDetect_CandidateBehindSymlinkIsOffered(t *testing.T) {
+	target := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(target, "package.json"), []byte("{}"), 0o644))
+
+	dir := t.TempDir()
+	if err := os.Symlink(target, filepath.Join(dir, "linked-app")); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+
+	detected := Detect(dir)
+
+	require.Len(t, detected.Candidates, 1)
+	assert.Equal(t, "linked-app", detected.Candidates[0].Rel)
+	assert.Equal(t, []string{"package.json"}, detected.Candidates[0].Markers)
+}
+
+// The home directory is never scanned: everything under it "carrying project
+// files" is an inventory, not an offer.
+func TestDetect_HomeDirectoryIsNeverScanned(t *testing.T) {
+	home := t.TempDir()
+	app := filepath.Join(home, "my-app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "go.mod"), []byte("module x\n"), 0o644))
+
+	t.Setenv("HOME", home)        // unix
+	t.Setenv("USERPROFILE", home) // windows
+
+	detected := Detect(home)
+
+	assert.True(t, detected.SuspectDir())
+	assert.Empty(t, detected.Candidates)
+	assert.False(t, detected.MoreCandidates)
+}
+
+// Past the offer cap the scan stops, and the flag is what lets the question
+// say the list is incomplete: a project whose name sorts late would
+// otherwise vanish without a trace.
+func TestDetect_TruncatedOfferReportsMoreCandidates(t *testing.T) {
+	dir := t.TempDir()
+
+	for i := range maxDirCandidates + 1 {
+		app := filepath.Join(dir, fmt.Sprintf("app-%d", i))
+		require.NoError(t, os.MkdirAll(app, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(app, "go.mod"), []byte("module x\n"), 0o644))
+	}
+
+	detected := Detect(dir)
+
+	assert.Len(t, detected.Candidates, maxDirCandidates)
+	assert.True(t, detected.MoreCandidates)
 }

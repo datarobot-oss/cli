@@ -18,12 +18,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 )
 
-func Delete(url, info string, body any) (*http.Response, error) {
+// Delete sends body as JSON via HTTP DELETE. timeout optionally overrides
+// DefaultClientTimeout, the same seam Get/Post/Patch have. Omitted, or ≤0,
+// falls back to DefaultClientTimeout (see NewHTTPClient).
+func Delete(url, info string, body any, timeout ...time.Duration) (*http.Response, error) {
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -50,7 +59,7 @@ func Delete(url, info string, body any) (*http.Response, error) {
 		return nil, err
 	}
 
-	resp, err := NewHTTPClient(DefaultClientTimeout).Do(req)
+	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +79,9 @@ func isDeleteSuccess(code int) bool {
 	return code == http.StatusOK || code == http.StatusAccepted || code == http.StatusNoContent
 }
 
-func DeleteJSON(url, info string, body, v any) error {
-	resp, err := Delete(url, info, body)
+// DeleteJSON is Delete with the response body decoded into v. timeout forwards to Delete.
+func DeleteJSON(url, info string, body, v any, timeout ...time.Duration) error {
+	resp, err := Delete(url, info, body, timeout...)
 	if err != nil {
 		return err
 	}

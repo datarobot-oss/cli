@@ -17,10 +17,14 @@ package up
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -29,11 +33,19 @@ import (
 // is for one that is still booting, which the report then says.
 const endpointCheckTimeout = 10 * time.Second
 
+type endpointCheckAuthMode string
+
+const (
+	endpointCheckAnonymous     endpointCheckAuthMode = "anonymous"
+	endpointCheckAuthenticated endpointCheckAuthMode = "authenticated"
+	workloadEndpointPathPrefix                       = config.DRAPIURLSuffix + "/endpoints/workloads/"
+)
+
 // checkEndpointFn performs the GET, swapped by tests. The request is
-// anonymous on purpose: the user's API token has no business in a container's
-// access log, and a 401 or 403 proves something is serving as well as a 200
-// does.
-var checkEndpointFn = func(url string) (int, error) {
+// anonymous for direct workload URLs and authenticated for the DataRobot public
+// gateway URL. The gateway consumes the token before proxying, while a direct
+// URL would carry the token into the user's container access logs.
+var checkEndpointFn = func(rawURL string) (int, error) {
 	client := drapi.NewHTTPClient(endpointCheckTimeout)
 
 	// The endpoint's own answer, never a hop beyond it: a gateway that 302s
@@ -44,7 +56,23 @@ var checkEndpointFn = func(url string) (int, error) {
 		return http.ErrUseLastResponse
 	}
 
-	resp, err := client.Get(url)
+	authMode, err := endpointCheckAuthForURL(rawURL)
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	if authMode == endpointCheckAuthenticated {
+		if err = drapi.AuthorizeRequest(req); err != nil {
+			return 0, err
+		}
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -68,8 +96,17 @@ var checkEndpointFn = func(url string) (int, error) {
 // judged for exactly that reason: a 404 at / is how a healthy API-only
 // framework answers, and only the person who wrote the app knows whether it
 // is fine.
-func verifyEndpoint(result Result, report *reporter) {
+func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 	if result.Endpoint == "" {
+		return
+	}
+
+	authMode, endpointErr := endpointCheckAuthForURL(result.Endpoint)
+	if endpointErr != nil {
+		report.say("  %s\n", tui.WarnStyle.Render("⚠ Skipping endpoint check: "+endpointErr.Error()))
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The workload API returned an endpoint URL the CLI cannot GET."))
+
 		return
 	}
 
@@ -101,7 +138,52 @@ func verifyEndpoint(result Result, report *reporter) {
 	}
 
 	report.say("  %s\n", tui.HintStyle.Render(
-		"Endpoint check: an anonymous GET answered HTTP "+httpStatusLabel(status)+"."))
+		"Endpoint check: an "+string(authMode)+" GET answered HTTP "+httpStatusLabel(status)+"."))
+
+	// Said only when the wait could not confirm the handover, and carrying the
+	// reason, because they are not the same problem: an install without the
+	// route is a platform fact, while a 403 is this token's own permissions.
+	// The GET above describes whatever answers now, and where the handover went
+	// unconfirmed "now" can be inside the window where the workload already
+	// names the new artifact and the endpoint is still on the old one.
+	if unconfirmed != "" {
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The deploy could not tell whether the previous version has stopped answering, because "+
+				unconfirmed+". The line above may describe it."))
+	}
+}
+
+// endpointCheckAuthForURL keeps the credential-safety decision next to the
+// workload endpoint policy: only DataRobot public workload ingress URLs receive
+// the CLI token, because direct service URLs can be owned by user containers.
+func endpointCheckAuthForURL(rawURL string) (endpointCheckAuthMode, error) {
+	endpointURL, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse endpoint URL %q: %w", rawURL, err)
+	}
+
+	if endpointURL.Scheme == "" || endpointURL.Host == "" {
+		return "", fmt.Errorf("endpoint URL %q is not absolute", rawURL)
+	}
+
+	if !strings.HasPrefix(endpointURL.EscapedPath(), workloadEndpointPathPrefix) {
+		return endpointCheckAnonymous, nil
+	}
+
+	matches, err := drapi.URLMatchesConfiguredBase(rawURL)
+	if err != nil || !matches {
+		// Public workload paths only receive credentials when they are on the
+		// configured DataRobot origin. Log the anonymous fallback so debug users
+		// can distinguish a gateway 401 from an intentional token-withheld check.
+		log.Debug("endpoint check: withholding token because endpoint URL does not match configured base",
+			"endpoint", rawURL,
+			"configured_base", config.GetBaseURL(),
+			"error", err)
+
+		return endpointCheckAnonymous, nil
+	}
+
+	return endpointCheckAuthenticated, nil
 }
 
 // httpStatusLabel renders "404 Not Found" rather than a bare number, because

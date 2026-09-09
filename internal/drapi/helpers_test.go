@@ -64,6 +64,60 @@ func TestEndpointURL_PropagatesConfigError(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+func TestURLMatchesConfiguredBase(t *testing.T) {
+	seedBaseURL(t, "https://example.test/api/v2")
+
+	for _, tc := range []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "same scheme and host", url: "https://example.test/api/v2/files/?limit=1", want: true},
+		{name: "same origin different API path", url: "https://example.test/api/v1/legacy/", want: true},
+		{name: "different host", url: "https://other.example.test/api/v2/files/", want: false},
+		{name: "different scheme", url: "http://example.test/api/v2/files/", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := URLMatchesConfiguredBase(tc.url)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestURLMatchesConfiguredBase_RejectsAmbiguousTargets(t *testing.T) {
+	seedBaseURL(t, "https://example.test")
+
+	for _, rawURL := range []string{"None/api/v2/files/", "://bad"} {
+		t.Run(rawURL, func(t *testing.T) {
+			got, err := URLMatchesConfiguredBase(rawURL)
+
+			require.Error(t, err)
+			assert.False(t, got)
+		})
+	}
+}
+
+func TestURLMatchesConfiguredBase_RequiresConfiguredBase(t *testing.T) {
+	seedBaseURL(t, "")
+
+	got, err := URLMatchesConfiguredBase("https://example.test/api/v2/files/")
+
+	require.Error(t, err)
+	assert.False(t, got)
+}
+
+func TestAssertNextOnSameHost(t *testing.T) {
+	seedBaseURL(t, "https://example.test/api/v2")
+
+	require.NoError(t, AssertNextOnSameHost("https://example.test/api/v2/files/?offset=100"))
+
+	err := AssertNextOnSameHost("https://other.example.test/api/v2/files/?offset=100")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `Next URL host "other.example.test" does not match API base "https://example.test"`)
+}
+
 // ErrFromResp interprets nothing: drapi serves APIs that disagree on their
 // error envelope, so even a well-formed FastAPI detail document stays a raw
 // body= dump here. Reading meaning into it is a caller's job (see

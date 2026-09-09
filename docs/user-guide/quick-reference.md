@@ -143,6 +143,9 @@ dr self version
 # Update CLI
 dr self update
 
+# Install a specific version
+dr self update --version v0.12.3
+
 # Enable shell completions
 dr self completion install [bash|zsh|fish|powershell]
 

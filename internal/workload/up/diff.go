@@ -31,7 +31,15 @@ type Change struct {
 	// Path is where the field sits, in the file's own spelling, with
 	// name-keyed lists addressed by name rather than by index:
 	// artifact.spec.containerGroups[default].containers[primary].port.
+	// Built to be read by a person: names go in verbatim, so one carrying a
+	// dot or a bracket parses as something else. Keys is the same location in
+	// the form code should ask about.
 	Path string
+
+	// Keys is Path as the segments the walk descended through, each name-keyed
+	// element contributing its name: {containerGroups, default, containers,
+	// primary, port}. A rebuild is decided from these.
+	Keys []string
 
 	// Want is the value the manifest asks for.
 	Want any
@@ -69,38 +77,40 @@ func (c Change) String() string {
 func Subset(want, have map[string]any) []Change {
 	var changes []Change
 
-	walk("", want, have, true, &changes)
+	walk("", nil, want, have, true, &changes)
 
 	return changes
 }
 
 // walk compares one node. present says whether have was actually there, so a
 // key holding an explicit null is not confused with a key that is missing.
-func walk(path string, want, have any, present bool, out *[]Change) {
+// path and keys are threaded together so neither can be rebuilt from the
+// other after the fact.
+func walk(path string, keys []string, want, have any, present bool, out *[]Change) {
 	if !present {
-		*out = append(*out, Change{Path: path, Want: want, Absent: true})
+		*out = append(*out, Change{Path: path, Keys: keys, Want: want, Absent: true})
 
 		return
 	}
 
 	switch w := want.(type) {
 	case map[string]any:
-		walkMap(path, w, have, out)
+		walkMap(path, keys, w, have, out)
 	case []any:
-		walkList(path, w, have, out)
+		walkList(path, keys, w, have, out)
 	default:
 		if !equalAt(path, want, have) {
-			*out = append(*out, Change{Path: path, Want: want, Have: have})
+			*out = append(*out, Change{Path: path, Keys: keys, Want: want, Have: have})
 		}
 	}
 }
 
 // walkMap recurses into an object, in key order so the plan reads the same
 // way twice.
-func walkMap(path string, want map[string]any, have any, out *[]Change) {
+func walkMap(path string, keys []string, want map[string]any, have any, out *[]Change) {
 	h, ok := have.(map[string]any)
 	if !ok {
-		*out = append(*out, Change{Path: path, Want: want, Have: have})
+		*out = append(*out, Change{Path: path, Keys: keys, Want: want, Have: have})
 
 		return
 	}
@@ -108,7 +118,7 @@ func walkMap(path string, want map[string]any, have any, out *[]Change) {
 	for _, key := range slices.Sorted(maps.Keys(want)) {
 		hv, present := h[key]
 
-		walk(join(path, key), want[key], hv, present, out)
+		walk(join(path, key), descend(keys, key), want[key], hv, present, out)
 	}
 }
 
@@ -119,17 +129,17 @@ func walkMap(path string, want map[string]any, have any, out *[]Change) {
 // resourceBundles of plain strings or an autoscaling policy with no name to
 // key on, is compared whole, because a partial match of an unkeyed list
 // means nothing.
-func walkList(path string, want []any, have any, out *[]Change) {
+func walkList(path string, keys []string, want []any, have any, out *[]Change) {
 	h, ok := have.([]any)
 	if !ok {
-		*out = append(*out, Change{Path: path, Want: want, Have: have})
+		*out = append(*out, Change{Path: path, Keys: keys, Want: want, Have: have})
 
 		return
 	}
 
 	if !nameKeyed(want) {
 		if !equal(want, h) {
-			*out = append(*out, Change{Path: path, Want: want, Have: h})
+			*out = append(*out, Change{Path: path, Keys: keys, Want: want, Have: h})
 		}
 
 		return
@@ -141,16 +151,23 @@ func walkList(path string, want []any, have any, out *[]Change) {
 		element, _ := item.(map[string]any)
 		name, _ := element["name"].(string)
 		at := fmt.Sprintf("%s[%s]", path, name)
+		below := descend(keys, name)
 
 		counterpart, found := live[name]
 		if !found {
-			*out = append(*out, Change{Path: at, Want: element, Absent: true})
+			*out = append(*out, Change{Path: at, Keys: below, Want: element, Absent: true})
 
 			continue
 		}
 
-		walkMap(at, element, counterpart, out)
+		walkMap(at, below, element, counterpart, out)
 	}
+}
+
+// descend is keys with one more segment, always in storage of its own:
+// appending in place would let two siblings share a backing array.
+func descend(keys []string, key string) []string {
+	return append(slices.Clone(keys), key)
 }
 
 // nameKeyed reports whether every element is an object carrying a non-empty

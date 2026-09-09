@@ -22,6 +22,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -345,10 +346,32 @@ func ClearWorkloadID(path, wantWorkloadID string) (bool, error) {
 	return changed, err
 }
 
-// editRoot is the read-modify-write both binding edits share: parse to a node
-// tree, hand the root mapping to mutate, and re-emit only if something
+// editRoot is renderEdit plus the write, and is what the binding edits use.
+func editRoot(path, action string, markUnreadable bool, mutate func(root *yaml.Node) (bool, error)) (bool, error) {
+	changed, rendered, err := renderEdit(path, action, markUnreadable, mutate)
+	if err != nil || !changed {
+		return false, err
+	}
+
+	// Reported as unchanged when the write fails: the caller's question is
+	// whether the file on disk now lacks the binding, and it does not.
+	if err := fsutil.AtomicWriteFile(path, rendered); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// renderEdit is the read-modify-write every in-place edit shares: parse to a
+// node tree, hand the root mapping to mutate, and re-emit only if something
 // changed. Re-emitting preserves comments, unknown keys and their order, which
 // regenerating from a struct would not.
+//
+// It stops short of the write, so a preview can run the edit it is previewing
+// rather than a second rendering that agrees with the first only until one of
+// them changes. The returned bytes are meaningless unless changed is true,
+// which matches what the mutators report: an edit that found nothing to do has
+// no content to show for it.
 //
 // action names the edit for the errors that mention it, so a failure says what
 // the CLI was trying to do rather than only where it stopped.
@@ -365,7 +388,9 @@ func ClearWorkloadID(path, wantWorkloadID string) (bool, error) {
 // nothing known today needs the check. It is here because that reasoning is
 // about the current implementation of other functions, and a guard that holds
 // only while nobody edits them is not one.
-func editRoot(path, action string, markUnreadable bool, mutate func(root *yaml.Node) (bool, error)) (bool, error) {
+func renderEdit(
+	path, action string, markUnreadable bool, mutate func(root *yaml.Node) (bool, error),
+) (bool, []byte, error) {
 	unreadable := func(format string, args ...any) error {
 		err := fmt.Errorf(format, args...)
 		if markUnreadable {
@@ -377,33 +402,32 @@ func editRoot(path, action string, markUnreadable bool, mutate func(root *yaml.N
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, unreadable("cannot read %s: %w", path, err)
+		return false, nil, unreadable("cannot read %s: %w", path, err)
 	}
 
 	doc, root, err := soleDocument(data, path, action, unreadable)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 
 	// The mutator's own message says what it refused and why, and every caller
 	// already has the path it passed in.
 	changed, err := mutate(root)
 	if err != nil || !changed {
-		return false, err
+		return false, nil, err
 	}
 
 	rendered, err := encodeDoc(doc)
 	if err != nil {
-		return false, fmt.Errorf("cannot render %s: %w", path, err)
+		return false, nil, fmt.Errorf("cannot render %s: %w", path, err)
 	}
 
-	// Reported as unchanged when the write fails: the caller's question is
-	// whether the file on disk now lacks the binding, and it does not.
-	if err := fsutil.AtomicWriteFile(path, matchLineEndings(data, rendered)); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	// The encoder drops blank lines, so a file the create path spaced comes
+	// back closed up. Re-spacing here is not the fix: spaceTopLevelBlocks
+	// imposes the gaps rather than restoring them, so it would reflow a
+	// compact hand-written file instead, and this path exists to leave a
+	// user's formatting alone.
+	return true, matchLineEndings(data, rendered), nil
 }
 
 // soleDocument reads the one document a manifest is, and hands back its root
@@ -836,27 +860,7 @@ func (d Draft) environmentVars() *yaml.Node {
 	entries := sequence()
 
 	for _, v := range d.EnvVars {
-		value := scalar(v.Value)
-		entry := []field{{key: keyName, value: scalar(v.Name)}}
-
-		switch {
-		case v.Secret && v.CredentialID == "":
-			value = scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey)
-			entry = append(entry, field{
-				key:     keyValue,
-				value:   value,
-				comment: "replace " + CredentialPlaceholder + " with the credential id",
-			})
-
-		case v.Secret:
-			value = scalar(CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey)
-			entry = append(entry, field{key: keyValue, value: value})
-
-		default:
-			entry = append(entry, field{key: keyValue, value: value})
-		}
-
-		entries.Content = append(entries.Content, mapping(entry...))
+		entries.Content = append(entries.Content, envVarNode(v))
 	}
 
 	if len(entries.Content) == 0 {
@@ -864,6 +868,34 @@ func (d Draft) environmentVars() *yaml.Node {
 	}
 
 	return entries
+}
+
+// envVarNode renders one entry. Setup builds a whole list of these and
+// --import-env appends single ones to a list already on disk, and the two must
+// agree: they describe the same variable, and a reader should not be able to
+// tell which command produced it.
+func envVarNode(v EnvVar) *yaml.Node {
+	entry := []field{{key: keyName, value: scalar(v.Name)}}
+
+	switch {
+	case v.Secret && v.CredentialID == "":
+		entry = append(entry, field{
+			key:     keyValue,
+			value:   scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey),
+			comment: "replace " + CredentialPlaceholder + " with the credential id",
+		})
+
+	case v.Secret:
+		entry = append(entry, field{
+			key:   keyValue,
+			value: scalar(CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey),
+		})
+
+	default:
+		entry = append(entry, field{key: keyValue, value: scalar(v.Value)})
+	}
+
+	return mapping(entry...)
 }
 
 // buildFields renders the one key that says where the image comes from.
@@ -951,13 +983,21 @@ func sequence(items ...*yaml.Node) *yaml.Node {
 // a workload named "no" must not arrive at the platform as false.
 var yaml11Booleans = map[string]bool{"y": true, "yes": true, "n": true, "no": true, "on": true, "off": true}
 
+// yaml11Sexagesimal is the base-60 number form YAML 1.1 resolves and YAML 1.2
+// dropped. It is why a CRON_WINDOW of 12:30 must not be written bare: yaml.v3
+// reads it back as the string it is, and the older parsers that also read this
+// file make it the number 750. The pattern is yaml.v3's own base-60 test,
+// borrowed rather than invented so the two cannot disagree about which values
+// need the quotes.
+var yaml11Sexagesimal = regexp.MustCompile(`^[-+]?[0-9][0-9_]*(:[0-5]?[0-9])+(\.[0-9_]*)?$`)
+
 // scalar renders a string, quoting it when a plain scalar would read back as
 // something other than this string. The encoder already handles the YAML 1.2
 // cases (a name of "8080" or "null" comes back quoted); the map above covers
 // what only older readers would misread. "my-app" stays bare.
 func scalar(value string) *yaml.Node {
 	node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
-	if yaml11Booleans[strings.ToLower(value)] {
+	if yaml11Booleans[strings.ToLower(value)] || yaml11Sexagesimal.MatchString(value) {
 		node.Style = yaml.DoubleQuotedStyle
 	}
 

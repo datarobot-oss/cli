@@ -15,6 +15,7 @@
 package drapi
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,37 @@ func EndpointURL(path string, query url.Values) (string, error) {
 	}
 
 	return full + "?" + query.Encode(), nil
+}
+
+// URLMatchesConfiguredBase reports whether rawURL has the same scheme and host
+// as the configured DataRobot API base. Use it before attaching DataRobot
+// credentials to an absolute URL supplied by a server response, where a hostile
+// or buggy redirect/cursor could otherwise move the request to another origin.
+func URLMatchesConfiguredBase(rawURL string) (bool, error) {
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		return false, fmt.Errorf("parse URL: %w", err)
+	}
+
+	if target.Scheme == "" || target.Host == "" {
+		return false, errors.New("parse URL: missing scheme or host")
+	}
+
+	baseURL := config.GetBaseURL()
+	if baseURL == "" {
+		return false, errors.New("configured API base URL is empty")
+	}
+
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return false, fmt.Errorf("parse API base URL: %w", err)
+	}
+
+	if base.Scheme == "" || base.Host == "" {
+		return false, errors.New("configured API base URL is missing scheme or host")
+	}
+
+	return target.Scheme == base.Scheme && target.Host == base.Host, nil
 }
 
 // ErrFromResp wraps a non-2xx *http.Response into a *HTTPError, capturing

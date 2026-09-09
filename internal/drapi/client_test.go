@@ -63,9 +63,23 @@ func withSkipAuth(t *testing.T, value string) string {
 }
 
 func TestNewHTTPClient(t *testing.T) {
-	c := NewHTTPClient(7 * time.Second)
-	require.NotNil(t, c)
-	assert.Equal(t, 7*time.Second, c.Timeout)
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		want    time.Duration
+	}{
+		{name: "positive timeout passes through", timeout: 7 * time.Second, want: 7 * time.Second},
+		{name: "zero timeout clamps to default", timeout: 0, want: DefaultClientTimeout},
+		{name: "negative timeout clamps to default", timeout: -5 * time.Second, want: DefaultClientTimeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewHTTPClient(tt.timeout)
+			require.NotNil(t, c)
+			assert.Equal(t, tt.want, c.Timeout)
+		})
+	}
 }
 
 func TestDefaultClientTimeout(t *testing.T) {

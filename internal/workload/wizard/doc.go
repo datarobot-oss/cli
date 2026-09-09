@@ -33,8 +33,10 @@
 // required answer is an error that names the flag.
 //
 // A project's .env is read here and its variables are classified by name and
-// by value, because `up` deploys the manifest and never reads .env: anything
-// kept only there would not reach the container. Ordinary settings are copied
+// by value, because a deploy carries the manifest and sends nothing from .env:
+// anything kept only there would not reach the container. ReportEnvDrift is
+// the one thing this package does for a deploy rather than for setup, and it
+// only says the two have parted. Ordinary settings are copied
 // in as literals; a secret becomes a credential reference with a placeholder
 // id, since creating the credential needs an API the CLI does not have yet.
 //

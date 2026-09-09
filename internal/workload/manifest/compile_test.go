@@ -329,6 +329,41 @@ func TestArtifactPayload_NoBlockToCreate(t *testing.T) {
 	assert.Contains(t, err.Error(), "no artifact block")
 }
 
+// The spec on its own is what an update takes: the artifact already has a name
+// and a type, and the platform owns the type once it exists.
+func TestArtifactSpecPayload_IsTheSpecAlone(t *testing.T) {
+	m, err := Parse([]byte(buildManifest), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	payload, err := compiled.ArtifactSpecPayload()
+	require.NoError(t, err)
+
+	var spec map[string]any
+
+	require.NoError(t, json.Unmarshal(payload, &spec))
+	assert.Contains(t, spec, "containerGroups")
+	assert.NotContains(t, spec, "name", "the name is the artifact's, not its spec's")
+	assert.Equal(t, "my-app-artifact", compiled.ArtifactName, "which is lifted out for the copy to be named")
+}
+
+// A manifest bound by id describes no block, so there is nothing to lift.
+func TestCompile_ArtifactBoundByIDHasNoBlockToRead(t *testing.T) {
+	m, err := Parse([]byte("name: my-app\nartifactId: 68b0bbbb0000000000000002\n"), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	assert.Empty(t, compiled.ArtifactName)
+
+	_, err = compiled.ArtifactSpecPayload()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no artifact block")
+}
+
 // The mirror of ArtifactPayload: the sizing half on its own, with nothing in
 // it about what the workload runs.
 func TestRuntimePayload_IsTheBlockItself(t *testing.T) {

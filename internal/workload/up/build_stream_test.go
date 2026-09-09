@@ -254,7 +254,7 @@ func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 
 	var out bytes.Buffer
 
-	buildID, err := maybeBuild("art-1", false, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
+	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-1"}, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
 	require.NoError(t, err)
 	assert.Equal(t, "bld-running", buildID)
 	assert.Equal(t, "bld-running", waited)
@@ -291,7 +291,7 @@ func TestMaybeBuild_TriggersInsteadOfAttachingToAWedgedBuild(t *testing.T) {
 
 	var out bytes.Buffer
 
-	buildID, err := maybeBuild("art-1", false, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
+	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-1"}, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
 	require.NoError(t, err)
 	assert.True(t, triggered, "a wedged build must be superseded, not attached to")
 	assert.Equal(t, "bld-new", buildID)
@@ -322,7 +322,7 @@ func TestMaybeBuild_TriggersDespiteRunningBuildWhenCodeChanged(t *testing.T) {
 
 	var out bytes.Buffer
 
-	buildID, err := maybeBuild("art-1", false, CodeChange{}, &sync.Result{UploadedCount: 1}, Options{}, newReporter(&out, false))
+	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-1"}, CodeChange{}, &sync.Result{UploadedCount: 1}, Options{}, newReporter(&out, false))
 	require.NoError(t, err)
 	assert.True(t, triggered)
 	assert.Equal(t, "bld-new", buildID)

@@ -16,10 +16,10 @@ package list
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -31,6 +31,7 @@ func Cmd() *cobra.Command {
 
 	var (
 		limit    int
+		offset   int
 		statuses []string
 		enclave  string
 	)
@@ -55,6 +56,8 @@ nothing.
 Example:
   dr workload list
   dr workload list --limit 10
+  dr workload list --offset 100
+  dr workload list --offset 100 --limit 50
   dr workload list --status running
   dr workload list --status errored --status interrupted
   dr workload list --enclave prod-east
@@ -64,10 +67,6 @@ Example:
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
-
-			if limit <= 0 {
-				return fmt.Errorf("invalid --limit %d: must be positive", limit)
-			}
 
 			// A blank --enclave would silently drop the filter and list
 			// everything, the opposite of what the flag asked for.
@@ -80,7 +79,7 @@ Example:
 				return err
 			}
 
-			workloads, err := workload.ListWorkloads(limit, parsedStatuses, enclave)
+			workloads, err := workload.ListWorkloads(limit, offset, parsedStatuses, enclave)
 			if err != nil {
 				return err
 			}
@@ -91,7 +90,8 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of workloads to return")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of workloads to return")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Number of workloads to skip before returning results")
 	cmd.Flags().StringSliceVar(&statuses, "status", nil,
 		"Filter by status (repeatable, also accepts comma-separated values; e.g. running, errored)")
 	cmd.Flags().StringVar(&enclave, "enclave", "",
@@ -99,9 +99,11 @@ Example:
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
+		offset, _ := c.Flags().GetInt("offset")
 
 		return map[string]any{
 			"limit":         limit,
+			"offset":        offset,
 			"output_format": string(outputFormat),
 			"status":        strings.Join(statuses, ","),
 			"enclave":       enclave,

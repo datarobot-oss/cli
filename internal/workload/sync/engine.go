@@ -40,7 +40,7 @@ type Result struct {
 	DownloadedCount int
 	DeletedCount    int
 	ConflictCount   int
-	ConflictCopies  []string // *.LOCAL.<ts> paths created during sync
+	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
 	Duration        time.Duration
 }
 
@@ -93,25 +93,25 @@ type Engine struct {
 	artifacts artifactStore
 	nowFn     func() time.Time
 
-	config         wapi.Config
-	base           BaseManifest
-	artifact       *workload.Artifact
-	remoteVer      string
-	drifted        bool
-	local          LocalManifest
-	remote         RemoteManifest
-	plan           *SyncPlan
-	lock           *SyncLock
-	rollback       *Rollback
-	newCatalogID   string
-	newVersionID   string
-	conflictCopies []string
-	result         *Result
-	startedAt      time.Time
-	staleNote      bool
-	migrationNote  string
-	ignoreNotice   string
-	lockedNote     string
+	config        wapi.Config
+	base          BaseManifest
+	artifact      *workload.Artifact
+	remoteVer     string
+	drifted       bool
+	local         LocalManifest
+	remote        RemoteManifest
+	plan          *SyncPlan
+	lock          *SyncLock
+	rollback      *Rollback
+	newCatalogID  string
+	newVersionID  string
+	localBackups  []string
+	result        *Result
+	startedAt     time.Time
+	staleNote     bool
+	migrationNote string
+	ignoreNotice  string
+	lockedNote    string
 
 	lockfileFn        LockfileRunner
 	lockfileGenerated bool

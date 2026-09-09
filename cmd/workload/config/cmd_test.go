@@ -211,10 +211,10 @@ func TestCmd_JSONImpliesNonInteractive(t *testing.T) {
 	var ran bool
 
 	restoreFlow := wizard.SetInteractiveFlowForTest(
-		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, error) {
+		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, string, error) {
 			ran = true
 
-			return nil, manifest.Draft{}, errors.New("the wizard must not run")
+			return nil, manifest.Draft{}, "", errors.New("the wizard must not run")
 		})
 	defer restoreFlow()
 
@@ -238,10 +238,10 @@ func TestCmd_YesImpliesNonInteractive(t *testing.T) {
 	var ran bool
 
 	restoreFlow := wizard.SetInteractiveFlowForTest(
-		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, error) {
+		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, string, error) {
 			ran = true
 
-			return nil, manifest.Draft{}, errors.New("the wizard must not run")
+			return nil, manifest.Draft{}, "", errors.New("the wizard must not run")
 		})
 	defer restoreFlow()
 
@@ -331,4 +331,152 @@ func TestCmd_UnparseableEnvFileLeaksNoValues(t *testing.T) {
 	assert.Contains(t, stderr.String(), "on line 2")
 	assert.NotContains(t, stderr.String(), "sk-live-do-not-print")
 	assert.NotContains(t, stderr.String(), "hunter2")
+}
+
+// A --dir that is not a directory is refused by name, the way 'up' and 'delete'
+// already refuse it. This command used to walk on into a path that was not
+// there and report the missing Dockerfile instead, three messages after the one
+// fact that explains them, with a manifest-search warning in between naming an
+// ancestor the user never typed.
+func TestCmd_RefusesADirThatIsNotADirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope", "project")
+
+	_, stderr, err := runCmd(t, "--dir", missing, "--yes", "--name", "my-app")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--dir "+missing)
+	assert.Contains(t, err.Error(), "not a directory")
+	assert.NotContains(t, stderr.String(), "cannot check for a manifest above",
+		"the refusal is the whole answer; a warning about an ancestor is noise on top of it")
+	assert.NotContains(t, stderr.String(), "no Dockerfile")
+}
+
+// The flag that reaches past the existing-manifest guard, seen from the
+// command: the file is edited, and the envelope says so with an action a
+// pipeline can tell apart from a create.
+func TestCmd_ImportEnvReportsUpdated(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"),
+		[]byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+
+	stdout, _, err := runCmd(t, "--dir", dir, "--yes", "--import-env", "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope struct {
+		Config struct {
+			Action        string `json:"action"`
+			EnvKeysListed int    `json:"envKeysListed"`
+		} `json:"config"`
+	}
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))
+	assert.Equal(t, "updated", envelope.Config.Action)
+	assert.Equal(t, 1, envelope.Config.EnvKeysListed)
+
+	written, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "REGION")
+}
+
+// An import that found nothing is reported as such rather than as setup
+// declining to run: telling the user to delete the file answers a question
+// they did not ask.
+func TestCmd_ImportEnvWithNothingToAdd(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--import-env")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "already declares every variable")
+	assert.NotContains(t, stderr.String(), "Delete it to run setup again")
+}
+
+// The two flags say opposite things about the same file, so the run stops
+// rather than picking one.
+func TestCmd_ImportEnvAndSkipEnvConflict(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--import-env", "--skip-env")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--import-env")
+	assert.Contains(t, err.Error(), "--skip-env")
+}
+
+// Every setup answer is dropped by an import, so passing one is a mistake the
+// run names rather than a no-op it reports as a success.
+func TestCmd_ImportEnvRejectsSetupFlags(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--import-env",
+		"--workload-id", "68b0c1d2e3f4a5b6c7d8e9f0", "--port", "9999")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--workload-id")
+	assert.Contains(t, err.Error(), "--port")
+}
+
+// The flag names a file to add to. Creating one instead would configure a
+// directory the flag says was already configured.
+func TestCmd_ImportEnvWithNoManifest(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--import-env")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "nothing to import")
+	assert.NoFileExists(t, manifest.Path(dir))
+}
+
+// stdout purity is only half the contract: `--output-format json 2>&1 | jq .`
+// has to parse too, so the drift notice stays off a JSON run.
+func TestCmd_EnvDriftNoticeSilentInJSON(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName),
+		[]byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+
+	stdout, stderr, err := runCmd(t, "--dir", dir, "--yes", "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.Empty(t, stderr.String())
+	assert.True(t, json.Valid(stdout.Bytes()))
+}
+
+// The import writes fresh literal values into a committed file, so it owes
+// the same disclosure the create path gives.
+func TestCmd_ImportEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName),
+		[]byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--import-env")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "Values written in the clear: REGION")
+
+	stdout, _, err := runCmd(t, "--dir", dir, "--yes", "--import-env",
+		"--output-format", "json")
+	require.NoError(t, err)
+
+	// Nothing left to add by now, but the envelope must still be well formed.
+	assert.True(t, json.Valid(stdout.Bytes()))
 }

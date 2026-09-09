@@ -15,12 +15,16 @@
 package wizard
 
 import (
+	"fmt"
+	"io"
 	"math"
 	"math/bits"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
 // EnvKind is what a `.env` entry looks like, and therefore where it belongs.
@@ -359,4 +363,48 @@ func mixedCharset(value string) bool {
 	// Two classes is the bar: hex digests and mixed-case tokens both clear
 	// it, while /usr/local/share/some-long-path and a plain sentence do not.
 	return bits.OnesCount(uint(seen)) >= 2
+}
+
+// LiteralNames is the variables whose values the manifest carries in the
+// clear. The classifier prefers to call a doubtful value secret, but it is
+// still a heuristic: a short secret under an ordinary name reads as
+// configuration, and its value goes into a file meant to be committed.
+func LiteralNames(vars []manifest.EnvVar) []string {
+	names := make([]string, 0, len(vars))
+	seen := make(map[string]bool, len(vars))
+
+	// Deduplicated because a manifest may declare the same name twice, and an
+	// update rewrites both entries. Two rewrites is the honest count of what
+	// moved in the file, but naming the variable twice reads as a fault in the
+	// report rather than in the file it is describing.
+	for _, v := range vars {
+		if v.Secret || seen[v.Name] {
+			continue
+		}
+
+		seen[v.Name] = true
+
+		names = append(names, v.Name)
+	}
+
+	return names
+}
+
+// WarnLiterals names those variables. Nothing prompts on a headless run and
+// the classifier's verdict is final there, so this listing is the only chance
+// the user gets to catch a misread before the file is committed. Names only:
+// the values are the thing being protected.
+//
+// It lives here rather than in either command because both write the same
+// values into the same committed file. `config` and `up` disclosing that
+// differently, or one of them not at all, would make whichever command stayed
+// quiet the one that looks safer.
+func WarnLiterals(stderr io.Writer, vars []manifest.EnvVar) {
+	names := LiteralNames(vars)
+	if len(names) == 0 {
+		return
+	}
+
+	fmt.Fprintf(stderr, "  Values written in the clear: %s. Anything secret among them belongs in a %s reference instead.\n",
+		JoinNames(names), manifest.CredentialShorthandPrefix)
 }

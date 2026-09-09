@@ -153,6 +153,17 @@ func TestCmdReturnsErrNotInTemplateWhenDatarobotMissing(t *testing.T) {
 	require.ErrorIs(t, err, cli.ErrSilent)
 }
 
+func TestCmdRejectsNonPositiveConcurrency(t *testing.T) {
+	// Rejected at parse time by countflags.PositiveInt, before any task
+	// runner is looked up: zero concurrency would run nothing.
+	cmd := Cmd()
+	cmd.SetArgs([]string{"--concurrency", "0", "start"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must be a positive integer")
+}
+
 // TestCmdStopsGeneratedTaskThatInvokesItself covers the recipe template's
 // `lint: [dr task run lint]` against a project with no committed root Taskfile.
 // Nothing sets DATAROBOT_CLI_TASK_RUN_FROM_ROOT on that path, so every

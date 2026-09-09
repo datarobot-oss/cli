@@ -48,8 +48,10 @@ const followLagAllowance = 10 * time.Second
 // mode, which has no cursor to prune by, leans on the rotation itself.
 const followSeenCap = 50000
 
-// maxTransientPollErrors caps consecutive transient fetch failures a follow
-// tolerates before giving up; it resets on any successful poll.
+// maxTransientPollErrors caps consecutive transient fetch failures a poll loop
+// tolerates before giving up; it resets on any successful poll. Shared by the
+// log follow and by pollWorkload, which want the same answer for the same
+// reason: both run long enough for a blip to land mid-wait.
 const maxTransientPollErrors = 5
 
 // sleepInterval waits for interval or ctx cancellation, returning false when

@@ -18,4 +18,5 @@ Document how functions fail, especially for streaming, long-running, and resourc
 
 ## Limitations and Future Work
 
-Intentional limitations must be tracked with JIRA tickets.
+Intentional limitations must be tracked with JIRA issues. However in package documentation or in the codebase,
+do NOT list issues by number. Just describe the limitation and the intended future work to address it.

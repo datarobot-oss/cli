@@ -25,11 +25,12 @@ import (
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
-// Test seams for the two reads, replaced by this package's tests to keep the
-// plan off the network.
+// Test seams for the reads, replaced by this package's tests to keep the plan
+// off the network.
 var (
 	getWorkloadDocFn = workload.GetWorkloadDocument
 	getArtifactDocFn = workload.GetArtifactDocument
+	failureReasonFn  = workload.FailureReason
 )
 
 // Keys read off the raw documents. They are read before manifest.NewLive
@@ -41,6 +42,23 @@ const (
 	keyArtifactID = "artifactId"
 	keySpec       = "spec"
 	keyType       = "type"
+
+	// Keys inside the artifact spec: the running image, and how the plan
+	// recognizes a changed field as one container's.
+	keyContainerGroups = "containerGroups"
+	keyContainers      = "containers"
+	keyImageURI        = "imageUri"
+
+	// The fields a container reads when it starts, which the plan's runtime
+	// allow-list is made of. manifest/keys.go spells the ones it renders; the
+	// duplication is deliberate, since this side reads the platform's spec.
+	keyA2AEnabled      = "a2aEnabled"
+	keyEnvironmentVars = "environmentVars"
+	keyLivenessProbe   = "livenessProbe"
+	keyPort            = "port"
+	keyReadinessProbe  = "readinessProbe"
+	keyRoutes          = "routes"
+	keyStartupProbe    = "startupProbe"
 
 	// keyArtifactRepositoryID is the repository an artifact belongs to. The
 	// platform assigns it, so it is read here and never written to the file;
@@ -75,6 +93,10 @@ type Live struct {
 	// StateStopped and only some of them can be started.
 	Status string
 
+	// Reason is why the workload is errored, in the platform's words, and ""
+	// for every other state: the difference between a rebuild and a code fix.
+	Reason string
+
 	// ArtifactID is the artifact currently running, "" when there is none.
 	ArtifactID string
 
@@ -99,6 +121,12 @@ type Live struct {
 	// artifact means production, and its successor has to be locked too
 	// before the platform will accept a replacement.
 	Locked bool
+
+	// ImageURI is the image the running version was built into, read off the
+	// raw document because Spec has it stripped as a build output.
+	ImageURI string
+
+	CodeVersionID string
 }
 
 // liveArtifactType reads the discriminator off the artifact document, falling
@@ -173,16 +201,53 @@ func Look(workloadID string) (Live, error) {
 		return Live{}, err
 	}
 
+	// Walked once for both fields below: two walks that could disagree about
+	// which container is primary is how a plan promises a missing image.
+	primary := workload.PrimaryContainerInDocument(artifactDoc)
+
+	state := stateFor(status)
+
 	return Live{
 		Live:                 live,
-		State:                stateFor(status),
+		State:                state,
 		Status:               status,
+		Reason:               failureReason(workloadID, state),
 		ArtifactID:           artifactID,
 		ArtifactType:         liveArtifactType(artifactDoc),
 		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
 		Endpoint:             workloadDoc.String(keyEndpoint),
 		Locked:               isLocked(artifactDoc.String(keyStatus)),
+		ImageURI:             containerImageURI(primary),
+		CodeVersionID:        containerCodeVersionID(primary),
 	}, nil
+}
+
+// failureReason asks the platform why the workload is errored, and nothing of
+// any other state: it costs two more requests, and it is best effort, since
+// the state is what the deploy acts on and the reason only what it says.
+func failureReason(workloadID string, state State) string {
+	if state != StateErrored {
+		return ""
+	}
+
+	return failureReasonFn(workloadID)
+}
+
+// containerCodeVersionID reads the catalog version a container points at,
+// which is what an inherited image is measured against.
+func containerCodeVersionID(container map[string]any) string {
+	ref := workload.CodeRefInContainer(container)
+	if ref == nil {
+		return ""
+	}
+
+	return ref.CatalogVersionID
+}
+
+func containerImageURI(container map[string]any) string {
+	uri, _ := container[keyImageURI].(string)
+
+	return uri
 }
 
 // artifactFor reads the artifact a workload runs. A workload without one is

@@ -40,8 +40,10 @@ func SetStdinTerminalForTest(isTerminal bool) func() {
 }
 
 // SetInteractiveFlowForTest replaces the wizard itself, so a command-level
-// test can tell whether it would have run.
-func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Draft, error)) func() {
+// test can tell whether it would have run. The string is the project
+// directory the flow settled on, which is Detected.Dir unless the user chose
+// another on the directory screen.
+func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Draft, string, error)) func() {
 	original := runInteractiveFlowFn
 	runInteractiveFlowFn = flow
 
@@ -68,6 +70,11 @@ const (
 	// have been written, and nothing was. A caller keying on the action must
 	// be able to tell that apart from a file that now exists.
 	ActionPlanned = "planned"
+	// ActionUpdated means a manifest that was already there was edited in
+	// place. It is deliberately not ActionCreated: a pipeline that keys on
+	// the action has to be able to tell a file it now owns from one it
+	// added to.
+	ActionUpdated = "updated"
 )
 
 // Options is one setup run.
@@ -78,28 +85,94 @@ type Options struct {
 	// implied by the absence of a terminal and by JSON output.
 	NonInteractive bool
 	// DryRun renders the manifest and writes nothing.
-	DryRun  bool
-	Answers Answers
+	DryRun bool
+	// ImportEnv re-reads .env over a manifest that already exists and adds
+	// the variables it does not declare. It is the one answer that survives
+	// the existing-manifest guard, and it has to be asked for: setup stays a
+	// one-time act, and a deploy that quietly picked up whatever .env grew
+	// since is the behaviour this command was built not to have.
+	ImportEnv bool
+	// UpdateEnv brings the variables the manifest already declares back in
+	// line with .env: a literal is rewritten, and the credential behind a
+	// secret is re-sent. It is separate from ImportEnv because it is the
+	// opposite act, changing what a name is worth rather than adding a name,
+	// and because a secret cannot be checked first: the platform never hands a
+	// stored value back, so this cannot tell a rotated key from an unchanged
+	// one and re-sends either way.
+	UpdateEnv bool
+	// JSONOutput says the run's answer is a machine-readable envelope. Under
+	// it the command hands the wizard no Stderr at all, because stdout purity
+	// is only half the contract and `2>&1 | jq .` has to parse too; what a
+	// terminal run would have warned about becomes an error instead, so the
+	// signal is carried by the exit code rather than dropped.
+	JSONOutput bool
+	Answers    Answers
+	// Remedy is the command a drift notice names when it says how to apply
+	// what it found. Empty is `dr workload config`, the command this package
+	// is the flow behind. A deploy sets its own, because both flags are on it
+	// too: sending the reader to another command to reconcile a file the run
+	// has just read is a detour, and one that finds the manifest by a
+	// different rule than the deploy did.
+	Remedy string
+	// DriftOnly narrows the notices to what has moved between the two files,
+	// leaving out everything that is true of the project on every run: the
+	// values behind credential references, which nothing can compare; the
+	// names the classifier reads as local-only, which no flag will ever add;
+	// an entry left naming the credential placeholder; a manifest whose shape
+	// no flag can edit.
+	//
+	// A command about configuration says all of it, because that is what it
+	// is for and because it is the one place those verdicts are ever
+	// mentioned. A deploy says only what changed. None of the rest can be
+	// settled by anything the reader is about to run, so on a deploy they
+	// print on every run of every project that has them, and a line that
+	// always prints is one the reader stops seeing, taking the drift beside
+	// it down too.
+	DriftOnly bool
 	// Stderr carries the wizard and its summary. Nothing the wizard says
 	// belongs on stdout, which is the command's machine-readable channel.
 	Stderr io.Writer
+}
+
+// remedy renders the command a drift notice sends the reader to, quoted the
+// way every other command reference in this package is.
+func (o Options) remedy(flag string) string {
+	command := o.Remedy
+	if command == "" {
+		command = "dr workload config"
+	}
+
+	return "'" + command + " " + flag + "'"
 }
 
 // Result is what a run settled.
 type Result struct {
 	// Path is the manifest, written or already present.
 	Path string
-	// Action is ActionCreated, ActionUnchanged or ActionPlanned.
+	// Action is ActionCreated, ActionUpdated, ActionUnchanged or ActionPlanned.
 	Action string
 	// Content is the manifest as written, or as it would be written under
 	// DryRun. Empty when the run changed nothing.
 	Content []byte
-	// EnvKeysListed is how many .env variables the written file carries, 0
+	// EnvKeysListed is how many .env variables this run put in the file, 0
 	// when there was no .env or the user opted out, and EnvSecretsPending is
-	// how many of those are commented out awaiting a credential. The command
-	// reports both, so a headless run says what it actually did.
+	// how many of those still await a credential. The command reports both, so
+	// a headless run says what it actually did. A create writes the whole
+	// list, so for it the count is also what the file carries; an import adds
+	// to a list already there, so for it the count is only what it added.
 	EnvKeysListed     int
 	EnvSecretsPending int
+	// EnvValuesUpdated is how many declared literals this run rewrote to match
+	// .env, and EnvSecretsRotated how many credentials it re-sent. They are
+	// counted apart because they are different acts on different things: one
+	// edits the committed file, the other writes to the tenant.
+	EnvValuesUpdated  int
+	EnvSecretsRotated int
+	// EnvSecretsNotRotated is how many re-sends failed. A failed rotation
+	// leaves the old value serving and the file unchanged, so without a count
+	// of its own it is a silent failure for anything reading the result rather
+	// than the terminal, which is exactly what --output-format json does.
+	EnvSecretsNotRotated int
 	// Draft is the answer set behind Content. For a bound workload it
 	// describes the fields the wizard asked about, not the whole file.
 	Draft manifest.Draft
@@ -108,9 +181,10 @@ type Result struct {
 // Run executes setup: it answers the questions from the flags, the project
 // and, on a terminal, the user, then writes the manifest.
 //
-// An existing manifest ends the run untouched. That is the whole of setup's
-// relationship with a configured project: the file is the interface, every
-// later change is a hand edit, and deleting the file re-arms the wizard.
+// An existing manifest ends the run untouched unless Options.ImportEnv asks
+// for the one edit setup makes to a configured project. That is the whole of
+// setup's relationship with one: the file is the interface, every other change
+// is a hand edit, and deleting the file re-arms the wizard.
 func Run(opts Options) (Result, error) {
 	dir, err := filepath.Abs(opts.Dir)
 	if err != nil {
@@ -119,20 +193,46 @@ func Run(opts Options) (Result, error) {
 
 	path := manifest.Path(dir)
 	if fsutil.FileExists(path) {
-		return existing(path)
+		return opts.configured(path, dir)
 	}
 
-	warnShadowedManifest(opts.Stderr, dir)
+	if err := opts.checkNothingToImport(dir); err != nil {
+		return Result{}, err
+	}
+
+	return opts.create(dir)
+}
+
+// create is setup proper: the run that answers the questions and writes a
+// manifest for a project that has none.
+func (o Options) create(dir string) (Result, error) {
+	warnShadowedManifest(o.Stderr, dir)
 
 	detected := Detect(dir)
 
-	if !opts.Answers.SkipEnv {
-		warnUnreadEnvFile(opts.Stderr, detected)
+	if err := o.checkEnvFile(detected); err != nil {
+		return Result{}, err
 	}
 
-	content, draft, err := opts.resolve(detected)
+	content, draft, projectDir, err := o.resolve(detected)
 	if err != nil {
 		return Result{}, err
+	}
+
+	// The interactive flow may have moved the project: everything from here
+	// on — the write, the validation's Dockerfile check, the reported path —
+	// belongs to the directory resolve settled on, which headless runs return
+	// unchanged.
+	path := manifest.Path(projectDir)
+
+	// The chosen directory's own .env gets the same courtesy the starting
+	// one got above: a parse failure must not read as "there was nothing to
+	// import". The flow re-detected on the way, but only the warning's
+	// reader was lost — the TUI owned the terminal at the time.
+	if projectDir != dir {
+		if err := o.checkEnvFile(Detect(projectDir)); err != nil {
+			return Result{}, err
+		}
 	}
 
 	// A file that came from a running workload is judged as the platform's
@@ -142,12 +242,12 @@ func Run(opts Options) (Result, error) {
 		author = authorLive
 	}
 
-	if err := checkRendered(content, dir, author); err != nil {
+	if err := checkRendered(content, projectDir, author); err != nil {
 		return Result{}, err
 	}
 
 	action := ActionCreated
-	if opts.DryRun {
+	if o.DryRun {
 		action = ActionPlanned
 	}
 
@@ -160,7 +260,7 @@ func Run(opts Options) (Result, error) {
 		EnvSecretsPending: pendingSecrets(draft.EnvVars),
 	}
 
-	if opts.DryRun {
+	if o.DryRun {
 		return result, nil
 	}
 
@@ -171,13 +271,47 @@ func Run(opts Options) (Result, error) {
 	return result, nil
 }
 
-// existing reports the manifest that is already there, and reads it rather
-// than only noting its presence: the run's answer describes the project as it
-// stands, not as it would have been configured. A file that cannot be read or
-// does not validate is reported as the line-numbered error it is, because
-// telling the user everything is fine and letting up discover otherwise is
-// the worse of the two answers.
-func existing(path string) (Result, error) {
+// editsEnv reports that this run acts on the .env of a manifest that already
+// exists. Both flags read the file and both write something as a result, so
+// every guard that turns on one of them turns on both.
+func (o Options) editsEnv() bool {
+	return o.ImportEnv || o.UpdateEnv
+}
+
+// checkNothingToImport refuses --import-env in a directory with no manifest.
+// The flag names an existing file to add to, and falling through to setup
+// would create one instead, in a directory the flag says was already
+// configured, and mint credentials for the whole .env on the way.
+func (o Options) checkNothingToImport(dir string) error {
+	if !o.editsEnv() {
+		return nil
+	}
+
+	// `up` reads the nearest manifest at or above its directory, so a project
+	// laid out with the file at the repository root has one governing this
+	// directory that this command, which only ever looks in the directory it
+	// was given, would otherwise deny the existence of.
+	if above, err := manifest.Locate(filepath.Dir(dir)); err == nil {
+		return fmt.Errorf(
+			"no %s in %s, so there is nothing to %s. The one at %s is what a deploy from here reads: "+
+				"run this with --dir %s",
+			manifest.FileName, dir, o.editVerb(), above, filepath.Dir(above))
+	}
+
+	return fmt.Errorf(
+		"no %s in %s, so there is nothing to %s. "+
+			"Run 'dr workload config' to create one, or point --dir at the project that has one",
+		manifest.FileName, dir, o.editVerb())
+}
+
+// configured handles a project that has been set up already: the one edit that
+// was asked for, or the file itself, reported and untouched.
+//
+// Both halves start from the file rather than from the answers, which is the
+// difference between this and a run that writes one. Setup answers a project
+// that has none; here the manifest is the truth and the most a run may do is
+// add to it.
+func (o Options) configured(path, dir string) (Result, error) {
 	parsed, err := manifest.Load(path)
 	if err != nil {
 		return Result{}, err
@@ -187,22 +321,940 @@ func existing(path string) (Result, error) {
 		return Result{}, err
 	}
 
+	detected := Detect(dir)
+
+	// Both halves read the same .env, so both owe the same account of one that
+	// could not be read. Without it the drift notice's silence, which means
+	// "nothing missing", would also be what a file that failed to parse looks
+	// like.
+	if err := o.checkEnvFile(detected); err != nil {
+		return Result{}, err
+	}
+
+	if o.editsEnv() {
+		return o.editEnv(path, parsed, detected)
+	}
+
+	return o.existing(path, parsed, detected)
+}
+
+// existing reports the manifest that is already there, and reads it rather
+// than only noting its presence: the run's answer describes the project as it
+// stands, not as it would have been configured. A file that cannot be read or
+// does not validate is reported as the line-numbered error it is, because
+// telling the user everything is fine and letting up discover otherwise is
+// the worse of the two answers.
+//
+// It changes nothing, and detected is here only so the run can say when .env
+// has grown past the file. That notice is the point: the import is one-time by
+// design, so the drift it leaves behind is invisible until a container fails
+// at first use, and this is the one command in a position to mention it.
+func (o Options) existing(path string, parsed *manifest.Manifest, detected Detected) (Result, error) {
+	o.reportDrift(parsed, detected)
+
 	return Result{
 		Path:   path,
 		Action: ActionUnchanged,
-		Draft: manifest.Draft{
-			WorkloadID: parsed.WorkloadID(),
-			Name:       parsed.Name(),
-			Build:      manifest.Build{Mode: parsed.BuildMode()},
-		},
+		Draft:  draftOf(parsed),
 	}, nil
 }
 
+// reportDrift is the whole of what these two files have to say about each
+// other. Every caller goes through it, so a deploy and a `dr workload config`
+// cannot reach different conclusions about the same pair; what they differ in
+// is Options.DriftOnly, which is a question about register rather than about
+// which comparisons ran.
+func (o Options) reportDrift(parsed *manifest.Manifest, detected Detected) {
+	o.warnEnvDrift(parsed, detected)
+	o.warnValueDrift(parsed, detected)
+}
+
+// ReportEnvDrift says what .env and the manifest disagree about, for a command
+// that has not been asked to do anything about it. It reads the two files,
+// writes to neither, and reports only what has moved between them: see
+// Options.DriftOnly for what a deploy leaves to `dr workload config`.
+//
+// The comparison is the one existing() runs, reached through the same
+// reportDrift, so a deploy and a setup run cannot come to different
+// conclusions about the same pair.
+//
+// The parameters are spelled out rather than taken as Options because the
+// contract is narrow and an Options would invite a caller to fill in fields
+// this ignores. dir must be absolute: Run normalises its own, and this is
+// called with a path a manifest was already loaded from.
+//
+// remedy is the command whose flags settle what is found, without the flag:
+// "dr workload up", or that plus the --dir the caller was given.
+//
+// Nothing here can fail the caller. This is a courtesy on a command that was
+// asked to do something else, so a .env that will not parse is reported and
+// then left alone.
+func ReportEnvDrift(dir, remedy string, stderr io.Writer, parsed *manifest.Manifest) {
+	if stderr == nil || parsed == nil {
+		return
+	}
+
+	opts := Options{Dir: dir, Remedy: remedy, DriftOnly: true, Stderr: stderr}
+
+	detected := detectEnv(dir)
+
+	opts.warnEnvFile(detected)
+
+	// Nothing was read, so there is nothing to compare, and a silent drift
+	// notice means "the two files agree" everywhere else it appears.
+	if detected.EnvErr != nil {
+		return
+	}
+
+	opts.reportDrift(parsed, detected)
+}
+
+// detectEnv reads the one file a drift comparison is about.
+//
+// Detect answers a wizard's whole opening question: it stats the Dockerfile
+// and reads it for an EXPOSE, stats every root marker, and for a directory
+// carrying none of them scans the subdirectories for somewhere better to set
+// up, at a manifest stat plus a marker sweep per entry. That budget was
+// written for one interactive run. A notice that only wants to know what .env
+// holds should not spend it on every deploy, and the answers it would get are
+// all discarded here anyway.
+func detectEnv(dir string) Detected {
+	detected := Detected{Dir: dir}
+
+	detected.EnvVars, detected.EnvErr = envVars(filepath.Join(dir, EnvFileName))
+
+	return detected
+}
+
+// warnEnvDrift names the .env variables the manifest does not declare, and the
+// flag that adds them.
+//
+// Names only, never values. The deploy plan redacts environment values on
+// purpose, and a warning that pasted a freshly added API key onto the terminal
+// would be the one place that undoes it.
+//
+// Silent where there is no .env, which is the ordinary CI case, and silent
+// under --skip-env, which is the user having already said the file is not to
+// be read.
+func (o Options) warnEnvDrift(parsed *manifest.Manifest, detected Detected) {
+	if o.quiet() {
+		return
+	}
+
+	// Asked once, up front, because it decides whether the comparison below
+	// means anything at all. EnvVarNames answers the empty set for exactly the
+	// shapes this refuses, and a container inheriting its environment through
+	// an alias or a merge key really is serving names the walk cannot see:
+	// compared against that empty set, an inherited block reads as a manifest
+	// declaring nothing, and every name in .env reads as drift.
+	blocked := parsed.CanDeclareEnvVars()
+
+	// Through envVars rather than detected.EnvVars directly, so the notice
+	// counts what --import-env would actually add: SkipEnv silences it, and a
+	// variable the classifier called local-only is held back on purpose, so it
+	// is reported separately below rather than as something the flag would fix.
+	wanted := o.Answers.envVars(detected)
+
+	// Naming a flag that cannot run on this file would be an errand, not
+	// advice, and naming the variables it would add would be a guess. So the
+	// count is of what .env offers rather than of a drift this cannot measure,
+	// and the refusal says what the shape is and what to do instead.
+	if blocked != nil {
+		// A shape no flag can edit is a fact about the file, not a difference
+		// between the two, and a deploy that names it names something the
+		// reader can only settle by hand. The count is of what .env offers
+		// rather than of a drift this cannot measure, so on a deploy it would
+		// also be reporting as missing names the container may already carry.
+		if o.DriftOnly {
+			return
+		}
+
+		if len(wanted) > 0 {
+			fmt.Fprintf(o.Stderr,
+				"%s defines %d %s, and %s cannot be added automatically: %v\n",
+				EnvFileName, len(wanted), Plural(len(wanted), "variable", "variables"),
+				Plural(len(wanted), "it", "they"), blocked)
+		}
+
+		o.warnEnvHeldBack(parsed, detected, blocked)
+
+		return
+	}
+
+	fresh := undeclared(wanted, parsed.EnvVarNames())
+	if len(fresh) == 0 {
+		o.warnEnvHeldBack(parsed, detected, blocked)
+
+		return
+	}
+
+	missing := make([]string, 0, len(fresh))
+	for _, v := range fresh {
+		missing = append(missing, v.Name)
+	}
+
+	fmt.Fprintf(o.Stderr,
+		"%s defines %d %s the manifest does not declare, so %s would not reach the container: %s.\n"+
+			"  Add %s with %s.\n",
+		EnvFileName, len(missing), Plural(len(missing), "variable", "variables"),
+		Plural(len(missing), "it", "they"), JoinNames(missing),
+		Plural(len(missing), "it", "them"), o.remedy("--import-env"))
+
+	// What the flag would not add is news whether or not it has something to
+	// add: a name held back is held back either way, and only saying so when
+	// the drift list happens to be empty makes it a matter of luck.
+	o.warnEnvHeldBack(parsed, detected, blocked)
+}
+
+// warnValueDrift names the declared variables whose .env value no longer
+// matches the manifest, and says what cannot be checked.
+//
+// Only the literals can be compared: a secret is a reference, and the platform
+// never hands a stored value back, so a rotated key is indistinguishable from
+// an untouched one. Saying that outright is the point. Silence about secrets
+// would read as "those are fine", which is the reading that leaves a rotated
+// key sitting in .env while the container serves the old one.
+//
+// Names only, never values. Both sides of a comparison are the user's own
+// configuration and the classifier's verdict on which of them is sensitive is
+// a heuristic.
+//
+// Under Options.DriftOnly only the first of the five reports survives. The
+// other four name values no flag will settle, so they say the same thing on
+// every run until the file is edited by hand.
+func (o Options) warnValueDrift(parsed *manifest.Manifest, detected Detected) {
+	if o.quiet() || o.Answers.SkipEnv {
+		return
+	}
+
+	changed, unverifiable, reclassified, structured, heldBack := o.compareValues(parsed, detected)
+
+	// The values are read by the walk that resolves aliases and applied by the
+	// one that refuses them, so a file can show its drift and still not accept
+	// the edit. Where it would not, the refusal takes the place of the advice:
+	// naming a flag that cannot run on this manifest is an errand, which is
+	// the rule the missing-name notice already follows.
+	//
+	// About the file only. A rotation writes to the credential store and
+	// leaves the file alone, so the line about secrets below stands whatever
+	// this says.
+	blocker := parsed.CanDeclareEnvVars()
+
+	if len(changed) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%s gives %d declared %s a different value from the manifest, and the manifest is what deploys: %s.\n%s",
+			EnvFileName, len(changed), Plural(len(changed), "variable", "variables"),
+			JoinNames(changed),
+			applyLine(blocker, fmt.Sprintf("Apply %s with %s.",
+				Plural(len(changed), "it", "them"), o.remedy("--update-env"))))
+	}
+
+	if o.DriftOnly {
+		return
+	}
+
+	if len(reclassified) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%s now gives %d declared %s a value of a different kind from the one the manifest holds "+
+				"(a literal where it stores a credential, or the reverse), which neither flag applies: %s.\n"+
+				"  Change %s in %s by hand, or delete the %s and re-add %s.\n",
+			EnvFileName, len(reclassified), Plural(len(reclassified), "variable", "variables"),
+			JoinNames(reclassified), Plural(len(reclassified), "it", "them"), manifest.FileName,
+			Plural(len(reclassified), "entry", "entries"), Plural(len(reclassified), "it", "them"))
+	}
+
+	if len(heldBack) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%s now reads %d declared %s as local-only, so neither flag applies %s value and the manifest keeps "+
+				"the one it holds: %s.\n"+
+				"  Change the manifest by hand if the %s %s is meant to deploy.\n",
+			EnvFileName, len(heldBack), Plural(len(heldBack), "variable", "variables"),
+			Plural(len(heldBack), "its", "their"), JoinNames(heldBack),
+			EnvFileName, Plural(len(heldBack), "value", "values"))
+	}
+
+	if len(structured) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%s gives %d declared %s a value that is not a plain string, which neither flag rewrites: %s.\n"+
+				"  Change %s by hand if %s is meant to win.\n",
+			manifest.FileName, len(structured), Plural(len(structured), "variable", "variables"),
+			JoinNames(structured), Plural(len(structured), "it", "them"), EnvFileName)
+	}
+
+	// Advised without a blocker check, because a re-send is not an edit to
+	// this file: the id stays what it was, so a manifest no rewrite can touch
+	// is still one whose secrets can be rotated. The names in this list were
+	// read off the declarations the rotation walks, so having any at all is
+	// proof it can run.
+	if len(unverifiable) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%d %s stored as %s, whose values cannot be compared with %s because the platform never returns them: %s.\n"+
+				"  If one was rotated locally, re-send it with %s.\n",
+			len(unverifiable), Plural(len(unverifiable), "variable is", "variables are"),
+			Plural(len(unverifiable), "a credential", "credentials"), EnvFileName,
+			JoinNames(unverifiable), o.remedy("--update-env"))
+	}
+}
+
+// applyLine is the second line of a drift notice about the file: what to run
+// about it, or why this manifest will not take it. Both flags rewrite through
+// the same walk and refuse the same shapes before they touch anything, so a
+// file that blocks one blocks the other.
+func applyLine(blocker error, advice string) string {
+	if blocker != nil {
+		return fmt.Sprintf("  This manifest cannot be edited automatically: %v\n", blocker)
+	}
+
+	return "  " + advice + "\n"
+}
+
+// compareValues sorts the declared variables .env also defines into the ones
+// whose value has moved, the ones nothing can answer for, and the ones no flag
+// will settle.
+func (o Options) compareValues(
+	parsed *manifest.Manifest, detected Detected,
+) (changed, unverifiable, reclassified, structured, heldBack []string) {
+	local := make(map[string]manifest.EnvVar, len(detected.EnvVars))
+	for _, v := range o.Answers.envVars(detected) {
+		local[v.Name] = v
+	}
+
+	localOnly := o.localOnlyNames(detected)
+
+	for _, declared := range parsed.DeclaredEnvVars() {
+		want, defined := local[declared.Name]
+		if !defined {
+			if localOnly[declared.Name] {
+				heldBack = append(heldBack, declared.Name)
+			}
+
+			continue
+		}
+
+		switch {
+		// The classifier reads the value, so a value that changed enough can
+		// change the verdict. Neither half acts on that: an update matches
+		// like for like and an import skips a declared name. Naming it is all
+		// that stops it being the one drift nothing ever mentions.
+		case declared.Secret() != want.Secret:
+			reclassified = append(reclassified, declared.Name)
+		// A placeholder has no stored value to compare or re-send.
+		// warnEnvHeldBack already names it, and saying "rotate it with
+		// --update-env" would be advice for a command that skips it.
+		case declared.CredentialID == manifest.CredentialPlaceholder:
+			continue
+		case declared.Secret():
+			unverifiable = append(unverifiable, declared.Name)
+		// A value written as a mapping or a list. The update path will not
+		// overwrite one, so calling it drift would advise a flag that then
+		// does nothing.
+		case declared.Structured:
+			structured = append(structured, declared.Name)
+		case declared.Value != want.Value:
+			changed = append(changed, declared.Name)
+		}
+	}
+
+	return changed, unverifiable, reclassified, structured, heldBack
+}
+
+// localOnlyNames is the .env names the classifier held back. envVars drops
+// them, so without this a declared variable whose .env value has turned
+// local-only reaches the comparison as a name .env no longer mentions: not
+// compared, not re-sent, and named nowhere, because the held-back notice
+// covers only names the manifest does not carry.
+//
+// Empty under --skip-env, which is the user having said the file is not to be
+// read at all: a verdict on a file nobody asked to read is not news.
+func (o Options) localOnlyNames(detected Detected) map[string]bool {
+	names := make(map[string]bool, len(detected.EnvVars))
+	if o.Answers.SkipEnv {
+		return names
+	}
+
+	for _, v := range detected.EnvVars {
+		if v.Kind == EnvLocal {
+			names[v.Name] = true
+		}
+	}
+
+	return names
+}
+
+// warnEnvHeldBack covers the two ways a manifest can declare every name .env
+// offers and still not be finished.
+//
+// A local-only variable is a classifier verdict, not a fact, and this path has
+// no table to overrule it on, so the name has to be said or the user has no
+// way to learn it was held back. A placeholder is an entry the CLI itself
+// wrote and never completed, and because the name counts as declared, every
+// later import skips it: without this line the retry after the credential
+// store comes back reports "nothing to add" about a file a deploy refuses.
+//
+// Silent entirely under Options.DriftOnly. Every line here is a standing fact
+// about the pair rather than a change to them: a classifier verdict holds
+// until the file changes, and a placeholder is already the subject of the
+// refusal the deploy raises for itself when it reaches the credential.
+//
+// blocked is why the manifest's declared names cannot be read, or nil when
+// they can. The local-only line rests on that set and is dropped without it:
+// a container inheriting its environment may already carry every one of these
+// names, and calling them deliberately omitted would send the user off to add
+// by hand a variable the deploy already has. The placeholder line stands
+// either way, because it resolves aliases and so reads the same entries the
+// deploy does.
+func (o Options) warnEnvHeldBack(parsed *manifest.Manifest, detected Detected, blocked error) {
+	if o.quiet() || o.Answers.SkipEnv || o.DriftOnly {
+		return
+	}
+
+	if blocked == nil {
+		o.warnEnvLocalOnly(parsed, detected)
+	}
+
+	if pending := parsed.PendingEnvNames(); len(pending) > 0 {
+		fmt.Fprintf(o.Stderr,
+			"%s still names %s for %s, so a deploy will refuse %s: %s.\n"+
+				"  Store the %s as a credential and put its id in the file.\n",
+			manifest.FileName, manifest.CredentialPlaceholder,
+			Plural(len(pending), "a variable", "variables"),
+			Plural(len(pending), "it", "them"), JoinNames(pending),
+			Plural(len(pending), "value", "values"))
+	}
+}
+
+// warnEnvLocalOnly names the .env variables the classifier held back and the
+// manifest does not carry either, because a verdict the user never sees is one
+// they have no way to overrule.
+//
+// Only sound where the manifest's declared names can be read: see warnEnvHeldBack.
+func (o Options) warnEnvLocalOnly(parsed *manifest.Manifest, detected Detected) {
+	var local []string
+
+	declared := parsed.EnvVarNames()
+
+	for _, v := range detected.EnvVars {
+		if v.Kind == EnvLocal && !declared[v.Name] {
+			local = append(local, v.Name)
+		}
+	}
+
+	if len(local) == 0 {
+		return
+	}
+
+	fmt.Fprintf(o.Stderr,
+		"%s defines %s that %s read as local-only, so %s deliberately left out of the manifest: %s.\n"+
+			"  Add %s by hand if the workload needs %s.\n",
+		EnvFileName, Plural(len(local), "a variable", "variables"),
+		Plural(len(local), "was", "were"), Plural(len(local), "it is", "they are"),
+		JoinNames(local),
+		Plural(len(local), "it", "them"), Plural(len(local), "it", "them"))
+}
+
+func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detected) (Result, error) {
+	// Asked before anything is stored, because storing is the step that cannot
+	// be undone. A credential is created on the tenant for good, and finding
+	// out at the write that this file was never going to accept the reference
+	// leaves a secret behind that nothing points at and whose name every retry
+	// then collides with.
+	//
+	// configured has already refused a .env this could not read, so what
+	// reaches here is a parsed file and a parsed environment.
+	// Only the additive half needs somewhere to append. A rotation writes to
+	// the credential store and a literal rewrite edits an entry already there,
+	// so refusing those for "nowhere to add a variable" would be an
+	// add-shaped refusal of a run that adds nothing.
+	if o.ImportEnv {
+		if err := parsed.CanDeclareEnvVars(); err != nil {
+			return Result{}, err
+		}
+	}
+
+	wanted := o.Answers.envVars(detected)
+
+	result := Result{Path: path, Action: ActionUnchanged, Draft: draftOf(parsed)}
+
+	if o.UpdateEnv {
+		if err := o.updateEnv(path, parsed, detected, wanted, &result); err != nil {
+			return Result{}, err
+		}
+	}
+
+	if o.ImportEnv {
+		if err := o.addEnv(path, parsed, detected, wanted, &result); err != nil {
+			return Result{}, err
+		}
+	}
+
+	o.reportEnvOutcome(parsed, detected, result)
+
+	return result, nil
+}
+
+// reportEnvOutcome is what a run that asked for the flags has left to say once
+// they have done what they can.
+//
+// parsed predates any rewrite the run made, which is sound for all three
+// branches: every comparison they reach is of names, and neither flag's
+// rewrite adds or removes one.
+func (o Options) reportEnvOutcome(parsed *manifest.Manifest, detected Detected, result Result) {
+	// A rotation leaves the file untouched, so the action alone cannot tell a
+	// run that did nothing from one that re-sent every secret it found, and
+	// only the first of those has "nothing to do" to report.
+	if result.Action == ActionUnchanged && result.EnvSecretsRotated == 0 && result.EnvSecretsNotRotated == 0 {
+		o.reportNothingToImport(parsed, detected)
+
+		return
+	}
+
+	o.warnNamesNotAdded(parsed, detected)
+}
+
+// warnNamesNotAdded is what a run that has finished with the flags owes about
+// the names it did not put in the file.
+//
+// An update adds no names, so one the manifest is missing is still missing
+// when it finishes, and without this the run that reconciled every value it
+// could reads as a clean bill of health for a file that is short a variable.
+// warnEnvDrift ends in the held-back notice itself, so the two branches are
+// exclusive rather than cumulative.
+//
+// An import is the other way round: it has just put those names in the file,
+// so naming them now would report as missing exactly what the run added.
+//
+// A manifest the flags cannot edit takes the held-back branch whichever flag
+// ran. warnEnvDrift's refusal there is add-shaped, counting the whole of .env
+// as un-addable, which is an errand to put in front of a run that was never
+// adding anything; and the blocker is passed on rather than replaced with nil,
+// because the local-only line rests on declared names this shape cannot read.
+//
+// parsed predates any rewrite this run made, which is sound here: every
+// comparison below is of names, and neither flag's rewrite adds or removes
+// one.
+func (o Options) warnNamesNotAdded(parsed *manifest.Manifest, detected Detected) {
+	blocked := parsed.CanDeclareEnvVars()
+
+	if !o.ImportEnv && blocked == nil {
+		o.warnEnvDrift(parsed, detected)
+
+		return
+	}
+
+	o.warnEnvHeldBack(parsed, detected, blocked)
+}
+
+// updateEnv brings declared variables back in line with .env: a literal is
+// rewritten in the file, and the credential behind a secret is re-sent.
+//
+// The secrets are re-sent without being checked, because they cannot be: the
+// platform never returns a stored value. That is why this needs asking for.
+// Re-sending a value that was already stored changes nothing, so the cost of
+// the unnecessary case is one request, and the cost of not doing it is a
+// container serving a key its owner has already rotated.
+func (o Options) updateEnv(
+	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar, result *Result,
+) error {
+	rewrite, err := o.provenRewrite(path, parsed, detected, wanted)
+	if err != nil {
+		return err
+	}
+
+	rotated, failed := o.rotateSecrets(parsed, detected, wanted)
+
+	var (
+		changed []manifest.EnvVar
+		content []byte
+	)
+
+	if rewrite {
+		if changed, content, err = manifest.UpdateEnvVars(path, wanted, o.DryRun); err != nil {
+			return err
+		}
+	}
+
+	result.EnvValuesUpdated = len(changed)
+	result.EnvSecretsRotated = rotated
+	result.EnvSecretsNotRotated = failed
+
+	o.recordUpdate(changed, content, result)
+
+	return nil
+}
+
+// recordUpdate is what the run has to show for itself, once the counts are in.
+//
+// A rotation is a write to the credential store, not to the file, so it does
+// not make the run an edit: saying "updated .datarobot.yaml" about a file that
+// is byte for byte what it was is the kind of claim this command exists not to
+// make. A dry run is planned either way, because both are things it would have
+// done.
+func (o Options) recordUpdate(changed []manifest.EnvVar, content []byte, result *Result) {
+	if result.EnvValuesUpdated == 0 && result.EnvSecretsRotated == 0 && result.EnvSecretsNotRotated == 0 {
+		return
+	}
+
+	if len(changed) > 0 || o.DryRun {
+		result.Action = o.editAction()
+	}
+
+	if len(changed) == 0 {
+		return
+	}
+
+	if len(content) > 0 {
+		result.Content = content
+	}
+
+	result.Draft.EnvVars = append(result.Draft.EnvVars, changed...)
+}
+
+// addEnv is the additive half: the names the manifest does not carry yet.
+func (o Options) addEnv(
+	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar, result *Result,
+) error {
+	fresh := undeclared(wanted, parsed.EnvVarNames())
+	if len(fresh) == 0 {
+		return nil
+	}
+
+	// The guard above reads the tree the manifest was parsed into, which
+	// cannot see what only the file says: a second YAML document after the
+	// first, which the reader skips and the edit refuses. So the edit is run
+	// once as a preview and thrown away. It is the only guard that cannot
+	// disagree with the write it guards, and it costs a parse to save a
+	// credential nothing would ever point at.
+	if _, _, err := manifest.ImportEnvVars(path, fresh, true); err != nil {
+		return err
+	}
+
+	fresh = o.storeSecrets(fresh, detected, parsed.Name())
+
+	added, content, err := manifest.ImportEnvVars(path, fresh, o.DryRun)
+	if err != nil {
+		return err
+	}
+
+	// The action comes from what the edit did, not from what was asked for.
+	// ImportEnvVars reports nothing added when the file changed under the run
+	// and already declares these names, and calling that an update would tell
+	// a pipeline a file moved that never did.
+	if len(added) == 0 {
+		return nil
+	}
+
+	if len(content) > 0 {
+		result.Content = content
+	}
+
+	result.Action = o.editAction()
+	result.EnvKeysListed = len(added)
+
+	// Not counted on a dry run. Nothing was stored, so every secret still
+	// carries the placeholder, and reporting that as "needs a credential id"
+	// would describe the preview rather than the run it previews.
+	if !o.DryRun {
+		result.EnvSecretsPending = pendingSecrets(added)
+	}
+
+	// The variables this run added, so the command can name the ones whose
+	// values it just wrote out in the clear. Without them the only disclosure
+	// the classifier's verdict ever gets is skipped on the one path that adds
+	// fresh values to a file headed for git.
+	result.Draft.EnvVars = append(result.Draft.EnvVars, added...)
+
+	return nil
+}
+
+// editAction is what an edit that did something reports.
+func (o Options) editAction() string {
+	if o.DryRun {
+		return ActionPlanned
+	}
+
+	return ActionUpdated
+}
+
+// provenRewrite runs the file edit as a preview and reports whether the real
+// one may follow.
+//
+// The rewrite is proven before a single credential is re-sent. A PATCH is
+// irreversible and the edit can still refuse for reasons the parsed tree
+// cannot see, so previewing it is what stops a refused run from having already
+// overwritten the tenant's secrets.
+//
+// A refusal about writing into the file only ends the run when the run was
+// going to write into the file. Sharing is that refusal: a container whose
+// environment another one reads through an anchor takes no edit here, while a
+// rotation writes to the credential store and leaves the file byte for byte
+// what it was. Ending on it would leave every manifest of that shape with no
+// way to re-send a rotated key at all, which is the case this command exists
+// for.
+func (o Options) provenRewrite(
+	path string, parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar,
+) (bool, error) {
+	_, _, err := manifest.UpdateEnvVars(path, wanted, true)
+	if err == nil {
+		return true, nil
+	}
+
+	// Any other refusal still stops everything, and so does a shared file the
+	// walk cannot read past: a run that rotated nothing because it saw no
+	// declarations would go on to report the file as agreeing with .env on the
+	// strength of the ones it never saw.
+	if !errors.Is(err, manifest.ErrSharedEnvVars) || len(parsed.DeclaredEnvVars()) == 0 {
+		return false, err
+	}
+
+	// A literal .env would rewrite makes this a write into the file after all,
+	// and the refusal is about exactly that.
+	changed, _, _, _, _ := o.compareValues(parsed, detected)
+	if len(changed) > 0 {
+		return false, err
+	}
+
+	return false, nil
+}
+
+// rotateSecrets re-sends each declared secret's current .env value to the
+// credential the manifest points at, and reports how many it sent and how many
+// it could not.
+//
+// Nothing is created: the id in the file stays the id in the file, so a
+// rotation leaves the manifest untouched. That is also why it does not reach a
+// workload on its own: a container reads its credentials at startup, and `up`
+// compares the manifest it already deployed, finds it unchanged and does
+// nothing. Only a restart makes the new value the one being served, which is
+// what the command says after a run that re-sent something. A send that fails is reported and
+// does not stop the others, matching how the import treats a store it cannot
+// reach: a partial result is the ordinary failure here, not an exceptional
+// one. The count of those comes back because a failure leaves the old value
+// serving and the file with nothing to show for it, so it is the only trace a
+// caller reading the result rather than the terminal would ever get.
+func (o Options) rotateSecrets(
+	parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar,
+) (rotated, failedCount int) {
+	// Only the names the answers kept. .env is read through the classifier for
+	// a reason: a value it reads as local-only is one the workload must not
+	// get, and --skip-env says not to read the file at all. Indexing the raw
+	// detection instead would send a developer's localhost URL to the tenant
+	// credential a production workload reads.
+	send := make(map[string]bool, len(wanted))
+
+	for _, v := range wanted {
+		if v.Secret {
+			send[v.Name] = true
+		}
+	}
+
+	values := secretValues(detected)
+
+	var failed []ImportFailure
+
+	for _, declared := range parsed.DeclaredEnvVars() {
+		value, reason := rotatable(declared, send, values, parsed.Name())
+		if reason != nil {
+			failed = append(failed, *reason)
+
+			continue
+		}
+
+		if value == "" {
+			continue
+		}
+
+		// A dry run counts what it would send and sends nothing. Saying
+		// nothing about the secrets instead would leave the one part of
+		// --update-env that reaches the tenant out of the preview of it.
+		if o.DryRun {
+			rotated++
+
+			continue
+		}
+
+		if _, err := updateCredentialFn(declared.CredentialID, value); err != nil {
+			failed = append(failed, ImportFailure{Name: declared.Name, Reason: importReason(err, declared.Name)})
+
+			continue
+		}
+
+		rotated++
+	}
+
+	reportRotation(o.Stderr, rotated, failed, o.DryRun)
+
+	return rotated, len(failed)
+}
+
+// rotatable is the value to re-send for a declared variable, empty when this
+// one is not a rotation candidate, and a failure when it is one this command
+// must not perform.
+//
+// The ownership check is the important half. A credential id in the manifest
+// may have been pasted by hand, and the store is tenant-wide: overwriting one
+// that other workloads read, from a flag about this project's .env, is the
+// damage this refuses. Only a credential named the way setup names them, and
+// only its apiToken field, is one this command wrote and may write again.
+func rotatable(
+	declared manifest.DeclaredEnvVar, send map[string]bool, values map[string]string, workloadName string,
+) (string, *ImportFailure) {
+	if !declared.Secret() || !send[declared.Name] ||
+		declared.CredentialID == manifest.CredentialPlaceholder {
+		return "", nil
+	}
+
+	// Only a credential this CLI would have written. The reference names which
+	// field of the credential feeds the variable, and re-sending an apiToken to
+	// one holding a password would rewrite a credential other DataRobot assets
+	// share, from a flag that promised to touch this workload's environment.
+	if declared.CredentialKey != manifest.CredentialKeyWritten {
+		return "", &ImportFailure{
+			Name: declared.Name,
+			Reason: fmt.Sprintf("it reads the %q field of its credential, which this command does not write; "+
+				"rotate that credential in DataRobot instead", declared.CredentialKey),
+		}
+	}
+
+	// A read that fails is not proof of anything, so it refuses too: the cost
+	// of not re-sending is a stale key the user is told about, and the cost of
+	// re-sending blind is another workload's secret replaced.
+	want := CredentialName(workloadName, declared.Name)
+
+	cred, err := getCredentialFn(declared.CredentialID)
+	if err != nil {
+		return "", &ImportFailure{Name: declared.Name, Reason: importReason(err, want)}
+	}
+
+	if cred.Name != want {
+		return "", &ImportFailure{
+			Name: declared.Name,
+			Reason: fmt.Sprintf("it points at credential %q, which this project did not create and other "+
+				"workloads may share; rotate that credential in DataRobot instead", cred.Name),
+		}
+	}
+
+	return values[declared.Name], nil
+}
+
+// reportNothingToImport says why an edit changed nothing. The command prints
+// no line of its own for this case, because only here is it known whether the
+// file was complete, absent, or complete only because the names that are
+// missing were held back.
+func (o Options) reportNothingToImport(parsed *manifest.Manifest, detected Detected) {
+	if o.quiet() {
+		return
+	}
+
+	dir := filepath.Dir(parsed.Path)
+
+	// Asked of the filesystem rather than of the parse: a .env holding only
+	// comments yields no variables and is still a file the user is looking at,
+	// and telling them it does not exist points them at the wrong fix.
+	if !fsutil.FileExists(filepath.Join(dir, EnvFileName)) {
+		fmt.Fprintf(o.Stderr, "No %s in %s, so there is nothing to %s.\n",
+			EnvFileName, dir, o.editVerb())
+
+		return
+	}
+
+	// A file the flags cannot act on is not a file that agrees with .env, so
+	// where there is drift left over the notice about it takes the place of
+	// the summary: a run that says both would contradict itself in two lines.
+	if o.hasUnappliedDrift(parsed, detected) {
+		o.warnValueDrift(parsed, detected)
+	} else {
+		fmt.Fprintf(o.Stderr, "%s %s.\n", ShortPath(parsed.Path), o.nothingLeftToDo())
+	}
+
+	o.warnNamesNotAdded(parsed, detected)
+}
+
+// hasUnappliedDrift reports whether an update that changed nothing left a
+// value behind that it was never going to settle: one the file holds as a
+// mapping or a list, one whose kind no longer matches what the manifest
+// stores, and one .env now reads as local-only. All three are things
+// --update-env skips on purpose, and all three make "already gives every
+// variable the value .env does" a false summary.
+//
+// Only for a run that asked to update. A literal .env changed is the other
+// flag's business, and an import saying nothing to add is still true about it.
+func (o Options) hasUnappliedDrift(parsed *manifest.Manifest, detected Detected) bool {
+	if !o.UpdateEnv {
+		return false
+	}
+
+	_, _, reclassified, structured, heldBack := o.compareValues(parsed, detected)
+
+	return len(reclassified)+len(structured)+len(heldBack) > 0
+}
+
+// editVerb names the act that found nothing to do, so a run that only asked
+// for one of the two flags is not told about the other.
+func (o Options) editVerb() string {
+	if !o.ImportEnv {
+		return "update"
+	}
+
+	return "import"
+}
+
+// nothingLeftToDo is what a file already in the state the flags would put it
+// in has to say for itself, which is a different sentence per flag: one is
+// about the names it carries, the other about the values behind them.
+func (o Options) nothingLeftToDo() string {
+	declares := fmt.Sprintf("already declares every variable in %s that can be imported", EnvFileName)
+	matches := fmt.Sprintf("already gives every variable it declares the value %s does", EnvFileName)
+
+	switch {
+	case o.ImportEnv && o.UpdateEnv:
+		return declares + ", and " + matches
+	case o.UpdateEnv:
+		return matches
+	default:
+		return declares
+	}
+}
+
+// undeclared is the variables whose names the manifest does not already
+// carry, in the order .env defines them.
+func undeclared(vars []manifest.EnvVar, declared map[string]bool) []manifest.EnvVar {
+	fresh := make([]manifest.EnvVar, 0, len(vars))
+
+	for _, v := range vars {
+		if !declared[v.Name] {
+			fresh = append(fresh, v)
+		}
+	}
+
+	return fresh
+}
+
+// draftOf is what a run over an existing manifest can say about it: the fields
+// the file answers, not the whole spec.
+func draftOf(parsed *manifest.Manifest) manifest.Draft {
+	return manifest.Draft{
+		WorkloadID: parsed.WorkloadID(),
+		Name:       parsed.Name(),
+		Build:      manifest.Build{Mode: parsed.BuildMode()},
+	}
+}
+
 // resolve produces the manifest bytes, from flags alone when nothing may
-// prompt and from the wizard otherwise.
-func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, error) {
+// prompt and from the wizard otherwise. The directory it returns is where the
+// project actually is: Detected.Dir, unless the interactive flow's directory
+// screen chose another.
+func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, error) {
 	if o.NonInteractive || !isStdinTerminalFn() {
-		return o.resolveHeadless(detected)
+		// Headless can warn but not offer: the check that interactively
+		// becomes the directory question is a line on stderr here, and never
+		// a refusal — a valid project cannot be reliably recognized, so a
+		// wrong guess has to cost nothing. Only the headless paths return
+		// detected.Dir unchanged, so the fourth value is settled right here.
+		o.warnSuspectDir(detected)
+
+		content, draft, err := o.resolveHeadless(detected)
+
+		return content, draft, detected.Dir, err
 	}
 
 	return runInteractiveFlowFn(o, detected)
@@ -226,6 +1278,42 @@ func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, err
 	}
 
 	return content, draft, nil
+}
+
+// warnSuspectDir says when the directory looks like the wrong place to run
+// setup from — none of the usual project files — and names the subdirectories
+// that look right, because the fix is one --dir away and this is the last
+// moment before six questions and an artifact are spent on the wrong tree.
+//
+// An image-mode run is exempt: it never syncs local directory contents, so
+// "everything here would be uploaded" describes a risk that cannot happen.
+func (o Options) warnSuspectDir(detected Detected) {
+	if o.Stderr == nil || !detected.SuspectDir() || o.Answers.BuildMode == manifest.BuildModeImage {
+		return
+	}
+
+	w := o.Stderr
+
+	line := fmt.Sprintf("Warning: %s has none of the usual project files (Dockerfile, pyproject.toml, "+
+		"package.json, ...). If this is not the project root, everything here would be uploaded on deploy.",
+		detected.Dir)
+
+	if len(detected.Candidates) > 0 {
+		names := make([]string, 0, len(detected.Candidates))
+		for _, candidate := range detected.Candidates {
+			names = append(names, candidate.Rel)
+		}
+
+		more := ""
+		if detected.MoreCandidates {
+			more = ", and more exist"
+		}
+
+		line += fmt.Sprintf(" These look like project roots: %s%s — pass --dir to use one.",
+			strings.Join(names, ", "), more)
+	}
+
+	fmt.Fprintln(w, line)
 }
 
 // storeSecrets sends each secret to the credential store and reports what
@@ -544,9 +1632,17 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 
 	found, err := manifest.Locate(parent)
 	if err != nil {
-		if !errors.Is(err, manifest.ErrNotFound) {
-			fmt.Fprintf(stderr, "Warning: cannot check for a manifest above %s: %v\n", dir, err)
+		// Both sentinels mean the same thing here: there is no manifest above
+		// to shadow this one. Not-a-directory says so because Locate refuses to
+		// start the walk, and it names the ancestor it was handed rather than
+		// the path the user typed, so a warning built from it reads as being
+		// about a directory the reader has never seen. The project directory is
+		// checked by the commands themselves, which name what the user typed.
+		if errors.Is(err, manifest.ErrNotFound) || errors.Is(err, manifest.ErrNotADirectory) {
+			return
 		}
+
+		fmt.Fprintf(stderr, "Warning: cannot check for a manifest above %s: %v\n", dir, err)
 
 		return
 	}
@@ -554,6 +1650,65 @@ func warnShadowedManifest(stderr io.Writer, dir string) {
 	fmt.Fprintf(stderr,
 		"Warning: a manifest already exists at %s. Writing one in %s means a deploy from either directory reads a different file.\n",
 		found, dir)
+}
+
+// warnEnvFile is warnUnreadEnvFile behind the opt-out: --skip-env means the
+// user declined the import, so a failed read is not news either.
+func (o Options) warnEnvFile(detected Detected) {
+	if o.Answers.SkipEnv {
+		return
+	}
+
+	// A caller that reads .env only to compare it has no import to report the
+	// failure of, and no hand edit to recommend: what it lost is the
+	// comparison, and the manifest it is about to deploy is complete without
+	// the file either way. Saying "nothing from it was imported" there
+	// describes an act that was never going to happen.
+	if o.DriftOnly {
+		if o.quiet() || detected.EnvErr == nil {
+			return
+		}
+
+		fmt.Fprintf(o.Stderr,
+			"Warning: %v. %s is what deploys and is unaffected, but the two cannot be compared "+
+				"until the file parses.\n", detected.EnvErr, manifest.FileName)
+
+		return
+	}
+
+	warnUnreadEnvFile(o.Stderr, detected)
+}
+
+// checkEnvFile is warnEnvFile for a run that has somewhere to fail to. A .env
+// the wizard could not read means the variables it holds reach nothing, and on
+// a machine-readable run there is no stderr to say so on: the envelope's zero
+// count reads exactly like a project that has no .env at all. So the same
+// state that is a warning on a terminal is an error here.
+//
+// An import fails on it either way. Its whole job is to read that file, and
+// "nothing to add" about a file it never parsed is the one answer it must not
+// give.
+func (o Options) checkEnvFile(detected Detected) error {
+	if o.Answers.SkipEnv || detected.EnvErr == nil {
+		o.warnEnvFile(detected)
+
+		return nil
+	}
+
+	if o.JSONOutput || o.editsEnv() {
+		return fmt.Errorf("cannot read %s: %w", EnvFileName, detected.EnvErr)
+	}
+
+	o.warnEnvFile(detected)
+
+	return nil
+}
+
+// quiet reports that nothing should be printed: no writer, which is what the
+// command hands over under --output-format json so stdout purity and
+// `2>&1 | jq .` both hold without every reporter having to know why.
+func (o Options) quiet() bool {
+	return o.Stderr == nil
 }
 
 // warnUnreadEnvFile says so when a .env is there but contributed nothing.

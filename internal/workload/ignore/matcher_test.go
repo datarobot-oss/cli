@@ -55,6 +55,31 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 	}
 }
 
+// The engine's own *.LOCAL backups are excluded from the sync walk at any
+// depth, so a copy of an overwritten file is never uploaded as new content and
+// the next sync does not see it (RAPTOR-19348).
+func TestMatch_ExcludesLocalBackups(t *testing.T) {
+	m := FromLines(nil)
+
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"app.py.LOCAL.20260102T030405Z", true},
+		{"src/nested/config.json.LOCAL.20260102T030405Z", true},
+		{"app.py", false},
+		{"notes.LOCAL.txt", false},     // ".LOCAL." but no timestamp: a real file
+		{"data.LOCAL.2026.csv", false}, // not the engine's stamp shape
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			assert.Equal(t, tc.want, IsBackupCopy(tc.path), "IsBackupCopy")
+			assert.Equal(t, tc.want, m.Match(tc.path, false), "Match")
+		})
+	}
+}
+
 // On macOS and Windows the state directory can end up inside a pre-existing
 // .Datarobot/ that the project already had: the filesystem preserves that
 // casing while treating it as the same directory, so the walk reports a path no

@@ -282,6 +282,18 @@
           "releaseDate": "2026-07-01"
         }
       ]
+    },
+    "codespace": {
+      "name": "codespace",
+      "description": "Connect to DataRobot Codespace via SSH",
+      "versions": [
+        {
+          "version": "0.5.5",
+          "url": "codespace/codespace-0.5.5.tar.xz",
+          "sha256": "0bc6930325562e84d5ae61532b258cec2c09f6652d0a7605df952573aab03630",
+          "releaseDate": "2026-08-28"
+        }
+      ]
     }
   }
 }
