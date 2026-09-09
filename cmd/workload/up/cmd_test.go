@@ -247,6 +247,33 @@ func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 	_, _, err = runCmd(t, "--lock")
 	require.NoError(t, err)
 	assert.True(t, locking.Lock)
+
+	draining := stubRun(t, deployed(), nil)
+
+	_, _, err = runCmd(t, "--wait-for-drain")
+	require.NoError(t, err)
+	assert.True(t, draining.WaitForDrain)
+}
+
+// A deploy returns once the new version is promoted and answering, which leaves
+// the previous one taking a share of requests for a few minutes. This is the
+// flag for the caller who has to be able to say nothing else is serving.
+func TestCmd_WaitForDrainDefaultsOff(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t)
+	require.NoError(t, err)
+	assert.False(t, seen.WaitForDrain)
+}
+
+// --wait-for-drain asks a wait to go on longer, and --detach is the flag that
+// skips the wait altogether, so honouring both would drop it in silence.
+func TestCmd_DetachAndWaitForDrainCannotBeCombined(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--detach", "--wait-for-drain")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--wait-for-drain cannot be combined with --detach")
 }
 
 // Locking happens after the workload is serving and --detach returns before
@@ -753,6 +780,7 @@ func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	assert.NotNil(t, cmd.Flags().Lookup("dry-run"))
 	assert.NotNil(t, cmd.Flags().Lookup("detach"))
 	assert.NotNil(t, cmd.Flags().Lookup("lock"))
+	assert.NotNil(t, cmd.Flags().Lookup("wait-for-drain"))
 	assert.True(t, cmd.Flags().Lookup("poll-interval").Hidden)
 }
 

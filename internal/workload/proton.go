@@ -144,12 +144,18 @@ func ListProtons(workloadID string) ([]Proton, error) {
 // marked active, yet the endpoint answers with the old build until t+171s; the
 // old generation only leaves draining at t+530s.
 //
-// A predecessor blocks the wait while it is running or draining, which are the
-// two states in which it was observed still answering. Both matter: at t+27s
-// both generations were running and the endpoint was still on the old build.
-// Anything past those is treated as gone, because an outgoing generation sits
-// in stopping long after it stopped mattering and waiting for the list to empty
-// would hold a finished deploy open for minutes.
+// AwaitDrain is what decides which of those clocks the wait runs on. Without
+// it the wait settles at the promotion, on the platform's own active role, and
+// the caller is expected to say that the previous version may answer for a
+// while yet; with it the wait holds until the predecessor is gone, which is
+// what a caller needs when it has to be able to say nothing else is serving.
+//
+// A predecessor blocks the strict wait while it is running or draining, which
+// are the two states in which it was observed still answering. Both matter: at
+// t+27s both generations were running and the endpoint was still on the old
+// build. Anything past those is treated as gone, because an outgoing
+// generation sits in stopping long after it stopped mattering and waiting for
+// the list to empty would hold a finished deploy open for minutes.
 //
 // Known limitation: a predecessor status this code has not seen is read as
 // gone. The alternative, blocking on anything unrecognised, trades a rare early
@@ -182,13 +188,25 @@ func protonsServing(protons []Proton, want Serving) protonVerdict {
 	// The platform's own answer, when it gives one.
 	if at := activeProtonIndex(protons); at >= 0 {
 		active := protons[at]
-
-		return protonVerdict{
-			Serving: active.ArtifactID == want.ArtifactID && IsRunningProtonStatus(active.Status),
+		if active.ArtifactID != want.ArtifactID || !IsRunningProtonStatus(active.Status) {
+			return protonVerdict{}
 		}
+
+		return protonVerdict{Serving: true, ProtonID: active.ID}
 	}
 
-	// No role reported, so fall back to whether anything runs the version.
+	// No role reported. "Something runs the version" is true of a candidate
+	// that has not been promoted yet, so without a role to read there is
+	// nothing here that says the handover happened, and the predecessor going
+	// away is the only remaining evidence. This is the one branch where
+	// dropping the drain wait would settle a roll mid-swap.
+	if anyServingPredecessor(protons, want.ArtifactID) {
+		return protonVerdict{}
+	}
+
+	// Deliberately no proton id. An install that reports no role is not one to
+	// assume can pin a request to a generation, and a pinned GET it does not
+	// understand would answer for something other than what was asked.
 	return protonVerdict{Serving: anyRunning(protons, want.ArtifactID)}
 }
 
@@ -196,9 +214,16 @@ func protonsServing(protons []Proton, want Serving) protonVerdict {
 // there and the handover is not done" from "the list said nothing at all",
 // which are the same answer to the wait and different answers to how long it
 // is worth waiting.
+//
+// ProtonID names the generation that settled it, and is set only where the
+// platform marked one active. It is what lets a caller address that generation
+// rather than the workload: the endpoint's router keeps sending a share of
+// requests to the version being replaced for minutes after the promotion, so a
+// plain GET is not a question about the generation this run put there.
 type protonVerdict struct {
-	Serving bool
-	Empty   bool
+	Serving  bool
+	Empty    bool
+	ProtonID string
 }
 
 // anyServingPredecessor reports whether a generation other than the one being

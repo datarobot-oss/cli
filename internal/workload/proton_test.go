@@ -32,6 +32,9 @@ func TestProtonsServing(t *testing.T) {
 		return Proton{ArtifactID: a, Status: ProtonStatusRunning, Role: ProtonRoleActive}
 	}
 	roll := func(a string) Serving { return Serving{ArtifactID: a, AwaitDrain: true} }
+	// The default a roll uses: it names its successor, so it settles on the
+	// promotion rather than on the predecessor going away.
+	promote := func(a string) Serving { return Serving{ArtifactID: a, Replaced: true} }
 
 	cases := []struct {
 		name    string
@@ -95,6 +98,38 @@ func TestProtonsServing(t *testing.T) {
 			"promoted, and the role says so",
 			[]Proton{active("art-2"), {ArtifactID: "art-1", Status: "stopping"}},
 			roll("art-2"), true,
+		},
+		{
+			// The whole of the saving: the same list that holds the strict
+			// wait open for another seven minutes settles this one.
+			"promotion settles a roll that does not wait the drain",
+			[]Proton{active("art-2"), draining("art-1")},
+			promote("art-2"), true,
+		},
+		{
+			// A candidate runs for a while before it is promoted, so this is
+			// the wait doing its job rather than an early exit.
+			"an unpromoted candidate holds it even without the drain wait",
+			[]Proton{active("art-1"), running("art-2")},
+			promote("art-2"), false,
+		},
+		{
+			// The one branch where dropping the drain wait would settle a
+			// roll mid-swap: with no role reported, "something runs the
+			// version" is equally true of a candidate nobody promoted.
+			"with no role reported the predecessor still has to be gone",
+			[]Proton{running("art-1"), running("art-2")},
+			promote("art-2"), false,
+		},
+		{
+			"with no role reported a draining predecessor still holds it",
+			[]Proton{draining("art-1"), running("art-2")},
+			promote("art-2"), false,
+		},
+		{
+			"with no role reported a predecessor past draining settles it",
+			[]Proton{{ArtifactID: "art-1", Status: "stopping"}, running("art-2")},
+			promote("art-2"), true,
 		},
 	}
 
@@ -188,4 +223,38 @@ func TestListProtons_RefusesAnEndlessCursor(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "did not end")
 	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(maxProtonPages))
+}
+
+// The id is what lets a deploy put its endpoint check to the generation it
+// promoted. Without it the check asks the workload, and the platform's router
+// answers from the version being replaced for minutes after the promotion.
+func TestProtonsServing_NamesTheGenerationThatSettledIt(t *testing.T) {
+	verdict := protonsServing([]Proton{
+		{ID: "p-2", ArtifactID: "art-2", Status: ProtonStatusRunning, Role: ProtonRoleActive},
+		{ID: "p-1", ArtifactID: "art-1", Status: ProtonStatusDraining},
+	}, Serving{ArtifactID: "art-2", Replaced: true})
+
+	assert.True(t, verdict.Serving)
+	assert.Equal(t, "p-2", verdict.ProtonID)
+}
+
+// An install that marks no generation active is not one to assume can pin a
+// request to one either, so it settles without naming one and the check that
+// follows asks the endpoint the ordinary way.
+func TestProtonsServing_NamesNoGenerationWhereThePlatformMarksNone(t *testing.T) {
+	verdict := protonsServing([]Proton{
+		{ID: "p-2", ArtifactID: "art-2", Status: ProtonStatusRunning},
+	}, Serving{ArtifactID: "art-2", Replaced: true})
+
+	assert.True(t, verdict.Serving)
+	assert.Empty(t, verdict.ProtonID)
+}
+
+// AwaitDrain implies a generation was replaced: there is nothing to drain
+// otherwise, so a caller that sets only the strict flag still gets the strict
+// wait rather than one that skips the proton list altogether.
+func TestServing_AwaitDrainImpliesAReplacedGeneration(t *testing.T) {
+	assert.True(t, Serving{AwaitDrain: true}.ReplacedGeneration())
+	assert.True(t, Serving{Replaced: true}.ReplacedGeneration())
+	assert.False(t, Serving{}.ReplacedGeneration())
 }

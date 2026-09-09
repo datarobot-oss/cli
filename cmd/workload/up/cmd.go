@@ -153,6 +153,7 @@ type flags struct {
 	detach    bool
 	lock      bool
 	force     bool
+	drain     bool
 	importEnv bool
 	updateEnv bool
 
@@ -244,12 +245,13 @@ Examples:
 		nonInteractive := cli.IsNonInteractive(cmd)
 
 		return map[string]any{
-			"yes":           nonInteractive,
-			"dry_run":       f.dryRun,
-			"detach":        f.detach,
-			"lock":          f.lock,
-			"force_build":   f.force,
-			"output_format": string(outputFormat),
+			"yes":            nonInteractive,
+			"dry_run":        f.dryRun,
+			"detach":         f.detach,
+			"lock":           f.lock,
+			"wait_for_drain": f.drain,
+			"force_build":    f.force,
+			"output_format":  string(outputFormat),
 		}
 	})
 
@@ -268,6 +270,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"version. Locking is one-way.")
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
 		"Rebuild the image even when the working tree matches what was last synced.")
+	cmd.Flags().BoolVar(&f.drain, "wait-for-drain", false,
+		"Wait until the version being replaced has stopped answering, instead of returning once the new one "+
+			"is promoted and answering. Costs several minutes; use it when nothing else may still be served.")
 
 	// The same two flags `dr workload config` takes, because the first run of
 	// this command already reads .env: with no manifest it is the wizard. A
@@ -320,6 +325,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
+		WaitForDrain:   f.drain,
 		Confirm:        rollConfirm(cmd, yes),
 		ForceBuild:     f.force,
 		ImportEnv:      f.importEnv,
@@ -358,10 +364,14 @@ func resolveDir(dir string) (string, error) {
 // a manifest to a workload is setup's job, and doing it here would mean two
 // places that decide what a project deploys to.
 //
-// --lock with --detach is the one contradictory pair: an artifact is locked
-// only once the workload it serves is running, and --detach returns before
-// that, so accepting both would drop the lock in silence and hand back an
-// artifact the caller believes is permanent.
+// --lock with --detach is one contradictory pair: an artifact is locked only
+// once the workload it serves is running, and --detach returns before that, so
+// accepting both would drop the lock in silence and hand back an artifact the
+// caller believes is permanent.
+//
+// --wait-for-drain with --detach is the other, for the same reason in reverse:
+// it asks a wait to go on longer, and --detach is the flag that skips the wait
+// altogether.
 func checkFlags(cmd *cobra.Command, f flags) error {
 	for _, flag := range []string{"workload-id", "name"} {
 		if cmd.Flags().Changed(flag) {
@@ -374,6 +384,11 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 	if f.detach && f.lock {
 		return errors.New(
 			"--lock cannot be combined with --detach: an artifact is locked only after the workload it serves is running")
+	}
+
+	if f.detach && f.drain {
+		return errors.New(
+			"--wait-for-drain cannot be combined with --detach: --detach returns without waiting for the deploy at all")
 	}
 
 	return nil

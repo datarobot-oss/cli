@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,7 +46,7 @@ func TestVerifyEndpoint_StatesTheStatusInWords(t *testing.T) {
 
 	var out bytes.Buffer
 
-	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, "", newReporter(&out, false))
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, endpointCheck{}, newReporter(&out, false))
 
 	assert.Contains(t, out.String(), "404 Not Found")
 	assert.Contains(t, out.String(), "anonymous GET")
@@ -67,7 +68,7 @@ func TestVerifyEndpoint_StatesAuthenticatedGatewayChecks(t *testing.T) {
 	verifyEndpoint(Result{
 		Endpoint:   "https://app.example.test/api/v2/endpoints/workloads/wl-1?protonId=p-1",
 		WorkloadID: "wl-1",
-	}, "", newReporter(&out, false))
+	}, endpointCheck{}, newReporter(&out, false))
 
 	assert.Contains(t, out.String(), "authenticated GET")
 	assert.Contains(t, out.String(), "200 OK")
@@ -83,7 +84,7 @@ func TestVerifyEndpoint_SaysPlainlyWhenNothingAnswers(t *testing.T) {
 
 	var out bytes.Buffer
 
-	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, "", newReporter(&out, false))
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"}, endpointCheck{}, newReporter(&out, false))
 
 	text := out.String()
 	assert.Contains(t, text, "did not answer")
@@ -103,7 +104,7 @@ func TestVerifyEndpoint_SkipsWithoutAnEndpoint(t *testing.T) {
 
 	var out bytes.Buffer
 
-	verifyEndpoint(Result{}, "", newReporter(&out, false))
+	verifyEndpoint(Result{}, endpointCheck{}, newReporter(&out, false))
 	assert.Empty(t, out.String())
 }
 
@@ -121,7 +122,7 @@ func TestVerifyEndpoint_SkipsMalformedEndpoint(t *testing.T) {
 	verifyEndpoint(Result{
 		Endpoint:   "None/api/v2/endpoints/workloads/wl-1?protonId=p-1",
 		WorkloadID: "wl-1",
-	}, "", newReporter(&out, false))
+	}, endpointCheck{}, newReporter(&out, false))
 
 	text := out.String()
 	assert.Contains(t, text, "Skipping endpoint check")
@@ -290,4 +291,218 @@ func startEndpointCheckDebugLog(t *testing.T) string {
 	})
 
 	return logDir
+}
+
+// TestMain drops the endpoint check's retry pause. The pause is there so a
+// container that is still starting is not reported as serving nothing; nothing
+// in this package is a real container, so sitting through it would only add
+// seconds to every test that fakes a refused GET.
+func TestMain(m *testing.M) {
+	endpointCheckRetryDelay = 0
+
+	os.Exit(m.Run())
+}
+
+// The point of the pin. A deploy now returns when the platform promotes the new
+// generation, and for minutes after that the endpoint URL hands a share of
+// requests to the version being replaced, so an unpinned GET is not a question
+// about what this deploy put there.
+func TestVerifyEndpoint_PinsTheGETToTheGenerationTheWaitSettledOn(t *testing.T) {
+	installEndpointCheckAuth(t, "https://app.example.test", "endpoint-test-token")
+
+	var got string
+
+	force(t, &checkEndpointFn, func(url string) (int, error) {
+		got = url
+
+		return http.StatusOK, nil
+	})
+
+	var out bytes.Buffer
+
+	result := Result{
+		Endpoint:   "https://app.example.test/api/v2/endpoints/workloads/wl-1/",
+		WorkloadID: "wl-1",
+	}
+
+	verifyEndpoint(result, endpointCheck{ProtonID: "p-9"}, newReporter(&out, false))
+
+	assert.Equal(t, "https://app.example.test/api/v2/endpoints/workloads/wl-1/?protonId=p-9", got)
+	assert.Contains(t, out.String(), "pinned to the container generation")
+	assert.Equal(t, "https://app.example.test/api/v2/endpoints/workloads/wl-1/", result.Endpoint,
+		"the pin belongs to the GET the CLI makes for itself; a pinned URL in the output would be a link "+
+			"that dies when that generation is collected")
+}
+
+// An endpoint URL is allowed to carry a query of its own, so the parameter is
+// merged rather than appended.
+func TestVerifyEndpoint_PinMergesIntoAnExistingQuery(t *testing.T) {
+	installEndpointCheckAuth(t, "https://app.example.test", "endpoint-test-token")
+
+	var got string
+
+	force(t, &checkEndpointFn, func(url string) (int, error) {
+		got = url
+
+		return http.StatusOK, nil
+	})
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{
+		Endpoint:   "https://app.example.test/api/v2/endpoints/workloads/wl-1/?tab=logs&protonId=stale",
+		WorkloadID: "wl-1",
+	}, endpointCheck{ProtonID: "p-9"}, newReporter(&out, false))
+
+	parsed, err := url.Parse(got)
+	require.NoError(t, err)
+	assert.Equal(t, "p-9", parsed.Query().Get("protonId"))
+	assert.Equal(t, "logs", parsed.Query().Get("tab"), "the endpoint's own query survives the pin")
+}
+
+// protonId is the DataRobot gateway's parameter. On a direct service URL it
+// would pin nothing and would arrive in somebody's application as a query
+// parameter it never asked for.
+func TestVerifyEndpoint_DoesNotPinADirectEndpoint(t *testing.T) {
+	var got string
+
+	force(t, &checkEndpointFn, func(url string) (int, error) {
+		got = url
+
+		return http.StatusOK, nil
+	})
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"},
+		endpointCheck{ProtonID: "p-9"}, newReporter(&out, false))
+
+	assert.Equal(t, "https://x.example/w/", got)
+	assert.NotContains(t, out.String(), "pinned")
+}
+
+// A workload gateway path on an origin that is not the configured one is not
+// this gateway, and is exactly the case that already withholds the token.
+func TestVerifyEndpoint_DoesNotPinAGatewayPathOnAnotherOrigin(t *testing.T) {
+	installEndpointCheckAuth(t, "https://app.example.test", "endpoint-test-token")
+
+	var got string
+
+	force(t, &checkEndpointFn, func(url string) (int, error) {
+		got = url
+
+		return http.StatusOK, nil
+	})
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{
+		Endpoint:   "https://other.example.test/api/v2/endpoints/workloads/wl-1/",
+		WorkloadID: "wl-1",
+	}, endpointCheck{ProtonID: "p-9"}, newReporter(&out, false))
+
+	assert.Equal(t, "https://other.example.test/api/v2/endpoints/workloads/wl-1/", got)
+	assert.Contains(t, out.String(), "anonymous GET")
+}
+
+// The line that keeps the success report honest: the deploy returns before the
+// platform has finished moving the route, and saying nothing would let the
+// green tick imply the cutover is complete.
+func TestVerifyEndpoint_SaysThePreviousVersionMayStillAnswer(t *testing.T) {
+	force(t, &checkEndpointFn, func(string) (int, error) { return http.StatusOK, nil })
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"},
+		endpointCheck{PredecessorMayServe: true}, newReporter(&out, false))
+
+	text := out.String()
+	assert.Contains(t, text, "may still answer some requests")
+	assert.Contains(t, text, "--wait-for-drain")
+}
+
+// It is a fact about the deploy, not about the GET, so it survives a run with
+// no endpoint to check.
+func TestVerifyEndpoint_SaysThePreviousVersionMayServeWithNoEndpointToCheck(t *testing.T) {
+	force(t, &checkEndpointFn, func(string) (int, error) {
+		t.Fatal("nothing may be fetched when there is no endpoint")
+
+		return 0, nil
+	})
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{WorkloadID: "wl-1"}, endpointCheck{PredecessorMayServe: true},
+		newReporter(&out, false))
+
+	assert.Contains(t, out.String(), "may still answer some requests")
+}
+
+// A run that waited the drain out has nothing to warn about: nothing else is
+// serving, which is the whole of what it spent those minutes buying.
+func TestVerifyEndpoint_SaysNothingAboutThePredecessorAfterADrainWait(t *testing.T) {
+	force(t, &checkEndpointFn, func(string) (int, error) { return http.StatusOK, nil })
+
+	var out bytes.Buffer
+
+	verifyEndpoint(Result{Endpoint: "https://x.example/w/", WorkloadID: "wl-1"},
+		endpointCheck{}, newReporter(&out, false))
+
+	assert.NotContains(t, out.String(), "may still answer some requests")
+}
+
+// The GET now happens at the promotion rather than seven minutes after it, and
+// a promotion says only that the container started, so a refusal to answer is
+// given a few seconds to become an answer.
+func TestCheckEndpointWithRetry_GivesAContainerTimeToStartAnswering(t *testing.T) {
+	calls := 0
+
+	force(t, &checkEndpointFn, func(string) (int, error) {
+		calls++
+		if calls == 1 {
+			return 0, errors.New("dial tcp: connection refused")
+		}
+
+		return http.StatusOK, nil
+	})
+
+	status, err := checkEndpointWithRetry("https://x.example/w/")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, 2, calls)
+}
+
+// A status code is the application's answer, whatever it is: a 404 at / is how
+// a healthy API-only framework answers, and asking again would only delay
+// saying so.
+func TestCheckEndpointWithRetry_DoesNotRetryTheApplicationsOwnAnswer(t *testing.T) {
+	calls := 0
+
+	force(t, &checkEndpointFn, func(string) (int, error) {
+		calls++
+
+		return http.StatusNotFound, nil
+	})
+
+	status, err := checkEndpointWithRetry("https://x.example/w/")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Equal(t, 1, calls)
+}
+
+// The three the gateway returns for itself when there is nothing behind it yet
+// are not the application's answer either.
+func TestCheckEndpointWithRetry_RetriesAGatewayWithNothingBehindIt(t *testing.T) {
+	calls := 0
+
+	force(t, &checkEndpointFn, func(string) (int, error) {
+		calls++
+
+		return http.StatusServiceUnavailable, nil
+	})
+
+	status, err := checkEndpointWithRetry("https://x.example/w/")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusServiceUnavailable, status)
+	assert.Equal(t, endpointCheckAttempts, calls, "it gives up and reports what it kept getting")
 }

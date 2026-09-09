@@ -400,9 +400,23 @@ type Serving struct {
 	// the run changed none.
 	ArtifactID string
 
-	// AwaitDrain requires the generation being replaced to have stopped
-	// taking requests. A roll and a resize both replace one; a create and a
-	// start do not.
+	// Replaced says this run swapped a generation out, which is what makes
+	// the proton list worth reading at all. A roll and a resize both do; a
+	// create and a start do not.
+	Replaced bool
+
+	// AwaitDrain additionally requires the generation being replaced to have
+	// stopped taking requests, rather than settling once the successor is
+	// promoted and running.
+	//
+	// It is the strict answer and the slow one. The platform keeps the
+	// outgoing generation alive for about five minutes past the promotion and
+	// collects it on a cron after that, so waiting it out costs roughly seven
+	// minutes beyond the moment the replacement itself is done. A roll buys
+	// little with that time: it has an artifact to name and a way to ask the
+	// new generation directly. A resize has neither, because both generations
+	// carry the same artifact, and so does any caller that has to be able to
+	// say nothing else is serving.
 	AwaitDrain bool
 
 	// OnUnconfirmed, if set, is called once with a short reason when the
@@ -411,6 +425,22 @@ type Serving struct {
 	// because on that path the endpoint may still be answering from the
 	// version being replaced.
 	OnUnconfirmed func(reason string)
+
+	// OnSettled, if set, is called once with the id of the generation the
+	// wait settled on, and not at all when the platform named none. A caller
+	// that checks the endpoint afterwards can pin its request to that
+	// generation, which is the only way to ask the version this run promoted
+	// rather than whatever the platform's router still has cached.
+	OnSettled func(protonID string)
+}
+
+// ReplacedGeneration reports whether this run swapped a generation out.
+//
+// AwaitDrain implies it: there is nothing to drain otherwise, so a caller that
+// sets only the strict flag still gets the strict wait rather than one that
+// skips the proton list altogether.
+func (s Serving) ReplacedGeneration() bool {
+	return s.Replaced || s.AwaitDrain
 }
 
 // WaitForWorkload polls GetWorkload on interval until the workload reaches a
@@ -469,6 +499,8 @@ func WaitForWorkload(
 		if !verdict.Empty {
 			empty = 0
 
+			settledOn(want, verdict)
+
 			return verdict.Serving
 		}
 
@@ -506,6 +538,19 @@ func degrade(want Serving, reason string) {
 	}
 }
 
+// settledOn tells the caller which generation the wait settled on, once, and
+// says nothing where the platform named none: an id the wait did not read from
+// the proton list would be a guess, and the one thing a caller does with it is
+// address that generation directly.
+//
+// A verdict that did not settle names nothing either, since the generation the
+// wait is still holding for is not the one it will end on.
+func settledOn(want Serving, verdict protonVerdict) {
+	if want.OnSettled != nil && verdict.Serving && verdict.ProtonID != "" {
+		want.OnSettled(verdict.ProtonID)
+	}
+}
+
 // onWantedArtifact reports whether wl names the artifact the caller named; an
 // empty want is a caller that changed none.
 func onWantedArtifact(wl *Workload, wantArtifactID string) bool {
@@ -525,7 +570,7 @@ func servingWanted(workloadID string, want Serving) (protonVerdict, error) {
 	// A create and a start replace no generation and confirm no artifact, so
 	// there is nothing here for them to ask about and no reason to spend a
 	// request finding that out.
-	if want.ArtifactID == "" && !want.AwaitDrain {
+	if want.ArtifactID == "" && !want.ReplacedGeneration() {
 		return protonVerdict{Serving: true}, nil
 	}
 
@@ -598,6 +643,15 @@ func stalledOn(workloadID string, want Serving) string {
 
 	if want.ArtifactID != "" && !anyRunning(protons, want.ArtifactID) {
 		return "nothing is running that version yet"
+	}
+
+	// Without the drain wait a roll ends at the promotion, so the way it
+	// stalls is a candidate that runs and is never marked active. Saying only
+	// that something runs the version would describe the stall as progress.
+	at := activeProtonIndex(protons)
+	if want.ArtifactID != "" && at >= 0 && protons[at].ArtifactID != want.ArtifactID {
+		return "the version it replaces is still the one marked active, so the rollout has not promoted " +
+			"the new version"
 	}
 
 	return ""

@@ -109,6 +109,18 @@ type Options struct {
 	// fields the file moved, and the run would have to be read to know which.
 	Lock bool
 
+	// WaitForDrain holds a deploy that replaced a generation open until the
+	// one it replaced has stopped answering, rather than returning once the
+	// new one is promoted and serving.
+	//
+	// Off by default because it costs roughly seven minutes past the point
+	// the platform has finished the replacement, and buys a claim most
+	// deploys do not need: a deploy already proves the new generation answers
+	// by asking that generation directly. It is here for the caller who has
+	// to be able to say nothing else is serving, such as one rotating a
+	// secret.
+	WaitForDrain bool
+
 	// ImportEnv and UpdateEnv are the .env re-entry `dr workload config`
 	// takes, offered here because the first run of this command already does
 	// it: with no manifest `up` is the wizard, and the wizard reads .env,
@@ -1320,13 +1332,16 @@ func isConflict(err error) bool {
 // Before this wait existed, a roll GETted the endpoint mid-swap and reported
 // the version being replaced.
 func settle(workloadID string, want workload.Serving, result Result, opts Options, report *reporter) (Result, error) {
-	// Whether the drain wait actually happened decides what the endpoint line
-	// below is allowed to claim. On an install without the proton route the
-	// wait rests on the artifact alone, and the artifact moves about a minute
-	// before the endpoint stops answering the old build, so a GET made there
-	// can describe the version being rolled off.
-	unconfirmed := ""
-	want.OnUnconfirmed = func(reason string) { unconfirmed = reason }
+	// What the wait learned decides what the endpoint line below is allowed
+	// to claim. On an install without the proton route the wait rests on the
+	// artifact alone, and the artifact moves about a minute before the
+	// endpoint stops answering the old build, so a GET made there can
+	// describe the version being rolled off. A run that settles at the
+	// promotion is in that same position by design, and gets a generation id
+	// to ask with.
+	check := endpointCheck{PredecessorMayServe: want.ReplacedGeneration() && !want.AwaitDrain}
+	want.OnUnconfirmed = func(reason string) { check.Unconfirmed = reason }
+	want.OnSettled = func(protonID string) { check.ProtonID = protonID }
 
 	result, err := awaitRunning(workloadID, want, result, opts, report)
 	if err != nil {
@@ -1336,7 +1351,7 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 	// One GET against the endpoint, reported and never fatal. Running means
 	// the container started; with no probe written by default, whether
 	// anything answers is a question nobody has asked yet.
-	verifyEndpoint(result, unconfirmed, report)
+	verifyEndpoint(result, check, report)
 
 	if !opts.Lock {
 		return result, nil
@@ -1393,14 +1408,15 @@ func awaitRunning(
 // A workload that never stopped running makes "waiting for the workload to run"
 // describe a wait that was over before it began, which is how this bug read as
 // a success. Both paths that replace a generation have that shape, so the label
-// keys on AwaitDrain rather than on the artifact: a resize waits out a drain
-// with no artifact to name, and would otherwise keep the wording the roll just
-// stopped using.
+// keys on whether a generation was replaced rather than on the artifact: a
+// resize replaces one with no artifact to name, and would otherwise keep the
+// wording the roll just stopped using. Not on AwaitDrain, which is now a
+// question about how long to wait rather than about what happened.
 //
 // result.ArtifactID still names the outgoing version at this point, by settle's
 // ordering, which is what tells a roll from a start onto the same version.
 func waitLabel(want workload.Serving, result Result) string {
-	if !want.AwaitDrain {
+	if !want.ReplacedGeneration() {
 		return "Waiting for the workload to run"
 	}
 

@@ -103,8 +103,11 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 	result.Action = ActionUpdated
 
 	// A resize changes no artifact, but it does replace a generation, so the
-	// wait still has to see the outgoing one stop answering.
-	return settle(result.WorkloadID, workload.Serving{AwaitDrain: true},
+	// wait still has to see the outgoing one stop answering. It cannot settle
+	// at the promotion the way a roll does: both generations carry the same
+	// artifact, so there is nothing to name, and the role alone would settle
+	// on whichever one the platform had marked active before the swap.
+	return settle(result.WorkloadID, workload.Serving{Replaced: true, AwaitDrain: true},
 		result, budgetLeft(opts, waitFrom), report)
 }
 

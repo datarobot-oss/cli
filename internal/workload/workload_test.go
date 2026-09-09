@@ -1101,3 +1101,70 @@ func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
 	require.NoError(t, err, "a 502 between polls must not fail a deploy that is going fine")
 	assert.Equal(t, "art-2", wl.ArtifactID)
 }
+
+// The wait hands the settled generation's id to the caller, and settles while
+// the predecessor is still draining. Both halves of the roll's fast path: the
+// old generation lingers for another seven minutes, and the id is what lets the
+// caller ask the new one directly instead of waiting that out.
+func TestWaitForWorkload_SettlesAtThePromotionAndNamesTheGeneration(t *testing.T) {
+	settled := ""
+
+	serveWorkloadAndProtons(t,
+		func() string { return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2") },
+		func() string {
+			return `{"count":2,"totalCount":2,"data":[` +
+				`{"id":"proton-new","workloadId":"wl-1","artifactId":"art-2",` +
+				`"status":"running","role":"active"},` +
+				`{"id":"proton-old","workloadId":"wl-1","artifactId":"art-1","status":"draining"}]}`
+		})
+
+	want := Serving{
+		ArtifactID: "art-2",
+		Replaced:   true,
+		OnSettled:  func(id string) { settled = id },
+	}
+
+	wl, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "art-2", wl.ArtifactID)
+	assert.Equal(t, "proton-new", settled, "the caller checks the endpoint next and has to know what to ask")
+}
+
+// The same list still holds a wait that asked for the drain, which is the
+// behaviour --wait-for-drain restores.
+func TestWaitForWorkload_TheDrainWaitStillHoldsOnADrainingPredecessor(t *testing.T) {
+	serveWorkloadAndProtons(t,
+		func() string { return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2") },
+		func() string {
+			return serverProtonList(
+				[2]string{"art-2", ProtonStatusRunning},
+				[2]string{"art-1", ProtonStatusDraining},
+			)
+		})
+
+	want := Serving{ArtifactID: "art-2", Replaced: true, AwaitDrain: true}
+
+	_, err := WaitForWorkload("wl-1", want, 5*time.Millisecond, 25*time.Millisecond, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a previous version is still answering its endpoint")
+}
+
+// A roll that settles at the promotion stalls differently: the candidate runs
+// and is never marked active. Saying only that something runs the version would
+// describe the stall as progress.
+func TestWaitForWorkload_TimeoutSaysTheNewVersionWasNeverPromoted(t *testing.T) {
+	serveWorkloadAndProtons(t,
+		func() string { return serverWorkloadDocOn("wl-1", "a", WorkloadStatusRunning, "art-2") },
+		func() string {
+			return `{"count":2,"totalCount":2,"data":[` +
+				`{"id":"proton-old","workloadId":"wl-1","artifactId":"art-1",` +
+				`"status":"running","role":"active"},` +
+				`{"id":"proton-new","workloadId":"wl-1","artifactId":"art-2","status":"running"}]}`
+		})
+
+	want := Serving{ArtifactID: "art-2", Replaced: true}
+
+	_, err := WaitForWorkload("wl-1", want, 5*time.Millisecond, 25*time.Millisecond, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has not promoted the new version")
+}

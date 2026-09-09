@@ -211,7 +211,7 @@ func TestRun_RollsALiveWorkloadOntoANewVersion(t *testing.T) {
 	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"guard", "create-artifact", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"}, tr.steps)
+	assert.Equal(t, []string{"guard", "create-artifact", "guard", "replace:art-2", "await-rollout", "settle:art-2"}, tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Equal(t, "art-2", result.ArtifactID)
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID, "a roll never makes a second workload")
@@ -239,7 +239,7 @@ func TestRun_RollUsesTheArtifactTheFileNames(t *testing.T) {
 	result, _, err := runIn(t, named, Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"guard", "guard", "replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain"}, tr.steps)
+	assert.Equal(t, []string{"guard", "guard", "replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002"}, tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }
 
@@ -304,7 +304,7 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "create-artifact", "guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+		[]string{"guard", "create-artifact", "guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2"},
 		tr.steps, "the successor is locked after the last guard and before the swap")
 	assert.Contains(t, asked, "is on a locked version")
 	assert.NotContains(t, asked, "production", "why a version was locked is not something the CLI knows")
@@ -342,7 +342,7 @@ func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"guard", "guard", "read:68b0bbbb0000000000000002",
-		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
+		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002",
 	}, tr.steps, "an artifact already locked is read, not locked again")
 	assert.True(t, result.Locked)
 }
@@ -371,7 +371,7 @@ func TestRun_LockedRollLocksANamedDraft(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"guard", "guard", "read:68b0bbbb0000000000000002", "lock:68b0bbbb0000000000000002",
-		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
+		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002",
 	}, tr.steps)
 	assert.True(t, result.Locked)
 }
@@ -567,7 +567,7 @@ func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"guard", "create-artifact", "guard", "replace:art-2",
-			"await-rollout", "settle:art-2+drain", "lock:art-2",
+			"await-rollout", "settle:art-2", "lock:art-2",
 		}, tr.steps,
 		"the lock follows the wait, so the wait is what decides which artifact becomes permanent")
 	assert.NotContains(t, tr.steps, "lock:68a0000000000000000000a1",
@@ -695,7 +695,7 @@ func TestRun_StoppedWorkloadWithANewVersionStartsThenRolls(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"guard", "start", "await-start", "guard", "create-artifact", "guard",
-		"replace:art-2", "await-rollout", "settle:art-2+drain",
+		"replace:art-2", "await-rollout", "settle:art-2",
 	}, tr.steps, "the guard that can refuse comes before the start that mutates")
 	assert.Equal(t, ActionRolled, result.Action,
 		"rolling is the more significant of the two things this run did")
@@ -1042,7 +1042,7 @@ func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2"},
 		tr.steps)
 	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the sync has to land in the new version, not the live one")
 	assert.Equal(t, ActionRolled, result.Action)
@@ -1070,7 +1070,7 @@ func TestRun_RollsABuiltProjectOffALockedVersion(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"guard", "create-artifact", "relink", "sync", "build",
-		"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain",
+		"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2",
 	}, tr.steps)
 	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the link has to leave the locked version behind")
 	assert.True(t, result.Locked, "a locked version is replaced by a locked one")
@@ -1124,7 +1124,7 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned"},
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
@@ -1177,7 +1177,7 @@ func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned"},
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }
@@ -1404,7 +1404,7 @@ func TestRun_RollWithNothingToUploadCarriesTheCodeOver(t *testing.T) {
 		"a new version of the same code has to point at that code")
 	assert.Equal(t, []string{
 		"guard", "create-artifact", "relink", "sync", "carry-code", "build",
-		"guard", "replace:art-2", "await-rollout", "settle:art-2+drain",
+		"guard", "replace:art-2", "await-rollout", "settle:art-2",
 	}, tr.steps)
 	assert.Equal(t, "bld-2", result.BuildID, "a version born without an image still needs one")
 }
@@ -1611,12 +1611,12 @@ func TestRun_RuntimeOnlyRollCopiesTheRunningVersion(t *testing.T) {
 		{
 			name:  "a draft is replaced by a draft",
 			live:  draftLiveArtifact,
-			steps: []string{"guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+			steps: []string{"guard", "replace:art-2", "await-rollout", "settle:art-2"},
 		},
 		{
 			name:  "a locked one is replaced by a locked one",
 			live:  func() workload.Document { return docOf(liveArtifactJSON) },
-			steps: []string{"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+			steps: []string{"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2"},
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -1932,4 +1932,122 @@ func TestRun_ALeftoverWithItsOwnCodeIsStillReAnchored(t *testing.T) {
 	assert.Contains(t, tr.steps, "build")
 	assert.Equal(t, []string{"art-abandoned", "cat1", "ver1"}, tr.carried,
 		"the version the project last synced is what it is pointed at")
+}
+
+// recordingWait is the roll fixture's wait with the Serving it was handed kept
+// for inspection: what the wait was asked to see is the whole of what changed
+// about when a roll returns.
+func recordingWait(tr *track, seen *workload.Serving, endpoint string) func(
+	string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload),
+) (*workload.Workload, error) {
+	return func(id string, want workload.Serving, _, _ time.Duration,
+		_ func(*workload.Workload),
+	) (*workload.Workload, error) {
+		*seen = want
+
+		tr.steps = append(tr.steps, servingLabel(want))
+
+		return &workload.Workload{
+			ID: id, Name: "my-app", Status: workload.WorkloadStatusRunning,
+			ArtifactID: want.ArtifactID, Endpoint: endpoint,
+		}, nil
+	}
+}
+
+// The complaint this answers: a roll onto a running workload blocked for
+// another seven minutes after the platform had finished the replacement,
+// waiting out a generation whose disappearance the deploy has no claim to make
+// anything of. It now settles when the successor is promoted.
+func TestRun_RollSettlesAtThePromotionWithoutWaitingTheDrain(t *testing.T) {
+	var (
+		tr   track
+		seen workload.Serving
+	)
+
+	f := wiredRoll(&tr)
+	f.wait = recordingWait(&tr, &seen, "https://app.datarobot.com/workloads/68b0/")
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "art-2", seen.ArtifactID)
+	assert.False(t, seen.AwaitDrain,
+		"waiting out the drain is the seven minutes; the promotion is what the deploy actually did")
+	assert.True(t, seen.ReplacedGeneration(),
+		"a roll still replaces a generation, which is what makes the proton list worth reading")
+	assert.Contains(t, stderr, "may still answer some requests",
+		"a deploy that returns before the platform has moved the route has to say so")
+}
+
+// --wait-for-drain buys back the stronger claim for whoever needs it: nothing
+// else is serving, rather than the new version serves.
+func TestRun_WaitForDrainRestoresTheStrictWait(t *testing.T) {
+	var (
+		tr   track
+		seen workload.Serving
+	)
+
+	f := wiredRoll(&tr)
+	f.wait = recordingWait(&tr, &seen, "https://app.datarobot.com/workloads/68b0/")
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, newImage(), Options{NonInteractive: true, WaitForDrain: true})
+	require.NoError(t, err)
+
+	assert.True(t, seen.AwaitDrain)
+	assert.Equal(t,
+		[]string{"guard", "create-artifact", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+		tr.steps)
+	assert.NotContains(t, stderr, "may still answer some requests",
+		"the drain is over, so there is nothing left to warn about")
+}
+
+// The proof the earlier settle point rests on. The endpoint URL keeps handing a
+// share of requests to the version being replaced for minutes after the
+// promotion, so the GET that ends the deploy is put to the generation the wait
+// settled on rather than to the workload.
+func TestRun_RollChecksTheEndpointOnTheGenerationItPromoted(t *testing.T) {
+	installEndpointCheckAuth(t, "https://app.example.test", "roll-test-token")
+
+	var (
+		tr  track
+		got string
+	)
+
+	f := wiredRoll(&tr)
+	f.wait = func(id string, want workload.Serving, _, _ time.Duration,
+		_ func(*workload.Workload),
+	) (*workload.Workload, error) {
+		tr.steps = append(tr.steps, servingLabel(want))
+
+		if want.OnSettled != nil {
+			want.OnSettled("proton-new")
+		}
+
+		return &workload.Workload{
+			ID: id, Name: "my-app", Status: workload.WorkloadStatusRunning,
+			ArtifactID: want.ArtifactID,
+			Endpoint:   "https://app.example.test/api/v2/endpoints/workloads/wl-1/",
+		}, nil
+	}
+	f.checkEndpoint = func(rawURL string) (int, error) {
+		got = rawURL
+
+		return http.StatusOK, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, newImage(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://app.example.test/api/v2/endpoints/workloads/wl-1/?protonId=proton-new", got)
+	assert.Contains(t, stderr, "pinned to the container generation")
+	assert.Equal(t, "https://app.example.test/api/v2/endpoints/workloads/wl-1/", result.Endpoint,
+		"the pin is for the GET the CLI makes for itself")
+	assert.NotContains(t, stderr, "protonId",
+		"a pinned URL in the output would be a link that dies when that generation is collected")
 }

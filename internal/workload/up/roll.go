@@ -353,8 +353,15 @@ func replace(
 
 	result.Action = ActionRolled
 
-	return settle(workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
-		result, budgetLeft(opts, waitFrom), report)
+	// The roll names its successor, so the platform's active role and a GET
+	// pinned to the generation it names are together a sharper answer than
+	// the predecessor's disappearance, and they arrive minutes earlier.
+	// --wait-for-drain is for the caller who needs the weaker claim anyway.
+	return settle(workloadID, workload.Serving{
+		ArtifactID: made.ID,
+		Replaced:   true,
+		AwaitDrain: opts.WaitForDrain,
+	}, result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.
