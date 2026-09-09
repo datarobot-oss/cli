@@ -43,12 +43,6 @@ to a frozen version) — selected via the shared `--scope` and
 `--version` flags. Schedules are locked-only.
 
 > [!NOTE]
-> The `pipeline` command is currently behind a feature gate. Enable it
-> by exporting `DATAROBOT_CLI_FEATURE_PIPELINE=true` before running any
-> `dr pipeline` subcommand. See
-> [Feature gates](../development/feature-gates.md) for details.
-
-> [!NOTE]
 > **First time?** If you're new to the CLI, start with the
 > [Quick start](../../README.md#quick-start) for step-by-step setup
 > instructions.
@@ -338,7 +332,6 @@ While iterating against a locally running pipelines-api (default port `8100`), p
 `http://localhost:8100` and bypass token verification:
 
 ```bash
-export DATAROBOT_CLI_FEATURE_PIPELINE=true
 export DATAROBOT_CLI_ENDPOINT=http://localhost:8100/api/v2
 export DATAROBOT_CLI_TOKEN=local
 export DATAROBOT_CLI_SKIP_AUTH=true
@@ -553,5 +546,3 @@ If the task ID is not found, the command prints `Task not found: <task-id>` and 
   interact.
 - [Configuration](../user-guide/configuration.md) — config file and
   environment-variable precedence.
-- [Feature gates](../development/feature-gates.md) — flipping
-  `DATAROBOT_CLI_FEATURE_PIPELINE` on and off.

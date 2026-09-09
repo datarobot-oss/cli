@@ -5,9 +5,6 @@ Complete cross-reference of every `dr pipeline …` subcommand, the
 inputs (positional args, flags, request body fields) each command
 accepts.
 
-> All commands below assume the `pipeline` feature is enabled
-> (`DATAROBOT_CLI_FEATURE_PIPELINE=true`).
-
 ## How to read this document
 
 - **Method + path** is relative to `/api/v2`. The CLI prefixes the host
