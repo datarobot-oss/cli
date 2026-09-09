@@ -47,7 +47,8 @@ func validatePluginName(name string) error {
 }
 
 // ValidatePluginScript validates that a plugin script outputs a manifest matching the expected manifest.
-// All fields must match exactly, including Scripts and MinCLIVersion for managed plugins.
+// All fields must match exactly, except Scripts, MinCLIVersion, and MaxCLIVersion, which are
+// optional managed-plugin fields (see validateManifests).
 func ValidatePluginScript(pluginDir string, expectedManifest PluginManifest) error {
 	if err := ValidateLicense(pluginDir); err != nil {
 		return err
@@ -106,9 +107,9 @@ var createManifestValidatorOnce = sync.OnceValue(func() *validator.Validate {
 })
 
 // validateManifests validates the script output manifest and checks that the
-// core BasicPluginManifest fields match expected. Scripts and MinCLIVersion
-// are intentionally ignored — they are optional managed-plugin fields that
-// PATH plugins do not output.
+// core BasicPluginManifest fields match expected. Scripts, MinCLIVersion, and
+// MaxCLIVersion are intentionally ignored — they are optional managed-plugin
+// fields that PATH plugins do not output.
 //
 // The field-by-field comparison below could be replaced with go-cmp, but was
 // written out explicitly to avoid adding that dependency.
@@ -126,7 +127,7 @@ func validateManifests(expected, actual PluginManifest) error {
 
 	var mismatches []string
 
-	// Fields `Scripts` and `MinCLIVersion` are ignored as they're optional managed plugin fields
+	// Fields `Scripts`, `MinCLIVersion`, and `MaxCLIVersion` are ignored as they're optional managed plugin fields
 	if actual.Name != expected.Name {
 		mismatches = append(mismatches, fmt.Sprintf("Name: expected %q, got %q", expected.Name, actual.Name))
 	}
