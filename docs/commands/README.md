@@ -112,7 +112,12 @@ dr
 │   │   ├── list       List runs for a pipeline
 │   │   ├── get        Display a single run
 │   │   ├── status     Lightweight run status (for polling)
-│   │   └── cancel     Cancel a running run
+│   │   ├── cancel     Cancel a running run
+│   │   └── task       Inspect per-run task executions (dispatch records)
+│   │       ├── list   List task invocations for a run (TASK ID · NODE ID)
+│   │       ├── get    Lifecycle record for a single task invocation
+│   │       ├── logs   Fetch a task invocation's logs (live or durable)
+│   │       └── result Presigned URL for a completed task's result
 │   ├── input          Manage pipeline input payloads
 │   │   ├── create     Register a JSON payload on a pipeline
 │   │   ├── list       List inputs for a pipeline (draft or locked scope)
@@ -369,7 +374,7 @@ For detailed documentation on each command, see:
   - `lock`&mdash;promote a draft pipeline to locked mode.
   - `version`&mdash;`list` / `get` to inspect pipeline versions.
   - `graph`&mdash;display the pipeline/task DAG (draft or locked).
-  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
+  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions; `run task` (`list`/`get`/`logs`/`result`) inspects the per-`@task` executions of a single run.
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
   - `image`&mdash;`create`/`get`/`list`/`update`/`delete` pipeline execution images; `version delete` and `version logs` operate on a specific image version.
