@@ -41,26 +41,32 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Discovery Wiring (PR 2, TDD)
 
-- [ ] 4.1 RED: in `internal/plugin/discover_test.go`, extend `createManagedTestPlugin` to accept min/max bounds; add case asserting an out-of-range managed plugin is absent from results and present in conflicts with `Reason: SkipReasonVersionIncompatible`. Spec: Managed plugin below minimum.
-- [ ] 4.2 RED: add `DiscoverWithContextSuite` case — two PATH dirs export the same manifest name, lexicographically-first violates `maxCLIVersion`; assert second registers under that name, conflicts hold exactly one `SkipReasonVersionIncompatible` record and zero `SkipReasonNameConflict` records. Spec: Skip Ordering Relative to Name Deduplication.
-- [ ] 4.3 RED: override `currentCLIVersion` (with `t.Cleanup` restore) in `TestDuplicatePATHEntryDoesNotWarn` and the XDG-config-dirs discovery test to a real semver so the `dev` bypass does not mask assertions.
-- [ ] 4.4 Confirm 4.1-4.3 fail against current code (`go test ./internal/plugin/... -race`).
-- [ ] 4.5 GREEN: call `cliVersionSkip` in `loadManagedPlugin` (~L304) and `getManifestsParallel` (~L441 loop), both immediately before the `seen[...]` reservation; append its non-nil result to conflicts and `continue` without setting `seen[name]`.
-- [ ] 4.6 Run `go test ./internal/plugin/... -race -v` until 4.1-4.3 are GREEN.
+- [x] 4.1 RED: in `internal/plugin/discover_test.go`, extend `createManagedTestPlugin` to accept min/max bounds; add case asserting an out-of-range managed plugin is absent from results and present in conflicts with `Reason: SkipReasonVersionIncompatible`. Spec: Managed plugin below minimum.
+- [x] 4.2 RED: add `DiscoverWithContextSuite` case — two PATH dirs export the same manifest name, lexicographically-first violates `maxCLIVersion`; assert second registers under that name, conflicts hold exactly one `SkipReasonVersionIncompatible` record and zero `SkipReasonNameConflict` records. Spec: Skip Ordering Relative to Name Deduplication.
+- [x] 4.3 RED: override `currentCLIVersion` (with `t.Cleanup`/`defer` restore) in `TestDuplicatePATHEntryDoesNotWarn` and the XDG-config-dirs discovery test to a real semver so the `dev` bypass does not mask assertions.
+- [x] 4.4 Confirmed 4.1-4.3 fail against current code (`go vet ./internal/plugin/...` → `undefined: ConflictsForReason` compile failure).
+- [x] 4.5 GREEN: call `cliVersionSkip` in `loadManagedPlugin` (before the executable resolution and the `seen[...]` reservation) and `getManifestsParallel`'s merge loop (before its `seen[...]` reservation); append its non-nil result to conflicts and `continue` without setting `seen[name]`.
+- [x] 4.6 `go test ./internal/plugin/... -race -v` — all new and existing cases GREEN.
 
 ## Phase 5: Reporting & CLI Wiring (PR 2, TDD)
 
-- [ ] 5.1 RED: extend `TestLogConflicts` asserting name-conflict wording is byte-identical to today, and a `SkipReasonVersionIncompatible` record emits Info-level output including `Detail`. Add `TestConflictsForReason`; extend `TestConflictsForName` fixtures with mixed reasons proving the filter stays reason-agnostic. Spec: Structured Single-Channel Skip Reporting.
-- [ ] 5.2 GREEN: add `ConflictsForReason(conflicts []PluginConflict, reason PluginSkipReason) []PluginConflict` in `internal/plugin/discover.go`; change `LogConflicts` to switch on `Reason` — Warn for name conflicts (unchanged wording), Info for version incompatibility.
-- [ ] 5.3 GREEN: in `cmd/plugin/discovery.go` (L56), change `RegisterPluginCommands` to call `LogConflicts(ConflictsForReason(conflicts, SkipReasonNameConflict))` and add a Debug line for the remainder, so routine discovery stays silent for version skips. Spec: Silent on routine command discovery.
-- [ ] 5.4 Verify `dr plugin list` / `dr plugin version <name>` surface skipped/incompatible plugins with required-version detail (manual harness run, or existing list/version command tests if present).
+- [x] 5.1 RED: extended `TestLogConflicts` asserting name-conflict wording/level is byte-identical to today (WARN, no INFO), added `TestLogConflictsVersionIncompatible` (INFO, includes `Detail`, no WARN), added `TestConflictsForReason`, and extended `TestConflictsForName` fixtures with a mixed-reason record proving the filter stays reason-agnostic. Spec: Structured Single-Channel Skip Reporting.
+- [x] 5.2 GREEN: added `ConflictsForReason(conflicts []PluginConflict, reason PluginSkipReason) []PluginConflict` in `internal/plugin/discover.go`; `LogConflicts` now switches on `Reason` — Warn for `SkipReasonNameConflict`, Info for `SkipReasonVersionIncompatible` (exhaustive switch, no `default`, to satisfy the `exhaustive` linter).
+- [x] 5.3 GREEN: extracted `reportDiscoveryConflicts` in `cmd/plugin/discovery.go`, called from `RegisterPluginCommands` in place of the direct `LogConflicts(conflicts)` call; it calls `LogConflicts(ConflictsForReason(conflicts, SkipReasonNameConflict))` and logs a Debug line for the remainder, so routine discovery stays silent for version skips. Added `TestReportDiscoveryConflicts` (RED confirmed via `undefined: reportDiscoveryConflicts` before implementation) covering name-conflict-only, version-only, and mixed cases. Spec: Silent on routine command discovery.
+- [x] 5.4 Verified via a real built binary (`go build -ldflags "-X .../version.Version=1.0.0"`) with a fake `dr-oldwidget` PATH plugin declaring `maxCLIVersion: 0.9.0`: `dr plugin list` excludes it from the table and prints `INFO Plugin skipped: CLI version incompatible ... detail="supports dr <= 0.9.0 (running 1.0.0); update the plugin"`; `dr plugin version oldwidget` prints the same Info line then `Error: plugin "oldwidget" not found`; plain `dr --help` prints neither the plugin name nor "version incompatible" (confirms silence on ordinary discovery). No code changes were needed in `cmd/plugin/list/cmd.go` or `cmd/plugin/version/cmd.go` — confirmed empirically, not just assumed from design.
 
 ## Phase 6: Documentation (PR 2)
 
-- [ ] 6.1 `docs/development/plugins.md` (~L82-89): add `maxCLIVersion` and `minCLIVersion` to the Optional fields list with inclusive-bound and dev-bypass semantics.
-- [ ] 6.2 `docs/development/remote-plugins.md` (~L61): add `maxCLIVersion` next to the existing `minCLIVersion` example.
+- [x] 6.1 `docs/development/plugins.md` (~L82-89): added `minCLIVersion`/`maxCLIVersion` to the manifest JSON example and a new Optional-fields bullet documenting inclusive bounds, core-version-only comparison, malformed-bound-always-skips, the `dev`/unparseable-CLI bypass, and the reporting channel.
+- [x] 6.2 `docs/development/remote-plugins.md` (~L61): added `maxCLIVersion` next to the existing `minCLIVersion` example, with a cross-reference to the full semantics in `plugins.md`.
 
 ## Phase 7: Final Gates (PR 1 and PR 2, each before opening)
 
-- [x] 7.1 `task lint` clean on each slice. (PR 1 done; PR 2 pending)
-- [x] 7.2 `task test` (race + coverage) green on each slice. (PR 1 done; PR 2 pending)
+- [x] 7.1 `task lint` clean on each slice. (PR 1 done; PR 2 done — 0 issues on all 3 GOOS targets)
+- [x] 7.2 `task test` (race + coverage) green on each slice. (PR 1 done; PR 2 done — full repo suite green, `internal/plugin` 80.9% coverage)
+
+## Delivery Status
+
+PR 1: https://github.com/datarobot-oss/cli/pull/814 (draft, branch `aj/cli-version-constraints` off `main`). All PR-1-scoped tasks (Phase 1-3, and the PR-1 portion of Phase 7) complete.
+
+PR 2: branch `aj/cli-version-constraints-discovery` off `aj/cli-version-constraints` (stacked). All PR-2-scoped tasks (Phase 4-6, and the PR-2 portion of Phase 7) complete. See apply-progress for the PR URL once opened.

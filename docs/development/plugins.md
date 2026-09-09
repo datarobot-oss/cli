@@ -69,7 +69,9 @@ The CLI currently understands the following fields:
   "name": "my-plugin",
   "version": "1.2.3",
   "description": "Adds extra commands to dr",
-  "authentication": true
+  "authentication": true,
+  "minCLIVersion": "1.0.0",
+  "maxCLIVersion": "2.0.0"
 }
 ```
 
@@ -87,6 +89,14 @@ The CLI currently understands the following fields:
   - If no valid credentials exist, the user will be prompted to log in.
   - Respects the global `--skip-auth` flag.
   - Defaults to `false` if omitted.
+- `minCLIVersion` / `maxCLIVersion` (string): Plain semver strings (no range syntax) declaring the inclusive `[minCLIVersion, maxCLIVersion]` window of `dr` versions the plugin supports. Either, both, or neither may be set.
+  - Checked at discovery time, before the plugin is loaded — an incompatible plugin never runs.
+  - Both bounds are inclusive: a running CLI version exactly equal to `minCLIVersion` or `maxCLIVersion` still loads the plugin.
+  - Comparison uses only the CLI's core version (`major.minor.patch`); any CLI prerelease/build metadata is ignored.
+  - A malformed `minCLIVersion`/`maxCLIVersion` value always skips the plugin, even on a `dev` CLI build.
+  - When the running CLI version itself is unparseable (including the `dev` build used by local/source builds), the check is bypassed and the plugin loads unconditionally — there is no reliable CLI version to compare against.
+  - A plugin skipped for version incompatibility is never loaded and never counted as a name conflict; it is reported at Info level and surfaced in `dr plugin list` / `dr plugin version <name>`, but stays silent on ordinary command discovery.
+  - If the CLI reports the plugin requires a newer version, run `dr self update`; if it requires an older version, update the plugin instead.
 
 ### Notes / recommendations
 

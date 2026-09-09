@@ -15,12 +15,49 @@
 package plugin
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/log"
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// captureLogOutput redirects os.Stderr to a pipe, reinitializes the stderr
+// logger, runs fn, then returns everything written during fn's execution.
+// Mirrors the equivalent helper in internal/plugin/discover_test.go.
+func captureLogOutput(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	log.StartStderr()
+
+	fn()
+
+	w.Close()
+
+	os.Stderr = origStderr
+
+	t.Cleanup(log.StopStderr)
+
+	var buf bytes.Buffer
+
+	_, err = buf.ReadFrom(r)
+	require.NoError(t, err)
+
+	r.Close()
+
+	return buf.String()
+}
 
 func TestIsManagedPlugin(t *testing.T) {
 	t.Run("returns true for plugin in primary XDG dir", func(t *testing.T) {
@@ -57,5 +94,58 @@ func TestIsManagedPlugin(t *testing.T) {
 		pathPlugin := filepath.Join("/usr", "local", "bin", "dr-myplugin")
 
 		assert.False(t, isManagedPlugin(pathPlugin))
+	})
+}
+
+// TestReportDiscoveryConflicts verifies routine discovery reporting stays
+// silent (Info-level) about CLI version incompatibility skips while still
+// warning about name conflicts, per the spec's "Silent on routine command
+// discovery" requirement. Version-incompatibility skips surface only through
+// `dr plugin list` / `dr plugin version <name>`, which call
+// internalPlugin.LogConflicts directly (unfiltered) instead of this helper.
+func TestReportDiscoveryConflicts(t *testing.T) {
+	t.Run("name conflicts are logged at Warn", func(t *testing.T) {
+		output := captureLogOutput(t, func() {
+			reportDiscoveryConflicts([]internalPlugin.PluginConflict{
+				{Name: "widget", Path: "/usr/local/bin/dr-widget"},
+			})
+		})
+
+		assert.Contains(t, output, "widget")
+		assert.Contains(t, output, "WARN")
+	})
+
+	t.Run("version-incompatibility skips produce no Info-level output", func(t *testing.T) {
+		output := captureLogOutput(t, func() {
+			reportDiscoveryConflicts([]internalPlugin.PluginConflict{
+				{
+					Name:   "gadget",
+					Path:   "/usr/local/bin/dr-gadget",
+					Reason: internalPlugin.SkipReasonVersionIncompatible,
+					Detail: "requires dr >= 2.0.0 (running 1.9.0); run 'dr self update'",
+				},
+			})
+		})
+
+		assert.NotContains(t, output, "gadget",
+			"a version-incompatibility skip must stay silent on routine command discovery")
+		assert.Empty(t, output)
+	})
+
+	t.Run("mixed conflicts only surface the name conflict", func(t *testing.T) {
+		output := captureLogOutput(t, func() {
+			reportDiscoveryConflicts([]internalPlugin.PluginConflict{
+				{Name: "widget", Path: "/usr/local/bin/dr-widget"},
+				{
+					Name:   "gadget",
+					Path:   "/usr/local/bin/dr-gadget",
+					Reason: internalPlugin.SkipReasonVersionIncompatible,
+					Detail: "requires dr >= 2.0.0 (running 1.9.0); run 'dr self update'",
+				},
+			})
+		})
+
+		assert.Contains(t, output, "widget")
+		assert.NotContains(t, output, "gadget")
 	})
 }
