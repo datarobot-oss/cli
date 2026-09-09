@@ -65,9 +65,18 @@ func GetRequirementsFromDir(dir string) ([]Prerequisite, []string, error) {
 	var violations []string
 
 	versions := make([]Prerequisite, 0, len(mapping.Content)/2)
+	seen := make(map[string]bool, len(mapping.Content)/2)
 
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key := mapping.Content[i].Value
+
+		// yaml.Node traversal doesn't reject duplicate keys the way decoding into a
+		// map does, so check explicitly to keep that same fail-fast behavior.
+		if seen[key] {
+			return nil, nil, fmt.Errorf("versions yaml file %s: duplicate key %q (line %d)", yamlFile, key, mapping.Content[i].Line)
+		}
+
+		seen[key] = true
 
 		var version Prerequisite
 		if err := mapping.Content[i+1].Decode(&version); err != nil {

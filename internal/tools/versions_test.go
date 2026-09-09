@@ -173,6 +173,37 @@ tool-m:
 	}
 }
 
+func TestGetRequirementsFromDir_DuplicateKeyReturnsError(t *testing.T) {
+	const yaml = `tool-a:
+  name: Tool A
+  minimum-version: "1.0.0"
+  command: "echo a"
+  url: https://example.com/a
+  install:
+    macos: "echo install"
+    linux: "echo install"
+tool-a:
+  name: Tool A Again
+  minimum-version: "2.0.0"
+  command: "echo a2"
+  url: https://example.com/a2
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+	dir := t.TempDir()
+
+	writeVersionsYAML(t, dir, yaml)
+
+	prereqs, _, err := GetRequirementsFromDir(dir)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate key")
+	assert.Contains(t, err.Error(), "tool-a")
+	assert.Nil(t, prereqs)
+}
+
 func TestGetRequirementsFromDir_EmptyYamlReturnsNoPrereqs(t *testing.T) {
 	dir := t.TempDir()
 
