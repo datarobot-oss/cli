@@ -62,9 +62,9 @@ func phase1Gather(e *Engine) error {
 				"artifact %s is locked (immutable); cannot sync.\n"+
 					"  A project with a %s deploys past this on its own: 'dr workload up' creates a new "+
 					"version, points this directory at it, and rolls onto it.\n"+
-					"  Otherwise make one with 'dr artifact create' (or in the DataRobot UI), then delete %s "+
-					"and re-link with 'dr artifact code init <new-id>'",
-				art.ID, wlmanifest.FileName, wapi.Dir(e.projectDir))
+					"  Otherwise make one with 'dr artifact create' (or in the DataRobot UI), then point this "+
+					"directory at it with 'dr artifact code init --force <new-id>'",
+				art.ID, wlmanifest.FileName)
 		}
 
 		e.lockedNote = fmt.Sprintf(

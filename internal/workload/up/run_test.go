@@ -214,6 +214,10 @@ type fakes struct {
 
 	// settings is the in-place path: a change that moved only the sizing.
 	settings func(string, json.RawMessage) (*workload.Replacement, error)
+
+	// The --recreate track: delete what is holding the name, then unbind.
+	deleteWorkload func(string) error
+	clearID        func(string, string) (bool, error)
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.
@@ -268,6 +272,19 @@ func install(t *testing.T, f fakes) {
 	swap(t, &writeWorkloadIDFn, f.writeID)
 	swap(t, &codeChangeFn, f.code)
 	swap(t, &getWorkloadDocFn, f.workloadD)
+
+	// A delete is irreversible and this one is a real DELETE against whatever
+	// tenant the developer is logged into, so an unwired seam has to fail the
+	// test rather than reach the network.
+	force(t, &deleteWorkloadFn, func(id string) error {
+		t.Fatalf("the run deleted workload %s, which this test did not wire", id)
+
+		return nil
+	})
+	swap(t, &deleteWorkloadFn, f.deleteWorkload)
+
+	force(t, &clearWorkloadIDFn, func(string, string) (bool, error) { return false, nil })
+	swap(t, &clearWorkloadIDFn, f.clearID)
 	swap(t, &getArtifactDocFn, f.artifactD)
 
 	// A test that does not wire the build track must not be able to reach it
@@ -1587,6 +1604,14 @@ func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
 	assert.Contains(t, err.Error(), ".datarobot", "where that choice is recorded")
 	assert.Contains(t, err.Error(), "wl-owner", "the workload that already has it")
 	assert.Contains(t, err.Error(), "workloadId: wl-owner", "a line the reader can paste")
+
+	// The other branch of the same choice used to end at deleting the link
+	// directory, which takes the code catalog and the last-synced version with
+	// it for the sake of one field.
+	assert.Contains(t, err.Error(), "dr artifact code init --force",
+		"the second way out has to be a command")
+	assert.NotContains(t, err.Error(), "delete",
+		"recovery must never end at deleting the state directory")
 }
 
 // A 409 on a linked project is just as likely to be a duplicate workload
@@ -2926,11 +2951,54 @@ func TestDeployable_DeadWorkloadRemediesSayTheEndpointChanges(t *testing.T) {
 
 			assert.Contains(t, err.Error(), "'dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --dir ./svc'",
 				"the remedy this note qualifies, with the --dir the run was given")
-			assert.Contains(t, err.Error(), ", then deploy again. The replacement keeps the name",
+			assert.Contains(t, err.Error(), ", then deploy again",
 				"then, not and: the imperative must not read as another thing the delete does")
+			assert.Contains(t, err.Error(), "one step. The replacement keeps the name",
+				"the cost lands last, after both ways of paying it")
 			assert.Contains(t, err.Error(), "new endpoint URL")
 			assert.Contains(t, err.Error(), "anything calling the old URL has to be pointed at the new one")
 			assert.NotContains(t, err.Error(), "under the same name")
+		})
+	}
+}
+
+// The message that gets there first. deployable speaks for the run after the
+// workload is already stuck; this one is printed at the moment it becomes
+// stuck, and it used to end at "check the logs" — the dead end that made
+// hand-deleting the workloadId the folk remedy, and the 409 that followed a
+// loop back to the line just deleted.
+func TestRun_ADeployThatEndsDeadNamesTheWayOut(t *testing.T) {
+	for _, status := range []string{workload.WorkloadStatusErrored, workload.WorkloadStatusTerminated} {
+		t.Run(status, func(t *testing.T) {
+			dead := running("wl-new")
+			dead.Status = status
+
+			install(t, fakes{
+				create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+				wait: func(string, workload.Serving, time.Duration, time.Duration,
+					func(*workload.Workload),
+				) (*workload.Workload, error) {
+					return dead, nil
+				},
+			})
+
+			_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "dr workload delete wl-new",
+				"the refusal has to carry its own exit")
+			assert.Contains(t, err.Error(), "clears the binding",
+				"the delete owns the binding, so nobody hand-edits the file")
+			assert.Contains(t, err.Error(), "--recreate", "and the one-step form of the same recovery")
+
+			// Errored is the one dead-looking state that can recover, so it is
+			// hedged with diagnosis first; terminated really is final.
+			if status == workload.WorkloadStatusErrored {
+				assert.Contains(t, err.Error(), "dr workload logs wl-new", "diagnosis before deletion")
+			} else {
+				assert.NotContains(t, err.Error(), "dr workload logs",
+					"no hedge for a state that cannot recover")
+			}
 		})
 	}
 }
@@ -3008,4 +3076,37 @@ func TestRun_ImportEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
 	assert.Contains(t, stderr, "Values written in the clear: REGION.")
 	assert.NotContains(t, stderr, "OPENAI_API_KEY", "the secret is the thing being protected")
 	assert.Equal(t, []string{"REGION"}, result.Env.Literals)
+}
+
+// The remedy has to reach the project it is about. A run against a manifest one
+// level down names a delete that would find nothing without the flag.
+func TestRun_TheDeadEndRemedyCarriesTheDirFlag(t *testing.T) {
+	dead := running("wl-new")
+	dead.Status = workload.WorkloadStatusErrored
+
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, workload.Serving, time.Duration, time.Duration,
+			func(*workload.Workload),
+		) (*workload.Workload, error) {
+			return dead, nil
+		},
+	})
+
+	root := t.TempDir()
+	app := filepath.Join(root, "service")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	writeManifest(t, app, unboundImageManifest)
+	require.NoError(t, os.WriteFile(filepath.Join(app, "Dockerfile"),
+		[]byte("FROM scratch\nEXPOSE 8080\n"), 0o600))
+
+	t.Chdir(root)
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{Dir: app, Stderr: &stderr, NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "dr workload delete wl-new --dir ",
+		"a delete without --dir would run in the parent and find nothing")
 }

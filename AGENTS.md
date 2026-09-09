@@ -24,7 +24,7 @@ Use Taskfile tasks rather than raw Go commands:
 - Tests use `testify/assert` for assertions
 - Test files follow `*_test.go` naming convention
 - If DR_API_TOKEN is set, run smoke tests: `task smoke-test` (but ask for permission before using a real API token)
-- Workload/artifact acceptance (live): `task smoke-test-workload` for scenarios A–C + artifact, or `task smoke-test-workload-full` to include the ~20-30 min built-workload scenario D. Uses the CLI's existing `drconfig.yaml` auth (set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override); CI wiring is pending team review.
+- Workload/artifact acceptance (live): `task smoke-test-workload` for scenarios A–C, E + artifact, or `task smoke-test-workload-full` to include the ~20-30 min built-workload scenario D. Uses the CLI's existing `drconfig.yaml` auth (set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override); CI wiring is pending team review.
 
 **Go Version Requirement:** Tests run with the `-race` flag for data race detection. The race runtime must match your Go compiler version exactly. If you see errors like `compile: version "go1.X.Y" does not match go tool version "go1.X.Z"`, ensure your installed Go version matches the version in `go.mod` (run `brew upgrade go` or adjust `go.mod` accordingly).
 

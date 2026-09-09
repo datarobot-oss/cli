@@ -11,6 +11,7 @@ scenario script (grep with `rg '^# Ticket:' smoke_test_scripts/workload`).
 | B — account sweep | `RAPTOR-19533-B-sweep.sh` | RAPTOR-19533 | binding works against every workload on the account |
 | C — re-bind tuned | `RAPTOR-19533-C-rebind.sh` | RAPTOR-19533 | re-bind preserves live tuning; FileExists guard; delete-rebind restore |
 | D — built-workload rebuild | `RAPTOR-19533-D-built.sh` | RAPTOR-19533 | no ErrImagePull after re-bind; platform rebuilds from imageBuildConfig |
+| E — recovery from a dead workload | `RAPTOR-19729-E-recovery.sh` | RAPTOR-19729 | every refusal names a command, not a file; `--recreate` recovers without discarding state |
 | Artifact lifecycle | `artifact-lifecycle.sh` | none — basic acceptance | `dr artifact` create/get/list/code sync/versions/del CLI-side state |
 
 ## Adding a scenario for a new ticket
