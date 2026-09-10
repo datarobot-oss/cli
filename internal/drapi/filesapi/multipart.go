@@ -35,10 +35,18 @@ const multipartFormField = "file"
 // by the pipe (one chunk in flight) plus the small envelope, regardless
 // of file size — important because the engine may upload multi-GiB zips.
 //
-// fields are written as ordinary form parts ahead of the file part. The
-// Files API binds a POST's parameters from the parsed body only, so an
-// option that must reach the server has to travel here rather than in
-// query; query is kept for parameters the server reads from the URL.
+// fields are written as ordinary form parts ahead of the file part.
+// The Files API binds a POST's parameters from the parsed body alone
+// and drops unrecognized query parameters without complaining, so an
+// option that has to reach the server travels here and not in the URL.
+//
+// useArchiveContents on the fromFile routes reads like a counter-example
+// and is not one. It is sent in the query, discarded there like anything
+// else, and extraction still happens only because the server's declared
+// form default for that field is already true. It is inert rather than
+// honoured, so it says nothing about the query being a usable channel,
+// and a flip of that default would stop extraction with no error.
+// Moving it into the form is a separate change.
 //
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing
@@ -46,16 +54,11 @@ const multipartFormField = "file"
 // isn't seekable).
 func newStreamingMultipartRequest(
 	requestURL string,
-	query url.Values,
 	fields url.Values,
 	filename string,
 	size int64,
 	body io.Reader,
 ) (*http.Request, error) {
-	if len(query) > 0 {
-		requestURL += "?" + query.Encode()
-	}
-
 	contentType, prologue, epilogue, err := multipartFraming(fields, filename)
 	if err != nil {
 		return nil, err
