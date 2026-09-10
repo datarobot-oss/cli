@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,6 +145,50 @@ func TestBrowserFlow_RefusesForgedBrowserCallbacks(t *testing.T) {
 			assert.Equal(t, "real-key", <-keyCh)
 		})
 	}
+}
+
+func TestBrowserFlow_RefusesConcurrentForgedProbes(t *testing.T) {
+	// The real attack fires forged probes concurrently with the genuine navigation;
+	// every probe must 403 and none may reach keyCh (CFX-7754).
+	flow := newTestFlow(t)
+
+	keyCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		key, err := flow.Wait(t.Context())
+
+		keyCh <- key
+
+		errCh <- err
+	}()
+
+	const probes = 10
+
+	var wg sync.WaitGroup
+
+	wg.Add(probes)
+
+	for range probes {
+		go func() {
+			defer wg.Done()
+
+			forged := waitForCallback(t, callbackURL(t, flow, "?key=planted-by-attacker"),
+				"Sec-Fetch-Dest", "image")
+
+			assert.Equal(t, http.StatusForbidden, forged.StatusCode)
+			assert.NoError(t, forged.Body.Close())
+		}()
+	}
+
+	wg.Wait()
+
+	// Still waiting after the storm: the genuine callback completes it, no key planted.
+	genuine := waitForCallback(t, callbackURL(t, flow, "?key=real-key"))
+	require.NoError(t, genuine.Body.Close())
+
+	require.NoError(t, <-errCh)
+	assert.Equal(t, "real-key", <-keyCh)
 }
 
 func TestBrowserFlow_AcceptsDocumentNavigation(t *testing.T) {
@@ -323,11 +368,12 @@ func TestBrowserFlow_ReclaimsPortFromStaleServer(t *testing.T) {
 // starts the server asynchronously. headers are alternating name/value pairs.
 func waitForCallback(t *testing.T, url string, headers ...string) *http.Response {
 	t.Helper()
+	require.Equal(t, 0, len(headers)%2, "headers must be alternating name/value pairs")
 
 	deadline := time.Now().Add(5 * time.Second)
 
 	for {
-		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		req, reqErr := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 		require.NoError(t, reqErr)
 
 		for i := 0; i+1 < len(headers); i += 2 {

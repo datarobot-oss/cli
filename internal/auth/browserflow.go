@@ -177,11 +177,11 @@ func (f *BrowserFlow) Close() error {
 }
 
 // handleCallback receives the API key from the web app's redirect ("key" query param).
-// Sec-Fetch-Dest present and not "document" refuses; absent accepts (port handover sends none).
+// Sec-Fetch-Dest accepts "document" (real callback) and absent (port handover sends none); any other value refuses.
 func (f *BrowserFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if dest := r.Header.Get("Sec-Fetch-Dest"); dest != "" && dest != "document" {
 		log.Debugf("Refusing auth callback with Sec-Fetch-Dest %q", dest)
-		http.Error(w, "forbidden", http.StatusForbidden)
+		http.Error(w, "forbidden: request type not allowed", http.StatusForbidden)
 
 		return
 	}
