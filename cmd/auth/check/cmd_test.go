@@ -16,12 +16,12 @@ package check
 
 import (
 	"bytes"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,32 +43,82 @@ func TestCheckCLICredentials_QuotedEndpointNamesEndpointNotToken(t *testing.T) {
 	assert.NotContains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
 }
 
-// The '.env' leg consumes VerifyToken's error as an opaque non-nil; the typed
-// *config.HTTPStatusError must leave its message and verdict unchanged.
-func TestVerifyDotenvToken_StatusErrorKeepsMessage(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	t.Cleanup(server.Close)
+// The stored-profile leg blames the token only on a real 401; 403 reports the
+// account lacking access, and other statuses blame the instance.
+func TestCheckCLICredentials_ClassifiesStoredProfileStatus(t *testing.T) {
+	cases := []struct {
+		name            string
+		status          int
+		wantContains    string
+		wantNotContains string
+	}{
+		{"401 blames the token", http.StatusUnauthorized, "No valid API key found", ""},
+		{"403 reports lacking access", http.StatusForbidden, "lacks API access", "No valid API key found"},
+		{"503 blames the instance", http.StatusServiceUnavailable, "answered HTTP 503", "No valid API key found"},
+	}
 
-	orig := os.Stdout
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(c.status)
+			}))
+			t.Cleanup(server.Close)
 
-	t.Cleanup(func() { os.Stdout = orig })
+			t.Setenv("DATAROBOT_ENDPOINT", "")
+			t.Setenv("DATAROBOT_API_ENDPOINT", "")
+			t.Setenv("DATAROBOT_API_TOKEN", "")
 
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
+			viperx.Reset()
+			viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+			viperx.Set(config.DataRobotAPIKey, "stored-token")
+			t.Cleanup(viperx.Reset)
 
-	os.Stdout = w
+			var buf bytes.Buffer
 
-	valid := verifyDotenvToken(server.URL+"/api/v2", "expired-token")
+			valid := checkCLICredentials(&buf)
 
-	os.Stdout = orig
+			require.False(t, valid)
+			assert.Contains(t, buf.String(), c.wantContains)
 
-	require.NoError(t, w.Close())
+			if c.wantNotContains != "" {
+				assert.NotContains(t, buf.String(), c.wantNotContains)
+			}
+		})
+	}
+}
 
-	out, err := io.ReadAll(r)
-	require.NoError(t, err)
+// The '.env' leg used to blame the token for every non-200; now 401 blames the
+// token, 403 reports lacking access, and other statuses blame the instance.
+func TestVerifyDotenvToken_ClassifiesStatus(t *testing.T) {
+	cases := []struct {
+		name            string
+		status          int
+		wantContains    string
+		wantNotContains string
+	}{
+		{"401 blames the token", http.StatusUnauthorized, "DATAROBOT_API_TOKEN in '.env' is invalid or expired", ""},
+		{"403 reports lacking access", http.StatusForbidden, "lacks API access", "is invalid or expired"},
+		{"404 blames the instance", http.StatusNotFound, "answered HTTP 404", "is invalid or expired"},
+		{"503 blames the instance", http.StatusServiceUnavailable, "answered HTTP 503", "is invalid or expired"},
+	}
 
-	require.False(t, valid)
-	assert.Contains(t, string(out), "DATAROBOT_API_TOKEN in '.env' is invalid or expired")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(c.status)
+			}))
+			t.Cleanup(server.Close)
+
+			var buf bytes.Buffer
+
+			valid := verifyDotenvToken(&buf, server.URL+"/api/v2", "some-token")
+
+			require.False(t, valid)
+			assert.Contains(t, buf.String(), c.wantContains)
+
+			if c.wantNotContains != "" {
+				assert.NotContains(t, buf.String(), c.wantNotContains)
+			}
+		})
+	}
 }
