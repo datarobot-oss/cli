@@ -69,3 +69,44 @@ jobs:
           DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
         run: |
           task smoke-test-pre-release DR_API_TOKEN="$DR_API_TOKEN"
+
+  # A separate job, not more steps above: that job already runs the `dr
+  # start` Agentic Starter flow inside its own 30-minute cap, and a
+  # stop->stopped wait independently observed to take ~11 minutes
+  # (RAPTOR-19749) risks blowing that budget for an unrelated reason.
+  # Ubuntu only -- this surface's behavior isn't OS-sensitive the way
+  # `dr start`'s template tooling is, so there's no need to double the cost
+  # by also running it on macOS.
+  workload-smoke-test:
+    runs-on: ubuntu-latest
+    name: Run Workload/Artifact Smoke Tests
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Install smoke-test dependencies
+        uses: datarobot-oss/cli/.github/actions/install-deps@main
+
+      - name: Set up Go and Task
+        uses: datarobot-oss/cli/.github/actions/setup@main
+
+      - name: Build and Install the DR CLI Binary
+        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
+
+      - name: Run Workload/Artifact Smoke Tests
+        env:
+          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+        # Scenarios A/B/C/E + artifact-lifecycle. D (~20-30 min, two image
+        # builds) stays local/opt-in -- its cost is a bigger ask than this
+        # ticket's scope; revisit if/when the pre-release gate's total
+        # runtime budget can absorb it.
+        #
+        # lib.sh depends on jq throughout; it isn't installed explicitly by
+        # install-deps, only relied on as preinstalled on GitHub-hosted
+        # runner images. Low risk today, but worth knowing if this job ever
+        # starts failing at the very first `dr workload list` probe.
+        run: |
+          task smoke-test-workload -- a b c e artifact

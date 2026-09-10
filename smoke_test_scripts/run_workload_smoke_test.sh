@@ -13,7 +13,10 @@
 #
 # Defaults to the fast set: a b c artifact. Scenario D (~20-30 min, two image
 # builds) is opt-in — pass `d` as a scenario, or set
-# WORKLOAD_SMOKE_INCLUDE_D=1 to add it to the default set.
+# WORKLOAD_SMOKE_INCLUDE_D=1 to add it to the default set. Scenario E
+# (~15-20 min, dominated by a stop->stopped wait) is likewise opt-in — pass
+# `e` explicitly; the pre-release CI job does. Neither is silently added to
+# a bare local run, since both push well past the "fast" set's usual runtime.
 #
 # Exit code is non-zero if any scenario failed.
 
@@ -43,6 +46,7 @@ scenario_script() {
         b|B)        printf '%s/RAPTOR-19533-B-sweep.sh'      "$WL_DIR" ;;
         c|C)        printf '%s/RAPTOR-19533-C-rebind.sh'     "$WL_DIR" ;;
         d|D)        printf '%s/RAPTOR-19533-D-built.sh'      "$WL_DIR" ;;
+        e|E)        printf '%s/RAPTOR-19749-E-dryrun-stop-reconcile.sh' "$WL_DIR" ;;
         artifact)   printf '%s/artifact-lifecycle.sh'       "$WL_DIR" ;;
         *) echo "❌ unknown scenario: $1" >&2; return 1 ;;
     esac
