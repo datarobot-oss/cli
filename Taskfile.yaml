@@ -136,7 +136,19 @@ tasks:
       - |
         GO_REQUIRED=$(grep '^go ' go.mod | awk '{print $2}')
         GO_INSTALLED=$(go version | awk '{print $3}' | sed 's/go//')
-        if [ "$(printf '%s\n%s\n' "$GO_REQUIRED" "$GO_INSTALLED" | sort -V | head -n1)" = "$GO_REQUIRED" ]; then
+        if awk -v req="$GO_REQUIRED" -v inst="$GO_INSTALLED" 'BEGIN {
+          split(req, r, ".")
+          split(inst, i, ".")
+
+          for (n = 1; n <= 3; n++) {
+            rv = (r[n] == "" ? 0 : r[n]) + 0
+            iv = (i[n] == "" ? 0 : i[n]) + 0
+            if (iv > rv) exit 0
+            if (iv < rv) exit 1
+          }
+
+          exit 0
+        }'; then
           echo "Go $GO_INSTALLED satisfies go.mod's go $GO_REQUIRED"
         else
           echo "Go version mismatch: go.mod requires $GO_REQUIRED, installed is $GO_INSTALLED"
