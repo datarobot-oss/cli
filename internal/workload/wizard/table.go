@@ -121,10 +121,13 @@ func tableStyles() table.Styles {
 		BorderBottom(true).
 		Bold(true).
 		Padding(0, 1)
-	s.Cell = valueStyle.Padding(0, 1)
-	// No padding here: bubbles/table applies Selected to the whole row after
-	// the cells already carry theirs, so padding again shifts the highlighted
-	// row a column out of line with the rest.
+	// Cells carry no colour of their own. bubbles/table renders each cell and
+	// then wraps the cursor row in Selected; a cell that set its own foreground
+	// would emit a reset that swallows the selected row's colour, so the colour
+	// is left off here and the selected row is the only thing coloured.
+	s.Cell = lipgloss.NewStyle().Padding(0, 1)
+	// No padding on Selected: it wraps the already-padded row, so padding again
+	// would shift the highlighted row a column out of line with the rest.
 	s.Selected = selectedStyle
 
 	return s
@@ -149,10 +152,15 @@ func columnsFor(headers []string, rows []tableRow, width int) []table.Column {
 
 	columns[0].Width = 2
 
+	// Cells are measured by display width, not byte length: a multibyte name is
+	// as wide as it looks, not as wide as its UTF-8 encoding. This is also the
+	// width bubbles/table truncates against, so the two agree. Cells must stay
+	// plain text — an embedded ANSI escape would be counted here and cut
+	// mid-sequence by the table's truncation, which is not escape-aware.
 	for _, row := range rows {
 		for i, cell := range row.cells {
 			if i+1 < len(columns) {
-				columns[i+1].Width = max(columns[i+1].Width, min(len(cell), maxColumnWidth))
+				columns[i+1].Width = max(columns[i+1].Width, min(lipgloss.Width(cell), maxColumnWidth))
 			}
 		}
 	}
