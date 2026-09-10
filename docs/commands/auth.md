@@ -519,10 +519,16 @@ Properties of this flow:
 - The callback listener is bound to localhost only
 
 > [!IMPORTANT]
-> The API key arrives as a URL query parameter and is stored in plaintext. There is no
-> `state` parameter, so any local process able to reach `localhost:51164` while a login
-> is in flight could deliver a key. Treat `drconfig.yaml` as a secret and prefer
-> `DATAROBOT_API_TOKEN` in shared or automated environments.
+> The API key arrives as a URL query parameter and is stored in plaintext. The callback
+> refuses the requests a page can make invisibly: a hidden `<img>` carries
+> `Sec-Fetch-Dest: image` and a background `fetch` or `XMLHttpRequest` carries `empty`, and
+> the listener turns both away, so a page you have open cannot silently plant a key while a
+> login is in flight. The gate accepts only `Sec-Fetch-Dest: document` and has no `state`
+> parameter, so it does not stop a real top-level navigation to the callback URL (`window.open`,
+> a link click, or setting `window.location`) or a local process that can forge headers. A
+> document navigation is at least visible to you, because the tab moves or a popup opens.
+> Treat `drconfig.yaml` as a secret and prefer `DATAROBOT_API_TOKEN` in shared or automated
+> environments.
 
 ## Configuration file
 
