@@ -87,6 +87,27 @@ func TestCheckCLICredentials_ClassifiesStoredProfileStatus(t *testing.T) {
 	}
 }
 
+// A fresh install (no stored endpoint or token) keeps the dr auth login advice
+// instead of misreporting the empty endpoint as a bad URL.
+func TestCheckCLICredentials_FreshInstallKeepsLoginAdvice(t *testing.T) {
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_TOKEN", "")
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, "")
+	viperx.Set(config.DataRobotAPIKey, "")
+	t.Cleanup(viperx.Reset)
+
+	var buf bytes.Buffer
+
+	valid := checkCLICredentials(&buf)
+
+	require.False(t, valid)
+	assert.Contains(t, buf.String(), "No valid API key found")
+	assert.NotContains(t, buf.String(), "missing URL scheme")
+}
+
 // The '.env' leg used to blame the token for every non-200; now 401 blames the
 // token, 403 reports lacking access, and other statuses blame the instance.
 func TestVerifyDotenvToken_ClassifiesStatus(t *testing.T) {

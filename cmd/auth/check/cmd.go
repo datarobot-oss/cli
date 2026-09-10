@@ -67,8 +67,9 @@ func checkCLICredentials(w io.Writer) bool {
 
 	_, err = config.GetAPIKey(context.Background())
 	if err != nil {
-		// ReportUnjudged handles timeout, unreachable, and non-401 statuses; only a real 401 needs the login advice.
-		if !auth.ReportUnjudged(w, viperx.GetString(config.DataRobotURL), auth.StoredEndpointName, err) {
+		// An absent stored token is a fresh install, not a verdict, so keep the login advice (as EnsureAuthenticated does).
+		if viperx.GetString(config.DataRobotAPIKey) == "" ||
+			!auth.ReportUnjudged(w, viperx.GetString(config.DataRobotURL), auth.StoredEndpointName, err) {
 			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
 			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
 			fmt.Fprint(w, tui.InfoStyle.Render("dr auth login"))
