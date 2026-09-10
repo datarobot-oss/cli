@@ -50,7 +50,7 @@ to a frozen version) — selected via the shared `--scope` and
 
 > [!NOTE]
 > **First time?** If you're new to the CLI, start with the
-> [Quick start](../../README.md#quick-start) for step-by-step setup
+> [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup
 > instructions.
 
 ## Quick start

@@ -20,7 +20,7 @@ Startup is asynchronous. A workload moves through `submitted â†’ provisioning â†
 > [!NOTE]
 > The `workload` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_WORKLOAD=true` before running any `dr workload` subcommand. See [Feature gates](../development/feature-gates.md) for details.
 >
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
 

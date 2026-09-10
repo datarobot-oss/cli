@@ -6,7 +6,7 @@ a human, committed, and reviewed &mdash; and the CLI still has to edit them in p
 
 That makes every such write a round trip through someone else's file. This page collects
 the rules that fall out of it. The machine-readable form lives in
-[.cursor/bugbot-user-files.md](../../.cursor/bugbot-user-files.md).
+[.cursor/bugbot-user-files.md](https://github.com/datarobot-oss/cli/blob/main/.cursor/bugbot-user-files.md).
 
 ## The invariant
 

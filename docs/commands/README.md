@@ -2,7 +2,7 @@
 
 Complete reference documentation for all DataRobot CLI commands.
 
-This document provides a comprehensive overview of all available commands, their flags, and usage examples. For getting started with the CLI, see the [Quick start guide](../../README.md#quick-start).
+This document provides a comprehensive overview of all available commands, their flags, and usage examples. For getting started with the CLI, see the [Quick start guide](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start).
 
 ## Global flags
 
@@ -425,6 +425,6 @@ EDITOR                              # External editor for file editing (fallback
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)
-- [User guide](../user-guide/)
-- [Template system](../template-system/)
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)
+- [User guide](../user-guide/README.md)
+- [Template system](../template-system/README.md)

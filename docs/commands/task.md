@@ -20,7 +20,7 @@ dr task run dev
 The command automatically discovers Taskfiles in your template components and aggregates them into a unified configuration.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 

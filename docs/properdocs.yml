@@ -12,6 +12,25 @@ extra:
 
 theme:
   name: material
+  # overrides/.icons holds the mark; icon.logo is inlined as SVG, so it inherits
+  # the header colour and flips with the palette (a theme.logo <img> would not).
+  custom_dir: overrides
+  favicon: img/dr-favicon.svg
+  icon:
+    logo: datarobot/logo
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
   features:
     - navigation.instant
     - navigation.tracking
@@ -38,6 +57,10 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  - def_list
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search
@@ -71,6 +94,12 @@ nav:
       - self: commands/self.md
       - plugins: commands/plugins.md
       - component: commands/component-managed-updates.md
+      - dependencies: commands/dependencies.md
+      - artifact: commands/artifact.md
+      - workload: commands/workload.md
+      - pipeline: commands/pipeline.md
+      - pipeline reference: commands/pipelines-reference.md
+      - llm-gateway: commands/llm-gateway.md
   - Development:
       - development/README.md
       - Setup: development/setup.md
@@ -81,12 +110,22 @@ nav:
       - Releasing: development/releasing.md
       - Plugins: development/plugins.md
       - Telemetry: development/telemetry.md
+      - Configuration & viper: development/configuration.md
+      - Flags: development/flags.md
+      - Feature gates: development/feature-gates.md
+      - Root command factory: development/root-factory.md
+      - Tool registry: development/tool-registry.md
+      - Remote plugins: development/remote-plugins.md
+      - Editing user files: development/editing-user-files.md
+      - Workload state validation: development/workload-wapi-validation.md
 
 # Exclude patterns to avoid processing non-documentation files
 exclude_docs: |
   dev-preview/
   .venv/
+  overrides/
   pyproject.toml
   component-defaults-example.yaml
   install
   winstall
+  index.html

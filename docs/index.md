@@ -18,7 +18,7 @@ curl https://cli.datarobot.com/install | sh
 irm https://cli.datarobot.com/winstall | iex
 ```
 
-For more installation options, see the [Installation](../README.md#installation) section in the main README.
+For more installation options, see the [Installation](https://github.com/datarobot-oss/cli/blob/main/README.md#installation) section in the main README.
 
 ## Documentation structure
 
@@ -26,7 +26,7 @@ For more installation options, see the [Installation](../README.md#installation)
 
 End-user documentation for using the CLI:
 
-- [Getting started](../README.md#quick-start)&mdash;installation and initial setup guide covering prerequisites, installation methods, authentication, and your first template.
+- [Getting started](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;installation and initial setup guide covering prerequisites, installation methods, authentication, and your first template.
 - [Quick reference](user-guide/quick-reference.md)&mdash;one-page command reference for the most common commands.
 - [Shell completions](user-guide/shell-completions.md)&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell.
 - [Configuration files](user-guide/configuration.md)&mdash;understanding config file structure, location, and how to manage multiple environments.
@@ -54,7 +54,7 @@ Detailed documentation for each command:
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
 - [Command reference index](commands/README.md)&mdash;full command tree including `dependencies check` and global flags.
 
-For template operations (list, setup), see the [Template system](template-system/) documentation and use `dr templates --help` for command details.
+For template operations (list, setup), see the [Template system](template-system/README.md) documentation and use `dr templates --help` for command details.
 
 ### 🔧 Development guide
 
@@ -69,10 +69,10 @@ For contributors and developers:
 
 ## Quick links
 
-- [Main README](../README.md)&mdash;project overview.
-- [Contributing guidelines](../CONTRIBUTING.md)&mdash;how to contribute.
-- [Code of conduct](../CODE_OF_CONDUCT.md)&mdash;community guidelines.
-- [Changelog](../CHANGELOG.md)&mdash;version history.
+- [Main README](https://github.com/datarobot-oss/cli/blob/main/README.md)&mdash;project overview.
+- [Contributing guidelines](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;how to contribute.
+- [Code of conduct](https://github.com/datarobot-oss/cli/blob/main/CODE_OF_CONDUCT.md)&mdash;community guidelines.
+- [Changelog](https://github.com/datarobot-oss/cli/blob/main/CHANGELOG.md)&mdash;version history.
 
 ## Getting help
 
@@ -102,7 +102,7 @@ If you can't find what you're looking for:
 #### 📝 To be added (Future)
 
 - User guide: authentication details, working with templates, FAQ
-- Command reference: dedicated page for `dr templates` (use `dr templates --help` and [Template system](template-system/) in the meantime)
+- Command reference: dedicated page for `dr templates` (use `dr templates --help` and [Template system](template-system/README.md) in the meantime)
 - Development: architecture details, testing guide
 
 ### Documentation principles
@@ -117,19 +117,25 @@ If you can't find what you're looking for:
 
 ### Local documentation preview
 
-To preview the documentation site locally with MkDocs:
+To preview the documentation site locally:
+
+```bash
+task docs-serve
+```
+
+Or directly:
 
 ```bash
 cd docs
 uv sync
-uv run mkdocs serve
+uv run properdocs serve
 ```
 
 Then open `http://localhost:8000` in your browser.
 
 ### Contributing to documentation
 
-Found an error or want to improve the docs? Please see our [Contributing Guidelines](../CONTRIBUTING.md) for information on submitting documentation improvements.
+Found an error or want to improve the docs? Please see our [Contributing Guidelines](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md) for information on submitting documentation improvements.
 
 ---
 

@@ -100,35 +100,37 @@ my-spa-template/
 
 ### Full-stack applications
 
-Create applications with multiple components.
+Create applications with multiple components. Prompts for every component live
+under the single root `.datarobot` directory&mdash;only that directory is scanned,
+so nested `backend/.datarobot/` files are not discovered.
 
 ```
 my-fullstack-template/
 ├── .datarobot/
-│   └── prompts.yaml
+│   ├── prompts.yaml
+│   └── components/
+│       ├── backend.yaml
+│       └── frontend.yaml
 ├── backend/
-│   ├── .datarobot/
-│   │   └── prompts.yaml
 │   └── src/
 ├── frontend/
-│   ├── .datarobot/
-│   │   └── prompts.yaml
 │   └── src/
 └── .env.template
 ```
 
 ### Microservices
 
-Use multiple independent services:
+Use multiple independent services, keeping all prompts under the root `.datarobot`:
 
 ```
 my-microservices-template/
 ├── .datarobot/
+│   └── components/
+│       ├── service-a.yaml
+│       └── service-b.yaml
 ├── service-a/
-│   ├── .datarobot/
 │   └── src/
 ├── service-b/
-│   ├── .datarobot/
 │   └── src/
 └── docker-compose.yml
 ```
@@ -246,6 +248,6 @@ Browse the [DataRobot template gallery](https://github.com/datarobot/templates) 
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)&mdash;installation and initial setup
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;installation and initial setup
 - [User guide](../user-guide/README.md)&mdash;complete usage guide
 - [Command reference: dotenv](../commands/dotenv.md)&mdash;environment variable management

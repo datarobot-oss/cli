@@ -17,7 +17,7 @@ dr auth login
 Your credentials are automatically saved and you're ready to use the CLI.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -764,9 +764,9 @@ dr auth login
 
 ## See also
 
-- [Quick start](../../README.md#quick-start) - Initial setup guide
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) - Initial setup guide
 - [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
-- [Templates](../template-system/) - Template management commands
+- [Templates](../template-system/README.md) - Template management commands
 
 > [!TIP]
 > **What's next?** After setting up authentication:
