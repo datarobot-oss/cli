@@ -55,10 +55,6 @@ func Delete(url, info string, body any, timeout ...time.Duration) (*http.Respons
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	if err := restoreRequestBody(req); err != nil {
-		return nil, err
-	}
-
 	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err

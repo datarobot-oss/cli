@@ -122,25 +122,49 @@ func IsAPIConsumerTrackingEnabled() bool {
 	return viper.GetBool(APIConsumerTrackingEnabled)
 }
 
+// RedactedReqInfo renders a request for the debug log: method, URL and headers,
+// with Authorization masked. It deliberately does NOT include the request body.
+//
+// Two reasons, both learned the hard way:
+//
+//  1. Bodies are not safely redactable. RedactSecretFields below is keyed on
+//     field *names*, which is sound for DataRobot's own endpoints where the
+//     schema is known -- but `dr pipeline input create` sends arbitrary
+//     user-authored JSON, and that is exactly where data-source credentials
+//     live. A secret under any key the regexp does not list (api_key,
+//     credentials, db_password) would land in the debug log in the clear,
+//     permanently. A redactor that has to recognise a secret will one day fail
+//     to; the fix is not to log the body at all.
+//  2. DumpRequestOut(req, true) *drains* req.Body, so every caller that logged
+//     a request then had to re-arm the body before sending it or the server
+//     received an empty payload. A bodyless dump never touches Body, which
+//     removes that hazard class outright.
+//
+// Request bodies rarely earn their place in a debug log; headers, method and
+// URL carry almost all of the diagnostic value.
 func RedactedReqInfo(req *http.Request) string {
-	// Dump the request to a byte slice after cloning and removing Auth header
+	// Clone so masking the Authorization header cannot affect the real request.
 	dumpReq := req.Clone(req.Context())
 	if auth := dumpReq.Header.Get("Authorization"); auth != "" {
 		dumpReq.Header.Set("Authorization", "[REDACTED]")
 	}
 
-	requestDump, err := httputil.DumpRequestOut(dumpReq, true)
+	// false == headers only. See the doc comment above before changing this.
+	requestDump, err := httputil.DumpRequestOut(dumpReq, false)
 	if err != nil {
 		return ""
 	}
 
+	// Still applied: a secret can appear in a non-Authorization header, and the
+	// call is cheap. It is no longer the only thing standing between a user's
+	// credential and the debug log.
 	return RedactSecretFields(string(requestDump))
 }
 
-// secretBodyFields matches a JSON field whose value is a secret. The dump
-// above includes the request body, and bodies carry secrets: POST
-// /credentials/ sends one by definition. Without this, `dr --debug` writes
-// the user's token into the debug log file, permanently and in the clear.
+// secretBodyFields matches a JSON field whose value is a secret. RedactedReqInfo
+// no longer dumps request bodies, so this is now defence in depth rather than
+// the primary control -- it still scrubs anything secret-shaped that appears in
+// a header, and it is exported for callers that log other API text.
 var secretBodyFields = regexp.MustCompile(
 	`(?i)"(apiToken|password|passwd|secret|privateKey|clientSecret|refreshToken|accessToken|token)"\s*:\s*"[^"]*"`)
 
