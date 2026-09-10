@@ -47,14 +47,21 @@ func (c *countingClient) count() int {
 	return len(c.events)
 }
 
-func (c *countingClient) Identify(amplitude.Identify, amplitude.EventOptions)                      {}
+func (c *countingClient) Identify(amplitude.Identify, amplitude.EventOptions) {}
+
 func (c *countingClient) GroupIdentify(string, string, amplitude.Identify, amplitude.EventOptions) {}
-func (c *countingClient) SetGroup(string, []string, amplitude.EventOptions)                        {}
-func (c *countingClient) Revenue(amplitude.Revenue, amplitude.EventOptions)                        {}
-func (c *countingClient) Flush()                                                                   {}
-func (c *countingClient) Shutdown()                                                                {}
-func (c *countingClient) Add(amplitude.Plugin)                                                     {}
-func (c *countingClient) Remove(string)                                                            {}
+
+func (c *countingClient) SetGroup(string, []string, amplitude.EventOptions) {}
+
+func (c *countingClient) Revenue(amplitude.Revenue, amplitude.EventOptions) {}
+
+func (c *countingClient) Flush() {}
+
+func (c *countingClient) Shutdown() {}
+
+func (c *countingClient) Add(amplitude.Plugin) {}
+
+func (c *countingClient) Remove(string) {}
 
 func (c *countingClient) Config() amplitude.Config { return amplitude.Config{} }
 
