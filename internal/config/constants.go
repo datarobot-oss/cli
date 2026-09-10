@@ -18,6 +18,17 @@ const (
 	DataRobotURL    = "endpoint"
 	DataRobotAPIKey = "token"
 
+	// OAuthRefreshToken and OAuthTokenEndpoint are written only by the OAuth2
+	// login flow. Both are needed to renew an access token without a browser:
+	// the endpoint is stored rather than re-discovered so a renewal costs one
+	// request and does not depend on discovery still being reachable.
+	//
+	// Their presence is also what marks a profile as OAuth-authenticated, which
+	// is why the legacy flow clears them — a stale refresh token left beside a
+	// hand-off credential would be renewed against the wrong instance.
+	OAuthRefreshToken  = "oauth-refresh-token"
+	OAuthTokenEndpoint = "oauth-token-endpoint"
+
 	APIConsumerTrackingEnabled = "api-consumer-tracking-enabled"
 
 	// SkipAuthKey is the viper key behind the --skip-auth persistent flag.

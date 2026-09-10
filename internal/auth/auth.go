@@ -371,6 +371,15 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 		return true
 	}
 
+	// A REJECTED token may be renewable without a browser — the reason
+	// `offline_access` is requested at login. Only on a judged rejection: an
+	// unjudged failure (404, 5xx, a network blip) is not evidence of expiry,
+	// and spending a rotate-on-use refresh token against a server that never
+	// rejected anything would turn an outage into a forced re-login.
+	if tokenWasRejected(viperErr) && renewStoredToken(ctx) {
+		return true
+	}
+
 	skipAuthFlow := false
 
 	// Everything this gate prints goes to stderr: PreRunE runs before the command,
@@ -647,4 +656,53 @@ func GetBaseURLOrAsk() string {
 	}
 
 	return datarobotHost
+}
+
+// renewStoredToken swaps an expired access token for a fresh one and reports
+// whether the profile ends up usable. false means "carry on to the interactive
+// login", including the ordinary case of nothing to renew with.
+func renewStoredToken(ctx context.Context) bool {
+	if _, err := RefreshAccessToken(ctx); err != nil {
+		if !errors.Is(err, ErrNoRefreshToken) {
+			log.Debugf("Could not renew the access token: %v", err)
+		}
+
+		return false
+	}
+
+	// Verify rather than trust: a server handing back a token it will not
+	// accept would otherwise loop us silently.
+	if _, err := config.GetAPIKey(ctx); err != nil {
+		log.Debug("Renewed token did not verify; falling back to interactive login")
+		ClearOAuthState()
+
+		return false
+	}
+
+	if err := WriteConfigFileSilent(); err != nil {
+		log.Error("Failed to write config file.", "error", err)
+
+		return false
+	}
+
+	log.Debug("Renewed the access token with the stored refresh token")
+
+	return true
+}
+
+// tokenWasRejected reports whether a failure was the server judging the
+// credential (401/403) rather than being unable to answer — the same
+// distinction fprintServerStatus makes.
+func tokenWasRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var statusErr *config.HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+
+	return statusErr.StatusCode == http.StatusUnauthorized ||
+		statusErr.StatusCode == http.StatusForbidden
 }

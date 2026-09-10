@@ -42,6 +42,8 @@ var PersistableKeys = map[string]struct{}{
 	"pulumi_config_passphrase": {},
 	"ca-cert":                  {},
 	DefaultLLMID:               {},
+	OAuthRefreshToken:          {},
+	OAuthTokenEndpoint:         {},
 }
 
 // UpdateConfigFile writes only the allowlisted keys from viper back to the
