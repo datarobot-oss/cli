@@ -10,7 +10,7 @@ vars:
     -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
   BIN_DIR: "$PWD/tmp/bin"
-  GOLANGCI_LINT_VERSION: "v2.11.4"
+  GOLANGCI_LINT_VERSION: "v2.13.2"
   LEFTHOOK_VERSION: "v2.1.10"
   JSCPD_VERSION: "5.0.12"
   GORELEASER_VERSION: "v2.17.1"
@@ -38,7 +38,11 @@ tasks:
         echo "🚚 Downloading tools…"
         export GOBIN={{.BIN_DIR}}
 
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
+        # Pin install.sh to the release tag rather than master: the master script's
+        # checksum lookup greps the filename unanchored, so it also matches the
+        # `<tarball>.sbom.json` entry now present in checksums.txt and fails
+        # verification against a valid artifact. The tagged script anchors the match.
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/{{.GOLANGCI_LINT_VERSION}}/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
         # goreleaser: download the prebuilt binary instead of `go install`, which
         # compiles a large dependency tree from source and slows container/CI setup.
         GORELEASER_OS=$(go env GOOS)

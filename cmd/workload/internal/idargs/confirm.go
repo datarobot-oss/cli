@@ -147,5 +147,5 @@ func canAsk(cmd *cobra.Command) bool {
 		return true
 	}
 
-	return term.IsTerminal(int(f.Fd())) //nolint:gosec // uintptr and int are same size on supported platforms
+	return term.IsTerminal(int(f.Fd()))
 }
