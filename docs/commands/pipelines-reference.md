@@ -139,15 +139,22 @@ Per-invocation execution records for a single run. `<task-id>` is the sequential
 
 ## Schedules (`dr pipeline schedule …`)
 
-Schedules are **locked-only** — every verb requires both `--pipeline` and `--version`.
+Schedules hang off the pipeline, not off a version: the routes are
+`/pipelines/{id}/schedules[/{schedule_id}]`. Only `create` takes `--version`
+(the locked version to run), and it travels in the request body as
+`pipeline_version_id` rather than in the path. `list`, `get`, `update` and
+`delete` take `--pipeline` only.
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipeline schedule create` | `POST /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id>` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"` (required), `--input <input-id>` (required), `--timezone <iana>` (default `UTC`), `--output-format json`. |
-| `dr pipeline schedule list` | `GET /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule list --pipeline <id> --version=2` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--offset <n>`, `--limit <n>`, `--output-format json`. |
-| `dr pipeline schedule get` | `GET /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule get --pipeline <id> --version=2 <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--output-format json`. |
-| `dr pipeline schedule update` | `PATCH /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule update --pipeline <id> --version=2 <schedule-id> --cron "*/15 * * * *"` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"`, `--timezone <iana>`. At least one required. |
-| `dr pipeline schedule delete` | `DELETE /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule delete --pipeline <id> --version=2 <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required). |
+| `dr pipeline schedule create` | `POST /pipelines/{id}/schedules` | `dr pipeline schedule create --pipeline <id> --version 2 --cron "0 * * * *" --input <input-id> --image <image-id> --image-version 1` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"` (required), `--input <input-id>` (required), `--image <image-id>` (required), `--image-version <n>` (required), `--timezone <iana>` (default `UTC`), `--output-format json`. |
+| `dr pipeline schedule list` | `GET /pipelines/{id}/schedules` | `dr pipeline schedule list --pipeline <id>` | **Flags:** `--pipeline <id>` (required), `--offset <n>`, `--limit <n>` (default 100), `--output-format json`. |
+| `dr pipeline schedule get` | `GET /pipelines/{id}/schedules/{schedule_id}` | `dr pipeline schedule get --pipeline <id> <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--output-format json`. |
+| `dr pipeline schedule update` | `PATCH /pipelines/{id}/schedules/{schedule_id}` | `dr pipeline schedule update --pipeline <id> <schedule-id> --cron "*/15 * * * *"` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--cron "<expr>"`, `--timezone <iana>`. At least one of `--cron` / `--timezone` required. |
+| `dr pipeline schedule delete` | `DELETE /pipelines/{id}/schedules/{schedule_id}` | `dr pipeline schedule delete --pipeline <id> <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required). |
+
+A schedule still targets a locked version — the version is recorded on the
+schedule and comes back on reads — but it is not part of the URL.
 
 ---
 

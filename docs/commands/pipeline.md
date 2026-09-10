@@ -40,7 +40,9 @@ Versions are created automatically:
 Inputs, runs, and the graph endpoint exist in two scopes —
 **draft** (mutable, no version pinned) and **locked** (immutable, tied
 to a frozen version) — selected via the shared `--scope` and
-`--version` flags. Schedules are locked-only.
+`--version` flags. Schedules target a locked version too, but they hang off
+the pipeline rather than the version: only `dr pipeline schedule create`
+takes `--version`, and it is sent in the request body rather than the path.
 
 > [!NOTE]
 > **First time?** If you're new to the CLI, start with the
