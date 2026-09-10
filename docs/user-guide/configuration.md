@@ -3,7 +3,7 @@
 The DataRobot CLI stores your authentication credentials and preferences in configuration files. This guide explains how configuration files work, where they're stored, and how to manage them.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](../../README.md#quick-start) for initial setup.
+> **First time?** If you're new to the CLI, you typically don't need to manually create configuration files. They're automatically created when you run `dr auth set-url` and `dr auth login`. See the [Quick start guide](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for initial setup.
 
 ## Configuration location
 
@@ -580,7 +580,7 @@ State files are small and do not require manual management under normal circumst
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)&mdash;initial setup and first-time configuration
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;initial setup and first-time configuration
 - [auth command](../commands/auth.md)&mdash;authentication commands and troubleshooting
 
 > [!TIP]

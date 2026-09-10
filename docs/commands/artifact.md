@@ -28,7 +28,7 @@ A locked, fully built artifact is what you hand to `dr workload create` to deplo
 > [!NOTE]
 > The `artifact` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_WORKLOAD=true` before running any `dr artifact` subcommand. See [Feature gates](../development/feature-gates.md) for details.
 >
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
 

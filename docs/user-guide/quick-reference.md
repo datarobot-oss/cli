@@ -192,7 +192,7 @@ Important files and where to find them. See the [configuration files documentati
 
 ## Getting help
 
-Find help and debug issues. See [Getting help](../../README.md#getting-help) in the main README for additional resources.
+Find help and debug issues. See [Getting help](https://github.com/datarobot-oss/cli/blob/main/README.md#getting-help) in the main README for additional resources.
 
 ```bash
 # General help
@@ -214,4 +214,4 @@ dr --debug [command]
 
 - [Full command reference](../commands/README.md) - Complete command documentation
 - [User guide](README.md) - Detailed usage guides
-- [Quick start](../../README.md#quick-start) - Step-by-step setup instructions
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) - Step-by-step setup instructions

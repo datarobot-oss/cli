@@ -337,7 +337,16 @@ tasks:
       - echo "📚 Starting documentation server…"
       - uv sync
       - echo "🌐 Open http://localhost:8000 in your browser"
-      - uv run mkdocs serve
+      - uv run properdocs serve
+
+  docs-build:
+    silent: true
+    desc: "Build documentation site"
+    dir: docs
+    cmds:
+      - echo "📚 Building documentation site…"
+      - uv sync
+      - uv run properdocs build
 
   copyright:
     silent: true
