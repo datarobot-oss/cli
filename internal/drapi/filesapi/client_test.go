@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -364,6 +365,12 @@ func TestPollStatus_CompletedRedirect(t *testing.T) {
 	assert.True(t, IsTerminalStatus(resp.Status))
 }
 
+// TestUploadFromZipExisting pins where the overwrite mode travels. The
+// Files API reads it from the multipart form: a value sent only in the
+// query is accepted and ignored, the rename default applies, and every
+// existing path comes back as "name (2).ext". So the form field must be
+// present and must precede the file part. The query copy stays until the
+// API documents which location is authoritative.
 func TestUploadFromZipExisting(t *testing.T) {
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/files/cid-1/fromFile/", r.URL.Path)
@@ -381,8 +388,28 @@ func TestUploadFromZipExisting(t *testing.T) {
 			return
 		}
 
+		assert.Equal(t, "overwrite", part.FormName(), "form fields must precede the file part")
+		assert.Empty(t, part.FileName())
+
+		value, err := io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "REPLACE", string(value))
+
+		part, err = mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
 		assert.Equal(t, "file", part.FormName())
 		assert.Equal(t, "changes.zip", part.FileName())
+
+		zipBytes, err := io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "PK\x03\x04fake-zip", string(zipBytes))
+
+		// Expect no further parts.
+		_, err = mr.NextPart()
+		assert.ErrorIs(t, err, io.EOF)
 
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
@@ -395,6 +422,62 @@ func TestUploadFromZipExisting(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v9", resp.CatalogVersionID)
 	assert.Equal(t, "sid-9", resp.StatusID)
+}
+
+// TestUploadFromZipExisting_ContentLengthWithFormFields checks that folding
+// form fields into the prologue keeps the advertised Content-Length exact
+// and the streamed file intact. An off-by-N here surfaces as a transport
+// error or a truncated part, never as a silent pass.
+func TestUploadFromZipExisting_ContentLengthWithFormFields(t *testing.T) {
+	// Long enough to cross io.Copy's internal buffer more than once.
+	payload := strings.Repeat("0123456789abcdef", 4096)
+
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, r.ContentLength, int64(len(raw)),
+			"advertised Content-Length must match the received body")
+
+		// The body is consumed above, so parse the buffered copy.
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		mr := multipart.NewReader(bytes.NewReader(raw), params["boundary"])
+
+		part, err := mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		value, err := io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "overwrite", part.FormName())
+		assert.Equal(t, "REPLACE", string(value))
+
+		part, err = mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		got, err := io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "file", part.FormName())
+		assert.Equal(t, payload, string(got))
+
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
+	}))
+
+	c := New()
+
+	body := strings.NewReader(payload)
+	_, err := c.UploadFromZipExisting("cid-1", "changes.zip", OverwriteReplace, int64(body.Len()), body)
+	require.NoError(t, err)
 }
 
 // TestUploadFromZipNew_HitsFromFileEndpoint locks in the (post-2026-04-30)
@@ -420,6 +503,11 @@ func TestUploadFromZipNew_HitsFromFileEndpoint(t *testing.T) {
 
 		assert.Equal(t, "file", part.FormName())
 		assert.Equal(t, "wapi-sync.zip", part.FileName())
+
+		// A new catalog has no paths to collide with, so no overwrite
+		// field travels: the file is the only part.
+		_, err = mr.NextPart()
+		assert.ErrorIs(t, err, io.EOF)
 
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"catalogId":"new-cid","catalogVersionId":"new-ver","statusId":"sid-new"}`))
