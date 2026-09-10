@@ -136,12 +136,13 @@ tasks:
       - |
         GO_REQUIRED=$(grep '^go ' go.mod | awk '{print $2}')
         GO_INSTALLED=$(go version | awk '{print $3}' | sed 's/go//')
-        if [ "$GO_REQUIRED" != "$GO_INSTALLED" ]; then
+        if [ "$(printf '%s\n%s\n' "$GO_REQUIRED" "$GO_INSTALLED" | sort -V | head -n1)" = "$GO_REQUIRED" ]; then
+          echo "Go $GO_INSTALLED satisfies go.mod's go $GO_REQUIRED"
+        else
           echo "Go version mismatch: go.mod requires $GO_REQUIRED, installed is $GO_INSTALLED"
           echo "Install Go $GO_REQUIRED from https://go.dev/dl/"
           exit 1
         fi
-        echo "Go $GO_INSTALLED matches go.mod"
       - task: install-tools
       - "{{.BIN_DIR}}/lefthook install"
       - task: build
