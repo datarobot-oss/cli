@@ -281,7 +281,7 @@ type ImageLogsResponse struct {
 
 // GetImage fetches a single image by ID from GET /api/v2/pipelines/images/{image_id}.
 func GetImage(imageID string) (*Image, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + imageID)
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + escapeID(imageID))
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func GetImage(imageID string) (*Image, error) {
 // GET /api/v2/pipelines/images/{image_id}/versions/{version_id}/logs.
 func GetImageBuildLogs(imageID string, version int) (*ImageLogsResponse, error) {
 	endpoint, err := config.GetEndpointURL(
-		"/api/v2/pipelines/images/" + imageID + "/versions/" + strconv.Itoa(version) + "/logs",
+		"/api/v2/pipelines/images/" + escapeID(imageID) + "/versions/" + strconv.Itoa(version) + "/logs",
 	)
 	if err != nil {
 		return nil, err
@@ -323,7 +323,7 @@ func GetImageBuildLogs(imageID string, version int) (*ImageLogsResponse, error) 
 // The API requires the image name in the body; UpdateImage fetches it
 // first so callers only need to supply the image ID.
 func UpdateImage(imageID string, pip []string, conda *CondaValue, pythonVersion, baseImage string, gpu bool) (*Image, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + imageID)
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + escapeID(imageID))
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func UpdateImage(imageID string, pip []string, conda *CondaValue, pythonVersion,
 // DeleteImage soft-deletes the most-recent active version of an image.
 // If no active versions remain, the parent image is soft-deleted as well.
 func DeleteImage(imageID string) error {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + imageID)
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/images/" + escapeID(imageID))
 	if err != nil {
 		return err
 	}
@@ -385,7 +385,7 @@ func DeleteImage(imageID string) error {
 // touching the parent.
 func DeleteImageVersion(imageID string, version int) error {
 	endpoint, err := config.GetEndpointURL(
-		"/api/v2/pipelines/images/" + imageID + "/versions/" + strconv.Itoa(version),
+		"/api/v2/pipelines/images/" + escapeID(imageID) + "/versions/" + strconv.Itoa(version),
 	)
 	if err != nil {
 		return err
