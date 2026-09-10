@@ -175,8 +175,8 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 // It avoids naming dr auth set-url, since DATAROBOT_CLI_ENDPOINT can override the file.
 const StoredEndpointName = "the configured DataRobot endpoint"
 
-// ReportUnjudged explains a verification failure that produced no verdict on the
-// credentials and reports whether it did. False means the instance rejected them.
+// ReportUnjudged writes a diagnostic and reports whether to suppress the login flow:
+// true for an unjudged failure or a 403 (credentials valid, account lacks access).
 func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool {
 	base, info := writerStyles(w)
 
