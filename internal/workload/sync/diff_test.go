@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func entry(hash string, size int64) FileEntry { return FileEntry{Hash: hash, Size: size} }
@@ -114,12 +115,25 @@ func TestDiff_BytesAccounting(t *testing.T) {
 func TestFromFilesAPI_RoundTrip(t *testing.T) {
 	in := map[string]filesapi.FileMeta{
 		"a.py": {Hash: "aaa", Size: 10},
-		"b.py": {Hash: "bbb", Size: 20},
+		"b.py": {Hash: "bbb", Size: 20, Mode: 0o755},
 	}
 
 	got := FromFilesAPI(in)
 
 	assert.Len(t, got, 2)
 	assert.Equal(t, FileEntry{Hash: "aaa", Size: 10}, got["a.py"])
-	assert.Equal(t, FileEntry{Hash: "bbb", Size: 20}, got["b.py"])
+	assert.Equal(t, FileEntry{Hash: "bbb", Size: 20, Mode: 0o755}, got["b.py"])
+}
+
+func TestDiff_ModePropagation(t *testing.T) {
+	base := BaseManifest{"a.py": {Hash: "aaa", Size: 10, Mode: 0o644}}
+	local := BaseManifest{"a.py": {Hash: "aaa-local", Size: 11, Mode: 0o755}}
+	remote := BaseManifest{"a.py": {Hash: "aaa-remote", Size: 12, Mode: 0o644}}
+
+	plan := Diff(base, local, remote)
+
+	require.Len(t, plan.Conflicts, 1)
+
+	assert.Equal(t, uint32(0o755), plan.Conflicts[0].LocalMode)
+	assert.Equal(t, uint32(0o644), plan.Conflicts[0].RemoteMode)
 }

@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
@@ -92,6 +93,10 @@ func (r *Rollback) Backup(relPath string) error {
 
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("close backup file: %w", err)
+	}
+
+	if err := fileops.ApplyMode(dst, uint32(info.Mode().Perm())); err != nil {
+		return fmt.Errorf("set mode on backup %s: %w", dst, err)
 	}
 
 	return nil
@@ -182,32 +187,50 @@ func restoreFromDir(rollDir, projectDir string) error {
 			return fmt.Errorf("relativize rollback %s: %w", p, err)
 		}
 
-		dst := filepath.Join(projectDir, rel)
-
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return fmt.Errorf("mkdir restore parent: %w", err)
-		}
-
-		in, err := os.Open(p) //nolint:gosec // low TOCTOU risk for backup restore
-		if err != nil {
-			return fmt.Errorf("open backup %s: %w", p, err)
-		}
-
-		out, err := os.Create(dst)
-		if err != nil {
-			_ = in.Close()
-			return fmt.Errorf("create restored file %s: %w", dst, err)
-		}
-
-		_, copyErr := io.Copy(out, in)
-
-		_ = in.Close()
-		_ = out.Close()
-
-		if copyErr != nil {
-			return fmt.Errorf("restore copy %s: %w", dst, copyErr)
-		}
-
-		return nil
+		return restoreOneEntry(p, filepath.Join(projectDir, rel))
 	})
+}
+
+// restoreOneEntry copies one backed-up file back to dst and restores its
+// mode. A stat failure on the source is exceptionally unlikely (it was just
+// opened and copied successfully) and this is a best-effort restore path:
+// failing the whole rollback over one missed chmod would lose every other
+// file it already restored, a worse outcome than one file keeping a stale
+// mode -- so a stat failure is silently skipped rather than propagated.
+func restoreOneEntry(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("mkdir restore parent: %w", err)
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open backup %s: %w", src, err)
+	}
+
+	srcInfo, statErr := in.Stat()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		_ = in.Close()
+		return fmt.Errorf("create restored file %s: %w", dst, err)
+	}
+
+	_, copyErr := io.Copy(out, in)
+
+	_ = in.Close()
+	_ = out.Close()
+
+	if copyErr != nil {
+		return fmt.Errorf("restore copy %s: %w", dst, copyErr)
+	}
+
+	if statErr != nil {
+		return nil
+	}
+
+	if err := fileops.ApplyMode(dst, uint32(srcInfo.Mode().Perm())); err != nil {
+		return fmt.Errorf("set mode on restored %s: %w", dst, err)
+	}
+
+	return nil
 }

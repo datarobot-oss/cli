@@ -78,11 +78,11 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 	files := make(map[string]wapi.FileMeta, len(e.remote))
 
 	for path, fe := range e.remote {
-		files[path] = wapi.FileMeta{Hash: fe.Hash, Size: fe.Size}
+		files[path] = wapi.FileMeta{Hash: fe.Hash, Size: fe.Size, Mode: fe.Mode}
 	}
 
 	for _, fa := range e.plan.Uploads {
-		files[fa.Path] = wapi.FileMeta{Hash: fa.LocalHash, Size: fa.LocalSize}
+		files[fa.Path] = wapi.FileMeta{Hash: fa.LocalHash, Size: fa.LocalSize, Mode: fa.LocalMode}
 	}
 
 	for _, fa := range e.plan.Deletes {
@@ -94,7 +94,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 			continue
 		}
 
-		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize}
+		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize, Mode: fa.RemoteMode}
 	}
 
 	syncedAtCopy := syncedAt

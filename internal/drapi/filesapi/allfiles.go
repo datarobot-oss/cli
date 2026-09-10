@@ -44,7 +44,7 @@ func (c *httpClient) AllFiles(catalogID, versionID string) (map[string]FileMeta,
 				return nil, fmt.Errorf("remote manifest entry %q: %w", item.FileName, err)
 			}
 
-			out[key] = FileMeta{Hash: item.FileChecksum, Size: item.FileSize}
+			out[key] = FileMeta{Hash: item.FileChecksum, Size: item.FileSize, Mode: item.FileMode}
 		}
 
 		if page.Next == "" {

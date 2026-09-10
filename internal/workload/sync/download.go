@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -142,6 +143,13 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 		return fmt.Errorf("close %s: %w", fa.Path, closeErr)
 	}
 
+	return verifyDownload(dst, fa, n, h)
+}
+
+// verifyDownload checks size/hash against what the plan expects, then
+// restores the remote mode. dst is removed if verification fails; a mode
+// restore failure is not, since the content itself is already correct.
+func verifyDownload(dst string, fa FileAction, n int64, h hash.Hash) error {
 	if fa.RemoteSize > 0 && n != fa.RemoteSize {
 		_ = os.Remove(dst)
 		return fmt.Errorf("download size mismatch on %s: expected %d, got %d", fa.Path, fa.RemoteSize, n)
@@ -153,6 +161,10 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 			_ = os.Remove(dst)
 			return fmt.Errorf("checksum mismatch on %s: expected %s, got %s", fa.Path, fa.RemoteHash, got)
 		}
+	}
+
+	if err := fileops.ApplyMode(dst, fa.RemoteMode); err != nil {
+		return fmt.Errorf("set mode on %s: %w", fa.Path, err)
 	}
 
 	return nil

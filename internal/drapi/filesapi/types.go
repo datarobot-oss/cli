@@ -14,11 +14,13 @@
 
 package filesapi
 
-// FileMeta is the per-file entry in a manifest: SHA-256 hex + byte size.
-// Shape matches wapi.FileMeta so manifests compare without conversion.
+// FileMeta is the per-file entry in a manifest: SHA-256 hex + byte size +
+// Unix permission bits. Shape matches wapi.FileMeta so manifests compare
+// without conversion.
 type FileMeta struct {
 	Hash string
 	Size int64
+	Mode uint32
 }
 
 // Overwrite modes for the stage and zip endpoints. The sync engine uses
@@ -109,6 +111,10 @@ type AllFilesItem struct {
 	FileType     string `json:"fileType,omitempty"`
 	FileSize     int64  `json:"fileSize"`
 	FileChecksum string `json:"fileChecksum"`
+	// FileMode carries Unix permission bits (0-0777). Absent/zero on any
+	// response from a server that doesn't populate it yet -- treated
+	// uniformly as "mode unknown" by every consumer.
+	FileMode uint32 `json:"fileMode,omitempty"`
 }
 
 type DeleteFilesReq struct {

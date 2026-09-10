@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestHashFile(t *testing.T) {
 
 		want := sha256.Sum256(body)
 
-		gotHash, gotSize, err := HashFile(path)
+		gotHash, gotSize, _, err := HashFile(path)
 		require.NoError(t, err)
 		assert.Equal(t, hex.EncodeToString(want[:]), gotHash)
 		assert.Equal(t, int64(len(body)), gotSize)
@@ -46,7 +47,7 @@ func TestHashFile(t *testing.T) {
 		path := filepath.Join(dir, "empty.txt")
 		require.NoError(t, os.WriteFile(path, nil, 0o644))
 
-		gotHash, gotSize, err := HashFile(path)
+		gotHash, gotSize, _, err := HashFile(path)
 		require.NoError(t, err)
 		// Known SHA-256 of empty input.
 		assert.Equal(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", gotHash)
@@ -54,7 +55,7 @@ func TestHashFile(t *testing.T) {
 	})
 
 	t.Run("Missing", func(t *testing.T) {
-		_, _, err := HashFile(filepath.Join(dir, "nope.txt"))
+		_, _, _, err := HashFile(filepath.Join(dir, "nope.txt"))
 		require.Error(t, err)
 	})
 
@@ -70,10 +71,24 @@ func TestHashFile(t *testing.T) {
 
 		want := sha256.Sum256(body)
 
-		gotHash, gotSize, err := HashFile(path)
+		gotHash, gotSize, _, err := HashFile(path)
 		require.NoError(t, err)
 		assert.Equal(t, hex.EncodeToString(want[:]), gotHash)
 		assert.Equal(t, int64(len(body)), gotSize)
+	})
+
+	t.Run("CapturesMode", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Unix permission bits are not meaningful on Windows")
+		}
+
+		path := filepath.Join(dir, "exe.sh")
+		require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"), 0o644))
+		require.NoError(t, os.Chmod(path, 0o755))
+
+		_, _, gotMode, err := HashFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o755), gotMode.Perm())
 	})
 }
 
@@ -86,7 +101,7 @@ func TestHashFile_ExceedsMaxSize(t *testing.T) {
 		path := filepath.Join(dir, "x.bin")
 		require.NoError(t, os.WriteFile(path, []byte("0123456789"), 0o644))
 
-		_, _, err := hashFile(path, 4)
+		_, _, _, err := hashFile(path, 4)
 		require.ErrorIs(t, err, ErrFileTooLarge)
 		assert.Contains(t, err.Error(), "x.bin")
 	})

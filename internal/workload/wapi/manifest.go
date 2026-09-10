@@ -25,10 +25,15 @@ import (
 )
 
 // FileMeta is the per-file entry in the BASE manifest. Hash is SHA-256 hex
-// (64 chars) as produced by the sync engine.
+// (64 chars) as produced by the sync engine. Mode is the Unix permission
+// bits (0-0777); zero means "unknown" -- manifests written before mode
+// tracking existed, or a remote that hasn't reported one yet. lte=511
+// bounds it to 0777 octal (9 permission bits), rejecting a corrupted value
+// outside that range instead of treating it as real permission bits.
 type FileMeta struct {
 	Hash string `json:"hash" validate:"required,dr_sha256hex"`
 	Size int64  `json:"size" validate:"gte=0"`
+	Mode uint32 `json:"mode,omitempty" validate:"lte=511"`
 }
 
 // Manifest is the parsed representation of the project's manifest.json — the BASE

@@ -133,7 +133,7 @@ func uploadOneToStage(e *Engine, catalogID, stageID string, fa FileAction) error
 
 	defer func() { _ = f.Close() }()
 
-	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, fa.LocalSize, f); err != nil {
+	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, fa.LocalSize, fa.LocalMode, f); err != nil {
 		return fmt.Errorf("upload %s: %w", fa.Path, err)
 	}
 

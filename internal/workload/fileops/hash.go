@@ -30,23 +30,23 @@ const (
 
 var ErrFileTooLarge = errors.New("file exceeds MaxFileSizeBytes")
 
-func HashFile(path string) (string, int64, error) {
+func HashFile(path string) (string, int64, os.FileMode, error) {
 	return hashFile(path, MaxFileSizeBytes)
 }
 
-func hashFile(path string, maxBytes int64) (string, int64, error) {
+func hashFile(path string, maxBytes int64) (string, int64, os.FileMode, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", 0, fmt.Errorf("stat %s: %w", path, err)
+		return "", 0, 0, fmt.Errorf("stat %s: %w", path, err)
 	}
 
 	if info.Size() > maxBytes {
-		return "", info.Size(), fmt.Errorf("%w: %s (%d bytes)", ErrFileTooLarge, path, info.Size())
+		return "", info.Size(), 0, fmt.Errorf("%w: %s (%d bytes)", ErrFileTooLarge, path, info.Size())
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
-		return "", info.Size(), fmt.Errorf("open %s: %w", path, err)
+		return "", info.Size(), 0, fmt.Errorf("open %s: %w", path, err)
 	}
 
 	defer func() { _ = f.Close() }()
@@ -55,10 +55,10 @@ func hashFile(path string, maxBytes int64) (string, int64, error) {
 	buf := make([]byte, HashChunkSizeBytes)
 
 	if _, err := io.CopyBuffer(h, f, buf); err != nil {
-		return "", info.Size(), fmt.Errorf("hash %s: %w", path, err)
+		return "", info.Size(), 0, fmt.Errorf("hash %s: %w", path, err)
 	}
 
-	return hex.EncodeToString(h.Sum(nil)), info.Size(), nil
+	return hex.EncodeToString(h.Sum(nil)), info.Size(), info.Mode().Perm(), nil
 }
 
 func HashReader(r io.Reader) (string, int64, error) {

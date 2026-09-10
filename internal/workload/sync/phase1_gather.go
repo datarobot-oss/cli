@@ -85,7 +85,7 @@ func phase1Gather(e *Engine) error {
 func baseFromManifest(m wapi.Manifest) BaseManifest {
 	out := make(BaseManifest, len(m.Files))
 	for k, v := range m.Files {
-		out[k] = FileEntry{Hash: v.Hash, Size: v.Size}
+		out[k] = FileEntry{Hash: v.Hash, Size: v.Size, Mode: v.Mode}
 	}
 
 	return out

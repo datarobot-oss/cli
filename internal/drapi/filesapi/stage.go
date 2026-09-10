@@ -53,14 +53,24 @@ func (c *httpClient) CreateStage(catalogID string) (*StageResp, error) {
 	return &resp, nil
 }
 
-func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error {
+func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, mode uint32, body io.Reader) error {
 	requestURL, err := drapi.EndpointURL(
 		"/files/"+url.PathEscape(catalogID)+"/stages/"+url.PathEscape(stageID)+"/upload/", nil)
 	if err != nil {
 		return fmt.Errorf("build upload url: %w", err)
 	}
 
-	req, err := newStreamingMultipartRequest(requestURL, nil, name, size, body)
+	// mode == 0 means "unknown" (see FileEntry.Mode) -- omit the param
+	// entirely rather than sending mode=0, so a server that doesn't
+	// understand it yet sees no param at all, exactly as before this field
+	// existed.
+	var query url.Values
+
+	if mode != 0 {
+		query = url.Values{"mode": []string{fmt.Sprintf("0%o", mode)}}
+	}
+
+	req, err := newStreamingMultipartRequest(requestURL, query, name, size, body)
 	if err != nil {
 		return err
 	}
