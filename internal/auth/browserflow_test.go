@@ -165,6 +165,16 @@ func TestBrowserFlow_RefusesConcurrentForgedProbes(t *testing.T) {
 
 	const probes = 10
 
+	// Warm the server on the test goroutine so the probes need no retry, and no
+	// require, inside their goroutines, which testifylint's go-require forbids.
+	forgedURL := callbackURL(t, flow, "?key=planted-by-attacker")
+	warm := waitForCallback(t, forgedURL, "Sec-Fetch-Dest", "image")
+
+	assert.Equal(t, http.StatusForbidden, warm.StatusCode)
+	require.NoError(t, warm.Body.Close())
+
+	codes := make(chan int, probes)
+
 	var wg sync.WaitGroup
 
 	wg.Add(probes)
@@ -173,15 +183,30 @@ func TestBrowserFlow_RefusesConcurrentForgedProbes(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			forged := waitForCallback(t, callbackURL(t, flow, "?key=planted-by-attacker"),
-				"Sec-Fetch-Dest", "image")
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, forgedURL, nil)
+			if !assert.NoError(t, err) {
+				return
+			}
 
-			assert.Equal(t, http.StatusForbidden, forged.StatusCode)
-			assert.NoError(t, forged.Body.Close())
+			req.Header.Set("Sec-Fetch-Dest", "image")
+
+			resp, err := http.DefaultClient.Do(req)
+			if !assert.NoError(t, err) {
+				return
+			}
+
+			assert.NoError(t, resp.Body.Close())
+
+			codes <- resp.StatusCode
 		}()
 	}
 
 	wg.Wait()
+	close(codes)
+
+	for code := range codes {
+		assert.Equal(t, http.StatusForbidden, code)
+	}
 
 	// Still waiting after the storm: the genuine callback completes it, no key planted.
 	genuine := waitForCallback(t, callbackURL(t, flow, "?key=real-key"))
