@@ -16,6 +16,18 @@ Worked example: `docs/development/drapi-client.md` — before attaching a bearer
 a server-supplied URL (pagination cursor, live endpoint), verify it with
 `drapi.URLMatchesConfiguredBase()` first.
 
+## Local Callback Listeners Must Validate Request Provenance
+
+A listener bound to localhost for an OAuth-style handoff is reachable by any open web page —
+localhost has no same-origin restriction. It must check something a page can't forge
+(`Sec-Fetch-Dest`, a nonce) before treating a request as authentic, not just accept whatever
+hits the port.
+
+## Security Mitigation Claims Must Name the Residual Bypass
+
+A doc or comment describing a security fix must scope its claim to the exact vectors it blocks
+and name what still gets through — not claim a blanket guarantee the fix doesn't provide.
+
 ## Validate Integration Points Explicitly
 
 Verify inter-package contracts with integration tests, not just assumptions.
