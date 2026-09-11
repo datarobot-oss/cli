@@ -307,12 +307,14 @@ func TestBrowserFlow_WaitTimesOut(t *testing.T) {
 func TestFprintLoginTimeoutHelp(t *testing.T) {
 	var buf bytes.Buffer
 
-	FprintLoginTimeoutHelp(&buf)
+	FprintLoginTimeoutHelp(&buf, "https://eu.datarobot.com")
 
 	out := buf.String()
 	assert.Contains(t, out, "dr auth login", "the retry command is the primary recovery step")
 	assert.Contains(t, out, "DATAROBOT_ENDPOINT", "the browserless path needs both env vars")
 	assert.Contains(t, out, "DATAROBOT_API_TOKEN")
+	assert.Contains(t, out, "https://eu.datarobot.com",
+		"the endpoint must be the host the user was logging into, not a hardcoded default")
 }
 
 func TestRunLoginWithFlow_HonorsTimeoutOption(t *testing.T) {

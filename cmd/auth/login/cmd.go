@@ -78,7 +78,15 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	viperx.Set(config.DataRobotAPIKey, "")
 
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
+
 	timeout, _ := cmd.Flags().GetDuration("timeout")
+	if timeout < 0 {
+		log.Errorf("--timeout must be zero or positive, got %s", timeout)
+
+		cmd.SilenceUsage = true
+
+		return cli.ErrSilent
+	}
 
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
 		NoBrowser: noBrowser,
@@ -89,7 +97,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		// The bare timeout error is a Go string with no next step; the help block is.
 		if errors.Is(err, auth.ErrLoginTimedOut) {
-			auth.FprintLoginTimeoutHelp(os.Stderr)
+			auth.FprintLoginTimeoutHelp(os.Stderr, datarobotHost)
 
 			return cli.ErrSilent
 		}

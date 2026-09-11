@@ -103,8 +103,9 @@ release the port and takes over.
 If no callback arrives before the timeout (5 minutes by default), the CLI prints the next
 steps instead of a bare error. A sign-in error in the browser often clears on a second
 attempt, so the first step is to run `dr auth login` again; the alternative is to set the
-`DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` environment variables and skip the browser
-entirely:
+`DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` environment variables, which authenticate
+the CLI without a browser. The endpoint printed is the host you were logging into, not a
+fixed default:
 
 ```bash
 $ dr auth login
@@ -114,7 +115,7 @@ If your browser showed a sign-in error, click through it and run login again.
 The sign-in often completes on the second attempt:
   dr auth login
 
-To skip the browser, set both and try again:
+Or authenticate without the browser by setting both:
   export DATAROBOT_ENDPOINT=https://app.datarobot.com
   export DATAROBOT_API_TOKEN=<token from Developer Tools>
 ```

@@ -15,9 +15,16 @@
 package login
 
 import (
+	"context"
+	"io"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/cli"
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,4 +45,61 @@ func TestCmd_HasTimeoutFlag(t *testing.T) {
 
 func TestCmd_HasNoBrowserFlag(t *testing.T) {
 	assert.NotNil(t, Cmd().Flags().Lookup("no-browser"), "dr auth login must keep --no-browser")
+}
+
+// TestRunE_TimeoutPrintsHelpAndReturnsSilent drives the timeout branch end to end:
+// a tiny --timeout with no browser and a dead endpoint reaches ErrLoginTimedOut fast.
+func TestRunE_TimeoutPrintsHelpAndReturnsSilent(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_TOKEN", "")
+
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+	viperx.Set(config.DataRobotURL, "https://nonexistent.invalid")
+
+	cmd := Cmd()
+	cmd.SetContext(context.Background())
+	require.NoError(t, cmd.Flags().Set("no-browser", "true"))
+	require.NoError(t, cmd.Flags().Set("timeout", "50ms"))
+
+	oldOut, oldErr := os.Stdout, os.Stderr
+	rOut, wOut, err := os.Pipe()
+	require.NoError(t, err)
+
+	rErr, wErr, err := os.Pipe()
+	require.NoError(t, err)
+
+	os.Stdout, os.Stderr = wOut, wErr
+
+	runErr := RunE(cmd, nil)
+
+	require.NoError(t, wOut.Close())
+	require.NoError(t, wErr.Close())
+
+	os.Stdout, os.Stderr = oldOut, oldErr
+
+	stderr, _ := io.ReadAll(rErr)
+	_, _ = io.ReadAll(rOut)
+
+	assert.ErrorIs(t, runErr, cli.ErrSilent, "a timeout returns the silent sentinel, not the raw error")
+	assert.Contains(t, string(stderr), "authorization came back", "the recovery help must reach stderr")
+}
+
+func TestRunE_RejectsNegativeTimeout(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_TOKEN", "")
+
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+	viperx.Set(config.DataRobotURL, "https://nonexistent.invalid")
+
+	cmd := Cmd()
+	cmd.SetContext(context.Background())
+	require.NoError(t, cmd.Flags().Set("no-browser", "true"))
+	require.NoError(t, cmd.Flags().Set("timeout", "-1s"))
+
+	err := RunE(cmd, nil)
+	assert.ErrorIs(t, err, cli.ErrSilent, "a negative --timeout is rejected before the browser flow starts")
 }
