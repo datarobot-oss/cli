@@ -192,6 +192,44 @@ func RenderEnclave(format outputformat.OutputFormat, e Enclave) error {
 	return nil
 }
 
+// Deletion outcomes reported by `dr enclave delete` when nothing was removed.
+// Both are exit-0 no-ops rather than errors, so they need a spelling a script
+// can branch on.
+const (
+	DeletionReasonNotFound = "not found"
+	DeletionReasonAborted  = "aborted"
+)
+
+// DeletionResult is the stable JSON shape emitted by `dr enclave delete`, and
+// the data backing its text confirmation line. It covers every exit-0 path:
+// the enclave was deleted, it was already gone, or the operator declined the
+// confirmation prompt.
+type DeletionResult struct {
+	EnclaveID string `json:"enclaveId"`
+	Deleted   bool   `json:"deleted"`
+	Reason    string `json:"reason,omitempty"` // set only when Deleted is false
+}
+
+// RenderDeletion prints the outcome of a delete. Text mode prints a one-line
+// confirmation; JSON mode emits the DeletionResult, so a script can tell a real
+// deletion from an already-gone or declined no-op without parsing prose.
+func RenderDeletion(format outputformat.OutputFormat, result DeletionResult) error {
+	if format == outputformat.OutputFormatJSON {
+		return printJSON(result)
+	}
+
+	switch {
+	case result.Deleted:
+		fmt.Println(tui.BaseTextStyle.Render("Deleted enclave: " + result.EnclaveID))
+	case result.Reason == DeletionReasonNotFound:
+		fmt.Println(tui.DimStyle.Render("No enclave found with id: " + result.EnclaveID))
+	default:
+		fmt.Println(tui.DimStyle.Render("Aborted."))
+	}
+
+	return nil
+}
+
 // RenderEnclaves renders the list result as a table (text) or JSON envelope.
 func RenderEnclaves(format outputformat.OutputFormat, enclaves []Enclave) error {
 	if format == outputformat.OutputFormatJSON {

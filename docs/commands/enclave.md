@@ -130,11 +130,25 @@ Delete an enclave. Prompts for confirmation unless `--yes` is given.
 ```bash
 dr enclave delete <enclave-id>
 dr enclave delete <enclave-id> --yes
+dr enclave delete <enclave-id> --yes --output-format json
 ```
 
 | Flag        | Description                    |
 | ----------- | ------------------------------ |
 | `-y, --yes` | Skip the confirmation prompt.  |
+
+Deleting an enclave that is already gone, and declining the prompt, are both
+no-ops that exit 0. `--output-format json` is how a script tells them apart from
+a real deletion:
+
+```json
+{ "enclaveId": "<enclave-id>", "deleted": true }
+{ "enclaveId": "<enclave-id>", "deleted": false, "reason": "not found" }
+{ "enclaveId": "<enclave-id>", "deleted": false, "reason": "aborted" }
+```
+
+In JSON mode the confirmation prompt is written to stderr, so stdout carries
+nothing but the result document.
 
 ## Access on one enclave
 

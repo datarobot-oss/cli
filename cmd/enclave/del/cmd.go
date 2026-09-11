@@ -19,21 +19,24 @@ package del
 
 import (
 	"errors"
-	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/datarobot/cli/cmd/helpers"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/enclave"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
-	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
+	var outputFormat outputformat.OutputFormat
+
 	cmd := &cobra.Command{
 		Use:   "delete <enclave-id>",
 		Short: "Delete an enclave.",
@@ -44,41 +47,57 @@ service without removing it, use 'dr enclave deactivate' instead.
 
 Without --yes the command asks for confirmation.
 
+Deleting an enclave that is already gone, and declining the prompt, are both
+no-ops that exit 0. Use --output-format json to tell them apart from a real
+deletion: the result carries "deleted" plus a "reason" when it is false.
+
 Example:
   dr enclave delete 3fa85f64-5717-4562-b3fc-2c963f66afa6
-  dr enclave delete 3fa85f64-5717-4562-b3fc-2c963f66afa6 --yes`,
+  dr enclave delete 3fa85f64-5717-4562-b3fc-2c963f66afa6 --yes
+  dr enclave delete 3fa85f64-5717-4562-b3fc-2c963f66afa6 --yes --output-format json`,
 		Args:         cobra.ExactArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, err := confirmDelete(cmd, args[0])
-			if err != nil || !confirmed {
+			outputFormat = outputformat.GetFormat(cmd)
+			enclaveID := args[0]
+
+			confirmed, err := confirmDelete(cmd, outputFormat, enclaveID)
+			if err != nil {
 				return err
 			}
 
-			if err := enclave.DeleteEnclave(args[0]); err != nil {
-				return handleDeleteError(err, args[0])
+			if !confirmed {
+				return enclave.RenderDeletion(outputFormat, enclave.DeletionResult{
+					EnclaveID: enclaveID,
+					Reason:    enclave.DeletionReasonAborted,
+				})
 			}
 
-			fmt.Println(tui.BaseTextStyle.Render("Deleted enclave: " + args[0]))
+			if err := enclave.DeleteEnclave(enclaveID); err != nil {
+				return handleDeleteError(err, outputFormat, enclaveID)
+			}
 
-			return nil
+			return enclave.RenderDeletion(outputFormat, enclave.DeletionResult{
+				EnclaveID: enclaveID,
+				Deleted:   true,
+			})
 		},
 	}
 
-	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt.")
+	outputformat.AddFlag(cmd, &outputFormat)
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip the confirmation prompt.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() so an explicit --yes does
 	// not leak into viper.AllSettings() and persist to drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, reader.NonInteractiveEnv)
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-
 		return map[string]any{
-			"enclave_id": telemetry.FirstArg(args),
-			"yes":        yesFlag || viperx.GetBool("yes"),
+			"enclave_id":    telemetry.FirstArg(args),
+			"yes":           cli.IsNonInteractive(cmd),
+			"output_format": string(outputFormat),
 		}
 	})
 
@@ -89,39 +108,41 @@ Example:
 // --yes / DATAROBOT_CLI_NON_INTERACTIVE was given, or the user confirmed
 // interactively. A declined prompt is (false, nil) so the command exits 0
 // as a no-op.
-func confirmDelete(cmd *cobra.Command, enclaveID string) (bool, error) {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	if yesFlag || viperx.GetBool("yes") {
+func confirmDelete(cmd *cobra.Command, format outputformat.OutputFormat, enclaveID string) (bool, error) {
+	if cli.IsNonInteractive(cmd) {
 		return true, nil
 	}
 
 	if !reader.IsStdinTerminal() {
-		return false, errors.New("confirmation required: pass --yes (or set DATAROBOT_CLI_NON_INTERACTIVE=1) to delete without a prompt")
+		return false, errors.New("confirmation required: pass --yes (or set " +
+			reader.NonInteractiveEnv + "=1) to delete without a prompt")
 	}
 
-	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
+	return helpers.Confirm(promptWriter(cmd, format), cmd.InOrStdin(),
 		"Delete enclave "+enclaveID+"? [y/N] ")
-	if err != nil {
-		return false, err
-	}
-
-	if !confirmed {
-		fmt.Println(tui.DimStyle.Render("Aborted."))
-	}
-
-	return confirmed, nil
 }
 
-// handleDeleteError converts a 404 into a friendly informational message
-// (returns nil) so the user does not see a stack-trace-style HTTP error
-// for what is effectively a no-op.
-func handleDeleteError(err error, enclaveID string) error {
+// promptWriter keeps the confirmation prompt off stdout in JSON mode, so the
+// only thing a caller parsing stdout sees is the DeletionResult document.
+func promptWriter(cmd *cobra.Command, format outputformat.OutputFormat) io.Writer {
+	if format == outputformat.OutputFormatJSON {
+		return cmd.ErrOrStderr()
+	}
+
+	return cmd.OutOrStdout()
+}
+
+// handleDeleteError turns a 404 into an already-gone result (exit 0) so the
+// user does not see a stack-trace-style HTTP error for what is effectively a
+// no-op. Every other error propagates.
+func handleDeleteError(err error, format outputformat.OutputFormat, enclaveID string) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		fmt.Println(tui.DimStyle.Render("No enclave found with id: " + enclaveID))
-
-		return nil
+		return enclave.RenderDeletion(format, enclave.DeletionResult{
+			EnclaveID: enclaveID,
+			Reason:    enclave.DeletionReasonNotFound,
+		})
 	}
 
 	return err
