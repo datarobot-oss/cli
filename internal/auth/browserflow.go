@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -178,13 +179,25 @@ func FprintLoginTimeoutHelp(w io.Writer, datarobotHost string) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, base.Render("Or authenticate without the browser by setting both:"))
 
+	// The endpoint is user-configured, so quote it into the copy-paste command the
+	// way dr auth export does, or a shell metacharacter in the value would execute.
 	if runtime.GOOS == "windows" {
-		fmt.Fprintln(w, info.Render(`  $env:DATAROBOT_ENDPOINT="`+datarobotHost+`"`))
+		fmt.Fprintln(w, info.Render("  $env:DATAROBOT_ENDPOINT="+pwshQuote(datarobotHost)))
 		fmt.Fprintln(w, info.Render(`  $env:DATAROBOT_API_TOKEN="<token from Developer Tools>"`))
 	} else {
-		fmt.Fprintln(w, info.Render("  export DATAROBOT_ENDPOINT="+datarobotHost))
+		fmt.Fprintln(w, info.Render("  export DATAROBOT_ENDPOINT="+posixQuote(datarobotHost)))
 		fmt.Fprintln(w, info.Render("  export DATAROBOT_API_TOKEN=<token from Developer Tools>"))
 	}
+}
+
+// posixQuote and pwshQuote single-quote a value for the respective shell, so a
+// metacharacter in a copy-paste command is a literal, not an instruction.
+func posixQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
+func pwshQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 // Close shuts the callback server down. It is safe to call more than once.

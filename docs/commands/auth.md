@@ -116,7 +116,7 @@ The sign-in often completes on the second attempt:
   dr auth login
 
 Or authenticate without the browser by setting both:
-  export DATAROBOT_ENDPOINT=https://app.datarobot.com
+  export DATAROBOT_ENDPOINT='https://app.datarobot.com'
   export DATAROBOT_API_TOKEN=<token from Developer Tools>
 ```
 

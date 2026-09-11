@@ -313,8 +313,8 @@ func TestFprintLoginTimeoutHelp(t *testing.T) {
 	assert.Contains(t, out, "dr auth login", "the retry command is the primary recovery step")
 	assert.Contains(t, out, "DATAROBOT_ENDPOINT", "the browserless path needs both env vars")
 	assert.Contains(t, out, "DATAROBOT_API_TOKEN")
-	assert.Contains(t, out, "https://eu.datarobot.com",
-		"the endpoint must be the host the user was logging into, not a hardcoded default")
+	assert.Contains(t, out, "'https://eu.datarobot.com'",
+		"the real host is rendered, single-quoted so a shell metacharacter cannot execute")
 }
 
 func TestRunLoginWithFlow_HonorsTimeoutOption(t *testing.T) {
