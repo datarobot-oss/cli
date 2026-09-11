@@ -44,6 +44,7 @@ dr auth login
 | Flag           | Description                                                |
 | -------------- | ---------------------------------------------------------- |
 | `--no-browser` | Print the login link instead of opening a browser (useful over SSH) |
+| `--timeout`    | How long to wait for the browser callback (default 5m); raise it behind a slow identity provider |
 
 **What happens:**
 
@@ -97,7 +98,27 @@ $ dr auth login
 ```
 
 If another `dr` process is already waiting on `localhost:51164`, the new one asks it to
-release the port and takes over. The wait times out after 5 minutes.
+release the port and takes over.
+
+If no callback arrives before the timeout (5 minutes by default), the CLI prints the next
+steps instead of a bare error: retry, since a sign-in error often clears on the second
+attempt, or set the `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` environment variables to
+authenticate without the browser.
+
+```bash
+$ dr auth login
+❌ No authorization came back from the browser.
+
+If your browser showed a sign-in error, click through it and run login again.
+The sign-in often completes on the second attempt:
+  dr auth login
+
+Or set the DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN environment variables
+(from Developer Tools) to authenticate without the browser.
+```
+
+Behind a slow identity provider where a cold sign-in with MFA needs more than 5 minutes,
+raise the deadline with `--timeout`, for example `dr auth login --timeout 10m`.
 
 ### `logout`
 

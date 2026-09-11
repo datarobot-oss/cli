@@ -17,6 +17,7 @@ package login
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
@@ -78,13 +79,30 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
-	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
-		NoBrowser: noBrowser,
-	})
-	if err != nil {
-		log.Error(err)
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	if timeout < 0 {
+		log.Errorf("--timeout must be zero or positive, got %s", timeout)
 
 		cmd.SilenceUsage = true
+
+		return cli.ErrSilent
+	}
+
+	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
+		NoBrowser: noBrowser,
+		Timeout:   timeout,
+	})
+	if err != nil {
+		cmd.SilenceUsage = true
+
+		// The bare timeout error is a Go string with no next step; the help block is.
+		if errors.Is(err, auth.ErrLoginTimedOut) {
+			auth.FprintLoginTimeoutHelp(os.Stderr)
+
+			return cli.ErrSilent
+		}
+
+		log.Error(err)
 
 		return err
 	}
@@ -128,6 +146,7 @@ If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 	// Read directly from cobra rather than binding to viper: this is a transient
 	// per-invocation flag and must never be persisted to drconfig.yaml.
 	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
+	cmd.Flags().Duration("timeout", 0, "how long to wait for the browser callback (default 5m)")
 
 	return cmd
 }
