@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/envbuilder"
 	"github.com/datarobot/cli/internal/repo"
 	"github.com/datarobot/cli/tui"
@@ -66,11 +67,9 @@ func checkCLICredentials(w io.Writer) bool {
 
 	_, err = config.GetAPIKey(context.Background())
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			fmt.Fprint(w, tui.BaseTextStyle.Render("❌ Connection to "))
-			fmt.Fprint(w, tui.InfoStyle.Render(datarobotHost))
-			fmt.Fprintln(w, tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
-		} else {
+		// An absent stored token is a fresh install, not a verdict, so keep the login advice (as EnsureAuthenticated does).
+		if viperx.GetString(config.DataRobotAPIKey) == "" ||
+			!auth.ReportUnjudged(w, viperx.GetString(config.DataRobotURL), auth.StoredEndpointName, err) {
 			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
 			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
 			fmt.Fprint(w, tui.InfoStyle.Render("dr auth login"))
@@ -85,31 +84,31 @@ func checkCLICredentials(w io.Writer) bool {
 	return allValid
 }
 
-func printDotenvMissingError() {
-	fmt.Println(tui.BaseTextStyle.Render("⚠️ No '.env' file found in repository."))
-	fmt.Print(tui.BaseTextStyle.Render("Run "))
-	fmt.Print(tui.InfoStyle.Render("dr start"))
-	fmt.Print(tui.BaseTextStyle.Render(" or "))
-	fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-	fmt.Println(tui.BaseTextStyle.Render(" to create one."))
+func printDotenvMissingError(w io.Writer) {
+	fmt.Fprintln(w, tui.BaseTextStyle.Render("⚠️ No '.env' file found in repository."))
+	fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+	fmt.Fprint(w, tui.InfoStyle.Render("dr start"))
+	fmt.Fprint(w, tui.BaseTextStyle.Render(" or "))
+	fmt.Fprint(w, tui.InfoStyle.Render("dr dotenv setup"))
+	fmt.Fprintln(w, tui.BaseTextStyle.Render(" to create one."))
 }
 
-func printDotenvReadError() {
-	fmt.Println(tui.BaseTextStyle.Render("❌ Failed to read '.env' file."))
-	fmt.Print(tui.BaseTextStyle.Render("Run "))
-	fmt.Print(tui.InfoStyle.Render("dr start"))
-	fmt.Print(tui.BaseTextStyle.Render(" or "))
-	fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-	fmt.Println(tui.BaseTextStyle.Render(" to create one."))
+func printDotenvReadError(w io.Writer) {
+	fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Failed to read '.env' file."))
+	fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+	fmt.Fprint(w, tui.InfoStyle.Render("dr start"))
+	fmt.Fprint(w, tui.BaseTextStyle.Render(" or "))
+	fmt.Fprint(w, tui.InfoStyle.Render("dr dotenv setup"))
+	fmt.Fprintln(w, tui.BaseTextStyle.Render(" to create one."))
 }
 
-func printMissingEnvVarError(varName string) {
-	fmt.Println(tui.BaseTextStyle.Render(fmt.Sprintf("⚠️ No %s found in '.env'.", varName)))
-	fmt.Print(tui.BaseTextStyle.Render("Run "))
-	fmt.Print(tui.InfoStyle.Render("dr start"))
-	fmt.Print(tui.BaseTextStyle.Render(" or "))
-	fmt.Print(tui.InfoStyle.Render("dr dotenv setup"))
-	fmt.Println(tui.BaseTextStyle.Render(" to configure the '.env' file."))
+func printMissingEnvVarError(w io.Writer, varName string) {
+	fmt.Fprintln(w, tui.BaseTextStyle.Render(fmt.Sprintf("⚠️ No %s found in '.env'.", varName)))
+	fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+	fmt.Fprint(w, tui.InfoStyle.Render("dr start"))
+	fmt.Fprint(w, tui.BaseTextStyle.Render(" or "))
+	fmt.Fprint(w, tui.InfoStyle.Render("dr dotenv setup"))
+	fmt.Fprintln(w, tui.BaseTextStyle.Render(" to configure the '.env' file."))
 }
 
 func extractDotenvVars(dotenvPath string) (string, string, error) {
@@ -141,30 +140,24 @@ func extractDotenvVars(dotenvPath string) (string, string, error) {
 	return dotenvToken, dotenvEndpoint, nil
 }
 
-func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
-	dotenvBaseURL, err := config.SchemeHostOnly(dotenvEndpoint)
-	if err != nil {
-		fmt.Println(tui.BaseTextStyle.Render("❌ Invalid DATAROBOT_ENDPOINT in '.env'."))
-		fmt.Print(tui.BaseTextStyle.Render("Run "))
-		fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
-		fmt.Println(tui.BaseTextStyle.Render(" to fix the configuration."))
+func verifyDotenvToken(w io.Writer, dotenvEndpoint, dotenvToken string) bool {
+	if _, err := config.SchemeHostOnly(dotenvEndpoint); err != nil {
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Invalid DATAROBOT_ENDPOINT in '.env'."))
+		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+		fmt.Fprint(w, tui.InfoStyle.Render("dr dotenv update"))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to fix the configuration."))
 
 		return false
 	}
 
-	err = config.VerifyToken(context.Background(), dotenvEndpoint, dotenvToken)
+	err := config.VerifyToken(context.Background(), dotenvEndpoint, dotenvToken)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			fmt.Print(tui.BaseTextStyle.Render("❌ Connection to "))
-			fmt.Print(tui.InfoStyle.Render(dotenvBaseURL))
-			fmt.Println(tui.BaseTextStyle.Render(" timed out. Check your network and try again."))
-		} else {
-			// Blames the token for any non-200, unlike the env-var leg.
-			// Splitting on the status here is a planned follow-up.
-			fmt.Println(tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
-			fmt.Print(tui.BaseTextStyle.Render("Run "))
-			fmt.Print(tui.InfoStyle.Render("dr dotenv update"))
-			fmt.Println(tui.BaseTextStyle.Render(" to refresh credentials."))
+		// ReportUnjudged handles timeout, unreachable, and non-401 statuses; only a real 401 needs the dotenv-update advice.
+		if !auth.ReportUnjudged(w, dotenvEndpoint, "DATAROBOT_ENDPOINT in '.env'", err) {
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ DATAROBOT_API_TOKEN in '.env' is invalid or expired."))
+			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
+			fmt.Fprint(w, tui.InfoStyle.Render("dr dotenv update"))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render(" to refresh credentials."))
 		}
 
 		return false
@@ -173,40 +166,40 @@ func verifyDotenvToken(dotenvEndpoint, dotenvToken string) bool {
 	return true
 }
 
-func checkDotenvCredentials(repoRoot string) bool {
+func checkDotenvCredentials(w io.Writer, repoRoot string) bool {
 	dotenvPath := filepath.Join(repoRoot, ".env")
 
 	_, statErr := os.Stat(dotenvPath)
 	if statErr != nil {
-		printDotenvMissingError()
+		printDotenvMissingError(w)
 
 		return false
 	}
 
 	dotenvToken, dotenvEndpoint, err := extractDotenvVars(dotenvPath)
 	if err != nil {
-		printDotenvReadError()
+		printDotenvReadError(w)
 
 		return false
 	}
 
 	if dotenvToken == "" {
-		printMissingEnvVarError("DATAROBOT_API_TOKEN")
+		printMissingEnvVarError(w, "DATAROBOT_API_TOKEN")
 
 		return false
 	}
 
 	if dotenvEndpoint == "" {
-		printMissingEnvVarError("DATAROBOT_ENDPOINT")
+		printMissingEnvVarError(w, "DATAROBOT_ENDPOINT")
 
 		return false
 	}
 
-	if !verifyDotenvToken(dotenvEndpoint, dotenvToken) {
+	if !verifyDotenvToken(w, dotenvEndpoint, dotenvToken) {
 		return false
 	}
 
-	fmt.Println(tui.BaseTextStyle.Render("✅ '.env' credentials are valid."))
+	fmt.Fprintln(w, tui.BaseTextStyle.Render("✅ '.env' credentials are valid."))
 
 	return true
 }
@@ -223,7 +216,7 @@ func RunE(_ *cobra.Command, _ []string) error {
 		return cli.ErrSilent
 	}
 
-	if checkDotenvCredentials(repoRoot) {
+	if checkDotenvCredentials(os.Stdout, repoRoot) {
 		return nil
 	}
 

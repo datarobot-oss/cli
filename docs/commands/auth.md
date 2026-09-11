@@ -176,10 +176,15 @@ $ dr auth check
 ❌ Could not connect to https://app.example.com: dial tcp: lookup app.example.com: no such host
 Check DATAROBOT_ENDPOINT and your network, then try again.
 
-# The instance answered, but not with a credential verdict (only 401/403 blame the token)
+# The instance answered, but not with a credential verdict (only 401 blames the token)
 $ dr auth check
 ❌ https://app.example.com answered HTTP 503, so the CLI could not verify your credentials.
 Check DATAROBOT_ENDPOINT, and the instance's status if it persists.
+
+# Credentials accepted, but the account lacks API access (a fresh login would not help)
+$ dr auth check
+❌ https://app.example.com accepted your credentials but your account lacks API access (HTTP 403).
+Check that your account is activated and any required agreement is signed.
 
 # Endpoint scheme the CLI cannot use
 $ dr auth check

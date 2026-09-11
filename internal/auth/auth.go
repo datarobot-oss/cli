@@ -175,8 +175,8 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 // It avoids naming dr auth set-url, since DATAROBOT_CLI_ENDPOINT can override the file.
 const StoredEndpointName = "the configured DataRobot endpoint"
 
-// ReportUnjudged explains a verification failure that produced no verdict on the
-// credentials and reports whether it did. False means the instance rejected them.
+// ReportUnjudged writes a diagnostic and reports whether to suppress the login flow:
+// true for an unjudged failure or a 403 (credentials valid, account lacks access).
 func ReportUnjudged(w io.Writer, endpoint, endpointName string, err error) bool {
 	base, info := writerStyles(w)
 
@@ -243,18 +243,26 @@ func fprintTransportError(w io.Writer, endpoint, endpointName string, err error)
 	return true
 }
 
-// Only 401 and 403 mean the token was judged and rejected. Blaming it for
-// a 404, 429, or 5xx would tell the user to unset working credentials.
+// 401 returns false so the caller relaunches login. 403 authenticated but the
+// account lacks access, so it reports here and returns true (no relaunch).
 func fprintServerStatus(w io.Writer, endpoint, endpointName string, err error) bool {
 	var statusErr *config.HTTPStatusError
 
-	if !errors.As(err, &statusErr) ||
-		statusErr.StatusCode == http.StatusUnauthorized ||
-		statusErr.StatusCode == http.StatusForbidden {
+	if !errors.As(err, &statusErr) || statusErr.StatusCode == http.StatusUnauthorized {
 		return false
 	}
 
 	base, info := writerStyles(w)
+
+	// A 403 authenticates then refuses; a fresh login would 403 the same way.
+	if statusErr.StatusCode == http.StatusForbidden {
+		fmt.Fprint(w, base.Render("❌ "))
+		fmt.Fprint(w, info.Render(hostOrEndpoint(endpoint)))
+		fmt.Fprintln(w, base.Render(" accepted your credentials but your account lacks API access (HTTP 403)."))
+		fmt.Fprintln(w, base.Render("Check that your account is activated and any required agreement is signed."))
+
+		return true
+	}
 
 	fmt.Fprint(w, base.Render("❌ "))
 	fmt.Fprint(w, info.Render(hostOrEndpoint(endpoint)))
