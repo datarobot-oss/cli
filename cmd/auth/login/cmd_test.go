@@ -82,7 +82,7 @@ func TestRunE_TimeoutPrintsHelpAndReturnsSilent(t *testing.T) {
 	stderr, _ := io.ReadAll(rErr)
 	_, _ = io.ReadAll(rOut)
 
-	assert.ErrorIs(t, runErr, cli.ErrSilent, "a timeout returns the silent sentinel, not the raw error")
+	require.ErrorIs(t, runErr, cli.ErrSilent, "a timeout returns the silent sentinel, not the raw error")
 	assert.Contains(t, string(stderr), "authorization came back", "the recovery help must reach stderr")
 }
 

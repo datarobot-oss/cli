@@ -105,7 +105,7 @@ steps instead of a bare error. A sign-in error in the browser often clears on a 
 attempt, so the first step is to run `dr auth login` again; the alternative is to set the
 `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` environment variables, which authenticate
 the CLI without a browser. The endpoint printed is the host you were logging into, not a
-fixed default:
+fixed default, and on Windows the CLI prints the PowerShell `$env:` form instead of `export`:
 
 ```bash
 $ dr auth login

@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -176,8 +177,14 @@ func FprintLoginTimeoutHelp(w io.Writer, datarobotHost string) {
 	fmt.Fprintln(w, info.Render("  dr auth login"))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, base.Render("Or authenticate without the browser by setting both:"))
-	fmt.Fprintln(w, info.Render("  export DATAROBOT_ENDPOINT="+datarobotHost))
-	fmt.Fprintln(w, info.Render("  export DATAROBOT_API_TOKEN=<token from Developer Tools>"))
+
+	if runtime.GOOS == "windows" {
+		fmt.Fprintln(w, info.Render(`  $env:DATAROBOT_ENDPOINT="`+datarobotHost+`"`))
+		fmt.Fprintln(w, info.Render(`  $env:DATAROBOT_API_TOKEN="<token from Developer Tools>"`))
+	} else {
+		fmt.Fprintln(w, info.Render("  export DATAROBOT_ENDPOINT="+datarobotHost))
+		fmt.Fprintln(w, info.Render("  export DATAROBOT_API_TOKEN=<token from Developer Tools>"))
+	}
 }
 
 // Close shuts the callback server down. It is safe to call more than once.
