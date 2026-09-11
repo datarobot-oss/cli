@@ -123,6 +123,10 @@ If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          RunE,
+		Annotations: map[string]string{
+			// login is expected to create a not-yet-existing --profile.
+			config.ProfileCreateAnnotationKey: "true",
+		},
 	}
 
 	// Read directly from cobra rather than binding to viper: this is a transient

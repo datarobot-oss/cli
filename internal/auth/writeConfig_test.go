@@ -231,6 +231,58 @@ func TestWriteConfigFileSilent_OnlyAllowlistedFieldsWritten(t *testing.T) {
 		"Non-allowlisted fields must not leak into drconfig.yaml")
 }
 
+// TestWriteConfigFileSilent_CACertStillPersisted guards against a regression
+// where narrowing WriteConfigFileSilent to explicit endpoint/token keys (so a
+// brand-new profile's section gets created, see the named-profiles change)
+// silently stopped persisting other allowlisted keys such as --ca-cert on
+// every `auth login`/`auth set-url`.
+func TestWriteConfigFileSilent_CACertStillPersisted(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "auth-test-*")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(tempDir)
+
+	testutil.SetTestHomeDir(t, tempDir)
+
+	viperx.Reset()
+
+	defer viperx.Reset()
+
+	err = config.CreateConfigFileDirIfNotExists()
+	require.NoError(t, err)
+
+	configDir := filepath.Join(tempDir, ".config", "datarobot")
+	configFile := filepath.Join(configDir, "drconfig.yaml")
+
+	initialConfig := map[string]interface{}{
+		"endpoint": "https://onprem.example.com/api/v2",
+		"token":    "original-token",
+	}
+
+	initialYaml, err := yaml.Marshal(initialConfig)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(configFile, initialYaml, 0o644))
+	require.NoError(t, config.ReadConfigFile(""))
+
+	// Simulate `dr --ca-cert /etc/ssl/corp.pem auth login`.
+	viperx.Set("ca-cert", "/etc/ssl/corp.pem")
+	viperx.Set("token", "new-token")
+
+	require.NoError(t, WriteConfigFileSilent())
+
+	rawYaml, err := os.ReadFile(configFile)
+	require.NoError(t, err)
+
+	var configMap map[string]interface{}
+
+	require.NoError(t, yaml.Unmarshal(rawYaml, &configMap))
+
+	assert.Equal(t, "/etc/ssl/corp.pem", configMap["ca-cert"],
+		"ca-cert set via flag must still be persisted by login/logout, not just endpoint/token")
+	assert.Equal(t, "new-token", configMap["token"])
+}
+
 func TestWriteConfigFileSilent_TransientFlagsNotPersisted(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "auth-test-*")
 	require.NoError(t, err)
@@ -287,4 +339,67 @@ func TestWriteConfigFileSilent_TransientFlagsNotPersisted(t *testing.T) {
 	assert.NotContains(t, configMap, "verbose")
 	assert.NotContains(t, configMap, "force-interactive")
 	assert.NotContains(t, configMap, "debug")
+}
+
+func TestWriteConfigFileSilent_WithActiveProfile_WritesUnderProfileAndLeavesDefaultUntouched(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "auth-test-*")
+	require.NoError(t, err)
+
+	defer os.RemoveAll(tempDir)
+
+	testutil.SetTestHomeDir(t, tempDir)
+
+	viperx.Reset()
+
+	defer viperx.Reset()
+
+	err = config.CreateConfigFileDirIfNotExists()
+	require.NoError(t, err)
+
+	configDir := filepath.Join(tempDir, ".config", "datarobot")
+	configFile := filepath.Join(configDir, "drconfig.yaml")
+
+	initialConfig := map[string]interface{}{
+		"endpoint": "https://app.datarobot.com/api/v2",
+		"token":    "default-token",
+	}
+
+	initialYaml, err := yaml.Marshal(initialConfig)
+	require.NoError(t, err)
+
+	err = os.WriteFile(configFile, initialYaml, 0o644)
+	require.NoError(t, err)
+
+	err = config.ReadConfigFile("")
+	require.NoError(t, err)
+
+	// Simulate `dr --profile eu-mtsaas auth login` on a not-yet-existing
+	// profile: the root factory clears endpoint/token before RunE, then the
+	// login flow sets the newly obtained ones.
+	viperx.Set(config.ProfileKey, "eu-mtsaas")
+	viperx.Set(config.DataRobotURL, "https://app.eu.datarobot.com/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "eu-token")
+
+	_ = WriteConfigFileSilent()
+
+	rawYaml, err := os.ReadFile(configFile)
+	require.NoError(t, err)
+
+	var configMap map[string]interface{}
+
+	err = yaml.Unmarshal(rawYaml, &configMap)
+	require.NoError(t, err)
+
+	// The default profile's top-level credentials must be untouched.
+	assert.Equal(t, "https://app.datarobot.com/api/v2", configMap["endpoint"])
+	assert.Equal(t, "default-token", configMap["token"])
+
+	profiles, ok := configMap["profiles"].(map[string]interface{})
+	require.True(t, ok, "expected a profiles: block to be created")
+
+	eu, ok := profiles["eu-mtsaas"].(map[string]interface{})
+	require.True(t, ok, "expected profiles.eu-mtsaas to be created")
+
+	assert.Equal(t, "https://app.eu.datarobot.com/api/v2", eu["endpoint"])
+	assert.Equal(t, "eu-token", eu["token"])
 }
