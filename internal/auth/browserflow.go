@@ -49,7 +49,7 @@ var ErrLoginInterrupted = errors.New("login was interrupted")
 
 // ErrLoginTimedOut is returned when no browser callback arrives before the
 // deadline. Callers print FprintLoginTimeoutHelp instead of the raw error.
-var ErrLoginTimedOut = errors.New("timed out waiting for browser authorization")
+var ErrLoginTimedOut = errors.New("browser login timed out")
 
 // BrowserFlow owns the local HTTP listener that receives the API key after the
 // user authorizes the CLI in their browser.
@@ -156,7 +156,7 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("timed out after %s waiting for browser authorization: %w", f.timeout, ErrLoginTimedOut)
+			return "", fmt.Errorf("no browser authorization within %s: %w", f.timeout, ErrLoginTimedOut)
 		}
 
 		log.Debug("Login context cancelled, exiting auth wait")
