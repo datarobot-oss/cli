@@ -60,6 +60,7 @@ These flags are available for all commands:
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
 ### Command tree
@@ -160,6 +161,23 @@ dr
 │   ├── status         Show a workload's status
 │   ├── endpoint       Print a workload's endpoint URL
 │   └── logs           Show a workload's container logs
+├── enclave            Enclave management (alias: enclaves, outpost(s), feature-gated)
+│   ├── register       Register an enclave, returning one-shot install secrets
+│   ├── get            Display details of an enclave
+│   ├── list           List enclaves
+│   ├── deactivate     Take an active enclave out of scheduling
+│   ├── reactivate     Return a deactivated enclave to service
+│   ├── delete         Delete an enclave
+│   ├── access         Manage who can access one enclave
+│   │   ├── grant      Grant a role (owner|user|consumer) on an enclave
+│   │   ├── revoke     Revoke a recipient's role on an enclave
+│   │   ├── list       List who holds a role on an enclave
+│   │   └── show       Show effective permissions on an enclave
+│   └── permission     Manage who can create enclaves
+│       ├── grant      Allow a recipient to create enclaves
+│       ├── revoke     Stop a recipient from creating enclaves
+│       ├── list       List who may create enclaves
+│       └── show       Show your collection-level permissions
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
