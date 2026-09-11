@@ -22,8 +22,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
-	"strings"
 	"sync"
 	"time"
 
@@ -167,8 +165,8 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 }
 
 // FprintLoginTimeoutHelp writes recovery steps after a browser login timed out:
-// retry (a sign-in error often clears next try), or authenticate via the env pair.
-func FprintLoginTimeoutHelp(w io.Writer, datarobotHost string) {
+// retry (a sign-in error often clears next try), or use the env-var credentials.
+func FprintLoginTimeoutHelp(w io.Writer) {
 	base, info := writerStyles(w)
 
 	fmt.Fprintln(w, base.Render("❌ No authorization came back from the browser."))
@@ -177,27 +175,8 @@ func FprintLoginTimeoutHelp(w io.Writer, datarobotHost string) {
 	fmt.Fprintln(w, base.Render("The sign-in often completes on the second attempt:"))
 	fmt.Fprintln(w, info.Render("  dr auth login"))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, base.Render("Or authenticate without the browser by setting both:"))
-
-	// The endpoint is user-configured, so quote it into the copy-paste command the
-	// way dr auth export does, or a shell metacharacter in the value would execute.
-	if runtime.GOOS == "windows" {
-		fmt.Fprintln(w, info.Render("  $env:DATAROBOT_ENDPOINT="+pwshQuote(datarobotHost)))
-		fmt.Fprintln(w, info.Render(`  $env:DATAROBOT_API_TOKEN="<token from Developer Tools>"`))
-	} else {
-		fmt.Fprintln(w, info.Render("  export DATAROBOT_ENDPOINT="+posixQuote(datarobotHost)))
-		fmt.Fprintln(w, info.Render("  export DATAROBOT_API_TOKEN=<token from Developer Tools>"))
-	}
-}
-
-// posixQuote and pwshQuote single-quote a value for the respective shell, so a
-// metacharacter in a copy-paste command is a literal, not an instruction.
-func posixQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
-}
-
-func pwshQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	fmt.Fprintln(w, base.Render("Or set the DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN environment variables"))
+	fmt.Fprintln(w, base.Render("(from Developer Tools) to authenticate without the browser."))
 }
 
 // Close shuts the callback server down. It is safe to call more than once.

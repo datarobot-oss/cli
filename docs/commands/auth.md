@@ -101,11 +101,9 @@ If another `dr` process is already waiting on `localhost:51164`, the new one ask
 release the port and takes over.
 
 If no callback arrives before the timeout (5 minutes by default), the CLI prints the next
-steps instead of a bare error. A sign-in error in the browser often clears on a second
-attempt, so the first step is to run `dr auth login` again; the alternative is to set the
-`DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` environment variables, which authenticate
-the CLI without a browser. The endpoint printed is the host you were logging into, not a
-fixed default, and on Windows the CLI prints the PowerShell `$env:` form instead of `export`:
+steps instead of a bare error: retry, since a sign-in error often clears on the second
+attempt, or set the `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` environment variables to
+authenticate without the browser.
 
 ```bash
 $ dr auth login
@@ -115,9 +113,8 @@ If your browser showed a sign-in error, click through it and run login again.
 The sign-in often completes on the second attempt:
   dr auth login
 
-Or authenticate without the browser by setting both:
-  export DATAROBOT_ENDPOINT='https://app.datarobot.com'
-  export DATAROBOT_API_TOKEN=<token from Developer Tools>
+Or set the DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN environment variables
+(from Developer Tools) to authenticate without the browser.
 ```
 
 Behind a slow identity provider where a cold sign-in with MFA needs more than 5 minutes,

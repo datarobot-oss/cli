@@ -97,7 +97,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		// The bare timeout error is a Go string with no next step; the help block is.
 		if errors.Is(err, auth.ErrLoginTimedOut) {
-			auth.FprintLoginTimeoutHelp(os.Stderr, datarobotHost)
+			auth.FprintLoginTimeoutHelp(os.Stderr)
 
 			return cli.ErrSilent
 		}
