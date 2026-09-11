@@ -107,3 +107,34 @@ func TestRenderDeletion_Text(t *testing.T) {
 		})
 	}
 }
+
+func TestPosixQuote(t *testing.T) {
+	assert.Equal(t, `'plain'`, posixQuote("plain"))
+	assert.Equal(t, `'a b'`, posixQuote("a b"))
+	assert.Equal(t, `'it'\''s'`, posixQuote("it's"))
+	assert.Equal(t, `''`, posixQuote(""))
+}
+
+// Secret data is server-supplied and lands in a command the operator pastes
+// into a shell, so every key=value must survive as exactly one literal word.
+func TestKubectlLiterals_QuotesServerData(t *testing.T) {
+	got := kubectlLiterals(map[string]string{
+		"token": "$(whoami)",
+		"cert":  "-----BEGIN CERT-----\nline two\n",
+	})
+
+	// Sorted by key, each key=value wrapped as a single quoted word.
+	assert.Equal(t,
+		"--from-literal='cert=-----BEGIN CERT-----\nline two\n' "+
+			"--from-literal='token=$(whoami)'",
+		got)
+
+	// The substitution is inert because the whole word is single-quoted; a
+	// bare $(...) here would run on paste.
+	assert.Contains(t, got, `'token=$(whoami)'`)
+}
+
+func TestKubectlLiterals_EscapesEmbeddedQuote(t *testing.T) {
+	got := kubectlLiterals(map[string]string{"k": "it's"})
+	assert.Equal(t, `--from-literal='k=it'\''s'`, got)
+}

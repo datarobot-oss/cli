@@ -358,13 +358,16 @@ func printInstallationSecrets(secrets map[string]InstallationSecret) {
 
 		fmt.Println(tui.DimStyle.Render(
 			"    Create on the enclave cluster with:\n" +
-				"      kubectl create secret generic " + name + " \\\n" +
+				"      kubectl create secret generic " + posixQuote(name) + " \\\n" +
 				"        " + kubectlLiterals(secrets[name].Data)))
 	}
 }
 
 // kubectlLiterals renders the --from-literal flags for a secret's data in a
-// stable key order, joined for a single-line continuation.
+// stable key order, joined for a single-line continuation. Each key=value is
+// shell-quoted as one word: the data is server-supplied and lands in a command
+// the operator pastes into a shell, so whitespace or metacharacters in a value
+// (a PEM body, say) must not split the word or reach the shell as syntax.
 func kubectlLiterals(data map[string]string) string {
 	keys := make([]string, 0, len(data))
 
@@ -381,10 +384,16 @@ func kubectlLiterals(data map[string]string) string {
 			out.WriteString(" ")
 		}
 
-		fmt.Fprintf(&out, "--from-literal=%s=%s", k, data[k])
+		out.WriteString("--from-literal=" + posixQuote(k+"="+data[k]))
 	}
 
 	return out.String()
+}
+
+// posixQuote wraps a value in single quotes and escapes any embedded single
+// quote, producing one literal word in sh, bash, zsh, and fish.
+func posixQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 // RenderCollectionPermissions prints whether the subject may create enclaves, and
