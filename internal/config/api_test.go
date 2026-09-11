@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -95,6 +96,21 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			input:       "not a url",
 			expectError: true,
 		},
+		{
+			name:        "http scheme is accepted",
+			input:       "http://localhost:8080",
+			expectedURL: "http://localhost:8080/api/v2",
+		},
+		{
+			name:        "ftp scheme is rejected",
+			input:       "ftp://app.datarobot.com",
+			expectError: true,
+		},
+		{
+			name:        "file scheme is rejected",
+			input:       "file://host/etc/passwd",
+			expectError: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -119,6 +135,15 @@ func (suite *APITestSuite) TestSetURLToConfigDoesNotWriteFile() {
 
 	configFile := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.NoFileExists(configFile, "SetURLToConfig must not write the config file to disk")
+}
+
+// SaveURLToConfig is the template-setup write path; it must reject a bad scheme
+// too, or the custom-host picker persists an endpoint the CLI cannot use.
+func (suite *APITestSuite) TestSaveURLToConfigRejectsNonHTTPScheme() {
+	err := SaveURLToConfig("ftp://app.datarobot.com")
+
+	suite.Require().Error(err)
+	suite.Empty(viper.GetString(DataRobotURL), "a rejected scheme must not be persisted")
 }
 
 func (suite *APITestSuite) TestCommandPathToTrace() {
@@ -249,5 +274,34 @@ func TestRedactSecretFields_CoversTheOtherNames(t *testing.T) {
 	for _, field := range []string{"password", "secret", "privateKey", "clientSecret", "refreshToken", "token"} {
 		out := RedactSecretFields(`{"` + field + `":"hunter2"}`)
 		assert.NotContains(t, out, "hunter2", "field %q", field)
+	}
+}
+
+// RequireHTTPScheme expects an already-normalized base URL (SchemeHostOnly runs
+// first), so a scheme-less string is rejected, not defaulted.
+func TestRequireHTTPScheme(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		wantErr string
+	}{
+		{"https accepted", "https://app.datarobot.com", ""},
+		{"http accepted", "http://localhost:8080", ""},
+		{"ftp rejected", "ftp://app.datarobot.com", `unsupported URL scheme "ftp"`},
+		{"file rejected", "file://host", `unsupported URL scheme "file"`},
+		{"scheme-less rejected", "app.datarobot.com", "unsupported URL scheme"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RequireHTTPScheme(tc.baseURL)
+
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.ErrorIs(t, err, ErrInvalidURL, "picker re-asks on ErrInvalidURL")
+			}
+		})
 	}
 }

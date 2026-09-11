@@ -16,6 +16,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -57,6 +58,26 @@ func SchemeHostOnly(longURL string) (string, error) {
 	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
 
 	return parsedURL.String(), nil
+}
+
+// unsupportedSchemeError is an ErrInvalidURL, so the interactive picker re-asks
+// on a bad scheme instead of aborting, while keeping its specific message.
+type unsupportedSchemeError struct{ scheme string }
+
+func (e *unsupportedSchemeError) Error() string {
+	return fmt.Sprintf("unsupported URL scheme %q, use https://", e.scheme)
+}
+
+func (e *unsupportedSchemeError) Unwrap() error { return ErrInvalidURL }
+
+// RequireHTTPScheme rejects a normalized base URL whose scheme is not http or
+// https. SchemeHostOnly stays scheme-agnostic (export and GetBaseURL share it).
+func RequireHTTPScheme(baseURL string) error {
+	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
+		return &unsupportedSchemeError{scheme}
+	}
+
+	return nil
 }
 
 func GetBaseURL() string {
@@ -160,6 +181,13 @@ func SaveURLToConfig(newURL string) error {
 		return err
 	}
 
+	// Empty is the reset case below; a non-empty host has to be http/https.
+	if newURL != "" {
+		if err = RequireHTTPScheme(newURL); err != nil {
+			return err
+		}
+	}
+
 	if err = CreateConfigFileDirIfNotExists(); err != nil {
 		return err
 	}
@@ -184,6 +212,10 @@ func SaveURLToConfig(newURL string) error {
 func SetURLToConfig(newURL string) error {
 	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {
+		return err
+	}
+
+	if err := RequireHTTPScheme(newURL); err != nil {
 		return err
 	}
 

@@ -295,6 +295,10 @@ dr auth set-url [url]
 
 - `url` (optional) - DataRobot instance URL. For example: `https://app.datarobot.com`
 
+A bare host like `app.datarobot.com` is accepted and defaults to `https`. A URL whose
+scheme is not `http` or `https` is rejected: `dr auth set-url ftp://host` prints
+`unsupported URL scheme "ftp", use https://` and exits non-zero.
+
 **Interactive mode:**
 
 If you run `dr auth set-url` without providing a URL, the CLI shows a picker. Move with
