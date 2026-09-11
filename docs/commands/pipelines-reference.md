@@ -118,7 +118,7 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipeline run create` | `POST /pipelines/{id}/dispatches` (draft) <br> `POST /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run create --pipeline <id> --input <input-id>` <br> `dr pipeline run create --pipeline <id> --version=2 --input <input-id> --output-format json` <br> `dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>` | **Flags:** `--pipeline <id>` (required), `--input <input-id>` (required), `--scope`, `--version`, `--image <image-id>` (optional; overrides the pipeline's linked image for this run), `--output-format json`. |
+| `dr pipeline run create` | `POST /pipelines/{id}/dispatches` (draft) <br> `POST /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>` <br> `dr pipeline run create --pipeline <id> --version=2 --input <input-id> --image <img-id>` <br> `dr pipeline run create --pipeline <id> --input <input-id> --image <img-id> --output-format json` | **Flags:** `--pipeline <id>` (required), `--input <input-id>` (required), `--image <image-id>` (required; the execution image for this run), `--scope`, `--version`, `--output-format json`. |
 | `dr pipeline run list` | `GET /pipelines/{id}/dispatches` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run list --pipeline <id>` <br> `dr pipeline run list --pipeline <id> --version=2 --output-format json` | **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--offset <n>`, `--limit <n>`, `--output-format json`. |
 | `dr pipeline run get` | `GET /pipelines/{id}/dispatches/{dispatch_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}` (locked) | `dr pipeline run get --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
 | `dr pipeline run status` | `GET /pipelines/{id}/dispatches/{dispatch_id}/status` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}/status` (locked) | `dr pipeline run status --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
@@ -178,6 +178,7 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | `dr pipeline image update` | `PATCH /pipelines/images/{id}` | `dr pipeline image update <img-id> --package scikit-learn` <br> `dr pipeline image update <img-id> --conda scipy --python-version 3.11` <br> `dr pipeline image update <img-id> --package torch --gpu` | **Positional:** `<image-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--conda <spec>` (repeatable), `--conda-channel <channel>` (repeatable; requires `--conda`), `--python-version <ver>`, `--base-image <uri>` (DEPRECATED — use `--python-version`; mutually exclusive with it), `--gpu` (`--nvidia` deprecated alias), `--output-format json`. At least one of `--package` or `--conda` required. All fields must be re-specified on each update (no carry-over from previous version). |
 | `dr pipeline image delete` | `DELETE /pipelines/images/{id}` | `dr pipeline image delete <img-id>` | **Positional:** `<image-id>` (required). |
 | `dr pipeline image version delete` | `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete --image <img-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--image <img-id>` (required). |
+| `dr pipeline image version logs` | `GET /pipelines/images/{id}/versions/{n}/logs` | `dr pipeline image version logs --image <img-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--image <img-id>` (required). Build logs are available once the version's build has completed (status `READY` or `ERROR`). |
 
 ---
 
@@ -224,5 +225,6 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | `PATCH /pipelines/images/{id}` | `dr pipeline image update` |
 | `DELETE /pipelines/images/{id}` | `dr pipeline image delete` |
 | `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete` |
+| `GET /pipelines/images/{id}/versions/{n}/logs` | `dr pipeline image version logs` |
 | `GET /pipelines/{id}/tasks/{task_id}` | `dr pipeline task get` (draft) |
 | `GET /pipelines/{id}/versions/{ver}/tasks/{task_id}` | `dr pipeline task get` (locked) |

@@ -96,7 +96,7 @@ dr
 ├── llm-gateway        LLM model management (alias: llm, llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
-├── pipeline           Pipelines API management
+├── pipeline           Pipelines API management (alias: pipelines)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines
 │   ├── get            Display pipeline details and versions
