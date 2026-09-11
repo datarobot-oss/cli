@@ -95,6 +95,21 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			input:       "not a url",
 			expectError: true,
 		},
+		{
+			name:        "http scheme is accepted",
+			input:       "http://localhost:8080",
+			expectedURL: "http://localhost:8080/api/v2",
+		},
+		{
+			name:        "ftp scheme is rejected",
+			input:       "ftp://app.datarobot.com",
+			expectError: true,
+		},
+		{
+			name:        "file scheme is rejected",
+			input:       "file://host/etc/passwd",
+			expectError: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -249,5 +264,33 @@ func TestRedactSecretFields_CoversTheOtherNames(t *testing.T) {
 	for _, field := range []string{"password", "secret", "privateKey", "clientSecret", "refreshToken", "token"} {
 		out := RedactSecretFields(`{"` + field + `":"hunter2"}`)
 		assert.NotContains(t, out, "hunter2", "field %q", field)
+	}
+}
+
+// RequireHTTPScheme expects an already-normalized base URL (SchemeHostOnly runs
+// first), so a scheme-less string is rejected, not defaulted.
+func TestRequireHTTPScheme(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		wantErr string
+	}{
+		{"https accepted", "https://app.datarobot.com", ""},
+		{"http accepted", "http://localhost:8080", ""},
+		{"ftp rejected", "ftp://app.datarobot.com", `unsupported URL scheme "ftp"`},
+		{"file rejected", "file://host", `unsupported URL scheme "file"`},
+		{"scheme-less rejected", "app.datarobot.com", "unsupported URL scheme"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RequireHTTPScheme(tc.baseURL)
+
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, tc.wantErr)
+			}
+		})
 	}
 }

@@ -125,12 +125,7 @@ func ValidateEndpoint(endpoint string) error {
 		return err
 	}
 
-	// Checked here, not in SchemeHostOnly, which set-url and export share.
-	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
-		return fmt.Errorf("unsupported URL scheme %q, use https://", scheme)
-	}
-
-	return nil
+	return config.RequireHTTPScheme(baseURL)
 }
 
 // ReportEnvCredentialsError writes a classified explanation of why an

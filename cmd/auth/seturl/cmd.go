@@ -16,15 +16,19 @@ package seturl
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set-url [url]",
-		Short: "🌐 Configure your DataRobot environment URL.",
+		Use:           "set-url [url]",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Short:         "🌐 Configure your DataRobot environment URL.",
 		Long: `Configure your DataRobot environment URL with an interactive selection.
 
 This command helps you choose the correct DataRobot environment:
@@ -34,28 +38,33 @@ This command helps you choose the correct DataRobot environment:
   • Custom/On-Premise: Your organization's DataRobot URL
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			var url string
 			if len(args) > 0 {
 				url = args[0]
 			}
 
+			// An explicit arg that won't validate is the user's to fix; report it
+			// rather than silently dropping into the interactive picker.
 			if url != "" {
-				err := config.SetURLToConfig(url)
-				if err == nil {
-					_ = auth.WriteConfigFileSilent()
-					_ = auth.EnsureAuthenticatedE(cmd, args)
+				if err := config.SetURLToConfig(url); err != nil {
+					log.Error(err.Error())
 
-					return
+					return cli.ErrSilent
 				}
+
+				_ = auth.WriteConfigFileSilent()
+				_ = auth.EnsureAuthenticatedE(cmd, args)
+
+				return nil
 			}
 
-			urlChanged := auth.SetURLAction()
-
-			if urlChanged {
+			if auth.SetURLAction() {
 				_ = auth.WriteConfigFileSilent()
 				_ = auth.EnsureAuthenticatedE(cmd, args)
 			}
+
+			return nil
 		},
 	}
 

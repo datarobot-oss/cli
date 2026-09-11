@@ -16,6 +16,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -57,6 +58,16 @@ func SchemeHostOnly(longURL string) (string, error) {
 	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
 
 	return parsedURL.String(), nil
+}
+
+// RequireHTTPScheme rejects a normalized base URL whose scheme is not http or
+// https. SchemeHostOnly stays scheme-agnostic (export and GetBaseURL share it).
+func RequireHTTPScheme(baseURL string) error {
+	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme %q, use https://", scheme)
+	}
+
+	return nil
 }
 
 func GetBaseURL() string {
@@ -184,6 +195,10 @@ func SaveURLToConfig(newURL string) error {
 func SetURLToConfig(newURL string) error {
 	newURL, err := SchemeHostOnly(urlFromShortcut(newURL))
 	if err != nil {
+		return err
+	}
+
+	if err := RequireHTTPScheme(newURL); err != nil {
 		return err
 	}
 
