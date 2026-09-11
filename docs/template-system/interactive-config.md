@@ -306,39 +306,44 @@ Q: Enter database connection string
 
 ## Prompt discovery
 
-The CLI automatically discovers prompts from `.datarobot` directories in your template.
+The CLI automatically discovers prompts from every YAML file under the root
+`.datarobot` directory of your template.
 
 ### Discovery process
 
 ```go
-// From internal/envbuilder/discovery.go
-func GatherUserPrompts(rootDir string) ([]UserPrompt, []string, error) {
-    // 1. Recursively find all .datarobot directories
-    // 2. Load prompts.yaml from each directory
-    // 3. Parse and validate prompt definitions
-    // 4. Build dependency graph (requires: "section")
-    // 5. Return ordered prompts with root sections
+// From internal/envbuilder/discovery.go and builder.go
+func gatherUserPrompts(rootDir string, ...) ([]UserPrompt, error) {
+    // 1. Walk .datarobot/ recursively (up to 5 levels deep)
+    // 2. Collect every *.yaml / *.yml file, sorted by path
+    // 3. Skip files that don't match the prompt schema
+    // 4. Parse each remaining file into sections of prompts
+    // 5. Deactivate any prompt whose env/key duplicates an earlier one
+    // 6. Determine which conditional sections are active (requires)
+    // 7. Return the combined, ordered list of prompts
 }
 ```
 
+Only the `.datarobot` directory at the repository root (or at the directory
+passed to `--output`) is scanned&mdash;nested `component/.datarobot/` directories
+are not discovered. Any number of files is supported, and their filenames are
+not significant.
+
 ### Prompt file structure
 
-Create `.datarobot/prompts.yaml` in any directory:
+Split prompts across as many files as you like under `.datarobot/`:
 
 ```
 my-template/
 ├── .datarobot/
-│   └── prompts.yaml          # Root level prompts
-├── backend/
-│   └── .datarobot/
-│       └── prompts.yaml      # Backend-specific prompts
-├── frontend/
-│   └── .datarobot/
-│       └── prompts.yaml      # Frontend-specific prompts
+│   ├── prompts.yaml           # Root level prompts
+│   └── components/
+│       ├── backend.yaml       # Backend-specific prompts
+│       └── frontend.yaml      # Frontend-specific prompts
 └── .env.template
 ```
 
-Each `prompts.yaml`:
+Each file:
 
 ```yaml
 section_name: # Optional: Only show if section enabled
@@ -355,6 +360,9 @@ section_name: # Optional: Only show if section enabled
         value: "actual_value"
         requires: "other_section"  # Optional: Enable section if selected
 ```
+
+See [dotenv command &mdash; Prompt definition files](../commands/dotenv.md#prompt-definition-files)
+for the full field reference and discovery rules.
 
 ## UI components
 

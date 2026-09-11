@@ -46,7 +46,7 @@ takes `--version`, and it is sent in the request body rather than the path.
 
 > [!NOTE]
 > **First time?** If you're new to the CLI, start with the
-> [Quick start](../../README.md#quick-start) for step-by-step setup
+> [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup
 > instructions.
 
 ## Quick start

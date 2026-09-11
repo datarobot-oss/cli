@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"sort"
 
 	"github.com/datarobot/cli/internal/drapi"
 )
@@ -34,22 +35,31 @@ const multipartFormField = "file"
 // by the pipe (one chunk in flight) plus the small envelope, regardless
 // of file size — important because the engine may upload multi-GiB zips.
 //
+// fields are written as ordinary form parts ahead of the file part.
+// The Files API binds a POST's parameters from the parsed body alone
+// and drops unrecognized query parameters without complaining, so an
+// option that has to reach the server travels here and not in the URL.
+//
+// useArchiveContents on the fromFile routes reads like a counter-example
+// and is not one. It is sent in the query, discarded there like anything
+// else, and extraction still happens only because the server's declared
+// form default for that field is already true. It is inert rather than
+// honoured, so it says nothing about the query being a usable channel,
+// and a flip of that default would stop extraction with no error.
+// Moving it into the form is a separate change.
+//
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing
 // retry must redo the call from scratch (re-opening the source if it
 // isn't seekable).
 func newStreamingMultipartRequest(
 	requestURL string,
-	query url.Values,
+	fields url.Values,
 	filename string,
 	size int64,
 	body io.Reader,
 ) (*http.Request, error) {
-	if len(query) > 0 {
-		requestURL += "?" + query.Encode()
-	}
-
-	contentType, prologue, epilogue, err := multipartFraming(filename)
+	contentType, prologue, epilogue, err := multipartFraming(fields, filename)
 	if err != nil {
 		return nil, err
 	}
@@ -81,12 +91,32 @@ func newStreamingMultipartRequest(
 }
 
 // multipartFraming returns the prologue and epilogue around a single
-// file part. Going through multipart.Writer keeps the framing
-// RFC-2046-correct even though we stream the body separately.
-func multipartFraming(filename string) (string, []byte, []byte, error) {
+// file part, with fields framed as complete parts before it. Fields go
+// first so a server that parses the stream incrementally has every
+// parameter in hand before it commits to reading an arbitrarily large
+// file. Names are sorted to keep the framing deterministic. Going through
+// multipart.Writer keeps the framing RFC-2046-correct even though we
+// stream the body separately.
+func multipartFraming(fields url.Values, filename string) (string, []byte, []byte, error) {
 	var head bytes.Buffer
 
 	w := multipart.NewWriter(&head)
+
+	names := make([]string, 0, len(fields))
+
+	for name := range fields {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	for _, name := range names {
+		for _, value := range fields[name] {
+			if err := w.WriteField(name, value); err != nil {
+				return "", nil, nil, fmt.Errorf("write multipart field %s: %w", name, err)
+			}
+		}
+	}
 
 	hdr := make(textproto.MIMEHeader)
 	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, multipartFormField, filename))

@@ -14,7 +14,7 @@ dr dotenv setup
 The wizard automatically discovers your template's requirements and prompts you for all necessary values. Your credentials are saved securely and you're ready to use the CLI.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -40,8 +40,8 @@ dr dotenv setup [--if-needed]
 
 - Interactive prompts for all required variables.
 - Context-aware questions based on template configuration.
-- Automatic discovery of configuration from `.datarobot/prompts.yaml` files.
-- Smart defaults from `.env.template`.
+- Automatic discovery of prompts from every YAML file under the repository's `.datarobot/` directory.
+- Smart defaults from the prompt definitions.
 - Secure handling of secret values.
 - DataRobot authentication integration.
 - Automatic state tracking of completion timestamp.
@@ -54,10 +54,10 @@ dr dotenv setup [--if-needed]
 
 **Flags:**
 
-- `--if-needed`&mdash;Only run setup if `.env` file doesn't exist or validation fails. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid.
+- `--if-needed`&mdash;Only run setup if the `.env` file doesn't exist or is missing required variables. This flag is useful for automation scripts and CI/CD pipelines where you want to ensure configuration exists without prompting if it's already valid. The check reads the `.env` file only; values that happen to be set in your shell environment do not satisfy it.
 - `-y, --yes`&mdash;Skip interactive prompts and auto-populate all environment variables with their default values (or empty strings if no default is provided). This is useful for CI/CD pipelines, automated testing, or quick development setup where you want to use all defaults. Variables with `generate: true` will still have random values auto-generated. Can also be enabled via `DATAROBOT_CLI_NON_INTERACTIVE=true` environment variable.
-- `-a, --all`&mdash;Show all prompts in the wizard, including those with default values already set. By default, prompts with defaults are skipped.
-- `-o, --output <directory>`&mdash;Specify a custom directory where the `.env` file should be written. By default, the `.env` file is written to the repository root. The directory will be created automatically if it doesn't exist. This is useful for managing multiple environment configurations or writing to a specific deployment directory. This option skips the repository check and directory up-walk, allowing setup to run even when not executed from an app directory.
+- `-a, --all`&mdash;Show all prompts in the wizard, including those already answered by a default value. Mutually exclusive with `--yes`.
+- `-o, --output <directory>`&mdash;Specify a custom directory where the `.env` file should be written. The directory is created automatically if it doesn't exist. By default, the `.env` file is written to the repository root. This option skips the repository check and directory up-walk, which means the directory you pass also becomes the root that is scanned for `.datarobot/` prompt files. When it is set, the setup completion timestamp is not recorded.
 
 **State tracking:**
 
@@ -119,14 +119,17 @@ The wizard guides you through:
 
 **How `--if-needed` works:**
 
-When the `--if-needed` flag is set, the command validates your existing `.env` file against all required variables:
+When the `--if-needed` flag is set, the command validates your existing `.env` file against every required prompt discovered under `.datarobot/`:
 
-- ✅ **Skips setup** if `.env` exists and all required variables are properly set (including core DataRobot variables and template-specific variables).
+- ✅ **Skips setup** if `.env` exists and every required variable is set in that file (including the core DataRobot variables and all template-specific variables).
 - ⚠️ **Runs setup** if `.env` doesn't exist.
-- ⚠️ **Runs setup** if any required variables are missing or empty.
-- ⚠️ **Runs setup** if validation fails for any reason.
+- ⚠️ **Runs setup** if any required variable is missing, empty, or commented out.
+
+> [!IMPORTANT]
+> The skip decision deliberately ignores your shell environment. A variable exported in your shell but absent from `.env` still triggers the wizard, so an incomplete `.env` is never left in place. Prompt `default:` values are also ignored for this check&mdash;only values actually written to the file count.
 
 This makes `--if-needed` ideal for:
+
 - **Automation scripts** that need to ensure configuration without user interaction.
 - **CI/CD pipelines** that should only prompt when necessary.
 - **Onboarding workflows** that intelligently skip already-completed steps.
@@ -226,7 +229,7 @@ dr dotenv validate
 
 **Features:**
 
-- Validates against template requirements defined in `.datarobot/prompts.yaml`.
+- Validates against every prompt discovered under `.datarobot/`.
 - Checks both `.env` file and environment variables.
 - Verifies core DataRobot variables (`DATAROBOT_ENDPOINT`, `DATAROBOT_API_TOKEN`).
 - Reports missing or invalid variables with helpful error messages.
@@ -315,16 +318,96 @@ DEBUG=true
 PORT=8000
 ```
 
+## Prompt definition files
+
+The wizard is driven by prompt definition files that live under the `.datarobot/`
+directory at the root of your repository.
+
+### Discovery
+
+There is no single, fixed prompt file. The CLI walks the `.datarobot/` directory
+and collects **every** `*.yaml` and `*.yml` file it finds, at any nesting level:
+
+```text
+my-template/
+├── .datarobot/
+│   ├── prompts.yaml           # discovered
+│   ├── llm.yml                # discovered
+│   └── components/
+│       ├── backend.yaml       # discovered
+│       └── frontend/
+│           └── prompts.yaml   # discovered
+└── .env
+```
+
+Discovery rules:
+
+| Rule | Behavior |
+|------|----------|
+| Root | Only `.datarobot/` at the repository root (or at `--output`) is scanned. |
+| Pattern | Any file matching `*.yaml` or `*.yml`. Filenames are not significant. |
+| Recursion | Subdirectories are walked, up to 5 levels below `.datarobot/`. |
+| Hidden directories | Skipped, apart from `.datarobot` itself. |
+| Ordering | Files are sorted by full path, then processed in that order. |
+| Non-prompt YAML | Files that don't match the prompt schema are silently skipped, so copier answer files, version manifests, and other config can live alongside prompts. |
+| Duplicates | If two files define the same `env` (or `key`), the first one in path order wins and the rest are ignored. |
+
+> [!TIP]
+> Because non-conforming YAML is skipped rather than rejected, a malformed prompt
+> file fails quietly. Run with `--debug` to see which files were parsed and which
+> were skipped.
+
+### File schema
+
+A prompt file is a mapping of **section names** to lists of prompts. Section
+names are arbitrary&mdash;`prompts` is a convention, not a keyword:
+
+```yaml
+# Top-level keys are section names.
+app_config:
+  - env: "APP_NAME"
+    help: "Enter your application name"
+```
+
+A section is a **root section** unless some option's `requires` field names it;
+root sections are always active, and the rest are activated conditionally. Root
+sections are processed in alphabetical order.
+
+> [!NOTE]
+> Sections and `requires` references are scoped to the file that declares them.
+> A `requires` in one file cannot activate a section in another file.
+
+Every prompt supports the following fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `env` | string | Environment variable to write to `.env`. Required unless `key` is given. |
+| `key` | string | Identifier used when the prompt does not map to an environment variable. Written to `.env` as a comment. |
+| `help` | string | Description shown to the user and emitted as a comment above the variable. Strongly recommended. |
+| `type` | string | `string` (default) or `secret_string` for masked input. See also `llmgw_catalog` below. |
+| `default` | string | Initial value. A prompt already sitting at its default is not shown unless `always_prompt` or `--all` is set. |
+| `optional` | bool | Allows the prompt to be left blank. |
+| `multiple` | bool | Renders `options` as checkboxes; selections are stored comma-separated. |
+| `generate` | bool | Auto-generates a random value when empty. Only applies to `secret_string`. |
+| `always_prompt` | bool | Shows the prompt even when its default already answers it. |
+| `options` | list | Choices for a selection prompt. |
+
+Each entry in `options` supports:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Text shown in the list. |
+| `value` | string | Value stored in `.env`. Defaults to `name`. |
+| `requires` | string | Section in the same file to activate when this option is selected. |
+
 ## Interactive configuration
 
 ### Prompt types
 
-The wizard supports multiple input types defined in `.datarobot/prompts.yaml`:
-
 **Text input:**
 
 ```yaml
-prompts:
+app_config:
   - env: "APP_NAME"
     help: "Enter your application name"
 ```
@@ -332,7 +415,7 @@ prompts:
 **Secret string:**
 
 ```yaml
-prompts:
+app_config:
   - env: "API_KEY"
     type: "secret_string"
     help: "Enter your API key"
@@ -342,7 +425,7 @@ prompts:
 **Single selection:**
 
 ```yaml
-prompts:
+app_config:
   - env: "ENVIRONMENT"
     help: "Select deployment environment"
     options:
@@ -355,7 +438,7 @@ prompts:
 **Multiple selection:**
 
 ```yaml
-prompts:
+app_config:
   - env: "ENABLED_FEATURES"
     help: "Select features to enable"
     multiple: true
@@ -367,19 +450,22 @@ prompts:
 **LLM from LLM gateway:**
 
 ```yaml
-prompts:
+app_config:
   - env: "LLM_GATEWAY_MODEL"
     type: "llmgw_catalog"
     optional: false
     help: "Choose LLM from LLM Gateway catalog."
 ```
 
+The `llmgw_catalog` type fetches the live model catalog from your DataRobot
+instance and renders it as a single-selection list.
+
 ### Conditional prompts
 
 Prompts can be shown based on previous selections:
 
 ```yaml
-prompts:
+app_config:
   - key: "enable_database"
     help: "Enable database?"
     options:
@@ -391,6 +477,10 @@ database_config:
   - env: "DATABASE_URL"
     help: "Database connection string"
 ```
+
+`database_config` is not a root section, because it is named by a `requires`,
+so its prompts appear only when the user picks "Yes". A prompt with any
+`requires` option is always shown, even if it has a default.
 
 ## Common workflows
 
@@ -478,28 +568,34 @@ dr dotenv edit
 
 ## Configuration discovery
 
-The CLI automatically discovers configuration from:
+The CLI assembles configuration from:
 
-1. **`.env.template`**&mdash;base template with variable names.
-2. **`.datarobot/prompts.yaml`**&mdash;interactive prompts and validation.
-3. **Existing `.env`**&mdash;current values (if present).
-4. **Environment variables**&mdash;system environment (override `.env`).
+1. **Core DataRobot prompts**&mdash;`DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN`, always present and filled from your authenticated session.
+2. **`.datarobot/**/*.{yaml,yml}`**&mdash;every prompt definition file in the repository, as described in [Prompt definition files](#prompt-definition-files).
+3. **Existing `.env`**&mdash;current values, if present. If `.env` doesn't exist, `.env.template` is read instead as the starting point.
+4. **Environment variables**&mdash;system environment.
 
-Priority order (highest to lowest):
+Priority order for a prompt's initial value (highest to lowest):
 
-1. System environment variables.
-2. User input from wizard.
-3. Existing `.env` file values.
-4. Default values from prompts.
-5. Template values from `.env.template`.
+1. System environment variable of the same name.
+2. Value from `.env` (or `.env.template` when `.env` doesn't exist yet).
+3. The prompt's `default:` value.
+4. A generated value, for `secret_string` prompts with `generate: true`.
+
+User input in the wizard overrides whatever was resolved above.
+
+> [!NOTE]
+> `PULUMI_CONFIG_PASSPHRASE` is an exception: it also falls back to the
+> `pulumi_config_passphrase` key in `drconfig.yaml`.
 
 ## Security
 
 ### Secret handling
 
-- Secret values are masked in the UI.
-- Variables containing "PASSWORD", "SECRET", "KEY", or "TOKEN" are automatically treated as secrets.
-- The `secret_string` prompt type enables secure input with masking.
+- Prompts declared as `type: secret_string` are masked with bullets during input.
+- Masking is driven by the prompt's declared type, not by the variable's name. A variable named `MY_API_KEY` is *not* masked unless its prompt declares `type: secret_string`.
+- `DATAROBOT_API_TOKEN` is masked when listed by `dr dotenv edit` and `dr dotenv validate`.
+- Secrets are stored as plain text in `.env`.
 
 > [!WARNING]
 > `.env` files should never be committed. To ensure this, add it to `.gitignore`.
@@ -509,14 +605,16 @@ Priority order (highest to lowest):
 Secret strings with `generate: true` are automatically generated:
 
 ```yaml
-prompts:
+app_config:
   - env: "SESSION_SECRET"
     type: "secret_string"
     generate: true
     help: "Session encryption key"
 ```
 
-This generates a cryptographically secure random string when no value exists.
+This generates a 32-character, base64 URL-safe random string when no value
+exists. Existing values are never overwritten, and generated prompts are not
+shown in the wizard unless `--all` is passed.
 
 ## Error handling
 

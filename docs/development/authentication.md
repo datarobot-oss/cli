@@ -130,7 +130,7 @@ openErr := flow.OpenBrowser()          // best effort; report the link if non-ni
 key, err := flow.Wait(ctx)             // serves until the callback arrives
 ```
 
-Two rules matter when changing this code:
+Three rules matter when changing this code:
 
 - **Bind before opening the browser.** `NewBrowserFlow` binds the listener so a fast
   redirect cannot arrive before anything is listening.
@@ -138,6 +138,13 @@ Two rules matter when changing this code:
   pass it through `auth.BrowserStateFor` and let `auth.RenderBrowserPrompt` choose the
   wording. Telling users to watch for a browser that never opened is the bug CFX-6318
   fixed.
+- **Keep the callback's `Sec-Fetch-Dest` gate present-and-wrong, never absent.**
+  `handleCallback` refuses a request whose `Sec-Fetch-Dest` is set to anything but
+  `document`, which turns away a page's `<img>` or `fetch` without touching the real
+  callback (a top-level navigation). An absent header must still be accepted: the
+  CLI-to-CLI port handover in `listenReclaimingPort` uses a Go `http.Client`, which sends
+  no fetch metadata, so rejecting absent would deadlock two concurrent logins. Do not
+  gate on `Sec-Fetch-Site`: the genuine callback is legitimately cross-site.
 
 `auth.RunBrowserLoginWith` accepts `LoginOptions{NoBrowser: true}` for `--no-browser`,
 which renders the link prominently without reporting a failure.

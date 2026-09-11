@@ -198,5 +198,5 @@ uv:
 
 ## See also
 
-- [Quick start](../../README.md#quick-start) - Initial setup guide
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) - Initial setup guide
 - [run](run.md) - Execute template tasks

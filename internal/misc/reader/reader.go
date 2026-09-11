@@ -266,7 +266,7 @@ func AskYesNo() bool {
 // IsStdinTerminal reports whether stdin is connected to an interactive terminal.
 // Returns false when stdin is a pipe, a file redirect, or otherwise non-interactive.
 func IsStdinTerminal() bool {
-	return term.IsTerminal(int(os.Stdin.Fd())) //nolint:gosec // uintptr and int are same size on supported platforms
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // NonInteractiveEnv is the env var users set to force non-interactive mode

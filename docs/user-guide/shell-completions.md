@@ -448,6 +448,6 @@ dr self completion powershell >> $PROFILE
 
 ## See also
 
-- [Quick start](../../README.md#quick-start)&mdash;get started with the CLI.
-- [Command reference](../commands/)&mdash;browse commands and flags.
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;get started with the CLI.
+- [Command reference](../commands/README.md)&mdash;browse commands and flags.
 - [Cobra documentation](https://github.com/spf13/cobra/blob/main/shell_completions.md)&mdash;completion implementation details.
