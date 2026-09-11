@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -296,9 +297,10 @@ func TestRequireHTTPScheme(t *testing.T) {
 			err := RequireHTTPScheme(tc.baseURL)
 
 			if tc.wantErr == "" {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			} else {
-				assert.ErrorContains(t, err, tc.wantErr)
+				require.ErrorContains(t, err, tc.wantErr)
+				require.ErrorIs(t, err, ErrInvalidURL, "picker re-asks on ErrInvalidURL")
 			}
 		})
 	}
