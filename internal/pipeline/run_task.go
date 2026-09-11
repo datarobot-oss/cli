@@ -82,7 +82,7 @@ type TaskExecutionResult struct {
 
 func taskBase(pipelineID, runID string) (string, error) {
 	return config.GetEndpointURL(
-		"/api/v2/pipelines/" + pipelineID + "/dispatches/" + runID + "/tasks",
+		"/api/v2/pipelines/" + escapeID(pipelineID) + "/dispatches/" + escapeID(runID) + "/tasks",
 	)
 }
 

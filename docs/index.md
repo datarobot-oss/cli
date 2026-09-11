@@ -52,6 +52,7 @@ Detailed documentation for each command:
 - [self](commands/self.md)&mdash;CLI utility commands (version, update &mdash; including installing a specific released version, config, completion, and plugin authoring: add, publish, package).
 - [plugins](commands/plugins.md)&mdash;plugin system documentation.
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
+- [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines; see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.
 - [Command reference index](commands/README.md)&mdash;full command tree including `dependencies check` and global flags.
 
 For template operations (list, setup), see the [Template system](template-system/README.md) documentation and use `dr templates --help` for command details.

@@ -57,7 +57,7 @@ These flags are available for all commands:
 | [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API.                     |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
@@ -96,7 +96,7 @@ dr
 ├── llm-gateway        LLM model management (alias: llm, llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
-├── pipeline           Pipelines API management (feature-gated)
+├── pipeline           Pipelines API management (alias: pipelines)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines
 │   ├── get            Display pipeline details and versions
@@ -112,7 +112,12 @@ dr
 │   │   ├── list       List runs for a pipeline
 │   │   ├── get        Display a single run
 │   │   ├── status     Lightweight run status (for polling)
-│   │   └── cancel     Cancel a running run
+│   │   ├── cancel     Cancel a running run
+│   │   └── task       Inspect per-run task executions (dispatch records)
+│   │       ├── list   List task invocations for a run (TASK ID · NODE ID)
+│   │       ├── get    Lifecycle record for a single task invocation
+│   │       ├── logs   Fetch a task invocation's logs (live or durable)
+│   │       └── result Presigned URL for a completed task's result
 │   ├── input          Manage pipeline input payloads
 │   │   ├── create     Register a JSON payload on a pipeline
 │   │   ├── list       List inputs for a pipeline (draft or locked scope)
@@ -125,13 +130,17 @@ dr
 │   │   ├── get        Display a single schedule
 │   │   ├── update     Change cron expression / timezone
 │   │   └── delete     Delete a schedule
-│   ├── environment    Manage named, versioned pip-package environments
-│   │   ├── create     Register a new environment with an initial version
-│   │   ├── list       List registered environments
-│   │   ├── update     Append a new version to an environment
-│   │   ├── delete     Soft-delete the latest active version of an environment
-│   │   └── version    Manage environment versions
-│   │       └── delete Delete a specific version
+│   ├── image          Manage pipeline execution images
+│   │   ├── create     Create a pipeline execution image
+│   │   ├── get        Fetch details of a pipeline execution image
+│   │   ├── list       List pipeline execution images
+│   │   ├── update     Add a new version to a pipeline execution image
+│   │   ├── delete     Delete a pipeline execution image
+│   │   └── version    Manage versions of a pipeline execution image
+│   │       ├── delete Delete a specific version
+│   │       └── logs   Fetch build logs for a specific version
+│   ├── clone          Clone a pipeline into a new draft
+│   ├── source         Display the source code of a pipeline
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
 ├── artifact           Artifact management (feature-gated)
@@ -356,7 +365,7 @@ For detailed documentation on each command, see:
   - `list` (`ls`)&mdash;fetch available LLMs and display them in a table (`ID · NAME · SOURCE · PROVIDER · MODEL · CONTEXT`). The currently-selected model is marked with `*`. Both sources are queried in parallel by default; `--source gateway` or `--source deployed` narrows it to one and skips the other request. Supports `--output-format json` (each entry includes `source`, `deployment_id`, and a `selected` boolean).
   - `select [llm-id]`&mdash;set the default LLM. Without an argument, launches an interactive TUI picker. With an argument (a gateway model id or a deployment id), validates it against the available LLMs and persists it immediately. The selection is saved to `drconfig.yaml` under the key `default-llm-id`.
 
-- **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
+- **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent.
   - `create`&mdash;upload a Python file to register a new pipeline.
   - `list`&mdash;list pipelines with mode filtering and pagination.
   - `get`&mdash;display full details of a pipeline including all versions.
@@ -365,10 +374,12 @@ For detailed documentation on each command, see:
   - `lock`&mdash;promote a draft pipeline to locked mode.
   - `version`&mdash;`list` / `get` to inspect pipeline versions.
   - `graph`&mdash;display the pipeline/task DAG (draft or locked).
-  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
+  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions; `run task` (`list`/`get`/`logs`/`result`) inspects the per-`@task` executions of a single run.
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
-  - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
+  - `image`&mdash;`create`/`get`/`list`/`update`/`delete` pipeline execution images; `version delete` and `version logs` operate on a specific image version.
+  - `clone`&mdash;clone an existing pipeline into a new draft.
+  - `source`&mdash;display the source code of a pipeline.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
 - **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
