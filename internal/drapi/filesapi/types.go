@@ -33,6 +33,22 @@ const (
 // JSON tags are camelCase: the gateway camelizes Python's snake_case
 // fields before they reach the wire.
 
+// CreateCatalogReq names a new catalog entry. Name is omitted when empty
+// rather than sent blank, because the server reads it as `name or <derived
+// title>` and a blank string is falsy there: sending "" would fall through
+// to the platform's own title, which is the behaviour this parameter
+// exists to replace.
+//
+// This route is also where the name is safe to send at all. It took no
+// request body before the parameter existed, so a server that predates it
+// ignores the key and leaves its own default on the entry. The
+// create-from-file route validates its multipart form strictly and would
+// reject the same name outright, which is why the zip path creates the
+// catalog here first rather than naming it on the upload.
+type CreateCatalogReq struct {
+	Name string `json:"name,omitempty"`
+}
+
 type CatalogResp struct {
 	CatalogID        string `json:"catalogId"`
 	CatalogVersionID string `json:"catalogVersionId"`
