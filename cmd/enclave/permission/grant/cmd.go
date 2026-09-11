@@ -33,7 +33,7 @@ func Cmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "grant --permission create <recipient>",
+		Use:   "grant",
 		Short: "Grant a collection-level enclave permission to a recipient.",
 		Long: `Grant a collection-level enclave permission to a single recipient.
 

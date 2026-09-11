@@ -33,7 +33,7 @@ func Cmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "revoke --permission create <recipient>",
+		Use:   "revoke",
 		Short: "Revoke a collection-level enclave permission from a recipient.",
 		Long: `Revoke a collection-level enclave permission from a single recipient.
 

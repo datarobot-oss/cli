@@ -34,7 +34,7 @@ func Cmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "grant <enclave-id> --role <owner|user|consumer> <recipient>",
+		Use:   "grant <enclave-id>",
 		Short: "Grant a role on an enclave to a recipient.",
 		Long: `Grant a role on an enclave to a single recipient.
 

@@ -33,7 +33,7 @@ func Cmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "revoke <enclave-id> <recipient>",
+		Use:   "revoke <enclave-id>",
 		Short: "Revoke a recipient's access to an enclave.",
 		Long: `Revoke a recipient's access to an enclave, whatever role they currently hold.
 
