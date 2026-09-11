@@ -331,7 +331,7 @@ func TestRunLoginWithFlow_HonorsTimeoutOption(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, ErrLoginTimedOut)
-	assert.True(t, time.Since(start) < 2*time.Second, "the option must override DefaultLoginTimeout")
+	assert.Less(t, time.Since(start), 2*time.Second, "the option must override DefaultLoginTimeout")
 }
 
 func TestBrowserFlow_ExtraCallbacksDoNotBlockHandlers(t *testing.T) {
