@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -298,9 +299,39 @@ func TestBrowserFlow_WaitTimesOut(t *testing.T) {
 	_, err := flow.Wait(context.Background())
 
 	require.Error(t, err)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorIs(t, err, ErrLoginTimedOut)
 	assert.NotErrorIs(t, err, ErrLoginInterrupted,
 		"a timeout must be distinguishable from a user interrupt")
+}
+
+func TestFprintLoginTimeoutHelp(t *testing.T) {
+	var buf bytes.Buffer
+
+	FprintLoginTimeoutHelp(&buf)
+
+	out := buf.String()
+	assert.Contains(t, out, "dr auth login", "the retry command is the primary recovery step")
+	assert.Contains(t, out, "DATAROBOT_ENDPOINT", "the browserless path needs both env vars")
+	assert.Contains(t, out, "DATAROBOT_API_TOKEN")
+}
+
+func TestRunLoginWithFlow_HonorsTimeoutOption(t *testing.T) {
+	// A short --timeout must shorten the wait, not sit on DefaultLoginTimeout.
+	flow := newTestFlow(t)
+
+	start := time.Now()
+
+	var err error
+
+	captureStdoutStderr(t, func() {
+		_, err = runLoginWithFlow(context.Background(), flow, LoginOptions{
+			NoBrowser: true,
+			Timeout:   50 * time.Millisecond,
+		})
+	})
+
+	require.ErrorIs(t, err, ErrLoginTimedOut)
+	assert.True(t, time.Since(start) < 2*time.Second, "the option must override DefaultLoginTimeout")
 }
 
 func TestBrowserFlow_ExtraCallbacksDoNotBlockHandlers(t *testing.T) {

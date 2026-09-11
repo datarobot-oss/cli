@@ -407,7 +407,12 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	key, err := APIKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
-		log.Error("Failed to retrieve API key.", "error", err)
+		if errors.Is(err, ErrLoginTimedOut) {
+			FprintLoginTimeoutHelp(os.Stderr)
+		} else {
+			log.Error("Failed to retrieve API key.", "error", err)
+		}
+
 		return false
 	}
 
