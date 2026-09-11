@@ -174,6 +174,7 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
 | `dr pipeline image create` | `POST /pipelines/images` | `dr pipeline image create --name ml-base --package numpy --package pandas` <br> `dr pipeline image create --name ml-base --conda scipy --conda numpy --python-version 3.11` <br> `dr pipeline image create --name gpu-base --package torch --gpu --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--conda <spec>` (repeatable), `--conda-channel <channel>` (repeatable; requires `--conda`), `--python-version <ver>`, `--base-image <uri>` (DEPRECATED — use `--python-version`; mutually exclusive with it), `--gpu` (`--nvidia` deprecated alias), `--description <text>`, `--output-format json`. At least one of `--package` or `--conda` required. |
+| `dr pipeline image get` | `GET /pipelines/images/{id}` | `dr pipeline image get <img-id>` <br> `dr pipeline image get <img-id> --output-format json` | **Positional:** `<image-id>` (required). **Flags:** `--output-format json`. |
 | `dr pipeline image list` | `GET /pipelines/images` | `dr pipeline image list` <br> `dr pipeline image list --offset 50 --limit 10 --output-format json` | **Flags:** `--offset <n>`, `--limit <n>`, `--output-format json`. |
 | `dr pipeline image update` | `PATCH /pipelines/images/{id}` | `dr pipeline image update <img-id> --package scikit-learn` <br> `dr pipeline image update <img-id> --conda scipy --python-version 3.11` <br> `dr pipeline image update <img-id> --package torch --gpu` | **Positional:** `<image-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--conda <spec>` (repeatable), `--conda-channel <channel>` (repeatable; requires `--conda`), `--python-version <ver>`, `--base-image <uri>` (DEPRECATED — use `--python-version`; mutually exclusive with it), `--gpu` (`--nvidia` deprecated alias), `--output-format json`. At least one of `--package` or `--conda` required. All fields must be re-specified on each update (no carry-over from previous version). |
 | `dr pipeline image delete` | `DELETE /pipelines/images/{id}` | `dr pipeline image delete <img-id>` | **Positional:** `<image-id>` (required). |
@@ -222,6 +223,7 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | `DELETE /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule delete` |
 | `POST /pipelines/images` | `dr pipeline image create` |
 | `GET /pipelines/images` | `dr pipeline image list` |
+| `GET /pipelines/images/{id}` | `dr pipeline image get` |
 | `PATCH /pipelines/images/{id}` | `dr pipeline image update` |
 | `DELETE /pipelines/images/{id}` | `dr pipeline image delete` |
 | `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete` |
