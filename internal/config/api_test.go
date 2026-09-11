@@ -136,6 +136,15 @@ func (suite *APITestSuite) TestSetURLToConfigDoesNotWriteFile() {
 	suite.NoFileExists(configFile, "SetURLToConfig must not write the config file to disk")
 }
 
+// SaveURLToConfig is the template-setup write path; it must reject a bad scheme
+// too, or the custom-host picker persists an endpoint the CLI cannot use.
+func (suite *APITestSuite) TestSaveURLToConfigRejectsNonHTTPScheme() {
+	err := SaveURLToConfig("ftp://app.datarobot.com")
+
+	suite.Require().Error(err)
+	suite.Empty(viper.GetString(DataRobotURL), "a rejected scheme must not be persisted")
+}
+
 func (suite *APITestSuite) TestCommandPathToTrace() {
 	tests := []struct {
 		name     string

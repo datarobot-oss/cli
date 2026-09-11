@@ -171,6 +171,13 @@ func SaveURLToConfig(newURL string) error {
 		return err
 	}
 
+	// Empty is the reset case below; a non-empty host has to be http/https.
+	if newURL != "" {
+		if err = RequireHTTPScheme(newURL); err != nil {
+			return err
+		}
+	}
+
 	if err = CreateConfigFileDirIfNotExists(); err != nil {
 		return err
 	}
