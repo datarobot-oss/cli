@@ -164,6 +164,12 @@ var expectedEnclaveTrackedCommands = []string{
 	"enclave delete",
 	"enclave access grant",
 	"enclave access revoke",
+	"enclave access list",
+	"enclave access show",
+	"enclave permission grant",
+	"enclave permission revoke",
+	"enclave permission list",
+	"enclave permission show",
 }
 
 // TestTelemetryWiring_AllEnclaveCommandsTracked walks the enclave subtree
