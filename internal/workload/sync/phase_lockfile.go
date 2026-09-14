@@ -46,23 +46,50 @@ var errUvNotFound = errors.New("uv is not installed")
 // working directory). Injected via Deps so tests can fake the exec.
 type LockfileRunner func(dir string) error
 
-// phaseLockfile lazily generates uv.lock when the project has a
-// pyproject.toml but no lock file. The workload-api image build requires
-// uv.lock (it runs `uv sync --frozen`), so generating it before the
-// phase-2 walk lets the normal diff/upload pipeline pick it up with no
-// changes downstream. This phase never fails the sync: when uv is
-// missing or resolution fails it logs a WARN with the fix and lets the
-// sync proceed (lockfileHint doubles as the once-only guard so phase 2's
-// ignore-file check doesn't stack a second warning).
+// LockfileChecker reports whether uv.lock in dir is still current with
+// respect to pyproject.toml. Injected via Deps so tests can fake the exec.
+//
+// A non-nil error means the question could not be answered — uv is not
+// installed, or the check would not run — which the phase reads as
+// "unknown" rather than as a stale lock. Not knowing is not the same as
+// knowing it is wrong: a project whose lockfile is current synced with no
+// uv on PATH before this check existed, and has to keep doing so.
+type LockfileChecker func(dir string) (current bool, err error)
+
+// phaseLockfile keeps uv.lock in step with pyproject.toml for a Python
+// project, before the phase-2 walk so whatever it writes is collected,
+// diffed and uploaded by the normal pipeline with no changes downstream.
+//
+// Two shapes, because the consequences differ:
+//
+//   - No uv.lock at all: generate one. A missing lockfile already fails
+//     the image build loudly ("Found pyproject.toml but no uv.lock"), so
+//     this is a convenience — when it cannot run, warning and continuing
+//     still leaves the user with an error that names the problem.
+//   - A uv.lock that no longer matches pyproject.toml: re-lock, and
+//     refuse the sync if that cannot be done. Nothing downstream catches
+//     this one (see refreshLockfile), so continuing would ship the wrong
+//     image silently.
+//
+// lockfileHint doubles as the once-only guard so phase 2's ignore-file
+// check doesn't stack a second warning.
 func phaseLockfile(e *Engine) error {
 	if !fileExistsIn(e.projectDir, pyprojectFile) {
 		return nil
 	}
 
 	if fileExistsIn(e.projectDir, uvLockFile) {
-		return nil
+		return refreshLockfile(e)
 	}
 
+	return generateLockfile(e)
+}
+
+// generateLockfile writes the uv.lock a project with a pyproject.toml is
+// missing. It never fails the sync: the image build refuses a project
+// with no lockfile on its own, so the worst case is the error the user
+// would have got anyway, with a warning here naming the fix.
+func generateLockfile(e *Engine) error {
 	log.Debug("pyproject.toml has no uv.lock; generating one with `uv lock`")
 
 	if err := e.lockfileFn(e.projectDir); err != nil {
@@ -100,19 +127,140 @@ func phaseLockfile(e *Engine) error {
 	return nil
 }
 
+// refreshLockfile re-locks a uv.lock that no longer describes
+// pyproject.toml, and refuses the sync when it cannot.
+//
+// A stale lock is the one case in this phase that nothing downstream
+// catches. The generated image build installs the lockfile as given
+// (`uv sync --frozen`), so an edited pyproject.toml is simply ignored:
+// sync succeeds, the build goes green, and the image is missing the
+// dependency that was added. The user meets it at container start as an
+// ImportError with nothing pointing back here. The build cannot make this
+// check itself — its builder stage has only pyproject.toml and uv.lock
+// copied in, so `uv lock --check` there fails on changes the image never
+// consumes, including a `dynamic = ["dependencies"]` project that can
+// never be made to pass. The CLI is the only component holding the whole
+// project tree, which is what the check needs (RAPTOR-20217).
+//
+// Hence the asymmetry with generateLockfile: a lockfile this cannot put
+// right is a wrong image nothing else will stop, so it stops the sync.
+// The exception is not knowing at all — with no uv on PATH there is
+// nothing to compare, and refusing would break every project whose
+// lockfile is current and whose CI has no uv, which synced fine before
+// this check existed.
+func refreshLockfile(e *Engine) error {
+	current, err := e.lockfileCheckFn(e.projectDir)
+	if err != nil {
+		if errors.Is(err, errUvNotFound) {
+			e.lockfileHint = "uv is not installed, so uv.lock could not be checked against pyproject.toml. " +
+				"If they have diverged the image is built from the old lock — install uv and run `uv lock`, then re-sync."
+		} else {
+			e.lockfileHint = fmt.Sprintf("Could not check uv.lock against pyproject.toml (%v). "+
+				"If they have diverged the image is built from the old lock — run `uv lock` and re-sync.", err)
+		}
+
+		log.Warn(e.lockfileHint)
+
+		return nil
+	}
+
+	if current {
+		return nil
+	}
+
+	log.Debug("uv.lock no longer matches pyproject.toml; re-locking with `uv lock`")
+
+	if err := e.lockfileFn(e.projectDir); err != nil {
+		return fmt.Errorf("uv.lock is out of date with pyproject.toml and could not be regenerated: %w. "+
+			"The image would be built from the old lock, so nothing was uploaded — "+
+			"run `uv lock` in the project and re-sync", err)
+	}
+
+	// Same reason generateLockfile re-checks the filesystem rather than
+	// trusting the exit code: `uv lock` in a workspace member succeeds
+	// while writing the lockfile at the workspace root, leaving this
+	// directory's copy exactly as stale as it was.
+	if current, err := e.lockfileCheckFn(e.projectDir); err == nil && !current {
+		return errors.New("uv lock reported success but uv.lock is still out of date with pyproject.toml " +
+			"(uv workspaces write the lockfile at the workspace root). The image would be built from the old " +
+			"lock, so nothing was uploaded — run `uv lock` in the project and re-sync")
+	}
+
+	e.lockfileGenerated = true
+
+	log.Warn("uv.lock was out of date with pyproject.toml — regenerated it; commit it to your repo")
+
+	return nil
+}
+
 // runUvLock is the production LockfileRunner: `uv lock` in dir with the
 // user's own environment, so their uv config, private indexes, and
 // credentials all apply — exactly as if they ran it by hand.
 func runUvLock(dir string) error {
+	out, err := runUv(dir, "uv lock", "lock")
+	if err == nil {
+		return nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return fmt.Errorf("uv lock failed: %s", tailOf(out, 400))
+	}
+
+	// uv missing, or timed out: both already say so in their own words.
+	return err
+}
+
+// runUvLockCheck is the production LockfileChecker: `uv lock --check` in
+// dir with the user's own environment, so their uv config, private
+// indexes, and credentials all apply — exactly as if they ran it by hand.
+//
+// A non-zero exit means "not current" rather than "could not run". uv
+// exits non-zero both for a lockfile that needs updating and for a
+// pyproject.toml it cannot resolve, and both want the same answer here:
+// re-lock, and refuse if that does not work either. Only a failure to
+// execute uv at all is reported as an error, because that is the case
+// where the sync has to continue rather than refuse.
+//
+// Cheap enough to run on every sync of a Python project: against a
+// current lockfile it resolves from the lock itself, with no network and
+// no measurable cost. It reaches the index only when something has
+// actually changed, which is the run that was about to be wrong.
+func runUvLockCheck(dir string) (bool, error) {
+	if _, err := runUv(dir, "uv lock --check", "lock", "--check"); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return false, nil
+		}
+
+		// uv missing, or timed out: the caller has to tell these apart
+		// from "stale", because they mean the sync continues rather
+		// than refuses.
+		return false, err
+	}
+
+	return true, nil
+}
+
+// runUv executes `uv <args...>` in dir with the user's own environment,
+// so their uv config, private indexes, and credentials all apply —
+// exactly as if they ran it by hand. It returns uv's combined output so a
+// caller can carry uv's own reason into its message, and errUvNotFound
+// when uv is not on PATH at all.
+//
+// label names the command in the timeout message; a caller distinguishes
+// a non-zero exit from a failure to run at all with errors.As on
+// *exec.ExitError.
+func runUv(dir, label string, args ...string) (string, error) {
 	uvPath, err := exec.LookPath("uv")
 	if err != nil {
-		return errUvNotFound
+		return "", errUvNotFound
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), uvLockTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, uvPath, "lock")
+	cmd := exec.CommandContext(ctx, uvPath, args...)
 	cmd.Dir = dir
 	// With Stdout/Stderr wired to a buffer, Run waits for the pipe-copy
 	// goroutines, not just the process — a uv child (build backend, git)
@@ -130,13 +278,13 @@ func runUvLock(dir string) error {
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return fmt.Errorf("uv lock timed out after %s", uvLockTimeout)
+			return out.String(), fmt.Errorf("%s timed out after %s", label, uvLockTimeout)
 		}
 
-		return fmt.Errorf("uv lock failed: %s", tailOf(out.String(), 400))
+		return out.String(), err
 	}
 
-	return nil
+	return out.String(), nil
 }
 
 // warnIfLockfileIgnored surfaces a warning when the ignore file excludes
