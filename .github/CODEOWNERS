@@ -5,3 +5,6 @@ internal/workload/ @datarobot-oss/workload-cli
 cmd/pipeline/ @datarobot-oss/compute-services
 internal/pipeline/ @datarobot-oss/compute-services
 docs/commands/pipeline*.md @datarobot-oss/compute-services
+cmd/enclave/ @datarobot-oss/compute-services
+internal/enclave/ @datarobot-oss/compute-services
+docs/commands/enclave.md @datarobot-oss/compute-services
