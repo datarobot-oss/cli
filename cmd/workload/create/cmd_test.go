@@ -109,7 +109,7 @@ func TestCmd_EnclavePinReachesTheWire(t *testing.T) {
 
 	cmd := Cmd()
 	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east"})
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east", "--use-case-id", "68b0aa11bb22cc33dd44ee55"})
 
 	require.NoError(t, cmd.Execute())
 
@@ -122,6 +122,7 @@ func TestCmd_EnclavePinReachesTheWire(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "manual", runtime["enclaveSelectionPolicy"])
 	assert.Equal(t, []any{"prod-east"}, runtime["enclaves"])
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
 }
 
 func TestCmd_BlankEnclaveFailsBeforeNetwork(t *testing.T) {
@@ -131,7 +132,7 @@ func TestCmd_BlankEnclaveFailsBeforeNetwork(t *testing.T) {
 
 	cmd := Cmd()
 	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", path, "--enclave", ""})
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "", "--use-case-id", "68b0aa11bb22cc33dd44ee55"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -146,9 +147,76 @@ func TestCmd_EnclaveConflictsWithSpecPin(t *testing.T) {
 
 	cmd := Cmd()
 	cmd.PreRunE = nil
-	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east"})
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east", "--use-case-id", "68b0aa11bb22cc33dd44ee55"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already sets")
+}
+
+func TestCmd_UseCaseAloneReachesTheWireWithAvailability(t *testing.T) {
+	var posted []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posted, _ = io.ReadAll(r.Body)
+
+		fmt.Fprint(w, `{"id":"wl-1","name":"my-app","status":"submitted"}`)
+	}))
+
+	defer srv.Close()
+
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(viperx.Reset)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"name": "wl", "artifactId": "art-1"}`), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--use-case-id", "68b0aa11bb22cc33dd44ee55"})
+
+	require.NoError(t, cmd.Execute())
+
+	var body map[string]any
+
+	require.NoError(t, json.Unmarshal(posted, &body))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
+
+	runtime, ok := body["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, "availability", runtime["enclaveSelectionPolicy"])
+}
+
+func TestCmd_EnclaveWithoutUseCaseFailsBeforeNetwork(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"name": "wl", "artifactId": "art-1"}`), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--enclave requires --use-case-id")
+}
+
+func TestCmd_UseCaseConflictsWithSpecUseCase(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	spec := `{"name": "wl", "artifactId": "art-1", "useCaseId": "68b0ffffffffffffffffffff"}`
+	require.NoError(t, os.WriteFile(path, []byte(spec), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--use-case-id", "68b0aa11bb22cc33dd44ee55"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already sets useCaseId")
 }
