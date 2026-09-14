@@ -171,7 +171,7 @@ func ReportEnvCredentialsError(w io.Writer, creds *EnvCredentials, err error) {
 	FprintUnsetTokenInstructions(w)
 }
 
-// StoredEndpointName names the endpoint in messages about the stored profile.
+// StoredEndpointName names the endpoint in messages about the stored credentials.
 // It avoids naming dr auth set-url, since DATAROBOT_CLI_ENDPOINT can override the file.
 const StoredEndpointName = "the configured DataRobot endpoint"
 
@@ -275,11 +275,11 @@ func hostOrEndpoint(endpoint string) string {
 	return endpoint
 }
 
-// reportStoredProfileNotUsed names both sides of the substitution this CLI
+// reportStoredCredentialsNotUsed names both sides of the substitution this CLI
 // refuses to make: the endpoint the environment asked for and the stored
-// profile it will NOT fall back to. Printed only when a stored profile exists,
-// since otherwise there is nothing to substitute.
-func reportStoredProfileNotUsed(w io.Writer, creds *EnvCredentials) {
+// credentials it will NOT fall back to. Printed only when stored credentials
+// exist, since otherwise there is nothing to substitute.
+func reportStoredCredentialsNotUsed(w io.Writer, creds *EnvCredentials) {
 	storedHost := config.GetBaseURL()
 	if storedHost == "" {
 		return
@@ -289,7 +289,7 @@ func reportStoredProfileNotUsed(w io.Writer, creds *EnvCredentials) {
 
 	fmt.Fprint(w, base.Render("Environment credentials for "))
 	fmt.Fprint(w, info.Render(hostOrEndpoint(creds.Endpoint)))
-	fmt.Fprint(w, base.Render(" failed to verify; not falling back to the stored profile for "))
+	fmt.Fprint(w, base.Render(" failed to verify; not falling back to the stored credentials for "))
 	fmt.Fprint(w, info.Render(storedHost))
 	fmt.Fprintln(w, base.Render("."))
 }
@@ -324,7 +324,7 @@ func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 // is valid or was successfully obtained.
 //
 // A complete DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN pair that fails
-// verification returns false without falling back to the stored profile and
+// verification returns false without falling back to the stored credentials and
 // without starting the login flow: environment credentials are an explicit
 // instance request, and substituting the profile would silently run against
 // the wrong instance.
@@ -350,11 +350,11 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	// A complete pair of environment credentials is an explicit request for
 	// that instance (the same precedence `dr auth export` documents). Falling
-	// back to the stored profile here would silently swap instances, so fail
+	// back to the stored credentials here would silently swap instances, so fail
 	// loudly instead and never touch the profile.
 	if !errors.Is(envErr, ErrEnvCredentialsNotSet) {
 		ReportEnvCredentialsError(os.Stderr, creds, envErr)
-		reportStoredProfileNotUsed(os.Stderr, creds)
+		reportStoredCredentialsNotUsed(os.Stderr, creds)
 
 		return false
 	}
@@ -425,10 +425,21 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 }
 
 func WriteConfigFileSilent() error {
-	// Only persist allowlisted keys (see config.PersistableKeys). This avoids
-	// writing transient flags such as --yes back to drconfig.yaml.
-	err := config.UpdateConfigFile()
-	if err != nil {
+	// Persist endpoint/token explicitly first: a bare sweep alone would skip
+	// them for a brand-new profile, since config.candidateKeys restricts a
+	// bare sweep's profile-scoped keys to ones the profile's own section
+	// already owns (to avoid forking an inherited value into it), and a
+	// brand-new profile owns nothing yet.
+	if err := config.UpdateConfigFile(config.DataRobotURL, config.DataRobotAPIKey); err != nil {
+		log.Error(err)
+		return err
+	}
+
+	// Also sweep the rest of config.PersistableKeys (e.g. ca-cert), same as
+	// before named profiles existed, so a flag like --ca-cert still persists
+	// across invocations. The bare sweep still refuses to fork a merely
+	// inherited profile-scoped value down into the active profile's section.
+	if err := config.UpdateConfigFile(); err != nil {
 		log.Error(err)
 		return err
 	}
