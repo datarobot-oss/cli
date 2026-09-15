@@ -18,8 +18,6 @@ Startup is asynchronous. A workload moves through `submitted â†’ provisioning â†
 `start` and `stop` are asynchronous and idempotent too: stopping keeps the workload so it can be started again later, and the artifact it was created from is never removed along with it.
 
 > [!NOTE]
-> The `workload` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_WORKLOAD=true` before running any `dr workload` subcommand. See [Feature gates](../development/feature-gates.md) for details.
->
 > **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
@@ -59,12 +57,13 @@ dr workload logs <workload-id> --follow
 Deploy a workload from a JSON or YAML spec file. The spec needs a `name` and exactly one of `artifactId` (an existing artifact) or an inline `artifact` object. JSON is sent to the server byte-for-byte; YAML is converted to JSON first. Startup is asynchronous, and the response includes the stable endpoint URL.
 
 ```bash
-dr workload create --spec-file <path> [--output-format text|json]
+dr workload create --spec-file <path> [--enclave <name>] [--output-format text|json]
 ```
 
 **Flags:**
 
 - `--spec-file <path>`: path to the JSON or YAML spec (required).
+- `--enclave <name>`: pin the workload to a named Enclave. It sets `runtime.enclaveSelectionPolicy` to `manual` and `runtime.enclaves` to that Enclave, which must be eligible and grant you deploy access. The flag refuses to override a spec that already sets either field, and using it means the spec is re-encoded rather than sent byte-for-byte. Without it, DataRobot picks the placement; confirm where a workload landed with `dr workload list --enclave <name>`.
 - `--output-format <text|json>`: output format. Defaults to `text`.
 
 **Example (fixed replica count):**
@@ -132,13 +131,15 @@ dr workload get [<workload-id>] [--dir <path>] [--output-format text|json]
 List workloads, optionally filtered by status.
 
 ```bash
-dr workload list [--status <status>] [--limit N] [--output-format text|json]
+dr workload list [--status <status>] [--enclave <name>] [--limit N] [--offset N] [--output-format text|json]
 ```
 
 **Flags:**
 
 - `--status <status>`: filter by status. Repeatable, and also accepts comma-separated values (for example `--status running --status errored`).
+- `--enclave <name>`: only list workloads running on the named Enclave.
 - `--limit <N>`: maximum number to return. Defaults to `100`.
+- `--offset <N>`: number of workloads to skip before returning results. Defaults to `0`.
 - `--output-format <text|json>`: output format. Defaults to `text`.
 
 ### `delete`
@@ -154,11 +155,11 @@ dr workload delete [<workload-id>] [--dir <path>] [--yes]
 - `--yes`, `-y`: skip the confirmation prompt. `DATAROBOT_CLI_NON_INTERACTIVE=1` stands in for it only when you passed the workload id; a workload whose id is specified in the manifest takes the explicit flag.
 - `--dir <path>`: project directory whose `.datarobot.yaml` names the workload, and holds the binding to clear, searched upward from there. Defaults to the current directory. Pass the same value you deployed with, since a manifest in a subdirectory is not visible from its parent.
 
-If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next `dr workload up` creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
+If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next deploy from this project creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
 
 A manifest this edit cannot make sound again is refused rather than rewritten, with the reason and the remedy: a binding whose value something else aliases, repeated `workloadId` keys that disagree, a file whose only recognized key is the binding, and a file carrying more than one YAML document.
 
-A workload that was already gone before the command ran is reported, and the binding is left alone: a 404 says the workload is not on this instance, which is not the same as saying it no longer exists. That case, and deletion from the UI or by a teammate, is handled at deploy time instead: `dr workload up` treats a binding that resolves to nothing as drift, creates a new workload, and names the id it could not find in both the plan and the JSON envelope.
+A workload that was already gone before the command ran is reported, and the binding is left alone: a 404 says the workload is not on this instance, which is not the same as saying it no longer exists. That case, and deletion from the UI or by a teammate, is handled at deploy time instead: a deploy treats a binding that resolves to nothing as drift, creates a new workload, and names the id it could not find in both the plan and the JSON envelope.
 
 ### `start` / `stop`
 
@@ -210,7 +211,7 @@ dr workload logs [<workload-id>] [--dir <path>] [--limit N] [--level <level>] [-
 
 ## Working in a project directory
 
-Every command that takes a `<workload-id>` can leave it out inside a project that `dr workload up` has deployed. The id is read from the `workloadId` in the nearest `.datarobot.yaml`, searched upward from `--dir` (the current directory by default), and the command says on stderr which workload it picked:
+Every command that takes a `<workload-id>` can leave it out inside a project whose `.datarobot.yaml` names a workload. The id is read from the `workloadId` in the nearest `.datarobot.yaml`, searched upward from `--dir` (the current directory by default), and the command says on stderr which workload it picked:
 
 ```bash
 cd my-app
@@ -221,7 +222,7 @@ dr workload logs --follow
 A typed id always wins over the manifest. `--dir` is what reaches a project the current directory cannot see, because the search only walks upward:
 
 ```bash
-dr workload logs --dir site   # the project deployed with 'dr workload up --dir site'
+dr workload logs --dir site   # the project whose .datarobot.yaml lives in site/
 ```
 
 Because `stop`, `start` and `delete` change something, they ask for confirmation when the id is specified in a manifest rather than on the command line. Pass `--yes` to skip the prompt in a script; a typed id is never prompted.
@@ -276,4 +277,3 @@ dr workload delete <workload-id>
 - [`dr artifact`](artifact.md): build and lock the artifact a workload runs.
 - [Authentication](auth.md): how `dr auth login` and `--skip-auth` interact.
 - [Configuration](../user-guide/configuration.md): config file and environment-variable precedence.
-- [Feature gates](../development/feature-gates.md): turning `DATAROBOT_CLI_FEATURE_WORKLOAD` on and off.

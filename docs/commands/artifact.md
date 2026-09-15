@@ -26,8 +26,6 @@ The `code` subcommands keep a local directory in sync with an artifact's source.
 A locked, fully built artifact is what you hand to `dr workload create` to deploy. See [`dr workload`](workload.md).
 
 > [!NOTE]
-> The `artifact` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_WORKLOAD=true` before running any `dr artifact` subcommand. See [Feature gates](../development/feature-gates.md) for details.
->
 > **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Quick start
@@ -120,13 +118,14 @@ The repository is the lineage the artifact belongs to. Successive versions of on
 List artifacts, most useful with a status filter.
 
 ```bash
-dr artifact list [--status draft|locked] [--limit N] [--output-format text|json]
+dr artifact list [--status draft|locked] [--limit N] [--offset N] [--output-format text|json]
 ```
 
 **Flags:**
 
 - `--status <draft|locked>`: only show artifacts in this status.
 - `--limit <N>`: maximum number to return. Defaults to `100`.
+- `--offset <N>`: number of artifacts to skip before returning results. Defaults to `0`.
 - `--output-format <text|json>`: output format. Defaults to `text`.
 
 ### `lock`
@@ -168,15 +167,15 @@ Synchronize a local project directory with an artifact's source code. Run `init`
 
 ```bash
 dr artifact code init     [<artifact-id>] [--dir <path>] [--yes]
-dr artifact code sync     [--dir <path>] [--dry-run | --diff] [--yes]
+dr artifact code sync     [--dir <path>] [--dry-run | --diff] [--accept-remote] [--yes]
 dr artifact code versions [--dir <path>] [--limit N]
 dr artifact code checkout [<ver>] [--dir <path>] [--clean]
 ```
 
 - `init` creates the `.datarobot/workload/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle. It also drops a starter `.drignore` at the project root, in gitignore syntax, listing what `sync` should leave out. Edit it and commit it. A project that already has an ignore file under either name keeps it, and no new one is written.
 - Projects created before the file was renamed have a `.wapiignore` instead. It is still read when there is no `.drignore` beside it, and `sync` says so once per run, but the name is deprecated: rename the file when convenient. If both are present, `.drignore` is the one that applies and `sync` warns that the other file's patterns are not in effect. Merge them and delete the old one: two ignore files at a project root is a state where patterns you wrote silently stop filtering. The ignore file is uploaded with your code, so if you work with others, agree on the rename rather than doing it alone.
-- `sync` computes a three-way diff against the last synced state and applies it in one versioned step. Conflicts resolve to the remote copy, and your version is kept as a `*.LOCAL.<timestamp>` file. Preview with `--dry-run`, or use `--diff` to also see per-file diffs. Both exit before any remote write.
-- The first `sync` of a project creates the File Registry entry that holds its code, named `Artifact: <id>` so the row identifies its project in the Registry's Files list. It carries the artifact id rather than the artifact name because naming is create-time only: the entry keeps whatever name it was created with, so a name the project later changes would go stale in place, and artifact names are not unique to begin with (`dr workload up` derives one from the directory). The id is the artifact that first pushed the code; after a deploy locks that artifact and `up` mints its successor, the entry keeps naming the first version of the lineage, which still resolves. Later syncs add versions to the entry and leave its name alone, so an entry created before the CLI sent a name keeps whatever the platform picked (`Untitled Dataset`, or `wapi-sync.zip` if the first sync was large enough to take the zip route). Rename it in the UI, or with `PATCH /api/v2/catalogItems/<catalog-id>/`; the catalog id is in `.datarobot/workload/config.json`.
+- `sync` computes a three-way diff against the last synced state and applies it in one versioned step. A file changed both locally and on the remote is a conflict: an interactive run asks before the remote copy is pulled over yours, and a non-interactive run (`--yes`, `DATAROBOT_CLI_NON_INTERACTIVE=1`, or no terminal) is refused unless you pass `--accept-remote`, so an automated sync fails loudly instead of overwriting your edits. A plain pull of a remote change you had not touched still applies without prompting. Whenever the remote wins, your version is kept as a `<path>.LOCAL.<timestamp>` file, and those copies are excluded from the next sync. Preview with `--dry-run`, or use `--diff` to also see per-file diffs. Both exit before any remote write.
+- The first `sync` of a project creates the File Registry entry that holds its code, named `Artifact: <id>` so the row identifies its project in the Registry's Files list. It carries the artifact id rather than the artifact name because naming is create-time only: the entry keeps whatever name it was created with, so a name the project later changes would go stale in place, and artifact names are not unique to begin with (a deploy derives one from the directory). The id is the artifact that first pushed the code; after a deploy locks that artifact and mints its successor, the entry keeps naming the first version of the lineage, which still resolves. Later syncs add versions to the entry and leave its name alone, so an entry created before the CLI sent a name keeps whatever the platform picked (`Untitled Dataset`, or `wapi-sync.zip` if the first sync was large enough to take the zip route). Rename it in the UI, or with `PATCH /api/v2/catalogItems/<catalog-id>/`; the catalog id is in `.datarobot/workload/config.json`.
 - For Python projects, the image build requires a `uv.lock` next to `pyproject.toml`. When your project has `pyproject.toml` but no `uv.lock`, `sync` generates one automatically by running your local `uv lock` (your uv configuration, private indexes, and credentials apply) and uploads it with the rest of your code — commit the generated file to your repo. If `uv` is not installed or lock generation fails, sync still completes and prints what to do (`uv lock`, then re-sync); the image build will fail until a lock file is added. This also happens on `--dry-run`/`--diff`, so the preview matches what a real sync would upload.
 - An existing `uv.lock` is kept in step with `pyproject.toml`. `sync` checks the two against each other and re-runs `uv lock` when they have diverged, uploading the refreshed lock — commit it. This matters because nothing downstream catches a stale lock: the image build installs the lockfile as given, so editing `pyproject.toml` without re-locking used to produce an image missing the dependency you added, with sync and the build both reporting success and the failure arriving at container start as an `ImportError`. The check needs your whole project to be accurate, which is why it lives here rather than in the build. If the lock is out of date and `uv lock` cannot put it right, sync stops and uploads nothing, rather than shipping code the image will not match. If `uv` is not installed there is nothing to compare with, so sync says so and continues — a project whose lock is already current is unaffected. Like generation, this runs on `--dry-run`/`--diff` too, so the preview matches what a real sync would upload: those modes make no remote writes, but they can refresh `uv.lock`, and a lockfile that cannot be put right stops them as well. The same applies to the comparison `dr workload up` runs before it asks you anything. `sync` also warns if your `.drignore` excludes `uv.lock`.
 - `versions` lists the artifact's catalog versions, marking the one the artifact currently points at (`*`) and noting the one you last synced.
@@ -190,7 +189,7 @@ Every subcommand that prints a resource accepts `--output-format json` for machi
 
 ### `--yes`
 
-Commands that prompt (`delete`, `code init`, `code sync`, `code checkout`) accept `--yes` / `-y` to skip the prompt. Setting `DATAROBOT_CLI_NON_INTERACTIVE=1` does the same, and prompts are skipped automatically when stdin is not a terminal.
+Commands that prompt (`delete`, `code init`, `code sync`, `code checkout`) accept `--yes` / `-y` to skip the prompt. Setting `DATAROBOT_CLI_NON_INTERACTIVE=1` does the same, and prompts are skipped automatically when stdin is not a terminal. The one exception is a `code sync` conflict: with the prompt skipped, the sync is refused rather than applied, unless `--accept-remote` says the remote may win.
 
 ### Global options
 
@@ -229,4 +228,3 @@ dr artifact build logs <artifact-id> <build-id> --level debug
 - [`dr workload`](workload.md): deploy a locked artifact as a running workload.
 - [Authentication](auth.md): how `dr auth login` and `--skip-auth` interact.
 - [Configuration](../user-guide/configuration.md): config file and environment-variable precedence.
-- [Feature gates](../development/feature-gates.md): turning `DATAROBOT_CLI_FEATURE_WORKLOAD` on and off.
