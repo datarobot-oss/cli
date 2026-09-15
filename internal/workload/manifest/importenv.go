@@ -327,6 +327,37 @@ func checkUnshared(node *yaml.Node) error {
 	return nil
 }
 
+// checkRemovable refuses an entry the file cannot lose whole: one shared on
+// checkUnshared's terms, or one carrying an anchor somewhere inside it. The
+// rewrite already refuses a value that is anchored, because an edit to it
+// would land wherever else the file reads through the anchor; taking the
+// entry out, or rebuilding it for a change of form, loses more, since the
+// alias is left pointing at nothing and the file no longer parses.
+func checkRemovable(node *yaml.Node) error {
+	if err := checkUnshared(node); err != nil {
+		return err
+	}
+
+	if anchoredWithin(node) {
+		return ErrSharedEnvVars
+	}
+
+	return nil
+}
+
+// anchoredWithin reports an anchor anywhere under node, which is a name the
+// rest of the file may be reading through. Aliases inside the node are not
+// counted: what it borrows is not its to keep, and goes with it harmlessly.
+func anchoredWithin(node *yaml.Node) bool {
+	for _, child := range node.Content {
+		if child.Anchor != "" || anchoredWithin(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // hasMergeKey reports whether a mapping folds another one into itself, which
 // makes every key it appears to lack a question this walk cannot answer.
 func hasMergeKey(node *yaml.Node) bool {
@@ -422,11 +453,17 @@ type DeclaredEnvVar struct {
 	// it may safely rewrite.
 	CredentialKey string
 	// Structured is set when the value is neither a literal nor a reference
-	// but a mapping or a list somebody wrote by hand. The update path leaves
-	// those alone, so anything comparing this against .env has to leave them
-	// alone too: reporting one as drift would name a flag that then does
-	// nothing, every run, for ever.
+	// but a mapping or a list somebody wrote by hand. A reconciliation
+	// overwrites one with the string .env has, which is why it has to be
+	// visible to whatever builds the table the user agrees to.
 	Structured bool
+	// Unwritten is set when the entry spells out no scalar value at all: no
+	// value key, or one holding null. It is not the same as an empty value,
+	// and the difference matters because the reconciliation replaces the whole
+	// entry either way. Without it, an entry carrying a hand-written key this
+	// CLI does not know about reads as `value: ""` and agrees with an empty
+	// .env line, so the edit lands with no row in the table and nothing asked.
+	Unwritten bool
 }
 
 // CredentialKeyWritten is the credential field the wizard stores a .env secret
@@ -462,12 +499,15 @@ func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
 
 		id, key := credentialRefOf(entry)
 
+		_, hasScalar := scalarString(mapValue(entry, keyValue))
+
 		declared = append(declared, DeclaredEnvVar{
 			Name:          name,
 			Value:         literalOf(entry, id),
 			CredentialID:  id,
 			CredentialKey: key,
 			Structured:    structuredValue(entry, id),
+			Unwritten:     id == "" && !hasScalar && !structuredValue(entry, id),
 		})
 	}
 
@@ -524,51 +564,52 @@ func credentialRefOf(entry *yaml.Node) (id, key string) {
 }
 
 // SyncChanges is what SyncEnvVars did, split by act because they read
-// differently to somebody checking a diff: a name that was added is a line
-// that is not there in the old file, and a value that moved is an edit to one
-// that is.
+// differently to somebody checking a diff: a value that moved is an edit to a
+// line, a form that changed is a different line, and a name that went is a
+// line that is not there any more.
 type SyncChanges struct {
 	// Added is the names .env had that the manifest did not.
 	Added []EnvVar
 	// Updated is the declared literals whose value was rewritten in place.
 	Updated []EnvVar
+	// Replaced is the entries whose form changed: a literal that became a
+	// credential reference or the reverse, a value that was a mapping or a
+	// list and is now a string, and a reference whose placeholder was filled
+	// in with the credential that was minted for it.
+	Replaced []EnvVar
+	// Removed is the names the manifest declared and .env no longer has.
+	Removed []string
 }
 
 // Any reports whether the sync touched the file at all.
 func (c SyncChanges) Any() bool {
-	return len(c.Added)+len(c.Updated) > 0
+	return len(c.Added)+len(c.Updated)+len(c.Replaced)+len(c.Removed) > 0
 }
 
-// SyncEnvVars brings the primary container's environment into line with .env
-// in one pass: it adds the names the file does not declare and rewrites the
-// literals whose value has moved.
+// SyncEnvVars makes the primary container's environment say what .env says.
 //
-// One pass rather than the two it replaces. ImportEnvVars added names and
-// never touched a value, UpdateEnvVars touched values and never added a name,
-// and a run that wanted both parsed the file twice, rendered it twice,
-// validated it twice and wrote it twice, with the second edit reading a tree
-// the first had already changed. What the caller has is one flag and one
-// table, so what the file gets is one edit.
+// It is the two-directional counterpart of ImportEnvVars, and the contract is
+// the opposite one: .env wins on every variable, on the value, on the form the
+// entry takes, and on whether the entry exists at all. A name the file no
+// longer mentions is removed. This is a deliberate reversal of the additive
+// rule the import follows, and it is why the caller shows the whole plan and
+// takes an answer before calling: with .env winning, a stale local copy is
+// enough to delete a variable a running workload depends on.
 //
-// Additive still. A name the manifest carries and .env no longer mentions is
-// left alone, because deleting a line from a developer's own file says nothing
-// about what the workload should run.
+// Entry order is preserved for everything that survives, and a surviving
+// entry is edited rather than rebuilt wherever the edit is a value: an anchor,
+// a comment and the entry's place in the file all outlive a change that only
+// ever meant to move one string. An entry whose form changes is replaced
+// whole, because the two forms share no structure worth keeping.
 //
-// An entry that survives is edited rather than rebuilt: an anchor, a comment
-// and the entry's place in the file all outlive a change that only ever meant
-// to move one string. Anything shared through an anchor or a merge key is
-// refused rather than edited, the way every other edit in this file refuses
-// it: rewriting a node another container reads would change that container
-// too, in a place no diff of this one would show.
+// Anything shared through an anchor or a merge key is refused rather than
+// edited, the way every other edit in this file refuses it: rewriting or
+// dropping a node another container reads would change that container too, in
+// a place no diff of this one would show.
 //
 // Secrets arrive already stored: vars carries the credential id the caller
 // minted, and this only writes the reference. That split is what keeps a
 // credential from being created for a file this edit then refuses.
-//
-// preview renders without writing. The bytes are parsed and validated before
-// they reach the disk either way. The file belongs to the user, this is the
-// only command that edits one in place, and a manifest the next deploy would
-// refuse must not be left behind under a success message.
 func SyncEnvVars(path string, vars []EnvVar, preview bool) (SyncChanges, []byte, error) {
 	var changes SyncChanges
 
@@ -601,7 +642,8 @@ func SyncEnvVars(path string, vars []EnvVar, preview bool) (SyncChanges, []byte,
 
 	if !preview {
 		// atomicWrite rather than Write: the file is already there, and Write
-		// reserves a new one.
+		// reserves a new one. This is the same persistence ImportEnvVars uses
+		// for the same reason.
 		if err := atomicWrite(path, rendered); err != nil {
 			return SyncChanges{}, nil, err
 		}
@@ -624,23 +666,40 @@ func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 
 	var changes SyncChanges
 
-	for _, entry := range seqItems(entries) {
+	items := seqItems(entries)
+	kept := make([]*yaml.Node, 0, len(items))
+
+	for _, entry := range items {
 		name, ok := scalarString(mapValue(entry, keyName))
 		if !ok {
-			// Nothing .env can address, so nothing this reconciles.
+			// Nothing .env can address, so nothing this reconciles. Kept
+			// rather than dropped: an entry whose name cannot be read is not
+			// an entry the user asked to be rid of.
+			kept = append(kept, entry)
+
 			continue
 		}
 
 		want, asked := wanted[name]
 		if !asked {
+			if err := checkRemovable(entry); err != nil {
+				return SyncChanges{}, err
+			}
+
+			changes.Removed = append(changes.Removed, name)
+
 			continue
 		}
 
-		if err := settleEnvEntry(entry, want, &changes); err != nil {
+		settled, err := settleEnvEntry(entry, want, &changes)
+		if err != nil {
 			return SyncChanges{}, err
 		}
+
+		kept = append(kept, settled)
 	}
 
+	entries.Content = kept
 	changes.Added = appendEnvVars(entries, vars)
 
 	return changes, nil
@@ -650,48 +709,80 @@ func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 type settlement int
 
 const (
-	// settleKeep is an entry this leaves exactly as it found it.
+	// settleKeep is an entry that already says it.
 	settleKeep settlement = iota
 	// settleValue is a literal whose value moved, and only its value.
 	settleValue
+	// settleForm is an entry whose shape has to change, which means a new one.
+	settleForm
 )
 
-// settleEnvEntry brings one entry into line with what .env says.
-func settleEnvEntry(entry *yaml.Node, want EnvVar, changes *SyncChanges) error {
-	if settleFor(entry, want) == settleValue {
-		return rewriteEnvValue(entry, want, changes)
+// settleEnvEntry brings one entry into line with what .env says, and returns
+// the node that stands in its place.
+func settleEnvEntry(entry *yaml.Node, want EnvVar, changes *SyncChanges) (*yaml.Node, error) {
+	switch settleFor(entry, want) {
+	case settleKeep:
+		return entry, nil
+
+	case settleValue:
+		return entry, rewriteEnvValue(entry, want, changes)
+
+	case settleForm:
+		if err := checkRemovable(entry); err != nil {
+			return nil, err
+		}
+
+		changes.Replaced = append(changes.Replaced, want)
+
+		return replaceEnvEntry(entry, want), nil
 	}
 
-	return nil
+	return entry, nil
+}
+
+// replaceEnvEntry builds the entry .env asks for and carries over what the
+// reader wrote around the old one.
+//
+// The two forms share no structure, so the node is rebuilt rather than edited,
+// but a comment is not structure: it is the reader's own note about this
+// variable, and it is as true of the new form as of the old. Losing it because
+// the value moved from a literal to a credential reference would take
+// something that was never this edit's to take.
+func replaceEnvEntry(entry *yaml.Node, want EnvVar) *yaml.Node {
+	replacement := envVarNode(want)
+
+	replacement.HeadComment = entry.HeadComment
+	replacement.LineComment = entry.LineComment
+	replacement.FootComment = entry.FootComment
+
+	return replacement
 }
 
 // settleFor reads what one entry needs.
+//
+// The value case is separated from the form case because only one of them can
+// be done in place: editing a scalar leaves the entry, its comment and its
+// position alone, while a literal and a credential reference share no
+// structure worth carrying across.
 func settleFor(entry *yaml.Node, want EnvVar) settlement {
-	// A secret's entry is a reference, and rotating it means sending a new
-	// value to the credential the reference names, which happens in the store
-	// rather than in this file: the id does not change, so there is nothing
-	// here to rewrite.
+	id, _ := credentialRefOf(entry)
+
 	if want.Secret {
-		return settleKeep
+		return settleSecret(id, want)
 	}
 
-	// The same from the other side: an entry deferring to a credential is not
-	// one a literal is written into.
-	if id, _ := credentialRefOf(entry); id != "" {
-		return settleKeep
+	// A secret .env now reads as an ordinary value.
+	if id != "" {
+		return settleForm
 	}
 
-	// What the entry means is read through the walk that resolves aliases,
-	// which is the walk the comparison against .env uses. Asking the raw node
-	// instead would compare an anchor's name with a value and read every
-	// borrowed value as already in agreement, so an entry the notice had just
-	// called drift would go by without a word.
 	current, isScalar := scalarString(mapValue(entry, keyValue))
 
 	switch {
-	// A value the file holds as a mapping or a list, which no rewrite touches.
+	// A value the file holds as a mapping or a list, which has to become the
+	// string .env has for it.
 	case !isScalar:
-		return settleKeep
+		return settleForm
 	case current == want.Value:
 		return settleKeep
 	default:
@@ -699,17 +790,52 @@ func settleFor(entry *yaml.Node, want EnvVar) settlement {
 	}
 }
 
-// rewriteEnvValue moves a literal's value, in place.
+// settleSecret is what an entry needs when .env reads its value as a secret.
 //
-// The scalar is edited rather than replaced, so an anchor, a comment and the
-// entry's place in the file all survive an edit that only ever meant to change
-// what one value is.
+// Split out of settleFor because the two halves answer different questions: on
+// this side the file's own value is never what wins, since a secret's value
+// lives in the credential store and the entry only ever names it.
+//
+// Every branch that cannot produce a reference keeps the entry exactly as it
+// was, so a run with nowhere to store a value reports no change rather than a
+// change that changed nothing.
+func settleSecret(id string, want EnvVar) settlement {
+	switch {
+	// A literal .env now reads as a secret, and a credential for it to point
+	// at.
+	case id == "" && want.CredentialID != "":
+		return settleForm
+
+	// The same with nothing to point at: the store could not be reached, or
+	// this is a dry run that mints nothing on purpose. Writing the placeholder
+	// over the literal would throw away a value that is working and leave an
+	// entry the next deploy refuses, which is worse than the run doing
+	// nothing.
+	case id == "":
+		return settleKeep
+
+	// A reference the store already holds the value for. The file has nothing
+	// to say about it; the rotation carries the value.
+	case id != CredentialPlaceholder:
+		return settleKeep
+
+	// A placeholder with still nowhere to point, for the same two reasons as
+	// above. What a dry run would have done is the caller's to report, and
+	// editEnv keeps the plan for that.
+	case want.CredentialID == "":
+		return settleKeep
+
+	// A placeholder an earlier run left, and a credential to finish it.
+	default:
+		return settleForm
+	}
+}
+
+// rewriteEnvValue moves a literal's value, in place.
 //
 // Written through the walk that does not resolve aliases, because a borrowed
 // scalar is the one thing this must not write into: an anchor others read
-// through carries the edit to a place no diff of this entry would show. It
-// refuses rather than skips, because rewriting a node another container reads
-// would change a value in a place the diff never shows.
+// through carries the edit to a place no diff of this entry would show.
 func rewriteEnvValue(entry *yaml.Node, want EnvVar, changes *SyncChanges) error {
 	if err := checkUnshared(entry); err != nil {
 		return err

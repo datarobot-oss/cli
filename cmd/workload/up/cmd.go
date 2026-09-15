@@ -80,8 +80,14 @@ type upResult struct {
 
 // envJSON is the .env re-entry's side of a deploy.
 type envJSON struct {
-	KeysAdded      int `json:"keysAdded"`
-	ValuesUpdated  int `json:"valuesUpdated"`
+	KeysAdded     int `json:"keysAdded"`
+	ValuesUpdated int `json:"valuesUpdated"`
+	// NamesRemoved is how many entries the reconciliation took out because
+	// .env no longer names them. Reported apart from the rest because it is
+	// the one act that loses configuration: a pipeline reading this has to be
+	// able to tell a run that added three variables from one that added three
+	// and dropped four.
+	NamesRemoved   int `json:"namesRemoved"`
 	SecretsRotated int `json:"secretsRotated"`
 	SecretsFailed  int `json:"secretsNotRotated"`
 	SecretsPending int `json:"secretsPending"`
@@ -282,8 +288,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
 		"Before deploying, bring the manifest into line with .env: add the variables it does not declare, "+
 			"rewrite a literal whose value has moved, and re-send the credential behind a secret. Prints what "+
-			"it would do and asks first. Nothing is removed. A re-sent secret reaches the containers this "+
-			"deploy replaces; a deploy with nothing else to do replaces none, and says how to restart.")
+			"it would do and asks first, removals included: a name .env no longer carries is taken out. A "+
+			"re-sent secret reaches the containers this deploy replaces; a deploy with nothing else to do "+
+			"replaces none, and says how to restart.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -560,6 +567,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,
 				ValuesUpdated:  result.Env.ValuesUpdated,
+				NamesRemoved:   result.Env.NamesRemoved,
 				SecretsRotated: result.Env.SecretsRotated,
 				SecretsFailed:  result.Env.SecretsFailed,
 				SecretsPending: result.Env.SecretsPending,

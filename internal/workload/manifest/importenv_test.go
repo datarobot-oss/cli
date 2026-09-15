@@ -73,7 +73,7 @@ func syncAdding(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, err
 func syncUpdating(path string, vars []EnvVar, preview bool) ([]EnvVar, []byte, error) {
 	changes, content, err := SyncEnvVars(path, vars, preview)
 
-	return changes.Updated, content, err
+	return append(changes.Updated, changes.Replaced...), content, err
 }
 
 // declaredIn is the manifest's own entries as .env would have to state them
