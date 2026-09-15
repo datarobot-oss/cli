@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
@@ -231,6 +232,44 @@ func TestProfileFlag_UnknownProfileFailsWithCandidateList(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"nope"`)
 	assert.Contains(t, err.Error(), "eu-mtsaas")
+}
+
+// A pre-run that fails must still close the debug log file it opened.
+// cobra runs no post-run hook after a failing pre-run, so neither
+// PersistentPostRunE nor the cobra.OnFinalize registered later in
+// persistentPreRun is reached, and the handle used to stay open for the
+// life of the process. Harmless where the process then exits, but a test
+// binary runs many commands: on Windows the live handle made this very
+// test's t.TempDir() cleanup fail with "The process cannot access the
+// file because it is being used by another process".
+//
+// Asserted through behaviour rather than the handle, so it holds on every
+// OS: once the file logger is stopped, nothing further reaches the file.
+func TestProfileFlag_FailedPreRunClosesTheDebugLog(t *testing.T) {
+	writeProfileConfig(t)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+	t.Cleanup(log.Stop)
+
+	root := buildProfileAwareTree()
+	addNoopStub(root)
+
+	root.SetArgs([]string{"--profile", "nope", "stub"})
+	require.Error(t, root.Execute())
+
+	log.Warn("marker-after-failed-prerun")
+
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(filepath.Join(home, ".dr-tui-debug.log"))
+	if os.IsNotExist(err) {
+		return // never opened is just as good as closed
+	}
+
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "marker-after-failed-prerun",
+		"the file logger must be stopped when the pre-run fails")
 }
 
 func TestProfileFlag_CreateAnnotationSurvivesUnknownProfile(t *testing.T) {

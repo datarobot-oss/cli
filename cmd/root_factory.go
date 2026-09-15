@@ -403,8 +403,21 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 
 // persistentPreRun runs all global initialization in the correct order:
 // logging, config, TLS, telemetry collection, and the first-run animation.
-func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error {
+func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) (retErr error) {
 	log.Start()
+
+	// Everything below can fail, and cobra runs no post-run hook when a
+	// pre-run returns an error — so neither PersistentPostRunE nor the
+	// cobra.OnFinalize registered further down is reached, and the debug log
+	// file opened just above stays open for the life of the process. Benign
+	// where the process is about to exit, but tests run many commands in one
+	// process: on Windows the live handle makes the failing command's own
+	// t.TempDir() cleanup fail, which is how this surfaced.
+	defer func() {
+		if retErr != nil {
+			log.Stop()
+		}
+	}()
 
 	// Suppress cobra's usage printout for runtime errors — only show it for
 	// flag-parsing failures, which happen before this hook runs.
