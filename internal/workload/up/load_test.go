@@ -267,12 +267,12 @@ func TestLoad_ADirectoryAtThePathIsNotAManifest(t *testing.T) {
 // The flag exists because the first run of this command already reads .env:
 // with no manifest `up` is the wizard. The edit has to happen before the file
 // is read, or the deploy would carry the version from before it.
-func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
+func TestLoad_SyncEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 	dir := t.TempDir()
 	path := writeManifest(t, dir, boundManifest)
 
 	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
-		assert.True(t, opts.ImportEnv)
+		assert.True(t, opts.SyncEnv)
 		assert.Equal(t, dir, opts.Dir, "the edit lands next to the manifest being deployed")
 		assert.Equal(t, "dr workload up"+manifest.DirFlag(dir), opts.Remedy,
 			"what the edit's own notices tell the reader to run next")
@@ -287,7 +287,7 @@ func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 		return wizard.Result{Path: path, Action: wizard.ActionUpdated, EnvKeysListed: 1}, nil
 	})
 
-	loaded, err := load(dir, Options{ImportEnv: true})
+	loaded, err := load(dir, Options{SyncEnv: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, loaded.Env.KeysAdded)
@@ -297,17 +297,17 @@ func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 
 // A rotation writes to the credential store and leaves the file alone, so the
 // count is the only trace of it: the plan below has nothing to show.
-func TestLoad_UpdateEnvCarriesTheRotationCount(t *testing.T) {
+func TestLoad_SyncEnvCarriesTheRotationCount(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, boundManifest)
 
 	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
-		assert.True(t, opts.UpdateEnv)
+		assert.True(t, opts.SyncEnv)
 
 		return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 2}, nil
 	})
 
-	loaded, err := load(dir, Options{UpdateEnv: true})
+	loaded, err := load(dir, Options{SyncEnv: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, loaded.Env.SecretsRotated)
@@ -355,8 +355,8 @@ func TestLoad_DriftNoticeNamesTheDeploysOwnFlags(t *testing.T) {
 
 	assert.Contains(t, out, "REGION", "a name .env has and the manifest does not")
 	assert.Contains(t, out, "LOG_LEVEL", "a declared value .env no longer agrees with")
-	assert.Contains(t, out, "'dr workload up"+at+" --import-env'")
-	assert.Contains(t, out, "'dr workload up"+at+" --update-env'")
+	assert.Equal(t, 2, strings.Count(out, "'dr workload up"+at+" --sync-env'"),
+		"one flag reconciles both, so both findings send the reader to the same command")
 
 	assert.NotContains(t, out, "dr workload config",
 		"both flags are on this command, so another one is a detour")
@@ -427,7 +427,7 @@ func TestLoad_DryRunPreviewsTheEdit(t *testing.T) {
 		return wizard.Result{Action: wizard.ActionPlanned, EnvKeysListed: 1}, nil
 	})
 
-	loaded, err := load(dir, Options{ImportEnv: true, DryRun: true})
+	loaded, err := load(dir, Options{SyncEnv: true, DryRun: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, loaded.Env.KeysAdded)
