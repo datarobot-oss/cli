@@ -330,6 +330,92 @@ func TestRunUvLockCheck_TellsStaleFromCannotRun(t *testing.T) {
 	}
 }
 
+// In a workspace member every uv lock operation acts on the root's
+// lockfile, so the check answers about a file the sync does not upload.
+// Asking anyway is worse than not asking: a stale root sends the sync to
+// `uv lock`, which brings the root up to date and leaves this directory
+// alone, so the next run is told "current" and ships the file the run
+// before refused. Verified against uv 0.11.23 on a real workspace.
+func TestEngine_Plan_WorkspaceMemberIsNotChecked(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"pyproject.toml": "[project]\nname = \"member\"\n",
+		"uv.lock":        "version = 1\n",
+	})
+
+	// The workspace root one level up, as `uv init --lib members/app` leaves it.
+	root := filepath.Dir(dir)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "pyproject.toml"),
+		[]byte("[project]\nname = \"root\"\n\n[tool.uv.workspace]\nmembers = [\"*\"]\n"), 0o644))
+
+	checked := false
+	check := func(string) (bool, error) {
+		checked = true
+
+		return true, nil
+	}
+
+	runnerCalled := false
+	runner := func(string) error {
+		runnerCalled = true
+
+		return nil
+	}
+
+	e := lockfileEngineWithCheck(t, dir, runner, check)
+
+	_, err := e.Plan()
+	require.NoError(t, err, "a workspace member still syncs")
+
+	assert.False(t, checked, "uv cannot answer for this directory's lockfile")
+	assert.False(t, runnerCalled, "and nothing here can put it right")
+}
+
+// The guard keys on the workspace table, not on any ancestor pyproject.toml:
+// a project nested under an unrelated Python package is checked as usual.
+func TestEngine_Plan_AncestorPyprojectWithoutWorkspaceIsStillChecked(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"pyproject.toml": "[project]\nname = \"x\"\n",
+		"uv.lock":        "version = 1\n",
+	})
+
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(dir), "pyproject.toml"),
+		[]byte("[project]\nname = \"unrelated\"\n"), 0o644))
+
+	checked := false
+	check := func(string) (bool, error) {
+		checked = true
+
+		return true, nil
+	}
+
+	e := lockfileEngineWithCheck(t, dir, noLockfileRunner, check)
+
+	_, err := e.Plan()
+	require.NoError(t, err)
+
+	assert.True(t, checked, "an ancestor that is not a workspace root changes nothing")
+}
+
+func TestUvWorkspaceRoot(t *testing.T) {
+	base := t.TempDir()
+	member := filepath.Join(base, "members", "app")
+	require.NoError(t, os.MkdirAll(member, 0o755))
+
+	assert.Empty(t, uvWorkspaceRoot(member), "no workspace table anywhere")
+
+	// Commented out and quoted mentions are not a table header.
+	require.NoError(t, os.WriteFile(filepath.Join(base, "pyproject.toml"),
+		[]byte("[project]\nname = \"root\"\n# [tool.uv.workspace]\ndesc = \"[tool.uv.workspace]\"\n"), 0o644))
+	assert.Empty(t, uvWorkspaceRoot(member), "a mention is not a declaration")
+
+	require.NoError(t, os.WriteFile(filepath.Join(base, "pyproject.toml"),
+		[]byte("[project]\nname = \"root\"\n\n  [tool.uv.workspace]\nmembers = [\"*\"]\n"), 0o644))
+	assert.Equal(t, base, uvWorkspaceRoot(member), "indented table headers count")
+
+	// A root is not a member of itself.
+	assert.Empty(t, uvWorkspaceRoot(base))
+}
+
 func TestUncheckableLockfileWarning(t *testing.T) {
 	assert.Contains(t, uncheckableLockfileWarning(errUvNotFound), "uv is not installed")
 	assert.Contains(t, uncheckableLockfileWarning(errUvNotFound), "old lock")

@@ -154,6 +154,31 @@ func generateLockfile(e *Engine) error {
 // lockfile is current and whose CI has no uv, which synced fine before
 // this check existed.
 func refreshLockfile(e *Engine) error {
+	// In a uv workspace member, every uv lock operation acts on the
+	// workspace root's lockfile, not the uv.lock in this directory — which
+	// is the one the sync uploads and the build installs. So `uv lock
+	// --check` answers about a file we do not ship, in both directions:
+	// "stale" when the root needs updating even though this copy is fine,
+	// and "current" when the root is fine even though this copy is not.
+	//
+	// The second is the dangerous one, and running the check makes it
+	// likelier rather than less: a stale root sends us to `uv lock`, which
+	// brings the root up to date and leaves this directory untouched, so
+	// the next sync is told "current" and ships the same stale file the run
+	// before refused. Checking at all would turn one honest refusal into a
+	// silent wrong image on the retry.
+	//
+	// Nothing here can resolve that — uv owns where the lockfile lives — so
+	// say what is true and leave the file alone, which is what every sync
+	// did before this check existed.
+	if root := uvWorkspaceRoot(e.projectDir); root != "" {
+		log.Warn(fmt.Sprintf("This project is a uv workspace member, so `uv lock` maintains the lockfile at %s "+
+			"rather than the uv.lock here. The image build installs this directory's uv.lock, which the CLI cannot "+
+			"check against pyproject.toml from inside a workspace — keep it current yourself.", root))
+
+		return nil
+	}
+
 	current, err := e.lockfileCheckFn(e.projectDir)
 	if err != nil {
 		// Deliberately not recorded in lockfileHint: that field is the
@@ -203,6 +228,52 @@ func refreshLockfile(e *Engine) error {
 	log.Warn("uv.lock was out of date with pyproject.toml — regenerated it; commit it to your repo")
 
 	return nil
+}
+
+// uvWorkspaceRootMarker is the TOML table that makes a pyproject.toml a
+// uv workspace root. Matched as a whole trimmed line so a mention inside
+// a comment or a string does not count.
+const uvWorkspaceRootMarker = "[tool.uv.workspace]"
+
+// uvWorkspaceRoot returns the directory of the uv workspace dir belongs
+// to, or "" when dir is not a member of one.
+//
+// The search starts at dir's parent: a pyproject.toml declaring the table
+// in dir itself makes dir the root, and a root's own lockfile is the one
+// uv maintains there, so it needs none of the handling a member does.
+//
+// Read rather than parsed. The answer only decides whether to warn, the
+// marker is a table header on a line of its own in every file uv writes
+// or accepts, and pulling in a TOML parser to find one line would be a
+// dependency for a warning.
+func uvWorkspaceRoot(dir string) string {
+	for parent := filepath.Dir(dir); ; parent = filepath.Dir(parent) {
+		if declaresUvWorkspace(filepath.Join(parent, pyprojectFile)) {
+			return parent
+		}
+
+		// filepath.Dir is its own fixed point at the filesystem root.
+		if filepath.Dir(parent) == parent {
+			return ""
+		}
+	}
+}
+
+// declaresUvWorkspace reports whether the pyproject.toml at path carries
+// the workspace table. A file that cannot be read is not one.
+func declaresUvWorkspace(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if strings.TrimSpace(line) == uvWorkspaceRootMarker {
+			return true
+		}
+	}
+
+	return false
 }
 
 // uncheckableLockfileWarning phrases a staleness check that could not be
