@@ -39,12 +39,24 @@ const (
 	BuildStatusCompleted  = "COMPLETED"
 	BuildStatusFailed     = "FAILED"
 	BuildStatusCancelled  = "CANCELLED"
+
+	// BuildStatusBuilt is the image existing without the artifact pointing
+	// at it yet. Named here so it is deliberately non-terminal rather than
+	// non-terminal by accident: IsTerminalBuildStatus polls on anything it
+	// does not recognize, which gave the right answer for this before the
+	// status had a name, and would go on giving it for the wrong reason.
+	BuildStatusBuilt = "BUILT"
 )
 
 // BuildStatusCLIUnknown is a CLI-side sentinel for "the server never gave
-// us a Build object" (e.g. the very first poll errored out). It is never
-// emitted by the server and intentionally lives outside the server-status
-// const block so it cannot be confused for a real enum value.
+// us a Build object" (e.g. the very first poll errored out).
+//
+// It is no longer only ours: UNKNOWN is in the server's own enum, and is
+// what the status field defaults to when the platform did not determine
+// one. The two cases are indistinguishable on the wire and both mean "no
+// answer yet", so nothing reads them apart — but they are not the same
+// fact, and a reader of this constant should not assume the value came
+// from here.
 const BuildStatusCLIUnknown = "UNKNOWN"
 
 // Default tail length used by BuildSummaryFor when a build ends in an error
@@ -67,6 +79,39 @@ type Build struct {
 	Status     string    `json:"status"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+
+	// ImageURI is the image this build produced, on the build's own record.
+	// The summary reads it from here rather than from the parent artifact:
+	// the artifact points at whatever build was applied last, which during
+	// the window ImageApplied describes is the previous one.
+	ImageURI string `json:"imageUri"`
+
+	// ImageApplied is whether the artifact now points at this build's
+	// image. COMPLETED means the image exists; this means it is the one a
+	// deploy would get. A pointer because the server sends null for "not
+	// determined", which is not the same as false and must not be read as
+	// "applied".
+	ImageApplied *bool `json:"imageApplied"`
+
+	// FailureReason is the platform's own account of a failed build, which
+	// is shorter and more direct than the log tail the summary falls back
+	// to. Empty on success and whenever the platform gave none.
+	FailureReason string `json:"failureReason,omitempty"`
+}
+
+// ImageIsApplied reports whether the artifact points at this build's image,
+// reading a null as "not yet" rather than as a verdict.
+func (b Build) ImageIsApplied() bool {
+	return b.ImageApplied != nil && *b.ImageApplied
+}
+
+// IsDeployable reports whether the build finished and its image is the one
+// a deploy would now get. This, not the status alone, is what --wait waits
+// for: COMPLETED lands a moment before the artifact is repointed, and a
+// script that deploys in that window gets the previous build's image, or
+// none at all (RAPTOR-20311).
+func (b Build) IsDeployable() bool {
+	return IsBuildCompleted(b.Status) && b.ImageIsApplied()
 }
 
 // BuildList is the paginated envelope returned by GET /artifacts/{id}/builds/.
@@ -137,6 +182,12 @@ type BuildSummary struct {
 	DurationSeconds int64           `json:"durationSeconds"`
 	ImageURI        string          `json:"imageUri"`
 	LogTail         []BuildLogEntry `json:"logTail"`
+
+	// FailureReason is the platform's own account of a failure, when it
+	// gave one. Unlike LogTail it is omitted when empty: the log tail has a
+	// stable shape so consumers can jq it either way, while a reason that
+	// was never given is better absent than present and blank.
+	FailureReason string `json:"failureReason,omitempty"`
 }
 
 // IsTerminalBuildStatus reports whether s is a state from which the build
@@ -385,15 +436,27 @@ func WaitForBuild(
 			onTick(build)
 		}
 
-		if IsTerminalBuildStatus(build.Status) {
-			if IsBuildErrorStatus(build.Status) {
-				return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
-			}
+		if IsBuildErrorStatus(build.Status) {
+			return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
+		}
 
+		// COMPLETED is not the end of the wait. It means the image exists;
+		// the artifact is repointed at it a moment later, and a caller that
+		// deploys in between gets the build before this one, or an artifact
+		// with no runtime image at all. Waiting for the artifact to catch up
+		// is the whole point of --wait (RAPTOR-20311).
+		if build.IsDeployable() {
 			return build, nil
 		}
 
 		if time.Now().After(deadline) {
+			if IsBuildCompleted(build.Status) {
+				return build, fmt.Errorf(
+					"build %s finished but the artifact was not updated to use its image within %s; "+
+						"deploying now would use the previous image. Check 'dr artifact get %s'",
+					buildID, timeout, build.ArtifactID)
+			}
+
 			return build, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
 		}
 
@@ -421,6 +484,8 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		DurationSeconds: buildDurationSeconds(*build),
 	}
 
+	summary.FailureReason = build.FailureReason
+
 	if !IsBuildCompleted(build.Status) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
@@ -440,15 +505,13 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		return summary, nil
 	}
 
-	artifact, err := GetArtifact(build.ArtifactID)
-	if err != nil {
-		// Surface the partial summary so callers can still render
-		// duration and status even when the artifact fetch fails.
-		// ImageURI stays empty in that case.
-		return summary, fmt.Errorf("fetch parent artifact for build %s: %w", build.ID, err)
-	}
-
-	summary.ImageURI = GetPrimaryContainerImageURI(*artifact)
+	// From the build, not from the parent artifact. The artifact points at
+	// whichever build was applied last, so fetching it here reported the
+	// previous build's image whenever the summary was composed before the
+	// artifact caught up — the same window --wait now waits through. The
+	// build's own record cannot be wrong about what the build produced,
+	// and reading it costs no second request.
+	summary.ImageURI = build.ImageURI
 
 	return summary, nil
 }
