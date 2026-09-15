@@ -59,9 +59,16 @@ type envAction struct {
 // wait in front of a prompt.
 func (o Options) envPlan(parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar) []envAction {
 	declared := parsed.EnvVarNames()
-	blocked := parsed.CanDeclareEnvVars() != nil
 
-	actions := o.addActions(wanted, declared, blocked)
+	// A shape no edit can touch has one thing to say about the file, and says
+	// it once per name. Running the other three would list a name under a
+	// verdict the run cannot carry out and again under the reason it cannot,
+	// which is two rows and one of them a lie.
+	if parsed.CanDeclareEnvVars() != nil {
+		return o.sharedPlan(parsed, detected, wanted)
+	}
+
+	actions := o.addActions(wanted, declared)
 	actions = append(actions, o.valueActions(parsed, detected)...)
 
 	return oncePerName(append(actions, o.skipActions(parsed, detected, declared)...))
@@ -97,19 +104,10 @@ func oncePerName(actions []envAction) []envAction {
 }
 
 // addActions is the names .env has that the manifest does not.
-func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool, blocked bool) []envAction {
+func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool) []envAction {
 	actions := make([]envAction, 0, len(wanted))
 
 	for _, v := range undeclared(wanted, declared) {
-		if blocked {
-			actions = append(actions, envAction{
-				v.Name, actSkip,
-				"the manifest's environment is shared, so nothing can be added to it",
-			})
-
-			continue
-		}
-
 		detail := "written into " + manifest.FileName + " as a literal"
 		if v.Secret {
 			detail = "stored as a new credential, and referenced by id"
@@ -136,9 +134,50 @@ func (o Options) valueActions(parsed *manifest.Manifest, detected Detected) []en
 	}
 
 	for _, name := range unverifiable {
+		actions = append(actions, resendRow(name))
+	}
+
+	return actions
+}
+
+// resendRow is a secret on its way to the credential store, which is the one
+// act a plan lists whatever shape the file takes: it writes to the store and
+// never to the file, so the file's own refusals say nothing about it.
+func resendRow(name string) envAction {
+	return envAction{
+		name, actResend,
+		"its value goes to the credential store; " + manifest.FileName + " is not changed",
+	}
+}
+
+// sharedPlan is the table for the one shape a reconciliation cannot write to:
+// a manifest whose environment is shared through a YAML anchor has nowhere to
+// append and no entry that can be rewritten without changing it for every
+// container that reads it, so every name .env carries is a skip. Every name
+// but the secrets. Those are re-sent, which is a write to the tenant whatever
+// the file allows, and a row for it is what makes the run stop and ask: a
+// table of nothing but skips is one the run walks through in silence, and the
+// rotation behind it was reaching the store with nobody having agreed.
+func (o Options) sharedPlan(parsed *manifest.Manifest, detected Detected, wanted []manifest.EnvVar) []envAction {
+	_, unverifiable, _, _, _ := o.compareValues(parsed, detected)
+
+	resent := make(map[string]bool, len(unverifiable))
+	actions := make([]envAction, 0, len(wanted))
+
+	for _, name := range unverifiable {
+		resent[name] = true
+
+		actions = append(actions, resendRow(name))
+	}
+
+	for _, v := range wanted {
+		if resent[v.Name] {
+			continue
+		}
+
 		actions = append(actions, envAction{
-			name, actResend,
-			"its value goes to the credential store; " + manifest.FileName + " is not changed",
+			v.Name, actSkip,
+			"the manifest's environment is shared, so no entry in it can be rewritten",
 		})
 	}
 

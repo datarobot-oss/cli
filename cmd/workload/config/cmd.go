@@ -97,7 +97,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Set up this project for `dr workload up`.",
+		Short: "Declare the workload's config in .datarobot.yaml.",
 		Long: `Answer a handful of questions and write the committed .datarobot.yaml
 that 'dr workload up' deploys from.
 
@@ -289,6 +289,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 			// see it and the run then blocks for an answer nobody knows to
 			// give.
 			Interactive: !asJSON && idargs.CanAsk(cmd),
+			Silent:      asJSON,
 		}),
 		JSONOutput: asJSON,
 		Answers:    f.answers,

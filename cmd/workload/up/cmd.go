@@ -172,7 +172,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "up",
-		Short: "Deploy this project, applying only what changed.",
+		Short: "Declare the workload's config in .datarobot.yaml and deploy it.",
 		Long: `Read the committed .datarobot.yaml, compare it and the working tree against
 what is running, and apply the difference.
 
@@ -344,6 +344,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 			// question goes to stderr, and a prompt written to a redirected
 			// stderr is one nobody can see and the run blocks on.
 			Interactive: !json && idargs.CanAsk(cmd),
+			Silent:      json,
 		}),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,
