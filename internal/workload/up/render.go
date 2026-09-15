@@ -473,7 +473,11 @@ func details(changes []Change) []string {
 
 	rendered := shortLines(shown)
 
-	out := make([]string, 0, len(rendered)+1)
+	// Capacity from the cap rather than from the length it produced, which is
+	// the same number and says why: at most detailLimit lines, plus the one
+	// that counts what was left out. A length the analyser cannot see a bound
+	// on reads as a size computation that might overflow.
+	out := make([]string, 0, detailLimit+1)
 	for _, line := range rendered {
 		out = append(out, "      "+line)
 	}
