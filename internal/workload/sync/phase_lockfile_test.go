@@ -15,9 +15,13 @@
 package sync
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -70,6 +74,17 @@ func lockfileEngineWithCheck(t *testing.T, dir string, runner LockfileRunner, ch
 	t.Cleanup(func() { _ = e.Close() })
 
 	return e
+}
+
+// uploadOf returns the plan's upload for path, or nil.
+func uploadOf(plan *SyncPlan, path string) *FileAction {
+	for i, fa := range plan.Uploads {
+		if fa.Path == path {
+			return &plan.Uploads[i]
+		}
+	}
+
+	return nil
 }
 
 func uploadPathsOf(plan *SyncPlan) []string {
@@ -162,7 +177,14 @@ func TestEngine_Plan_RefreshesStaleLockfile(t *testing.T) {
 
 	assert.True(t, relocked, "a stale uv.lock is re-locked")
 	assert.True(t, e.lockfileGenerated)
-	assert.Contains(t, uploadPathsOf(plan), "uv.lock", "the refreshed lock is uploaded with the rest")
+
+	// Not just that uv.lock is in the upload set — a first sync uploads
+	// the fixture's copy either way. The hash ties it to the rewrite.
+	rewritten := sha256.Sum256([]byte("version = 2\n"))
+	uploaded := uploadOf(plan, "uv.lock")
+	require.NotNil(t, uploaded, "the refreshed lock is uploaded with the rest")
+	assert.Equal(t, hex.EncodeToString(rewritten[:]), uploaded.LocalHash,
+		"the upload carries the re-locked content, not the fixture's")
 }
 
 // Refusing is the whole point: continuing here would upload the stale
@@ -185,20 +207,33 @@ func TestEngine_Plan_StaleLockfileThatCannotBeRegeneratedRefuses(t *testing.T) {
 	assert.Contains(t, err.Error(), "left-pad", "uv's own reason is carried through")
 }
 
-// `uv lock` in a workspace member exits 0 while writing the lockfile at
-// the workspace root, leaving this directory exactly as stale as it was.
-func TestEngine_Plan_StaleLockfileStillStaleAfterRelockRefuses(t *testing.T) {
+// `uv lock` from a workspace member exits 0 having rewritten the lockfile
+// at the workspace root, leaving this directory's copy untouched. Asking
+// uv again would not see it — from a member directory `uv lock --check`
+// judges the root lockfile too — so the guard is on this directory's own
+// bytes, and this runner leaves them alone the way that case does.
+func TestEngine_Plan_RelockThatLeavesTheFileUnchangedRefuses(t *testing.T) {
 	dir := initProject(t, map[string]string{
 		"pyproject.toml": "[project]\nname = \"x\"\n",
 		"uv.lock":        "version = 1\n",
 	})
 
-	e := lockfileEngineWithCheck(t, dir, func(string) error { return nil }, lockfileStale)
+	// Reports current after the run, as a member directory's check does.
+	relocked := false
+	check := func(string) (bool, error) { return relocked, nil }
+	runner := func(string) error {
+		relocked = true
+
+		return nil
+	}
+
+	e := lockfileEngineWithCheck(t, dir, runner, check)
 
 	_, err := e.Plan()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "still out of date")
+	assert.Contains(t, err.Error(), "left uv.lock in this directory unchanged")
 	assert.Contains(t, err.Error(), "workspace")
+	assert.False(t, e.lockfileGenerated, "nothing was regenerated here")
 }
 
 // Not knowing is not the same as knowing it is wrong. A project whose
@@ -226,25 +261,82 @@ func TestEngine_Plan_UvMissingCannotCheckStalenessButDoesNotBlock(t *testing.T) 
 
 	assert.False(t, runnerCalled, "nothing to re-lock when staleness is unknown")
 	assert.False(t, e.lockfileGenerated)
-	assert.Contains(t, e.lockfileHint, "uv is not installed")
-	assert.Contains(t, e.lockfileHint, "old lock")
 }
 
-func TestEngine_Plan_StalenessCheckFailureDoesNotBlock(t *testing.T) {
+// The warning about an unanswerable check must not take lockfileHint,
+// which is phase 2's once-only guard: a project that has a uv.lock is
+// exactly the one the ignore-file warning is for, so claiming the guard
+// here would lose it on every machine without uv.
+func TestEngine_Plan_UncheckableLockfileStillWarnsWhenIgnored(t *testing.T) {
 	dir := initProject(t, map[string]string{
 		"pyproject.toml": "[project]\nname = \"x\"\n",
 		"uv.lock":        "version = 1\n",
+		ignore.FileName:  "uv.lock\n",
 	})
 
-	check := func(string) (bool, error) { return false, errors.New("uv lock --check failed: broken toml") }
+	check := func(string) (bool, error) { return false, errUvNotFound }
 
 	e := lockfileEngineWithCheck(t, dir, noLockfileRunner, check)
 
 	_, err := e.Plan()
 	require.NoError(t, err)
 
-	assert.Contains(t, e.lockfileHint, "Could not check uv.lock")
-	assert.Contains(t, e.lockfileHint, "broken toml")
+	assert.Contains(t, e.lockfileHint, "excluded by "+ignore.FileName,
+		"the ignore warning survives a check that could not run")
+}
+
+// The production checker has to tell uv's two non-zero exits apart: 1 is
+// "the lockfile needs updating", 2 is "could not run at all" — a uv too
+// old to have --check, an unparseable pyproject.toml, an interpreter it
+// cannot fetch. Reading 2 as stale would re-lock, find the file
+// unchanged, and refuse every sync of a project whose lock is current.
+func TestRunUvLockCheck_TellsStaleFromCannotRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub uv is a shell script")
+	}
+
+	for _, tc := range []struct {
+		name        string
+		exit        int
+		wantCurrent bool
+		wantErr     bool
+	}{
+		{name: "up to date", exit: 0, wantCurrent: true},
+		{name: "needs updating", exit: 1},
+		{name: "could not run", exit: 2, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			binDir := t.TempDir()
+			stub := filepath.Join(binDir, "uv")
+			script := fmt.Sprintf("#!/bin/sh\necho 'stub uv says so' >&2\nexit %d\n", tc.exit)
+			require.NoError(t, os.WriteFile(stub, []byte(script), 0o700))
+
+			t.Setenv("PATH", binDir)
+
+			current, err := runUvLockCheck(t.TempDir())
+
+			assert.Equal(t, tc.wantCurrent, current)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				require.NotErrorIs(t, err, errUvNotFound, "uv ran; it just could not answer")
+				assert.Contains(t, err.Error(), "stub uv says so", "uv's own reason is carried through")
+
+				return
+			}
+
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestUncheckableLockfileWarning(t *testing.T) {
+	assert.Contains(t, uncheckableLockfileWarning(errUvNotFound), "uv is not installed")
+	assert.Contains(t, uncheckableLockfileWarning(errUvNotFound), "old lock")
+
+	other := uncheckableLockfileWarning(errors.New("uv lock --check failed: broken toml"))
+	assert.Contains(t, other, "Could not check uv.lock")
+	assert.Contains(t, other, "broken toml")
 }
 
 func TestEngine_Plan_SkipsLockfileWithoutPyproject(t *testing.T) {

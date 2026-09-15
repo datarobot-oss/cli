@@ -36,6 +36,11 @@ const (
 	// uvLockTimeout bounds `uv lock`: dependency resolution hits the
 	// network and can hang on unreachable indexes.
 	uvLockTimeout = 2 * time.Minute
+
+	// uvLockStaleExitCode is what `uv lock --check` exits with when the
+	// lockfile needs updating, as opposed to 2 for a run it could not
+	// make at all. See runUvLockCheck.
+	uvLockStaleExitCode = 1
 )
 
 // errUvNotFound reports that the uv binary is not on PATH. The phase
@@ -151,15 +156,12 @@ func generateLockfile(e *Engine) error {
 func refreshLockfile(e *Engine) error {
 	current, err := e.lockfileCheckFn(e.projectDir)
 	if err != nil {
-		if errors.Is(err, errUvNotFound) {
-			e.lockfileHint = "uv is not installed, so uv.lock could not be checked against pyproject.toml. " +
-				"If they have diverged the image is built from the old lock — install uv and run `uv lock`, then re-sync."
-		} else {
-			e.lockfileHint = fmt.Sprintf("Could not check uv.lock against pyproject.toml (%v). "+
-				"If they have diverged the image is built from the old lock — run `uv lock` and re-sync.", err)
-		}
-
-		log.Warn(e.lockfileHint)
+		// Deliberately not recorded in lockfileHint: that field is the
+		// once-only guard for phase 2's ignore-file warning, and a
+		// project that has a uv.lock is exactly the one that warning is
+		// for. Suppressing it here would lose "uv.lock is excluded by
+		// .drignore" on every machine without uv.
+		log.Warn(uncheckableLockfileWarning(err))
 
 		return nil
 	}
@@ -170,20 +172,30 @@ func refreshLockfile(e *Engine) error {
 
 	log.Debug("uv.lock no longer matches pyproject.toml; re-locking with `uv lock`")
 
+	before, readErr := os.ReadFile(filepath.Join(e.projectDir, uvLockFile))
+
 	if err := e.lockfileFn(e.projectDir); err != nil {
 		return fmt.Errorf("uv.lock is out of date with pyproject.toml and could not be regenerated: %w. "+
 			"The image would be built from the old lock, so nothing was uploaded — "+
 			"run `uv lock` in the project and re-sync", err)
 	}
 
-	// Same reason generateLockfile re-checks the filesystem rather than
-	// trusting the exit code: `uv lock` in a workspace member succeeds
-	// while writing the lockfile at the workspace root, leaving this
-	// directory's copy exactly as stale as it was.
-	if current, err := e.lockfileCheckFn(e.projectDir); err == nil && !current {
-		return errors.New("uv lock reported success but uv.lock is still out of date with pyproject.toml " +
-			"(uv workspaces write the lockfile at the workspace root). The image would be built from the old " +
-			"lock, so nothing was uploaded — run `uv lock` in the project and re-sync")
+	// Same reason generateLockfile re-stats rather than trusting the exit
+	// code, and for the same kind of case: `uv lock` from a workspace
+	// member exits 0 having rewritten the lockfile at the workspace root,
+	// leaving this directory's copy untouched. Asking uv again would not
+	// see it — from a member directory `uv lock --check` judges the root
+	// lockfile too, and answers "current" about a file we are not
+	// uploading. What this directory's own bytes did is the one signal
+	// independent of where uv decided to work.
+	if readErr == nil {
+		after, err := os.ReadFile(filepath.Join(e.projectDir, uvLockFile))
+		if err == nil && bytes.Equal(before, after) {
+			return errors.New("uv lock reported success but left uv.lock in this directory unchanged, " +
+				"so it is still out of date with pyproject.toml (uv workspaces write the lockfile at the " +
+				"workspace root). The image would be built from the old lock, so nothing was uploaded — " +
+				"run `uv lock` in the project and re-sync")
+		}
 	}
 
 	e.lockfileGenerated = true
@@ -191,6 +203,18 @@ func refreshLockfile(e *Engine) error {
 	log.Warn("uv.lock was out of date with pyproject.toml — regenerated it; commit it to your repo")
 
 	return nil
+}
+
+// uncheckableLockfileWarning phrases a staleness check that could not be
+// answered. Split out so the wording is testable without capturing logs.
+func uncheckableLockfileWarning(err error) string {
+	if errors.Is(err, errUvNotFound) {
+		return "uv is not installed, so uv.lock could not be checked against pyproject.toml. " +
+			"If they have diverged the image is built from the old lock — install uv and run `uv lock`, then re-sync."
+	}
+
+	return fmt.Sprintf("Could not check uv.lock against pyproject.toml (%v). "+
+		"If they have diverged the image is built from the old lock — run `uv lock` and re-sync.", err)
 }
 
 // runUvLock is the production LockfileRunner: `uv lock` in dir with the
@@ -215,31 +239,37 @@ func runUvLock(dir string) error {
 // dir with the user's own environment, so their uv config, private
 // indexes, and credentials all apply — exactly as if they ran it by hand.
 //
-// A non-zero exit means "not current" rather than "could not run". uv
-// exits non-zero both for a lockfile that needs updating and for a
-// pyproject.toml it cannot resolve, and both want the same answer here:
-// re-lock, and refuse if that does not work either. Only a failure to
-// execute uv at all is reported as an error, because that is the case
-// where the sync has to continue rather than refuse.
+// Only exit 1 means "not current". uv separates the two outcomes: 1 for
+// a lockfile that needs updating, 2 for a run it could not make at all —
+// an unparseable pyproject.toml, an interpreter it cannot fetch, or a uv
+// too old to have --check. Reading 2 as stale would re-lock, find the
+// lock unchanged, and refuse every sync of a project whose lockfile is
+// perfectly current, which is the worst failure this phase could have.
+// Anything that is not an answer becomes an error, so the caller warns
+// and continues instead.
 //
 // Cheap enough to run on every sync of a Python project: against a
 // current lockfile it resolves from the lock itself, with no network and
 // no measurable cost. It reaches the index only when something has
 // actually changed, which is the run that was about to be wrong.
 func runUvLockCheck(dir string) (bool, error) {
-	if _, err := runUv(dir, "uv lock --check", "lock", "--check"); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+	out, err := runUv(dir, "uv lock --check", "lock", "--check")
+	if err == nil {
+		return true, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if exitErr.ExitCode() == uvLockStaleExitCode {
 			return false, nil
 		}
 
-		// uv missing, or timed out: the caller has to tell these apart
-		// from "stale", because they mean the sync continues rather
-		// than refuses.
-		return false, err
+		return false, fmt.Errorf("uv lock --check failed: %s", tailOf(out, 400))
 	}
 
-	return true, nil
+	// uv missing, or timed out: the caller has to tell these apart from
+	// "stale", because they mean the sync continues rather than refuses.
+	return false, err
 }
 
 // runUv executes `uv <args...>` in dir with the user's own environment,
