@@ -1624,3 +1624,57 @@ func TestRun_SecretDriftNamesTheFlagThroughASharedEnvironment(t *testing.T) {
 	assert.Contains(t, stderr.String(), "LLM_API_KEY")
 	assert.Contains(t, stderr.String(), "re-send it with 'dr workload config --sync-env'")
 }
+
+// The third thing a shared block can be asked for, after a rewrite and a
+// rotation: a name .env carries that the block does not.
+//
+// It cannot have it. Appending to a node other containers read would add the
+// variable to all of them, so the refusal is the same one a rewrite gets. It
+// used to pass instead, because only a changed literal counted as a write into
+// the file, and the run then went on to report that the manifest "already
+// declares every variable in .env that can be added" without ever naming the
+// ones it had not added. The reader asked for the two files to agree and was
+// told they did.
+func TestSyncEnv_RefusesASharedEnvironmentWithNamesToAdd(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvManifest), 0o600))
+
+	sent := rotatingStore(t)
+
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		t.Fatal("the add was never going to happen, so there was nothing to agree to")
+
+		return false, nil
+	}
+
+	_, err := Run(opts)
+	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
+
+	assert.Empty(t, *sent)
+	assert.Equal(t, sharedEnvManifest, readManifest(t, dir))
+}
+
+// The line that refusal must not cross. A shared block already carrying every
+// name .env has is one a rotation can still go through, because the id it
+// sends to is read through the alias and the file is not touched. Reading the
+// declared names off the walk that does not resolve aliases would count every
+// one of them as missing and refuse this too.
+func TestSyncEnv_StillRotatesThroughASharedEnvironmentThatDeclaresEverything(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	result, err := Run(syncing(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	require.Len(t, *sent, 1)
+}

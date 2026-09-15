@@ -16,9 +16,11 @@ package wizard
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -139,4 +141,61 @@ func TestEnvPlan_PrintsNoValues(t *testing.T) {
 	assert.NotContains(t, shown.String(), "a-secret-looking-value")
 	assert.NotContains(t, shown.String(), "eu-west-1")
 	assert.NotContains(t, strings.ToLower(shown.String()), "hello")
+}
+
+// pendingAndDroppedManifest declares a variable that is two things at once: an
+// entry an earlier run left on the credential placeholder, and a name .env no
+// longer carries. The categories the table is built from are not exclusive, so
+// one variable can earn a row from each.
+const pendingAndDroppedManifest = `name: my-app
+artifact:
+  name: my-app-artifact
+  type: service
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: registry/team/app:v1
+            environmentVars:
+              - name: STRIPE_API_KEY
+                value: dr-credential:PLACEHOLDER/apiToken
+              - name: GREETING
+                value: hello
+runtime:
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 1000m, memory: 1Gi}
+`
+
+// The table says a name appears exactly once, and the reader relies on it: two
+// rows for one variable read as two variables that happen to share a name, and
+// the second reason quietly contradicts the first. STRIPE_API_KEY is both a
+// pending placeholder and a name .env has dropped, and used to be listed under
+// both.
+func TestEnvPlan_NamesAVariableOnlyOnce(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(pendingAndDroppedManifest), 0o600))
+	writeEnvFile(t, dir, "GREETING=hi there\n")
+
+	shown := &bytes.Buffer{}
+
+	_, err := Run(asking(dir, false, shown))
+	require.NoError(t, err)
+
+	out := shown.String()
+
+	assert.Equal(t, 1, strings.Count(out, "STRIPE_API_KEY"), "one variable, one row:\n%s", out)
+
+	// The row it keeps is the one that says the most about it: a placeholder a
+	// deploy will refuse outranks a name that is merely absent from .env.
+	assert.Contains(t, out, "still names the credential placeholder")
+	assert.NotContains(t, out, "nothing is ever removed")
 }

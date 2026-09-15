@@ -1072,7 +1072,34 @@ func (o Options) provenRewrite(
 		return false, err
 	}
 
+	// So does a name .env carries and the block does not, for the same reason
+	// and with more at stake: letting it through left the run reporting that
+	// the two files already agree while the variables it could not append went
+	// unnamed, so the reader was told the opposite of what had happened.
+	//
+	// Asked of DeclaredEnvVars rather than EnvVarNames, because the shape this
+	// is about is the one EnvVarNames answers the empty set for: a shared
+	// block declares nothing as far as an edit is concerned, and every name in
+	// .env would read as missing, so a rotation would be refused along with it.
+	if len(undeclared(wanted, declaredNames(parsed))) > 0 {
+		return false, err
+	}
+
 	return false, nil
+}
+
+// declaredNames is the names the manifest carries, read through the walk that
+// resolves aliases, so a container borrowing its environment still counts as
+// declaring what it serves.
+func declaredNames(parsed *manifest.Manifest) map[string]bool {
+	declared := parsed.DeclaredEnvVars()
+	names := make(map[string]bool, len(declared))
+
+	for _, d := range declared {
+		names[d.Name] = true
+	}
+
+	return names
 }
 
 // rotateSecrets re-sends each declared secret's current .env value to the

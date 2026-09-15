@@ -64,7 +64,36 @@ func (o Options) envPlan(parsed *manifest.Manifest, detected Detected, wanted []
 	actions := o.addActions(wanted, declared, blocked)
 	actions = append(actions, o.valueActions(parsed, detected)...)
 
-	return append(actions, o.skipActions(parsed, detected, declared)...)
+	return oncePerName(append(actions, o.skipActions(parsed, detected, declared)...))
+}
+
+// oncePerName keeps the first row a variable earns and drops the rest, because
+// the table promises a name appears exactly once and the categories it is
+// built from are not exclusive: an entry still on the credential placeholder
+// is also one whose kind no longer matches .env, and also one .env may have
+// dropped, so it arrived under two skip reasons at once and read as two
+// different variables that happened to share a name.
+//
+// First rather than last, because the rows are assembled in descending order
+// of what the run will actually do: an add or an update outranks a skip, and
+// among the skips the earlier one is the more actionable. The reader's
+// question is what happens to this variable, and the answer is the row that
+// says the most about it.
+func oncePerName(actions []envAction) []envAction {
+	seen := make(map[string]bool, len(actions))
+	kept := make([]envAction, 0, len(actions))
+
+	for _, a := range actions {
+		if seen[a.name] {
+			continue
+		}
+
+		seen[a.name] = true
+
+		kept = append(kept, a)
+	}
+
+	return kept
 }
 
 // addActions is the names .env has that the manifest does not.

@@ -74,6 +74,14 @@ func Ask(stderr io.Writer, stdin io.Reader, policy Policy) func() (bool, error) 
 		return refuse
 	}
 
+	// One reader, built here rather than per question, and shared with the
+	// deploy's own prompt. A buffered read takes more from stdin than the line
+	// it returns and throws the rest away, so a second reader over the same
+	// stdin can swallow an answer typed ahead for the prompt after this one.
+	// bufio.NewReader hands back the reader it is given when that is already a
+	// *bufio.Reader, which is how the two come to share one.
+	answers := bufio.NewReader(stdin)
+
 	return func() (bool, error) {
 		fmt.Fprintf(stderr, "\n  %s\n", tui.HintStyle.Render(
 			"A rewrite lands in a file you commit, and a re-send overwrites the value on the tenant."))
@@ -81,7 +89,7 @@ func Ask(stderr io.Writer, stdin io.Reader, policy Policy) func() (bool, error) 
 
 		// One line, like the deploy's own confirmation. An answer that cannot
 		// be read at all is a no, which leaves both files as they are.
-		line, err := bufio.NewReader(stdin).ReadString('\n')
+		line, err := answers.ReadString('\n')
 		if err != nil && line == "" {
 			return false, nil
 		}

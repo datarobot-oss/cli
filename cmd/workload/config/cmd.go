@@ -30,7 +30,6 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -282,9 +281,14 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		// suppresses wizards in CI is not consent to overwrite a value on the
 		// tenant, which is the line `dr workload delete` already draws.
 		Confirm: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
-			Yes:         f.yes,
-			DryRun:      f.dryRun,
-			Interactive: !asJSON && isStdinTerminalFn(),
+			Yes:    f.yes,
+			DryRun: f.dryRun,
+			// Both ends, through the same check the id prompts use. The
+			// question goes to stderr, so a live stdin alone is not enough:
+			// with stderr redirected the prompt is written where nobody can
+			// see it and the run then blocks for an answer nobody knows to
+			// give.
+			Interactive: !asJSON && idargs.CanAsk(cmd),
 		}),
 		JSONOutput: asJSON,
 		Answers:    f.answers,
@@ -321,11 +325,6 @@ var setupOnlyFlags = []string{
 	"execution-environment", "entrypoint", "image", "port", "health",
 	"no-readiness-probe", "replicas", "cpu", "memory", "importance",
 }
-
-// isStdinTerminalFn answers whether a person is there to be asked. A test
-// harness always pipes stdin, so the tests that are about what happens on a
-// terminal replace it.
-var isStdinTerminalFn = reader.IsStdinTerminal
 
 // checkSyncEnvFlags refuses the combinations --sync-env cannot honour,
 // rather than accepting them and reporting a success that did none of it.

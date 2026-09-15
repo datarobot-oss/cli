@@ -318,22 +318,32 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	// stdout is being parsed is a trap for whoever is parsing it.
 	nonInteractive := yes || json || !isStdinTerminalFn()
 
+	// One reader over stdin for the whole run, because a deploy can ask twice:
+	// the .env question below, and then the typed confirmation a locked
+	// production roll needs. A reader per prompt loses whatever the previous
+	// one buffered past the line it returned, which is the answer to the
+	// second question when both were typed ahead or pasted together.
+	stdin := bufio.NewReader(cmd.InOrStdin())
+
 	result, runErr := runFn(up.Options{
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
-		Confirm:        rollConfirm(cmd, yes),
+		Confirm:        rollConfirm(cmd, yes, stdin),
 		ForceBuild:     f.force,
 		SyncEnv:        f.syncEnv,
 		// The flag alone, not cli.IsNonInteractive: the environment variable
 		// that suppresses wizards in CI is not consent to overwrite a value on
 		// the tenant, which is the line `dr workload delete` already draws.
-		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
-			Yes:         f.yes,
-			DryRun:      f.dryRun,
-			Interactive: !json && isStdinTerminalFn(),
+		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
+			Yes:    f.yes,
+			DryRun: f.dryRun,
+			// Both ends, through the same check the id prompts use: the
+			// question goes to stderr, and a prompt written to a redirected
+			// stderr is one nobody can see and the run blocks on.
+			Interactive: !json && idargs.CanAsk(cmd),
 		}),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,
@@ -399,12 +409,12 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 // `dr workload up --output json` on a terminal rolls production without a
 // word. The question and its answer never touch stdout, so a run that asks
 // still emits exactly one document.
-func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool, error) {
+func rollConfirm(cmd *cobra.Command, yes bool, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	if yes || !isStdinTerminalFn() {
 		return nil
 	}
 
-	return typedConfirm(cmd)
+	return typedConfirm(cmd, stdin)
 }
 
 // typedConfirm asks a question that only the exact expected word answers.
@@ -417,20 +427,25 @@ func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool
 // The deploy calls it only on an interactive run, so it never has to decide
 // whether prompting is allowed. An answer that cannot be read at all is a no,
 // which leaves the workload running what it was running.
-func typedConfirm(cmd *cobra.Command) func(question, want string) (bool, error) {
+func typedConfirm(cmd *cobra.Command, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	return func(question, want string) (bool, error) {
 		fmt.Fprint(cmd.ErrOrStderr(), question)
 
-		scanner := bufio.NewScanner(cmd.InOrStdin())
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
+		// The run's one reader rather than a fresh one over the same stdin. A
+		// buffered read keeps whatever it took past the line it returned, so a
+		// reader built here would start empty and the env question before this
+		// one would already have eaten the roll's answer out of a pasted or
+		// typed-ahead pair of lines.
+		line, err := stdin.ReadString('\n')
+		if err != nil && line == "" {
+			if !errors.Is(err, io.EOF) {
 				return false, fmt.Errorf("cannot read the answer: %w", err)
 			}
 
 			return false, nil
 		}
 
-		return strings.TrimSpace(scanner.Text()) == want, nil
+		return strings.TrimSpace(line) == want, nil
 	}
 }
 
