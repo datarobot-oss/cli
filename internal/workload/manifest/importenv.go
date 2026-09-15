@@ -768,25 +768,7 @@ func settleFor(entry *yaml.Node, want EnvVar) settlement {
 	id, _ := credentialRefOf(entry)
 
 	if want.Secret {
-		switch {
-		// A literal .env now reads as a secret.
-		case id == "":
-			return settleForm
-		// A reference the store already holds the value for. The file has
-		// nothing to say about it; the rotation carries the value.
-		case id != CredentialPlaceholder:
-			return settleKeep
-		// A placeholder with still nowhere to point. Left exactly as it was, so
-		// a run that could not reach the store reports no change rather than a
-		// change that changed nothing. A dry run lands here too, because it
-		// mints nothing on purpose; what it would have done is the caller's to
-		// report, and editEnv keeps the plan for that.
-		case want.CredentialID == "":
-			return settleKeep
-		// A placeholder an earlier run left, and a credential to finish it.
-		default:
-			return settleForm
-		}
+		return settleSecret(id, want)
 	}
 
 	// A secret .env now reads as an ordinary value.
@@ -805,6 +787,47 @@ func settleFor(entry *yaml.Node, want EnvVar) settlement {
 		return settleKeep
 	default:
 		return settleValue
+	}
+}
+
+// settleSecret is what an entry needs when .env reads its value as a secret.
+//
+// Split out of settleFor because the two halves answer different questions: on
+// this side the file's own value is never what wins, since a secret's value
+// lives in the credential store and the entry only ever names it.
+//
+// Every branch that cannot produce a reference keeps the entry exactly as it
+// was, so a run with nowhere to store a value reports no change rather than a
+// change that changed nothing.
+func settleSecret(id string, want EnvVar) settlement {
+	switch {
+	// A literal .env now reads as a secret, and a credential for it to point
+	// at.
+	case id == "" && want.CredentialID != "":
+		return settleForm
+
+	// The same with nothing to point at: the store could not be reached, or
+	// this is a dry run that mints nothing on purpose. Writing the placeholder
+	// over the literal would throw away a value that is working and leave an
+	// entry the next deploy refuses, which is worse than the run doing
+	// nothing.
+	case id == "":
+		return settleKeep
+
+	// A reference the store already holds the value for. The file has nothing
+	// to say about it; the rotation carries the value.
+	case id != CredentialPlaceholder:
+		return settleKeep
+
+	// A placeholder with still nowhere to point, for the same two reasons as
+	// above. What a dry run would have done is the caller's to report, and
+	// editEnv keeps the plan for that.
+	case want.CredentialID == "":
+		return settleKeep
+
+	// A placeholder an earlier run left, and a credential to finish it.
+	default:
+		return settleForm
 	}
 }
 

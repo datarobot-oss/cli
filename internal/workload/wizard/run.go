@@ -920,7 +920,7 @@ func (o Options) mintMissing(
 	}
 
 	stored := make(map[string]string, len(mint))
-	for _, v := range o.storeSecrets(mint, detected, parsed.Name()) {
+	for _, v := range o.storeSecrets(mint, detected, parsed.Name(), onPlaceholder(parsed)) {
 		stored[v.Name] = v.CredentialID
 	}
 
@@ -931,6 +931,26 @@ func (o Options) mintMissing(
 	}
 
 	return wanted
+}
+
+// onPlaceholder reports, for a name whose secret did not reach the store,
+// whether the file ends up holding the placeholder for it.
+//
+// A name the manifest does not declare is appended, and a new entry with no
+// credential to point at carries the placeholder. A name it already declares
+// keeps its entry untouched, so the only way that entry holds a placeholder is
+// if it already did.
+func onPlaceholder(parsed *manifest.Manifest) func(string) bool {
+	declared := parsed.EnvVarNames()
+
+	pending := make(map[string]bool)
+	for _, name := range parsed.PendingEnvNames() {
+		pending[name] = true
+	}
+
+	return func(name string) bool {
+		return !declared[name] || pending[name]
+	}
 }
 
 // usableCredentials is the credential each declared secret already points at,
@@ -1268,7 +1288,7 @@ func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, err
 		return nil, manifest.Draft{}, err
 	}
 
-	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name)
+	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name, nil)
 
 	content, err := draft.Render()
 	if err != nil {
@@ -1322,14 +1342,19 @@ func (o Options) warnSuspectDir(detected Detected) {
 // is the only moment both facts are available: which variables the user calls
 // secret, and what they are worth. Nothing is stored under --dry-run, because
 // a run that promises to change nothing must not leave a credential behind.
-func (o Options) storeSecrets(vars []manifest.EnvVar, detected Detected, workloadName string) []manifest.EnvVar {
+// keepsPlaceholder answers, for a secret that failed to store, whether the
+// file is left carrying the placeholder for it. nil means every failure is,
+// which is true of a run writing the whole list fresh.
+func (o Options) storeSecrets(
+	vars []manifest.EnvVar, detected Detected, workloadName string, keepsPlaceholder func(string) bool,
+) []manifest.EnvVar {
 	if o.DryRun {
 		return vars
 	}
 
 	stored, report := importSecrets(vars, detected, workloadName)
 
-	reportImport(o.Stderr, report)
+	reportImport(o.Stderr, report, keepsPlaceholder)
 
 	return stored
 }
@@ -1358,7 +1383,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// to what reached the file, and keeps a credential from being stored for a
 	// variable the workload is already serving.
 	draft.EnvVars = live.NewEnvVars(draft.EnvVars)
-	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name)
+	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name, nil)
 
 	applied, err := live.Apply(draft)
 	if err != nil {

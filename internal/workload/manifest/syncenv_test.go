@@ -305,3 +305,48 @@ func TestDeclaredEnvVars_MarksAnEntryWithNoWrittenValue(t *testing.T) {
 	assert.True(t, declared[0].Unwritten, "no value key at all")
 	assert.False(t, declared[1].Unwritten, "an empty value is a value")
 }
+
+// A literal .env has come to read as a secret, and nothing was minted for it:
+// the store could not be reached, or this is a preview that mints nothing on
+// purpose. The entry keeps the value it has.
+//
+// Replacing it with the placeholder was the one outcome worse than doing
+// nothing. The working value is not recoverable from the manifest afterwards,
+// and the entry left behind is one the next deploy refuses, so a store outage
+// turned a run that should have changed nothing into a broken environment.
+func TestSyncEnvVars_KeepsALiteralWhenNoCredentialWasMinted(t *testing.T) {
+	source := container(`            environmentVars:
+              - name: API_KEY
+                value: the-working-value
+`)
+
+	path := writeManifest(t, t.TempDir(), source)
+
+	changes, _, err := SyncEnvVars(path, []EnvVar{
+		{Name: "API_KEY", Value: "sk-rotated", Secret: true},
+	}, false)
+	require.NoError(t, err)
+
+	assert.False(t, changes.Any(), "nothing could be written, so nothing was")
+	assert.Equal(t, source, readFile(t, path))
+}
+
+// The other side of that line: given a credential, the form change happens and
+// the reference replaces the literal.
+func TestSyncEnvVars_ReplacesALiteralOnceThereIsACredential(t *testing.T) {
+	path := writeManifest(t, t.TempDir(), container(`            environmentVars:
+              - name: API_KEY
+                value: the-working-value
+`))
+
+	changes, _, err := SyncEnvVars(path, []EnvVar{
+		{Name: "API_KEY", Value: "sk-rotated", Secret: true, CredentialID: "66f0c1d2e3f4a5b6c7d8e9f0"},
+	}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"API_KEY"}, names(changes.Replaced))
+
+	on := readFile(t, path)
+	assert.Contains(t, on, "66f0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, on, "the-working-value")
+}
