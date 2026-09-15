@@ -871,7 +871,7 @@ func (d Draft) environmentVars() *yaml.Node {
 }
 
 // envVarNode renders one entry. Setup builds a whole list of these and
-// --import-env appends single ones to a list already on disk, and the two must
+// --sync-env appends single ones to a list already on disk, and the two must
 // agree: they describe the same variable, and a reader should not be able to
 // tell which command produced it.
 func envVarNode(v EnvVar) *yaml.Node {
