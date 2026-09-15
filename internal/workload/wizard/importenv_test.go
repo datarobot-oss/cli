@@ -1177,7 +1177,24 @@ func TestImportEnv_NamesTheManifestAboveTheDirectory(t *testing.T) {
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), manifest.Path(root))
-	assert.Contains(t, err.Error(), "--dir "+root)
+
+	// The argument the remedy actually carries, read back out of the message.
+	//
+	// Not "--dir "+root, which assumed a native separator and no quoting: that
+	// holds on POSIX and fails on Windows the moment a temp path carries an
+	// 8.3 name like RUNNER~1, which DirFlag quotes. Not DirFlag(root) either,
+	// which would only be this message agreeing with the function that built
+	// it. How the flag is spelled is settled in TestDirFlag_*; the only thing
+	// tolerated here is the quoting, because that is what varies by platform.
+	//
+	// Compared whole rather than searched for, because the directory that was
+	// searched is a child of the one that has the manifest, so a remedy
+	// pointing at the wrong one of the two still contains the right one.
+	_, remedy, found := strings.Cut(err.Error(), "--dir ")
+	require.True(t, found, "the remedy names the flag")
+
+	assert.Equal(t, filepath.ToSlash(root), strings.Trim(remedy, `"`),
+		"and points it at the project that has the manifest, not the one that was searched")
 }
 
 // A container that inherits its environment through a merge key is serving
