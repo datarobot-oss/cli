@@ -798,13 +798,19 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir)
 	require.NoError(t, err)
 
-	// Forward slashes, which is the spelling the suffix is printed in on every
-	// platform: the CLI takes them on Windows too, and a backslash pasted into
-	// a POSIX shell is an escape rather than a separator.
-	at := filepath.ToSlash(dir)
+	// Composed through DirFlag rather than spelled out. How the suffix is
+	// rendered is settled in TestDirFlag_*: forward slashes on every platform,
+	// and quotes around a path a shell would act on. Spelling it out here
+	// pinned the unquoted form, which held until a temp path arrived carrying
+	// an 8.3 name like RUNNER~1 and Windows CI printed it quoted.
+	//
+	// What this test is about is the other half: that every line in the block
+	// carries the suffix, and carries the directory this deploy was given.
+	at := manifest.DirFlag(dir)
+	require.NotEmpty(t, at, "the deploy ran elsewhere, so there is a --dir to carry")
 
-	assert.Contains(t, stderr, "dr workload logs --dir "+at)
-	assert.Contains(t, stderr, "dr workload up --lock --dir "+at,
+	assert.Contains(t, stderr, "dr workload logs"+at)
+	assert.Contains(t, stderr, "dr workload up --lock"+at,
 		"every line in the block has to run as printed, --lock included")
 }
 
