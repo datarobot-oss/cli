@@ -53,11 +53,15 @@ type Policy struct {
 	// answer from and one to write the question to.
 	Interactive bool
 
-	// Silent says the run has no writer for the table, which is what a
-	// machine-readable one hands the wizard so that `2>&1 | jq .` parses. The
+	// Silent says the run printed no table, which is the case when the caller
+	// hands the wizard no writer at all so that `2>&1 | jq .` parses. The
 	// refusal has to say something different there: the reason it cannot ask
 	// is the output format, not the absence of a terminal, and pointing at a
 	// table nobody printed is no help at all.
+	//
+	// It tracks the writer, not the output format. A command that prints its
+	// plan to stderr under JSON has shown the table and must leave this false,
+	// or the refusal disowns the very rows the reader is looking at.
 	Silent bool
 }
 

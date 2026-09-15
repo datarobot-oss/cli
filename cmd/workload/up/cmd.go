@@ -344,7 +344,12 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 			// question goes to stderr, and a prompt written to a redirected
 			// stderr is one nobody can see and the run blocks on.
 			Interactive: !json && idargs.CanAsk(cmd),
-			Silent:      json,
+			// No Silent, even under JSON. This command keeps a real stderr
+			// whatever the output format, because the plan it prints is for a
+			// person and only stdout has to stay parseable, so the table is
+			// shown here and the refusal can point at it. `config` is the
+			// other way round: it hands the wizard no writer at all under
+			// JSON, so there the table really is absent.
 		}),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,

@@ -64,11 +64,25 @@ func locate(c Change) location {
 	}
 
 	// Nothing sits under it, so the element itself is what the change is
-	// about. Its name goes in the field rather than the scope column, which is
-	// dropped when every change shares it and would leave the line naming
-	// nothing at all.
+	// about. Its own name moves out of the scope column and into the field,
+	// where it reads as the subject rather than as the place: "container
+	// sidecar: {imageUri, name}" rather than a line whose scope repeats the
+	// name its field already carries.
+	//
+	// What encloses it stays. Dropping the group along with the name left two
+	// groups gaining a container called the same thing rendering as two
+	// identical lines, and left a missing container beside another group's
+	// change sitting under a blank scope column.
 	if len(keys) == 0 {
-		return location{field: elementName(at)}
+		at.field = elementName(at)
+
+		if at.container != "" {
+			at.container = ""
+		} else {
+			at.group = ""
+		}
+
+		return at
 	}
 
 	at.field = fieldName(keys)

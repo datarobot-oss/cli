@@ -966,3 +966,25 @@ func TestCmd_SyncEnvWithYesHandsTheDeployNoQuestion(t *testing.T) {
 
 	assert.Nil(t, seen.ConfirmEnv)
 }
+
+// A machine-readable deploy still prints its plan to stderr, because only
+// stdout has to stay parseable, so the .env table is one of the things the
+// reader is looking at when the run refuses. The refusal used to tell them a
+// machine-readable run cannot show what it would do, immediately below the
+// rows showing exactly that. `config` earns that wording by handing the wizard
+// no writer at all; this command does not.
+func TestCmd_JSONRefusalDoesNotDisownTheTableItPrinted(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env", "--output-format", "json")
+	require.NoError(t, err)
+	require.NotNil(t, seen.ConfirmEnv, "nil is consent, and nobody gave any")
+
+	require.NotNil(t, seen.Stderr, "the table is printed, which is what the refusal may point at")
+
+	_, err = seen.ConfirmEnv()
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "The table above")
+	assert.NotContains(t, err.Error(), "cannot show you what it would do")
+}

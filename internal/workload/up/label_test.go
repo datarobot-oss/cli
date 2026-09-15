@@ -127,3 +127,32 @@ func inGroupContainer(group, name string, field ...string) Change {
 
 	return c
 }
+
+// Two groups gaining a container of the same name. The element's own name goes
+// in the field, but the group it is being added to is the only thing that
+// tells the two lines apart, so dropping it rendered them identically.
+func TestShortLines_TellsTwoGroupsGainingTheSameNameApart(t *testing.T) {
+	blue := absent(inGroupContainer("blue", "primary"))
+	blue.Want = map[string]any{"name": "primary", "imageUri": "a:1"}
+
+	green := absent(inGroupContainer("green", "primary"))
+	green.Want = map[string]any{"name": "primary", "imageUri": "b:1"}
+
+	assert.Equal(t, []string{
+		"blue   container primary: {imageUri, name}",
+		"green  container primary: {imageUri, name}",
+	}, shortLines([]Change{blue, green}))
+}
+
+// The milder half of the same fault: a whole missing container beside a change
+// inside another group used to sit under a blank scope, because the location it
+// was reduced to carried no group for the column to print.
+func TestShortLines_KeepsTheGroupOfAMissingContainer(t *testing.T) {
+	missing := absent(inGroupContainer("blue", "primary"))
+	missing.Want = map[string]any{"name": "primary", "imageUri": "a:1"}
+
+	assert.Equal(t, []string{
+		"blue           container primary: {imageUri, name}",
+		"green/sidecar  port: 8080 -> 9090",
+	}, shortLines([]Change{missing, moved(inGroupContainer("green", "sidecar", "port"), 8080.0, 9090.0)}))
+}
