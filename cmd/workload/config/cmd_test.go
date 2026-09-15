@@ -396,7 +396,7 @@ func TestCmd_SyncEnvWithNothingToDo(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--sync-env")
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr.String(), "already declares every variable")
+	assert.Contains(t, stderr.String(), "already says what .env says")
 	assert.NotContains(t, stderr.String(), "Delete it to run setup again")
 }
 
@@ -494,9 +494,9 @@ func TestCmd_SyncEnvWithoutYesIsRefusedWhereNobodyCanAnswer(t *testing.T) {
 	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
 	require.NoError(t, err)
 
-	// .env grows a name the manifest does not declare, so the run has
-	// something to ask about.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+	// .env drops the one name the manifest declares, which is the half of a
+	// reconciliation that loses configuration.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("REGION=eu-west-1\n"), 0o600))
 
 	before, err := os.ReadFile(manifest.Path(dir))
 	require.NoError(t, err)

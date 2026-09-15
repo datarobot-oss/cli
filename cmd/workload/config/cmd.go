@@ -57,7 +57,11 @@ type configResult struct {
 	// create writes the whole list, so there the count is also what the file
 	// carries; a --sync-env run adds to a list already there, so there it
 	// is only what it added.
-	EnvKeysListed     int `json:"envKeysListed"`
+	EnvKeysListed int `json:"envKeysListed"`
+	// EnvNamesRemoved is how many entries the reconciliation took out because
+	// .env no longer names them, reported apart from the rest because it is
+	// the one act that loses configuration.
+	EnvNamesRemoved   int `json:"envNamesRemoved"`
 	EnvSecretsPending int `json:"envSecretsPending"`
 	// EnvValuesUpdated is how many declared literals a --sync-env run
 	// rewrote, and EnvSecretsRotated how many credentials it re-sent. Counted
@@ -109,11 +113,13 @@ start over.
 
 The exception is --sync-env. It brings the manifest into line with .env in one
 act: a name the file does not declare is added, a literal whose value has moved
-is rewritten, and the credential behind a secret is re-sent. It prints a table
-of what it would do to every variable, and why, and asks before it writes a
-line or sends a value. Nothing is ever removed. It is opt-in because .env is
-your local copy and is allowed to drift: a deploy that silently picked up
-whatever it grew since is what this command is built not to do.
+is rewritten, the credential behind a secret is re-sent, and a name .env no
+longer carries is taken out. It prints a table of what it would do to every
+variable, and why, and asks before it writes a line or sends a value, because
+.env winning on everything means a stale copy is enough to delete something a
+running workload needs. It is opt-in because .env is your local copy and is
+allowed to drift: a deploy that silently picked up whatever it grew since is
+what this command is built not to do.
 
 A secret is re-sent without being compared. The platform never returns a
 stored value, so nothing can tell a rotated key from an untouched one, and a
@@ -192,7 +198,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
 		"Bring the manifest into line with .env: add the variables it does not declare, rewrite a literal "+
 			"whose value has moved, and re-send the credential behind a secret. Prints what it would do and "+
-			"asks first. Nothing is removed: a name dropped from .env is left alone. Secrets are re-sent "+
+			"asks first, removals included: a name dropped from .env is taken out. Secrets are re-sent "+
 			"without being compared, because the platform never returns a stored value.")
 
 	cmd.Flags().StringVar(&f.answers.WorkloadID, "workload-id", "", "Bind an existing workload by id. Exclusive with --name.")
@@ -387,6 +393,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			BuildMode:            result.Draft.Build.Mode,
 			Action:               result.Action,
 			EnvKeysListed:        result.EnvKeysListed,
+			EnvNamesRemoved:      result.EnvNamesRemoved,
 			EnvSecretsPending:    result.EnvSecretsPending,
 			EnvValuesUpdated:     result.EnvValuesUpdated,
 			EnvSecretsRotated:    result.EnvSecretsRotated,
@@ -474,7 +481,16 @@ func reportEnvAdded(stderr io.Writer, result wizard.Result) {
 			wizard.EnvFileName, secretSuffix(result.EnvSecretsPending))
 	}
 
-	// Last, and outside both counts: every value this run put in the file is
+	// Said out loud, because it is the one act that loses configuration rather
+	// than gaining it, and the two counts above would otherwise report a run
+	// that added three variables and dropped four as a run that added three.
+	if result.EnvNamesRemoved > 0 {
+		fmt.Fprintf(stderr, "  %d %s removed, gone from %s.\n",
+			result.EnvNamesRemoved, wizard.Plural(result.EnvNamesRemoved, "variable", "variables"),
+			wizard.EnvFileName)
+	}
+
+	// Last, and outside every count: every value this run put in the file is
 	// owed the same disclosure, whether it arrived as a new name or as a new
 	// value for one already there.
 	wizard.WarnLiterals(stderr, result.Draft.EnvVars)
