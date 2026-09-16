@@ -393,6 +393,29 @@ func TestArtifactCommandNotPresentByDefault(t *testing.T) {
 	assert.False(t, found, "artifact command should not be present when feature gate is not enabled")
 }
 
+// TestPipelineCommandPresentByDefault verifies that pipeline is present in the
+// default command tree. Pipelines went GA, so unlike workload/artifact the
+// command carries no feature-gate annotation and cli.CommandAdder must not
+// filter it out. The env var is neutralized so the test proves the command is
+// there on its own merits, not because DATAROBOT_CLI_FEATURE_PIPELINE happens
+// to be set in the ambient environment.
+func TestPipelineCommandPresentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_PIPELINE", "")
+
+	root := newIsolatedRootCmd()
+
+	var found bool
+
+	for _, subCmd := range root.Commands() {
+		if subCmd.Name() == "pipeline" {
+			found = true
+			break
+		}
+	}
+
+	assert.True(t, found, "pipeline command should be present by default now that pipelines are GA")
+}
+
 // TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-CA TLS flags
 // are always registered on RootCmd (no longer feature-gated). Flag registration
 // happens during init(); no execution is required.

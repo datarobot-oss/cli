@@ -15,6 +15,7 @@
 package up
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/stretchr/testify/assert"
@@ -352,7 +354,8 @@ func TestCmd_TypedConfirmAcceptsOnlyTheName(t *testing.T) {
 			cmd.SetErr(&errOut)
 			cmd.SetIn(strings.NewReader(c.typed))
 
-			agreed, err := typedConfirm(cmd)("Type the workload name: ", "my-app")
+			agreed, err := typedConfirm(cmd, bufio.NewReader(cmd.InOrStdin()))(
+				"Type the workload name: ", "my-app")
 			require.NoError(t, err)
 
 			assert.Equal(t, c.want, agreed)
@@ -795,13 +798,19 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir)
 	require.NoError(t, err)
 
-	// Forward slashes, which is the spelling the suffix is printed in on every
-	// platform: the CLI takes them on Windows too, and a backslash pasted into
-	// a POSIX shell is an escape rather than a separator.
-	at := filepath.ToSlash(dir)
+	// Composed through DirFlag rather than spelled out. How the suffix is
+	// rendered is settled in TestDirFlag_*: forward slashes on every platform,
+	// and quotes around a path a shell would act on. Spelling it out here
+	// pinned the unquoted form, which held until a temp path arrived carrying
+	// an 8.3 name like RUNNER~1 and Windows CI printed it quoted.
+	//
+	// What this test is about is the other half: that every line in the block
+	// carries the suffix, and carries the directory this deploy was given.
+	at := manifest.DirFlag(dir)
+	require.NotEmpty(t, at, "the deploy ran elsewhere, so there is a --dir to carry")
 
-	assert.Contains(t, stderr, "dr workload logs --dir "+at)
-	assert.Contains(t, stderr, "dr workload up --lock --dir "+at,
+	assert.Contains(t, stderr, "dr workload logs"+at)
+	assert.Contains(t, stderr, "dr workload up --lock"+at,
 		"every line in the block has to run as printed, --lock included")
 }
 
@@ -841,7 +850,7 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 		"the lines that can name the workload still do")
 }
 
-// rotatedNothingElse is the run --update-env exists to make safe: the secret
+// rotatedNothingElse is the run --sync-env exists to make safe: the secret
 // reached the credential store, the manifest was already current, and so no
 // container was replaced on the way past.
 func rotatedNothingElse() up.Result {
@@ -909,4 +918,79 @@ func TestCmd_EnvLiteralsAreAlwaysAList(t *testing.T) {
 	body, _ = envelope["up"].(map[string]any)
 	env, _ = body["env"].(map[string]any)
 	assert.Equal(t, []any{}, env["literals"], "a run with no .env flags names nothing, which is not null")
+}
+
+// A deploy can ask twice: the .env table first, then the typed confirmation a
+// locked production roll needs. Both read the same stdin, and a buffered read
+// takes more than the line it returns, so a reader built per prompt threw away
+// the answer meant for the one after it. Answering both at once, which is what
+// a paste or type-ahead does, used to leave the roll with nothing to read.
+func TestConfirm_SecondQuestionKeepsTheAnswerTypedForIt(t *testing.T) {
+	cmd := Cmd()
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader("y\nmy-app\n"))
+
+	stdin := bufio.NewReader(cmd.InOrStdin())
+
+	agreed, err := envconfirm.Ask(cmd.ErrOrStderr(), stdin, envconfirm.Policy{Interactive: true})()
+	require.NoError(t, err)
+	require.True(t, agreed, "the first line answers the first question")
+
+	rolled, err := typedConfirm(cmd, stdin)("Type the workload name: ", "my-app")
+	require.NoError(t, err)
+	assert.True(t, rolled, "the second line is still there for the second question")
+}
+
+// The same line on the deploy: --yes is consent to a reconciliation, and the
+// variable that suppresses wizards in CI is not. A run with it set and no --yes
+// hands the deploy a question that refuses and names the flag, rather than no
+// question at all.
+func TestCmd_SyncEnvWithoutYesHandsTheDeployARefusal(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env")
+	require.NoError(t, err)
+
+	require.NotNil(t, seen.ConfirmEnv, "nil is consent, and nobody gave any")
+
+	_, err = seen.ConfirmEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--yes", "the refusal names the way out of it")
+}
+
+// --yes is the consent, so the deploy gets no question to ask.
+func TestCmd_SyncEnvWithYesHandsTheDeployNoQuestion(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env", "--yes")
+	require.NoError(t, err)
+
+	assert.Nil(t, seen.ConfirmEnv)
+}
+
+// A machine-readable deploy still prints its plan to stderr, because only
+// stdout has to stay parseable, so the .env table is one of the things the
+// reader is looking at when the run refuses. The refusal used to tell them a
+// machine-readable run cannot show what it would do, immediately below the
+// rows showing exactly that. `config` earns that wording by handing the wizard
+// no writer at all; this command does not.
+func TestCmd_JSONRefusalDoesNotDisownTheTableItPrinted(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env", "--output-format", "json")
+	require.NoError(t, err)
+	require.NotNil(t, seen.ConfirmEnv, "nil is consent, and nobody gave any")
+
+	require.NotNil(t, seen.Stderr, "the table is printed, which is what the refusal may point at")
+
+	_, err = seen.ConfirmEnv()
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "The table above")
+	assert.NotContains(t, err.Error(), "cannot show you what it would do")
 }

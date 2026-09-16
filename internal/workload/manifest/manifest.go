@@ -183,19 +183,41 @@ func DirFlag(dir string) string {
 // shellArg quotes a path that would not survive being pasted into a shell.
 //
 // These suffixes are printed inside commands the reader is meant to copy and
-// run, and a project under "My Projects" unquoted becomes a --dir that stops
-// at the space with a stray argument after it, pointed at a directory that
-// does not exist.
+// run, and a path is not a word: `/tmp/a&b` backgrounds the command at the
+// ampersand, `$HOME` and a backtick are expanded before the command ever sees
+// them, and a space simply ends the argument.
 //
-// Double quotes rather than single, because the notices carrying these wrap
-// the whole command in single quotes already, and because a path may itself
-// hold an apostrophe.
+// An allowlist rather than a list of the characters that bite, because the
+// list of what a shell does something with is long, differs between shells,
+// and grows. Anything outside the set below is quoted; a path that is only
+// letters, digits and the handful of punctuation marks a path normally
+// carries is left bare, so the ordinary message is not littered with quotes.
+//
+// Double quotes rather than single. The notices carrying these wrap the whole
+// command in single quotes, which a single-quoted path would close early, and
+// cmd.exe reads double quotes and nothing else. Inside double quotes a POSIX
+// shell still acts on four characters, so those are escaped: the quote
+// itself, a backslash, a dollar and a backtick.
 func shellArg(path string) string {
-	if !strings.ContainsAny(path, " \t\"") {
+	if path != "" && !strings.ContainsFunc(path, needsQuoting) {
 		return path
 	}
 
-	return `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(path)
+
+	return `"` + escaped + `"`
+}
+
+// needsQuoting reports a character a shell would not hand over as itself.
+func needsQuoting(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return false
+	case strings.ContainsRune("._-+/:@,=", r):
+		return false
+	default:
+		return true
+	}
 }
 
 // Locate searches for the manifest in startDir and each ancestor, the way

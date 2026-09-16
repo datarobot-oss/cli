@@ -23,7 +23,10 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 )
 
-func (c *httpClient) CreateCatalog() (*CatalogResp, error) {
+// CreateCatalog creates an empty catalog entry, named after name when it
+// is non-empty. An empty name leaves the entry on the platform's default,
+// which the File Registry shows as "Untitled Dataset".
+func (c *httpClient) CreateCatalog(name string) (*CatalogResp, error) {
 	requestURL, err := drapi.EndpointURL("/files/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build catalog url: %w", err)
@@ -31,7 +34,8 @@ func (c *httpClient) CreateCatalog() (*CatalogResp, error) {
 
 	var resp CatalogResp
 
-	if err := drapi.PostJSON(requestURL, "catalog", struct{}{}, &resp); err != nil {
+	body := CreateCatalogReq{Name: ClampCatalogName(name)}
+	if err := drapi.PostJSON(requestURL, "catalog", body, &resp); err != nil {
 		return nil, err
 	}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/datarobot/cli/cmd/auth/export"
 	"github.com/datarobot/cli/cmd/auth/login"
 	"github.com/datarobot/cli/cmd/auth/logout"
+	"github.com/datarobot/cli/cmd/auth/profile"
 	"github.com/datarobot/cli/cmd/auth/seturl"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
@@ -36,8 +37,13 @@ Manage your DataRobot credentials and connection settings:
   • Log in using OAuth authentication
   • Log out and clear stored credentials
   • Export your credentials as environment variables
+  • Inspect named profiles for working with multiple DataRobot installations
 
-🚀 Quick start: dr auth set-url && dr auth login`,
+🚀 Quick start: dr auth set-url && dr auth login
+
+💡 Multiple installations? Use --profile <name> (or DATAROBOT_CLI_PROFILE) on
+any command, e.g. dr --profile eu auth set-url && dr --profile eu auth login.
+See 'dr auth profile list'.`,
 	}
 
 	cmd.AddCommand(
@@ -45,6 +51,7 @@ Manage your DataRobot credentials and connection settings:
 		export.Cmd(),
 		login.Cmd(),
 		logout.Cmd(),
+		profile.Cmd(),
 		seturl.Cmd(),
 	)
 

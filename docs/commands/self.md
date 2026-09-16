@@ -20,7 +20,7 @@ dr self config
 These commands help you manage the CLI tool itself, including updates, version information, and configuration.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -241,4 +241,4 @@ $ dr self version --output-format json
 - [Completion command](completion.md)&mdash;completion command reference
 - [Plugins command](plugins.md)&mdash;install and manage plugins (user-facing)
 - [Plugin development](../development/plugins.md)&mdash;creating and publishing plugins
-- [Quick start](../../README.md#quick-start)&mdash;initial CLI setup
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;initial CLI setup

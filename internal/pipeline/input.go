@@ -107,7 +107,7 @@ func ListInputs(pipelineID string, scope Scope, version *int, offset, limit int)
 
 // GetInput fetches a single input by id within the given scope.
 func GetInput(pipelineID string, scope Scope, version *int, inputID string) (*Input, error) {
-	endpoint, err := EndpointFor(pipelineID, scope, version, "inputs/"+inputID)
+	endpoint, err := EndpointFor(pipelineID, scope, version, "inputs/"+escapeID(inputID))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func GetInput(pipelineID string, scope Scope, version *int, inputID string) (*In
 // UpdateInput PATCHes a draft input set with a new payload. Locked inputs
 // cannot be updated; the API will return 409 in that case.
 func UpdateInput(pipelineID, inputID string, payload map[string]any) (*Input, error) {
-	endpoint, err := EndpointFor(pipelineID, ScopeDraft, nil, "inputs/"+inputID)
+	endpoint, err := EndpointFor(pipelineID, ScopeDraft, nil, "inputs/"+escapeID(inputID))
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func UpdateInput(pipelineID, inputID string, payload map[string]any) (*Input, er
 
 // DeleteInput removes an input set within the given scope.
 func DeleteInput(pipelineID string, scope Scope, version *int, inputID string) error {
-	endpoint, err := EndpointFor(pipelineID, scope, version, "inputs/"+inputID)
+	endpoint, err := EndpointFor(pipelineID, scope, version, "inputs/"+escapeID(inputID))
 	if err != nil {
 		return err
 	}

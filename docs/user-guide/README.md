@@ -11,35 +11,35 @@ The DataRobot CLI (`dr`) is a command-line tool for:
 - Setting up environment variables with validation
 - Running tasks and workflows defined in templates
 
-For a complete overview and feature list, see the [main README](../../README.md).
+For a complete overview and feature list, see the [main README](https://github.com/datarobot-oss/cli/blob/main/README.md).
 
 ## Getting started
 
 **New to the CLI?** Follow this learning path:
 
-1. **[Installation and quick start](../../README.md#quick-start)** ⭐ *Start here*&mdash;install the CLI, authenticate, and set up your first template
+1. **[Installation and quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)** ⭐ *Start here*&mdash;install the CLI, authenticate, and set up your first template
 2. **[Authentication](../commands/auth.md)**&mdash;manage DataRobot credentials and login
-3. **[Working with templates](../template-system/)**&mdash;clone, configure, and manage application templates
+3. **[Working with templates](../template-system/README.md)**&mdash;clone, configure, and manage application templates
 4. **[Configuration files](configuration.md)**&mdash;understand config file structure and management
 
 ## Documentation topics
 
 ### Essential guides
 
-- **[Quick start](../../README.md#quick-start)** ⭐ *Start here*&mdash;installation and initial setup
+- **[Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)** ⭐ *Start here*&mdash;installation and initial setup
 - **[Quick reference](quick-reference.md)** ⚡ *Quick lookup*&mdash;one-page command reference for common tasks
 - **[Authentication](../commands/auth.md)**&mdash;managing DataRobot credentials and login
 - **[Configuration files](configuration.md)**&mdash;understanding config file structure and location
 
 ### Feature guides
 
-- **[Working with templates](../template-system/)**&mdash;clone, configure, and manage application templates
+- **[Working with templates](../template-system/README.md)**&mdash;clone, configure, and manage application templates
 - **[Shell completions](shell-completions.md)**&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell
 
 ### Additional resources
 
-- **[Command reference](../commands/)**&mdash;detailed documentation for all CLI commands
-- **[Template system documentation](../template-system/)**&mdash;deep dive into template structure, interactive configuration, and environment variables
+- **[Command reference](../commands/README.md)**&mdash;detailed documentation for all CLI commands
+- **[Template system documentation](../template-system/README.md)**&mdash;deep dive into template structure, interactive configuration, and environment variables
 
 ## Need help?
 

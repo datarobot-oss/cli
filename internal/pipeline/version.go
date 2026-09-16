@@ -73,7 +73,7 @@ type Graph struct {
 
 // ListVersions fetches a paginated list of versions for a pipeline.
 func ListVersions(pipelineID string, offset, limit int) ([]PipelineVersion, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID + "/versions")
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID) + "/versions")
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func ListVersions(pipelineID string, offset, limit int) ([]PipelineVersion, erro
 
 // GetVersion fetches a single version of a pipeline.
 func GetVersion(pipelineID string, versionID int) (*PipelineVersion, error) {
-	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + pipelineID + "/versions/" + strconv.Itoa(versionID))
+	endpoint, err := config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID) + "/versions/" + strconv.Itoa(versionID))
 	if err != nil {
 		return nil, err
 	}

@@ -57,7 +57,7 @@ To preview the documentation site locally:
 ```bash
 cd docs
 uv sync
-uv run mkdocs serve
+uv run properdocs serve
 ```
 
 Then open `http://localhost:8000` in your browser. The preview will auto-reload when you edit markdown files.

@@ -26,6 +26,11 @@ import (
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 )
 
+// syncZipName is the filename the zip travels under. It names the upload,
+// not the catalog: the catalog's own name is a separate parameter, and a
+// zip whose contents are extracted leaves nothing behind called this.
+const syncZipName = "wapi-sync.zip"
+
 // ZipUploader implements the async zip workflow: build a zip locally,
 // POST it to FilesAPI, poll until terminal.
 type ZipUploader struct{}
@@ -120,14 +125,29 @@ func addToZip(zw *zip.Writer, src, archivePath string) error {
 	return nil
 }
 
-// postZip dispatches to UploadFromZipNew (first-sync, no catalog) or
-// UploadFromZipExisting (subsequent syncs).
+// postZip creates the catalog if the project has none, then adds the zip's
+// contents to it.
+//
+// A first sync could instead create and fill in one request, via the
+// Files API's create-from-file route, and used to. Creating separately
+// keeps the catalog's name on the JSON create call, which is the only
+// route where naming is safe against every server: the create-from-file
+// route validates its multipart form strictly, so a name reaching a
+// server that predates the parameter fails the whole upload, and the
+// retry that would paper over it means streaming the entire archive a
+// second time. The JSON route ignores what it does not recognize, so
+// there the same server just leaves its own default on the entry.
+//
+// The cost is an extra round trip on first sync and, if the upload then
+// fails, an empty catalog with nothing in it. Both are what the stage
+// path has always done, so this is one shape rather than two.
 func postZip(e *Engine, body io.Reader, size int64) (*filesapi.FromFileResp, error) {
-	if id := resolveExistingCatalogID(e); id != "" {
-		return e.files.UploadFromZipExisting(id, "wapi-sync.zip", filesapi.OverwriteReplace, size, body)
+	catalogID, err := ensureCatalog(e)
+	if err != nil {
+		return nil, err
 	}
 
-	return e.files.UploadFromZipNew("wapi-sync.zip", size, body)
+	return e.files.UploadFromZipExisting(catalogID, syncZipName, filesapi.OverwriteReplace, size, body)
 }
 
 // waitForCompletion polls until terminal status or ZipPollTimeoutSecs

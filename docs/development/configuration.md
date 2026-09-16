@@ -67,16 +67,21 @@ Viper resolves a key from these sources in priority order:
    today &mdash; see below)
 3. Environment variable bound via `viperx.BindEnv(key, "DATAROBOT_…")`
    or auto-mapped via `viperx.SetEnvPrefix("DATAROBOT_CLI")`
-4. Value loaded from `drconfig.yaml`
-5. Default registered via `viperx.SetDefault`
+4. The active named profile's own keys, merged into this layer by
+   `config.ReadConfigFile` via `viper.MergeConfigMap` (see
+   [Named profiles](#named-profiles) below) &mdash; shadows the default
+   profile's values from the same layer
+5. Value loaded from `drconfig.yaml` (the default/top-level profile)
+6. Default registered via `viperx.SetDefault`
 
 ### Persistent root flags bound to viper
 
-Only the persistent root flags listed in `cmd/root.go::init()` are bound
-explicitly with `viperx.BindPFlag`. We do **not** bulk-bind subcommand
-flags (and `viperx` does not even expose a `BindPFlags` function), because
-that would slurp every subcommand flag (such as `--yes`, `--if-needed`)
-into `viper.AllSettings()` and risk leaking transient flag state into
+Only the persistent root flags registered in `cmd/root_factory.go`'s
+`registerFlags` are bound explicitly with `viperx.BindPFlag`, in
+`bindViperFlags`. We do **not** bulk-bind subcommand flags (and `viperx`
+does not even expose a `BindPFlags` function), because that would slurp
+every subcommand flag (such as `--yes`, `--if-needed`) into
+`viper.AllSettings()` and risk leaking transient flag state into
 `drconfig.yaml`.
 
 `--output-format` is one of these root-bound flags. It is global and supports
@@ -129,6 +134,42 @@ viper state &mdash; including transient flags such as `--yes`, `--verbose`,
 The wrappers in the auth package (`auth.WriteConfigFileSilent`,
 `auth.WriteConfigFile`) call this writer under the hood.
 
+### Named profiles
+
+`--profile <name>` / `DATAROBOT_CLI_PROFILE` select a section under
+`profiles:` in `drconfig.yaml` (see the
+[user-facing docs](../user-guide/configuration.md#named-profiles)). The
+mechanism lives in `internal/config/profile.go`:
+
+- `config.ReadConfigFile` calls `applyProfile(name)`, which
+  `viper.MergeConfigMap`s the profile's own keys into viper's **config**
+  layer &mdash; the same layer `viper.ReadInConfig` populates from the file.
+  Deliberately **not** `viperx.Set`: `Set` writes the override layer, which
+  outranks flags and env, so a profile's `endpoint` would beat an explicit
+  `DATAROBOT_CLI_ENDPOINT` instead of losing to it.
+- Only `config.ProfileScopedKeys` (`endpoint`, `token`, `ca-cert`) may live
+  under a profile; every other persistable key stays global at the top level,
+  shared by all profiles. `ssl_verify` is deliberately excluded: nothing in
+  the CLI reads it (TLS is driven by `--ca-cert` and
+  `--skip-certificate-check`), so it stays a global passthrough value that
+  `UpdateConfigFile` preserves.
+- `endpoint`/`token` merge atomically: if a profile defines either one, both
+  are merged (substituting `""` for the one it omits), so a profile can
+  never end up pairing its own endpoint with the default profile's token.
+
+On the write side, `UpdateConfigFile`'s `PersistableKeys` allowlist is
+unchanged &mdash; `profileDestPath(key)` in `internal/config/write.go` maps an
+allowlisted key to `profiles.<name>.<key>` instead of `<key>` when a
+profile is active. A **bare** sweep (`UpdateConfigFile()` with no explicit
+keys) additionally restricts profile-scoped candidates to keys the
+profile's own section already defines (`candidateKeys`) &mdash; otherwise it
+would copy every value the profile currently inherits from the default
+profile (including its endpoint/token) permanently into the profile's
+section. Call sites that already pass explicit keys (e.g.
+`auth.WriteConfigFileSilent` passing `endpoint`, `token`) are unaffected by
+that restriction, which is what lets a brand-new profile's section be
+created on its first write.
+
 ## Rules for new flags
 
 When adding a new flag, decide which category it falls into:
@@ -137,7 +178,7 @@ When adding a new flag, decide which category it falls into:
 | --------------------------------------------------------- | --------------- | ------------------------------------ |
 | Transient subcommand flag (e.g. `--yes`, `--all`)          | No              | No                                   |
 | Global transient root flag (e.g. `--output-format`)        | Yes (root only) | No                                   |
-| Sticky preference (e.g. `--external-editor`)               | Yes (root only) | Yes &mdash; add to `PersistableKeys` |
+| Sticky preference (e.g. `--ca-cert`)                        | Yes (root only) | Yes &mdash; add to `PersistableKeys` |
 | Connection credential (e.g. `--token`)                     | Yes             | Yes                                  |
 
 For transient subcommand flags:
@@ -155,8 +196,9 @@ For global transient root flags:
 ## Rules for new env vars
 
 `viperx.AutomaticEnv()` with prefix `DATAROBOT_CLI` is enabled in
-`initializeConfig`, so any key you `viperx.Get` will already check
-`DATAROBOT_CLI_<KEY>` (with `-` replaced by `_`).
+`defaultConfigInitializer` (`cmd/root_factory.go`), so any key you
+`viperx.Get` will already check `DATAROBOT_CLI_<KEY>` (with `-` replaced by
+`_`).
 
 For env vars that should map to a different name (e.g.
 `DATAROBOT_CLI_NON_INTERACTIVE` → key `yes`), use `viperx.BindEnv` and
@@ -169,7 +211,12 @@ To make a key writable to `drconfig.yaml`:
 1. Add the key to `PersistableKeys` in `internal/config/write.go`
 2. Update its production write call sites to pass the key explicitly:
    `config.UpdateConfigFile("my-new-key")`
-3. Add a regression test under `internal/auth/writeConfig_test.go` (or a
+3. Decide whether the key is per-profile or global (see
+   [Named profiles](#named-profiles) above). Per-profile-with-fallback is
+   the default for anything that can legitimately differ between DataRobot
+   installations (e.g. TLS settings); add it to `ProfileScopedKeys` in
+   `internal/config/profile.go` if so. Leave it out (global) otherwise.
+4. Add a regression test under `internal/auth/writeConfig_test.go` (or a
    dedicated test file) verifying the key round-trips correctly and that
    transient flags still do not leak.
 
@@ -192,6 +239,11 @@ to prevent accidental exposure of secrets in logs. To mark a key as sensitive:
 
 2. When `--debug` is enabled, the key will be redacted as `****` in console output
    from `DebugViperConfig()`.
+
+Redaction is depth-recursive (`redactSettings`/`redactValue` in
+`internal/config/config.go`): a key match is redacted no matter how deeply
+nested, which is what keeps e.g. `profiles.eu-mtsaas.token` redacted the
+same as top-level `token`.
 
 ## Common pitfalls
 

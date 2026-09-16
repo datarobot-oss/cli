@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
@@ -70,7 +71,7 @@ type upResult struct {
 	Action     string      `json:"action"`
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
-	// Env is what --import-env and --update-env did before the plan was
+	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
 	// these a run that re-sent a secret is indistinguishable from one that
 	// did nothing at all.
@@ -79,8 +80,14 @@ type upResult struct {
 
 // envJSON is the .env re-entry's side of a deploy.
 type envJSON struct {
-	KeysAdded      int `json:"keysAdded"`
-	ValuesUpdated  int `json:"valuesUpdated"`
+	KeysAdded     int `json:"keysAdded"`
+	ValuesUpdated int `json:"valuesUpdated"`
+	// NamesRemoved is how many entries the reconciliation took out because
+	// .env no longer names them. Reported apart from the rest because it is
+	// the one act that loses configuration: a pipeline reading this has to be
+	// able to tell a run that added three variables from one that added three
+	// and dropped four.
+	NamesRemoved   int `json:"namesRemoved"`
 	SecretsRotated int `json:"secretsRotated"`
 	SecretsFailed  int `json:"secretsNotRotated"`
 	SecretsPending int `json:"secretsPending"`
@@ -91,7 +98,7 @@ type envJSON struct {
 	Literals []string `json:"literals"`
 }
 
-// warnSecretStillServing covers the one thing --update-env can do that a
+// warnSecretStillServing covers the one thing --sync-env can do that a
 // deploy cannot finish: re-send a secret.
 //
 // The credential store takes the new value immediately, but a container reads
@@ -147,14 +154,13 @@ func buildID(id string) *string {
 }
 
 type flags struct {
-	dir       string
-	yes       bool
-	dryRun    bool
-	detach    bool
-	lock      bool
-	force     bool
-	importEnv bool
-	updateEnv bool
+	dir     string
+	yes     bool
+	dryRun  bool
+	detach  bool
+	lock    bool
+	force   bool
+	syncEnv bool
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -172,7 +178,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "up",
-		Short: "Deploy this project, applying only what changed.",
+		Short: "Declare the workload's config in .datarobot.yaml and deploy it.",
 		Long: `Read the committed .datarobot.yaml, compare it and the working tree against
 what is running, and apply the difference.
 
@@ -279,13 +285,12 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	// this command already reads .env: with no manifest it is the wizard. A
 	// deploy stays a function of the committed repo, since neither flag does
 	// anything unless it is passed.
-	cmd.Flags().BoolVar(&f.importEnv, "import-env", false,
-		"Before deploying, add the .env variables the manifest does not declare yet. "+
-			"Secrets are stored as credentials, the same way setup stores them.")
-	cmd.Flags().BoolVar(&f.updateEnv, "update-env", false,
-		"Before deploying, bring the variables the manifest already declares back in line with .env: "+
-			"a literal is rewritten and the credential behind a secret is re-sent. A re-sent secret reaches "+
-			"the containers this deploy replaces; if the deploy has nothing else to do, it will not replace them.")
+	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
+		"Before deploying, bring the manifest into line with .env: add the variables it does not declare, "+
+			"rewrite a literal whose value has moved, and re-send the credential behind a secret. Prints what "+
+			"it would do and asks first, removals included: a name .env no longer carries is taken out. A "+
+			"re-sent secret reaches the containers this deploy replaces; a deploy with nothing else to do "+
+			"replaces none, and says how to restart.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -320,20 +325,43 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	// stdout is being parsed is a trap for whoever is parsing it.
 	nonInteractive := yes || json || !isStdinTerminalFn()
 
+	// One reader over stdin for the whole run, because a deploy can ask twice:
+	// the .env question below, and then the typed confirmation a locked
+	// production roll needs. A reader per prompt loses whatever the previous
+	// one buffered past the line it returned, which is the answer to the
+	// second question when both were typed ahead or pasted together.
+	stdin := bufio.NewReader(cmd.InOrStdin())
+
 	result, runErr := runFn(up.Options{
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
-		Confirm:        rollConfirm(cmd, yes),
+		Confirm:        rollConfirm(cmd, yes, stdin),
 		ForceBuild:     f.force,
-		ImportEnv:      f.importEnv,
-		UpdateEnv:      f.updateEnv,
-		PollInterval:   poll.Interval,
-		PollTimeout:    poll.Timeout,
-		Stderr:         cmd.ErrOrStderr(),
-		Spinner:        !json && !nonInteractive,
+		SyncEnv:        f.syncEnv,
+		// The flag alone, not cli.IsNonInteractive: the environment variable
+		// that suppresses wizards in CI is not consent to overwrite a value on
+		// the tenant, which is the line `dr workload delete` already draws.
+		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
+			Yes:    f.yes,
+			DryRun: f.dryRun,
+			// Both ends, through the same check the id prompts use: the
+			// question goes to stderr, and a prompt written to a redirected
+			// stderr is one nobody can see and the run blocks on.
+			Interactive: !json && idargs.CanAsk(cmd),
+			// No Silent, even under JSON. This command keeps a real stderr
+			// whatever the output format, because the plan it prints is for a
+			// person and only stdout has to stay parseable, so the table is
+			// shown here and the refusal can point at it. `config` is the
+			// other way round: it hands the wizard no writer at all under
+			// JSON, so there the table really is absent.
+		}),
+		PollInterval: poll.Interval,
+		PollTimeout:  poll.Timeout,
+		Stderr:       cmd.ErrOrStderr(),
+		Spinner:      !json && !nonInteractive,
 	})
 
 	if runErr != nil && !reportable(result) {
@@ -394,12 +422,12 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 // `dr workload up --output json` on a terminal rolls production without a
 // word. The question and its answer never touch stdout, so a run that asks
 // still emits exactly one document.
-func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool, error) {
+func rollConfirm(cmd *cobra.Command, yes bool, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	if yes || !isStdinTerminalFn() {
 		return nil
 	}
 
-	return typedConfirm(cmd)
+	return typedConfirm(cmd, stdin)
 }
 
 // typedConfirm asks a question that only the exact expected word answers.
@@ -412,20 +440,25 @@ func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool
 // The deploy calls it only on an interactive run, so it never has to decide
 // whether prompting is allowed. An answer that cannot be read at all is a no,
 // which leaves the workload running what it was running.
-func typedConfirm(cmd *cobra.Command) func(question, want string) (bool, error) {
+func typedConfirm(cmd *cobra.Command, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	return func(question, want string) (bool, error) {
 		fmt.Fprint(cmd.ErrOrStderr(), question)
 
-		scanner := bufio.NewScanner(cmd.InOrStdin())
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
+		// The run's one reader rather than a fresh one over the same stdin. A
+		// buffered read keeps whatever it took past the line it returned, so a
+		// reader built here would start empty and the env question before this
+		// one would already have eaten the roll's answer out of a pasted or
+		// typed-ahead pair of lines.
+		line, err := stdin.ReadString('\n')
+		if err != nil && line == "" {
+			if !errors.Is(err, io.EOF) {
 				return false, fmt.Errorf("cannot read the answer: %w", err)
 			}
 
 			return false, nil
 		}
 
-		return strings.TrimSpace(scanner.Text()) == want, nil
+		return strings.TrimSpace(line) == want, nil
 	}
 }
 
@@ -534,6 +567,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,
 				ValuesUpdated:  result.Env.ValuesUpdated,
+				NamesRemoved:   result.Env.NamesRemoved,
 				SecretsRotated: result.Env.SecretsRotated,
 				SecretsFailed:  result.Env.SecretsFailed,
 				SecretsPending: result.Env.SecretsPending,

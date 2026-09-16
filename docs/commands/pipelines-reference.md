@@ -5,9 +5,6 @@ Complete cross-reference of every `dr pipeline …` subcommand, the
 inputs (positional args, flags, request body fields) each command
 accepts.
 
-> All commands below assume the `pipeline` feature is enabled
-> (`DATAROBOT_CLI_FEATURE_PIPELINE=true`).
-
 ## How to read this document
 
 - **Method + path** is relative to `/api/v2`. The CLI prefixes the host
@@ -121,7 +118,7 @@ term `dispatches` / `dispatch_id`, but the CLI's `--output-format json` remaps t
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipeline run create` | `POST /pipelines/{id}/dispatches` (draft) <br> `POST /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run create --pipeline <id> --input <input-id>` <br> `dr pipeline run create --pipeline <id> --version=2 --input <input-id> --output-format json` <br> `dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>` | **Flags:** `--pipeline <id>` (required), `--input <input-id>` (required), `--scope`, `--version`, `--image <image-id>` (optional; overrides the pipeline's linked image for this run), `--output-format json`. |
+| `dr pipeline run create` | `POST /pipelines/{id}/dispatches` (draft) <br> `POST /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run create --pipeline <id> --input <input-id> --image <img-id>` <br> `dr pipeline run create --pipeline <id> --version=2 --input <input-id> --image <img-id>` <br> `dr pipeline run create --pipeline <id> --input <input-id> --image <img-id> --output-format json` | **Flags:** `--pipeline <id>` (required), `--input <input-id>` (required), `--image <image-id>` (required; the execution image for this run), `--scope`, `--version`, `--output-format json`. |
 | `dr pipeline run list` | `GET /pipelines/{id}/dispatches` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches` (locked) | `dr pipeline run list --pipeline <id>` <br> `dr pipeline run list --pipeline <id> --version=2 --output-format json` | **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--offset <n>`, `--limit <n>`, `--output-format json`. |
 | `dr pipeline run get` | `GET /pipelines/{id}/dispatches/{dispatch_id}` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}` (locked) | `dr pipeline run get --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
 | `dr pipeline run status` | `GET /pipelines/{id}/dispatches/{dispatch_id}/status` (draft) <br> `GET /pipelines/{id}/versions/{ver}/dispatches/{dispatch_id}/status` (locked) | `dr pipeline run status --pipeline <id> <run-id>` | **Positional:** `<run-id>` (required). **Flags:** `--pipeline <id>` (required), `--scope`, `--version`, `--output-format json`. |
@@ -142,15 +139,22 @@ Per-invocation execution records for a single run. `<task-id>` is the sequential
 
 ## Schedules (`dr pipeline schedule …`)
 
-Schedules are **locked-only** — every verb requires both `--pipeline` and `--version`.
+Schedules hang off the pipeline, not off a version: the routes are
+`/pipelines/{id}/schedules[/{schedule_id}]`. Only `create` takes `--version`
+(the locked version to run), and it travels in the request body as
+`pipeline_version_id` rather than in the path. `list`, `get`, `update` and
+`delete` take `--pipeline` only.
 
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
-| `dr pipeline schedule create` | `POST /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule create --pipeline <id> --version=2 --cron "0 * * * *" --input <input-id>` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"` (required), `--input <input-id>` (required), `--timezone <iana>` (default `UTC`), `--output-format json`. |
-| `dr pipeline schedule list` | `GET /pipelines/{id}/versions/{ver}/schedules` | `dr pipeline schedule list --pipeline <id> --version=2` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--offset <n>`, `--limit <n>`, `--output-format json`. |
-| `dr pipeline schedule get` | `GET /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule get --pipeline <id> --version=2 <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--output-format json`. |
-| `dr pipeline schedule update` | `PATCH /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule update --pipeline <id> --version=2 <schedule-id> --cron "*/15 * * * *"` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"`, `--timezone <iana>`. At least one required. |
-| `dr pipeline schedule delete` | `DELETE /pipelines/{id}/versions/{ver}/schedules/{schedule_id}` | `dr pipeline schedule delete --pipeline <id> --version=2 <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--version <n>` (required). |
+| `dr pipeline schedule create` | `POST /pipelines/{id}/schedules` | `dr pipeline schedule create --pipeline <id> --version 2 --cron "0 * * * *" --input <input-id> --image <image-id> --image-version 1` | **Flags:** `--pipeline <id>` (required), `--version <n>` (required), `--cron "<expr>"` (required), `--input <input-id>` (required), `--image <image-id>` (required), `--image-version <n>` (required), `--timezone <iana>` (default `UTC`), `--output-format json`. |
+| `dr pipeline schedule list` | `GET /pipelines/{id}/schedules` | `dr pipeline schedule list --pipeline <id>` | **Flags:** `--pipeline <id>` (required), `--offset <n>`, `--limit <n>` (default 100), `--output-format json`. |
+| `dr pipeline schedule get` | `GET /pipelines/{id}/schedules/{schedule_id}` | `dr pipeline schedule get --pipeline <id> <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--output-format json`. |
+| `dr pipeline schedule update` | `PATCH /pipelines/{id}/schedules/{schedule_id}` | `dr pipeline schedule update --pipeline <id> <schedule-id> --cron "*/15 * * * *"` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required), `--cron "<expr>"`, `--timezone <iana>`. At least one of `--cron` / `--timezone` required. |
+| `dr pipeline schedule delete` | `DELETE /pipelines/{id}/schedules/{schedule_id}` | `dr pipeline schedule delete --pipeline <id> <schedule-id>` | **Positional:** `<schedule-id>` (required). **Flags:** `--pipeline <id>` (required). |
+
+A schedule still targets a locked version — the version is recorded on the
+schedule and comes back on reads — but it is not part of the URL.
 
 ---
 
@@ -170,10 +174,12 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | Command | API endpoint | Usage | Inputs |
 |---|---|---|---|
 | `dr pipeline image create` | `POST /pipelines/images` | `dr pipeline image create --name ml-base --package numpy --package pandas` <br> `dr pipeline image create --name ml-base --conda scipy --conda numpy --python-version 3.11` <br> `dr pipeline image create --name gpu-base --package torch --gpu --output-format json` | **Flags:** `--name <name>` (required), `--package <spec>` (repeatable / comma-separated), `--conda <spec>` (repeatable), `--conda-channel <channel>` (repeatable; requires `--conda`), `--python-version <ver>`, `--base-image <uri>` (DEPRECATED — use `--python-version`; mutually exclusive with it), `--gpu` (`--nvidia` deprecated alias), `--description <text>`, `--output-format json`. At least one of `--package` or `--conda` required. |
+| `dr pipeline image get` | `GET /pipelines/images/{id}` | `dr pipeline image get <img-id>` <br> `dr pipeline image get <img-id> --output-format json` | **Positional:** `<image-id>` (required). **Flags:** `--output-format json`. |
 | `dr pipeline image list` | `GET /pipelines/images` | `dr pipeline image list` <br> `dr pipeline image list --offset 50 --limit 10 --output-format json` | **Flags:** `--offset <n>`, `--limit <n>`, `--output-format json`. |
 | `dr pipeline image update` | `PATCH /pipelines/images/{id}` | `dr pipeline image update <img-id> --package scikit-learn` <br> `dr pipeline image update <img-id> --conda scipy --python-version 3.11` <br> `dr pipeline image update <img-id> --package torch --gpu` | **Positional:** `<image-id>` (required). **Flags:** `--package <spec>` (repeatable / comma-separated), `--conda <spec>` (repeatable), `--conda-channel <channel>` (repeatable; requires `--conda`), `--python-version <ver>`, `--base-image <uri>` (DEPRECATED — use `--python-version`; mutually exclusive with it), `--gpu` (`--nvidia` deprecated alias), `--output-format json`. At least one of `--package` or `--conda` required. All fields must be re-specified on each update (no carry-over from previous version). |
 | `dr pipeline image delete` | `DELETE /pipelines/images/{id}` | `dr pipeline image delete <img-id>` | **Positional:** `<image-id>` (required). |
 | `dr pipeline image version delete` | `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete --image <img-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--image <img-id>` (required). |
+| `dr pipeline image version logs` | `GET /pipelines/images/{id}/versions/{n}/logs` | `dr pipeline image version logs --image <img-id> <version>` | **Positional:** `<version>` (integer, required). **Flags:** `--image <img-id>` (required). Build logs are available once the version's build has completed (status `READY` or `ERROR`). |
 
 ---
 
@@ -217,8 +223,10 @@ TASK ID column of `dr pipeline graph` and can be used to inspect individual task
 | `DELETE /pipelines/{id}/versions/{ver}/schedules/{id}` | `dr pipeline schedule delete` |
 | `POST /pipelines/images` | `dr pipeline image create` |
 | `GET /pipelines/images` | `dr pipeline image list` |
+| `GET /pipelines/images/{id}` | `dr pipeline image get` |
 | `PATCH /pipelines/images/{id}` | `dr pipeline image update` |
 | `DELETE /pipelines/images/{id}` | `dr pipeline image delete` |
 | `DELETE /pipelines/images/{id}/versions/{n}` | `dr pipeline image version delete` |
+| `GET /pipelines/images/{id}/versions/{n}/logs` | `dr pipeline image version logs` |
 | `GET /pipelines/{id}/tasks/{task_id}` | `dr pipeline task get` (draft) |
 | `GET /pipelines/{id}/versions/{ver}/tasks/{task_id}` | `dr pipeline task get` (locked) |

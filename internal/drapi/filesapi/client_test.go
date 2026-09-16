@@ -64,20 +64,72 @@ func startServer(t *testing.T, handler http.Handler) *httptest.Server {
 	return srv
 }
 
+// TestCreateCatalog pins the name onto the JSON body. Sent anywhere else
+// it is dropped and the entry lands in the File Registry as "Untitled
+// Dataset", which is the whole defect this parameter exists to fix.
 func TestCreateCatalog(t *testing.T) {
+	var gotBody map[string]any
+
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/v2/files/", r.URL.Path)
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
 	}))
 
 	c := New()
-	got, err := c.CreateCatalog()
+	got, err := c.CreateCatalog("my-agent-artifact")
 
 	require.NoError(t, err)
 	assert.Equal(t, "cid-1", got.CatalogID)
 	assert.Equal(t, "v0", got.CatalogVersionID)
+	assert.Equal(t, map[string]any{"name": "my-agent-artifact"}, gotBody)
+}
+
+// TestCreateCatalog_NoName checks that an unnamed create sends no name key
+// at all rather than an empty string. The server reads the field as `name
+// or <derived title>`, where a blank string is falsy, so "omitted" and
+// "empty" are not interchangeable.
+func TestCreateCatalog_NoName(t *testing.T) {
+	var gotBody map[string]any
+
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
+	}))
+
+	c := New()
+	_, err := c.CreateCatalog("")
+
+	require.NoError(t, err)
+	assert.Empty(t, gotBody, "an unnamed create must not carry a name key")
+}
+
+// TestCreateCatalog_ClampsName covers the one input that would otherwise
+// fail the create outright: workload artifact names are allowed to run to
+// 5000 characters, the Files API stops at 255.
+func TestCreateCatalog_ClampsName(t *testing.T) {
+	var gotName string
+
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		gotName, _ = body["name"].(string)
+
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
+	}))
+
+	c := New()
+	_, err := c.CreateCatalog(strings.Repeat("é", 300))
+
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("é", 255), gotName,
+		"the limit counts characters, so multi-byte names must not be cut mid-rune")
 }
 
 func TestCreateStage_ApplyStage(t *testing.T) {
@@ -478,49 +530,6 @@ func TestUploadFromZipExisting_ContentLengthWithFormFields(t *testing.T) {
 	body := strings.NewReader(payload)
 	_, err := c.UploadFromZipExisting("cid-1", "changes.zip", OverwriteReplace, int64(body.Len()), body)
 	require.NoError(t, err)
-}
-
-// TestUploadFromZipNew_HitsFromFileEndpoint locks in the (post-2026-04-30)
-// fix that the new-catalog-from-zip path posts to /files/fromFile/ rather
-// than /files/. The bare /files/ endpoint silently created an empty catalog
-// without extracting the zip, so smoke-tested syncs reported success but
-// the remote was empty.
-func TestUploadFromZipNew_HitsFromFileEndpoint(t *testing.T) {
-	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/files/fromFile/", r.URL.Path)
-		assert.Equal(t, "true", r.URL.Query().Get("useArchiveContents"))
-		assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
-
-		mr, err := r.MultipartReader()
-		if !assert.NoError(t, err) {
-			return
-		}
-
-		part, err := mr.NextPart()
-		if !assert.NoError(t, err) {
-			return
-		}
-
-		assert.Equal(t, "file", part.FormName())
-		assert.Equal(t, "wapi-sync.zip", part.FileName())
-
-		// A new catalog has no paths to collide with, so no overwrite
-		// field travels: the file is the only part.
-		_, err = mr.NextPart()
-		assert.ErrorIs(t, err, io.EOF)
-
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"catalogId":"new-cid","catalogVersionId":"new-ver","statusId":"sid-new"}`))
-	}))
-
-	c := New()
-
-	zipBody := bytes.NewReader([]byte("PK\x03\x04fake-zip"))
-	resp, err := c.UploadFromZipNew("wapi-sync.zip", int64(zipBody.Len()), zipBody)
-	require.NoError(t, err)
-	assert.Equal(t, "new-cid", resp.CatalogID)
-	assert.Equal(t, "new-ver", resp.CatalogVersionID)
-	assert.Equal(t, "sid-new", resp.StatusID)
 }
 
 // Ensure the package's mime/multipart writer references compile (helps catch
