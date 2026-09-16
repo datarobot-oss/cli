@@ -54,6 +54,7 @@ func TestCheckCLICredentials_ClassifiesStoredProfileStatus(t *testing.T) {
 	}{
 		{"401 blames the token", http.StatusUnauthorized, "No valid API key found", ""},
 		{"403 reports lacking access", http.StatusForbidden, "lacks API access", "No valid API key found"},
+		{"404 blames the instance", http.StatusNotFound, "answered HTTP 404", "No valid API key found"},
 		{"503 blames the instance", http.StatusServiceUnavailable, "answered HTTP 503", "No valid API key found"},
 	}
 
