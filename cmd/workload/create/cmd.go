@@ -15,6 +15,8 @@
 package create
 
 import (
+	"errors"
+
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -26,8 +28,9 @@ func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
 	var (
-		specFile string
-		enclave  string
+		specFile  string
+		enclave   string
+		useCaseID string
 	)
 
 	cmd := &cobra.Command{
@@ -49,14 +52,19 @@ stay strings (for example "0644" or "1.10"), and unquoted dates are sent
 as RFC3339 timestamps. The server validates field-level shape and returns
 a 422 with a JSON-path detail on a mismatch.
 
-Use --enclave <name> to pin the workload to a specific Enclave: it sets
-runtime.enclaveSelectionPolicy to "manual" and runtime.enclaves to the
-named Enclave, which must be eligible and grant you deploy access. The
-flag refuses to override a spec that already sets either field, and using
-it means the spec is re-encoded rather than sent byte-for-byte. Without
-the flag (or with enclaveSelectionPolicy "availability"), DataRobot picks
-the placement. Confirm where the workload landed with
-'dr workload list --enclave <name>'.
+Enclave placement is opt-in per workload and governed by a Use Case. Use
+--use-case-id <id> to opt in: the workload is linked to that Use Case at
+create time and may only run on the Enclaves an administrator has granted
+to it. On its own the flag sets runtime.enclaveSelectionPolicy to
+"availability" and DataRobot picks among the granted Enclaves. Add
+--enclave <name> to pin one specific Enclave instead (the policy becomes
+"manual"); pinning requires the CAN_OVERRIDE_WORKLOAD_PLACEMENT permission
+on workloads, and the pinned Enclave must be granted to the Use Case.
+--enclave cannot be used without --use-case-id. Without either flag the
+workload is not placed on an Enclave. The flags refuse to override a spec
+that already sets the fields they write, and using them means the spec is
+re-encoded rather than sent byte-for-byte. Confirm where the workload
+landed with 'dr workload list --enclave <name>'.
 
 Three flows:
 
@@ -129,7 +137,8 @@ Three flows:
 Example:
   dr workload create --spec-file workload.json
   dr workload create --spec-file workload.yaml
-  dr workload create --spec-file workload.json --enclave prod-east
+  dr workload create --spec-file workload.json --use-case-id 68b0aa11bb22cc33dd44ee55
+  dr workload create --spec-file workload.json --use-case-id 68b0aa11bb22cc33dd44ee55 --enclave prod-east
   dr workload create --spec-file workload.yaml --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -142,10 +151,26 @@ Example:
 				return err
 			}
 
+			// The server requires a Use Case for any Enclave-targeted create;
+			// fail here instead of a guaranteed round-trip rejection.
+			if cmd.Flags().Changed("enclave") && !cmd.Flags().Changed("use-case-id") {
+				return errors.New(
+					"--enclave requires --use-case-id: Enclave placement is governed by a Use Case")
+			}
+
 			// Changed, not enclave != "": an explicit --enclave "" must be
 			// rejected by ApplyEnclavePin, not silently create unpinned.
 			if cmd.Flags().Changed("enclave") {
 				payload, err = workload.ApplyEnclavePin(payload, enclave)
+				if err != nil {
+					return err
+				}
+			}
+
+			// After the pin so an applied "manual" policy is kept: ApplyUseCase
+			// only defaults the policy to "availability" when none is set.
+			if cmd.Flags().Changed("use-case-id") {
+				payload, err = workload.ApplyUseCase(payload, useCaseID)
 				if err != nil {
 					return err
 				}
@@ -170,12 +195,16 @@ Example:
 	_ = cmd.MarkFlagRequired("spec-file")
 
 	cmd.Flags().StringVar(&enclave, "enclave", "",
-		"Pin the workload to the named Enclave (sets runtime.enclaveSelectionPolicy=manual)")
+		"Pin the workload to the named Enclave (sets runtime.enclaveSelectionPolicy=manual); requires --use-case-id")
+
+	cmd.Flags().StringVar(&useCaseID, "use-case-id", "",
+		"Link the workload to this Use Case and place it on the Enclaves granted to it")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
 			"output_format": string(outputFormat),
 			"enclave":       enclave,
+			"use_case_id":   useCaseID,
 		}
 	})
 

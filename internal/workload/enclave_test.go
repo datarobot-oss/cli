@@ -125,3 +125,83 @@ func TestApplyEnclavePin_RejectsNullSpec(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be a JSON object")
 }
+
+func TestApplyUseCase_SetsIdAndDefaultsAvailability(t *testing.T) {
+	out, err := ApplyUseCase([]byte(`{"name":"my-app","artifactId":"art-1"}`), "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+
+	runtime, ok := doc["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, EnclaveSelectionPolicyAvailability, runtime["enclaveSelectionPolicy"])
+}
+
+func TestApplyUseCase_KeepsAnAppliedPin(t *testing.T) {
+	pinned, err := ApplyEnclavePin([]byte(`{"name":"my-app","artifactId":"art-1"}`), "prod-east")
+	require.NoError(t, err)
+
+	out, err := ApplyUseCase(pinned, "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+
+	runtime, ok := doc["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, EnclaveSelectionPolicyManual, runtime["enclaveSelectionPolicy"])
+	assert.Equal(t, []any{"prod-east"}, runtime["enclaves"])
+}
+
+func TestApplyUseCase_KeepsASpecChosenPolicy(t *testing.T) {
+	spec := `{"name":"my-app","artifactId":"art-1","runtime":{"enclaveSelectionPolicy":"availability"}}`
+
+	out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+
+	runtime, ok := doc["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, EnclaveSelectionPolicyAvailability, runtime["enclaveSelectionPolicy"])
+}
+
+func TestApplyUseCase_TrimsTheId(t *testing.T) {
+	out, err := ApplyUseCase([]byte(`{"name":"my-app"}`), "  68b0aa11bb22cc33dd44ee55  ")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+}
+
+func TestApplyUseCase_RejectsBlankId(t *testing.T) {
+	_, err := ApplyUseCase([]byte(`{"name":"my-app"}`), "   ")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid --use-case-id")
+}
+
+func TestApplyUseCase_RejectsSpecWithUseCaseId(t *testing.T) {
+	spec := `{"name":"my-app","useCaseId":"68b0aa11bb22cc33dd44ee55"}`
+
+	_, err := ApplyUseCase([]byte(spec), "68b0ffffffffffffffffffff")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already sets useCaseId")
+}
+
+func TestApplyUseCase_RejectsNonObjectSpec(t *testing.T) {
+	_, err := ApplyUseCase([]byte(`null`), "68b0aa11bb22cc33dd44ee55")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a JSON object")
+}

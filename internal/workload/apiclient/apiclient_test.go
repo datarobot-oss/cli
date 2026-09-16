@@ -30,7 +30,15 @@ func TestErrorDetail(t *testing.T) {
 		body string
 		want string
 	}{
-		"string detail":   {`{"detail":"boom"}`, "boom"},
+		"string detail": {`{"detail":"boom"}`, "boom"},
+		"typed rejection": {
+			`{"detail":{"code":"MISSING_USE_CASE","message":"useCaseId is required"}}`,
+			"useCaseId is required (MISSING_USE_CASE)",
+		},
+		"object without the typed pair": {
+			`{"detail":{"code":"X","hint":"other shape"}}`,
+			`{"code":"X","hint":"other shape"}`,
+		},
 		"array detail":    {`{"detail":[{"msg":"field required"}]}`, `[{"msg":"field required"}]`},
 		"no detail field": {`{"message":"drflask says hi"}`, ""},
 		"not json":        {"<html>504 Gateway Time-out</html>", ""},

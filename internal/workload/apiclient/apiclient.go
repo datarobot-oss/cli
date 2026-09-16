@@ -35,6 +35,7 @@ package apiclient
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -72,9 +73,12 @@ func LiftDetail(err error) error {
 }
 
 // ErrorDetail pulls the "detail" field out of a FastAPI-style JSON error
-// body, or "" when the body is not such a document. Non-string details
-// (e.g. validation error arrays) are re-encoded as JSON rather than dropped:
-// they carry the field-level messages the caller needs.
+// body, or "" when the body is not such a document. A typed rejection --
+// a {"code": ..., "message": ...} detail, the shape workload placement
+// errors use -- renders as the message with the machine code in
+// parentheses. Other non-string details (e.g. validation error arrays) are
+// re-encoded as JSON rather than dropped: they carry the field-level
+// messages the caller needs.
 func ErrorDetail(body []byte) string {
 	var payload struct {
 		Detail any `json:"detail"`
@@ -86,6 +90,15 @@ func ErrorDetail(body []byte) string {
 
 	if detail, ok := payload.Detail.(string); ok {
 		return detail
+	}
+
+	if typed, ok := payload.Detail.(map[string]any); ok && len(typed) == 2 {
+		code, codeOK := typed["code"].(string)
+		message, messageOK := typed["message"].(string)
+
+		if codeOK && messageOK {
+			return fmt.Sprintf("%s (%s)", message, code)
+		}
 	}
 
 	encoded, err := json.Marshal(payload.Detail)
