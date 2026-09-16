@@ -408,7 +408,7 @@ func RenderCollectionPermissions(
 	fmt.Printf("Subject:     %s\n", p.SubjectUserID)
 
 	if len(p.Permissions) == 0 {
-		fmt.Printf("Permissions: %s (may not create enclaves)\n", emptyValuePlaceholder)
+		fmt.Printf("Permissions: %s (no collection-level enclave permissions)\n", emptyValuePlaceholder)
 	} else {
 		fmt.Printf("Permissions: %s\n", strings.Join(p.Permissions, ", "))
 	}
@@ -433,8 +433,10 @@ func RenderCollectionPermissions(
 	return nil
 }
 
-// RenderCreateAccess prints who may create enclaves.
-func RenderCreateAccess(format outputformat.OutputFormat, holders []CreateAccessHolder) error {
+// RenderCreateAccess prints who holds the named collection-level permission.
+func RenderCreateAccess(
+	format outputformat.OutputFormat, permission string, holders []CreateAccessHolder,
+) error {
 	if format == outputformat.OutputFormatJSON {
 		if holders == nil {
 			holders = []CreateAccessHolder{}
@@ -444,7 +446,7 @@ func RenderCreateAccess(format outputformat.OutputFormat, holders []CreateAccess
 	}
 
 	if len(holders) == 0 {
-		fmt.Println("Nobody has been granted the enclave create permission.")
+		fmt.Printf("Nobody has been granted the enclave %s permission.\n", permission)
 
 		return nil
 	}
