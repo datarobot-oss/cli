@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -44,6 +45,10 @@ const DefaultLoginTimeout = 5 * time.Minute
 // ErrLoginInterrupted is returned when the user aborts the login (Ctrl-C) or
 // another CLI process takes over the callback port.
 var ErrLoginInterrupted = errors.New("login was interrupted")
+
+// ErrLoginTimedOut is returned when no browser callback arrives before the
+// deadline. Callers print FprintLoginTimeoutHelp instead of the raw error.
+var ErrLoginTimedOut = errors.New("browser login timed out")
 
 // BrowserFlow owns the local HTTP listener that receives the API key after the
 // user authorizes the CLI in their browser.
@@ -150,13 +155,28 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("timed out after %s waiting for browser authorization: %w", f.timeout, ctx.Err())
+			return "", fmt.Errorf("no browser authorization within %s: %w", f.timeout, ErrLoginTimedOut)
 		}
 
 		log.Debug("Login context cancelled, exiting auth wait")
 
 		return "", ErrLoginInterrupted
 	}
+}
+
+// FprintLoginTimeoutHelp writes recovery steps after a browser login timed out:
+// retry (a sign-in error often clears next try), or use the env-var credentials.
+func FprintLoginTimeoutHelp(w io.Writer) {
+	base, info := writerStyles(w)
+
+	fmt.Fprintln(w, base.Render("❌ No authorization came back from the browser."))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, base.Render("If your browser showed a sign-in error, click through it and run login again."))
+	fmt.Fprintln(w, base.Render("The sign-in often completes on the second attempt:"))
+	fmt.Fprintln(w, info.Render("  dr auth login"))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, base.Render("Or set the DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN environment variables"))
+	fmt.Fprintln(w, base.Render("(from Developer Tools) to authenticate without the browser."))
 }
 
 // Close shuts the callback server down. It is safe to call more than once.
@@ -213,6 +233,9 @@ type LoginOptions struct {
 	// NoBrowser skips launching a browser and shows the link instead. Useful over
 	// SSH or anywhere the CLI cannot reach a usable browser.
 	NoBrowser bool
+
+	// Timeout overrides DefaultLoginTimeout for the callback wait. Zero uses the default.
+	Timeout time.Duration
 }
 
 // RunBrowserLogin opens the browser, tells the user what is happening, and blocks
@@ -252,6 +275,10 @@ func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOp
 // Split out from RunBrowserLoginWith so tests can drive a flow on an ephemeral port
 // instead of competing for the fixed production one.
 func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions) (string, error) {
+	if opts.Timeout > 0 {
+		flow.timeout = opts.Timeout
+	}
+
 	// The browser state drives the wording: when no browser opened, the link stops
 	// being a footnote and becomes the primary instruction.
 	state := BrowserSkipped

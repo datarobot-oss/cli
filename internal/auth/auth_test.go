@@ -120,6 +120,27 @@ func TestEnsureAuthenticated_MissingCredentials(t *testing.T) {
 	assert.Equal(t, server.URL, baseURL, "Expected base URL to be set from test server")
 }
 
+func TestEnsureAuthenticated_LoginTimeoutPrintsHelp(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	viperx.Set(config.DataRobotAPIKey, "")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		return "", ErrLoginTimedOut
+	}
+
+	var result bool
+
+	_, stderr := captureStdoutStderr(t, func() {
+		result = EnsureAuthenticated(context.Background())
+	})
+
+	assert.False(t, result, "a login timeout must fail EnsureAuthenticated")
+	assert.Contains(t, stderr, "dr auth login", "the timeout help must reach the user on stderr")
+}
+
 func TestEnsureAuthenticated_ExpiredCredentials(t *testing.T) {
 	_, cleanup := setupTestEnvironment(t)
 	defer cleanup()
