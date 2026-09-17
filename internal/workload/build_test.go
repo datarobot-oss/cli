@@ -421,6 +421,9 @@ func TestGetArtifactBuild_Decodes(t *testing.T) {
 			"name":"my build",
 			"artifactId":"art-1",
 			"status":"COMPLETED",
+			"imageUri":"ecr/img:b-1",
+			"imageApplied":true,
+			"failureReason":"",
 			"createdAt":"2026-06-09T10:00:00Z",
 			"updatedAt":"2026-06-09T10:00:12Z"
 		}`))
@@ -435,6 +438,123 @@ func TestGetArtifactBuild_Decodes(t *testing.T) {
 	assert.Equal(t, "b-1", build.ID)
 	assert.Equal(t, BuildStatusCompleted, build.Status)
 	assert.Equal(t, int64(12), buildDurationSeconds(*build))
+
+	// Decoded from a body rather than set by hand, so a typo in either json
+	// tag fails here instead of passing everywhere else.
+	assert.Equal(t, "ecr/img:b-1", build.ImageURI)
+	assert.True(t, build.ImageIsApplied())
+}
+
+// Every tagged workload-api release predates imageApplied — v11.12.0, the
+// latest, sends none of imageApplied, imageUri or failureReason. Gating on
+// the field alone would leave every successful build on every released
+// server polling to the timeout and then failing, which is worse than the
+// race this fixes. A nil field falls back to the check the server itself
+// performs: the image tag is the build id.
+func TestWaitForBuild_ServerWithoutImageApplied_FallsBackToTheImageTag(t *testing.T) {
+	installSkipAuth(t)
+
+	var artifactReads int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/builds/") {
+			// No imageApplied, no imageUri: a released server's shape.
+			_, _ = w.Write([]byte(`{
+				"id":"b-1","artifactId":"art-1","status":"COMPLETED",
+				"createdAt":"2026-06-09T10:00:00Z",
+				"updatedAt":"2026-06-09T10:00:08Z"
+			}`))
+
+			return
+		}
+
+		artifactReads++
+
+		_, _ = w.Write([]byte(`{
+			"id":"art-1","name":"a","status":"draft",
+			"spec":{"containerGroups":[{"containers":[{"primary":true,"imageUri":"ecr/img:b-1"}]}]},
+			"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	require.NoError(t, err, "a released server must not be polled to the timeout")
+	assert.Equal(t, BuildStatusCompleted, build.Status)
+	assert.Positive(t, artifactReads, "the tag check is what answered")
+}
+
+// The artifact still on the previous build's image is the window itself, so
+// the fallback has to keep waiting rather than read "no imageApplied" as
+// permission to return.
+func TestWaitForBuild_ServerWithoutImageApplied_WaitsWhileTagIsStale(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/builds/") {
+			_, _ = w.Write([]byte(`{
+				"id":"b-2","artifactId":"art-1","status":"COMPLETED",
+				"createdAt":"2026-06-09T10:00:00Z",
+				"updatedAt":"2026-06-09T10:00:08Z"
+			}`))
+
+			return
+		}
+
+		// Still the build before this one.
+		_, _ = w.Write([]byte(`{
+			"id":"art-1","name":"a","status":"draft",
+			"spec":{"containerGroups":[{"containers":[{"primary":true,"imageUri":"ecr/img:b-1"}]}]},
+			"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := WaitForBuild("art-1", "b-2", time.Millisecond, 20*time.Millisecond, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "still not using its image")
+}
+
+// An explicit false is the server answering, and is believed: falling back
+// to the tag there would second-guess the field this exists to use.
+func TestWaitForBuild_ExplicitFalseIsNotSecondGuessed(t *testing.T) {
+	installSkipAuth(t)
+
+	var artifactReads int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/builds/") {
+			_, _ = w.Write([]byte(`{
+				"id":"b-1","artifactId":"art-1","status":"COMPLETED","imageApplied":false,
+				"createdAt":"2026-06-09T10:00:00Z",
+				"updatedAt":"2026-06-09T10:00:08Z"
+			}`))
+
+			return
+		}
+
+		artifactReads++
+
+		_, _ = w.Write([]byte(`{
+			"id":"art-1","name":"a","status":"draft",
+			"spec":{"containerGroups":[{"containers":[{"primary":true,"imageUri":"ecr/img:b-1"}]}]},
+			"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := WaitForBuild("art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
+	require.Error(t, err, "the server said not yet")
+	assert.Zero(t, artifactReads, "an answered question is not asked again")
 }
 
 func TestGetArtifactBuild_NotFound(t *testing.T) {
@@ -642,7 +762,7 @@ func TestWaitForBuild_CompletedButNeverAppliedTimesOutDistinctly(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, build)
 	assert.Equal(t, BuildStatusCompleted, build.Status)
-	assert.Contains(t, err.Error(), "not updated to use its image")
+	assert.Contains(t, err.Error(), "still not using its image")
 	assert.Contains(t, err.Error(), "previous image")
 	assert.NotContains(t, err.Error(), "timeout waiting for build",
 		"the generic timeout would hide which half did not finish")
@@ -781,6 +901,34 @@ func TestBuildSummaryFor_ReadsTheImageOffALowercaseCompleted(t *testing.T) {
 	assert.Equal(t, "ecr/img:tag", summary.ImageURI, "the image is what a completed build is read for")
 	assert.False(t, logsHit, "a completed build has no failure logs to fetch")
 	assert.False(t, artifactHit, "the build carries its own image; the artifact is not consulted")
+}
+
+// No tagged workload-api release sends the build-level imageUri, and both
+// commands promise the resulting image in their help. An absent one falls
+// back to the artifact, which is where this always read from.
+func TestBuildSummaryFor_FallsBackToTheArtifactImage(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"id":"art-1","name":"a","status":"draft",
+			"spec":{"containerGroups":[{"containers":[{"primary":true,"imageUri":"ecr/img:b-1"}]}]},
+			"createdAt":"2026-06-09T10:00:00Z","updatedAt":"2026-06-09T10:00:00Z"
+		}`))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	summary, err := BuildSummaryFor(&Build{
+		ID:         "b-1",
+		ArtifactID: "art-1",
+		Status:     BuildStatusCompleted,
+	}, DefaultBuildLogTail)
+	require.NoError(t, err)
+	assert.Equal(t, "ecr/img:b-1", summary.ImageURI,
+		"a server that sends no build-level imageUri still gets an image in the summary")
 }
 
 func TestBuildSummaryFor_FailureFetchesLogs(t *testing.T) {

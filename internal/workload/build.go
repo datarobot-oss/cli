@@ -40,11 +40,11 @@ const (
 	BuildStatusFailed     = "FAILED"
 	BuildStatusCancelled  = "CANCELLED"
 
-	// BuildStatusBuilt is the image existing without the artifact pointing
-	// at it yet. Named here so it is deliberately non-terminal rather than
-	// non-terminal by accident: IsTerminalBuildStatus polls on anything it
-	// does not recognize, which gave the right answer for this before the
-	// status had a name, and would go on giving it for the wrong reason.
+	// BuildStatusBuilt is the image built and being pushed to the registry,
+	// which is a stage before COMPLETED rather than after it. BuildStatusLine
+	// has narrated it all along; the constant only gives the string a name so
+	// the classifiers below stop relying on it falling through their
+	// unknown-status default.
 	BuildStatusBuilt = "BUILT"
 )
 
@@ -105,13 +105,66 @@ func (b Build) ImageIsApplied() bool {
 	return b.ImageApplied != nil && *b.ImageApplied
 }
 
-// IsDeployable reports whether the build finished and its image is the one
-// a deploy would now get. This, not the status alone, is what --wait waits
-// for: COMPLETED lands a moment before the artifact is repointed, and a
-// script that deploys in that window gets the previous build's image, or
-// none at all (RAPTOR-20311).
+// IsDeployable reports whether the build finished and the server said its
+// image is the one a deploy would now get. This, not the status alone, is
+// what --wait waits for: COMPLETED lands a moment before the artifact is
+// repointed, and a script that deploys in that window gets the previous
+// build's image, or none at all (RAPTOR-20311).
+//
+// False when the server said nothing, which is not the same as "no". Use
+// buildIsDeployable for the question a caller actually has, since it can
+// answer it for a server that does not publish the field.
 func (b Build) IsDeployable() bool {
 	return IsBuildCompleted(b.Status) && b.ImageIsApplied()
+}
+
+// buildIsDeployable answers "would deploying now use this build's image",
+// including on a platform that does not send imageApplied.
+//
+// No tagged workload-api release publishes the field: v11.12.0, the latest,
+// carries none of imageApplied, imageUri or failureReason. Gating purely on
+// it would leave every successful build on every released server polling to
+// the timeout and then failing, which is a far worse bug than the race this
+// fixes.
+//
+// So a nil imageApplied — the server never sent one, or sent null for "not
+// determined" — falls back to the check the server itself performs: the
+// image tag is the build's own id, so an artifact whose primary container
+// ends in :{buildID} is running this build's image. An explicit false is
+// the server answering "not yet" and is believed as-is.
+func buildIsDeployable(b *Build) bool {
+	if !IsBuildCompleted(b.Status) {
+		return false
+	}
+
+	if b.ImageApplied != nil {
+		return *b.ImageApplied
+	}
+
+	return artifactRunsBuildImage(b.ArtifactID, b.ID)
+}
+
+// artifactRunsBuildImage reports whether artifactID's primary container is
+// running the image buildID produced. A fetch that fails answers no: the
+// caller polls again, and a wait that ends on an unanswered question is the
+// thing being fixed.
+func artifactRunsBuildImage(artifactID, buildID string) bool {
+	uri := primaryImageURI(artifactID)
+
+	return uri != "" && strings.HasSuffix(uri, ":"+buildID)
+}
+
+// primaryImageURI is the artifact's primary container image, or "" when the
+// artifact cannot be read.
+func primaryImageURI(artifactID string) string {
+	artifact, err := GetArtifact(artifactID)
+	if err != nil {
+		log.Debug("read artifact for image URI", "artifact_id", artifactID, "err", err)
+
+		return ""
+	}
+
+	return GetPrimaryContainerImageURI(*artifact)
 }
 
 // BuildList is the paginated envelope returned by GET /artifacts/{id}/builds/.
@@ -445,16 +498,16 @@ func WaitForBuild(
 		// deploys in between gets the build before this one, or an artifact
 		// with no runtime image at all. Waiting for the artifact to catch up
 		// is the whole point of --wait (RAPTOR-20311).
-		if build.IsDeployable() {
+		if buildIsDeployable(build) {
 			return build, nil
 		}
 
 		if time.Now().After(deadline) {
 			if IsBuildCompleted(build.Status) {
 				return build, fmt.Errorf(
-					"build %s finished but the artifact was not updated to use its image within %s; "+
-						"deploying now would use the previous image. Check 'dr artifact get %s'",
-					buildID, timeout, build.ArtifactID)
+					"build %s finished but the artifact is still not using its image after %s; "+
+						"deploying now would use the previous image",
+					buildID, timeout)
 			}
 
 			return build, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
@@ -505,13 +558,22 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		return summary, nil
 	}
 
-	// From the build, not from the parent artifact. The artifact points at
-	// whichever build was applied last, so fetching it here reported the
+	// From the build where the platform provides it. The artifact points at
+	// whichever build was applied last, so reading it there reported the
 	// previous build's image whenever the summary was composed before the
 	// artifact caught up — the same window --wait now waits through. The
-	// build's own record cannot be wrong about what the build produced,
-	// and reading it costs no second request.
+	// build's own record cannot be wrong about what the build produced, and
+	// costs no second request.
+	//
+	// No tagged workload-api release sends it yet, though, and both commands
+	// promise the resulting image in their help. So an absent one falls back
+	// to the artifact, which is where this always read from: by the time a
+	// summary is composed the wait has established that the artifact runs
+	// this build's image, so on those servers the two name the same thing.
 	summary.ImageURI = build.ImageURI
+	if summary.ImageURI == "" {
+		summary.ImageURI = primaryImageURI(build.ArtifactID)
+	}
 
 	return summary, nil
 }
