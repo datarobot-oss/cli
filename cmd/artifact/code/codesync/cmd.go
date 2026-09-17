@@ -141,9 +141,13 @@ so an automated sync never silently overwrites your local changes. A
 plain pull of a remote change you had not touched applies without
 prompting (still backed up to *.LOCAL).
 
-Use --dry-run to preview the plan without writing anything; --diff to
-also print per-file unified diffs. Both modes exit before any remote
-write and never prompt, so they are safe to run unattended. --yes
+Use --dry-run to preview the plan; --diff to also print per-file unified
+diffs. Both modes exit before any remote write and never prompt, so they
+are safe to run unattended. The one local write they can still make is
+uv.lock: a Python project's lockfile is generated when missing and
+re-locked when it no longer matches pyproject.toml, before the plan is
+built, so that the preview shows the upload set a real sync would send.
+A lockfile that cannot be put right stops the preview too. --yes
 auto-confirms the post-plan prompt and skips any interactive directory
 prompt.
 
@@ -168,8 +172,8 @@ Example:
 	outputformat.AddFlag(c, &outputFormat)
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
-	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
-	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
+	c.Flags().Bool("dry-run", false, "Show plan; no remote writes (may still refresh uv.lock).")
+	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs; no remote writes (may still refresh uv.lock).")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
 	c.Flags().Bool("accept-remote", false,
 		"Allow the remote to overwrite or delete local files in a non-interactive run "+

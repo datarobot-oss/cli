@@ -66,20 +66,23 @@ func (workloadArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionI
 
 // Deps are the external dependencies injected into an Engine. Use
 // defaultDeps for production wiring; tests build their own. A nil
-// Lockfile falls back to the production runner (runUvLock).
+// Lockfile or LockfileCheck falls back to the production runner
+// (runUvLock, runUvLockCheck).
 type Deps struct {
-	Files     filesapi.Client
-	Artifacts artifactStore
-	Now       func() time.Time
-	Lockfile  LockfileRunner
+	Files         filesapi.Client
+	Artifacts     artifactStore
+	Now           func() time.Time
+	Lockfile      LockfileRunner
+	LockfileCheck LockfileChecker
 }
 
 func defaultDeps() Deps {
 	return Deps{
-		Files:     filesapi.New(),
-		Artifacts: workloadArtifactStore{},
-		Now:       time.Now,
-		Lockfile:  runUvLock,
+		Files:         filesapi.New(),
+		Artifacts:     workloadArtifactStore{},
+		Now:           time.Now,
+		Lockfile:      runUvLock,
+		LockfileCheck: runUvLockCheck,
 	}
 }
 
@@ -114,6 +117,7 @@ type Engine struct {
 	lockedNote    string
 
 	lockfileFn        LockfileRunner
+	lockfileCheckFn   LockfileChecker
 	lockfileGenerated bool
 	lockfileHint      string
 }
@@ -134,13 +138,18 @@ func newWithDeps(projectDir string, opts Options, deps Deps) (*Engine, error) {
 		deps.Lockfile = runUvLock
 	}
 
+	if deps.LockfileCheck == nil {
+		deps.LockfileCheck = runUvLockCheck
+	}
+
 	return &Engine{
-		projectDir: projectDir,
-		opts:       opts,
-		files:      deps.Files,
-		artifacts:  deps.Artifacts,
-		nowFn:      deps.Now,
-		lockfileFn: deps.Lockfile,
+		projectDir:      projectDir,
+		opts:            opts,
+		files:           deps.Files,
+		artifacts:       deps.Artifacts,
+		nowFn:           deps.Now,
+		lockfileFn:      deps.Lockfile,
+		lockfileCheckFn: deps.LockfileCheck,
 	}, nil
 }
 
