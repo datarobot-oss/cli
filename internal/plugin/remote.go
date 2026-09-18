@@ -522,6 +522,30 @@ func copyFileURL(url string) (string, error) {
 	return tmpFile.Name(), nil
 }
 
+// newDownloadTransport returns the transport used to download plugin archives.
+//
+// It clones http.DefaultTransport instead of building a fresh http.Transport so
+// the download inherits the proxy resolution (HTTP_PROXY / HTTPS_PROXY /
+// NO_PROXY) and whatever TLS configuration tls.Apply installed. A zero-value
+// http.Transport has a nil Proxy, which silently bypasses a corporate forward
+// proxy and fails on the direct DNS lookup instead.
+func newDownloadTransport() *http.Transport {
+	var transport *http.Transport
+
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = base.Clone()
+	} else {
+		transport = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+
+	// Connection timeout to fail fast if no internet.
+	transport.DialContext = (&net.Dialer{
+		Timeout: httpDialTimeout,
+	}).DialContext
+
+	return transport
+}
+
 // downloadHTTP downloads a file via HTTP to a temp file.
 func downloadHTTP(finalURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", finalURL)
@@ -529,14 +553,7 @@ func downloadHTTP(finalURL string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pluginDownloadTimeout)
 	defer cancel()
 
-	// Custom transport with connection timeout to fail fast if no internet
-	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: httpDialTimeout,
-		}).DialContext,
-	}
-
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: newDownloadTransport()}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, finalURL, nil)
 	if err != nil {
