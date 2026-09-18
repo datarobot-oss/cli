@@ -77,6 +77,15 @@ func ReadString() (string, error) {
 
 	str, err := readLine(reader)
 	if err != nil {
+		// On a read error (Ctrl-C, EOF, cancelreader failure) print a bare
+		// newline to stdout so the terminal cursor moves off the prompt line.
+		// This is a cosmetic edge for JSON purity: in --output-format json
+		// mode a Ctrl-C at an interactive prompt can emit this stray newline
+		// on stdout. Abort paths emit no JSON report anyway (no
+		// invalid-JSON-following-JSON scenario exists today), but reader
+		// prompt helpers are not fully JSON-mode-safe as-is. Behavior is
+		// intentionally unchanged — do not remove this newline without
+		// auditing all call sites for terminal cursor positioning.
 		fmt.Println()
 	}
 

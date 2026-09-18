@@ -65,13 +65,121 @@ func TestPrintLinkedEmptyArtifact_IncludesArtifactName(t *testing.T) {
 	assert.Contains(t, out, "Run 'dr artifact code sync' to upload your files.")
 }
 
-func TestPrintAlreadyLinked_IncludesPath(t *testing.T) {
-	out := captureStdout(t, func() {
-		printAlreadyLinked("art-abc-123", "/tmp/proj")
-	})
+func TestPrintAlreadyLinkedHealthy_NoDeleteAdvice(t *testing.T) {
+	var buf bytes.Buffer
 
-	assert.Contains(t, out, "Already linked to artifact art-abc-123; state exists at "+wapi.Dir("/tmp/proj")+".")
-	assert.Contains(t, out, "Delete "+wapi.Dir("/tmp/proj")+" to re-init.")
+	printAlreadyLinkedHealthy(&buf, "art-abc-123", "/tmp/proj")
+
+	out := buf.String()
+
+	assert.Contains(t, out, "Already linked to artifact art-abc-123")
+	assert.Contains(t, out, wapi.Dir("/tmp/proj"))
+	assert.Contains(t, out, "dr artifact code doctor")
+	assert.NotContains(t, out, "Delete")
+	assert.NotContains(t, out, "rm -rf")
+	assert.NotContains(t, out, "re-init")
+}
+
+func TestPrintCorruptConfig_NoDeleteAdvice(t *testing.T) {
+	var buf bytes.Buffer
+
+	printCorruptConfig(&buf, "/tmp/proj")
+
+	out := buf.String()
+
+	assert.Contains(t, out, "unreadable")
+	assert.Contains(t, out, wapi.ConfigPath("/tmp/proj"))
+	assert.Contains(t, out, "dr artifact code doctor --fix")
+	assert.NotContains(t, out, "Delete")
+	assert.NotContains(t, out, "rm -rf")
+	assert.NotContains(t, out, "re-init")
+}
+
+func TestPrintGoneGuidance_NoDeleteAdvice(t *testing.T) {
+	var buf bytes.Buffer
+
+	printGoneGuidance(&buf, "art-gone-001")
+
+	out := buf.String()
+
+	assert.Contains(t, out, "art-gone-001")
+	assert.Contains(t, out, "not found")
+	assert.Contains(t, out, "dr artifact code doctor --relink <new-artifact-id>")
+	assert.NotContains(t, out, "Delete")
+	assert.NotContains(t, out, "rm -rf")
+	assert.NotContains(t, out, "re-init")
+}
+
+func TestPrintMismatchGuidance_NoDeleteAdvice(t *testing.T) {
+	var buf bytes.Buffer
+
+	printMismatchGuidance(&buf, "art-mismatch-001")
+
+	out := buf.String()
+
+	assert.Contains(t, out, "art-mismatch-001")
+	assert.Contains(t, out, "catalog id no longer matches")
+	assert.Contains(t, out, "dr artifact code doctor --relink <new-artifact-id>")
+	assert.NotContains(t, out, "Delete")
+	assert.NotContains(t, out, "rm -rf")
+	assert.NotContains(t, out, "re-init")
+}
+
+func TestPrintRelinkSuccess_NoDeleteAdvice(t *testing.T) {
+	var buf bytes.Buffer
+
+	printRelinkSuccess(&buf, "art-new-001")
+
+	out := buf.String()
+
+	assert.Contains(t, out, "Relinked to artifact art-new-001")
+	assert.Contains(t, out, "sync baseline reset")
+	assert.Contains(t, out, "dr artifact code sync")
+	assert.NotContains(t, out, "Delete")
+	assert.NotContains(t, out, "rm -rf")
+}
+
+func TestRenderAlreadyLinkedJSON_PinnedShape(t *testing.T) {
+	var buf bytes.Buffer
+
+	artifactID := "art-abc-123"
+
+	renderAlreadyLinkedJSON(&buf, &artifactID, "dr artifact code doctor")
+
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	assert.Equal(t, "error", parsed["status"])
+	assert.Equal(t, "already-linked", parsed["error"])
+	assert.Equal(t, "art-abc-123", parsed["artifactId"])
+	assert.Equal(t, "dr artifact code doctor", parsed["remedy"])
+}
+
+func TestRenderAlreadyLinkedJSON_NullArtifactID(t *testing.T) {
+	var buf bytes.Buffer
+
+	renderAlreadyLinkedJSON(&buf, nil, "dr artifact code doctor --fix")
+
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	assert.Nil(t, parsed["artifactId"])
+	assert.Equal(t, "dr artifact code doctor --fix", parsed["remedy"])
+}
+
+func TestRenderRelinkJSON_PureJSON(t *testing.T) {
+	var buf bytes.Buffer
+
+	renderRelinkJSON(&buf, "art-new-001", nil)
+
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+
+	assert.Equal(t, "ok", parsed["status"])
+	assert.Equal(t, "art-new-001", parsed["artifactId"])
 }
 
 func TestRenderInitResult_TextWithCodeRef(t *testing.T) {
@@ -136,5 +244,27 @@ func TestShortVer(t *testing.T) {
 
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, shortVer(tc.in), "input=%q", tc.in)
+	}
+}
+
+// TestNoDeleteAdviceAnywhere is the grep guard: no display function
+// produces "Delete", "rm -rf", "remove the state", or "to re-init" advice.
+func TestNoDeleteAdviceAnywhere(t *testing.T) {
+	dirs := []string{"/tmp/proj", "/tmp/another"}
+
+	for _, dir := range dirs {
+		var buf bytes.Buffer
+
+		printAlreadyLinkedHealthy(&buf, "art-1", dir)
+		printCorruptConfig(&buf, dir)
+		printGoneGuidance(&buf, "art-1")
+		printMismatchGuidance(&buf, "art-1")
+		printRelinkSuccess(&buf, "art-new")
+
+		out := buf.String()
+
+		for _, bad := range []string{"Delete ", "rm -rf", "remove the state", "to re-init"} {
+			assert.NotContains(t, out, bad, "display output must not contain %q: %s", bad, out)
+		}
 	}
 }

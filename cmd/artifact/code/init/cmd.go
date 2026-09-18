@@ -28,6 +28,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 )
@@ -105,7 +106,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
 
 	if wapi.Exists(dir) {
-		return reportAlreadyLinked(dir)
+		return reportAlreadyLinked(cmd, dir, outputFormat)
 	}
 
 	artifactID, err := dirprompt.ResolveArtifactID(args, yes, dirprompt.Ask)
@@ -123,7 +124,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 
 	if err := wapi.Initialize(dir, opts); err != nil {
 		if errors.Is(err, wapi.ErrAlreadyLinked) {
-			return reportAlreadyLinked(dir)
+			return reportAlreadyLinked(cmd, dir, outputFormat)
 		}
 
 		return err
@@ -162,13 +163,81 @@ func buildInitOptions(artifactID string, codeRef *workload.DatarobotCodeRef) wap
 	return opts
 }
 
-func reportAlreadyLinked(dir string) error {
-	cfg, lerr := wapi.LoadConfig(dir)
-	if lerr != nil {
-		return fmt.Errorf("project already linked but config is unreadable: %w", lerr)
+// reportAlreadyLinked handles the already-linked branch: the project is
+// already linked and the user tried to init again. It fetches the linked
+// artifact to determine health and branches:
+//   - Corrupt config (unreadable linked state): report unreadable, remedy
+//     names doctor --fix, never deletion.
+//   - Gone (404) or catalog mismatch: interactive → offer to relink in place;
+//     non-interactive → print guidance naming doctor --relink.
+//   - Healthy (or non-404 error — can't determine): keep abort behavior,
+//     point to doctor for diagnosis. No delete advice anywhere.
+//
+// JSON mode: the abort emits a single JSON object on stdout
+// {status:error, error:already-linked, artifactId:<id|null>, remedy:<guidance>}
+// with human text on stderr, exit 1.
+func reportAlreadyLinked(cmd *cobra.Command, dir string, outputFormat outputformat.OutputFormat) error {
+	stderr := cmd.ErrOrStderr()
+
+	cfg, err := wapi.LoadConfig(dir)
+	if err != nil {
+		// Corrupt config: cannot read the linked artifact id. Do NOT fetch;
+		// report unreadable, remedy names doctor --fix, never deletion.
+		// The underlying LoadConfig error is wrapped so the user sees the
+		// root cause (e.g. JSON parse error), and the config path is included
+		// in both text and JSON stderr so the user knows which file is bad.
+		const remedy = "dr artifact code doctor --fix"
+
+		configPath := wapi.ConfigPath(dir)
+
+		wrappedErr := fmt.Errorf("init aborted: project already linked (config unreadable at %s): %w", configPath, err)
+
+		if outputFormat == outputformat.OutputFormatJSON {
+			renderAlreadyLinkedJSON(cmd.OutOrStdout(), nil, remedy)
+
+			fmt.Fprintf(stderr, "Project is already linked but the config at %s is unreadable: %v\n", configPath, err)
+			fmt.Fprintln(stderr, "Run 'dr artifact code doctor --fix' to repair the config.")
+
+			cmd.SilenceErrors = true
+
+			return cli.ErrSilent
+		}
+
+		printCorruptConfig(cmd.OutOrStdout(), dir)
+
+		return wrappedErr
 	}
 
-	printAlreadyLinked(cfg.ArtifactID, dir)
+	// Fetch the linked artifact to determine health.
+	art, fetchErr := getArtifactFn(cfg.ArtifactID)
+
+	gone := wldoctor.IsNotFound(fetchErr)
+
+	mismatch := false
+	if fetchErr == nil && art != nil {
+		mismatch = wldoctor.IsCatalogMismatch(cfg.CatalogID, art)
+	}
+
+	if gone || mismatch {
+		return handleGoneOrMismatch(cmd, dir, cfg, outputFormat, gone)
+	}
+
+	// Healthy (or non-404 error — can't determine, treat as healthy).
+	const remedy = "dr artifact code doctor"
+
+	if outputFormat == outputformat.OutputFormatJSON {
+		artifactID := cfg.ArtifactID
+
+		renderAlreadyLinkedJSON(cmd.OutOrStdout(), &artifactID, remedy)
+
+		printAlreadyLinkedHealthy(stderr, cfg.ArtifactID, dir)
+
+		cmd.SilenceErrors = true
+
+		return cli.ErrSilent
+	}
+
+	printAlreadyLinkedHealthy(cmd.OutOrStdout(), cfg.ArtifactID, dir)
 
 	return errors.New("init aborted: project already linked")
 }
