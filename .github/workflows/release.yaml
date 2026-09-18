@@ -76,6 +76,14 @@ jobs:
       # signatures so the Slack alert says what broke and who can fix it,
       # instead of sending everyone to read the raw log. Add new signatures
       # here as they are diagnosed in the wild.
+      #
+      # Signatures seen in real runs (both from the failed v0.8.1 attempts):
+      # - "Team is not yet configured for notarization":
+      #   https://github.com/datarobot-oss/cli/actions/runs/35128057233
+      # - "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED":
+      #   https://github.com/datarobot-oss/cli/actions/runs/35382156489
+      # The generic "notariz" catch-all has no motivating run; it is a
+      # fallback for notarization failures with a signature not listed above.
       - name: Diagnose failure
         id: diagnose
         env:
