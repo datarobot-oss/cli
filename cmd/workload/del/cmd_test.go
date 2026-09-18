@@ -131,6 +131,11 @@ func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, parsed.WorkloadID())
 	assert.Contains(t, out, "Removed workloadId")
+
+	// The note says what the removal means for the project, not which
+	// command to run next: `dr workload up` is not generally available, and
+	// this line prints for everyone who deletes a bound workload.
+	assert.NotContains(t, out, "workload up")
 }
 
 // delete is addressed by id and can be run from any directory. A manifest

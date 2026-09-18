@@ -112,6 +112,27 @@ var expectedTrackedCommands = []string{
 	"dr artifact code init",
 	"dr artifact code sync",
 	"dr artifact code versions",
+	"dr artifact code checkout",
+}
+
+// trackedSubtrees are the command groups every leaf of which must fire a
+// telemetry event.
+//
+// expectedTrackedCommands can only say that the commands somebody listed are
+// tracked; it cannot say which ones nobody listed, and a leaf missing from a
+// hand-kept list is invisible to a loop over that list. That is how
+// `dr artifact code checkout` reached general availability untracked. These
+// groups are walked instead, so the next leaf added under one of them fails
+// here until it is wired.
+//
+// Only API groups are walked. Elsewhere in the tree an untracked leaf is
+// routine (`dr auth check`, `dr self version`), so a walk would have to carry
+// a list of exemptions, which is the same hand-kept list with the burden of
+// proof reversed.
+var trackedSubtrees = []string{
+	"dr workload",
+	"dr artifact",
+	"dr pipeline",
 }
 
 // TestTelemetryWiring_AllCoreCommandsTracked walks the static command tree
@@ -127,6 +148,46 @@ func TestTelemetryWiring_AllCoreCommandsTracked(t *testing.T) {
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
 		})
 	}
+}
+
+// TestTelemetryWiring_EveryLeafOfTrackedSubtreesTracked walks each group in
+// trackedSubtrees and asserts every leaf under it carries the telemetry
+// annotation, whether or not anybody remembered to list it above.
+//
+// Leaves rather than runnable commands: a group command is not expected to
+// fire an event, and the two are told apart by having children rather than by
+// what they do when run, which is how `dr artifact build` (no children of its
+// own to speak for it) would otherwise be read as a missing wiring.
+func TestTelemetryWiring_EveryLeafOfTrackedSubtreesTracked(t *testing.T) {
+	for _, path := range trackedSubtrees {
+		root := findCommandByPath(RootCmd.Command, path)
+		require.NotNilf(t, root, "command %q not found in static command tree", path)
+
+		for _, leaf := range leafCommands(root) {
+			t.Run(leaf.CommandPath(), func(t *testing.T) {
+				assert.Containsf(t, leaf.Annotations, "telemetry",
+					"command %q must be wired to telemetry via telemetry.Track / TrackWith, "+
+						"and listed in expectedTrackedCommands", leaf.CommandPath())
+			})
+		}
+	}
+}
+
+// leafCommands returns every descendant of root that has no subcommands of
+// its own, root included when it has none.
+func leafCommands(root *cobra.Command) []*cobra.Command {
+	children := root.Commands()
+	if len(children) == 0 {
+		return []*cobra.Command{root}
+	}
+
+	var leaves []*cobra.Command
+
+	for _, child := range children {
+		leaves = append(leaves, leafCommands(child)...)
+	}
+
+	return leaves
 }
 
 // expectedGatedWorkloadTrackedCommands enumerates the `dr workload` leaves
