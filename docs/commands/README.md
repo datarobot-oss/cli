@@ -410,6 +410,8 @@ For detailed documentation on each command, see:
   - `start` / `stop` / `status`&mdash;run-state control and status polling.
   - `endpoint` / `logs`&mdash;print the endpoint URL and stream container logs.
 
+- **[artifact and workload spec](workload-spec.md)**&mdash;the reference for the two spec files those commands read: container groups and images, environment variables and secrets, replicas and resource allocation, and one walkthrough from source code to a running URL.
+
 ## Getting help
 
 ```bash

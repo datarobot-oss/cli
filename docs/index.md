@@ -55,6 +55,7 @@ Detailed documentation for each command:
 - [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines; see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.
 - [artifact](commands/artifact.md): build and manage the container artifacts that back workloads (register a spec, sync code, build images, lock).
 - [workload](commands/workload.md): deploy and operate workloads created from artifacts (alias `wl`), from create through start, stop, status, endpoint and logs.
+- [artifact and workload spec](commands/workload-spec.md): every field the two spec files accept, environment variables and secrets, and one walkthrough from source code to a running URL.
 - [Command reference index](commands/README.md)&mdash;full command tree including `dependencies check` and global flags.
 
 For template operations (list, setup), see the [Template system](template-system/README.md) documentation and use `dr templates --help` for command details.
@@ -98,7 +99,7 @@ If you can't find what you're looking for:
 - Template system structure and quickstart
 - Interactive configuration deep-dive
 - Environment variables management
-- auth, start, task, dotenv, completion, self, plugins, component, pipeline, artifact, workload commands
+- auth, start, task, dotenv, completion, self, plugins, component, pipeline, artifact, workload commands, plus the artifact and workload spec reference
 - Command reference index with full tree (including dependencies, self plugin, completion install/uninstall)
 - Building from source guide
 
