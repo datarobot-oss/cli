@@ -54,6 +54,7 @@ func TestNewDownloadTransportInheritsProxyAndTLSFromDefault(t *testing.T) {
 
 func TestNewDownloadTransportKeepsCustomTLSConfig(t *testing.T) {
 	original := http.DefaultTransport
+
 	t.Cleanup(func() { http.DefaultTransport = original })
 
 	custom := original.(*http.Transport).Clone()
@@ -88,6 +89,7 @@ func TestDownloadHTTPGoesThroughTheProxy(t *testing.T) {
 	require.NoError(t, err)
 
 	original := http.DefaultTransport
+
 	t.Cleanup(func() { http.DefaultTransport = original })
 
 	routed := original.(*http.Transport).Clone()
