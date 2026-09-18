@@ -350,70 +350,64 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 // Structural tests (read-only, no Execute)
 // ---------------------------------------------------------------------------
 
-// TestWorkloadCommandNotPresentByDefault verifies that workload is absent from
-// the default command tree. Uses a fresh isolated build with the feature-gate
-// env var neutralized so the test passes even when
-// DATAROBOT_CLI_FEATURE_WORKLOAD is set in the ambient environment.
-func TestWorkloadCommandNotPresentByDefault(t *testing.T) {
+// TestWorkloadCommandPresentByDefault verifies that workload is present in the
+// default command tree. The command carries no feature-gate annotation any
+// more, so cli.CommandAdder must not filter it out. The env var is neutralized
+// so the test proves the command is there on its own merits, not because
+// DATAROBOT_CLI_FEATURE_WORKLOAD happens to be set in the ambient environment
+// (the repo's gitignored .env sets it, and `task test` loads that file).
+func TestWorkloadCommandPresentByDefault(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
 
 	root := newIsolatedRootCmd()
 
-	var found bool
-
-	for _, subCmd := range root.Commands() {
-		if subCmd.Name() == "workload" {
-			found = true
-			break
-		}
-	}
-
-	assert.False(t, found, "workload command should not be present when feature gate is not enabled")
+	assert.NotNil(t, findCommandByPath(root.Command, "dr workload"),
+		"workload command should be present by default now that it is no longer feature-gated")
 }
 
-// TestArtifactCommandNotPresentByDefault verifies that artifact is absent from
-// the default command tree. The artifact command shares the "workload" feature
-// gate, so it is filtered out by cli.CommandAdder during Build() when the gate
-// is not enabled. Uses a fresh isolated build with the env var neutralized so
-// the test passes even when DATAROBOT_CLI_FEATURE_WORKLOAD is set.
-func TestArtifactCommandNotPresentByDefault(t *testing.T) {
+// TestArtifactCommandPresentByDefault verifies that artifact is present in the
+// default command tree. It used to share the "workload" feature gate; both
+// roots are registered unconditionally now.
+func TestArtifactCommandPresentByDefault(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
 
 	root := newIsolatedRootCmd()
 
-	var found bool
+	assert.NotNil(t, findCommandByPath(root.Command, "dr artifact"),
+		"artifact command should be present by default now that it is no longer feature-gated")
+}
 
-	for _, subCmd := range root.Commands() {
-		if subCmd.Name() == "artifact" {
-			found = true
-			break
-		}
+// TestWorkloadUpAndConfigAbsentByDefault verifies that the two workload
+// subcommands still behind DATAROBOT_CLI_FEATURE_WORKLOAD are missing from the
+// tree while it is unset: not hidden, absent, so they are out of help,
+// completion and dispatch alike. The env var is neutralized for the same
+// reason as above.
+func TestWorkloadUpAndConfigAbsentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+
+	root := newIsolatedRootCmd()
+
+	require.NotNil(t, findCommandByPath(root.Command, "dr workload"))
+
+	for _, path := range []string{"dr workload up", "dr workload config"} {
+		assert.Nil(t, findCommandByPath(root.Command, path),
+			"%s should be absent when DATAROBOT_CLI_FEATURE_WORKLOAD is unset", path)
 	}
-
-	assert.False(t, found, "artifact command should not be present when feature gate is not enabled")
 }
 
 // TestPipelineCommandPresentByDefault verifies that pipeline is present in the
-// default command tree. Pipelines went GA, so unlike workload/artifact the
-// command carries no feature-gate annotation and cli.CommandAdder must not
-// filter it out. The env var is neutralized so the test proves the command is
-// there on its own merits, not because DATAROBOT_CLI_FEATURE_PIPELINE happens
-// to be set in the ambient environment.
+// default command tree. Pipelines went GA, so the command carries no
+// feature-gate annotation and cli.CommandAdder must not filter it out. The env
+// var is neutralized so the test proves the command is there on its own
+// merits, not because DATAROBOT_CLI_FEATURE_PIPELINE happens to be set in the
+// ambient environment.
 func TestPipelineCommandPresentByDefault(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_PIPELINE", "")
 
 	root := newIsolatedRootCmd()
 
-	var found bool
-
-	for _, subCmd := range root.Commands() {
-		if subCmd.Name() == "pipeline" {
-			found = true
-			break
-		}
-	}
-
-	assert.True(t, found, "pipeline command should be present by default now that pipelines are GA")
+	assert.NotNil(t, findCommandByPath(root.Command, "dr pipeline"),
+		"pipeline command should be present by default now that pipelines are GA")
 }
 
 // TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-CA TLS flags

@@ -90,6 +90,35 @@ dr run lint test --parallel
 dr run dev --watch
 ```
 
+## Workloads and artifacts
+
+Deploy your code to DataRobot infrastructure and operate it once it runs. See the [artifact](../commands/artifact.md) and [workload](../commands/workload.md) command documentation, and the [spec reference](../commands/workload-spec.md) for the files these commands read.
+
+```bash
+# Register an artifact, then link this directory to it
+dr artifact create --spec-file spec.yaml
+dr artifact code init <artifact-id>
+
+# ⭐ Push code and build the image
+dr artifact code sync
+dr artifact build create --wait
+
+# Freeze the artifact for deployment
+dr artifact lock <artifact-id>
+
+# ⭐ Deploy it
+dr workload create --spec-file workload.yaml
+
+# Watch it come up, then call it
+dr workload status <workload-id>
+curl "$(dr workload endpoint <workload-id>)health"
+
+# Operate it (inside the project directory the id can be left out)
+dr workload logs --follow
+dr workload stop <workload-id>
+dr workload start <workload-id>
+```
+
 ## Common workflows
 
 Step-by-step guides for typical tasks.
@@ -196,6 +225,9 @@ Important files and where to find them. See the [configuration files documentati
 | State file           | `.datarobot/cli/state.yaml` (in template directory) |
 | Environment file     | `.env` (in template directory)                      |
 | Environment template | `.env.template` (in template directory)             |
+| Workload binding     | `.datarobot.yaml` (in project directory)            |
+| Artifact code state  | `.datarobot/workload/` (in project directory)       |
+| Code sync ignore     | `.drignore` (in project directory)                  |
 
 ## Getting help
 

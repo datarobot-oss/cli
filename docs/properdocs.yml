@@ -97,6 +97,7 @@ nav:
       - dependencies: commands/dependencies.md
       - artifact: commands/artifact.md
       - workload: commands/workload.md
+      - spec reference: commands/workload-spec.md
       - pipeline: commands/pipeline.md
       - pipeline reference: commands/pipelines-reference.md
       - llm-gateway: commands/llm-gateway.md

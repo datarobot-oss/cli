@@ -40,6 +40,7 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - 📦 **Template management**&mdash;clone and configure application templates interactively.
 - ⚙️ **Interactive configuration**&mdash;smart wizard for environment setup with validation.
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
+- 🛳️ **Workload deployment**&mdash;build container artifacts from your code and run them on DataRobot infrastructure.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
 - 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 
@@ -417,6 +418,7 @@ See the links below for specific details:
 - **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
 - **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
 - **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
+- **[Deploying workloads](docs/commands/workload-spec.md)**&mdash;take your own code from an artifact to a running URL with [`dr artifact`](docs/commands/artifact.md) and [`dr workload`](docs/commands/workload.md), including the spec files both commands read.
 - **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 
 ## Common issues

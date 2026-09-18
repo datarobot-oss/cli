@@ -27,6 +27,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
@@ -100,6 +101,21 @@ Example:
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().Bool("clean", false, "Remove checkout directories instead of downloading.")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts.")
+
+	// The version argument is deliberately not reported: it may be any unique
+	// prefix, so what it identifies is a catalog version of one project rather
+	// than anything comparable across runs. Whether one was given at all is
+	// the part that says how the command was used.
+	telemetry.TrackWith(c, func(cmd *cobra.Command, args []string) map[string]any {
+		clean, _ := cmd.Flags().GetBool("clean")
+
+		return map[string]any{
+			"clean":         clean,
+			"version_given": len(args) > 0,
+			"yes":           cli.IsNonInteractive(cmd),
+			"output_format": string(outputFormat),
+		}
+	})
 
 	return c
 }

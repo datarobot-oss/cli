@@ -343,7 +343,7 @@ func TestTriggerArtifactBuild_ClientTimeoutSaysRerunIsSafe(t *testing.T) {
 
 	_, err := TriggerArtifactBuild("art-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Re-running 'dr workload up' is safe")
+	assert.Contains(t, err.Error(), "Re-running the command is safe")
 	assert.Contains(t, err.Error(), "may still have started")
 }
 
