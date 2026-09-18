@@ -20,7 +20,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,37 +31,70 @@ import (
 // and failed on a direct DNS lookup of the download host, and it also dropped
 // the TLS configuration tls.Apply installs for --ca-cert / -k.
 
-func TestNewDownloadTransportInheritsProxyAndTLSFromDefault(t *testing.T) {
-	base, ok := http.DefaultTransport.(*http.Transport)
-	require.True(t, ok, "http.DefaultTransport should be *http.Transport")
+// restoreDefaultTransport returns the current default transport and puts it back
+// after the test, since these tests replace it process-wide.
+func restoreDefaultTransport(t *testing.T) *http.Transport {
+	t.Helper()
 
-	transport := newDownloadTransport()
-
-	require.NotNil(t, transport.Proxy, "download must resolve a proxy, not connect directly")
-	assert.Equal(t,
-		reflect.ValueOf(base.Proxy).Pointer(),
-		reflect.ValueOf(transport.Proxy).Pointer(),
-		"download should resolve proxies the same way as the rest of the CLI",
-	)
-
-	// tls.Apply swaps http.DefaultTransport to carry --ca-cert / -k, so cloning
-	// it is what keeps those flags effective for plugin downloads too.
-	assert.Equal(t, base.TLSClientConfig, transport.TLSClientConfig)
-
-	assert.NotNil(t, transport.DialContext, "the fail-fast dial timeout must be kept")
-}
-
-func TestNewDownloadTransportKeepsCustomTLSConfig(t *testing.T) {
 	original := http.DefaultTransport
 
 	t.Cleanup(func() { http.DefaultTransport = original })
 
-	custom := original.(*http.Transport).Clone()
+	base, ok := original.(*http.Transport)
+	require.True(t, ok, "http.DefaultTransport should be *http.Transport")
+
+	return base
+}
+
+func TestNewDownloadTransportResolvesProxiesLikeTheRestOfTheCLI(t *testing.T) {
+	base := restoreDefaultTransport(t)
+
+	// Asserted by behaviour rather than by comparing function pointers, which
+	// reflect's own documentation says do not identify a func.
+	sentinel, err := url.Parse("http://sentinel.example:8080")
+	require.NoError(t, err)
+
+	routed := base.Clone()
+	routed.Proxy = func(*http.Request) (*url.URL, error) { return sentinel, nil }
+	http.DefaultTransport = routed
+
+	transport, err := newDownloadTransport()
+	require.NoError(t, err)
+	require.NotNil(t, transport.Proxy, "download must resolve a proxy, not connect directly")
+
+	target, err := url.Parse("https://cli.datarobot.com/plugins/x.tar.xz")
+	require.NoError(t, err)
+
+	resolved, err := transport.Proxy(&http.Request{URL: target})
+	require.NoError(t, err)
+	assert.Equal(t, sentinel, resolved,
+		"the download should go wherever the CLI's configured transport says")
+}
+
+func TestNewDownloadTransportKeepsTheDefaultTransportTimeouts(t *testing.T) {
+	base := restoreDefaultTransport(t)
+
+	transport, err := newDownloadTransport()
+	require.NoError(t, err)
+
+	// A bare &http.Transport{} leaves these at zero: no TLS handshake deadline,
+	// and idle connections that are never reaped. Cloning carries them over.
+	assert.Equal(t, base.TLSHandshakeTimeout, transport.TLSHandshakeTimeout)
+	assert.NotZero(t, transport.TLSHandshakeTimeout)
+	assert.Equal(t, base.IdleConnTimeout, transport.IdleConnTimeout)
+	assert.NotZero(t, transport.IdleConnTimeout)
+	assert.Equal(t, base.ExpectContinueTimeout, transport.ExpectContinueTimeout)
+}
+
+func TestNewDownloadTransportKeepsCustomTLSConfig(t *testing.T) {
+	base := restoreDefaultTransport(t)
+
+	custom := base.Clone()
 	custom.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // mirrors tls.Apply(--skip-certificate-check)
 	http.DefaultTransport = custom
 
-	transport := newDownloadTransport()
-
+	transport, err := newDownloadTransport()
+	require.NoError(t, err)
 	require.NotNil(t, transport.TLSClientConfig)
 	assert.True(t, transport.TLSClientConfig.InsecureSkipVerify,
 		"a TLS-intercepting proxy needs the CLI's TLS settings to reach the download too")
@@ -75,10 +107,15 @@ func TestNewDownloadTransportKeepsCustomTLSConfig(t *testing.T) {
 func TestDownloadHTTPGoesThroughTheProxy(t *testing.T) {
 	const body = "plugin-archive-bytes"
 
-	var proxiedURL string
+	// Handed over a channel rather than a shared variable: the handler runs on
+	// the server's goroutine and the assertion on the test's.
+	proxied := make(chan string, 1)
 
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxiedURL = r.URL.String()
+		select {
+		case proxied <- r.URL.String():
+		default:
+		}
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(body))
@@ -88,11 +125,9 @@ func TestDownloadHTTPGoesThroughTheProxy(t *testing.T) {
 	proxyURL, err := url.Parse(proxy.URL)
 	require.NoError(t, err)
 
-	original := http.DefaultTransport
+	base := restoreDefaultTransport(t)
 
-	t.Cleanup(func() { http.DefaultTransport = original })
-
-	routed := original.(*http.Transport).Clone()
+	routed := base.Clone()
 	routed.Proxy = func(*http.Request) (*url.URL, error) { return proxyURL, nil }
 	http.DefaultTransport = routed
 
@@ -102,8 +137,13 @@ func TestDownloadHTTPGoesThroughTheProxy(t *testing.T) {
 
 	t.Cleanup(func() { _ = os.Remove(path) })
 
-	assert.Equal(t, "http://plugins.invalid/codespace-0.5.5.tar.xz", proxiedURL,
-		"the proxy should receive the absolute download URL")
+	select {
+	case got := <-proxied:
+		assert.Equal(t, "http://plugins.invalid/codespace-0.5.5.tar.xz", got,
+			"the proxy should receive the absolute download URL")
+	default:
+		t.Fatal("the proxy never received a request")
+	}
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
