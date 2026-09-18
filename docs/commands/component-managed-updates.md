@@ -75,6 +75,34 @@ copier update -a .datarobot/answers/agent-writer_agent.yml \
 By default, python warnings emitted by copier are suppressed.
 You can use `--verbose` or `--debug` flags to show them.
 
+### Component Rewrite-Config
+
+In air-gapped or corporate mirror environments you can point the CLI at an internal
+Git mirror by setting `APPLICATION_TEMPLATE_GIT_BASE_URL`. When this variable is set,
+`dr component add` writes the mirror URL into the copier answers file from the start.
+
+For components that were already added before the variable was configured, their answers
+files still contain the original `https://github.com/datarobot-community/…` URL. Run
+`dr component rewrite-config` once to patch all of those files so that subsequent
+`dr component update` calls also use the mirror:
+
+```bash
+export APPLICATION_TEMPLATE_GIT_BASE_URL=https://gitlab.internal.corp/datarobot-mirror
+
+# Patch all existing .datarobot/answers/*.yml files in-place
+dr component rewrite-config
+```
+
+After the rewrite:
+
+- `_src_path` in each answers file is replaced from `https://github.com/datarobot-community/…` to your mirror URL.
+- Files whose `_src_path` already uses the mirror URL (or an unrecognised base) are left unchanged.
+- If `APPLICATION_TEMPLATE_GIT_BASE_URL` is not set, the command prints a message and exits without touching any files.
+
+> [!NOTE]
+> Only `https://github.com/datarobot-community/…` URLs are remapped. Repositories under
+> `https://github.com/datarobot/…` or any other host are left unchanged.
+
 ## Data file
 
 ### Naming and location
