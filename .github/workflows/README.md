@@ -60,7 +60,7 @@ One extension everywhere: **`.yaml`**.
 | `fork-smoke-tests.yaml` | `workflow_dispatch` | Maintainer-approved fork smoke tests with a security pre-scan. |
 | `manual-smoke.yaml` | `workflow_dispatch` | Manual deps / install-integration / installation smoke suites (`suite` input). |
 | `nightly-smoke.yaml` | `push → main`, `schedule`, `dispatch` | Full smoke matrix + install/self-update tests + Slack on failure. |
-| `release.yaml` | `push tags v*` | GoReleaser release → verify-installation → pre-release smoke → promote. |
+| `release.yaml` | `push tags v*` | GoReleaser release → verify-installation → pre-release smoke → promote. On release-job failure, diagnoses known infrastructure failures and posts the fix to Slack. |
 | `dev-image.yaml` | `push → main`, `dispatch` | Build and push a floating multi-arch `ghcr.io/datarobot-oss/cli:dev` Docker image. |
 | `pages.yaml` | `push → main`, `dispatch` | Build and deploy the MkDocs site to GitHub Pages. |
 
@@ -184,6 +184,17 @@ status), or `/skip-smoke-tests` to bypass it. The `run-smoke-tests` label and
 
 `release.yaml` (success + failure) and `nightly-smoke.yaml` (failure only) post to
 Slack via the `SLACK_WEBHOOK_URL` repository secret.
+
+The `release.yaml` failure alert includes an automated diagnosis: the
+`notify-release-failure` job fetches the failed job's logs and pattern-matches
+known infrastructure failure signatures (e.g. Apple notarization rejections such
+as an expired Developer Program agreement), then posts what broke and the
+remediation — typically "open a ticket with IT" — so the responder does not have
+to read raw goreleaser output. It is a separate job, not a step, because a job
+cannot fetch its own logs while still running. Add new signatures to the
+`Diagnose failure` step as they are diagnosed in the wild. Set the optional
+`IT_TICKET_URL` repository variable to include a link to the IT ticket portal in
+the alert.
 
 ## Conventions for editing
 

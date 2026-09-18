@@ -61,8 +61,71 @@ jobs:
         run: |
           gh release edit ${{ github.ref_name }} --prerelease
 
+  # Failure notification is a separate job, not a step in the release job: a
+  # job cannot fetch its own logs while it is still running, and the diagnosis
+  # below needs the release job's logs to be complete.
+  notify-release-failure:
+    needs: release
+    # always() + explicit result check: a bare failure() is unreliable when the
+    # needs graph skips jobs (same reasoning as notify-verification-failure).
+    if: always() && needs.release.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Match the goreleaser output against known infrastructure failure
+      # signatures so the Slack alert says what broke and who can fix it,
+      # instead of sending everyone to read the raw log. Add new signatures
+      # here as they are diagnosed in the wild.
+      #
+      # Signatures seen in real runs (both from the failed v0.8.1 attempts):
+      # - "Team is not yet configured for notarization":
+      #   https://github.com/datarobot-oss/cli/actions/runs/35128057233
+      # - "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED":
+      #   https://github.com/datarobot-oss/cli/actions/runs/35382156489
+      # The generic "notariz" catch-all has no motivating run; it is a
+      # fallback for notarization failures with a signature not listed above.
+      - name: Diagnose failure
+        id: diagnose
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional repo variable: link to the IT ticket portal, included in
+          # the Slack message so the responder can file the ticket directly.
+          IT_TICKET_URL: ${{ vars.IT_TICKET_URL }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          SUMMARY="The release job failed. See the workflow run for the failing step."
+          ACTION="Open a ticket with IT and include a link to this run."
+          LOGS="$(gh run view "$RUN_ID" --log-failed 2>/dev/null || true)"
+
+          if grep -q "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED" <<<"$LOGS"; then
+            SUMMARY="Apple notarization was rejected: a required Apple Developer Program agreement is missing or expired."
+            ACTION="The Apple account holder must sign the pending agreement (https://developer.apple.com/account or App Store Connect → Business). Open a ticket with IT to route this, then re-run the failed workflow — no code or tag changes are needed."
+          elif grep -q "Team is not yet configured for notarization" <<<"$LOGS"; then
+            SUMMARY="Apple notarization was rejected: the team is not yet configured for notarization."
+            ACTION="Open a ticket with IT to check the Apple Developer account's notarization entitlement (Apple Developer Programs Support), then re-run the failed workflow."
+          elif grep -qi "notariz" <<<"$LOGS"; then
+            SUMMARY="macOS notarization failed; see the goreleaser step output for Apple's response."
+            ACTION="Open a ticket with IT to check the Apple signing/notarization credentials, then re-run the failed workflow."
+          fi
+
+          if [ -n "$IT_TICKET_URL" ]; then
+            ACTION="$ACTION IT ticket portal: $IT_TICKET_URL"
+          fi
+
+          {
+            echo "summary=$SUMMARY"
+            echo "action=$ACTION"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Release failure diagnosis"
+            echo
+            echo "**What happened:** $SUMMARY"
+            echo
+            echo "**What to do:** $ACTION"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Notify Slack on Failure
-        if: failure()
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -90,6 +153,13 @@ jobs:
                       "text": "*Repository:*\n<${{ github.event.repository.html_url }}|${{ github.repository }}>"
                     }
                   ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*What happened:*\n${{ steps.diagnose.outputs.summary }}\n\n*What to do:*\n${{ steps.diagnose.outputs.action }}"
+                  }
                 },
                 {
                   "type": "section",
