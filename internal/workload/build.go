@@ -307,7 +307,7 @@ func explainTriggerTimeout(err error) error {
 
 	return fmt.Errorf(
 		"the build trigger got no response within %s; the platform may still have started the build. "+
-			"Re-running 'dr workload up' is safe: a new trigger supersedes any build this one started: %w",
+			"Re-running the command is safe: a new trigger supersedes any build this one started: %w",
 		triggerTimeout, err)
 }
 

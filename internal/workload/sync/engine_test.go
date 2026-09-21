@@ -326,6 +326,12 @@ func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
 	_, err := e.Plan()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "locked")
+
+	// The remedy is reachable by whoever hit this. A deploy mints a new
+	// version and gets past the lock, but the command that does it is behind
+	// a feature gate, and `dr artifact code sync` is not.
+	assert.NotContains(t, err.Error(), "workload up")
+	assert.Contains(t, err.Error(), "dr artifact create")
 }
 
 // A preview writes nothing, so the one reason to refuse a locked artifact
