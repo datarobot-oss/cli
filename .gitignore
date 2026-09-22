@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# gentle-ai skill-registry state (auto-generated, per-repo)
+.atl/
+
 # goreleaser binary files
 dist/
 tmp
