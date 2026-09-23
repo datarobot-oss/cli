@@ -15,9 +15,11 @@ cli/
 │   ├── self/                # Self-management commands
 │   ├── start/               # Application startup
 │   ├── task/                # Task commands
-│   └── templates/           # Template management
+│   ├── templates/           # Template management
+│   └── workload/            # Workload lifecycle commands (feature-gated)
 ├── internal/                # Private application code
 │   ├── assets/              # Embedded assets
+│   ├── auth/                # Authentication logic (OAuth-style browser flow)
 │   ├── cli/                 # CLI infrastructure (GatedCommand, etc.)
 │   ├── config/              # Configuration management
 │   ├── copier/              # Template copying utilities
@@ -30,7 +32,8 @@ cli/
 │   ├── task/                # Task discovery and execution
 │   ├── telemetry/           # Anonymous usage analytics (Amplitude)
 │   ├── tools/               # Tool prerequisites
-│   └── version/             # Version information
+│   ├── version/             # Version information
+│   └── workload/            # Workload manifest, wizard, deploy, and sync engine
 ├── tui/                     # Terminal UI components
 │   ├── banner.go            # Banner display
 │   ├── interrupt.go         # Interrupt handling
@@ -63,8 +66,9 @@ Contains all CLI command implementations using the Cobra framework. Each subdire
 #### Example
 
 - `cmd/auth/cmd.go`: The auth command group
-- `cmd/auth/login.go`: The login subcommand
-- `cmd/auth/logout.go`: The logout subcommand
+- `cmd/auth/login/cmd.go`: The login subcommand
+- `cmd/auth/logout/cmd.go`: The logout subcommand
+- ...
 
 ### internal/
 
@@ -88,7 +92,24 @@ DataRobot API client implementation for:
 
 See the package doc (`go doc ./internal/drapi`) for the timeout-override
 convention and the `HTTPError`/`errors.As` contract new commands should
-follow when wiring in a call.
+follow when wiring in a call, or [drapi client conventions](drapi-client.md)
+for the same content as a dev doc.
+
+#### auth/
+
+OAuth-style browser login flow (`auth.EnsureAuthenticated`, used as a
+`PreRunE` gate on any command that needs credentials) plus the
+credential-verification and interactive URL-picker logic behind
+`dr auth login`/`set-url`. See
+[Authentication](authentication.md) for the full flow.
+
+#### workload/
+
+Manifest parsing/compilation, the `dr workload config` setup wizard, the
+`dr workload up` deploy orchestrator, and the code-sync engine behind
+`dr artifact code sync`. A dedicated architecture guide is in review with
+the Workload API team; until it lands, `internal/workload/*/doc.go` (e.g.
+`go doc ./internal/workload/up`) is the best available reference.
 
 #### envbuilder/
 
@@ -230,19 +251,27 @@ Configuration is managed through Viper and stored in:
 
 - `~/.config/datarobot/drconfig.yaml`: Global configuration and authentication tokens
 
-Access configuration through the `internal/config` package:
+Access configuration through `internal/config` and its `viperx` wrapper
+(the only supported way to read/write viper state — `spf13/viper` cannot be
+imported directly outside `internal/config`):
 
 ```go
-import "github.com/datarobot/cli/internal/config"
+import (
+    "github.com/datarobot/cli/internal/config"
+    "github.com/datarobot/cli/internal/config/viperx"
+)
 
 // Get configuration values
-apiKey := config.GetAPIKey()
-endpoint := config.GetEndpoint()
+apiKey := viperx.GetString(config.DataRobotAPIKey)
+endpoint := config.GetBaseURL()
 
-// Set configuration values
-config.SetAPIKey("new-key")
-config.SaveConfig()
+// Persist a value — only keys listed in config.PersistableKeys are written
+viperx.Set(config.DataRobotURL, "https://app.datarobot.com")
+config.UpdateConfigFile(config.DataRobotURL)
 ```
+
+See [Configuration](configuration.md) for the full contract (persistable
+keys, env-var binding, redaction rules).
 
 ## Testing structure
 

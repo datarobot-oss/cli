@@ -35,3 +35,8 @@ Validation tests must cover both success and failure paths.
 ## Validation Error Messages
 
 Validation errors must name the field that failed and explain why.
+
+## Heuristic Detection Must Degrade, Never Refuse
+
+A check built on heuristics (missing project markers, ambiguous environment) must warn or
+prompt, never hard-block — heuristics have false positives a hard refusal can't recover from.
