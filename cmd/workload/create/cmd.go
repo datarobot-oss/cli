@@ -15,11 +15,14 @@
 package create
 
 import (
-	"errors"
+	"encoding/json"
+	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/usecase"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
@@ -151,29 +154,9 @@ Example:
 				return err
 			}
 
-			// The server requires a Use Case for any Enclave-targeted create;
-			// fail here instead of a guaranteed round-trip rejection.
-			if cmd.Flags().Changed("enclave") && !cmd.Flags().Changed("use-case-id") {
-				return errors.New(
-					"--enclave requires --use-case-id: Enclave placement is governed by a Use Case")
-			}
-
-			// Changed, not enclave != "": an explicit --enclave "" must be
-			// rejected by ApplyEnclavePin, not silently create unpinned.
-			if cmd.Flags().Changed("enclave") {
-				payload, err = workload.ApplyEnclavePin(payload, enclave)
-				if err != nil {
-					return err
-				}
-			}
-
-			// After the pin so an applied "manual" policy is kept: ApplyUseCase
-			// only defaults the policy to "availability" when none is set.
-			if cmd.Flags().Changed("use-case-id") {
-				payload, err = workload.ApplyUseCase(payload, useCaseID)
-				if err != nil {
-					return err
-				}
+			payload, err = applyPlacementFlags(cmd, payload, enclave, useCaseID)
+			if err != nil {
+				return err
 			}
 
 			if err := workload.ValidateWorkloadCreateRequest(payload); err != nil {
@@ -200,13 +183,71 @@ Example:
 	cmd.Flags().StringVar(&useCaseID, "use-case-id", "",
 		"Link the workload to this Use Case and place it on the Enclaves granted to it")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+		// No raw ids: whether each flag was given, and the placement they ask for.
 		return map[string]any{
-			"output_format": string(outputFormat),
-			"enclave":       enclave,
-			"use_case_id":   useCaseID,
+			"output_format":        string(outputFormat),
+			"use_case_id_provided": cmd.Flags().Changed("use-case-id"),
+			"enclave_provided":     cmd.Flags().Changed("enclave"),
+			"placement_mode":       placementMode(cmd),
 		}
 	})
 
 	return cmd
+}
+
+// applyPlacementFlags applies --enclave and --use-case-id to the create spec.
+func applyPlacementFlags(
+	cmd *cobra.Command, payload json.RawMessage, enclave, useCaseID string,
+) (json.RawMessage, error) {
+	var err error
+
+	// The server requires a Use Case for any Enclave-targeted create;
+	// fail here instead of a guaranteed round-trip rejection. A spec
+	// that already names one satisfies the requirement.
+	if !workload.SpecSetsUseCase(payload) {
+		if err := cli.RequireFlagWhenChanged(cmd, "enclave", "use-case-id"); err != nil {
+			return nil, fmt.Errorf(
+				"%w (or useCaseId in the spec): Enclave placement is governed by a Use Case", err)
+		}
+	}
+
+	// Changed, not enclave != "": an explicit --enclave "" must be
+	// rejected by ApplyEnclavePin, not silently create unpinned.
+	if cmd.Flags().Changed("enclave") {
+		payload, err = workload.ApplyEnclavePin(payload, enclave)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// After the pin so an applied "manual" policy is kept: ApplyUseCase
+	// only defaults the policy to "availability" when none is set.
+	if cmd.Flags().Changed("use-case-id") {
+		id, err := usecase.ParseID(useCaseID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --use-case-id: %w", err)
+		}
+
+		payload, err = workload.ApplyUseCase(payload, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return payload, nil
+}
+
+// placementMode names the Enclave placement the flags ask for: "manual" for
+// --enclave, "availability" for --use-case-id alone, "none" otherwise. It
+// reads the flags only; a spec can still choose its own placement.
+func placementMode(cmd *cobra.Command) string {
+	switch {
+	case cmd.Flags().Changed("enclave"):
+		return workload.EnclaveSelectionPolicyManual
+	case cmd.Flags().Changed("use-case-id"):
+		return workload.EnclaveSelectionPolicyAvailability
+	default:
+		return "none"
+	}
 }

@@ -35,11 +35,20 @@ func TestErrorDetail(t *testing.T) {
 			`{"detail":{"code":"MISSING_USE_CASE","message":"useCaseId is required"}}`,
 			"useCaseId is required (MISSING_USE_CASE)",
 		},
+		"typed rejection with an extra field": {
+			`{"detail":{"code":"ENCLAVE_NOT_IN_USE_CASE","message":"Enclave 'x' is not linked","enclave":"x"}}`,
+			"Enclave 'x' is not linked (ENCLAVE_NOT_IN_USE_CASE)",
+		},
+		"typed rejection, pretty-printed": {
+			"{\"detail\": {\"message\": \"useCaseId is required\", \"code\": \"MISSING_USE_CASE\"}}",
+			"useCaseId is required (MISSING_USE_CASE)",
+		},
 		"object without the typed pair": {
 			`{"detail":{"code":"X","hint":"other shape"}}`,
 			`{"code":"X","hint":"other shape"}`,
 		},
 		"array detail":    {`{"detail":[{"msg":"field required"}]}`, `[{"msg":"field required"}]`},
+		"spaced array":    {`{"detail": [ {"msg": "field required"} ]}`, `[{"msg":"field required"}]`},
 		"no detail field": {`{"message":"drflask says hi"}`, ""},
 		"not json":        {"<html>504 Gateway Time-out</html>", ""},
 		"empty":           {"", ""},

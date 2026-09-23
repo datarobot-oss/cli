@@ -161,7 +161,9 @@ func TestApplyUseCase_KeepsAnAppliedPin(t *testing.T) {
 }
 
 func TestApplyUseCase_KeepsASpecChosenPolicy(t *testing.T) {
-	spec := `{"name":"my-app","artifactId":"art-1","runtime":{"enclaveSelectionPolicy":"availability"}}`
+	// "manual", not the "availability" default: an unconditional overwrite
+	// would change it, so this fails if the spec's choice is not kept.
+	spec := `{"name":"my-app","artifactId":"art-1","runtime":{"enclaveSelectionPolicy":"manual","enclaves":["prod-east"]}}`
 
 	out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
 	require.NoError(t, err)
@@ -173,23 +175,24 @@ func TestApplyUseCase_KeepsASpecChosenPolicy(t *testing.T) {
 	runtime, ok := doc["runtime"].(map[string]any)
 
 	require.True(t, ok)
-	assert.Equal(t, EnclaveSelectionPolicyAvailability, runtime["enclaveSelectionPolicy"])
+	assert.Equal(t, EnclaveSelectionPolicyManual, runtime["enclaveSelectionPolicy"])
+	assert.Equal(t, []any{"prod-east"}, runtime["enclaves"])
 }
 
-func TestApplyUseCase_TrimsTheId(t *testing.T) {
-	out, err := ApplyUseCase([]byte(`{"name":"my-app"}`), "  68b0aa11bb22cc33dd44ee55  ")
-	require.NoError(t, err)
-
-	var doc map[string]any
-
-	require.NoError(t, json.Unmarshal(out, &doc))
-	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
-}
-
-func TestApplyUseCase_RejectsBlankId(t *testing.T) {
-	_, err := ApplyUseCase([]byte(`{"name":"my-app"}`), "   ")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid --use-case-id")
+func TestSpecSetsUseCase(t *testing.T) {
+	for name, c := range map[string]struct {
+		spec string
+		want bool
+	}{
+		"set":          {`{"name":"my-app","useCaseId":"68b0aa11bb22cc33dd44ee55"}`, true},
+		"absent":       {`{"name":"my-app"}`, false},
+		"null":         {`{"name":"my-app","useCaseId":null}`, false},
+		"invalid json": {`{`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, c.want, SpecSetsUseCase([]byte(c.spec)))
+		})
+	}
 }
 
 func TestApplyUseCase_RejectsSpecWithUseCaseId(t *testing.T) {

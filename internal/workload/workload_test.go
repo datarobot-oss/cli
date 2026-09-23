@@ -315,6 +315,31 @@ func TestCreateWorkload_422SurfacesServerDetail(t *testing.T) {
 	assert.Contains(t, err.Error(), "Artifact not found")
 }
 
+// A typed placement rejection reads as the server's sentence and code, not a
+// raw JSON dump, and the error still unpacks to the HTTP status.
+func TestCreateWorkload_TypedRejectionRendersMessageAndCode(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprint(w, `{"detail":{"code":"MISSING_USE_CASE","message":"useCaseId is required"}}`)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := CreateWorkload(json.RawMessage(`{"name":"wl","artifactId":"art-1"}`))
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode)
+	assert.Equal(t, "useCaseId is required (MISSING_USE_CASE)", httpErr.Detail)
+	assert.NotContains(t, err.Error(), `{"detail"`)
+}
+
 func TestGetWorkload_Success(t *testing.T) {
 	installSkipAuth(t)
 

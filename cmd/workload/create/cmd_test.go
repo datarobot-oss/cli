@@ -220,3 +220,75 @@ func TestCmd_UseCaseConflictsWithSpecUseCase(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already sets useCaseId")
 }
+
+// A spec that already names a Use Case can be pinned with --enclave alone.
+func TestCmd_EnclaveWithSpecUseCaseReachesTheWire(t *testing.T) {
+	var posted []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posted, _ = io.ReadAll(r.Body)
+
+		fmt.Fprint(w, `{"id":"wl-1","name":"my-app","status":"submitted"}`)
+	}))
+
+	defer srv.Close()
+
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(viperx.Reset)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	spec := `{"name": "wl", "artifactId": "art-1", "useCaseId": "68b0aa11bb22cc33dd44ee55"}`
+	require.NoError(t, os.WriteFile(path, []byte(spec), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--enclave", "prod-east"})
+
+	require.NoError(t, cmd.Execute())
+
+	var body map[string]any
+
+	require.NoError(t, json.Unmarshal(posted, &body))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
+
+	runtime, ok := body["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, "manual", runtime["enclaveSelectionPolicy"])
+	assert.Equal(t, []any{"prod-east"}, runtime["enclaves"])
+}
+
+func TestCmd_MalformedUseCaseIDFailsBeforeNetwork(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spec.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"name": "wl", "artifactId": "art-1"}`), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--spec-file", path, "--use-case-id", "not-an-id"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid --use-case-id")
+}
+
+func TestPlacementMode(t *testing.T) {
+	for name, c := range map[string]struct {
+		args []string
+		want string
+	}{
+		"no placement flags": {nil, "none"},
+		"use case only":      {[]string{"--use-case-id", "68b0aa11bb22cc33dd44ee55"}, "availability"},
+		"enclave":            {[]string{"--enclave", "prod-east", "--use-case-id", "68b0aa11bb22cc33dd44ee55"}, "manual"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cmd := Cmd()
+			require.NoError(t, cmd.ParseFlags(c.args))
+			assert.Equal(t, c.want, placementMode(cmd))
+		})
+	}
+}

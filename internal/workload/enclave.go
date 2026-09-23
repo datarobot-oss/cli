@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/datarobot/cli/internal/usecase"
 )
 
 // Enclave selection policies as serialized by the server. Enclave placement
@@ -95,6 +97,21 @@ func decodeSpecObject(spec []byte) (map[string]any, error) {
 	return doc, nil
 }
 
+// SpecSetsUseCase reports whether a JSON workload create spec already names
+// a Use Case in its top-level useCaseId field. A spec that does not decode is
+// reported as not setting one; validation rejects it later with a clearer
+// error.
+func SpecSetsUseCase(spec []byte) bool {
+	doc, err := decodeSpecObject(spec)
+	if err != nil {
+		return false
+	}
+
+	id, ok := doc["useCaseId"]
+
+	return ok && id != nil
+}
+
 // ApplyUseCase links a workload create spec to a Use Case: the top-level
 // useCaseId field the server reads at create time. Enclave placement is
 // opt-in per workload and always governed by a Use Case, so when neither
@@ -103,12 +120,7 @@ func decodeSpecObject(spec []byte) (map[string]any, error) {
 // granted to the Use Case. It errors if the spec already sets useCaseId
 // rather than silently rewriting it. Re-encodes the spec the same way
 // ApplyEnclavePin does.
-func ApplyUseCase(spec []byte, useCaseID string) (json.RawMessage, error) {
-	id := strings.TrimSpace(useCaseID)
-	if id == "" {
-		return nil, errors.New("invalid --use-case-id: the Use Case id must be non-blank")
-	}
-
+func ApplyUseCase(spec []byte, id usecase.ID) (json.RawMessage, error) {
 	doc, err := decodeSpecObject(spec)
 	if err != nil {
 		return nil, err
@@ -119,7 +131,7 @@ func ApplyUseCase(spec []byte, useCaseID string) (json.RawMessage, error) {
 			"spec already sets useCaseId; remove it from the spec or drop --use-case-id")
 	}
 
-	doc["useCaseId"] = id
+	doc["useCaseId"] = string(id)
 
 	runtime := map[string]any{}
 
