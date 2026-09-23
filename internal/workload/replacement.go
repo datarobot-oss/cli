@@ -62,13 +62,18 @@ const rollingStrategy = "rolling"
 // which is what the platform's own example code implies. ArtifactID and
 // Status carry the polling and rollout logic; the rest are display fields.
 type Replacement struct {
-	ID         string    `json:"id"`
-	WorkloadID string    `json:"workloadId"`
-	ArtifactID string    `json:"candidateArtifactId"`
-	Status     string    `json:"status"`
-	Strategy   string    `json:"strategy,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID         string `json:"id"`
+	WorkloadID string `json:"workloadId"`
+	ArtifactID string `json:"candidateArtifactId"`
+	Status     string `json:"status"`
+	Strategy   string `json:"strategy,omitempty"`
+
+	// Message is the platform's account of how a failed rollout ended, which
+	// for a candidate that never became healthy carries the container's reason.
+	Message string `json:"message,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // IsTerminalReplacementStatus reports whether s is a status the replacement
@@ -425,7 +430,7 @@ func (w *replacementWait) step() (bool, error) {
 		return false, nil
 	}
 
-	return true, terminalReplacementErr(w.workloadID, replacement.Status)
+	return true, terminalReplacementErr(w.workloadID, replacement)
 }
 
 // timedOut is the deadline error, spelled once because two paths reach it.
@@ -465,14 +470,22 @@ const defaultReplacementPollInterval = 2 * time.Second
 // should return, or nil when the rollout succeeded. It is only meaningful for
 // a status IsTerminalReplacementStatus accepts; anything else reads as
 // success, which is why the single call site is behind that check.
-func terminalReplacementErr(workloadID, status string) error {
-	if !IsFailedReplacementStatus(status) {
+//
+// The platform's message travels with the status when there is one: without it
+// the reader is told that a swap failed and sent to the logs for the reason.
+func terminalReplacementErr(workloadID string, replacement *Replacement) error {
+	if !IsFailedReplacementStatus(replacement.Status) {
 		return nil
 	}
 
+	why := ""
+	if replacement.Message != "" {
+		why = " (" + replacement.Message + ")"
+	}
+
 	return fmt.Errorf(
-		"replacement for workload %s ended with status %s; the workload reverted to its previous artifact",
-		workloadID, status,
+		"replacement for workload %s ended with status %s%s; the workload reverted to its previous artifact",
+		workloadID, replacement.Status, why,
 	)
 }
 

@@ -15,7 +15,6 @@
 package telemetry
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"runtime"
@@ -98,7 +97,7 @@ func CollectCommonProperties() *CommonProperties {
 	}
 
 	// Retrieve account info (includes userID, orgID, tenantID)
-	result, err := retrieveAccountInfo(context.Background())
+	result, err := retrieveAccountInfo()
 	if err == nil {
 		props.UserID = &result.UID
 

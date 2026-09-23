@@ -126,7 +126,9 @@ func (c choice) view() string {
 		line := fmt.Sprintf("%d. %s", i+1, opt.label)
 
 		if i == c.selected {
-			b.WriteString(tui.InfoStyle.Render("> " + line))
+			// The same cursor glyph the pickers use (table.go syncRows), so a
+			// selection reads the same across menus and lists.
+			b.WriteString(selectedStyle.Render("❯ " + line))
 		} else {
 			b.WriteString("  " + line)
 		}
@@ -140,6 +142,9 @@ func (c choice) view() string {
 			b.WriteString(style.Render("   " + opt.note))
 		}
 
+		// A trailing green tag on the right, its own colour whatever the option
+		// is doing: green means "from the running workload" throughout the
+		// wizard's notes, and the tag is one more live-derived value.
 		if c.liveValue != "" && opt.value == c.liveValue {
 			b.WriteString(liveStyle.Render("   · in use"))
 		}

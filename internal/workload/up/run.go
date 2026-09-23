@@ -109,6 +109,26 @@ type Options struct {
 	// fields the file moved, and the run would have to be read to know which.
 	Lock bool
 
+	// SyncEnv is the .env re-entry `dr workload config` takes, offered here
+	// because the first run of this command already does it: with no manifest
+	// `up` is the wizard, and the wizard reads .env, classifies it and mints
+	// the credentials. Without it the second run is the only one that cannot,
+	// which makes the file the deploy reads something you have to leave the
+	// command to change.
+	//
+	// Opt-in, and that is what keeps a deploy a function of the committed
+	// repo: a run without it changes neither file and sends nothing from .env,
+	// so a fresh CI clone with no .env deploys exactly what your laptop
+	// deploys. The file is still read, for the notice that says the two have
+	// parted.
+	SyncEnv bool
+
+	// ConfirmEnv is shown what the sync would do and answers whether to do it,
+	// nil when there is nobody to ask. It reaches the wizard unchanged: the
+	// deploy has no opinion about the question, only about when it is safe to
+	// put one in front of somebody.
+	ConfirmEnv func() (bool, error)
+
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
 	PollTimeout  time.Duration
@@ -138,6 +158,27 @@ type Result struct {
 	// the artifact was still current. A build that failed still sets it, so
 	// the caller can say which logs to read.
 	BuildID string
+
+	// Env is what --sync-env did to the manifest before
+	// the plan was computed, zero when neither was asked for. The counts
+	// travel because a rotation is the one edit the plan cannot show: it
+	// changes no file, so a run that re-sent a secret and deployed nothing
+	// would otherwise report itself as a deploy that did nothing at all.
+	Env EnvEdit
+}
+
+// EnvEdit is the .env re-entry's side of a deploy.
+type EnvEdit struct {
+	KeysAdded      int
+	ValuesUpdated  int
+	NamesRemoved   int
+	SecretsRotated int
+	SecretsFailed  int
+	SecretsPending int
+
+	// Literals names the variables this run left in the manifest in the
+	// clear, the same list `dr workload config` reports for the same edit.
+	Literals []string
 }
 
 // Run reads, plans, and applies as much of the plan as this release can.
@@ -152,25 +193,29 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// What a failure between here and the plan still has to report. The
+	// binding travels because losing the id is how a deploy becomes
+	// unfindable; the .env counts travel because that edit has already
+	// happened. A rotation in particular leaves no file behind, so a failure
+	// that dropped it would let the next bare run call the workload up to date
+	// while it goes on serving the old value.
+	early := Result{WorkloadID: loaded.WorkloadID(), Env: loaded.Env}
+
 	live, err := lookSettled(loaded.WorkloadID(), opts)
 	if err != nil {
-		// The binding travels with the failure. A run that dies before the plan
-		// exists still has to report which workload it was about: losing the id
-		// is how a deploy becomes unfindable, and it is the whole of what the
-		// JSON envelope can carry from here.
-		return Result{WorkloadID: loaded.WorkloadID()}, err
+		return early, err
 	}
 
 	code, err := codeChangeFn(loaded, live)
 	if err != nil {
-		return Result{}, err
+		return early, err
 	}
 
 	noteIgnoreFile(code, opts)
 
 	plan, err := Build(loaded, live, code, opts)
 	if err != nil {
-		return Result{}, err
+		return early, err
 	}
 
 	// Read here rather than in Build, which is kept off the filesystem so its
@@ -191,14 +236,17 @@ func Run(opts Options) (Result, error) {
 		// below this. What was wanted stays readable under plan.action.
 		Action: ActionUnchanged,
 		Locked: live.Locked,
+		// What the .env flags did before any of this, so a run that re-sent a
+		// secret and found nothing else to do can say so: that edit changes no
+		// file and appears in no plan.
+		Env: loaded.Env,
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
 		return result, err
 	}
 
-	summary := Summary{Name: result.Name, WorkloadID: result.WorkloadID, Status: live.Status}
-	if err := Render(opts.Stderr, summary, plan); err != nil {
+	if err := announce(loaded, live, plan, result, opts); err != nil {
 		return result, err
 	}
 
@@ -243,7 +291,7 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 	// workload is cleared by `dr workload delete`, and that command only finds
 	// this project's manifest if the message carries the same --dir the deploy
 	// was given.
-	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := deployable(live, result.Plan, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
@@ -458,24 +506,17 @@ func bindLocked(loaded Loaded, plan Plan, result *Result) error {
 // happened. A dry run is excluded: it changes nothing by definition, and the
 // flag not having been used is the least of what it did not do.
 //
-// There are two ways for the flag to be idle. A run that deploys nothing is
-// the loud one. The quiet one is a manifest naming a published image: the
-// deploy goes ahead and succeeds, so nothing invites a second look at the
-// image it is actually serving, and the flag asked for a rebuild of something
-// this project never builds.
+// The flag is idle in one case only now that the plan carries it: a manifest
+// whose image the platform does not build. The deploy goes ahead and may well
+// succeed, so nothing invites a second look at the image it is serving. On a
+// built project the flag always deploys.
 func noteUnusedForce(plan Plan, opts Options) {
-	if !opts.ForceBuild || opts.DryRun {
+	if !opts.ForceBuild || opts.DryRun || plan.Code.Applies {
 		return
 	}
 
-	switch {
-	case plan.Empty():
-		fmt.Fprintf(opts.Stderr, "  --force-build had no effect: nothing is being deployed.\n")
-
-	case !plan.Code.Applies:
-		fmt.Fprintf(opts.Stderr,
-			"  --force-build had no effect: this manifest names an image the platform does not build.\n")
-	}
+	fmt.Fprintf(opts.Stderr,
+		"  --force-build had no effect: this manifest does not build its image, so there is nothing to rebuild.\n")
 }
 
 // load finds the manifest, running the setup wizard when there is none and a
@@ -484,7 +525,11 @@ func noteUnusedForce(plan Plan, opts Options) {
 // is the one thing this command must never do.
 func load(dir string, opts Options) (Loaded, error) {
 	loaded, err := Load(dir)
-	if err == nil || !errors.Is(err, ErrNoManifest) {
+	if err == nil {
+		return opts.editEnv(loaded)
+	}
+
+	if !errors.Is(err, ErrNoManifest) {
 		return loaded, err
 	}
 
@@ -493,7 +538,15 @@ func load(dir string, opts Options) (Loaded, error) {
 			"%w. Run 'dr workload config' to create one, then deploy", err)
 	}
 
-	setup, err := runWizardFn(wizard.Options{Dir: dir, Stderr: opts.Stderr})
+	// Remedy for the same reason the deploy path sets it: nothing setup prints
+	// today names a flag, but the fallback is `dr workload config`, and a
+	// default that is wrong for this caller is one nobody will notice going
+	// wrong.
+	setup, err := runWizardFn(wizard.Options{
+		Dir:    dir,
+		Remedy: "dr workload up" + manifest.DirFlag(dir),
+		Stderr: opts.Stderr,
+	})
 	if err != nil {
 		return Loaded{}, err
 	}
@@ -506,6 +559,171 @@ func load(dir string, opts Options) (Loaded, error) {
 	}
 
 	return Load(dir)
+}
+
+// editEnv applies the .env re-entry this run asked for, against the manifest
+// this deploy is about, and re-reads the file when the edit moved it. Asked
+// for nothing, it reports what the two files disagree about and changes
+// neither.
+//
+// It runs before the plan rather than after, so what reaches the platform is
+// the file as edited: an import that landed and a deploy that did not carry it
+// would leave the variable in the manifest, absent from the container, and
+// nothing to say which of the two runs was wrong.
+//
+// The wizard is given the manifest's own directory rather than this command's,
+// because `up` searches upward for the file and the edit has to land on the one
+// being deployed, next to the .env that pairs with it.
+//
+// The notice is the whole of what a bare deploy does with .env, and it keeps
+// the rule the flags were built around rather than bending it: a deploy stays
+// a function of the committed repo, and reading the file to say the two have
+// parted is not deploying from it. The alternative was the silence this
+// replaces, where a run whose .env had just been edited answered "Already up
+// to date", which is a claim about being in sync made without looking at the
+// file the reader had in front of them. `dr workload config` had the notice
+// all along, and nothing on the deploy path pointed at it.
+func (o Options) editEnv(loaded Loaded) (Loaded, error) {
+	dir := loaded.ProjectDir
+
+	// What a notice tells the reader to run, carrying this run's --dir.
+	// `config` looks only in the directory it is given while `up` walks upward
+	// for the manifest, so a bare flag on a deploy made from a subdirectory
+	// would name a command that cannot find the file the notice is about.
+	remedy := "dr workload up" + dirFlagFor(loaded)
+
+	if !o.SyncEnv {
+		o.reportEnvDrift(dir, remedy, loaded.Manifest)
+
+		return loaded, nil
+	}
+
+	// A dry run previews the edit and writes nothing, which is the only way
+	// `up --dry-run` can keep its promise: an import that minted a credential
+	// and rewrote the manifest would have changed two things the plan below
+	// then reports it is not going to do.
+	edit, err := runWizardFn(wizard.Options{
+		Dir:            dir,
+		NonInteractive: true,
+		DryRun:         o.DryRun,
+		SyncEnv:        true,
+		Confirm:        o.ConfirmEnv,
+		Remedy:         remedy,
+		Stderr:         o.Stderr,
+	})
+	if err != nil {
+		return Loaded{}, err
+	}
+
+	// Only a real write moves the file the plan reads. A dry run reports
+	// planned and leaves the manifest where it was, so the deploy below plans
+	// from what is on disk, which is what a dry run is for.
+	o.reportEnvEdit(edit)
+
+	if edit.Action != wizard.ActionUpdated {
+		return withEnvEdit(loaded, edit), nil
+	}
+
+	// The file the plan is about to be computed from is not the one already
+	// read, so it is read again rather than patched in memory: the deploy
+	// validates and compiles what is on disk, and that is what a later run
+	// will compare against.
+	reloaded, err := Load(dir)
+	if err != nil {
+		return Loaded{}, err
+	}
+
+	return withEnvEdit(reloaded, edit), nil
+}
+
+// reportEnvDrift puts the drift notice on the deploy's own margin and
+// separates it from the plan below.
+//
+// Only the notice is moved. The wizard's status lines, the ones that report
+// what an import or a rotation did, already carry the deploy's two spaces
+// because they were written to sit beside its own; wrapping those as well
+// would put them at four while `up`'s own summary of the same edit stayed at
+// two. Its prose is the half that starts flush.
+func (o Options) reportEnvDrift(dir, remedy string, parsed *manifest.Manifest) {
+	if o.Stderr == nil {
+		return
+	}
+
+	// No separator after it. The plan supplies its own leading newline when it
+	// has no header to print and none when it has, so a blank line added here
+	// would be doubled on a create; and every other preamble this command
+	// prints, the ignore notice and the summary of an env edit, already sits
+	// straight above the plan. Whether the plan should lead with a blank line
+	// of its own is a question about all of them.
+	wizard.ReportEnvDrift(dir, remedy, indent(o.Stderr, deployMargin), parsed)
+}
+
+// reportEnvEdit says what the flags did to the manifest, before the plan that
+// was computed from the result of it.
+//
+// The wizard has already reported what it sent to the credential store, which
+// is the half that happens off this machine. What is left is the half that
+// happened to the file, and on a dry run the fact that the plan below knows
+// nothing about it: nothing was written, so the plan describes the manifest as
+// it stands rather than as the flags would leave it.
+func (o Options) reportEnvEdit(edit wizard.Result) {
+	if o.Stderr == nil {
+		return
+	}
+
+	var parts []string
+
+	if edit.EnvKeysListed > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s added from %s",
+			edit.EnvKeysListed, wizard.Plural(edit.EnvKeysListed, "variable", "variables"), wizard.EnvFileName))
+	}
+
+	if edit.EnvValuesUpdated > 0 {
+		parts = append(parts, fmt.Sprintf("%d declared %s updated to match %s",
+			edit.EnvValuesUpdated, wizard.Plural(edit.EnvValuesUpdated, "value", "values"), wizard.EnvFileName))
+	}
+
+	// Said out loud, and last, because it is the one act that loses
+	// configuration rather than gaining it. A run that added three variables
+	// and dropped four would otherwise report only the three.
+	if edit.EnvNamesRemoved > 0 {
+		parts = append(parts, fmt.Sprintf("%d %s removed, gone from %s",
+			edit.EnvNamesRemoved, wizard.Plural(edit.EnvNamesRemoved, "variable", "variables"), wizard.EnvFileName))
+	}
+
+	if len(parts) == 0 {
+		return
+	}
+
+	if o.DryRun {
+		fmt.Fprintf(o.Stderr, "  %s would have %s. The plan below is for %s as it stands.\n",
+			tui.HintStyle.Render("~"), strings.Join(parts, ", "), manifest.FileName)
+	} else {
+		fmt.Fprintf(o.Stderr, "  %s %s: %s.\n",
+			tui.SuccessStyle.Render("✓"), manifest.FileName, strings.Join(parts, ", "))
+	}
+
+	// The same disclosure `dr workload config` owes for the same act. These
+	// flags put values into a file headed for git, and which command carried
+	// them there does not change who needs to read the names before it is
+	// committed.
+	wizard.WarnLiterals(o.Stderr, edit.Draft.EnvVars)
+}
+
+// withEnvEdit carries the wizard's counts onto the load, so the run can report
+// an edit the plan has no way to show.
+func withEnvEdit(loaded Loaded, edit wizard.Result) Loaded {
+	loaded.Env = EnvEdit{
+		KeysAdded:      edit.EnvKeysListed,
+		ValuesUpdated:  edit.EnvValuesUpdated,
+		NamesRemoved:   edit.EnvNamesRemoved,
+		SecretsRotated: edit.EnvSecretsRotated,
+		SecretsFailed:  edit.EnvSecretsNotRotated,
+		SecretsPending: edit.EnvSecretsPending,
+		Literals:       wizard.LiteralNames(edit.Draft.EnvVars),
+	}
+
+	return loaded
 }
 
 // boundID is the workload this run is about, for the envelope and for a
@@ -554,8 +772,21 @@ func name(loaded Loaded, live Live) string {
 }
 
 // apply carries out the plan, or explains why it cannot.
+//
+// Most of the explaining happens earlier: Run refuses the states a deploy
+// cannot land on before it prints the plan, so a refusal no longer announces
+// work it will not attempt. deployable stays here as the backstop it always
+// was, and is the only thing that answers for a workload which was steady when
+// it was read and is moving again by the time it is acted on.
 func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
-	if err := deployable(live, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
+		return result, err
+	}
+
+	// Pulled before anything is started or rolled, so a directory that turns
+	// out to hold the wrong thing is refused before the run has touched the
+	// workload.
+	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
 		return result, err
 	}
 
@@ -593,6 +824,8 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 		if err != nil || plan.OnlyStarts() {
 			return result, err
 		}
+
+		plan = afterStart(plan, result, report)
 	}
 
 	// A runtime-only change is applied to the workload in place, with no new
@@ -690,10 +923,82 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 	return loaded.Compiled.CredentialRefs
 }
 
-// deployable refuses the live states that cannot take a deploy, one message
-// each. None is a guess: an unsettled workload may still be on its way
-// somewhere, an errored one has nothing safe underneath it, and a terminated
-// one is not coming back.
+// announce prints the plan and says whether the run may carry it out, which is
+// one act rather than two: whether the plan is going to be applied changes how
+// it has to be written, so the question is asked before anything is printed.
+//
+// A refusal and a stderr that will not take a write are returned the same way,
+// because Run answers both identically: the result so far, and the error.
+//
+// Only a plan with something in it is judged. An empty plan says what it found
+// rather than listing work, so there is no announcement to correct, and
+// refusing here would turn today's exit 0 into a failure for a run that was
+// never going to change anything. --lock is the one empty plan that still
+// mutates, and lockOnly asks the same question for itself.
+func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) error {
+	var refused error
+
+	if !plan.Empty() {
+		refused = refusal(loaded, live, plan, result.Name, opts.DryRun)
+	}
+
+	summary := Summary{
+		Name:       result.Name,
+		WorkloadID: result.WorkloadID,
+		Status:     live.Status,
+		Refused:    refused != nil,
+		// Carried through announce rather than read by the renderer, because
+		// it is what this run already did to the credential store and the plan
+		// is what it is about to do to the workload. The verdict needs both:
+		// an empty plan is the truth about the manifest and not about the
+		// value the workload goes on serving until it is restarted.
+		SecretsRotated: result.Env.SecretsRotated,
+	}
+
+	if err := Render(opts.Stderr, summary, plan); err != nil {
+		return err
+	}
+
+	return refused
+}
+
+// refusal is why the state this plan was built against cannot take it, and nil
+// when it can.
+//
+// It is asked before the plan is printed. `up`'s contract is that the plan is
+// what is about to happen, so a block of changes above a refusal announces work
+// that is not going to be attempted, and the reader only finds that out on the
+// last line.
+//
+// Settling is exempt on a dry run alone, which is the one asymmetry here.
+//
+// A moving workload is waited out before the plan is built, so a dry run is
+// what ordinarily reaches a plan still settling: it does not wait, and it has
+// nothing to refuse, because it previews where the deploy would land rather
+// than acting on where the workload is. Refusing it would contradict the line
+// printed directly above the plan, which says a deploy would wait.
+//
+// A real run reaching here settling is a different thing entirely. awaitSteady
+// ends with a fresh Look, so the workload was steady when the wait landed and
+// is moving again one call later. That run is not previewing anything, and
+// deployable refuses it moments afterwards regardless -- so leaving it out of
+// the question here bought nothing and cost the plan its disclaimer, which is
+// the whole defect this change exists to fix, in the one state the report named
+// alongside errored. deployable keeps its settling branch as the backstop for
+// everything that reaches the apply by another route.
+func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bool) error {
+	if live.State == StateSettling && dryRun {
+		return nil
+	}
+
+	return deployable(live, plan, workloadName, dirFlagFor(loaded))
+}
+
+// deployable refuses the live states that cannot take this deploy, one
+// message each. None is a guess: an unsettled workload may still be on its
+// way somewhere, a terminated one is not coming back, and an errored one has
+// nothing safe underneath it, which only matters to a deploy that would leave
+// what it is running in place.
 //
 // Missing is not among them. A binding that resolves to nothing is drift, and
 // the apply for it is a create; the plan says which id went missing so a
@@ -708,23 +1013,24 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 // being deployable, and `up` means "make the file true", which for something
 // that is not running means starting it, and then applying whatever else the
 // file asks for onto the workload that is now up.
-func deployable(live Live, workloadName, dirFlag string) error {
+//
+// Errored is refused only for a plan that replaces nothing: a roll or a resize
+// is the recovery, with no serving generation for the swap to endanger, while
+// a run with nothing new to deploy could only put the same failure back.
+func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 	switch live.State {
 	case StateTerminated:
 		return fmt.Errorf(
 			"workload %s is terminated, which cannot be undone, and it still holds its name and artifact — "+
-				"%s, then deploy again",
-			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true))
+				"%s, then deploy again. %s",
+			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
-		// The refusal carries its own exit. Ending at "check the logs" left
-		// recovery to folklore, and the folk remedy — hand-deleting the
-		// workloadId, or the whole state directory — either loops through the
-		// name conflict below or throws away the code catalog with it.
-		return fmt.Errorf(
-			"workload %s is errored, so there is nothing safe to deploy onto. "+
-				"%sIf it stays errored, %s, and deploy again to recreate it under the same name",
-			workloadName, erroredCaveat(live.WorkloadID), deleteRemedy(live.WorkloadID, dirFlag, true))
+		if plan.Replaces() {
+			return nil
+		}
+
+		return erroredRefusal(live, plan, workloadName, dirFlag)
 
 	case StateSettling:
 		// The backstop, not the answer. Every run waits a moving workload out
@@ -746,6 +1052,44 @@ func deployable(live Live, workloadName, dirFlag string) error {
 	default:
 		return nil
 	}
+}
+
+// erroredRefusal is the errored workload with nothing new to roll onto it.
+// Deploying the same thing again could only reproduce the failure, so the run
+// stops and names what would not: --force-build for an image the platform
+// builds, since the registry losing it is what the flag is for, a change to
+// the image or artifact otherwise, and the delete as the last resort it was.
+func erroredRefusal(live Live, plan Plan, workloadName, dirFlag string) error {
+	return fmt.Errorf(
+		"workload %s is errored%s, and nothing here would change what it runs. "+
+			"%s%s. If it stays errored, %s, then deploy again. %s",
+		workloadName, reasonClause(plan.Reason), erroredCaveat(live.WorkloadID),
+		erroredRemedy(plan, dirFlag), deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
+}
+
+// erroredRemedy is what would give the errored workload something new to run.
+func erroredRemedy(plan Plan, dirFlag string) string {
+	if plan.Code.Applies {
+		return fmt.Sprintf(
+			"Run 'dr workload up --force-build%s' to build the image again and roll a new version onto it, "+
+				"which is the fix when the registry no longer has the image it was built into; "+
+				"for anything else, change the code or %s and deploy again",
+			dirFlag, manifest.FileName)
+	}
+
+	return fmt.Sprintf(
+		"This manifest does not build its image, so change the image or the artifact %s names and deploy again",
+		manifest.FileName)
+}
+
+// reasonClause is the platform's reason in parentheses, ready to follow the
+// word "errored", and empty when there is none to add.
+func reasonClause(reason string) string {
+	if reason == "" {
+		return ""
+	}
+
+	return " (" + reason + ")"
 }
 
 // startable refuses the one status that cannot be started. The platform
@@ -860,7 +1204,42 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 		return settle(result.WorkloadID, workload.Serving{}, result, opts, report)
 	}
 
-	return awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
+	result, err := awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
+	if err != nil && workload.IsErroredWorkloadStatus(result.Status) {
+		// The start is a prerequisite rather than the deploy, and what follows
+		// replaces the generation that just failed. Failing here closed a loop:
+		// a stopped workload whose image is gone cannot be started, so a deploy
+		// that insisted on starting it first never reached the rebuild.
+		report.say("  Workload %s came up errored; the deploy goes on, since what follows replaces what it is running.\n",
+			result.WorkloadID)
+
+		return result, nil
+	}
+
+	return result, err
+}
+
+// afterStart is the plan with the one answer in it that the start can change.
+//
+// Everything else was decided about the file and the artifact, which a start
+// does not touch. Inheriting the image is the exception: inheritsImage read a
+// stopped workload's image as trustworthy because nothing had said otherwise,
+// and a start that came up errored is the thing that says otherwise. It is the
+// same evidence on which an already-errored workload never inherits. Left
+// standing, the copy would carry the image that just failed onto the version
+// this run promotes, and under --lock lock it there for good, leaving a
+// permanently locked artifact pointing at an image that does not work.
+func afterStart(plan Plan, result Result, report *reporter) Plan {
+	if !plan.InheritsImage || !workload.IsErroredWorkloadStatus(result.Status) {
+		return plan
+	}
+
+	plan.InheritsImage = false
+
+	report.say("  The image it failed to come up on cannot be trusted, " +
+		"so the new version is built rather than copied.\n")
+
+	return plan
 }
 
 // requestStart POSTs the start and passes on the one thing the platform says
@@ -932,27 +1311,18 @@ func nameTaken(createErr error, workloadName, path, dirFlag string) error {
 		}
 
 		// A workload a deploy cannot act on must not be recommended for
-		// binding. Advising 'set workloadId' against an errored or terminated
-		// holder sends the next run straight into that state's refusal — and
-		// for the user who cleared the binding by hand because their workload
-		// was stuck, it closes a loop: the 409 recommending the exact line
-		// they just deleted. The advice is the one those refusals give:
-		// delete what holds the name.
-		if workload.IsWorkloadErrorStatus(existing[i].Status) {
-			// Errored gets the same hedge deployable's own refusal carries;
-			// terminated really is final, so it keeps the certainty.
-			caveat := ""
-			if !strings.EqualFold(existing[i].Status, workload.WorkloadStatusTerminated) {
-				caveat = erroredCaveat(existing[i].ID)
-			}
-
+		// binding: advising 'set workloadId' against a terminated holder sends
+		// the next run straight into that state's refusal, so the advice is the
+		// one that refusal gives. An errored holder is not that any more: a
+		// deploy onto it replaces what it is running, so binding is the way back.
+		if workload.IsTerminatedWorkloadStatus(existing[i].Status) {
 			return fmt.Errorf(
 				"a workload named %s already exists (%s), is %s, and nothing was deployed onto it. "+
 					"A deploy cannot act on it, so binding to it would only move this refusal. "+
-					"%sIf it is this project's dead workload, %s "+
-					"and deploy again to recreate the name. If it is not, rename this one in %s: %w",
+					"If it is this project's dead workload, %s, then deploy again to take the name "+
+					"back. %s. If it is not, rename this one in %s: %w",
 				workloadName, existing[i].ID, strings.ToLower(existing[i].Status),
-				caveat, deleteRemedy(existing[i].ID, dirFlag, false), path, createErr)
+				deleteRemedy(existing[i].ID, dirFlag, false), recreateNote, path, createErr)
 		}
 
 		return fmt.Errorf(
@@ -979,6 +1349,18 @@ func deleteRemedy(workloadID, dirFlag string, clearsBinding bool) string {
 
 	return remedy
 }
+
+// recreateNote is what a delete-and-deploy actually costs, said rather than
+// left to be discovered. The name survives, which is the whole reason
+// "recreate" sounds like continuity; the id and the endpoint URL do not, and a
+// URL that changes under live consumers is not something to find out about
+// afterwards.
+//
+// It carries the consequence only, not the "deploy again" that precedes it, so
+// each of the three refusals keeps its own imperative and all three can share
+// this. A fixed sentence is a const here, like the package's other message text.
+const recreateNote = "The replacement keeps the name, but it is a new workload with a new id " +
+	"and a new endpoint URL, so anything calling the old URL has to be pointed at the new one"
 
 // erroredCaveat is the hedge every message about an errored workload carries:
 // errored is the one dead-looking state that can still recover, so advising

@@ -40,8 +40,8 @@ const DockerfileName = "Dockerfile"
 const DefaultDockerfilePath = "./" + DockerfileName
 
 // EnvFileName is the local environment file the wizard looks for. It is read
-// in full: `up` deploys the manifest and never reads .env, so anything kept
-// only there would not reach the container. Ordinary settings are copied into
+// in full: a deploy carries the manifest and never sends anything from .env,
+// so anything kept only there would not reach the container. Ordinary settings are copied into
 // the manifest as literals and secrets become credential references, which is
 // why the values are classified rather than merely counted.
 const EnvFileName = ".env"
@@ -72,9 +72,9 @@ type Detected struct {
 	// EnvVars are the variables the project's .env defines, classified, in
 	// the order the file defines them; empty when there is no .env.
 	//
-	// `up` deploys the manifest and never reads .env, so a project that keeps
-	// its configuration there would otherwise deploy without any of it and
-	// find out at runtime. The classification decides how each one is
+	// A deploy carries the manifest and sends nothing from .env, so a project
+	// that keeps its configuration there would otherwise deploy without any of
+	// it and find out at runtime. The classification decides how each one is
 	// written: an ordinary value as a literal, a secret as a credential
 	// reference whose id the user fills in. Every row is overridable.
 	EnvVars []EnvVar
@@ -230,6 +230,24 @@ func (d Detected) HasEnvFile() bool {
 // produces a warning and an offer, not a refusal.
 func (d Detected) SuspectDir() bool {
 	return len(d.RootMarkers) == 0
+}
+
+// NameListLimit caps how many names a listing prints. Past a handful they stop
+// being a summary and start being a wall, and the sentence saying what to do
+// about them scrolls away.
+const NameListLimit = 8
+
+// JoinNames renders a name list for a message, capped at NameListLimit with a
+// count of what was left out. One implementation, because three listings in
+// this feature area answer the same question and a reader should not have to
+// compare them character by character to see that they agree.
+func JoinNames(names []string) string {
+	if len(names) <= NameListLimit {
+		return strings.Join(names, ", ")
+	}
+
+	return fmt.Sprintf("%s and %d more",
+		strings.Join(names[:NameListLimit], ", "), len(names)-NameListLimit)
 }
 
 // Plural picks the singular or plural word for count. Exported so the

@@ -22,7 +22,6 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/get"
 	"github.com/datarobot/cli/cmd/artifact/list"
 	"github.com/datarobot/cli/cmd/artifact/lock"
-	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
 
@@ -36,8 +35,6 @@ func Cmd() *cobra.Command {
 Create and inspect artifacts, build their container images, and
 synchronize local code with a remote artifact.`,
 	}
-
-	features.SetGate(cmd, "workload")
 
 	cmd.AddCommand(
 		// The artifact is the primary resource: direct verbs, like

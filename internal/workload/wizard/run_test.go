@@ -239,6 +239,18 @@ func TestRun_WarnsAboutAManifestAbove(t *testing.T) {
 	assert.Contains(t, stderr.String(), "reads a different file")
 }
 
+// A parent that is not a directory has no manifest in it, so there is nothing
+// to warn about. Locate refuses to start the walk and names the ancestor it was
+// handed, so the warning this used to print ended with a path the reader never
+// typed while opening with the one they did.
+func TestWarnShadowedManifest_SaysNothingWhenTheWalkCannotStart(t *testing.T) {
+	stderr := &bytes.Buffer{}
+
+	warnShadowedManifest(stderr, filepath.Join(t.TempDir(), "missing", "project"))
+
+	assert.Empty(t, stderr.String())
+}
+
 func TestRun_NoWarningWithoutAManifestAbove(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 

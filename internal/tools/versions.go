@@ -24,8 +24,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type versionsYaml map[string]Prerequisite
-
 func GetRequirements() ([]Prerequisite, []string, error) {
 	repoRoot, err := repo.FindRepoRoot()
 	if err != nil {
@@ -45,17 +43,46 @@ func GetRequirementsFromDir(dir string) ([]Prerequisite, []string, error) {
 		return nil, nil, fmt.Errorf("Failed to read versions yaml file %s: %w", yamlFile, err)
 	}
 
-	var fileParsed versionsYaml
+	// Decoded via yaml.Node (not a map[string]Prerequisite) to preserve the file's
+	// declaration order: dependency installation runs in this order, and tools like
+	// pulumi-datarobot's install command need pulumi already installed, so map
+	// iteration's randomized order would install prerequisites out of order.
+	var root yaml.Node
 
-	if err = yaml.Unmarshal(data, &fileParsed); err != nil {
+	if err = yaml.Unmarshal(data, &root); err != nil {
 		return nil, nil, fmt.Errorf("Failed to unmarshal versions yaml file %s: %w", yamlFile, err)
+	}
+
+	if len(root.Content) == 0 {
+		return nil, nil, nil
+	}
+
+	mapping := root.Content[0]
+	if mapping.Kind != yaml.MappingNode {
+		return nil, nil, fmt.Errorf("versions yaml file %s must contain a top-level mapping", yamlFile)
 	}
 
 	var violations []string
 
-	versions := make([]Prerequisite, 0, len(fileParsed))
+	versions := make([]Prerequisite, 0, len(mapping.Content)/2)
+	seen := make(map[string]bool, len(mapping.Content)/2)
 
-	for key, version := range fileParsed {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key := mapping.Content[i].Value
+
+		// yaml.Node traversal doesn't reject duplicate keys the way decoding into a
+		// map does, so check explicitly to keep that same fail-fast behavior.
+		if seen[key] {
+			return nil, nil, fmt.Errorf("versions yaml file %s: duplicate key %q (line %d)", yamlFile, key, mapping.Content[i].Line)
+		}
+
+		seen[key] = true
+
+		var version Prerequisite
+		if err := mapping.Content[i+1].Decode(&version); err != nil {
+			return nil, nil, fmt.Errorf("Failed to unmarshal entry %q in %s: %w", key, yamlFile, err)
+		}
+
 		version.Key = key
 		violations = append(violations, validatePrerequisite(key, version)...)
 		versions = append(versions, version)

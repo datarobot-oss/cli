@@ -151,7 +151,7 @@ func TestDeployable_RefusesAWorkloadThatStartedMovingAgain(t *testing.T) {
 		Live:   manifest.Live{WorkloadID: "wl-1"},
 		State:  StateSettling,
 		Status: workload.WorkloadStatusLaunching,
-	}, "my-app", "")
+	}, Plan{}, "my-app", "")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), workload.WorkloadStatusLaunching,
@@ -163,7 +163,7 @@ func TestDeployable_RefusesAWorkloadThatStartedMovingAgain(t *testing.T) {
 // above from being a catch-all.
 func TestDeployable_AcceptsTheStatesADeployCanActOn(t *testing.T) {
 	for _, state := range []State{StateUnbound, StateMissing, StateRunning} {
-		require.NoError(t, deployable(Live{State: state}, "my-app", ""), "state %s", state)
+		require.NoError(t, deployable(Live{State: state}, Plan{}, "my-app", ""), "state %s", state)
 	}
 }
 

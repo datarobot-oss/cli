@@ -35,11 +35,23 @@ const multipartFormField = "file"
 // by the pipe (one chunk in flight) plus the small envelope, regardless
 // of file size — important because the engine may upload multi-GiB zips.
 //
-// Fields ride in the multipart body, not the URL query: some server
-// routes (fromFile) bind their validator fields from the parsed form
-// only and silently ignore query parameters. Fields are framed as
-// complete parts BEFORE the file part so a streaming parser collects
-// them without buffering the file.
+// fields are written as ordinary form parts ahead of the file part.
+// The Files API binds a POST's parameters from the parsed body alone
+// and drops unrecognized query parameters without complaining, so an
+// option that has to reach the server travels here and not in the URL.
+// That covers the upload's overwrite mode, which is silently lost from a
+// query string. A new catalog's name is the counter-case and travels on
+// the JSON create call instead: this route validates its form strictly,
+// so a field a server does not know fails the whole upload, and re-trying
+// without it would mean streaming the archive twice.
+//
+// useArchiveContents on the fromFile routes reads like a counter-example
+// and is not one. It is sent in the query, discarded there like anything
+// else, and extraction still happens only because the server's declared
+// form default for that field is already true. It is inert rather than
+// honoured, so it says nothing about the query being a usable channel,
+// and a flip of that default would stop extraction with no error.
+// Moving it into the form is a separate change.
 //
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing
@@ -47,16 +59,11 @@ const multipartFormField = "file"
 // isn't seekable).
 func newStreamingMultipartRequest(
 	requestURL string,
-	query url.Values,
 	fields url.Values,
 	filename string,
 	size int64,
 	body io.Reader,
 ) (*http.Request, error) {
-	if len(query) > 0 {
-		requestURL += "?" + query.Encode()
-	}
-
 	contentType, prologue, epilogue, err := multipartFraming(fields, filename)
 	if err != nil {
 		return nil, err
@@ -73,9 +80,6 @@ func newStreamingMultipartRequest(
 		return nil, fmt.Errorf("build multipart request: %w", err)
 	}
 
-	// ContentLength stays exact because the form fields are folded into
-	// the prologue; the file bytes still contribute exactly size, and the
-	// epilogue is unchanged.
 	if size >= 0 {
 		req.ContentLength = int64(len(prologue)) + size + int64(len(epilogue))
 	}
@@ -91,14 +95,13 @@ func newStreamingMultipartRequest(
 	return req, nil
 }
 
-// multipartFraming returns the prologue and epilogue around the streamed
-// file part, with any extra form fields framed as complete parts first.
-// Fields must precede the file part: streaming parsers read form fields
-// as they arrive, so a server can collect its parameters before
-// committing to an arbitrarily large file stream. Field names are sorted
-// so the framing is deterministic. Going through multipart.Writer keeps
-// the framing RFC-2046-correct even though we stream the file content
-// separately.
+// multipartFraming returns the prologue and epilogue around a single
+// file part, with fields framed as complete parts before it. Fields go
+// first so a server that parses the stream incrementally has every
+// parameter in hand before it commits to reading an arbitrarily large
+// file. Names are sorted to keep the framing deterministic. Going through
+// multipart.Writer keeps the framing RFC-2046-correct even though we
+// stream the body separately.
 func multipartFraming(fields url.Values, filename string) (string, []byte, []byte, error) {
 	var head bytes.Buffer
 

@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,11 +101,173 @@ func TestBrowserFlow_EmptyKeyIsInterrupt(t *testing.T) {
 	}()
 
 	resp := waitForCallback(t, callbackURL(t, flow, ""))
+	body, readErr := io.ReadAll(resp.Body)
+	require.NoError(t, readErr)
 	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Empty(t, body, "the sentinel response must not be the success page")
 
 	err := <-errCh
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrLoginInterrupted)
+}
+
+func TestBrowserFlow_RefusesForgedBrowserCallbacks(t *testing.T) {
+	// An <img> carries Sec-Fetch-Dest "image" and a fetch()/XHR carries "empty";
+	// a page cannot forge these headers, so neither can plant a key (CFX-7754).
+	for _, dest := range []string{"image", "empty"} {
+		t.Run(dest, func(t *testing.T) {
+			flow := newTestFlow(t)
+
+			keyCh := make(chan string, 1)
+			errCh := make(chan error, 1)
+
+			go func() {
+				key, err := flow.Wait(context.Background())
+
+				keyCh <- key
+
+				errCh <- err
+			}()
+
+			forged := waitForCallback(t, callbackURL(t, flow, "?key=planted-by-attacker"),
+				"Sec-Fetch-Dest", dest)
+			require.NoError(t, forged.Body.Close())
+			assert.Equal(t, http.StatusForbidden, forged.StatusCode)
+
+			// The login must still be waiting: a genuine headerless callback completes
+			// it, and the planted key never surfaces.
+			genuine := waitForCallback(t, callbackURL(t, flow, "?key=real-key"))
+			require.NoError(t, genuine.Body.Close())
+
+			require.NoError(t, <-errCh)
+			assert.Equal(t, "real-key", <-keyCh)
+		})
+	}
+}
+
+func TestBrowserFlow_RefusesConcurrentForgedProbes(t *testing.T) {
+	// The real attack fires forged probes concurrently with the genuine navigation;
+	// every probe must 403 and none may reach keyCh (CFX-7754).
+	flow := newTestFlow(t)
+
+	keyCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		key, err := flow.Wait(t.Context())
+
+		keyCh <- key
+
+		errCh <- err
+	}()
+
+	const probes = 10
+
+	// Warm the server on the test goroutine so the probes need no retry, and no
+	// require, inside their goroutines, which testifylint's go-require forbids.
+	forgedURL := callbackURL(t, flow, "?key=planted-by-attacker")
+	warm := waitForCallback(t, forgedURL, "Sec-Fetch-Dest", "image")
+
+	assert.Equal(t, http.StatusForbidden, warm.StatusCode)
+	require.NoError(t, warm.Body.Close())
+
+	codes := make(chan int, probes)
+
+	var wg sync.WaitGroup
+
+	wg.Add(probes)
+
+	for range probes {
+		go func() {
+			defer wg.Done()
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, forgedURL, nil)
+			if !assert.NoError(t, err) {
+				return
+			}
+
+			req.Header.Set("Sec-Fetch-Dest", "image")
+
+			resp, err := http.DefaultClient.Do(req)
+			if !assert.NoError(t, err) {
+				return
+			}
+
+			assert.NoError(t, resp.Body.Close())
+
+			codes <- resp.StatusCode
+		}()
+	}
+
+	wg.Wait()
+	close(codes)
+
+	for code := range codes {
+		assert.Equal(t, http.StatusForbidden, code)
+	}
+
+	// Still waiting after the storm: the genuine callback completes it, no key planted.
+	genuine := waitForCallback(t, callbackURL(t, flow, "?key=real-key"))
+	require.NoError(t, genuine.Body.Close())
+
+	require.NoError(t, <-errCh)
+	assert.Equal(t, "real-key", <-keyCh)
+}
+
+func TestBrowserFlow_AcceptsDocumentNavigation(t *testing.T) {
+	// The real callback is a top-level navigation, marked Sec-Fetch-Dest "document".
+	flow := newTestFlow(t)
+
+	keyCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		key, err := flow.Wait(context.Background())
+
+		keyCh <- key
+
+		errCh <- err
+	}()
+
+	resp := waitForCallback(t, callbackURL(t, flow, "?key=real-key"), "Sec-Fetch-Dest", "document")
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotEmpty(t, body, "the navigation must still receive the success page")
+
+	require.NoError(t, <-errCh)
+	assert.Equal(t, "real-key", <-keyCh)
+}
+
+func TestBrowserFlow_KeylessBrowserProbeDoesNotInterrupt(t *testing.T) {
+	// A favicon probe is keyless with Sec-Fetch-Dest "image". It used to be mistaken
+	// for the port-handover sentinel and aborted the login in progress.
+	flow := newTestFlow(t)
+
+	keyCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		key, err := flow.Wait(context.Background())
+
+		keyCh <- key
+
+		errCh <- err
+	}()
+
+	probe := waitForCallback(t, callbackURL(t, flow, ""), "Sec-Fetch-Dest", "image")
+	require.NoError(t, probe.Body.Close())
+	assert.Equal(t, http.StatusForbidden, probe.StatusCode)
+
+	resp := waitForCallback(t, callbackURL(t, flow, "?key=real-key"))
+	require.NoError(t, resp.Body.Close())
+
+	require.NoError(t, <-errCh)
+	assert.Equal(t, "real-key", <-keyCh)
 }
 
 func TestBrowserFlow_WaitHonoursContextCancellation(t *testing.T) {
@@ -227,14 +390,22 @@ func TestBrowserFlow_ReclaimsPortFromStaleServer(t *testing.T) {
 }
 
 // waitForCallback issues the callback request, retrying briefly because Wait
-// starts the server asynchronously.
-func waitForCallback(t *testing.T, url string) *http.Response {
+// starts the server asynchronously. headers are alternating name/value pairs.
+func waitForCallback(t *testing.T, url string, headers ...string) *http.Response {
 	t.Helper()
+	require.Equal(t, 0, len(headers)%2, "headers must be alternating name/value pairs")
 
 	deadline := time.Now().Add(5 * time.Second)
 
 	for {
-		resp, err := http.Get(url) //nolint:noctx,gosec // test-controlled localhost URL
+		req, reqErr := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+		require.NoError(t, reqErr)
+
+		for i := 0; i+1 < len(headers); i += 2 {
+			req.Header.Set(headers[i], headers[i+1])
+		}
+
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil {
 			return resp
 		}

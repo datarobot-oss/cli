@@ -15,6 +15,7 @@
 package up
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/stretchr/testify/assert"
@@ -352,7 +354,8 @@ func TestCmd_TypedConfirmAcceptsOnlyTheName(t *testing.T) {
 			cmd.SetErr(&errOut)
 			cmd.SetIn(strings.NewReader(c.typed))
 
-			agreed, err := typedConfirm(cmd)("Type the workload name: ", "my-app")
+			agreed, err := typedConfirm(cmd, bufio.NewReader(cmd.InOrStdin()))(
+				"Type the workload name: ", "my-app")
 			require.NoError(t, err)
 
 			assert.Equal(t, c.want, agreed)
@@ -572,6 +575,12 @@ func TestCmd_NoWorkloadSaysNothingAboutDrafts(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.Error(t, err)
 	assert.False(t, draftWarned(stderr))
+
+	// The same run has no follow-ups either, and for its own reason: every
+	// command in the list needs an id, and this run never produced one. Pinned
+	// here because the guard that says so sits above the failed branch in
+	// followUps, where a later edit could reorder it out of the way.
+	assert.NotContains(t, stderr, "Next:")
 }
 
 // A failed deploy has one thing worth reading and it is the error. Telling
@@ -599,6 +608,23 @@ func TestCmd_FailedDeployThatStartedTheWorkloadStillWarns(t *testing.T) {
 	assert.True(t, draftWarned(stderr))
 }
 
+// A start that came up errored leaves nothing running, so there is no draft on
+// the air to warn about; the follow-ups stay.
+func TestCmd_FailureAfterAStartThatErroredDoesNotWarn(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+	result.Status = "errored"
+
+	stubRun(t, result, errors.New("the rollout of workload wl-1 ended as errored"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.False(t, draftWarned(stderr))
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
 // A run that changed nothing still leaves a draft serving on the same clock.
 // "Already up to date" is not the same as "this will still be here tomorrow".
 func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
@@ -610,6 +636,134 @@ func TestCmd_UnchangedRunStillWarnsAboutTheDraft(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
 	assert.Contains(t, stderr, draftHeadline)
+}
+
+// A refused --dry-run is a failure, and its footer would read as a preview
+// that went to plan. The plan block above it already says it is disclaimed and
+// the error below says why, so the line between them is the one thing on the
+// screen still describing an ordinary run.
+func TestCmd_FailedDryRunDropsTheFooter(t *testing.T) {
+	stubRun(t, refused(up.StateTerminated), errors.New("workload my-app is terminated"))
+
+	_, stderr, err := runCmd(t, "--dry-run")
+	require.Error(t, err)
+
+	assert.NotContains(t, stderr, "Dry run: nothing was changed.")
+	assert.False(t, draftWarned(stderr))
+}
+
+// refused is the result a deploy hands back when the live state turned it
+// away: the workload is real and reports where it stands, and nothing was done
+// to it. Status and the plan's state agree here because a refusal sets the
+// first from the second, which is the shape the shell reads.
+func refused(state up.State) up.Result {
+	result := deployed()
+	result.Status = state.String()
+	result.Plan.State = state
+	result.Action = up.ActionUnchanged
+
+	return result
+}
+
+// TestCmd_TerminatedRefusalOffersNoFollowUps is half the reported bug. Three
+// commands were printed under the error, and not one of them applies to a
+// workload that is not coming back: 'stop' on a terminated workload is
+// meaningless, and the refusal already names the delete that clears the way.
+func TestCmd_TerminatedRefusalOffersNoFollowUps(t *testing.T) {
+	stubRun(t, refused(up.StateTerminated), errors.New("workload my-app is terminated"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.NotContains(t, stderr, "Next:")
+	assert.NotContains(t, stderr, "dr workload stop")
+	assert.NotContains(t, stderr, "dr workload logs")
+}
+
+// An errored workload is the other half, and it goes the other way: reading the
+// logs is exactly what to do next, and the list is the only place the id is
+// attached to the command. What it loses is 'stop', which is not a next step
+// for a deploy that never landed.
+func TestCmd_ErroredRefusalKeepsLogsAndStatusButNotStop(t *testing.T) {
+	stubRun(t, refused(up.StateErrored), errors.New("workload my-app is errored"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "Next:")
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, stderr, "dr workload stop")
+}
+
+// The rule is about the run having failed rather than about a refusal: a wait
+// that timed out, or a rollout that never completed, leaves a running workload
+// whose logs and status are the whole of what there is to look at.
+func TestCmd_AnyFailureKeepsLogsAndStatusButNotStop(t *testing.T) {
+	stubRun(t, deployed(), errors.New("timed out waiting"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, stderr, "dr workload stop")
+	assert.NotContains(t, stderr, "dr workload up --lock",
+		"a failed run is not advised to lock what it did not deploy")
+}
+
+// A deploy onto a stopped workload starts it before it rolls, so a run that
+// fails after that has itself put a draft on the air: draftIsServing says so,
+// and the warning prints. The list still does not offer --lock, because locking
+// a version this run could not finish is not the remedy; the warning names the
+// command inline for anyone who decides otherwise.
+func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+
+	stubRun(t, result, errors.New("rollout never completed"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.True(t, draftWarned(stderr), "the run left a draft running and has to say so")
+	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, stderr, "  dr workload up --lock  Lock the artifact")
+	assert.NotContains(t, stderr, "dr workload stop")
+}
+
+// A run that started a workload which then reached the end of its life warns
+// about nothing and offers nothing. The draft clock this would otherwise
+// mention is not ticking, because a terminated workload is running no artifact
+// at all, and the two halves of the footer have to agree: a warning above an
+// empty follow-up list reads as advice the command forgot to finish.
+func TestCmd_StartedThenTerminatedWarnsAboutNoDraft(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionStarted
+	result.Status = "terminated"
+
+	stubRun(t, result, errors.New("workload my-app finished as terminated"))
+
+	_, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.False(t, draftWarned(stderr), "nothing is running, so nothing is on a clock")
+	assert.NotContains(t, stderr, "Next:")
+}
+
+// A refusal still reports the workload it was refused by. Losing the id is how
+// a deploy becomes unfindable, and the endpoint is deliberately kept for the
+// same reason; only its success tick is dropped.
+func TestCmd_TerminatedRefusalStillReportsTheEndpoint(t *testing.T) {
+	stubRun(t, refused(up.StateTerminated), errors.New("workload my-app is terminated"))
+
+	stdout, stderr, err := runCmd(t)
+	require.Error(t, err)
+
+	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/\n", stdout)
+	assert.Contains(t, stderr, "Workload endpoint:")
+	assert.NotContains(t, stderr, "✓ Workload endpoint:")
 }
 
 func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
@@ -644,8 +798,19 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir)
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr, "dr workload logs --dir "+dir)
-	assert.Contains(t, stderr, "dr workload up --lock --dir "+dir,
+	// Composed through DirFlag rather than spelled out. How the suffix is
+	// rendered is settled in TestDirFlag_*: forward slashes on every platform,
+	// and quotes around a path a shell would act on. Spelling it out here
+	// pinned the unquoted form, which held until a temp path arrived carrying
+	// an 8.3 name like RUNNER~1 and Windows CI printed it quoted.
+	//
+	// What this test is about is the other half: that every line in the block
+	// carries the suffix, and carries the directory this deploy was given.
+	at := manifest.DirFlag(dir)
+	require.NotEmpty(t, at, "the deploy ran elsewhere, so there is a --dir to carry")
+
+	assert.Contains(t, stderr, "dr workload logs"+at)
+	assert.Contains(t, stderr, "dr workload up --lock"+at,
 		"every line in the block has to run as printed, --lock included")
 }
 
@@ -683,4 +848,149 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	assert.NotContains(t, next, "--lock")
 	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
 		"the lines that can name the workload still do")
+}
+
+// rotatedNothingElse is the run --sync-env exists to make safe: the secret
+// reached the credential store, the manifest was already current, and so no
+// container was replaced on the way past.
+func rotatedNothingElse() up.Result {
+	result := deployed()
+	result.Action = up.ActionUnchanged
+	result.Env = up.EnvEdit{SecretsRotated: 1}
+
+	return result
+}
+
+// A rotation the deploy could not finish is true of the workload whatever the
+// output format. The warning used to sit below the JSON return, so the one run
+// that most needs it, a scripted rotation, was the one that never saw it.
+func TestCmd_JSONStillWarnsThatTheOldSecretIsServing(t *testing.T) {
+	stubRun(t, rotatedNothingElse(), nil)
+
+	stdout, stderr, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "still serves the value it started with")
+	assert.Contains(t, stderr, "dr workload stop --yes")
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope), "the advice goes to stderr, so stdout stays pure")
+}
+
+// The same run without --output-format json, so the two formats are known to
+// agree rather than assumed to.
+func TestCmd_TextWarnsThatTheOldSecretIsServing(t *testing.T) {
+	stubRun(t, rotatedNothingElse(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "still serves the value it started with")
+}
+
+// The envelope carries the names `dr workload config` reports under
+// envLiterals, and carries them as a list: a consumer that iterates should not
+// have to guard for null on the run that wrote nothing.
+func TestCmd_EnvLiteralsAreAlwaysAList(t *testing.T) {
+	result := deployed()
+	result.Env = up.EnvEdit{KeysAdded: 1, Literals: []string{"REGION"}}
+
+	stubRun(t, result, nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	env, ok := body["env"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"REGION"}, env["literals"])
+
+	stubRun(t, deployed(), nil)
+
+	stdout, _, err = runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ = envelope["up"].(map[string]any)
+	env, _ = body["env"].(map[string]any)
+	assert.Equal(t, []any{}, env["literals"], "a run with no .env flags names nothing, which is not null")
+}
+
+// A deploy can ask twice: the .env table first, then the typed confirmation a
+// locked production roll needs. Both read the same stdin, and a buffered read
+// takes more than the line it returns, so a reader built per prompt threw away
+// the answer meant for the one after it. Answering both at once, which is what
+// a paste or type-ahead does, used to leave the roll with nothing to read.
+func TestConfirm_SecondQuestionKeepsTheAnswerTypedForIt(t *testing.T) {
+	cmd := Cmd()
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetIn(strings.NewReader("y\nmy-app\n"))
+
+	stdin := bufio.NewReader(cmd.InOrStdin())
+
+	agreed, err := envconfirm.Ask(cmd.ErrOrStderr(), stdin, envconfirm.Policy{Interactive: true})()
+	require.NoError(t, err)
+	require.True(t, agreed, "the first line answers the first question")
+
+	rolled, err := typedConfirm(cmd, stdin)("Type the workload name: ", "my-app")
+	require.NoError(t, err)
+	assert.True(t, rolled, "the second line is still there for the second question")
+}
+
+// The same line on the deploy: --yes is consent to a reconciliation, and the
+// variable that suppresses wizards in CI is not. A run with it set and no --yes
+// hands the deploy a question that refuses and names the flag, rather than no
+// question at all.
+func TestCmd_SyncEnvWithoutYesHandsTheDeployARefusal(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env")
+	require.NoError(t, err)
+
+	require.NotNil(t, seen.ConfirmEnv, "nil is consent, and nobody gave any")
+
+	_, err = seen.ConfirmEnv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--yes", "the refusal names the way out of it")
+}
+
+// --yes is the consent, so the deploy gets no question to ask.
+func TestCmd_SyncEnvWithYesHandsTheDeployNoQuestion(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env", "--yes")
+	require.NoError(t, err)
+
+	assert.Nil(t, seen.ConfirmEnv)
+}
+
+// A machine-readable deploy still prints its plan to stderr, because only
+// stdout has to stay parseable, so the .env table is one of the things the
+// reader is looking at when the run refuses. The refusal used to tell them a
+// machine-readable run cannot show what it would do, immediately below the
+// rows showing exactly that. `config` earns that wording by handing the wizard
+// no writer at all; this command does not.
+func TestCmd_JSONRefusalDoesNotDisownTheTableItPrinted(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--sync-env", "--output-format", "json")
+	require.NoError(t, err)
+	require.NotNil(t, seen.ConfirmEnv, "nil is consent, and nobody gave any")
+
+	require.NotNil(t, seen.Stderr, "the table is printed, which is what the refusal may point at")
+
+	_, err = seen.ConfirmEnv()
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "The table above")
+	assert.NotContains(t, err.Error(), "cannot show you what it would do")
 }

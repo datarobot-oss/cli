@@ -51,8 +51,8 @@ full acknowledgement document.
 
 ` + idargs.HelpText + `
 
-A workload named by the manifest rather than by you is confirmed
-first; pass --yes to skip that.
+A workload whose id is specified in the manifest rather than on the
+command line is confirmed first; pass --yes to skip that.
 
 Example:
   dr workload start
@@ -73,7 +73,7 @@ Example:
 
 			// Only an ambient target is confirmed: a typed id is the consent.
 			if ref.FromManifest() {
-				confirmed, err := idargs.Confirm(cmd, idargs.AmbientPrompt("Start", ref), idargs.EnvMayConsent)
+				confirmed, err := idargs.Confirm(cmd, idargs.Prompt("Start", ref, ""), idargs.EnvMayConsent)
 				if err != nil || !confirmed {
 					return err
 				}
@@ -100,7 +100,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 	idargs.AddDirFlag(cmd)
-	idargs.AddYesFlag(cmd, "Start a manifest-named workload without confirmation.")
+	idargs.AddYesFlag(cmd, "Skip the confirmation asked when the id is specified in the manifest.")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {
 		return map[string]any{

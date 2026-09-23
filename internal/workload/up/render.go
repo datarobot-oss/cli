@@ -17,6 +17,7 @@ package up
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -38,11 +39,28 @@ type Summary struct {
 	// interrupted are one state to the deploy and three quite different things
 	// to a reader, and only one of them can actually be started.
 	Status string
+
+	// Refused marks a plan that is not going to be applied, because the live
+	// workload is in a state no deploy can land on. The block still prints:
+	// knowing what drift exists is useful even when nothing can be done about
+	// it yet, and a reader who has just been refused is usually about to ask
+	// exactly that. What changes is that it has to read as a description, where
+	// every other plan this command prints is an announcement.
+	Refused bool
+
+	// SecretsRotated is how many credentials this run re-sent before the plan
+	// was computed. A rotation writes to the credential store and to no file,
+	// so it can move nothing the plan is able to show, and an empty plan is
+	// still the truth about the manifest. It is not the whole truth about the
+	// workload, which goes on serving the value it started with until it is
+	// restarted, and a bare "Already up to date" above that reads as a
+	// contradiction.
+	SecretsRotated int
 }
 
-// shortIDLen is how much of an id is enough to recognise it. The platform's
-// ids are 24 hex characters and nobody reads past the first few; the full id
-// is in the JSON envelope for anything that needs to act on it.
+// shortIDLen is how much of an id is enough to label something with. The
+// platform's ids are 24 hex characters and nobody reads past the first few; the
+// full id is in the JSON envelope for anything that needs to act on it.
 const shortIDLen = 8
 
 // detailLimit caps how many individual changes a plan spells out. Past this
@@ -55,6 +73,10 @@ const detailLimit = 6
 // environment variable can be a secret someone pasted in plaintext, and a
 // plan that echoed it would put it in terminal scrollback and CI logs. Names
 // are enough to see what changed.
+//
+// Only for a change that carries no keys to ask instead. The bracket is part
+// of the match because it is what tells the list apart from a field whose name
+// merely starts the same way.
 const envVarsSegment = ".environmentVars["
 
 // Render writes the plan block that `up` prints before it acts, and that
@@ -67,8 +89,10 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 		b.WriteString("\n")
 	}
 
+	writeRefusedNote(&b, s)
+
 	if plan.Empty() {
-		b.WriteString("\n" + settledVerdict(plan) + "\n")
+		b.WriteString("\n" + settledVerdict(s, plan) + "\n")
 
 		_, err := io.WriteString(w, b.String())
 
@@ -97,13 +121,41 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 // until it finishes, at which point the deploy that follows starts it again.
 // Saying nothing differs, without saying it will differ, is how a preview comes
 // to read as the opposite of what the deploy will do.
-func settledVerdict(plan Plan) string {
+func settledVerdict(s Summary, plan Plan) string {
 	if plan.State == StateSettling {
 		return tui.WarnStyle.Render("Nothing differs yet, but this workload is still settling") + "\n" +
 			tui.HintStyle.Render("  What a deploy does depends on where it lands, so it waits first.")
 	}
 
+	// About the manifest, which is what a plan is about. The note under it is
+	// about the credential store, which no plan can show, so the verdict says
+	// which of the two it is answering for rather than claiming both.
+	if s.SecretsRotated > 0 {
+		return tui.SuccessStyle.Render("✓ Already up to date") + "\n" +
+			tui.HintStyle.Render(fmt.Sprintf("  Apart from the %s just re-sent, which needs a restart to reach the container.",
+				plural(s.SecretsRotated, "secret", "secrets")))
+	}
+
 	return tui.SuccessStyle.Render("✓ Already up to date")
+}
+
+// writeRefusedNote says that what follows is not going to happen.
+//
+// It goes above the changes rather than below them, because below is where the
+// error already is and the whole complaint is that the reader met the work
+// first and the refusal last.
+//
+// It says only that, in one line. The stateLine directly beneath it already
+// names what is wrong with the workload and the error directly below the block
+// already names the remedy, so a note that explained either would be the third
+// telling on one screen.
+func writeRefusedNote(b *strings.Builder, s Summary) {
+	if !s.Refused {
+		return
+	}
+
+	b.WriteString("\n  " + tui.HintStyle.Render(
+		"Nothing below will be applied; it is what differs, not what is about to happen.") + "\n")
 }
 
 // header names the workload being deployed onto and says what state it is in.
@@ -133,7 +185,12 @@ func header(s Summary, plan Plan) string {
 	return fmt.Sprintf("%s (%s), %s", name, shortID(s.WorkloadID), state)
 }
 
-// shortID trims an id to something a person can compare at a glance.
+// shortID trims an id to something a person can take in at a glance.
+//
+// Only for an id the output is labelling, never for one the reader is being
+// asked to recognise. Comparing a bound id against what is in the manifest is
+// the check that catches a token resolving to a different instance or
+// organisation, and eight characters is not enough to do it with.
 func shortID(id string) string {
 	if len(id) <= shortIDLen {
 		return id
@@ -154,7 +211,7 @@ func lines(s Summary, plan Plan) []string {
 	// The plans whose reason to act is the state rather than a difference.
 	// Without a line the body is empty and the block reads as though nothing
 	// is about to happen, while the JSON beside it says otherwise.
-	if line := stateLine(plan.State, s.Status); line != "" {
+	if line := stateLine(plan, s.Status); line != "" {
 		out = append(out, line)
 	}
 
@@ -183,8 +240,12 @@ func lines(s Summary, plan Plan) []string {
 // the platform ignores a start of a suspended workload, so promising one here
 // would preview an act the apply is about to refuse, and a dry run never gets
 // as far as the refusal.
-func stateLine(state State, status string) string {
-	switch state {
+//
+// Errored reads two ways, by the rule deployable applies: a plan that replaces
+// the failed generation announces the recovery, one with nothing to replace it
+// with is the refusal. The platform's reason goes beside the word either way.
+func stateLine(plan Plan, status string) string {
+	switch plan.State {
 	case StateStopped:
 		if workload.IsSuspendedWorkloadStatus(status) {
 			return entry("!", "workload", "suspended, which a deploy cannot undo")
@@ -193,7 +254,11 @@ func stateLine(state State, status string) string {
 		return entry("~", "workload", "started, having been "+stoppedAs(status))
 
 	case StateErrored:
-		return entry("!", "workload", "errored, so there is nothing healthy to deploy onto")
+		if plan.Replaces() {
+			return entry("~", "workload", "errored"+reasonClause(plan.Reason)+"; this deploy replaces what it is running")
+		}
+
+		return entry("!", "workload", "errored"+reasonClause(plan.Reason)+", and nothing here would change what it runs")
 
 	case StateTerminated:
 		return entry("!", "workload", "terminated, and it still holds its name and artifact")
@@ -245,8 +310,11 @@ func createDetail(s Summary, plan Plan) string {
 	// being dropped, since the flow this most often follows produces both facts
 	// at once: a workload deleted outside the CLI leaves the binding stale and
 	// the artifact link exactly where it was.
+	// The id is printed whole: this is the line that separates a deleted
+	// workload from a run pointed at the wrong instance, and comparing it
+	// against what is in the file is the only way to know which happened.
 	line := fmt.Sprintf("%s will be created: %s is bound to %s, which no longer exists",
-		s.Name, manifest.FileName, shortID(plan.PriorWorkloadID))
+		s.Name, manifest.FileName, plan.PriorWorkloadID)
 
 	if !reusesLink(plan) {
 		return line
@@ -311,7 +379,7 @@ func lockLines(plan Plan) []string {
 	switch {
 	case plan.Locked:
 		return []string{entry("~", "lock",
-			"the running version is locked, so a new one is created and locked to match. Locking is permanent")}
+			"the running version is locked, so a new one is created and permanently locked to match")}
 
 	case plan.Code.LinkLocked:
 		return []string{entry("~", "lock",
@@ -354,7 +422,7 @@ func runtimeLines(plan Plan) []string {
 	}
 
 	if len(plan.Runtime) == 1 {
-		return []string{entry("~", "runtime", describe(plan.Runtime[0]))}
+		return []string{entry("~", "runtime", shortLines(plan.Runtime)[0])}
 	}
 
 	head := entry("~", "runtime", fmt.Sprintf("%d %s",
@@ -394,15 +462,24 @@ var (
 
 // details lists individual changes under their entry, capped, saying out loud
 // how many it left out.
+//
+// The cap is applied before the lines are rendered, so a change nobody is
+// going to see cannot decide how the ones above it are labelled.
 func details(changes []Change) []string {
 	shown := changes
 	if len(shown) > detailLimit {
 		shown = shown[:detailLimit]
 	}
 
-	out := make([]string, 0, len(shown)+1)
-	for _, c := range shown {
-		out = append(out, "      "+describe(c))
+	rendered := shortLines(shown)
+
+	// Capacity from the cap rather than from the length it produced, which is
+	// the same number and says why: at most detailLimit lines, plus the one
+	// that counts what was left out. A length the analyser cannot see a bound
+	// on reads as a size computation that might overflow.
+	out := make([]string, 0, detailLimit+1)
+	for _, line := range rendered {
+		out = append(out, "      "+line)
 	}
 
 	if dropped := len(changes) - len(shown); dropped > 0 {
@@ -412,23 +489,43 @@ func details(changes []Change) []string {
 	return out
 }
 
-// describe renders one change, redacting the values of environment variables.
+// describe renders one change under its whole path, which is what the JSON
+// envelope carries.
 func describe(c Change) string {
-	if redacted(c.Path) {
-		if c.Absent {
-			return c.Path + ": set"
-		}
-
-		return c.Path + ": changed"
-	}
-
-	return c.String()
+	return describeAs(c, c.Path)
 }
 
-// redacted reports whether a path sits inside an environmentVars list, whose
+// describeAs renders one change under the label the caller has chosen for it,
+// redacting the values of environment variables.
+func describeAs(c Change, label string) string {
+	if redacted(c) {
+		if c.Absent {
+			return label + ": set"
+		}
+
+		return label + ": changed"
+	}
+
+	return c.at(label)
+}
+
+// redacted reports whether a change sits inside an environmentVars list, whose
 // values never reach the output.
-func redacted(path string) bool {
-	return strings.Contains(path, envVarsSegment)
+//
+// From the walk's keys wherever there are any, rather than from the path: the
+// path is a rendering, and a rendering is free to change shape. One that did
+// would take the redaction with it and say nothing, which is the one failure
+// here that cannot be taken back once it has reached a CI log.
+//
+// A name that happens to be "environmentVars" is redacted along with the list
+// itself. Being wrong that way costs a reader the two values behind a field
+// they can open the file to see; being wrong the other way prints a secret.
+func redacted(c Change) bool {
+	if len(c.Keys) > 0 {
+		return slices.Contains(c.Keys, keyEnvironmentVars)
+	}
+
+	return strings.Contains(c.Path, envVarsSegment)
 }
 
 // plural picks the right noun for a count.
@@ -446,9 +543,15 @@ func plural(n int, one, many string) string {
 // secret would be worse than a human-readable one, since it ends up in CI
 // artifacts.
 type PlanJSON struct {
-	Action  string `json:"action"`
-	State   string `json:"state"`
-	Creates bool   `json:"creates"`
+	Action string `json:"action"`
+	State  string `json:"state"`
+
+	// StateReason is the platform's account of why the workload is errored,
+	// "" for every other state, so a pipeline can tell a pruned image from a
+	// crashing container without parsing stderr.
+	StateReason string `json:"stateReason"`
+
+	Creates bool `json:"creates"`
 
 	// Locked reports that this run will permanently lock the version it
 	// deploys, because the one it replaces is locked and the platform will not
@@ -501,6 +604,7 @@ func (p Plan) JSON() PlanJSON {
 	return PlanJSON{
 		Action:          p.Action(),
 		State:           p.State.String(),
+		StateReason:     p.Reason,
 		Creates:         p.Creates,
 		Locked:          p.Locked && mints,
 		PriorWorkloadID: p.PriorWorkloadID,

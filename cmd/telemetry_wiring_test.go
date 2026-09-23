@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/datarobot/cli/cmd/artifact"
+	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/workload"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -47,6 +47,92 @@ var expectedTrackedCommands = []string{
 	"dr plugin install",
 	"dr plugin uninstall",
 	"dr plugin update",
+
+	// Pipelines, workloads and artifacts are GA, so no feature gate hides them
+	// from the live RootCmd and they need no separate standalone list. The two
+	// workload leaves still behind a gate are checked further down.
+	"dr pipeline create",
+	"dr pipeline get",
+	"dr pipeline clone",
+	"dr pipeline list",
+	"dr pipeline update",
+	"dr pipeline delete",
+	"dr pipeline lock",
+	"dr pipeline version get",
+	"dr pipeline version list",
+	"dr pipeline graph",
+	"dr pipeline source",
+	"dr pipeline task get",
+	"dr pipeline input create",
+	"dr pipeline input get",
+	"dr pipeline input list",
+	"dr pipeline input update",
+	"dr pipeline input delete",
+	"dr pipeline run create",
+	"dr pipeline run get",
+	"dr pipeline run list",
+	"dr pipeline run status",
+	"dr pipeline run cancel",
+	"dr pipeline run task get",
+	"dr pipeline run task list",
+	"dr pipeline run task logs",
+	"dr pipeline run task result",
+	"dr pipeline schedule create",
+	"dr pipeline schedule get",
+	"dr pipeline schedule list",
+	"dr pipeline schedule update",
+	"dr pipeline schedule delete",
+	"dr pipeline image create",
+	"dr pipeline image get",
+	"dr pipeline image list",
+	"dr pipeline image update",
+	"dr pipeline image delete",
+	"dr pipeline image version delete",
+	"dr pipeline image version logs",
+
+	"dr workload create",
+	"dr workload get",
+	"dr workload list",
+	"dr workload delete",
+	"dr workload start",
+	"dr workload stop",
+	"dr workload status",
+	"dr workload endpoint",
+	"dr workload logs",
+
+	"dr artifact create",
+	"dr artifact get",
+	"dr artifact list",
+	"dr artifact delete",
+	"dr artifact lock",
+	"dr artifact build create",
+	"dr artifact build get",
+	"dr artifact build list",
+	"dr artifact build logs",
+	"dr artifact code init",
+	"dr artifact code sync",
+	"dr artifact code versions",
+	"dr artifact code checkout",
+}
+
+// trackedSubtrees are the command groups every leaf of which must fire a
+// telemetry event.
+//
+// expectedTrackedCommands can only say that the commands somebody listed are
+// tracked; it cannot say which ones nobody listed, and a leaf missing from a
+// hand-kept list is invisible to a loop over that list. That is how
+// `dr artifact code checkout` reached general availability untracked. These
+// groups are walked instead, so the next leaf added under one of them fails
+// here until it is wired.
+//
+// Only API groups are walked. Elsewhere in the tree an untracked leaf is
+// routine (`dr auth check`, `dr self version`), so a walk would have to carry
+// a list of exemptions, which is the same hand-kept list with the burden of
+// proof reversed.
+var trackedSubtrees = []string{
+	"dr workload",
+	"dr artifact",
+	"dr pipeline",
 }
 
 // TestTelemetryWiring_AllCoreCommandsTracked walks the static command tree
@@ -64,38 +150,69 @@ func TestTelemetryWiring_AllCoreCommandsTracked(t *testing.T) {
 	}
 }
 
-// expectedWorkloadTrackedCommands enumerates leaf commands under
-// `dr workload` that must be wired to fire a telemetry event. The
-// `dr workload` subtree is hidden from the live RootCmd by
-// cli.CommandAdder when DATAROBOT_CLI_FEATURE_WORKLOAD is unset
-// (the default in CI), so this test walks a freshly-built subtree
-// produced by workload.Cmd() instead of the global RootCmd.
+// TestTelemetryWiring_EveryLeafOfTrackedSubtreesTracked walks each group in
+// trackedSubtrees and asserts every leaf under it carries the telemetry
+// annotation, whether or not anybody remembered to list it above.
 //
-// Paths are relative to workload.Cmd() (no "dr" prefix) because
-// findCommandByPath matches against the root's Name(), which is
-// "workload" for the standalone subtree.
-var expectedWorkloadTrackedCommands = []string{
-	"workload config",
-	"workload up",
-	"workload create",
-	"workload get",
-	"workload list",
-	"workload delete",
-	"workload start",
-	"workload stop",
-	"workload status",
-	"workload endpoint",
-	"workload logs",
+// Leaves rather than runnable commands: a group command is not expected to
+// fire an event, and the two are told apart by having children rather than by
+// what they do when run, which is how `dr artifact build` (no children of its
+// own to speak for it) would otherwise be read as a missing wiring.
+func TestTelemetryWiring_EveryLeafOfTrackedSubtreesTracked(t *testing.T) {
+	for _, path := range trackedSubtrees {
+		root := findCommandByPath(RootCmd.Command, path)
+		require.NotNilf(t, root, "command %q not found in static command tree", path)
+
+		for _, leaf := range leafCommands(root) {
+			t.Run(leaf.CommandPath(), func(t *testing.T) {
+				assert.Containsf(t, leaf.Annotations, "telemetry",
+					"command %q must be wired to telemetry via telemetry.Track / TrackWith, "+
+						"and listed in expectedTrackedCommands", leaf.CommandPath())
+			})
+		}
+	}
 }
 
-// TestTelemetryWiring_AllWorkloadCommandsTracked walks the workload
-// subtree (built via workload.Cmd() to bypass the feature-gate filter
-// in cli.CommandAdder) and asserts each entry has the "telemetry"
+// leafCommands returns every descendant of root that has no subcommands of
+// its own, root included when it has none.
+func leafCommands(root *cobra.Command) []*cobra.Command {
+	children := root.Commands()
+	if len(children) == 0 {
+		return []*cobra.Command{root}
+	}
+
+	var leaves []*cobra.Command
+
+	for _, child := range children {
+		leaves = append(leaves, leafCommands(child)...)
+	}
+
+	return leaves
+}
+
+// expectedGatedWorkloadTrackedCommands enumerates the `dr workload` leaves
+// still behind DATAROBOT_CLI_FEATURE_WORKLOAD. cli.CommandAdder leaves them
+// out of the tree while the variable is unset (the default in CI), so the
+// test below sets it and walks a freshly-built subtree from workload.Cmd()
+// rather than the global RootCmd.
+//
+// Paths are relative to workload.Cmd() (no "dr" prefix) because
+// findCommandByPath matches against the root's Name(), which is "workload"
+// for the standalone subtree.
+var expectedGatedWorkloadTrackedCommands = []string{
+	"workload config",
+	"workload up",
+}
+
+// TestTelemetryWiring_GatedWorkloadCommandsTracked enables the workload gate,
+// builds the subtree and asserts each gated leaf has the "telemetry"
 // annotation set by telemetry.Track / TrackWith.
-func TestTelemetryWiring_AllWorkloadCommandsTracked(t *testing.T) {
+func TestTelemetryWiring_GatedWorkloadCommandsTracked(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "true")
+
 	workloadRoot := workload.Cmd()
 
-	for _, path := range expectedWorkloadTrackedCommands {
+	for _, path := range expectedGatedWorkloadTrackedCommands {
 		t.Run("dr "+path, func(t *testing.T) {
 			cmd := findCommandByPath(workloadRoot, path)
 			require.NotNilf(t, cmd, "command %q not found in workload subtree", path)
@@ -106,42 +223,39 @@ func TestTelemetryWiring_AllWorkloadCommandsTracked(t *testing.T) {
 	}
 }
 
-// expectedArtifactTrackedCommands enumerates leaf commands under
-// `dr artifact` that must be wired to fire a telemetry event. Like the
-// workload subtree, `dr artifact` is hidden from the live RootCmd by
-// cli.CommandAdder when DATAROBOT_CLI_FEATURE_WORKLOAD is unset (the
-// default in CI), so this test walks a freshly-built subtree produced by
-// artifact.Cmd() instead of the global RootCmd.
-//
-// Paths are relative to artifact.Cmd() (no "dr" prefix) because
-// findCommandByPath matches against the root's Name(), which is
-// "artifact" for the standalone subtree.
-var expectedArtifactTrackedCommands = []string{
-	"artifact create",
-	"artifact get",
-	"artifact list",
-	"artifact delete",
-	"artifact lock",
-	"artifact build create",
-	"artifact build get",
-	"artifact build list",
-	"artifact build logs",
-	"artifact code init",
-	"artifact code sync",
-	"artifact code versions",
+// expectedEnclaveTrackedCommands enumerates leaf commands under `dr enclave`
+// that must be wired to fire a telemetry event. Like the workload subtree,
+// `dr enclave` is hidden from the live RootCmd by cli.CommandAdder when
+// DATAROBOT_CLI_FEATURE_ENCLAVE is unset (the default in CI), so this test
+// walks a freshly-built subtree produced by enclave.Cmd().
+var expectedEnclaveTrackedCommands = []string{
+	"enclave register",
+	"enclave get",
+	"enclave list",
+	"enclave deactivate",
+	"enclave reactivate",
+	"enclave delete",
+	"enclave access grant",
+	"enclave access revoke",
+	"enclave access list",
+	"enclave access show",
+	"enclave permission grant",
+	"enclave permission revoke",
+	"enclave permission list",
+	"enclave permission show",
 }
 
-// TestTelemetryWiring_AllArtifactCommandsTracked walks the artifact
-// subtree (built via artifact.Cmd() to bypass the feature-gate filter
-// in cli.CommandAdder) and asserts each entry has the "telemetry"
-// annotation set by telemetry.Track / TrackWith.
-func TestTelemetryWiring_AllArtifactCommandsTracked(t *testing.T) {
-	artifactRoot := artifact.Cmd()
+// TestTelemetryWiring_AllEnclaveCommandsTracked walks the enclave subtree
+// (built via enclave.Cmd() to bypass the feature-gate filter in
+// cli.CommandAdder) and asserts each entry has the "telemetry" annotation set
+// by telemetry.Track / TrackWith.
+func TestTelemetryWiring_AllEnclaveCommandsTracked(t *testing.T) {
+	enclaveRoot := enclave.Cmd()
 
-	for _, path := range expectedArtifactTrackedCommands {
+	for _, path := range expectedEnclaveTrackedCommands {
 		t.Run("dr "+path, func(t *testing.T) {
-			cmd := findCommandByPath(artifactRoot, path)
-			require.NotNilf(t, cmd, "command %q not found in artifact subtree", path)
+			cmd := findCommandByPath(enclaveRoot, path)
+			require.NotNilf(t, cmd, "command %q not found in enclave subtree", path)
 
 			assert.Containsf(t, cmd.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)

@@ -381,10 +381,12 @@ func setupUniversalTestFlags(t *testing.T) *pflag.FlagSet {
 	fs.Bool("disable-telemetry", false, "")
 	fs.Bool("skip-certificate-check", false, "")
 	fs.String("ca-cert", "", "")
+	fs.String(config.ProfileKey, "", "")
 	fs.Lookup("debug").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DEBUG"}}
 	fs.Lookup("disable-telemetry").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
 	fs.Lookup("skip-certificate-check").Annotations = map[string][]string{config.UniversalAnnotationKey: {"SKIP_CERTIFICATE_CHECK"}}
 	fs.Lookup("ca-cert").Annotations = map[string][]string{config.UniversalAnnotationKey: {"CA_CERT"}}
+	fs.Lookup(config.ProfileKey).Annotations = map[string][]string{config.UniversalAnnotationKey: {"PROFILE"}}
 
 	return fs
 }
@@ -487,6 +489,36 @@ func TestUniversalFlagEnv_StringEmptyOmitted(t *testing.T) {
 
 	assert.NotContains(t, result, config.EnvPrefix+"CA_CERT=",
 		"empty string flags must not be emitted")
+}
+
+func TestUniversalFlagEnv_ProfileSet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set(config.ProfileKey, "eu-mtsaas")
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"PROFILE=eu-mtsaas",
+		"the active profile must be forwarded to plugin subprocesses")
+}
+
+func TestBuildPluginEnv_ForwardsActiveProfileCredentials(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set(config.ProfileKey, "eu-mtsaas")
+	viperx.Set(config.DataRobotURL, "https://app.eu.datarobot.com/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "eu-token")
+
+	env := buildPluginEnv("", true, fs)
+
+	assert.Contains(t, env, config.EnvPrefix+"PROFILE=eu-mtsaas")
+	assert.Contains(t, env, "DATAROBOT_ENDPOINT=https://app.eu.datarobot.com/api/v2")
+	assert.Contains(t, env, "DATAROBOT_API_TOKEN=eu-token")
 }
 
 // --- TraverseChildren / core-blind invariant tests ---

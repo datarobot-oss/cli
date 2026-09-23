@@ -57,12 +57,6 @@ func Post(url, info string, body any, timeout ...time.Duration) (*http.Response,
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	// RedactedReqInfo above drains req.Body for logging, so re-arm it before client.Do
-	// or the server receives an empty payload.
-	if err := restoreRequestBody(req); err != nil {
-		return nil, err
-	}
-
 	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err
@@ -86,25 +80,6 @@ func isCreateSuccess(code int) bool {
 	}
 
 	return false
-}
-
-// restoreRequestBody re-arms req.Body after RedactedReqInfo (which dumps and
-// consumes it). For *bytes.Reader payloads, http.NewRequest sets req.GetBody
-// automatically; for other body kinds we leave Body alone and rely on the
-// transport reading whatever is left.
-func restoreRequestBody(req *http.Request) error {
-	if req.GetBody == nil {
-		return nil
-	}
-
-	body, err := req.GetBody()
-	if err != nil {
-		return err
-	}
-
-	req.Body = body
-
-	return nil
 }
 
 // PostJSON is Post with the response body decoded into v. timeout forwards to Post.

@@ -157,7 +157,7 @@ func importReason(err error, name string) string {
 // wrong answer either way: a secret that was stored is a thing that now exists
 // outside this repository, and one that was not is an entry the next deploy
 // will refuse.
-func reportImport(stderr io.Writer, report Import) {
+func reportImport(stderr io.Writer, report Import, keepsPlaceholder func(name string) bool) {
 	if stderr == nil || !report.Any() {
 		return
 	}
@@ -166,7 +166,7 @@ func reportImport(stderr io.Writer, report Import) {
 		fmt.Fprintf(stderr, "  %s Stored %d %s %s\n",
 			tui.SuccessStyle.Render("✓"),
 			len(report.Stored), Plural(len(report.Stored), "secret", "secrets"),
-			tui.HintStyle.Render("("+storedNames(report.Stored)+")"))
+			tui.HintStyle.Render("("+JoinNames(report.Stored)+", all in "+manifest.FileName+")"))
 	}
 
 	for _, failure := range report.Failed {
@@ -174,25 +174,27 @@ func reportImport(stderr io.Writer, report Import) {
 			tui.WarnStyle.Render("!"),
 			tui.WarnStyle.Render(failure.Name+" was not stored"),
 			failure.Reason,
-			tui.HintStyle.Render(fmt.Sprintf("%s keeps %s for it, and a deploy will refuse that.",
-				manifest.FileName, manifest.CredentialPlaceholder)))
+			tui.HintStyle.Render(unstoredOutcome(keepsPlaceholder == nil || keepsPlaceholder(failure.Name))))
 	}
 }
 
-// storedNames lists what was stored, trimmed to a line's worth. Past a
-// handful the names stop being a summary and start being a wall, and the file
-// is the better place to read them all.
-func storedNames(names []string) string {
-	if len(names) <= namesShown {
-		return strings.Join(names, ", ")
+// unstoredOutcome is what the file is left holding for a secret that never
+// reached the store. The two answers are different enough that saying the
+// wrong one is worse than saying nothing.
+//
+// A name being added has nowhere to point, so its new entry carries the
+// placeholder and the next deploy refuses it. A name the manifest already
+// declares as something else keeps exactly what it had: replacing a working
+// literal with a placeholder would throw the value away and break a deploy
+// that was working, on the strength of a store that could not be reached.
+func unstoredOutcome(keepsPlaceholder bool) string {
+	if keepsPlaceholder {
+		return fmt.Sprintf("%s keeps %s for it, and a deploy will refuse that.",
+			manifest.FileName, manifest.CredentialPlaceholder)
 	}
 
-	return fmt.Sprintf("%s, … and %d more, all in %s",
-		strings.Join(names[:namesShown], ", "), len(names)-namesShown, manifest.FileName)
+	return manifest.FileName + " keeps the entry it already had, so nothing is lost and nothing is reconciled for it."
 }
-
-// namesShown is how many secrets are named before the list is cut short.
-const namesShown = 5
 
 // pendingSecrets counts the entries still carrying a placeholder, which is
 // what the command reports as unfinished.
@@ -211,3 +213,43 @@ func pendingSecrets(vars []manifest.EnvVar) int {
 // createCredentialFn is the seam the tests replace: storing a secret is the
 // one call in setup that cannot be allowed to reach a real tenant by accident.
 var createCredentialFn = workload.CreateCredential
+
+// updateCredentialFn re-sends a value to a credential that already exists,
+// which is the only route a rotated .env secret has to a running workload.
+var updateCredentialFn = workload.UpdateCredential
+
+// getCredentialFn reads a credential's metadata, which is how a rotation
+// checks that the id in the manifest names one this project created.
+var getCredentialFn = workload.GetCredential
+
+// reportRotation says what re-sending the secrets did. It is separate from
+// reportImport because the acts differ in what they risk: an import that fails
+// leaves a placeholder a deploy refuses by name, while a rotation that fails
+// leaves the previous value in place and the container serving it, which
+// nothing downstream can notice.
+func reportRotation(stderr io.Writer, rotated int, failed []ImportFailure, dryRun bool) {
+	if stderr == nil || (rotated == 0 && len(failed) == 0) {
+		return
+	}
+
+	if rotated > 0 {
+		fmt.Fprint(stderr, rotationLine(rotated, dryRun))
+	}
+
+	for _, failure := range failed {
+		fmt.Fprintf(stderr, "  %s %s was not re-sent: %s. The workload keeps the value it has.\n",
+			tui.WarnStyle.Render("!"), failure.Name, failure.Reason)
+	}
+}
+
+// rotationLine reports the sends, in the tense the run earned: a dry run says
+// what it would do, and only a run that reached the store gets the tick.
+func rotationLine(rotated int, dryRun bool) string {
+	if dryRun {
+		return fmt.Sprintf("  %d %s would be re-sent to the credential store.\n",
+			rotated, Plural(rotated, "secret", "secrets"))
+	}
+
+	return fmt.Sprintf("  %s Re-sent %d %s to the credential store.\n",
+		tui.SuccessStyle.Render("✓"), rotated, Plural(rotated, "secret", "secrets"))
+}

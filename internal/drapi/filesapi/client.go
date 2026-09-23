@@ -19,12 +19,11 @@ import (
 )
 
 type Client interface {
-	CreateCatalog() (*CatalogResp, error)
+	CreateCatalog(name string) (*CatalogResp, error)
 	CreateStage(catalogID string) (*StageResp, error)
 	UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error
 	ApplyStage(catalogID, stageID, overwrite string) (*ApplyStageResp, error)
-	UploadFromZipNew(name string, size int64, body io.Reader) (*FromFileResp, error)
-	UploadFromZipExisting(catalogID, name, overwrite string, size int64, body io.Reader) (*FromFileResp, error)
+	UploadFromZipExisting(catalogID, filename, overwrite string, size int64, body io.Reader) (*FromFileResp, error)
 	PollStatus(statusID string) (*StatusResp, error)
 	AllFiles(catalogID, versionID string) (map[string]FileMeta, error)
 	DownloadFile(catalogID, versionID, path string, w io.Writer) (string, int64, error)

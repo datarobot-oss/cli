@@ -75,6 +75,13 @@ type SyncJSON struct {
 	PlanJSON
 
 	Result *ResultJSON `json:"result,omitempty"`
+
+	// Refused is set when the plan was emitted but nothing was applied because
+	// it needs a confirmation the run could not give (conflicts under
+	// --output-format json without --yes). It is the positive signal that the
+	// run is a no-op — uploads included — so a consumer does not have to infer
+	// that from a missing "result" (RAPTOR-19348).
+	Refused bool `json:"refused,omitempty"`
 }
 
 // planJSON builds the plan view. A nil plan carries only the locked flag, which
@@ -105,15 +112,26 @@ func planJSON(plan *sync.SyncPlan, locked bool) PlanJSON {
 // RenderSyncJSON writes the one-document sync view to w: the plan, plus the
 // result under "result" when result is non-nil.
 func RenderSyncJSON(w io.Writer, plan *sync.SyncPlan, result *sync.Result, locked bool) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-
 	out := SyncJSON{PlanJSON: planJSON(plan, locked)}
 
 	if result != nil {
 		r := resultJSON(result)
 		out.Result = &r
 	}
+
+	return encodeSyncJSON(w, out)
+}
+
+// RenderRefusedJSON writes the plan with "refused": true and no result: the run
+// declined to apply anything because the plan needs a confirmation it could not
+// give (conflicts, no --yes). One document, like the others.
+func RenderRefusedJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
+	return encodeSyncJSON(w, SyncJSON{PlanJSON: planJSON(plan, locked), Refused: true})
+}
+
+func encodeSyncJSON(w io.Writer, out SyncJSON) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
 
 	if err := enc.Encode(out); err != nil {
 		return fmt.Errorf("encode sync json: %w", err)

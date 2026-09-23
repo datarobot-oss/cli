@@ -103,14 +103,10 @@ func (f *fakeClient) callCounts() (all, dl int) {
 }
 
 // Panicking stubs for the rest of filesapi.Client.
-func (*fakeClient) CreateCatalog() (*filesapi.CatalogResp, error)                { panic("unused") }
+func (*fakeClient) CreateCatalog(string) (*filesapi.CatalogResp, error)          { panic("unused") }
 func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error)              { panic("unused") }
 func (*fakeClient) UploadToStage(string, string, string, int64, io.Reader) error { panic("unused") }
 func (*fakeClient) ApplyStage(string, string, string) (*filesapi.ApplyStageResp, error) {
-	panic("unused")
-}
-
-func (*fakeClient) UploadFromZipNew(string, int64, io.Reader) (*filesapi.FromFileResp, error) {
 	panic("unused")
 }
 

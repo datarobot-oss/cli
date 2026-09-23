@@ -275,36 +275,44 @@ Template authors can optionally provide a `.taskfile-data.yaml` file to configur
 
 See [dr task compose documentation](../commands/task.md#taskfile-data-configuration) for complete details on the file format and usage.
 
-## Multi-level configuration
+## Multi-component configuration
 
-Templates can have nested `.datarobot` directories for component-specific configuration:
+Templates can split prompts across any number of files inside the root
+`.datarobot` directory, one per component:
 
 ```
 my-template/
 ├── .datarobot/
-│   └── prompts.yaml          # Root level prompts
+│   ├── prompts.yaml          # Root level prompts
+│   └── components/
+│       ├── backend.yaml      # Backend prompts
+│       └── frontend.yaml     # Frontend prompts
 ├── backend/
-│   ├── .datarobot/
-│   │   └── prompts.yaml      # Backend prompts
 │   └── src/
 ├── frontend/
-│   ├── .datarobot/
-│   │   └── prompts.yaml      # Frontend prompts
 │   └── src/
 └── .env.template
 ```
 
+> [!IMPORTANT]
+> Only the `.datarobot` directory at the repository root is scanned. A nested
+> `backend/.datarobot/prompts.yaml` is **not** discovered. Put component prompt
+> files in subdirectories of the root `.datarobot` instead.
+
 ### Discovery order
 
-The CLI discovers prompts in this order:
+The CLI collects every `*.yaml` and `*.yml` file under the root `.datarobot`
+directory, recursing up to five levels deep. Filenames are not significant, and
+files that don't match the prompt schema are skipped. The collected files are
+sorted by path and processed in that order; when two files define the same
+environment variable, the first one wins.
 
-1. Root `.datarobot/prompts.yaml`
-2. Subdirectory prompts (depth-first search, up to depth 2)
-3. Merged and deduplicated
+See [dotenv command &mdash; Prompt definition files](../commands/dotenv.md#prompt-definition-files)
+for the full discovery rules and prompt schema.
 
 ### Example: backend prompts
 
-`backend/.datarobot/prompts.yaml`:
+`.datarobot/components/backend.yaml`:
 
 ```yaml
 backend:
@@ -320,7 +328,7 @@ backend:
 
 ### Example: frontend prompts
 
-`frontend/.datarobot/prompts.yaml`:
+`.datarobot/components/frontend.yaml`:
 
 ```yaml
 frontend:

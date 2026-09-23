@@ -167,11 +167,57 @@ func DirFlag(dir string) string {
 	// Relative when it is shorter to read and still lands in the same place;
 	// absolute otherwise, which is what a project on another branch of the tree
 	// gets rather than a ../../.. chain.
+	//
+	// Forward slashes on every platform. The CLI accepts them on Windows too,
+	// since resolving --dir goes through filepath.Abs, which normalizes them;
+	// what it would not survive is a backslash pasted into a POSIX shell, where
+	// it is an escape rather than a separator, and quoting it away would take
+	// quotes cmd.exe does not read.
 	if rel, err := filepath.Rel(cwd, project); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
-		return " --dir " + rel
+		return " --dir " + shellArg(filepath.ToSlash(rel))
 	}
 
-	return " --dir " + project
+	return " --dir " + shellArg(filepath.ToSlash(project))
+}
+
+// shellArg quotes a path that would not survive being pasted into a shell.
+//
+// These suffixes are printed inside commands the reader is meant to copy and
+// run, and a path is not a word: `/tmp/a&b` backgrounds the command at the
+// ampersand, `$HOME` and a backtick are expanded before the command ever sees
+// them, and a space simply ends the argument.
+//
+// An allowlist rather than a list of the characters that bite, because the
+// list of what a shell does something with is long, differs between shells,
+// and grows. Anything outside the set below is quoted; a path that is only
+// letters, digits and the handful of punctuation marks a path normally
+// carries is left bare, so the ordinary message is not littered with quotes.
+//
+// Double quotes rather than single. The notices carrying these wrap the whole
+// command in single quotes, which a single-quoted path would close early, and
+// cmd.exe reads double quotes and nothing else. Inside double quotes a POSIX
+// shell still acts on four characters, so those are escaped: the quote
+// itself, a backslash, a dollar and a backtick.
+func shellArg(path string) string {
+	if path != "" && !strings.ContainsFunc(path, needsQuoting) {
+		return path
+	}
+
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(path)
+
+	return `"` + escaped + `"`
+}
+
+// needsQuoting reports a character a shell would not hand over as itself.
+func needsQuoting(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return false
+	case strings.ContainsRune("._-+/:@,=", r):
+		return false
+	default:
+		return true
+	}
 }
 
 // Locate searches for the manifest in startDir and each ancestor, the way

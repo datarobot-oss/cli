@@ -82,7 +82,7 @@ func validateDRID(fl validator.FieldLevel) bool {
 func validateDRNonemptyPtr(fl validator.FieldLevel) bool {
 	field := fl.Field()
 
-	if field.Kind() == reflect.Ptr {
+	if field.Kind() == reflect.Pointer {
 		if field.IsNil() {
 			return true
 		}

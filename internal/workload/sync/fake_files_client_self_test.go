@@ -184,7 +184,7 @@ func TestFakeServerState_ZipPathRecordsContent(t *testing.T) {
 		versionID: "ver-zip",
 	}
 
-	resp, err := fake.UploadFromZipNew("wapi-sync.zip", int64(len(zipData)), bytes.NewReader(zipData))
+	resp, err := fake.UploadFromZipExisting("cid-zip", "wapi-sync.zip", filesapi.OverwriteReplace, int64(len(zipData)), bytes.NewReader(zipData))
 	require.NoError(t, err)
 
 	assert.Equal(t, "cid-zip", resp.CatalogID)

@@ -34,7 +34,7 @@ When a command is removed, it:
 Set the env var `DATAROBOT_CLI_FEATURE_<FEATURE_NAME>=true` or `=1`:
 
 ```bash
-DATAROBOT_CLI_FEATURE_WORKLOAD=true dr workload --help
+DATAROBOT_CLI_FEATURE_WORKLOAD=true dr workload up --help
 ```
 
 Feature names are converted from lowercase with hyphens to uppercase with underscores:
@@ -47,10 +47,10 @@ Config file support (e.g., `drconfig.yaml`) is not yet implemented. See the TODO
 
 ## Adding a Feature-Gated Command
 
-1. **Create the command package** (e.g., `cmd/workload/cmd.go`):
+1. **Create the command package** (e.g., `cmd/mycommand/cmd.go`):
 
 ```go
-package workload
+package mycommand
 
 import (
     "github.com/datarobot/cli/internal/features"
@@ -59,11 +59,11 @@ import (
 
 func Cmd() *cobra.Command {
     return &cobra.Command{
-        Use:     "workload",
+        Use:     "mycommand",
         GroupID: "core",
-        Short:   "Workload management commands",
+        Short:   "My command",
         Annotations: map[string]string{
-            features.AnnotationKey: "workload",
+            features.AnnotationKey: "my-command",
         },
     }
 }
@@ -74,7 +74,7 @@ func Cmd() *cobra.Command {
 ```go
 RootCmd.AddCommand(
     // ... existing commands ...
-    workload.Cmd(),
+    mycommand.Cmd(),
     // ...
 )
 ```
@@ -101,25 +101,27 @@ func Cmd() *cobra.Command {
 
 When the parent command itself is gated and disabled, child commands are implicitly unavailable because the parent is never added to the tree.
 
+The live example is `cmd/workload/cmd.go`: `dr workload` itself is not gated, and it registers `config` and `up` through a `cli.CommandAdder` with the `workload` gate on those two commands only, so `DATAROBOT_CLI_FEATURE_WORKLOAD=true` unlocks exactly them.
+
 ## Removing a Feature Gate (GA Release)
 
 When a feature is ready for general availability:
 
 1. Delete the `Annotations` map from the command
-2. No other changes needed; feature is now permanently available
+2. Invert the command's gate tests so they assert it is present by default, move its telemetry paths into `expectedTrackedCommands` in `cmd/telemetry_wiring_test.go`, and drop the gate note from its docs page. The feature is then permanently available.
 
 ```go
 // Before (gated)
 &cobra.Command{
-    Use:     "workload",
+    Use:     "mycommand",
     Annotations: map[string]string{
-        features.AnnotationKey: "workload",
+        features.AnnotationKey: "my-command",
     },
 }
 
 // After (GA)
 &cobra.Command{
-    Use:     "workload",
+    Use:     "mycommand",
     // No annotations
 }
 ```

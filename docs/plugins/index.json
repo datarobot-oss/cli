@@ -6,6 +6,12 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.38",
+          "url": "assist/assist-0.1.38.tar.xz",
+          "sha256": "84abeeae9241b524bf819094d0c190d42cfb06aacf383aa749db5dea8a0515bb",
+          "releaseDate": "2026-09-21"
+        },
+        {
           "version": "0.1.37",
           "url": "assist/assist-0.1.37.tar.xz",
           "sha256": "97648b6030788756cfe02c94976fcfc32929eb633934495130fd4cbd63b0ea4d",
@@ -186,6 +192,12 @@
       "description": "A local experimentation dashboard for DataRobot users to visualize and compare agent runs.",
       "versions": [
         {
+          "version": "2.0.0",
+          "url": "xp/xp-2.0.0.tar.xz",
+          "sha256": "1c6978d5b40a8369f086fb51eaac5344ef635b67f0f39e79d566af56ed90fa9a",
+          "releaseDate": "2026-09-14"
+        },
+        {
           "version": "1.3.4",
           "url": "xp/xp-1.3.4.tar.xz",
           "sha256": "3924bc2d9de7c97a952fc0106063ba87d6e6da95dd5719a8e6a6b4604740cabb",
@@ -251,6 +263,24 @@
       "name": "opencode",
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
+        {
+          "version": "0.1.9",
+          "url": "opencode/opencode-0.1.9.tar.xz",
+          "sha256": "b5519b3a6a139cec8260c97f8c0c96c3a607f19bb4b1d3f7d6e8b5acd7574081",
+          "releaseDate": "2026-09-16"
+        },
+        {
+          "version": "0.1.8",
+          "url": "opencode/opencode-0.1.8.tar.xz",
+          "sha256": "cb5746c5033498c08fc2c35833b5603a4d9a05e215c5510e6eb5def4eddd3f1c",
+          "releaseDate": "2026-09-15"
+        },
+        {
+          "version": "0.1.7",
+          "url": "opencode/opencode-0.1.7.tar.xz",
+          "sha256": "b141529706f1f23d90d1532716acf5ff539c45779bdb33c7d467fb4461da2a2a",
+          "releaseDate": "2026-09-09"
+        },
         {
           "version": "0.1.6",
           "url": "opencode/opencode-0.1.6.tar.xz",

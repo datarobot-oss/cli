@@ -18,7 +18,7 @@ This guide outlines how to build, test, and develop with the DataRobot CLI.
 
 ### Prerequisites
 
-- [Go 1.26.7+](https://golang.org/dl/)
+- [Go 1.27.1+](https://golang.org/dl/)
 - Git version control
 - [Task](https://taskfile.dev/installation/) (The task runner)
 
@@ -343,7 +343,7 @@ Consider the following when building terminal user interfaces.
 
 2. **Reuse existing TUI components**. Check `tui/` package first before creating new components. Also explore the [Bubbles library](https://github.com/charmbracelet/bubbles) for pre-built components.
 
-3. **Use common lipgloss styles**. The styles are defined in [tui/styles.go](../../tui/styles.go) for visual consistency:
+3. **Use common lipgloss styles**. The styles are defined in [tui/styles.go](https://github.com/datarobot-oss/cli/blob/main/tui/styles.go) for visual consistency:
 
    ```go
    import "github.com/datarobot/cli/tui"

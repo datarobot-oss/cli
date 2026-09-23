@@ -94,6 +94,49 @@ func TestCreateCredential_PostsTheValueAndReturnsTheID(t *testing.T) {
 	assert.Equal(t, "66f1a2b3c4d5e6f7a8b9c0d1", cred.CredentialID)
 }
 
+// The update route takes the secret and nothing else. Sending the type back
+// with it, the way the create call does, is answered by the platform with a
+// 422 naming credentialType as "not allowed key", so this pins the one field
+// that may travel: without it the rotation looks right against any mock and
+// fails against every real instance.
+func TestUpdateCredential_SendsOnlyTheSecret(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/credentials/66f1a2b3c4d5e6f7a8b9c0d1/", r.URL.Path)
+
+		var body map[string]string
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, map[string]string{"apiToken": "fixture-key-rotated-d4d4"}, body)
+
+		fmt.Fprint(w, `{"credentialId":"66f1a2b3c4d5e6f7a8b9c0d1","name":"my-app/OPENAI_API_KEY"}`)
+	}))
+
+	cred, err := UpdateCredential("66f1a2b3c4d5e6f7a8b9c0d1", "fixture-key-rotated-d4d4")
+	require.NoError(t, err)
+
+	// The id is what every manifest reference names, so a rotation that
+	// changed it would leave the file pointing at the old value.
+	assert.Equal(t, "66f1a2b3c4d5e6f7a8b9c0d1", cred.CredentialID)
+}
+
+// A credential id that is not there comes back as the HTTP error it is, so the
+// caller can say which variable was not re-sent rather than fail the run.
+func TestUpdateCredential_MissingIsAnHTTPError(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"message":"credential not found"}`)
+	}))
+
+	_, err := UpdateCredential("66f1a2b3c4d5e6f7a8b9c0d1", "fixture-key-rotated-d4d4")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+}
+
 // A name already in use is the caller's decision, not this function's:
 // reusing whatever credential holds that name would deploy a value the user
 // never supplied.

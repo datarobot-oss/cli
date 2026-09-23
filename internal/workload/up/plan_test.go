@@ -88,10 +88,36 @@ func TestPlan_EmptyIsExactlyNothingToDo(t *testing.T) {
 		{"sizing differs", Plan{State: StateRunning, Runtime: []Change{{Path: "replicaCount"}}}, false},
 		{"nothing exists yet", Plan{State: StateUnbound, Creates: true}, false},
 		{"stopped and identical", Plan{State: StateStopped, Code: builtCode(0)}, false},
+		{"errored and identical", Plan{State: StateErrored, Code: builtCode(0)}, false},
+		{"a forced build of an unchanged tree", Plan{State: StateRunning, Code: builtCode(0), ForceBuild: true}, false},
+		{"a forced build of a published image", Plan{State: StateRunning, ForceBuild: true}, true},
 	}
 
 	for _, c := range cases {
 		assert.Equal(t, c.want, c.plan.Empty(), c.name)
+	}
+}
+
+// Replaces is the question an errored workload is deployable on: a roll and a
+// resize both swap the failed generation for a new one, a create and a bare
+// start do not.
+func TestPlan_Replaces(t *testing.T) {
+	cases := []struct {
+		name string
+		plan Plan
+		want bool
+	}{
+		{"code differs", Plan{State: StateErrored, Code: builtCode(2)}, true},
+		{"sizing differs", Plan{State: StateErrored, Runtime: []Change{{Path: "replicaCount"}}}, true},
+		{"a forced build", Plan{State: StateErrored, Code: builtCode(0), ForceBuild: true}, true},
+		{"nothing differs", Plan{State: StateErrored, Code: builtCode(0)}, false},
+		{"a forced build of a published image", Plan{State: StateErrored, ForceBuild: true}, false},
+		{"a create replaces nothing", Plan{State: StateMissing, Creates: true, Code: builtCode(2)}, false},
+		{"a bare start replaces nothing", Plan{State: StateStopped, Code: builtCode(0)}, false},
+	}
+
+	for _, c := range cases {
+		assert.Equal(t, c.want, c.plan.Replaces(), c.name)
 	}
 }
 
@@ -125,6 +151,8 @@ func TestPlan_RollsArtifact(t *testing.T) {
 			true,
 		},
 		{"nothing differs", Plan{Code: builtCode(0)}, false},
+		{"a forced build of an unchanged tree", Plan{Code: builtCode(0), ForceBuild: true}, true},
+		{"a forced build of a published image", Plan{ForceBuild: true}, false},
 	}
 
 	for _, c := range cases {
@@ -718,7 +746,7 @@ func TestCreates_IsASubsetOfWhatDeployableAllows(t *testing.T) {
 			continue
 		}
 
-		err := deployable(Live{State: state}, "my-app", "")
+		err := deployable(Live{State: state}, Plan{}, "my-app", "")
 		assert.NoError(t, err, "%s creates but is refused, so nothing can act on the plan", state)
 	}
 }

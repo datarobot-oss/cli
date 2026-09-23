@@ -17,7 +17,7 @@ dr auth login
 Your credentials are automatically saved and you're ready to use the CLI.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -176,10 +176,15 @@ $ dr auth check
 ❌ Could not connect to https://app.example.com: dial tcp: lookup app.example.com: no such host
 Check DATAROBOT_ENDPOINT and your network, then try again.
 
-# The instance answered, but not with a credential verdict (only 401/403 blame the token)
+# The instance answered, but not with a credential verdict (only 401 blames the token)
 $ dr auth check
 ❌ https://app.example.com answered HTTP 503, so the CLI could not verify your credentials.
 Check DATAROBOT_ENDPOINT, and the instance's status if it persists.
+
+# Credentials accepted, but the account lacks API access (a fresh login would not help)
+$ dr auth check
+❌ https://app.example.com accepted your credentials but your account lacks API access (HTTP 403).
+Check that your account is activated and any required agreement is signed.
 
 # Endpoint scheme the CLI cannot use
 $ dr auth check
@@ -363,15 +368,69 @@ Error: Invalid URL format
 > - Malformed domain names
 > - For self-managed instances, ensure the URL includes the full domain (e.g., `https://datarobot.company.com`)
 
+### `profile`
+
+Inspect the named profiles stored in `drconfig.yaml`. Read-only: there is no `create` or
+`delete` subcommand. A profile is created the first time `dr --profile <name> auth login`
+(or `auth set-url`) is run for a name that doesn't exist yet; remove one by editing
+`drconfig.yaml` directly.
+
+```bash
+dr auth profile list
+dr auth profile show [name]
+```
+
+**`profile list`** shows the default profile plus every named profile, marking the active
+one (selected via `--profile` or `DATAROBOT_CLI_PROFILE`):
+
+```bash
+$ dr auth profile list
+DataRobot Profiles
+──────────────────
+╭───────────┬───────────────────────────────────────┬───────┬────────╮
+│ NAME      │ ENDPOINT                               │ TOKEN │ ACTIVE │
+├───────────┼───────────────────────────────────────┼───────┼────────┤
+│ default   │ https://app.datarobot.com/api/v2       │ set   │ ✓      │
+│ eu-mtsaas │ https://app.eu.datarobot.com/api/v2    │ set   │        │
+╰───────────┴───────────────────────────────────────┴───────┴────────╯
+```
+
+**`profile show [name]`** shows one profile's resolved settings &mdash; its own values, falling
+back to the default profile's for anything it doesn't define. Defaults to the active
+profile when no name is given; pass `default` to see the top-level profile explicitly. The
+token value itself is never printed, only whether one is set.
+
+```bash
+$ dr auth profile show eu-mtsaas
+eu-mtsaas
+─────────
+  endpoint: https://app.eu.datarobot.com/api/v2
+  token: set
+  ca-cert: - (inherited from default)
+```
+
+Both support `--output-format json`. To work against a specific profile with any command,
+not just `auth profile`, use `--profile <name>` or `DATAROBOT_CLI_PROFILE=<name>`:
+
+```bash
+dr --profile eu-mtsaas auth login
+dr --profile eu-mtsaas templates list
+DATAROBOT_CLI_PROFILE=eu-mtsaas dr templates list
+```
+
+See [Named profiles](../user-guide/configuration.md#named-profiles) for the full
+`drconfig.yaml` shape and precedence rules.
+
 ## Global options
 
 These options work with all `auth` commands:
 
 ```bash
-  -v, --verbose      Enable verbose output
-      --debug        Enable debug output
-      --skip-auth    Skip authentication checks (for advanced users)
-  -h, --help         Show help for command
+  -v, --verbose        Enable verbose output
+      --debug          Enable debug output
+      --skip-auth      Skip authentication checks (for advanced users)
+      --profile string Named profile from drconfig.yaml to use
+  -h, --help           Show help for command
 ```
 
 > [!WARNING]
@@ -453,6 +512,18 @@ $ dr auth set-url https://staging.datarobot.com
 $ dr auth login
 ```
 
+If you switch back and forth between the same instances often, a
+[named profile](#profile) avoids re-authenticating each time:
+
+```bash
+$ dr --profile staging auth set-url https://staging.datarobot.com
+$ dr --profile staging auth login
+$ dr --profile staging templates list
+
+# Later, back to the default instance — no re-login needed:
+$ dr templates list
+```
+
 ### Debug authentication issues
 
 ```bash
@@ -519,10 +590,16 @@ Properties of this flow:
 - The callback listener is bound to localhost only
 
 > [!IMPORTANT]
-> The API key arrives as a URL query parameter and is stored in plaintext. There is no
-> `state` parameter, so any local process able to reach `localhost:51164` while a login
-> is in flight could deliver a key. Treat `drconfig.yaml` as a secret and prefer
-> `DATAROBOT_API_TOKEN` in shared or automated environments.
+> The API key arrives as a URL query parameter and is stored in plaintext. The callback
+> refuses the requests a page can make invisibly: a hidden `<img>` carries
+> `Sec-Fetch-Dest: image` and a background `fetch` or `XMLHttpRequest` carries `empty`, and
+> the listener turns both away, so a page you have open cannot silently plant a key while a
+> login is in flight. The gate accepts only `Sec-Fetch-Dest: document` and has no `state`
+> parameter, so it does not stop a real top-level navigation to the callback URL (`window.open`,
+> a link click, or setting `window.location`) or a local process that can forge headers. A
+> document navigation is at least visible to you, because the tab moves or a popup opens.
+> Treat `drconfig.yaml` as a secret and prefer `DATAROBOT_API_TOKEN` in shared or automated
+> environments.
 
 ## Configuration file
 
@@ -535,12 +612,19 @@ After authentication, credentials are stored in:
 
 **Format:**
 
-Keys are flat and top-level; there is no `datarobot:` or `preferences:` nesting:
+Keys are flat and top-level (the default profile); there is no `datarobot:` or
+`preferences:` nesting. The only nested key is `profiles:`, one section per
+[named profile](#profile):
 
 ```yaml
 endpoint: https://app.datarobot.com/api/v2
 token: <plaintext_api_key>
 api-consumer-tracking-enabled: true
+
+profiles:
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: <plaintext_api_key>
 ```
 
 Only allowlisted keys are ever written back (see `config.PersistableKeys`), so transient
@@ -581,15 +665,28 @@ chmod 600 ~/.config/datarobot/drconfig.yaml
 
 ### Use per-environment authentication
 
+Prefer a [named profile](#profile) for multiple DataRobot environments &mdash; one
+`drconfig.yaml`, no re-authenticating when you switch back:
+
 ```bash
 # Development
-export DATAROBOT_CLI_CONFIG=~/.config/datarobot/dev-config.yaml
-dr auth set-url https://dev.datarobot.com --config $DATAROBOT_CLI_CONFIG
-dr auth login
+dr --profile dev auth set-url https://dev.datarobot.com
+dr --profile dev auth login
 
 # Production
-export DATAROBOT_CLI_CONFIG=~/.config/datarobot/prod-config.yaml
-dr auth set-url https://prod.datarobot.com --config $DATAROBOT_CLI_CONFIG
+dr --profile prod auth set-url https://prod.datarobot.com
+dr --profile prod auth login
+
+dr --profile dev templates list
+dr --profile prod templates list
+```
+
+Separate config files remain available via `--config`/`DATAROBOT_CLI_CONFIG` for cases
+that genuinely need a different file, such as a self-contained CI config:
+
+```bash
+export DATAROBOT_CLI_CONFIG=~/.config/datarobot/ci-config.yaml
+dr auth set-url https://app.datarobot.com --config $DATAROBOT_CLI_CONFIG
 dr auth login
 ```
 
@@ -616,6 +713,9 @@ export DATAROBOT_API_TOKEN=your-api-token
 
 # Custom config file location
 export DATAROBOT_CLI_CONFIG=~/.config/datarobot/custom-config.yaml
+
+# Named profile to use (see 'profile' above)
+export DATAROBOT_CLI_PROFILE=eu-mtsaas
 ```
 
 To go the other way — take the credentials the CLI already has and put them in your shell environment for the DataRobot SDKs and other tools — use [`dr auth export`](#export):
@@ -758,9 +858,9 @@ dr auth login
 
 ## See also
 
-- [Quick start](../../README.md#quick-start) - Initial setup guide
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) - Initial setup guide
 - [Configuration](../user-guide/configuration.md) - Configuration file details and advanced settings
-- [Templates](../template-system/) - Template management commands
+- [Templates](../template-system/README.md) - Template management commands
 
 > [!TIP]
 > **What's next?** After setting up authentication:

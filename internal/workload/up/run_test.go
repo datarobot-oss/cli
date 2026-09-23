@@ -181,6 +181,10 @@ type fakes struct {
 	workloadD      func(string) (workload.Document, error)
 	artifactD      func(string) (workload.Document, error)
 
+	// reason is the platform's account of why a workload is errored, read
+	// only for one that is.
+	reason func(string) string
+
 	// The build track: create an artifact, link the project to it, push the
 	// code, turn it into an image.
 	newArtifact func(any) (*workload.Artifact, error)
@@ -250,6 +254,12 @@ func install(t *testing.T, f fakes) {
 		})
 
 	swap(t, &waitSteadyFn, f.waitSteady)
+
+	// The reason an errored workload is read with costs two requests to
+	// whatever tenant the developer is logged into, so an errored fixture is
+	// errored for no stated reason unless the test says otherwise.
+	force(t, &failureReasonFn, func(string) string { return "" })
+	swap(t, &failureReasonFn, f.reason)
 
 	// The placeholder message looks a credential up by name. Left unwired it
 	// would list credentials from whatever tenant the developer is logged
@@ -728,16 +738,28 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 // Told to bind to an errored holder, the next run walks into that state's own
 // refusal — and the user who hand-cleared the binding because their workload
 // was stuck is sent back to the exact line they deleted: a loop.
-func TestRun_ConflictWithADeadHolderAdvisesDeleteNotRebinding(t *testing.T) {
-	for _, status := range []string{workload.WorkloadStatusErrored, workload.WorkloadStatusTerminated} {
-		t.Run(status, func(t *testing.T) {
+func TestRun_ConflictWithADeadHolder(t *testing.T) {
+	cases := []struct {
+		status string
+		want   string
+		not    string
+	}{
+		// Binding advice against a terminated holder is the loop this exists
+		// to break; an errored holder can be deployed onto again, so binding
+		// is the way back rather than a dead end.
+		{workload.WorkloadStatusTerminated, "dr workload delete wl-dead --dir ", "workloadId: wl-dead"},
+		{workload.WorkloadStatusErrored, "workloadId: wl-dead", "dr workload delete"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.status, func(t *testing.T) {
 			install(t, fakes{
 				create: func(any) (*workload.Workload, error) {
 					return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 				},
 				list: func(int, int, []string, string) ([]workload.Workload, error) {
 					dead := *running("wl-dead")
-					dead.Status = status
+					dead.Status = c.status
 
 					return []workload.Workload{dead}, nil
 				},
@@ -746,43 +768,35 @@ func TestRun_ConflictWithADeadHolderAdvisesDeleteNotRebinding(t *testing.T) {
 			_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
 			require.Error(t, err)
 
-			assert.Contains(t, err.Error(), "dr workload delete wl-dead --dir ",
-				"the exit is the delete, carrying the flag that reaches this project")
-			assert.Contains(t, err.Error(), status, "say why binding is not offered")
-			assert.NotContains(t, err.Error(), "workloadId: wl-dead",
-				"binding advice against a dead holder is the loop this exists to break")
-
-			// Errored is the one dead-looking state that can recover, so it is
-			// hedged with diagnosis first; terminated really is final.
-			if status == workload.WorkloadStatusErrored {
-				assert.Contains(t, err.Error(), "dr workload logs wl-dead", "diagnosis before deletion")
-			} else {
-				assert.NotContains(t, err.Error(), "dr workload logs", "no hedge for a state that cannot recover")
-			}
+			assert.Contains(t, err.Error(), c.want)
+			assert.NotContains(t, err.Error(), c.not)
 		})
 	}
 }
 
-// The errored refusal carries its own exit. Ending at "check the logs" left
-// recovery to folklore: hand-deleting the workloadId loops through the name
-// conflict, and deleting the state directory throws the code catalog away
-// with it.
+// The errored refusal is for a deploy with nothing new to run, and it names
+// what would be: --force-build for a built image, the platform's reason beside
+// the state, and the delete as the exit for when nothing else works.
 func TestRun_ErroredRefusalNamesTheWayOut(t *testing.T) {
-	install(t, fakes{
-		workloadD: func(string) (workload.Document, error) {
-			return workload.Document{"id": "wl-1", "name": "my-app", "status": workload.WorkloadStatusErrored}, nil
-		},
-		artifactD: func(string) (workload.Document, error) { return nil, nil },
-	})
+	f := liveIn(t, workload.WorkloadStatusErrored)
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	f.reason = func(string) string { return "vllm-server: ErrImagePull: failed to resolve image: not found" }
 
-	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+	install(t, f)
 
-	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
 	require.Error(t, err)
 
+	assert.Contains(t, err.Error(), "ErrImagePull", "the platform's reason is the fact that decides what to do")
+	assert.Contains(t, err.Error(), "dr workload up --force-build", "a built image can be built again")
 	assert.Contains(t, err.Error(), "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0", "diagnosis first: it may recover")
-	assert.Contains(t, err.Error(), "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0", "and the exit when it does not")
+	assert.Contains(t, err.Error(), "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0", "and the exit when nothing else works")
 	assert.Contains(t, err.Error(), "clears the binding", "the delete owns the binding, so nobody hand-edits the file")
+
+	assert.Contains(t, stderr, "ErrImagePull", "the plan says it too, which is all a --dry-run shows")
+	assert.Contains(t, stderr, "Nothing below will be applied")
 }
 
 func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
@@ -877,24 +891,29 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 		status string
 		want   string
 	}{
-		{workload.WorkloadStatusErrored, "dr workload logs"},
+		// Errored is refused only with nothing new to deploy: a run that
+		// would put the same failure back.
+		{workload.WorkloadStatusErrored, "nothing here would change what it runs"},
+		{workload.WorkloadStatusTerminated, "dr workload delete"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.status, func(t *testing.T) {
-			install(t, fakes{
-				workloadD: func(string) (workload.Document, error) {
-					return workload.Document{"id": "wl-1", "name": "my-app", "status": c.status}, nil
-				},
-				artifactD: func(string) (workload.Document, error) { return nil, nil },
-				create: func(any) (*workload.Workload, error) {
-					t.Fatal("nothing may be created for a workload in this state")
+			f := liveIn(t, c.status)
+			f.create = func(any) (*workload.Workload, error) {
+				t.Fatal("nothing may be created for a workload in this state")
 
-					return nil, nil
-				},
-			})
+				return nil, nil
+			}
+			f.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+				t.Fatal("nothing may be rolled onto a workload in this state")
 
-			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+				return nil, nil
+			}
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
 
 			_, _, err := runIn(t, bound, Options{NonInteractive: true})
 			require.Error(t, err)
@@ -1086,6 +1105,69 @@ func TestRun_DryRunOnASettlingWorkloadDoesNotWait(t *testing.T) {
 	assert.NotContains(t, stderr, "Already up to date")
 }
 
+// The settling exemption in refusal, guarded. A moving workload is waited out
+// before the plan is built, so the only run that reaches a plan still settling
+// is a dry run, which does not wait. Refusing that would contradict the note
+// printed two lines above it, which says a deploy would wait and plan against
+// where the workload lands. deployable keeps its settling branch for the point
+// of action; nothing may ask it here.
+func TestRun_DryRunOnASettlingWorkloadWithDriftIsStillAPreview(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusLaunching
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err, "a preview of a moving workload is early, not wrong")
+
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Contains(t, stderr, "+ artifact")
+	assert.NotContains(t, stderr, "Nothing below will be applied")
+}
+
+// The other half of the settling exemption, and the reason it is keyed on the
+// dry run rather than on the state.
+//
+// awaitSteady ends with a fresh Look, so a workload can be steady when the wait
+// lands and moving again one call later. That run is not a preview: deployable
+// refuses it at the point of action either way, so the plan printed above that
+// refusal has to carry the same disclaimer every other refused state gets.
+// Exempting the state wholesale left this one path announcing work it would not
+// do, which is the defect itself, in one of the two states the report named.
+func TestRun_SettlingOnTheReReadIsRefusedLikeAnyOtherState(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusProvisioning
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			// Steady at the moment the wait lands; the Look that follows
+			// disagrees, which is the race this covers.
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
+		},
+	})
+
+	_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a state a deploy can act on")
+
+	assert.Contains(t, stderr, "Nothing below will be applied",
+		"a real run refused for settling is refused like any other state")
+
+	note := strings.Index(stderr, "Nothing below will be applied")
+	change := strings.Index(stderr, "+ artifact")
+	require.Positive(t, change)
+	assert.Less(t, note, change)
+}
+
 // A workload that dies while the deploy is watching it must not be reported as
 // a success. The deploy now waits transitions out, so a workload that settles
 // into errored is one this run had a front-row seat to, and the file matching
@@ -1254,6 +1336,107 @@ func TestRun_TerminatedWorkloadDoesNotAnnounceACreate(t *testing.T) {
 
 	assert.NotContains(t, stderr, "will be created")
 	assert.NotContains(t, stderr, "no longer exists", "it does still exist")
+}
+
+// liveIn is the live pair for a workload the platform reports in status,
+// still holding its name and its artifact.
+func liveIn(t *testing.T, status string) fakes {
+	t.Helper()
+
+	return fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = status
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+}
+
+// driftedManifest is boundLiveManifest with one port moved, which is enough to
+// make the plan want a new version.
+func driftedManifest() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "port: 8000", "port: 9000", 1)
+}
+
+// TestRun_RefusedStateDescribesItsDriftRatherThanAnnouncingIt is the reported
+// bug. The plan was rendered before the apply path ever asked whether the state
+// could take one, so a refusal printed a full announcement of a rollout and
+// only disowned it on the last line.
+//
+// The drift itself stays: someone who has just been told the workload cannot
+// take a deploy is usually about to ask what the deploy would have been. What
+// changes is that the block says so before the reader gets to it.
+//
+// Both refusals a drifted file can meet are driven: they differ in the remedy
+// they name and in how they reach deployable. Errored is not among them any
+// more, because drift is exactly what lets a deploy act on it.
+func TestRun_RefusedStateDescribesItsDriftRatherThanAnnouncingIt(t *testing.T) {
+	cases := []struct {
+		status string
+		want   string
+	}{
+		{workload.WorkloadStatusTerminated, "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0"},
+
+		// Suspended reaches the refusal by its own route, through
+		// deployable's stopped branch and into startable, and is the one
+		// refused status whose State is shared with a state that deploys
+		// perfectly well. A note that keyed off the state rather than the
+		// answer would go missing here and nowhere else.
+		{workload.WorkloadStatusSuspended, "suspended"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.status, func(t *testing.T) {
+			install(t, liveIn(t, c.status))
+
+			_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.want)
+
+			assert.Contains(t, stderr, "Nothing below will be applied")
+			assert.Contains(t, stderr, "+ artifact",
+				"the drift is still worth reading; only its framing changes")
+
+			note := strings.Index(stderr, "Nothing below will be applied")
+			change := strings.Index(stderr, "+ artifact")
+			require.Positive(t, change)
+			assert.Less(t, note, change, "the disclaimer has to come before the work it disclaims")
+		})
+	}
+}
+
+// A deploy that is going to happen says nothing about not happening, which is
+// the whole of what makes the note mean anything.
+func TestRun_AnAppliedPlanIsStillAnnounced(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	_, stderr, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "Nothing below will be applied")
+}
+
+// A --dry-run onto a refused state is a failure rather than a preview. The
+// question the flag asks is "what would this deploy", and the honest answer is
+// that it would be turned away, which a CI job has to be able to see in the
+// exit code. The plan is still printed, disclaimed, so the answer is not just
+// the refusal.
+func TestRun_RefusedDryRunIsAFailureNotAPreview(t *testing.T) {
+	install(t, liveIn(t, workload.WorkloadStatusTerminated))
+
+	result, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true, DryRun: true})
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "Nothing below will be applied")
+	assert.Contains(t, stderr, "+ artifact")
+	assert.Equal(t, ActionUnchanged, result.Action, "a refused run did nothing, including in a preview")
 }
 
 // track records what the build path did, in order, so a test can pin the
@@ -1840,22 +2023,10 @@ func TestRun_DryRunReportsTheIgnoreFileNotice(t *testing.T) {
 
 // A flag that was asked for and did nothing has to say so, or it reads as a
 // rebuild that quietly happened.
-func TestRun_ForceBuildWithNothingToDoSaysSo(t *testing.T) {
-	install(t, fakes{
-		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
-		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
-	})
-
-	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
-
-	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, ForceBuild: true})
-	require.NoError(t, err)
-	assert.Contains(t, stderr, "--force-build had no effect")
-}
-
-// The quieter half of the same problem: a manifest naming a published image
-// deploys and succeeds, so a --force-build that was never going to build
-// anything leaves nothing to suggest the image is not what the flag implied.
+// A manifest naming a published image deploys and succeeds, so a --force-build
+// that was never going to build anything leaves nothing to suggest the image
+// is not what the flag implied. A built project with nothing else to do is no
+// longer the other idle case: the flag is a reason to deploy there now.
 func TestRun_ForceBuildOnAPublishedImageSaysSo(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
@@ -2733,4 +2904,116 @@ func TestDefaultCodeChange_AppliesMatchesTheFilesBuildMode(t *testing.T) {
 				"the plan's answer and the file's have to be the same answer (build mode %q)", mode)
 		})
 	}
+}
+
+// Both dead-workload refusals end at "delete it and deploy again", which keeps
+// the name and is what makes the advice sound like continuity. It is not: the
+// replacement is a different workload with a different id, so its endpoint URL
+// is different too, permanently. A caller pointed at the old URL finds out when
+// their traffic stops arriving, which is too late to be told.
+func TestDeployable_DeadWorkloadRemediesSayTheEndpointChanges(t *testing.T) {
+	cases := map[string]struct {
+		state  State
+		status string
+	}{
+		"errored":    {StateErrored, workload.WorkloadStatusErrored},
+		"terminated": {StateTerminated, workload.WorkloadStatusTerminated},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			live := Live{
+				Live:   manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
+				State:  c.state,
+				Status: c.status,
+			}
+
+			err := deployable(live, Plan{}, "my-app", " --dir ./svc")
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "'dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --dir ./svc'",
+				"the remedy this note qualifies, with the --dir the run was given")
+			assert.Contains(t, err.Error(), ", then deploy again. The replacement keeps the name",
+				"then, not and: the imperative must not read as another thing the delete does")
+			assert.Contains(t, err.Error(), "new endpoint URL")
+			assert.Contains(t, err.Error(), "anything calling the old URL has to be pointed at the new one")
+			assert.NotContains(t, err.Error(), "under the same name")
+		})
+	}
+}
+
+// The third refusal giving the same advice. It is reached by a create that 409s
+// on a name a terminated workload still holds, and the sentence it qualifies
+// opens "If it is this project's dead workload", so its reader loses the same
+// URL.
+func TestNameTaken_DeadHolderRemedySaysTheEndpointChanges(t *testing.T) {
+	swap(t, &listWorkloadsFn, func(int, int, []string, string) ([]workload.Workload, error) {
+		return []workload.Workload{{
+			ID: "68b0c1d2e3f4a5b6c7d8e9f0", Name: "my-app", Status: workload.WorkloadStatusTerminated,
+		}}, nil
+	})
+
+	err := nameTaken(&drapi.HTTPError{StatusCode: http.StatusConflict}, "my-app", ".datarobot.yaml", "")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "then deploy again to take the name back")
+	assert.Contains(t, err.Error(), "new endpoint URL")
+	assert.NotContains(t, err.Error(), "deploy again to recreate the name",
+		"recreating the name is exactly what sounds like continuity and is not")
+}
+
+// A run can rotate a secret and then die before there is a plan, and the
+// rotation is the one edit with nothing left on disk to find it by. Dropping
+// it from the failed result made the next bare `up` report the workload as up
+// to date while the container went on serving the old value.
+func TestRun_EnvEditSurvivesAFailureBeforeThePlan(t *testing.T) {
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 2}, nil
+		},
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		code: func(Loaded, Live) (CodeChange, error) {
+			return CodeChange{}, errors.New("cannot read the project")
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, SyncEnv: true})
+	require.Error(t, err)
+
+	assert.Equal(t, 2, result.Env.SecretsRotated, "the failure has to carry what already reached the store")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID,
+		"and which workload it was about, or the deploy is unfindable")
+}
+
+// The values these flags write land in a file headed for git, exactly as
+// `dr workload config` writes them. The classifier is a heuristic, so naming
+// them is the only chance to catch a misread before the commit, and it cannot
+// depend on which command carried the edit.
+func TestRun_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			return wizard.Result{
+				Action:        wizard.ActionUnchanged,
+				EnvKeysListed: 2,
+				Draft: manifest.Draft{EnvVars: []manifest.EnvVar{
+					{Name: "REGION", Value: "eu-west-1"},
+					{Name: "OPENAI_API_KEY", Secret: true},
+				}},
+			}, nil
+		},
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, SyncEnv: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Values written in the clear: REGION.")
+	assert.NotContains(t, stderr, "OPENAI_API_KEY", "the secret is the thing being protected")
+	assert.Equal(t, []string{"REGION"}, result.Env.Literals)
 }

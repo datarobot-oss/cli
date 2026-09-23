@@ -16,8 +16,10 @@ package sync
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,6 +56,11 @@ func (f *fakeArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionID
 	return f.PatchFn(artifactID, catalogID, catalogVersionID)
 }
 
+// testRepoID is the artifact repository the test artifacts belong to. The
+// catalog name must not carry it, so it has to be something an assertion
+// can look for and fail on.
+const testRepoID = "repo-xyz-789"
+
 func initProject(t *testing.T, files map[string]string) string {
 	t.Helper()
 
@@ -70,7 +77,7 @@ func initProject(t *testing.T, files map[string]string) string {
 }
 
 func draftArtifact(id, catalogID, versionID string) *workload.Artifact {
-	a := &workload.Artifact{ID: id, Name: id, Status: "DRAFT"}
+	a := &workload.Artifact{ID: id, Name: id, Status: "DRAFT", ArtifactRepositoryID: testRepoID}
 
 	if catalogID == "" {
 		return a
@@ -205,6 +212,12 @@ func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
 	_, err := e.Plan()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "locked")
+
+	// The remedy is reachable by whoever hit this. A deploy mints a new
+	// version and gets past the lock, but the command that does it is behind
+	// a feature gate, and `dr artifact code sync` is not.
+	assert.NotContains(t, err.Error(), "workload up")
+	assert.Contains(t, err.Error(), "dr artifact create")
 }
 
 // A preview writes nothing, so the one reason to refuse a locked artifact
@@ -320,6 +333,56 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 	assert.NotEmpty(t, patchedArtifactID, "PatchArtifactCodeRef must be called after upload")
 	assert.Equal(t, "cid-new", patchedCatalogID)
 	assert.Equal(t, "ver-1", patchedVersionID)
+
+	// The catalog this sync created is labelled with the artifact's id, so
+	// the File Registry row identifies its project instead of showing
+	// "Untitled Dataset". The id and not the name: see newCatalogName.
+	assert.Equal(t, catalogNameLabel+"art-abc-123", fake.createdCatalogName)
+}
+
+// TestEngine_Run_FirstSyncZipPathNamesTheCatalog is the large-change-set
+// half of the same guarantee. The two upload paths create a catalog
+// through different endpoints, so a name wired into only one of them
+// leaves every project over the file threshold on "Untitled Dataset".
+func TestEngine_Run_FirstSyncZipPathNamesTheCatalog(t *testing.T) {
+	files := make(map[string]string, StageVsZipFileThreshold+1)
+	for i := range StageVsZipFileThreshold + 1 {
+		files[fmt.Sprintf("mod%02d.py", i)] = fmt.Sprintf("x = %d\n", i)
+	}
+
+	dir := initProject(t, files)
+
+	fake := &fakeFilesClient{
+		catalogID: "cid-zip",
+		versionID: "ver-zip",
+	}
+
+	e, err := newWithDeps(dir, Options{Yes: true}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, "", ""), nil
+			},
+		},
+		Now: time.Now,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e.Close() })
+
+	result, err := e.Run()
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.Equal(t, "ver-zip", result.NewVersion)
+	assert.Empty(t, fake.uploadedFiles, "over the threshold the stage path must not run")
+
+	// The zip path names its catalog on the JSON create and then adds the
+	// archive to it, rather than naming it on the upload: the upload route
+	// rejects a form field it does not know, so a name there would fail the
+	// whole sync against a server that predates the parameter.
+	assert.Equal(t, catalogNameLabel+"art-abc-123", fake.createdCatalogName)
+	assert.Equal(t, "cid-zip", fake.zippedIntoCatalog)
 }
 
 // The engine is where the deprecation note is picked up, so this is the level
@@ -408,4 +471,50 @@ func hashLocal(t *testing.T, dir, rel string) (string, int64, error) {
 	abs := filepath.Join(dir, filepath.FromSlash(rel))
 
 	return fileops.HashFile(abs)
+}
+
+// TestNewCatalogName_LabelsTheArtifact pins both halves of the name: a
+// label saying what the id is, and the artifact's own id rather than its
+// name (which the project may change under an entry that cannot follow) or
+// its repository (a separate kind of object in the Workload API).
+func TestNewCatalogName_LabelsTheArtifact(t *testing.T) {
+	e := &Engine{
+		artifact: &workload.Artifact{
+			ID:                   "art-abc-123",
+			Name:                 "name-should-not-appear",
+			ArtifactRepositoryID: testRepoID,
+		},
+	}
+
+	got := newCatalogName(e)
+
+	assert.Equal(t, "Artifact: art-abc-123", got)
+	assert.NotContains(t, got, "name-should-not-appear",
+		"naming is create-time only, so a renamable name would go stale in place")
+	assert.NotContains(t, got, testRepoID,
+		"a repository is a different entity; its id here would name the wrong thing")
+}
+
+// TestNewCatalogName_NoID covers an artifact the platform gave no id.
+// The name is still worth sending; a label with nothing after it is not.
+func TestNewCatalogName_NoID(t *testing.T) {
+	e := &Engine{artifact: &workload.Artifact{Name: "bare-artifact"}}
+
+	assert.Equal(t, "bare-artifact", newCatalogName(e))
+}
+
+// TestNewCatalogName_NoIDClampsTheFallback keeps the fallback inside what
+// the Files API accepts, since an artifact name may run to twenty times
+// the limit.
+func TestNewCatalogName_NoIDClampsTheFallback(t *testing.T) {
+	e := &Engine{artifact: &workload.Artifact{Name: strings.Repeat("a", 400)}}
+
+	assert.Len(t, []rune(newCatalogName(e)), filesapi.CatalogNameMaxLen)
+}
+
+// TestNewCatalogName_NoArtifact pins the guard that leaves the name off
+// the request entirely rather than sending a label with no id, which would
+// name the entry after nothing at all.
+func TestNewCatalogName_NoArtifact(t *testing.T) {
+	assert.Empty(t, newCatalogName(&Engine{}))
 }

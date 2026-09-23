@@ -65,7 +65,7 @@ func ensureCatalog(e *Engine) (string, error) {
 		return id, nil
 	}
 
-	cat, err := e.files.CreateCatalog()
+	cat, err := e.files.CreateCatalog(newCatalogName(e))
 	if err != nil {
 		return "", fmt.Errorf("create catalog: %w", err)
 	}

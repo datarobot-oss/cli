@@ -149,3 +149,47 @@ func TestAnnounce_IgnoresAnInheritedOutputFormat(t *testing.T) {
 	announce(speaking, Ref{ID: boundID, Source: WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"})
 	assert.Empty(t, quiet.String(), "a command that does render JSON stays quiet")
 }
+
+// The prompt has one job the announcement above it does not: saying why it is
+// being put. "Named by <file>" said neither half of that clearly, since the
+// manifest carries a real name: key and the phrase read just as easily as "its
+// name comes from this file". Asserted whole rather than by substring, because
+// the spacing between the three clauses is where a rebuilt question breaks and
+// no Contains spans a join.
+func TestPrompt(t *testing.T) {
+	ambient := Ref{ID: boundID, Source: WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
+
+	assert.Equal(t,
+		"Stop workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
+			"rather than on the command line. [y/N] ",
+		Prompt("Stop", ambient, ""))
+
+	assert.Equal(t,
+		"Delete workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
+			"rather than on the command line. Gone for good. [y/N] ",
+		Prompt("Delete", ambient, "Gone for good."))
+
+	typed := Ref{ID: boundID, Source: WorkloadIDSourceExplicit}
+
+	assert.Equal(t, "Stop workload "+boundID+"? [y/N] ", Prompt("Stop", typed, ""),
+		"an id the user typed has no manifest to attribute it to, and no double space where one would go")
+	assert.Equal(t, "Delete workload "+boundID+"? Gone for good. [y/N] ", Prompt("Delete", typed, "Gone for good."))
+}
+
+// The provenance clause is empty for a typed id rather than a sentence with a
+// hole in it. Nothing calls it that way today; the point is that a new mutating
+// command cannot make it happen by forgetting a guard its two siblings apply
+// externally.
+func TestRefProvenance_IsEmptyForATypedID(t *testing.T) {
+	typed := Ref{ID: boundID, Source: WorkloadIDSourceExplicit}
+
+	assert.Empty(t, typed.Provenance())
+	assert.Empty(t, typed.SpecifiedIn())
+
+	ambient := Ref{ID: boundID, Source: WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
+
+	assert.Equal(t, "The id is specified in /p/.datarobot.yaml rather than on the command line. ",
+		ambient.Provenance())
+	assert.Equal(t, ", specified in /p/.datarobot.yaml", ambient.SpecifiedIn(),
+		"the appositive and the sentence are one phrase, so a rewording cannot half-apply")
+}

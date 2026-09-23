@@ -23,9 +23,9 @@ import (
 )
 
 func tryLockExclusive(f *os.File) error {
-	return unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // uintptr and int are same size on supported platforms
+	return unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 }
 
 func unlockExclusive(f *os.File) error {
-	return unix.Flock(int(f.Fd()), unix.LOCK_UN) //nolint:gosec // uintptr and int are same size on supported platforms
+	return unix.Flock(int(f.Fd()), unix.LOCK_UN)
 }

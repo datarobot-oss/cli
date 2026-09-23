@@ -40,7 +40,7 @@ type Result struct {
 	DownloadedCount int
 	DeletedCount    int
 	ConflictCount   int
-	ConflictCopies  []string // *.LOCAL.<ts> paths created during sync
+	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
 	Duration        time.Duration
 }
 
@@ -66,20 +66,23 @@ func (workloadArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionI
 
 // Deps are the external dependencies injected into an Engine. Use
 // defaultDeps for production wiring; tests build their own. A nil
-// Lockfile falls back to the production runner (runUvLock).
+// Lockfile or LockfileCheck falls back to the production runner
+// (runUvLock, runUvLockCheck).
 type Deps struct {
-	Files     filesapi.Client
-	Artifacts artifactStore
-	Now       func() time.Time
-	Lockfile  LockfileRunner
+	Files         filesapi.Client
+	Artifacts     artifactStore
+	Now           func() time.Time
+	Lockfile      LockfileRunner
+	LockfileCheck LockfileChecker
 }
 
 func defaultDeps() Deps {
 	return Deps{
-		Files:     filesapi.New(),
-		Artifacts: workloadArtifactStore{},
-		Now:       time.Now,
-		Lockfile:  runUvLock,
+		Files:         filesapi.New(),
+		Artifacts:     workloadArtifactStore{},
+		Now:           time.Now,
+		Lockfile:      runUvLock,
+		LockfileCheck: runUvLockCheck,
 	}
 }
 
@@ -93,28 +96,29 @@ type Engine struct {
 	artifacts artifactStore
 	nowFn     func() time.Time
 
-	config         wapi.Config
-	base           BaseManifest
-	artifact       *workload.Artifact
-	remoteVer      string
-	drifted        bool
-	local          LocalManifest
-	remote         RemoteManifest
-	plan           *SyncPlan
-	lock           *SyncLock
-	rollback       *Rollback
-	newCatalogID   string
-	newVersionID   string
-	uploadOutcome  *UploadOutcome
-	conflictCopies []string
-	result         *Result
-	startedAt      time.Time
-	staleNote      bool
-	migrationNote  string
-	ignoreNotice   string
-	lockedNote     string
+	config        wapi.Config
+	base          BaseManifest
+	artifact      *workload.Artifact
+	remoteVer     string
+	drifted       bool
+	local         LocalManifest
+	remote        RemoteManifest
+	plan          *SyncPlan
+	lock          *SyncLock
+	rollback      *Rollback
+	newCatalogID  string
+	newVersionID  string
+	uploadOutcome *UploadOutcome
+	localBackups  []string
+	result        *Result
+	startedAt     time.Time
+	staleNote     bool
+	migrationNote string
+	ignoreNotice  string
+	lockedNote    string
 
 	lockfileFn        LockfileRunner
+	lockfileCheckFn   LockfileChecker
 	lockfileGenerated bool
 	lockfileHint      string
 }
@@ -135,13 +139,18 @@ func newWithDeps(projectDir string, opts Options, deps Deps) (*Engine, error) {
 		deps.Lockfile = runUvLock
 	}
 
+	if deps.LockfileCheck == nil {
+		deps.LockfileCheck = runUvLockCheck
+	}
+
 	return &Engine{
-		projectDir: projectDir,
-		opts:       opts,
-		files:      deps.Files,
-		artifacts:  deps.Artifacts,
-		nowFn:      deps.Now,
-		lockfileFn: deps.Lockfile,
+		projectDir:      projectDir,
+		opts:            opts,
+		files:           deps.Files,
+		artifacts:       deps.Artifacts,
+		nowFn:           deps.Now,
+		lockfileFn:      deps.Lockfile,
+		lockfileCheckFn: deps.LockfileCheck,
 	}, nil
 }
 
@@ -306,4 +315,59 @@ func resolveExistingCatalogID(e *Engine) string {
 	}
 
 	return refFromArtifact(e).CatalogID
+}
+
+// catalogNameLabel prefixes the id in a new catalog's name, so the File
+// Registry row says what the id is rather than leaving a bare hex string
+// for a reader to guess at. It names the artifact, which is the object the
+// id belongs to; the repository an artifact sits in is a separate entity
+// in the Workload API and naming it here would point a reader at the wrong
+// kind of thing.
+const catalogNameLabel = "Artifact: "
+
+// newCatalogName is the name to give a catalog this sync creates: the
+// artifact pushing the code, so the File Registry row identifies its
+// project instead of showing the platform's "Untitled Dataset" or, on the
+// zip path, the internal "wapi-sync.zip".
+//
+// The artifact's name is deliberately not what goes here. Naming is a
+// create-time parameter on the Files API, so whatever goes in is what the
+// entry shows for the rest of its life, and a name the project is free to
+// change afterwards would end up telling a reader something that had
+// stopped being true, which is the same defect as the default titles and
+// harder to spot. It would not identify the row either, since nothing
+// stops two projects from choosing the same artifact name and `dr workload
+// up` derives that name from the directory.
+//
+// The id names the artifact that created the entry, which is not always
+// the one deploying from it later: every successful `dr workload up` locks
+// the artifact it deployed, so the next deploy mints a fresh one in the
+// same repository and repoints the project at it, while the catalog stays
+// where it is. A locked artifact is kept rather than deleted, so the id
+// goes on resolving and goes on being true about where this code came
+// from; it is the first version of the lineage rather than the current
+// one.
+//
+// Only the first sync of a project gets here, so an entry created before
+// the CLI sent a name at all keeps whatever the platform gave it.
+//
+// Returns "" when the artifact is unknown, which leaves the name off the
+// request. Phase 1 always fetches the artifact before Phase 5 uploads, so
+// that is a guard against future reordering rather than a state a sync
+// reaches today.
+func newCatalogName(e *Engine) string {
+	if e.artifact == nil {
+		return ""
+	}
+
+	// An artifact the platform gave no id is not a case a sync reaches, since
+	// the id is how phase 1 fetched it. The name is the only other thing here
+	// worth showing, and it beats a label with nothing after it.
+	if e.artifact.ID == "" {
+		return filesapi.ClampCatalogName(e.artifact.Name)
+	}
+
+	// Label plus a platform id is nowhere near the API's ceiling, so unlike
+	// the fallback this needs no budgeting.
+	return catalogNameLabel + e.artifact.ID
 }

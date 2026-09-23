@@ -180,10 +180,7 @@ type secretsStoredMsg struct {
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
 	f := flow{detected: detected, workloads: workloads, answers: answers, pendingBind: answers.WorkloadID}
 
-	f.draft = answers.draftOrPartial(detected)
-	// A name passed as a flag is an answer the user gave, so the screen shows
-	// it as a value rather than re-offering the directory's suggestion.
-	f.nameGiven = answers.Name != ""
+	f.startFrom(answers.draftOrPartial(detected))
 
 	f.at = f.first(answers)
 	if f.at == screenDirectory {
@@ -208,6 +205,18 @@ func newFlow(detected Detected, workloads []workload.Workload, answers Answers) 
 	}
 
 	return f
+}
+
+// startFrom installs a draft built from this run's flags, at the start and
+// again whenever the flow starts over. The name question starts over with it:
+// a name typed for the draft being replaced went with that draft, so only a
+// --name still counts as given. That flag is an answer the user gave and the
+// screen shows it as a value; the suggestion a fresh draft carries is a
+// placeholder, and left marked as given it would come back looking typed,
+// one reflexive Enter away from naming a deployed workload "src".
+func (f *flow) startFrom(draft manifest.Draft) {
+	f.draft = draft
+	f.nameGiven = f.answers.Name != ""
 }
 
 // defaultDraft is where a run starts when nothing else has been said: the
@@ -707,17 +716,19 @@ func (f *flow) acceptKind() (tea.Cmd, error) {
 }
 
 // acceptDirectory re-reads the project from the directory chosen. This is
-// always the first screen, so no answer beyond this one exists yet and the
-// draft is rebuilt the way newFlow built it — everything Detect suggests
-// (name, port, Dockerfile, .env) belonged to the old directory. The env
-// table is dropped for the same reason: built once from the old tree, it
-// would otherwise write the old directory's variables into the new one's
-// manifest. f.offer stays untouched throughout, so Escape re-poses the
+// always the first screen, and choosing another directory starts the run over
+// from it: the draft is rebuilt the way newFlow built it, because everything
+// Detect suggests (name, port, Dockerfile, .env) belonged to the old
+// directory. On the way back that also discards the answers given after it,
+// the typed name included: they were given for the old tree's draft.
+// The env table is dropped for the same reason: built once from the old
+// tree, it would otherwise write the old directory's variables into the new
+// one's manifest. f.offer stays untouched throughout, so Escape re-poses the
 // original question.
 func (f *flow) acceptDirectory() (tea.Cmd, error) {
 	if chosen := f.choice.value(); chosen != f.detected.Dir {
 		f.detected = Detect(chosen)
-		f.draft = f.answers.draftOrPartial(f.detected)
+		f.startFrom(f.answers.draftOrPartial(f.detected))
 		f.envTable = envTable{}
 	}
 
@@ -787,7 +798,7 @@ func (f *flow) acceptBinding() (tea.Cmd, error) {
 		// a reason to withdraw it.
 		if f.live != nil {
 			f.live = nil
-			f.draft = f.answers.partialDraft(f.detected)
+			f.startFrom(f.answers.partialDraft(f.detected))
 		}
 
 		f.draft.WorkloadID = ""
@@ -1131,6 +1142,14 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	// --replicas and --memory were given before the fetch and still stand.
 	// Replacing the draft outright would drop every flag the wizard has no
 	// screen to re-ask, which is the same layering the headless bind does.
+	//
+	// This is the one draft rebuild that does not go through startFrom, so
+	// nameGiven is left as it stands. A bound workload is already named and
+	// never gets asked: branch sends the binding screen to screenKind while
+	// live is set, and firstQuestion sends a flag-named workload there too,
+	// so screenName is unreachable and the flag's only reader never runs.
+	// Give a bound workload a rename screen and that stops being true; this
+	// site then has to start over from the draft like the other two.
 	f.draft = f.answers.partialApplyTo(live.Defaults(), f.detected)
 	f.pendingBind = ""
 
@@ -1156,7 +1175,7 @@ func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
 		f.failed = errors.New("no execution environments are available; go back and pick another image source")
 	default:
 		f.execEnvs = msg.environments
-		f.picker = newExecEnvPicker(msg.environments, f.width, f.height)
+		f.picker = newExecEnvPicker(msg.environments, f.liveExecEnvID(), f.width, f.height)
 	}
 
 	return f, nil

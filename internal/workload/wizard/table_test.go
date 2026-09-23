@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -235,4 +236,22 @@ func TestColumnsFor_CapsAnOutlier(t *testing.T) {
 	assert.LessOrEqual(t, columns[1].Width, maxColumnWidth)
 	assert.Equal(t, len("67a554bbfef3a4ce2ab6700"), columns[2].Width,
 		"the id column keeps its natural width")
+}
+
+// columnsFor sizes by display width, not byte length. A cell carrying ANSI (as
+// a styled tag once did) or a multibyte name must be measured by what it shows,
+// not its raw bytes: bubbles/table truncates against display width and is not
+// escape-aware, so an over-measured column would let it cut a real escape
+// mid-sequence.
+func TestColumnsFor_SizesByDisplayWidthNotBytes(t *testing.T) {
+	plain := "ee-1  · in use"
+	styled := "\x1b[38;2;0;200;0m" + plain + "\x1b[0m"
+
+	columns := columnsFor([]string{"BASE IMAGE", "LANGUAGE", "ID"},
+		[]tableRow{{cells: []string{"Node", "javascript", styled}}}, 200)
+
+	id := columns[len(columns)-1]
+	assert.Equal(t, lipgloss.Width(plain), id.Width,
+		"the id column is sized to the visible width, not the escape-inflated byte length")
+	assert.Less(t, id.Width, len(styled), "byte length would have over-sized the column")
 }

@@ -25,11 +25,12 @@ import (
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
-// Test seams for the two reads, replaced by this package's tests to keep the
-// plan off the network.
+// Test seams for the reads, replaced by this package's tests to keep the plan
+// off the network.
 var (
 	getWorkloadDocFn = workload.GetWorkloadDocument
 	getArtifactDocFn = workload.GetArtifactDocument
+	failureReasonFn  = workload.FailureReason
 )
 
 // Keys read off the raw documents. They are read before manifest.NewLive
@@ -91,6 +92,10 @@ type Live struct {
 	// Status is the platform's own word. Three statuses reduce to
 	// StateStopped and only some of them can be started.
 	Status string
+
+	// Reason is why the workload is errored, in the platform's words, and ""
+	// for every other state: the difference between a rebuild and a code fix.
+	Reason string
 
 	// ArtifactID is the artifact currently running, "" when there is none.
 	ArtifactID string
@@ -200,10 +205,13 @@ func Look(workloadID string) (Live, error) {
 	// which container is primary is how a plan promises a missing image.
 	primary := workload.PrimaryContainerInDocument(artifactDoc)
 
+	state := stateFor(status)
+
 	return Live{
 		Live:                 live,
-		State:                stateFor(status),
+		State:                state,
 		Status:               status,
+		Reason:               failureReason(workloadID, state),
 		ArtifactID:           artifactID,
 		ArtifactType:         liveArtifactType(artifactDoc),
 		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
@@ -212,6 +220,17 @@ func Look(workloadID string) (Live, error) {
 		ImageURI:             containerImageURI(primary),
 		CodeVersionID:        containerCodeVersionID(primary),
 	}, nil
+}
+
+// failureReason asks the platform why the workload is errored, and nothing of
+// any other state: it costs two more requests, and it is best effort, since
+// the state is what the deploy acts on and the reason only what it says.
+func failureReason(workloadID string, state State) string {
+	if state != StateErrored {
+		return ""
+	}
+
+	return failureReasonFn(workloadID)
 }
 
 // containerCodeVersionID reads the catalog version a container points at,

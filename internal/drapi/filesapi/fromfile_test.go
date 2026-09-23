@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"mime"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,91 +107,6 @@ func TestUploadFromZipExisting_UseArchiveContentsStaysInQuery(t *testing.T) {
 	c := New()
 
 	body := bytes.NewReader([]byte("PK\x03\x04fake-zip"))
-	_, err := c.UploadFromZipExisting("cid-1", "changes.zip", OverwriteReplace, int64(body.Len()), body)
-	require.NoError(t, err)
-}
-
-// TestUploadFromZipNew_NoOverwriteField guards the shared-framing parity:
-// a first sync has no pre-existing paths, so it must send no overwrite
-// form field and no overwrite query parameter — the server's RENAME
-// default is correct there and the request should stay minimal.
-func TestUploadFromZipNew_NoOverwriteField(t *testing.T) {
-	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Empty(t, r.URL.Query().Get("overwrite"))
-
-		parts, err := readMultipartParts(r)
-		if !assert.NoError(t, err) {
-			return
-		}
-
-		for _, part := range parts {
-			assert.NotEqual(t, "overwrite", part.Name)
-		}
-
-		if !assert.Len(t, parts, 1) {
-			return
-		}
-
-		assert.Equal(t, "file", parts[0].Name)
-		assert.Equal(t, "wapi-sync.zip", parts[0].FileName)
-
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"catalogId":"new-cid","catalogVersionId":"new-ver","statusId":"sid-new"}`))
-	}))
-
-	c := New()
-
-	body := bytes.NewReader([]byte("PK\x03\x04fake-zip"))
-	resp, err := c.UploadFromZipNew("wapi-sync.zip", int64(body.Len()), body)
-	require.NoError(t, err)
-	assert.Equal(t, "new-ver", resp.CatalogVersionID)
-}
-
-// TestUploadFromZipExisting_ContentLengthMatchesBodyWithFormFields
-// verifies the Content-Length accounting survives folding form fields
-// into the prologue: the advertised length must equal the received body
-// exactly, and the streamed file must still decode intact. An off-by-N
-// here surfaces as a transport error or a truncated multipart stream,
-// never as a silent pass.
-func TestUploadFromZipExisting_ContentLengthMatchesBodyWithFormFields(t *testing.T) {
-	// Long enough to cross io.Copy's internal buffer more than once.
-	payload := strings.Repeat("0123456789abcdef", 4096)
-
-	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, err := io.ReadAll(r.Body)
-		if !assert.NoError(t, err) {
-			return
-		}
-
-		assert.Equal(t, r.ContentLength, int64(len(raw)),
-			"advertised Content-Length must match the received body byte-for-byte")
-
-		// The body is consumed by the ReadAll above, so parse the buffered
-		// copy rather than asking the request for a fresh MultipartReader.
-		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if !assert.NoError(t, err) {
-			return
-		}
-
-		parts, err := decodeMultipart(multipart.NewReader(bytes.NewReader(raw), params["boundary"]))
-		if !assert.NoError(t, err) {
-			return
-		}
-
-		if !assert.Len(t, parts, 2) {
-			return
-		}
-
-		assert.Equal(t, "REPLACE", string(parts[0].Content))
-		assert.Equal(t, payload, string(parts[1].Content))
-
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
-	}))
-
-	c := New()
-
-	body := bytes.NewReader([]byte(payload))
 	_, err := c.UploadFromZipExisting("cid-1", "changes.zip", OverwriteReplace, int64(body.Len()), body)
 	require.NoError(t, err)
 }

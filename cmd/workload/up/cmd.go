@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/cmd/internal/pollflags"
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
@@ -33,6 +34,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/datarobot/cli/tui"
@@ -69,6 +71,76 @@ type upResult struct {
 	Action     string      `json:"action"`
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
+	// Env is what --sync-env did before the plan was
+	// computed. A rotation edits no file and shows in no plan, so without
+	// these a run that re-sent a secret is indistinguishable from one that
+	// did nothing at all.
+	Env envJSON `json:"env"`
+}
+
+// envJSON is the .env re-entry's side of a deploy.
+type envJSON struct {
+	KeysAdded     int `json:"keysAdded"`
+	ValuesUpdated int `json:"valuesUpdated"`
+	// NamesRemoved is how many entries the reconciliation took out because
+	// .env no longer names them. Reported apart from the rest because it is
+	// the one act that loses configuration: a pipeline reading this has to be
+	// able to tell a run that added three variables from one that added three
+	// and dropped four.
+	NamesRemoved   int `json:"namesRemoved"`
+	SecretsRotated int `json:"secretsRotated"`
+	SecretsFailed  int `json:"secretsNotRotated"`
+	SecretsPending int `json:"secretsPending"`
+	// Literals names the variables this run wrote into the manifest in the
+	// clear, so an audit step can check them without parsing the YAML. The
+	// same list `dr workload config` reports under envLiterals, because it is
+	// the same edit to the same committed file.
+	Literals []string `json:"literals"`
+}
+
+// warnSecretStillServing covers the one thing --sync-env can do that a
+// deploy cannot finish: re-send a secret.
+//
+// The credential store takes the new value immediately, but a container reads
+// its credentials when it starts, so the workload keeps serving the old one
+// until it is replaced. A deploy that had something else to do replaces it on
+// the way past; a deploy that found nothing else leaves the rotation sitting
+// in the store, under a summary that says the workload is up to date. It is,
+// about the manifest, which is why this says the other half out loud.
+func warnSecretStillServing(stderr io.Writer, result up.Result, f flags) {
+	if f.dryRun || result.Env.SecretsRotated == 0 || result.Action != up.ActionUnchanged {
+		return
+	}
+
+	dir := manifest.DirFlag(f.dir)
+
+	fmt.Fprintf(stderr,
+		"\n  %s %d re-sent %s reached the credential store, and this deploy replaced no container, "+
+			"so the workload still serves the value it started with.\n    Restart it to pick %s up:\n"+
+			"      dr workload stop --yes%s\n      dr workload start --yes%s\n",
+		tui.WarnStyle.Render("!"), result.Env.SecretsRotated,
+		plural(result.Env.SecretsRotated, "secret", "secrets"),
+		plural(result.Env.SecretsRotated, "it", "them"), dir, dir)
+}
+
+// plural picks the word for count, the way the wizard's own reporting does.
+func plural(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+
+	return many
+}
+
+// envLiterals keeps the envelope's list a list. A run with no .env flags has
+// nothing to name, and an absent key encoded as null would make every consumer
+// guard for it before iterating.
+func envLiterals(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
+
+	return names
 }
 
 // buildID is the envelope's build reference: the id when a build ran, null
@@ -82,12 +154,13 @@ func buildID(id string) *string {
 }
 
 type flags struct {
-	dir    string
-	yes    bool
-	dryRun bool
-	detach bool
-	lock   bool
-	force  bool
+	dir     string
+	yes     bool
+	dryRun  bool
+	detach  bool
+	lock    bool
+	force   bool
+	syncEnv bool
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -105,7 +178,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "up",
-		Short: "Deploy this project, applying only what changed.",
+		Short: "Declare the workload's config in .datarobot.yaml and deploy it.",
 		Long: `Read the committed .datarobot.yaml, compare it and the working tree against
 what is running, and apply the difference.
 
@@ -137,11 +210,11 @@ workload kind, a current version that was never built, and --force-build.
 Deploying onto a workload that already exists rolls it: a new version is made
 from the file and swapped in, the endpoint does not change, and the version
 already serving keeps serving until the new one is ready. When that version is
-locked, meaning production, an interactive run asks for the workload name to
-be typed back. A run with no terminal, or --yes, rolls without asking. Locking
-is one-way, so the new version is a new artifact rather than a change to the
-locked one, and it is locked to match. That is why a locked workload keeps
-deploying without --lock being passed again.
+locked, an interactive run asks for the workload name to be typed back. A run
+with no terminal, or --yes, rolls without asking. Locking is one-way, so the
+new version is a new artifact rather than a change to the locked one, and it is
+locked to match. That is why a locked workload keeps deploying without --lock
+being passed again.
 
 A change that moves only the sizing, such as a replica count or a resource
 allocation, is applied in place instead. Nothing is built and no version is
@@ -153,6 +226,11 @@ refused. One still starting or stopping is waited out and then re-read, so the
 plan is built against where it landed. A stopped one is started and then
 reconciled in the same run, which is one command whether the file asks for a
 start alone or for a start and a new version.
+
+An errored workload is rolled onto like any other when the deploy gives it
+something new to run: a code change, a change to the file, or --force-build,
+which is the fix when the registry no longer has the image. The plan names the
+platform's reason for the failure. With nothing new to deploy the run is refused.
 
 Examples:
   dr workload up
@@ -193,14 +271,26 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory; the manifest is searched upward from here.")
 	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
 		"Do not prompt. With no manifest this is an error rather than a wizard, "+
-			"and rolling a locked production version is not confirmed.")
+			"and rolling a locked version is not confirmed.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
 		"Lock whichever artifact ends up live, making it permanent, even when this deploy minted no new "+
 			"version. Locking is one-way.")
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
-		"Rebuild the image even when the working tree matches what was last synced.")
+		"Rebuild the image even when the working tree matches what was last synced, and roll the "+
+			"result out. This is how to recover a workload whose image is gone from the registry.")
+
+	// The same two flags `dr workload config` takes, because the first run of
+	// this command already reads .env: with no manifest it is the wizard. A
+	// deploy stays a function of the committed repo, since neither flag does
+	// anything unless it is passed.
+	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
+		"Before deploying, bring the manifest into line with .env: add the variables it does not declare, "+
+			"rewrite a literal whose value has moved, and re-send the credential behind a secret. Prints what "+
+			"it would do and asks first, removals included: a name .env no longer carries is taken out. A "+
+			"re-sent secret reaches the containers this deploy replaces; a deploy with nothing else to do "+
+			"replaces none, and says how to restart.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -235,18 +325,43 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	// stdout is being parsed is a trap for whoever is parsing it.
 	nonInteractive := yes || json || !isStdinTerminalFn()
 
+	// One reader over stdin for the whole run, because a deploy can ask twice:
+	// the .env question below, and then the typed confirmation a locked
+	// production roll needs. A reader per prompt loses whatever the previous
+	// one buffered past the line it returned, which is the answer to the
+	// second question when both were typed ahead or pasted together.
+	stdin := bufio.NewReader(cmd.InOrStdin())
+
 	result, runErr := runFn(up.Options{
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
 		Lock:           f.lock,
-		Confirm:        rollConfirm(cmd, yes),
+		Confirm:        rollConfirm(cmd, yes, stdin),
 		ForceBuild:     f.force,
-		PollInterval:   poll.Interval,
-		PollTimeout:    poll.Timeout,
-		Stderr:         cmd.ErrOrStderr(),
-		Spinner:        !json && !nonInteractive,
+		SyncEnv:        f.syncEnv,
+		// The flag alone, not cli.IsNonInteractive: the environment variable
+		// that suppresses wizards in CI is not consent to overwrite a value on
+		// the tenant, which is the line `dr workload delete` already draws.
+		ConfirmEnv: envconfirm.Ask(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
+			Yes:    f.yes,
+			DryRun: f.dryRun,
+			// Both ends, through the same check the id prompts use: the
+			// question goes to stderr, and a prompt written to a redirected
+			// stderr is one nobody can see and the run blocks on.
+			Interactive: !json && idargs.CanAsk(cmd),
+			// No Silent, even under JSON. This command keeps a real stderr
+			// whatever the output format, because the plan it prints is for a
+			// person and only stdout has to stay parseable, so the table is
+			// shown here and the refusal can point at it. `config` is the
+			// other way round: it hands the wizard no writer at all under
+			// JSON, so there the table really is absent.
+		}),
+		PollInterval: poll.Interval,
+		PollTimeout:  poll.Timeout,
+		Stderr:       cmd.ErrOrStderr(),
+		Spinner:      !json && !nonInteractive,
 	})
 
 	if runErr != nil && !reportable(result) {
@@ -307,12 +422,12 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 // `dr workload up --output json` on a terminal rolls production without a
 // word. The question and its answer never touch stdout, so a run that asks
 // still emits exactly one document.
-func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool, error) {
+func rollConfirm(cmd *cobra.Command, yes bool, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	if yes || !isStdinTerminalFn() {
 		return nil
 	}
 
-	return typedConfirm(cmd)
+	return typedConfirm(cmd, stdin)
 }
 
 // typedConfirm asks a question that only the exact expected word answers.
@@ -325,20 +440,25 @@ func rollConfirm(cmd *cobra.Command, yes bool) func(question, want string) (bool
 // The deploy calls it only on an interactive run, so it never has to decide
 // whether prompting is allowed. An answer that cannot be read at all is a no,
 // which leaves the workload running what it was running.
-func typedConfirm(cmd *cobra.Command) func(question, want string) (bool, error) {
+func typedConfirm(cmd *cobra.Command, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	return func(question, want string) (bool, error) {
 		fmt.Fprint(cmd.ErrOrStderr(), question)
 
-		scanner := bufio.NewScanner(cmd.InOrStdin())
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
+		// The run's one reader rather than a fresh one over the same stdin. A
+		// buffered read keeps whatever it took past the line it returned, so a
+		// reader built here would start empty and the env question before this
+		// one would already have eaten the roll's answer out of a pasted or
+		// typed-ahead pair of lines.
+		line, err := stdin.ReadString('\n')
+		if err != nil && line == "" {
+			if !errors.Is(err, io.EOF) {
 				return false, fmt.Errorf("cannot read the answer: %w", err)
 			}
 
 			return false, nil
 		}
 
-		return strings.TrimSpace(scanner.Text()) == want, nil
+		return strings.TrimSpace(line) == want, nil
 	}
 }
 
@@ -384,6 +504,22 @@ func reportable(result up.Result) bool {
 // gets here: see bindLocked in internal/workload/up. Without it a promotion
 // of a locked artifact onto a fresh workload would be called temporary and
 // then advised to lock what is already locked.
+// terminated reports that the workload this run is about is not coming back.
+//
+// Status rather than Plan.State, and deliberately: the plan's state is what was
+// found before the run acted, so a deploy that started a workload which then
+// died reads as "stopped" there and as "terminated" here. Status is the last
+// thing known about the workload, which is the question both callers are
+// actually asking.
+//
+// The predicate lives in internal/workload rather than as a comparison here,
+// because the value being matched arrives by two routes -- the platform's own
+// status on a live read, and State.String() on a refusal -- and a literal in
+// this package would be relying on those two agreeing by coincidence.
+func terminated(result up.Result) bool {
+	return workload.IsTerminatedWorkloadStatus(result.Status)
+}
+
 func draftIsServing(f flags, result up.Result, failed bool) bool {
 	if f.lock || result.Locked {
 		return false
@@ -393,13 +529,30 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 		// Action is what this run actually did, not what it wanted, so it says
 		// "started" only when the start went through. A run that failed before
 		// that changed nothing and has nothing to warn about.
-		return result.Action == up.ActionStarted
+		//
+		// Terminated is excluded even so. A workload that started and then
+		// reached the end of its life is running nothing, so the clock this
+		// warns about is not ticking and the remedy it names would be a lock on
+		// the artifact of something that is never coming back. followUps drops
+		// its whole list for the same state, and the two must agree: a warning
+		// with no follow-ups reads as advice the command forgot to give.
+		//
+		// Errored is excluded for the first of those reasons only: a start that
+		// came up errored leaves nothing running, so there is no draft on the
+		// air to warn about. followUps keeps its list for it.
+		return result.Action == up.ActionStarted && !workload.IsWorkloadErrorStatus(result.Status)
 	}
 
 	return f.dryRun || result.WorkloadID != ""
 }
 
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, failed bool) error {
+	// Above the envelope, because a rotation this deploy could not finish is
+	// true of the workload whatever the output format, and the JSON return
+	// below ends the function. It writes to stderr only, so stdout stays the
+	// envelope and nothing else.
+	warnSecretStillServing(cmd.ErrOrStderr(), result, f)
+
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
 			WorkloadID: result.WorkloadID,
@@ -411,12 +564,31 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Action:     result.Action,
 			Locked:     result.Locked,
 			Plan:       result.Plan.JSON(),
+			Env: envJSON{
+				KeysAdded:      result.Env.KeysAdded,
+				ValuesUpdated:  result.Env.ValuesUpdated,
+				NamesRemoved:   result.Env.NamesRemoved,
+				SecretsRotated: result.Env.SecretsRotated,
+				SecretsFailed:  result.Env.SecretsFailed,
+				SecretsPending: result.Env.SecretsPending,
+				Literals:       envLiterals(result.Env.Literals),
+			},
 		})
 	}
 
 	draft := draftIsServing(f, result, failed)
 
 	if f.dryRun {
+		// A dry run that failed says nothing of its own. The error explains
+		// itself, and the footer's calm "nothing was changed" sitting above it
+		// reads as a preview that went to plan; a refused deploy is exactly the
+		// case, since the plan it just printed is disclaimed rather than
+		// promised. draftIsServing already withholds the warning for the same
+		// reason, so there is nothing left to print here either.
+		if failed {
+			return nil
+		}
+
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
 		draftWarning(cmd.ErrOrStderr(), draft, true)
 
@@ -492,28 +664,63 @@ func draftWarning(w io.Writer, draft, planned bool) {
 }
 
 // nextSteps lists what to run against the workload this deploy just touched,
-// on stderr so the endpoint on stdout stays pipeable. Nothing is printed for a
-// run that produced no workload: a list of commands that need an id is no help
-// to someone who has not got one.
+// on stderr so the endpoint on stdout stays pipeable. Nothing is printed when
+// there is nothing worth running: see followUps.
+func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
+	steps := followUps(result, dir, draft, failed)
+	if len(steps) == 0 {
+		return
+	}
+
+	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
+
+	for _, step := range steps {
+		fmt.Fprintf(w, "  %s  %s\n",
+			tui.InfoStyle.Render(step[0]), tui.HintStyle.Render(step[1]))
+	}
+}
+
+// followUps is what is worth running against this workload now, empty when
+// nothing is. A run that produced no workload is the first such case: a list of
+// commands that all name a workload is no help to someone who has not got one.
 //
 // The commands carry no id. A successful deploy leaves the manifest bound, so
 // they resolve from the project directory, and --dir carries a deploy that ran
 // somewhere else.
 //
-// A failed run is the exception, and takes the id instead. One of its shapes
-// is a workload created whose id could not be written back, where the binding
-// the bare commands need is exactly what is missing; printing them bare would
-// hand the reader three commands that cannot run. It is also what keeps
-// reportable's promise that a deploy which failed late is still findable.
+// A failed run is the exception, and takes the id instead. One of its shapes is
+// a workload created whose id could not be written back, where the binding the
+// bare commands need is exactly what is missing; printing them bare would hand
+// the reader commands that cannot run. It is also what keeps reportable's
+// promise that a deploy which failed late is still findable.
+//
+// A failed run also loses two of the lines, for the reason the endpoint's tick
+// is dropped on the same run. 'stop' is not a next step for a deploy that did
+// not land, and neither is --lock: a deploy onto a stopped workload starts it
+// before it rolls, so a run that fails after that really has put a draft on the
+// air, but locking a version this run could not finish is not the remedy for
+// it, and draftWarning names the command inline for anyone who decides
+// otherwise. --lock is in any case the one line that could not be made to name
+// the workload, since it takes no id, and on a failed run the manifest may hold
+// no binding for it to resolve. What survives is logs and status, which are the
+// right pair for an errored workload, a wait that timed out and a rollout that
+// never completed, and which carry the id that the errors naming those same
+// commands do not.
+//
+// A terminated workload gets nothing. None of the three mean anything against
+// something that is not coming back, and the refusal already names
+// 'dr workload delete', which is the only command that helps. Asked through
+// terminated rather than through IsWorkloadErrorStatus, which also covers
+// errored: errored is exactly where logs and status earn their place.
 //
 // A draft deploy trades the stop line for --lock, and puts it first so it sits
 // directly under the warning that explains why it is there. Someone who wants
-// to switch a workload off goes looking for the command; someone whose
-// workload switches itself off does not know there is anything to look for,
-// and this list is the one place they will read either way.
-func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
+// to switch a workload off goes looking for the command; someone whose workload
+// switches itself off does not know there is anything to look for, and this
+// list is the one place they will read either way.
+func followUps(result up.Result, dir string, draft, failed bool) [][2]string {
 	if result.WorkloadID == "" {
-		return
+		return nil
 	}
 
 	at := manifest.DirFlag(dir)
@@ -521,35 +728,32 @@ func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 		at = " " + result.WorkloadID
 	}
 
-	steps := [][2]string{
-		{"dr workload logs" + at, "View the container logs"},
-		{"dr workload status" + at, "Check the workload status"},
+	// No build-logs line on any of these paths. It needs an artifact id as well
+	// as a build id, and on a roll the two deliberately belong to different
+	// artifacts: BuildID is the candidate's, ArtifactID stays on the version
+	// still serving until the swap lands. Pairing them would send the reader to
+	// a 404 at exactly the moment they need the logs. The error from a failed
+	// build already names the right pair.
+	logs := [2]string{"dr workload logs" + at, "View the container logs"}
+	status := [2]string{"dr workload status" + at, "Check the workload status"}
+
+	if failed {
+		if terminated(result) {
+			return nil
+		}
+
+		return [][2]string{logs, status}
 	}
 
-	// --lock takes no id, so on a failed run it is the one line that cannot be
-	// made to name the workload. That is also the run where the manifest may
-	// hold no binding, which would make it create a second workload instead of
-	// locking this one, so it is left out rather than printed unrunnable.
-	if draft && !failed {
-		steps = append([][2]string{
-			{"dr workload up --lock" + manifest.DirFlag(dir), "Lock the artifact to make it permanent"},
-		}, steps...)
-	} else {
-		steps = append(steps,
-			[2]string{"dr workload stop" + at, "Stop the workload, retaining its version"})
+	if draft {
+		return [][2]string{
+			{"dr workload up --lock" + at, "Lock the artifact to make it permanent"},
+			logs, status,
+		}
 	}
 
-	// No build-logs line. It needs an artifact id as well as a build id, and
-	// on a roll the two deliberately belong to different artifacts: BuildID is
-	// the candidate's, ArtifactID stays on the version still serving until the
-	// swap lands. Pairing them would send the reader to a 404 at exactly the
-	// moment they need the logs. The error from a failed build already names
-	// the right pair.
-
-	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
-
-	for _, step := range steps {
-		fmt.Fprintf(w, "  %s  %s\n",
-			tui.InfoStyle.Render(step[0]), tui.HintStyle.Render(step[1]))
+	return [][2]string{
+		logs, status,
+		{"dr workload stop" + at, "Stop the workload, retaining its version"},
 	}
 }

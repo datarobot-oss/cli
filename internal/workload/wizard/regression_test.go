@@ -1794,6 +1794,74 @@ func TestFlow_ChangingDirectoryDropsTheOldEnvTable(t *testing.T) {
 	assert.Empty(t, model.envTable.rows, "another tree starts from its own .env")
 }
 
+// Choosing another directory starts the name over along with the rest of the
+// draft. A name typed for the old tree belonged to that draft, and the new
+// tree's suggestion is a placeholder, not something the user typed: shown as a
+// value, one reflexive Enter would put a name like "src" on a deployed
+// workload, which is what the name screen exists to prevent. Staying put keeps
+// the typed name, because nothing it was given for has changed.
+func TestFlow_ChangingDirectoryStartsTheNameOver(t *testing.T) {
+	model := newFlow(parentOfProject(t), nil, Answers{})
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "down", "enter") // stay put
+	require.Equal(t, screenName, model.at)
+
+	model = press(t, typeInto(t, model, "chosen-name"), "enter")
+	require.Equal(t, screenKind, model.at)
+
+	model = press(t, model, "esc", "esc")
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "down", "enter") // stay put again
+	require.Equal(t, screenName, model.at)
+	assert.Equal(t, "chosen-name", model.inputs[0].Value(), "the same tree keeps the name given for it")
+
+	model = press(t, model, "esc")
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "enter") // take the candidate
+	require.Equal(t, screenName, model.at)
+	require.Equal(t, "my-app", model.detected.Name)
+	assert.Empty(t, model.inputs[0].Value(), "another tree's suggestion is not shown as a typed value")
+	assert.Equal(t, namePlaceholder, model.inputs[0].Placeholder)
+}
+
+// "Create a new workload" after looking at an existing one starts over, and
+// the name is part of that: the one typed before the bind went with the draft
+// the bind replaced, and the directory's suggestion the fresh draft carries
+// has to come back as a placeholder, not as a value the user appears to have
+// typed.
+func TestFlow_CreateNewAfterABindStartsTheNameOver(t *testing.T) {
+	stubLiveDocs(t)
+
+	workloads := []workload.Workload{{ID: "68b0", Name: "live-app", Status: "running", UpdatedAt: time.Now()}}
+	model := newFlow(dockerfileProject(t), workloads, Answers{})
+	require.Equal(t, screenBinding, model.at)
+
+	model = press(t, model, "enter") // create a new workload
+	require.Equal(t, screenName, model.at)
+
+	model = press(t, typeInto(t, model, "chosen-name"), "enter")
+	require.Equal(t, screenKind, model.at)
+
+	model = press(t, model, "esc", "esc")
+	require.Equal(t, screenBinding, model.at)
+
+	model = press(t, model, "down", "enter") // bind live-app
+	require.NotNil(t, model.live)
+	require.Equal(t, screenKind, model.at)
+
+	model = press(t, model, "esc")
+	require.Equal(t, screenBinding, model.at)
+
+	model = press(t, model, "up", "enter") // create a new workload after all
+	require.Nil(t, model.live)
+	require.Equal(t, screenName, model.at)
+	assert.Empty(t, model.inputs[0].Value(), "the suggestion is not shown as a typed value")
+	assert.Equal(t, namePlaceholder, model.inputs[0].Placeholder)
+}
+
 // A --workload-id bind must not hide the directory question behind the
 // loading view: the fetch waits for the answer, then starts.
 func TestFlow_BindWaitsForTheDirectoryAnswer(t *testing.T) {

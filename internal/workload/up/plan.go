@@ -111,19 +111,45 @@ type Plan struct {
 	// that cannot be undone. The plan is where it belongs: --dry-run is how a
 	// locked deploy is reviewed before it happens.
 	Locked bool
+
+	// ForceBuild carries --force-build into the plan, so a flag whose purpose
+	// is to deploy something counts as something to deploy. Read only by the
+	// build step, as it used to be, it never got that far on an unchanged tree
+	// with no drift, which is the one case it exists for.
+	ForceBuild bool
+
+	// Reason is the platform's account of why the workload is errored, "" for
+	// every other state, printed beside the state and named in the refusal.
+	Reason string
 }
 
 // Empty reports that the live state already matches the file and there is
 // nothing for the run to do about it. `up` prints "Already up to date" and
 // exits 0, having touched nothing.
 //
-// Matching the file is not sufficient, which is what actsOnState covers.
+// Matching the file is not sufficient, which is what actsOnState covers, and
+// neither is the tree matching the image: a forced build is something to do.
 func (p Plan) Empty() bool {
 	return !p.Creates &&
 		!p.Code.Changed() &&
 		len(p.Artifact) == 0 &&
 		len(p.Runtime) == 0 &&
+		!p.forcesBuild() &&
 		!p.actsOnState()
+}
+
+// forcesBuild reports that --force-build has an image to act on: only a project
+// the platform builds has one, and on a published image the flag is idle.
+func (p Plan) forcesBuild() bool {
+	return p.ForceBuild && p.Code.Applies
+}
+
+// Replaces reports that this run swaps the workload's serving generation for
+// a new one, which a roll and a resize both do and a create and a bare start
+// do not. It is the question an errored workload is deployable on: what it is
+// running has failed, so a run that replaces it is the recovery.
+func (p Plan) Replaces() bool {
+	return !p.Creates && (p.RollsArtifact() || len(p.Runtime) > 0)
 }
 
 // actsOnState reports the live states that give a run something to do even
@@ -204,16 +230,17 @@ func priorBinding(live Live) string {
 // RollsArtifact reports whether a new artifact version has to be minted and
 // rolled in. Code and spec are one question here because they have one
 // answer: both produce a new immutable version, and a run that has to rebuild
-// also has to replace.
+// also has to replace. A forced build is the third way to the same answer.
 func (p Plan) RollsArtifact() bool {
-	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0)
+	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0 || p.forcesBuild())
 }
 
 // RebuildsImage reports whether anything this run changes is an input to the
 // image. runtimeFields are read when the container starts; everything else is
 // a rebuild, where being wrong the other way promotes a version with no image.
+// A forced build rebuilds by definition.
 func (p Plan) RebuildsImage() bool {
-	if p.Code.Changed() || p.Code.ImageStale {
+	if p.Code.Changed() || p.Code.ImageStale || p.forcesBuild() {
 		return true
 	}
 
@@ -335,10 +362,12 @@ func (p Plan) Action() string {
 func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error) {
 	plan := Plan{
 		State:           live.State,
+		Reason:          live.Reason,
 		Creates:         creates(live.State),
 		PriorWorkloadID: priorBinding(live),
 		Code:            code,
 		Locked:          live.Locked,
+		ForceBuild:      opts.ForceBuild,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an
@@ -415,7 +444,7 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	}
 
 	// Last: every drift has to be in hand before RebuildsImage can answer.
-	plan.InheritsImage = inheritsImage(live, plan, opts, kind, loaded.Compiled.ArtifactName)
+	plan.InheritsImage = inheritsImage(live, plan, kind, loaded.Compiled.ArtifactName)
 
 	return plan, nil
 }

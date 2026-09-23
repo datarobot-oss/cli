@@ -70,6 +70,13 @@ type fakeFilesClient struct {
 	uploadedFiles map[string][]byte
 	deletedPaths  []string
 
+	// createdCatalogName records the name the sync asked the Files API to
+	// give the catalog it created (the File Registry entry name), and
+	// zippedIntoCatalog the catalog the zip was added to. Mainline tests
+	// assert both, pinning the #913 named-catalog behavior.
+	createdCatalogName string
+	zippedIntoCatalog  string
+
 	// Call counters (guarded by mu).
 	createCatalogCalls int
 	createStageCalls   int
@@ -249,11 +256,12 @@ func (f *fakeFilesClient) AllFilesCalls() int {
 
 // --- filesapi.Client implementation ---
 
-func (f *fakeFilesClient) CreateCatalog() (*filesapi.CatalogResp, error) {
+func (f *fakeFilesClient) CreateCatalog(name string) (*filesapi.CatalogResp, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.createCatalogCalls++
+	f.createdCatalogName = name
 
 	if f.catalogID == "" {
 		return nil, errors.New("fakeFilesClient.CreateCatalog: no catalogID configured")
@@ -387,44 +395,6 @@ func (f *fakeFilesClient) ApplyStage(catalogID, _, _ string) (*filesapi.ApplySta
 	}, nil
 }
 
-func (f *fakeFilesClient) UploadFromZipNew(_ string, _ int64, body io.Reader) (*filesapi.FromFileResp, error) {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return nil, fmt.Errorf("read zip body: %w", err)
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.uploadFromZipCalls++
-
-	if f.catalogID == "" {
-		return nil, errors.New("fakeFilesClient.UploadFromZipNew: no catalogID configured")
-	}
-
-	zipFiles, err := extractZipFiles(data)
-	if err != nil {
-		return nil, err
-	}
-
-	if f.versions == nil {
-		f.versions = make(map[string]map[string]filesapi.FileMeta)
-	}
-
-	if f.latestVersion == nil {
-		f.latestVersion = make(map[string]string)
-	}
-
-	f.versions[f.versionID] = zipFiles
-	f.latestVersion[f.catalogID] = f.versionID
-
-	// Inline completion (no StatusID), matching the real API for small archives.
-	return &filesapi.FromFileResp{
-		CatalogID:        f.catalogID,
-		CatalogVersionID: f.versionID,
-	}, nil
-}
-
 func (f *fakeFilesClient) UploadFromZipExisting(catalogID, _, _ string, _ int64, body io.Reader) (*filesapi.FromFileResp, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
@@ -435,6 +405,7 @@ func (f *fakeFilesClient) UploadFromZipExisting(catalogID, _, _ string, _ int64,
 	defer f.mu.Unlock()
 
 	f.uploadFromZipCalls++
+	f.zippedIntoCatalog = catalogID
 
 	zipFiles, err := extractZipFiles(data)
 	if err != nil {
