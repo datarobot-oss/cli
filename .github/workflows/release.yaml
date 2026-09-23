@@ -62,8 +62,10 @@ jobs:
           gh release edit ${{ github.ref_name }} --prerelease
 
   # Failure notification is a separate job, not a step in the release job: a
-  # job cannot fetch its own logs while it is still running, and the diagnosis
-  # below needs the release job's logs to be complete.
+  # job's logs only exist once that job has finished. The diagnosis below also
+  # cannot use the run-level log archive (gh run view --log-failed) — GitHub
+  # serves it only after the whole run completes, and this job is part of that
+  # run — so it fetches the concluded release job's logs directly instead.
   notify-release-failure:
     needs: release
     # always() + explicit result check: a bare failure() is unreliable when the
@@ -71,9 +73,9 @@ jobs:
     if: always() && needs.release.result == 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # gh run view --log-failed downloads the failed job's logs, which the
-    # Actions logs API gates behind actions:read. This job-scoped block grants
-    # exactly that (and nothing else) for this job.
+    # The diagnosis fetches the failed jobs' logs via the Actions jobs/logs
+    # API, which gates log access behind actions:read. This job-scoped block
+    # grants exactly that (and nothing else) for this job.
     permissions:
       actions: read
     steps:
@@ -87,8 +89,12 @@ jobs:
       #   https://github.com/datarobot-oss/cli/actions/runs/35128057233
       # - "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED":
       #   https://github.com/datarobot-oss/cli/actions/runs/35382156489
-      # The generic "notariz" catch-all has no motivating run; it is a
-      # fallback for notarization failures with a signature not listed above.
+      # The notarization catch-all has no motivating run; it is a fallback for
+      # notarization failures with a signature not listed above. It requires
+      # failure-adjacent wording (failed to notarize / fail / error / reject)
+      # because successful runs also mention "notariz" — a later publish,
+      # Homebrew, or Docker failure in the same log must not be mislabeled as
+      # a notarization failure.
       - name: Diagnose failure
         id: diagnose
         env:
@@ -101,9 +107,28 @@ jobs:
           IT_TICKET_URL: ${{ vars.IT_TICKET_URL }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          SUMMARY="The release job failed. See the workflow run for the failing step."
-          ACTION="Open a ticket with IT and include a link to this run."
-          LOGS="$(gh run view "$RUN_ID" --log-failed 2>/dev/null || true)"
+          SUMMARY=""
+          ACTION=""
+
+          # gh run view --log-failed only serves the run-level log archive,
+          # which GitHub holds back until the whole run completes — and this
+          # job is part of that run. Per-job logs have no such gate: the
+          # release job has already concluded by the time this job starts.
+          # List the failed jobs once, then fetch each one's logs. jq is
+          # preinstalled on the runner.
+          JOBS_URL="repos/{owner}/{repo}/actions/runs/$RUN_ID/jobs?per_page=100"
+          JOBS_JSON="$(gh api "$JOBS_URL" 2>/dev/null || echo '{"jobs":[]}')"
+          FAILED_JOB_IDS="$(jq -r '.jobs[] | select(.conclusion == "failure") | .id' <<<"$JOBS_JSON")"
+          # Names of the failed steps, so the fallback diagnosis can at least
+          # say where the job died even when no signature matches.
+          FAILED_STEPS="$(jq -r \
+            '[.jobs[] | select(.conclusion == "failure") | .steps[] | select(.conclusion == "failure") | .name] | unique | join(", ")' \
+            <<<"$JOBS_JSON")"
+
+          LOGS=""
+          for job_id in $FAILED_JOB_IDS; do
+            LOGS+="$(gh api --allow-escape-sequences "repos/{owner}/{repo}/actions/jobs/$job_id/logs" 2>/dev/null || true)"$'\n'
+          done
 
           if grep -q "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED" <<<"$LOGS"; then
             SUMMARY="Apple notarization was rejected: a required Apple Developer Program agreement is missing or expired."
@@ -111,9 +136,14 @@ jobs:
           elif grep -q "Team is not yet configured for notarization" <<<"$LOGS"; then
             SUMMARY="Apple notarization was rejected: the team is not yet configured for notarization."
             ACTION="Open a ticket with IT to check the Apple Developer account's notarization entitlement (Apple Developer Programs Support), then re-run the failed workflow."
-          elif grep -qi "notariz" <<<"$LOGS"; then
+          elif grep -qiE "failed to notarize|notariz.*(fail|error|reject)" <<<"$LOGS"; then
             SUMMARY="macOS notarization failed; see the goreleaser step output for Apple's response."
             ACTION="Open a ticket with IT to check the Apple signing/notarization credentials, then re-run the failed workflow."
+          fi
+
+          if [ -z "$SUMMARY" ]; then
+            SUMMARY="The release job failed${FAILED_STEPS:+ at: $FAILED_STEPS}. See the workflow run for the failing step."
+            ACTION="Open a ticket with IT and include a link to this run."
           fi
 
           if [ -n "$IT_TICKET_URL" ]; then
