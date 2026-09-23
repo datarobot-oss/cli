@@ -28,18 +28,14 @@ import (
 // behind, and it aborts before any state write so that leftover dir pairs
 // with un-advanced state — the safe mid-Phase-5 shape (see below).
 func phase6State(e *Engine) error {
-	// Discard the rollback BEFORE any state write, unconditionally. When this
-	// runs, Phase 5 executed the whole plan successfully (e.rollback is only
-	// assigned after executePlan returns nil; a Phase 5 failure restores and
-	// returns without reaching here), so the backup tree has no remaining
-	// purpose — and Phase 6 never restores on failure because the remote has
-	// already advanced. Discarding first makes the cleanup independent of
-	// write success: if SaveManifest or SaveConfig below fails, the early
-	// return must not strand the rollback dir, because the next run's
-	// stale-rollback recovery would blindly copy the pre-sync bytes back
-	// into the working tree. Against the manifest this run just wrote, those
-	// resurrected bytes look like local edits and are silently re-uploaded
-	// over the remote.
+	// Discard the rollback BEFORE any state write. Phase 5 completed (the
+	// rollback is only assigned after executePlan returns nil) and Phase 6
+	// never restores (the remote has already advanced), so the backup tree
+	// is dead weight. Discarding first also keeps cleanup independent of
+	// write success: an early return on a failed save must not strand the
+	// rollback dir, because stale-rollback recovery would resurrect the
+	// pre-sync bytes as apparent local edits against the manifest this run
+	// just wrote, and silently re-upload them over the remote.
 	if err := discardRollback(e); err != nil {
 		return err
 	}
@@ -68,37 +64,27 @@ func phase6State(e *Engine) error {
 	}
 
 	// Build and write the manifest BEFORE writing config. Both orders leave
-	// a one-file window on failure, and the safe direction is the one where
-	// the next sync detects drift and rebuilds from real remote data:
+	// a one-file failure window, but only one direction self-heals:
 	//
-	//   - SaveManifest fails: config has not been advanced yet, so the next
-	//     sync sees the old version in config, detects drift, fetches
-	//     AllFiles, and rebuilds BASE from the remote — safe and
-	//     self-healing. The manifest write is retried by that same sync.
+	//   - SaveManifest fails: config still names the old version, so the
+	//     next sync detects drift, fetches AllFiles, rebuilds BASE from the
+	//     remote, and retries the manifest write.
 	//
-	//   - SaveConfig fails: the manifest is already advanced while config
-	//     still names the old version. The version mismatch makes every
-	//     later sync detect drift and fetch the real remote; BASE (the
-	//     advanced manifest) truthfully describes that remote, so those
-	//     syncs compute an empty plan. An empty plan never reaches this
-	//     phase — Run returns before Execute on empty plans — so Phase 6
-	//     is skipped and config.json stays stale on each of those runs,
-	//     converging only when a later sync has real work to execute.
-	//     The rollback dir is already gone by then — discarded at entry
-	//     above — so no stale-restore can resurrect pre-sync bytes as
-	//     false local edits. The asymmetry is safe because it is loud: a
-	//     manifest ahead of config re-triggers drift detection on every
-	//     sync, so the window self-heals at the first sync with actual
-	//     work; the reverse direction below is silent and never heals.
+	//   - SaveConfig fails: the manifest is ahead of config. Every later
+	//     sync sees the version mismatch, fetches the real remote — which
+	//     the advanced manifest truthfully describes — and computes an
+	//     empty plan that never reaches Phase 6. Config stays stale until
+	//     a sync with actual work converges it; the asymmetry is loud (it
+	//     re-triggers drift detection every run) and the rollback dir is
+	//     already gone, so no stale restore can intervene.
 	//
-	// The converse (config advanced, manifest stale) is the poisonous
-	// direction: the next sync sees no drift, fast-paths, copies the stale
-	// BASE to REMOTE, and reports "Up to date." forever.
+	// The converse — config ahead of manifest — is the poisonous direction:
+	// the next sync sees no drift, fast-paths, copies the stale BASE to
+	// REMOTE, and reports "Up to date." forever.
 	//
-	// This is data-safe because nothing between the two writes reads config
-	// from disk. buildNewBaseManifest reads only e.remote, e.plan, and
-	// e.uploadOutcome (all in-memory). e.config and populateResult are
-	// touched only after both writes complete.
+	// Safe because nothing between the two writes reads config from disk:
+	// buildNewBaseManifest uses only in-memory state (e.remote, e.plan,
+	// e.uploadOutcome).
 	manifest, err := buildNewBaseManifest(e, versionForState, now)
 	if err != nil {
 		return fmt.Errorf("build manifest: %w", err)
@@ -123,14 +109,12 @@ func phase6State(e *Engine) error {
 }
 
 // discardRollback removes the rollback tree at Phase 6 entry. A Discard
-// failure must abort the phase here, before any state write: nothing is
-// persisted yet, so returning an error leaves the next run with the rollback
-// dir AND un-advanced state — the recoverable mid-Phase-5 outcome. The stale
-// restore puts back bytes the un-advanced manifest still matches, and the
-// next diff schedules downloads, not false uploads. Swallowing the error
-// instead strands the rollback dir next to advanced state, where the same
-// stale restore resurrects pre-sync bytes as phantom local edits which the
-// next sync silently re-uploads over the remote.
+// failure aborts before any state write: un-advanced state plus a rollback
+// dir is the recoverable mid-Phase-5 shape — the stale restore puts back
+// bytes the un-advanced manifest still matches, so the next diff schedules
+// downloads, not false uploads. Past the first write, the stranded dir
+// instead resurrects pre-sync bytes as phantom local edits the next sync
+// silently re-uploads over the remote.
 func discardRollback(e *Engine) error {
 	if e.rollback == nil {
 		return nil
