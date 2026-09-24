@@ -18,7 +18,7 @@ require (
 	github.com/codeclysm/extract/v4 v4.0.0
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/gitsight/go-vcsurl v1.0.1
-	github.com/go-playground/validator/v10 v10.30.4
+	github.com/go-playground/validator/v10 v10.30.5
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade
 	github.com/joho/godotenv v1.5.1
 	github.com/muesli/cancelreader v0.2.2
