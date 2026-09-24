@@ -38,6 +38,13 @@ const PluginRegistryTerminology = "registry"
 // PluginRegistryURL is the default URL for the remote plugin registry.
 const PluginRegistryURL = "https://cli.datarobot.com/plugins/index.json"
 
+// DiscoveryTimeoutKey is the global flag/env/config key for plugin discovery.
+const DiscoveryTimeoutKey = "plugin-discovery-timeout"
+
+// DefaultDiscoveryTimeout is the startup discovery timeout used when no
+// execution-time flag or environment override is present.
+const DefaultDiscoveryTimeout = 2 * time.Second
+
 // TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder.
 var registry = &DiscoveredPluginsRegistry{}
 
@@ -48,10 +55,43 @@ var registry = &DiscoveredPluginsRegistry{}
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation.
 func GetPlugins() ([]DiscoveredPlugin, []PluginConflict) {
 	registry.once.Do(func() {
-		registry.plugins, registry.conflicts = DiscoverPluginsWithContext(context.Background())
+		timeout := DiscoveryTimeout()
+		if timeout <= 0 {
+			log.Debug("Plugin discovery disabled", "timeout", timeout)
+
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		registry.plugins, registry.conflicts = DiscoverPluginsWithContext(ctx)
 	})
 
 	return registry.plugins, registry.conflicts
+}
+
+// DiscoveryTimeout resolves discovery timeout values outside Cobra startup.
+// Env is checked explicitly because command registration runs before viper's
+// env binding is initialized; viper remains the fallback for tests and for
+// lazy GetPlugins calls that happen after config initialization.
+func DiscoveryTimeout() time.Duration {
+	if raw := os.Getenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT"); raw != "" {
+		timeout, err := time.ParseDuration(raw)
+		if err != nil {
+			log.Debug("Invalid plugin discovery timeout environment value", "value", raw, "error", err)
+
+			return DefaultDiscoveryTimeout
+		}
+
+		return timeout
+	}
+
+	if viperx.IsSet(DiscoveryTimeoutKey) {
+		return viperx.GetDuration(DiscoveryTimeoutKey)
+	}
+
+	return DefaultDiscoveryTimeout
 }
 
 // PrimeCache seeds the discovery cache with an already-computed plugin list

@@ -238,7 +238,7 @@ dr templates list --verbose
 # Enable debug logging
 dr templates list --debug
 
-# Timeout for plugin discovery (0s disables discovery)
+# Timeout for startup plugin discovery (0s disables discovery; place before the command)
 dr --plugin-discovery-timeout 2s --help
 ```
 

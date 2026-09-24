@@ -188,6 +188,42 @@ func addNoopStub(root *cli.CommandAdder) {
 	root.AddCommand(stub)
 }
 
+func TestBuildDefersPluginRegistrationUntilExecuteTime(t *testing.T) {
+	var calls int
+
+	root := NewIsolatedRootFactory(
+		WithPluginRegistrar(func(cmd *cobra.Command) {
+			calls++
+
+			cmd.AddCommand(&cobra.Command{
+				Use: "deferred-plugin",
+				Run: func(_ *cobra.Command, _ []string) {},
+			})
+		}),
+	).Build()
+
+	assert.Nil(t, findCommandByPath(root.Command, "dr deferred-plugin"),
+		"Build must not register plugins before leading global flags can be parsed")
+
+	factory := NewIsolatedRootFactory(
+		WithPluginRegistrar(func(cmd *cobra.Command) {
+			calls++
+
+			cmd.AddCommand(&cobra.Command{
+				Use: "deferred-plugin",
+				Run: func(_ *cobra.Command, _ []string) {},
+			})
+		}),
+	)
+	root = factory.Build()
+
+	factory.RegisterPlugins(root)
+	factory.RegisterPlugins(root)
+
+	assert.Equal(t, 1, calls, "RegisterPlugins must be idempotent")
+	assert.NotNil(t, findCommandByPath(root.Command, "dr deferred-plugin"))
+}
+
 func TestProfileFlag_RegisteredAndUniversal(t *testing.T) {
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)

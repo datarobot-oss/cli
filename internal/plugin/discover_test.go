@@ -716,3 +716,31 @@ func TestConflictsForName(t *testing.T) {
 	assert.Empty(t, ConflictsForName(conflicts, "turnip"))
 	assert.Empty(t, ConflictsForName(nil, "potato"))
 }
+
+func TestDiscoveryTimeout_EnvBeatsViper(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	viperx.Set(DiscoveryTimeoutKey, "5s")
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "10ms")
+
+	assert.Equal(t, 10*time.Millisecond, DiscoveryTimeout())
+}
+
+func TestGetPlugins_ZeroTimeoutSkipsDiscovery(t *testing.T) {
+	oldRegistry := registry
+
+	registry = &DiscoveredPluginsRegistry{}
+
+	t.Cleanup(func() { registry = oldRegistry })
+
+	tempDir := t.TempDir()
+	createMockPlugin(t, tempDir, "dr-skipped", `{"name":"skipped","version":"1.0.0"}`)
+	setDiscoveryPath(t, tempDir)
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "0s")
+
+	plugins, conflicts := GetPlugins()
+
+	assert.Empty(t, plugins)
+	assert.Empty(t, conflicts)
+}

@@ -17,9 +17,11 @@ package cmd
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/misc/reader"
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -344,6 +346,50 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "unknown command:", "explicit Args validator should not be overridden")
+}
+
+func TestParseLeadingGlobalFlags_ParsesTimeoutBeforeCommand(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"--plugin-discovery-timeout=0s", "self", "version"})
+
+	flag := root.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey)
+	require.NotNil(t, flag)
+	assert.True(t, flag.Changed)
+
+	value, err := root.PersistentFlags().GetDuration(internalPlugin.DiscoveryTimeoutKey)
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), value)
+}
+
+func TestParseLeadingGlobalFlags_ParsesSeparatedFlagValue(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"--plugin-discovery-timeout", "25ms", "self", "version"})
+
+	value, err := root.PersistentFlags().GetDuration(internalPlugin.DiscoveryTimeoutKey)
+	require.NoError(t, err)
+	assert.Equal(t, 25*time.Millisecond, value)
+}
+
+func TestParseLeadingGlobalFlags_IgnoresFlagsAfterCommand(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"self", "--plugin-discovery-timeout=0s", "version"})
+
+	flag := root.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey)
+	require.NotNil(t, flag)
+	assert.False(t, flag.Changed)
+}
+
+func TestParseLeadingGlobalFlags_StopsAtDoubleDash(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"--", "--plugin-discovery-timeout=0s", "self"})
+
+	flag := root.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey)
+	require.NotNil(t, flag)
+	assert.False(t, flag.Changed)
 }
 
 // ---------------------------------------------------------------------------
