@@ -24,6 +24,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/datarobot/cli/cmd/allcommands"
 	selfversion "github.com/datarobot/cli/cmd/self/version"
@@ -82,6 +83,9 @@ func init() {
 // ExecuteContext executes the root command with the given context.
 // This is called by main.main(). It only needs to happen once per process.
 func ExecuteContext(ctx context.Context) error {
+	parseLeadingGlobalFlags(RootCmd.Command, os.Args[1:])
+	productionFactory.RegisterPlugins(RootCmd)
+
 	if err := RootCmd.ExecuteContext(ctx); err != nil {
 		return fmt.Errorf("execute root command: %w", err)
 	}

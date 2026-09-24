@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -33,7 +34,7 @@ import (
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
 // on rootCmd. The plugin group is only added when at least one plugin is found.
 func RegisterPluginCommands(rootCmd *cobra.Command) {
-	timeout := viperx.GetDuration("plugin-discovery-timeout")
+	timeout := pluginDiscoveryTimeout(rootCmd)
 	if timeout <= 0 {
 		log.Debug("Plugin discovery disabled", "timeout", timeout)
 
@@ -84,6 +85,24 @@ func RegisterPluginCommands(rootCmd *cobra.Command) {
 
 		rootCmd.AddCommand(createPluginCommand(p))
 	}
+}
+
+// pluginDiscoveryTimeout resolves the startup discovery timeout. Discovery
+// happens before config initialization, so the root flag is read directly when
+// it was pre-parsed, and the env var is read directly instead of through viper.
+func pluginDiscoveryTimeout(rootCmd *cobra.Command) time.Duration {
+	if flag := rootCmd.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey); flag != nil && flag.Changed {
+		timeout, err := time.ParseDuration(flag.Value.String())
+		if err != nil {
+			log.Debug("Invalid plugin discovery timeout flag", "value", flag.Value.String(), "error", err)
+
+			return internalPlugin.DefaultDiscoveryTimeout
+		}
+
+		return timeout
+	}
+
+	return internalPlugin.DiscoveryTimeout()
 }
 
 func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {

@@ -17,9 +17,13 @@ package plugin
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsManagedPlugin(t *testing.T) {
@@ -58,4 +62,42 @@ func TestIsManagedPlugin(t *testing.T) {
 
 		assert.False(t, isManagedPlugin(pathPlugin))
 	})
+}
+
+func newPluginDiscoveryTimeoutRoot(t *testing.T) *cobra.Command {
+	t.Helper()
+
+	root := &cobra.Command{Use: "dr"}
+	root.PersistentFlags().Duration(
+		internalPlugin.DiscoveryTimeoutKey,
+		internalPlugin.DefaultDiscoveryTimeout,
+		"",
+	)
+
+	return root
+}
+
+func TestPluginDiscoveryTimeout_FlagBeatsEnv(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "9s")
+
+	root := newPluginDiscoveryTimeoutRoot(t)
+	require.NoError(t, root.PersistentFlags().Set(internalPlugin.DiscoveryTimeoutKey, "0s"))
+
+	assert.Equal(t, time.Duration(0), pluginDiscoveryTimeout(root))
+}
+
+func TestPluginDiscoveryTimeout_UsesEnvBeforeConfigIsRead(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "25ms")
+
+	root := newPluginDiscoveryTimeoutRoot(t)
+
+	assert.Equal(t, 25*time.Millisecond, pluginDiscoveryTimeout(root))
+}
+
+func TestPluginDiscoveryTimeout_InvalidEnvFallsBackToDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "not-a-duration")
+
+	root := newPluginDiscoveryTimeoutRoot(t)
+
+	assert.Equal(t, internalPlugin.DefaultDiscoveryTimeout, pluginDiscoveryTimeout(root))
 }
