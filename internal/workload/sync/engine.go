@@ -108,6 +108,7 @@ type Engine struct {
 	rollback      *Rollback
 	newCatalogID  string
 	newVersionID  string
+	uploadOutcome *UploadOutcome
 	localBackups  []string
 	result        *Result
 	startedAt     time.Time
@@ -176,9 +177,9 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 	return e.plan, nil
 }
 
-// Execute runs phases 5-6 against the plan returned by Plan. The lock
-// is released on completion (success or error). A failure to release
-// the lock is joined into the returned error so callers see both.
+// Execute runs the execute and state phases against the plan returned by
+// Plan. The lock is released on completion (success or error). A failure to
+// release the lock is joined into the returned error so callers see both.
 func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 	if e.plan == nil || plan == nil {
 		return nil, e.joinReleaseErr(ErrNoPlan)
@@ -197,7 +198,7 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 	if err := runPhases(
 		e,
 		phase{name: "execute", run: phase5Execute},
-		phase{name: "state", run: phase6State},
+		phase{name: "state", run: phase7State},
 	); err != nil {
 		return nil, err
 	}
