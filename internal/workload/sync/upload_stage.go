@@ -29,7 +29,7 @@ import (
 type StageUploader struct{}
 
 // ApplyUploads pushes files via the stage workflow and returns the per-path
-// streamed hashes so Phase 6 can record what the server actually received.
+// streamed hashes so Phase 7 can record what the server actually received.
 func (StageUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error) {
 	catalogID, err := ensureCatalog(e)
 	if err != nil {

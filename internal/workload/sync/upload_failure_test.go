@@ -166,17 +166,17 @@ func TestMissingSentEntry_BuildNewBaseManifestHardFails(t *testing.T) {
 }
 
 // TestMissingSentEntry_Phase6DoesNotAdvanceManifest verifies that when
-// buildNewBaseManifest fails inside phase6State (because Sent is missing an
+// buildNewBaseManifest fails inside phase7State (because Sent is missing an
 // entry), neither manifest.json nor config.json is written — both retain
 // their exact pre-sync content. This is the on-disk consequence of the
 // hard-fail combined with the manifest-before-config write ordering.
 //
-// The invariant: config never moves ahead of the manifest. Phase 6 now
+// The invariant: config never moves ahead of the manifest. Phase 7 now
 // builds and writes the manifest first, then writes config. When
 // buildNewBaseManifest fails, neither write has occurred, so config stays
 // at the old version. The missing-Sent scenario is not reachable through
 // normal operation (uploadFilesParallel returns an error if any upload
-// fails, so a partial Sent never reaches Phase 6), but the ordering
+// fails, so a partial Sent never reaches Phase 7), but the ordering
 // invariant is what protects the reachable hazard (SaveManifest I/O
 // failure), so this test guards it directly.
 func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
@@ -194,10 +194,10 @@ func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
 
 	pre := captureState(t, dir, []string{"app.py"})
 
-	// Construct an engine in the state Phase 6 would see after a successful
+	// Construct an engine in the state Phase 7 would see after a successful
 	// Phase 5 where the Sent map is missing app.py. This is not reachable
 	// through the engine (uploadFilesParallel returns an error on any upload
-	// failure), so we test phase6State directly.
+	// failure), so we test phase7State directly.
 	e := &Engine{
 		projectDir: dir,
 		config:     cfg,
@@ -217,9 +217,9 @@ func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
 		nowFn:        time.Now,
 	}
 
-	err = phase6State(e)
+	err = phase7State(e)
 
-	require.Error(t, err, "phase6State must fail when Sent is missing")
+	require.Error(t, err, "phase7State must fail when Sent is missing")
 	assert.Contains(t, err.Error(), "app.py",
 		"error must name the missing path")
 
@@ -233,7 +233,7 @@ func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
 	assert.Equal(t, pre.manifestBytes, mBytes,
 		"manifest.json must be byte-identical to its pre-sync content")
 
-	// config.json must NOT be advanced. Phase 6 now writes the manifest
+	// config.json must NOT be advanced. Phase 7 now writes the manifest
 	// before config: buildNewBaseManifest runs first, and when it fails,
 	// neither SaveManifest nor SaveConfig has executed. Config stays at
 	// the old version, preserving the invariant that config never moves
@@ -252,7 +252,7 @@ func TestMissingSentEntry_Phase6DoesNotAdvanceManifest(t *testing.T) {
 	assert.Equal(t, "ver-synced", *unchangedCfg.LastSyncedVersionID,
 		"config LastSyncedVersionID must NOT be advanced when the manifest build fails")
 
-	// The project file must be unchanged (Phase 6 does not modify the tree).
+	// The project file must be unchanged (Phase 7 does not modify the tree).
 	content, err := os.ReadFile(filepath.Join(dir, "app.py"))
 	require.NoError(t, err)
 
@@ -287,11 +287,11 @@ func TestMissingSentEntry_DoesNotFallBackToPhase2Hash(t *testing.T) {
 		"no manifest must be produced when Sent is missing — no fallback")
 }
 
-// --- Phase 6 write-ordering invariants ---
+// --- Phase 7 write-ordering invariants ---
 
 // TestSaveManifestFailure_DoesNotAdvanceConfig verifies that when SaveManifest
-// fails inside phase6State (injected by making manifest.json a directory so
-// the atomic rename fails), config.json is NOT advanced. Phase 6 now writes
+// fails inside phase7State (injected by making manifest.json a directory so
+// the atomic rename fails), config.json is NOT advanced. Phase 7 now writes
 // the manifest before config: SaveManifest runs first, and when it fails,
 // SaveConfig has not executed. Config stays at the old version, preserving
 // the invariant that config never moves ahead of the manifest.
@@ -349,9 +349,9 @@ func TestSaveManifestFailure_DoesNotAdvanceConfig(t *testing.T) {
 		nowFn:        time.Now,
 	}
 
-	err = phase6State(e)
+	err = phase7State(e)
 
-	require.Error(t, err, "phase6State must fail when SaveManifest fails")
+	require.Error(t, err, "phase7State must fail when SaveManifest fails")
 	assert.Contains(t, err.Error(), "save manifest",
 		"error must come from SaveManifest, not SaveConfig")
 
@@ -382,7 +382,7 @@ func TestSaveManifestFailure_DoesNotAdvanceConfig(t *testing.T) {
 // artifact's new one), fetches AllFiles rather than fast-pathing, computes an
 // EMPTY plan (the advanced manifest matches the remote, and the disk matches
 // both), and returns WITHOUT executing: Run short-circuits empty plans before
-// Execute, so Phase 6 never runs and config.json keeps the old version. No
+// Execute, so Phase 7 never runs and config.json keeps the old version. No
 // production caller reaches Execute with an empty plan, so a test that forces
 // one there would assert a convergence path that cannot happen. Config is
 // converged only by the next sync that has real work to do — which is exactly
@@ -459,9 +459,9 @@ func TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync(t *tes
 		nowFn:        time.Now,
 	}
 
-	err = phase6State(e)
+	err = phase7State(e)
 
-	require.Error(t, err, "phase6State must fail when SaveConfig fails")
+	require.Error(t, err, "phase7State must fail when SaveConfig fails")
 	assert.Contains(t, err.Error(), "save config",
 		"error must come from SaveConfig, not SaveManifest")
 
@@ -560,9 +560,9 @@ func TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync(t *tes
 		"the empty-plan sync must not apply anything — Run returns before Execute")
 
 	assert.Empty(t, result.NewVersion,
-		"the empty-plan run creates no new version — Phase 6 never ran")
+		"the empty-plan run creates no new version — Phase 7 never ran")
 
-	// Phase 6 never ran, so config.json still holds the OLD version while
+	// Phase 7 never ran, so config.json still holds the OLD version while
 	// manifest.json holds the new one. That asymmetry is the safe one (see
 	// the function comment): the version mismatch makes every later sync
 	// detect drift and fetch the real remote, so the window self-heals at
@@ -574,7 +574,7 @@ func TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync(t *tes
 
 	require.NotNil(t, staleCfg.LastSyncedVersionID)
 	assert.Equal(t, versionID, *staleCfg.LastSyncedVersionID,
-		"config must still hold the old version — Run short-circuits the empty plan, so Phase 6 never runs")
+		"config must still hold the old version — Run short-circuits the empty plan, so Phase 7 never runs")
 
 	advManifest, err := wapi.LoadManifest(dir)
 	require.NoError(t, err)
@@ -586,7 +586,7 @@ func TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync(t *tes
 	// --- Convergence needs a sync with real work ---
 
 	// Only a plan with actual work makes Run reach Execute, and only the
-	// Phase 6 reached that way converges config. Introduce a real change
+	// Phase 7 reached that way converges config. Introduce a real change
 	// so the next run has something to upload.
 	finalContent := "print('real work')\n"
 
@@ -653,7 +653,7 @@ func TestSaveConfigFailure_ManifestAdvanced_ConfigConvergesOnNextRealSync(t *tes
 
 // TestPartialSent_WorkerError_FailsCleanly verifies that when some workers
 // succeed and one errors (producing a partial Sent internally), the sync
-// fails, Phase 6 never runs, and manifest.json and config.json retain their
+// fails, Phase 7 never runs, and manifest.json and config.json retain their
 // pre-sync content. The partial Sent is never merged with a fallback because
 // uploadFilesParallel returns an error, not a partial map.
 // Fulfills VAL-UPLOAD-011 (partial Sent) and VAL-UPLOAD-013.
@@ -699,7 +699,7 @@ func TestPartialSent_WorkerError_FailsCleanly(t *testing.T) {
 
 // TestUploadFailure_OneFileFailsLate_FailsCleanly verifies that when one file
 // fails after others have been uploaded to the staging area, the sync fails,
-// Phase 6 never runs, and all persisted state is untouched. Files staged but
+// Phase 7 never runs, and all persisted state is untouched. Files staged but
 // never applied must not appear in the manifest.
 // Fulfills VAL-UPLOAD-013.
 func TestUploadFailure_OneFileFailsLate_FailsCleanly(t *testing.T) {
@@ -747,7 +747,7 @@ func TestUploadFailure_OneFileFailsLate_FailsCleanly(t *testing.T) {
 }
 
 // TestUploadFailure_AllFilesFail_FailsCleanly verifies that when every upload
-// fails, the sync fails immediately, Phase 6 never runs, and all persisted
+// fails, the sync fails immediately, Phase 7 never runs, and all persisted
 // state is untouched.
 // Fulfills VAL-UPLOAD-013.
 func TestUploadFailure_AllFilesFail_FailsCleanly(t *testing.T) {
@@ -787,7 +787,7 @@ func TestUploadFailure_AllFilesFail_FailsCleanly(t *testing.T) {
 }
 
 // TestUploadFailure_ApplyStageFails_FailsCleanly verifies that when all files
-// are staged successfully but ApplyStage fails, the sync fails, Phase 6
+// are staged successfully but ApplyStage fails, the sync fails, Phase 7
 // never runs, and all persisted state is untouched. Files staged but never
 // applied must not appear in the manifest.
 // Fulfills VAL-UPLOAD-013.

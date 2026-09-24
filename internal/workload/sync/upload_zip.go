@@ -36,7 +36,7 @@ const syncZipName = "wapi-sync.zip"
 type ZipUploader struct{}
 
 // ApplyUploads zips the files, POSTs, polls until done, and returns the
-// per-path streamed hashes so Phase 6 can record what entered the archive.
+// per-path streamed hashes so Phase 7 can record what entered the archive.
 func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error) {
 	zipPath, sent, err := buildZip(e.projectDir, files)
 	if err != nil {

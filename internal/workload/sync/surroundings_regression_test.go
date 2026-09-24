@@ -668,7 +668,7 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 	// downloadable content via withDownloadable, so we cannot Execute a
 	// conflict resolution through the fake. Instead, verify the plan
 	// structure: the conflict is in the Conflicts list, and the conflict
-	// path's RemoteHash is the server's hash. Phase 6 (buildNewBaseManifest)
+	// path's RemoteHash is the server's hash. Phase 7 (buildNewBaseManifest)
 	// uses fa.RemoteHash for conflict entries, which is the remote-wins
 	// resolution.
 	e, err := newWithDeps(dir, Options{DryRun: true, Yes: true}, Deps{

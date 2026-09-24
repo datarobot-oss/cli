@@ -21,15 +21,15 @@ import (
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
-// phase6State writes the new BASE manifest, config, and history entry, and
+// phase7State writes the new BASE manifest, config, and history entry, and
 // discards the rollback at entry. Failures here do NOT roll back Phase 5
 // since the remote has already advanced; the next sync will reconcile. A
 // Discard failure is the one entry failure that leaves the rollback dir
 // behind, and it aborts before any state write so that leftover dir pairs
 // with un-advanced state — the safe mid-Phase-5 shape (see below).
-func phase6State(e *Engine) error {
+func phase7State(e *Engine) error {
 	// Discard the rollback BEFORE any state write. Phase 5 completed (the
-	// rollback is only assigned after executePlan returns nil) and Phase 6
+	// rollback is only assigned after executePlan returns nil) and Phase 7
 	// never restores (the remote has already advanced), so the backup tree
 	// is dead weight. Discarding first also keeps cleanup independent of
 	// write success: an early return on a failed save must not strand the
@@ -73,7 +73,7 @@ func phase6State(e *Engine) error {
 	//   - SaveConfig fails: the manifest is ahead of config. Every later
 	//     sync sees the version mismatch, fetches the real remote — which
 	//     the advanced manifest truthfully describes — and computes an
-	//     empty plan that never reaches Phase 6. Config stays stale until
+	//     empty plan that never reaches Phase 7. Config stays stale until
 	//     a sync with actual work converges it; the asymmetry is loud (it
 	//     re-triggers drift detection every run) and the rollback dir is
 	//     already gone, so no stale restore can intervene.
@@ -108,7 +108,7 @@ func phase6State(e *Engine) error {
 	return nil
 }
 
-// discardRollback removes the rollback tree at Phase 6 entry. A Discard
+// discardRollback removes the rollback tree at Phase 7 entry. A Discard
 // failure aborts before any state write: un-advanced state plus a rollback
 // dir is the recoverable mid-Phase-5 shape — the stale restore puts back
 // bytes the un-advanced manifest still matches, so the next diff schedules
@@ -149,7 +149,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 
 		sent, ok := e.uploadOutcome.Sent[fa.Path]
 		if !ok {
-			// Refuse rather than fall back: phase6 overwrites unconditionally,
+			// Refuse rather than fall back: phase7 overwrites unconditionally,
 			// so a per-path fallback to fa.LocalHash silently reintroduces
 			// the poisoning. Either every upload has a Sent entry, or the
 			// sync fails.
@@ -214,7 +214,7 @@ func (e *Engine) populateResult(versionForState string) {
 		Duration:        e.nowFn().Sub(e.startedAt),
 	}
 
-	// "Old" should be the version BEFORE Phase 6 overwrote config.
+	// "Old" should be the version BEFORE Phase 7 overwrote config.
 	r.OldVersion = e.plan.OldVersionShort
 
 	e.result = r

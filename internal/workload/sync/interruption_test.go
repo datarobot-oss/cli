@@ -35,7 +35,7 @@ import (
 //
 // The interruption is simulated by injecting an upload failure (withFailNthUpload)
 // rather than by delivering a real SIGINT. The effect is the same from the
-// engine's perspective: Phase 5 fails, Phase 6 never runs, and the rollback
+// engine's perspective: Phase 5 fails, Phase 7 never runs, and the rollback
 // directory is left on disk. The second sync's Phase 0 restores the stale
 // rollback via RestoreStaleIfPresent, then proceeds normally.
 //
@@ -60,7 +60,7 @@ import (
 //   - Real SIGINT delivery to a running `dr` process (a Go test cannot
 //     deliver a signal to itself in a meaningful way; the test simulates the
 //     interruption via a fault-injected upload failure, which has the same
-//     engine-level effect: Phase 5 fails, Phase 6 never runs, the rollback
+//     engine-level effect: Phase 5 fails, Phase 7 never runs, the rollback
 //     directory remains for the next sync's stale-rollback recovery).
 //   - The real binary exits with a non-zero code on SIGINT (the Go test
 //     asserts the engine returns an error, which maps to a non-zero exit in

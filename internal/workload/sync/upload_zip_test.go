@@ -299,7 +299,7 @@ func TestZipBuild_SizeChange(t *testing.T) {
 
 // TestStageAndZipProduceIdenticalSent verifies that given the same project
 // tree, the stage path and the zip path produce identical Sent maps (same
-// hashes and sizes for every file). Since Phase 6 seeds the manifest from
+// hashes and sizes for every file). Since Phase 7 seeds the manifest from
 // Sent, identical Sent maps mean identical manifests. Both uploaders are
 // driven directly through their exported ApplyUploads methods against
 // self-consistent fakes, so the comparison exercises the real production

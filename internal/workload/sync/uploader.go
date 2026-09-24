@@ -16,7 +16,7 @@ package sync
 
 // UploadOutcome is what an Uploader actually accomplished. Sent carries the
 // hash and size of the bytes that really crossed the wire, keyed by the same
-// forward-slash relative path used everywhere else in the manifest. Phase 6
+// forward-slash relative path used everywhere else in the manifest. Phase 7
 // seeds each uploaded file's manifest entry from Sent, never from the Phase-2
 // planned hash — a per-path fallback to the planned hash is the original
 // poisoning bug and must not exist anywhere in the code.

@@ -160,11 +160,11 @@ func TestExecuteRecordsStreamedHash(t *testing.T) {
 	}
 }
 
-// TestPhase6MissingSentHardFails verifies the hard rule: if Sent[path] is
+// TestPhase7MissingSentHardFails verifies the hard rule: if Sent[path] is
 // missing for an uploaded path, buildNewBaseManifest must return an error
 // naming the path rather than falling back to the Phase-2 planned hash. A
 // per-path fallback IS the original poisoning bug.
-func TestPhase6MissingSentHardFails(t *testing.T) {
+func TestPhase7MissingSentHardFails(t *testing.T) {
 	e := &Engine{
 		plan: &SyncPlan{
 			Uploads: []FileAction{
@@ -185,9 +185,9 @@ func TestPhase6MissingSentHardFails(t *testing.T) {
 		"error must name the missing path")
 }
 
-// TestPhase6NilOutcomeHardFails verifies that a nil uploadOutcome with a
+// TestPhase7NilOutcomeHardFails verifies that a nil uploadOutcome with a
 // non-empty upload list also hard-fails naming the path.
-func TestPhase6NilOutcomeHardFails(t *testing.T) {
+func TestPhase7NilOutcomeHardFails(t *testing.T) {
 	e := &Engine{
 		plan: &SyncPlan{
 			Uploads: []FileAction{
@@ -203,11 +203,11 @@ func TestPhase6NilOutcomeHardFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "app.py")
 }
 
-// TestPhase6EmptyPlanStillWritesManifest verifies that a plan with zero
+// TestPhase7EmptyPlanStillWritesManifest verifies that a plan with zero
 // uploads still produces a correct manifest. The upload loop does not execute,
 // so the hard-fail does not misfire on an empty Sent map. A nil uploadOutcome
 // is safe when there are no uploads.
-func TestPhase6EmptyPlanStillWritesManifest(t *testing.T) {
+func TestPhase7EmptyPlanStillWritesManifest(t *testing.T) {
 	e := &Engine{
 		plan: &SyncPlan{
 			Uploads:   []FileAction{},

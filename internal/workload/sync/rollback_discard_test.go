@@ -30,12 +30,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests in this file pin the Phase 6 discard-first ordering: the rollback
-// directory must be discarded at Phase 6 ENTRY, before any state write, not
+// The tests in this file pin the Phase 7 discard-first ordering: the rollback
+// directory must be discarded at Phase 7 ENTRY, before any state write, not
 // after the last one succeeds.
 //
 // The hazard this guards: e.rollback is assigned only after Phase 5 executed
-// the whole plan successfully, but a Phase 6 failure (SaveManifest or
+// the whole plan successfully, but a Phase 7 failure (SaveManifest or
 // SaveConfig) returns early. If the discard sits below the state writes, a
 // write failure strands the rollback dir. The next run's Phase 0
 // (RestoreStaleIfPresent) then blindly copies the pre-sync bytes back into
@@ -67,7 +67,7 @@ type rollbackDiscardScenario struct {
 }
 
 // setupRollbackDiscardScenario wires the scenario and returns it after Plan(),
-// so the caller can inject a Phase 6 fault and then Execute.
+// so the caller can inject a Phase 7 fault and then Execute.
 func setupRollbackDiscardScenario(t *testing.T) *rollbackDiscardScenario {
 	return setupRollbackDiscardScenarioWithPatchHook(t, nil)
 }
@@ -75,8 +75,8 @@ func setupRollbackDiscardScenario(t *testing.T) *rollbackDiscardScenario {
 // setupRollbackDiscardScenarioWithPatchHook is the hook-aware variant. The
 // hook, when non-nil, replaces the no-op PatchCodeRef fake: it runs at the
 // very end of Phase 5 — after every backup, download, delete, and upload,
-// with the rollback dir already on disk but Phase 6 not yet entered — which
-// is exactly the window a Phase 6-entry fault must land in.
+// with the rollback dir already on disk but Phase 7 not yet entered — which
+// is exactly the window a Phase 7-entry fault must land in.
 func setupRollbackDiscardScenarioWithPatchHook(t *testing.T, patchHook func(artifactID, catalogID, catalogVersionID string) error) *rollbackDiscardScenario {
 	t.Helper()
 
@@ -158,7 +158,7 @@ func setupRollbackDiscardScenarioWithPatchHook(t *testing.T, patchHook func(arti
 
 // replaceFileWithDir removes a state file and recreates it as a directory, so
 // AtomicWriteFile's rename fails when the engine next writes it. Phase 1 has
-// already loaded the real file, so the fault hits only Phase 6.
+// already loaded the real file, so the fault hits only Phase 7.
 func replaceFileWithDir(t *testing.T, path string) {
 	t.Helper()
 
@@ -169,28 +169,28 @@ func replaceFileWithDir(t *testing.T, path string) {
 }
 
 // assertNoRollbackDir asserts the rollback location is empty — the property
-// a Phase 6 outcome must never violate. Non-fatal so a red run reports the
+// a Phase 7 outcome must never violate. Non-fatal so a red run reports the
 // full downstream corruption (stale restore, false uploads) alongside it.
 func assertNoRollbackDir(t *testing.T, rollDir string) {
 	t.Helper()
 
 	_, err := os.Stat(rollDir)
 	assert.True(t, os.IsNotExist(err),
-		"rollback directory must not survive the Phase 6 outcome at %s", rollDir)
+		"rollback directory must not survive the Phase 7 outcome at %s", rollDir)
 }
 
-// TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads is the
+// TestPhase7SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads is the
 // main regression: SaveConfig fails AFTER SaveManifest advanced the manifest.
-// The rollback dir must already be gone (discarded at Phase 6 entry), and the
+// The rollback dir must already be gone (discarded at Phase 7 entry), and the
 // next run must reconcile from the remote without resurrecting b.py's
 // pre-sync bytes as a false LOCAL_MODIFIED upload. Every leg of the next-run
 // half drives the production entry point Run(); config convergence — the
 // self-healing of the manifest-ahead-of-config asymmetry — is asserted only
 // through the sync after that, which has real work to do, because Run
-// short-circuits empty plans before Execute and Phase 6 never runs on them.
+// short-circuits empty plans before Execute and Phase 7 never runs on them.
 //
 // Fulfills VAL-ROLLBACK-001 (SaveConfig-failure leg) and VAL-ROLLBACK-002.
-func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testing.T) {
+func TestPhase7SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testing.T) {
 	const (
 		catalogID  = "cid-synced"
 		oldVersion = "ver-synced"
@@ -206,7 +206,7 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 
 	_, err := s.engine.Execute(s.plan)
 
-	require.Error(t, err, "phase 6 must fail when SaveConfig fails")
+	require.Error(t, err, "phase 7 must fail when SaveConfig fails")
 	assert.Contains(t, err.Error(), "save config",
 		"error must come from SaveConfig, not an earlier step")
 
@@ -266,7 +266,7 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 	}).withVersion(catalogID, newVersion, all)
 
 	// The codeRef now points at ver-new: run 1's PatchCodeRef succeeded
-	// before Phase 6 failed, so the artifact genuinely moved ahead.
+	// before Phase 7 failed, so the artifact genuinely moved ahead.
 	e2, err := newWithDeps(s.dir, Options{Yes: true}, Deps{
 		Files: fake2,
 		Artifacts: &fakeArtifactStore{
@@ -289,7 +289,7 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 	// still names the old version, so drift was detected and the real
 	// remote fetched, no silent fast path. What must NOT happen is a false
 	// upload for the rollback-covered path, or Execute: Run short-circuits
-	// empty plans before Execute, so Phase 6 never runs on this sync. No
+	// empty plans before Execute, so Phase 7 never runs on this sync. No
 	// production caller reaches Execute with an empty plan, so a test that
 	// forced one there would assert a convergence path that cannot happen;
 	// convergence is asserted below through the only production path that
@@ -302,7 +302,7 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 	// nothing to resurrect. Pre-fix, this is true AND b.py has been rolled
 	// back to its pre-sync bytes.
 	assert.False(t, e2.StaleRollbackRestored(),
-		"the next run must not restore a stale rollback — the rollback dir was discarded at Phase 6 entry")
+		"the next run must not restore a stale rollback — the rollback dir was discarded at Phase 7 entry")
 
 	// Drift was detected (config names the old version, the artifact the
 	// new one): AllFiles was fetched, not fast-pathed.
@@ -330,9 +330,9 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 		"the empty-plan sync must not apply anything — Run returns before Execute")
 
 	assert.Empty(t, result2.NewVersion,
-		"the empty-plan run creates no new version — Phase 6 never ran")
+		"the empty-plan run creates no new version — Phase 7 never ran")
 
-	// Phase 6 never ran, so config.json still holds the pre-sync version
+	// Phase 7 never ran, so config.json still holds the pre-sync version
 	// while the manifest holds the advanced one. That asymmetry is the safe
 	// one: the version mismatch makes every later sync detect drift and
 	// fetch the real remote, so the window self-heals at the first sync
@@ -342,12 +342,12 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 
 	require.NotNil(t, stillStaleCfg.LastSyncedVersionID)
 	assert.Equal(t, oldVersion, *stillStaleCfg.LastSyncedVersionID,
-		"config must still hold the pre-sync version — Run short-circuits the empty plan, so Phase 6 never runs")
+		"config must still hold the pre-sync version — Run short-circuits the empty plan, so Phase 7 never runs")
 
 	// --- Convergence needs a sync with real work ---
 
 	// Only a plan with actual work makes Run reach Execute, and only the
-	// Phase 6 reached that way converges config. Modify a.py — NOT b.py:
+	// Phase 7 reached that way converges config. Modify a.py — NOT b.py:
 	// b.py is the rollback-covered path whose absence from every upload plan
 	// is this test's core claim, so the real-work leg must leave it
 	// untouched and prove it is still not uploaded alongside genuine work.
@@ -411,11 +411,11 @@ func TestPhase6SaveConfigFailure_DiscardsRollback_NextRunNoFalseUploads(t *testi
 	}
 }
 
-// TestPhase6SaveManifestFailure_DiscardsRollback pins the other write-failure
+// TestPhase7SaveManifestFailure_DiscardsRollback pins the other write-failure
 // leg of VAL-ROLLBACK-001: SaveManifest itself fails. The discard-first
-// ordering has already removed the rollback dir by then, so no Phase 6
+// ordering has already removed the rollback dir by then, so no Phase 7
 // outcome — not even the earliest write failing — strands it.
-func TestPhase6SaveManifestFailure_DiscardsRollback(t *testing.T) {
+func TestPhase7SaveManifestFailure_DiscardsRollback(t *testing.T) {
 	s := setupRollbackDiscardScenario(t)
 
 	// Fault: SaveManifest's atomic write fails (manifest.json is now a
@@ -424,7 +424,7 @@ func TestPhase6SaveManifestFailure_DiscardsRollback(t *testing.T) {
 
 	_, err := s.engine.Execute(s.plan)
 
-	require.Error(t, err, "phase 6 must fail when SaveManifest fails")
+	require.Error(t, err, "phase 7 must fail when SaveManifest fails")
 	assert.Contains(t, err.Error(), "save manifest",
 		"error must come from SaveManifest, not an earlier step")
 
@@ -442,11 +442,11 @@ func TestPhase6SaveManifestFailure_DiscardsRollback(t *testing.T) {
 		"config must not advance when SaveManifest fails")
 }
 
-// TestPhase6CleanSuccessDiscardsRollback pins the no-failure leg of
-// VAL-ROLLBACK-001 for completeness: a fully successful Phase 6 also leaves
+// TestPhase7CleanSuccessDiscardsRollback pins the no-failure leg of
+// VAL-ROLLBACK-001 for completeness: a fully successful Phase 7 also leaves
 // no rollback dir behind. The interruption tests already assert this for an
 // uploads-only plan; this variant covers a plan that also downloads.
-func TestPhase6CleanSuccessDiscardsRollback(t *testing.T) {
+func TestPhase7CleanSuccessDiscardsRollback(t *testing.T) {
 	s := setupRollbackDiscardScenario(t)
 
 	result, err := s.engine.Execute(s.plan)
@@ -463,13 +463,13 @@ func TestPhase6CleanSuccessDiscardsRollback(t *testing.T) {
 	assert.Equal(t, sha256Hex([]byte(s.remoteB)), manifest.Files["b.py"].Hash)
 }
 
-// TestPhase6DiscardFailure_AbortsBeforeStateWrites covers the one Phase 6
+// TestPhase7DiscardFailure_AbortsBeforeStateWrites covers the one Phase 7
 // failure mode the write-failure tests above cannot reach: Discard itself
 // failing. The fault rides Phase 5's final step (PatchCodeRef), which fires
-// after the rollback dir exists but before Phase 6 runs, and strips write
+// after the rollback dir exists but before Phase 7 runs, and strips write
 // permission from the rollback dir so Discard's os.RemoveAll fails.
 //
-// Phase 6 must abort with a wrapped error BEFORE SaveManifest/SaveConfig.
+// Phase 7 must abort with a wrapped error BEFORE SaveManifest/SaveConfig.
 // At entry nothing has been persisted, so un-advanced state plus the
 // surviving rollback dir is exactly the recoverable mid-Phase-5 outcome:
 // the next run's stale-rollback restore puts back pre-sync bytes that the
@@ -478,7 +478,7 @@ func TestPhase6CleanSuccessDiscardsRollback(t *testing.T) {
 // strands the rollback dir next to ADVANCED state, and that same stale
 // restore resurrects pre-sync bytes as phantom local edits which the next
 // sync silently re-uploads over the remote.
-func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
+func TestPhase7DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
 	testutil.SkipIfWindows(t, "fault injection relies on POSIX directory permissions; windows ignores them")
 
 	// The fault is a chmod, which root bypasses: without this guard the
@@ -492,8 +492,8 @@ func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
 
 	s = setupRollbackDiscardScenarioWithPatchHook(t, func(_, _, _ string) error {
 		// Phase 5's last step: make the rollback dir unremovable so the
-		// Phase 6 entry Discard fails. The hook itself must succeed so
-		// Phase 5 completes and Phase 6 is genuinely reached.
+		// Phase 7 entry Discard fails. The hook itself must succeed so
+		// Phase 5 completes and Phase 7 is genuinely reached.
 		if err := os.Chmod(s.rollDir, 0o555); err != nil {
 			return fmt.Errorf("fault: chmod rollback dir: %w", err)
 		}
@@ -518,7 +518,7 @@ func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
 
 	_, err = s.engine.Execute(s.plan)
 
-	require.Error(t, err, "Phase 6 must abort when the rollback dir cannot be discarded")
+	require.Error(t, err, "Phase 7 must abort when the rollback dir cannot be discarded")
 	assert.Contains(t, err.Error(), "discard rollback",
 		"error must be the wrapped Discard failure, not a later write error")
 
@@ -528,14 +528,14 @@ func TestPhase6DiscardFailure_AbortsBeforeStateWrites(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, preManifest, postManifest,
-		"manifest.json must be untouched when Discard fails at Phase 6 entry")
+		"manifest.json must be untouched when Discard fails at Phase 7 entry")
 
 	cfg, err := wapi.LoadConfig(s.dir)
 	require.NoError(t, err)
 
 	require.NotNil(t, cfg.LastSyncedVersionID)
 	assert.Equal(t, "ver-synced", *cfg.LastSyncedVersionID,
-		"config.json must not advance when Discard fails at Phase 6 entry")
+		"config.json must not advance when Discard fails at Phase 7 entry")
 
 	// The rollback dir survives the failed Discard — that is the fault. Its
 	// presence is safe only because no state advanced (asserted above): the
