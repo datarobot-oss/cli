@@ -126,7 +126,8 @@ func TestApplyEnclavePin_RejectsNullSpec(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be a JSON object")
 }
 
-func TestApplyUseCase_SetsIdAndDefaultsAvailability(t *testing.T) {
+// A Use Case on its own is an organizational link: no placement is added.
+func TestApplyUseCase_SetsIdAndLeavesPlacementAlone(t *testing.T) {
 	out, err := ApplyUseCase([]byte(`{"name":"my-app","artifactId":"art-1"}`), "68b0aa11bb22cc33dd44ee55")
 	require.NoError(t, err)
 
@@ -134,6 +135,18 @@ func TestApplyUseCase_SetsIdAndDefaultsAvailability(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal(out, &doc))
 	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+	assert.NotContains(t, doc, "runtime")
+}
+
+func TestApplyUseCase_KeepsASpecAvailabilityPolicy(t *testing.T) {
+	spec := `{"name":"my-app","artifactId":"art-1","runtime":{"enclaveSelectionPolicy":"availability"}}`
+
+	out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
 
 	runtime, ok := doc["runtime"].(map[string]any)
 
@@ -187,6 +200,9 @@ func TestSpecSetsUseCase(t *testing.T) {
 		"set":          {`{"name":"my-app","useCaseId":"68b0aa11bb22cc33dd44ee55"}`, true},
 		"absent":       {`{"name":"my-app"}`, false},
 		"null":         {`{"name":"my-app","useCaseId":null}`, false},
+		"empty string": {`{"name":"my-app","useCaseId":""}`, false},
+		"blank string": {`{"name":"my-app","useCaseId":"   "}`, false},
+		"not a string": {`{"name":"my-app","useCaseId":123}`, false},
 		"invalid json": {`{`, false},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -207,4 +223,31 @@ func TestApplyUseCase_RejectsNonObjectSpec(t *testing.T) {
 	_, err := ApplyUseCase([]byte(`null`), "68b0aa11bb22cc33dd44ee55")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be a JSON object")
+}
+
+// A spec whose useCaseId names nothing (null or blank) is filled in, so the
+// flag can always be used with it; before, --enclave refused it for lacking a
+// Use Case and --use-case-id refused it for already having one.
+func TestApplyUseCase_FillsANullOrBlankUseCaseId(t *testing.T) {
+	for name, spec := range map[string]string{
+		"null":  `{"name":"my-app","useCaseId":null}`,
+		"empty": `{"name":"my-app","useCaseId":""}`,
+		"blank": `{"name":"my-app","useCaseId":"  "}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
+			require.NoError(t, err)
+
+			var doc map[string]any
+
+			require.NoError(t, json.Unmarshal(out, &doc))
+			assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+		})
+	}
+}
+
+func TestApplyUseCase_RejectsANonStringUseCaseId(t *testing.T) {
+	_, err := ApplyUseCase([]byte(`{"name":"my-app","useCaseId":123}`), "68b0aa11bb22cc33dd44ee55")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "'useCaseId' must be a string")
 }

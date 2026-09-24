@@ -98,55 +98,59 @@ func decodeSpecObject(spec []byte) (map[string]any, error) {
 }
 
 // SpecSetsUseCase reports whether a JSON workload create spec already names
-// a Use Case in its top-level useCaseId field. A spec that does not decode is
-// reported as not setting one; validation rejects it later with a clearer
-// error.
+// a Use Case: a non-blank string in its top-level useCaseId field. A missing,
+// null or blank useCaseId names none, and neither does a value of another
+// type, which ApplyUseCase refuses. A spec that does not decode is reported as
+// not setting one; validation rejects it later with a clearer error.
 func SpecSetsUseCase(spec []byte) bool {
 	doc, err := decodeSpecObject(spec)
 	if err != nil {
 		return false
 	}
 
-	id, ok := doc["useCaseId"]
+	named, err := specUseCase(doc)
 
-	return ok && id != nil
+	return err == nil && named
+}
+
+// specUseCase applies the one rule both SpecSetsUseCase and ApplyUseCase use:
+// useCaseId names a Use Case only when it is a non-blank string. Absent, null
+// and blank values name none; any other type is an invalid spec.
+func specUseCase(doc map[string]any) (bool, error) {
+	switch value := doc["useCaseId"].(type) {
+	case nil:
+		return false, nil
+	case string:
+		return strings.TrimSpace(value) != "", nil
+	default:
+		return false, errors.New("invalid spec: 'useCaseId' must be a string")
+	}
 }
 
 // ApplyUseCase links a workload create spec to a Use Case: the top-level
-// useCaseId field the server reads at create time. Enclave placement is
-// opt-in per workload and always governed by a Use Case, so when neither
-// the spec nor an already-applied pin has chosen an enclaveSelectionPolicy,
-// the policy becomes "availability" and DataRobot picks among the Enclaves
-// granted to the Use Case. It errors if the spec already sets useCaseId
-// rather than silently rewriting it. Re-encodes the spec the same way
-// ApplyEnclavePin does.
+// useCaseId field the server reads at create time. It leaves the placement
+// alone: a Use Case on its own is an organizational link, and the workload
+// goes to an Enclave only when the spec (or --enclave) sets an
+// enclaveSelectionPolicy. It errors if the spec already names a Use Case
+// rather than silently rewriting it; a null or blank useCaseId names none and
+// is filled in. Re-encodes the spec the same way ApplyEnclavePin does.
 func ApplyUseCase(spec []byte, id usecase.ID) (json.RawMessage, error) {
 	doc, err := decodeSpecObject(spec)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, ok := doc["useCaseId"]; ok {
+	named, err := specUseCase(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	if named {
 		return nil, errors.New(
 			"spec already sets useCaseId; remove it from the spec or drop --use-case-id")
 	}
 
 	doc["useCaseId"] = string(id)
-
-	runtime := map[string]any{}
-
-	if raw, ok := doc["runtime"]; ok && raw != nil {
-		runtime, ok = raw.(map[string]any)
-		if !ok {
-			return nil, errors.New("invalid spec: 'runtime' must be an object")
-		}
-	}
-
-	if _, ok := runtime["enclaveSelectionPolicy"]; !ok {
-		runtime["enclaveSelectionPolicy"] = EnclaveSelectionPolicyAvailability
-	}
-
-	doc["runtime"] = runtime
 
 	return json.Marshal(doc)
 }

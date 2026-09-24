@@ -55,15 +55,21 @@ stay strings (for example "0644" or "1.10"), and unquoted dates are sent
 as RFC3339 timestamps. The server validates field-level shape and returns
 a 422 with a JSON-path detail on a mismatch.
 
-Enclave placement is opt-in per workload and governed by a Use Case. Use
---use-case-id <id> to opt in: the workload is linked to that Use Case at
-create time and may only run on the Enclaves an administrator has granted
-to it. On its own the flag sets runtime.enclaveSelectionPolicy to
-"availability" and DataRobot picks among the granted Enclaves. Add
---enclave <name> to pin one specific Enclave instead (the policy becomes
-"manual"); pinning requires the CAN_OVERRIDE_WORKLOAD_PLACEMENT permission
-on workloads, and the pinned Enclave must be granted to the Use Case.
---enclave cannot be used without --use-case-id. Without either flag the
+--use-case-id <id> links the workload to a Use Case at create time. On its
+own it does not place the workload on an Enclave: without a selection
+policy the workload runs outside any Enclave, like any other asset in the
+Use Case. To place it on the Enclaves an administrator has granted to the
+Use Case, set the policy in the spec:
+
+  "runtime": {"enclaveSelectionPolicy": "availability", ...}
+
+and DataRobot picks among the granted Enclaves. If the Use Case has
+Enclaves and the spec sets no policy, the server refuses the create with
+ENCLAVE_TARGETING_REQUIRED. Add --enclave <name> to pin one specific
+Enclave instead (the policy becomes "manual"); pinning requires the
+CAN_OVERRIDE_WORKLOAD_PLACEMENT permission on workloads, and the pinned
+Enclave must be granted to the Use Case. --enclave needs a Use Case, from
+--use-case-id or useCaseId in the spec. Without a policy or --enclave the
 workload is not placed on an Enclave. The flags refuse to override a spec
 that already sets the fields they write, and using them means the spec is
 re-encoded rather than sent byte-for-byte. Confirm where the workload
@@ -181,7 +187,7 @@ Example:
 		"Pin the workload to the named Enclave (sets runtime.enclaveSelectionPolicy=manual); requires --use-case-id")
 
 	cmd.Flags().StringVar(&useCaseID, "use-case-id", "",
-		"Link the workload to this Use Case and place it on the Enclaves granted to it")
+		"Link the workload to this Use Case; set runtime.enclaveSelectionPolicy in the spec to place it on the Use Case's Enclaves")
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
 		// No raw ids: whether each flag was given, and the placement they ask for.
@@ -221,8 +227,6 @@ func applyPlacementFlags(
 		}
 	}
 
-	// After the pin so an applied "manual" policy is kept: ApplyUseCase
-	// only defaults the policy to "availability" when none is set.
 	if cmd.Flags().Changed("use-case-id") {
 		id, err := usecase.ParseID(useCaseID)
 		if err != nil {
@@ -239,15 +243,12 @@ func applyPlacementFlags(
 }
 
 // placementMode names the Enclave placement the flags ask for: "manual" for
-// --enclave, "availability" for --use-case-id alone, "none" otherwise. It
+// --enclave, "none" otherwise. --use-case-id alone asks for no placement. It
 // reads the flags only; a spec can still choose its own placement.
 func placementMode(cmd *cobra.Command) string {
-	switch {
-	case cmd.Flags().Changed("enclave"):
+	if cmd.Flags().Changed("enclave") {
 		return workload.EnclaveSelectionPolicyManual
-	case cmd.Flags().Changed("use-case-id"):
-		return workload.EnclaveSelectionPolicyAvailability
-	default:
-		return "none"
 	}
+
+	return "none"
 }
