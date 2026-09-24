@@ -17,6 +17,7 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -601,6 +602,12 @@ func (s *DiscoverWithContextSuite) TestCancelledContextSkipsPATHPlugins() {
 }
 
 func (s *DiscoverWithContextSuite) TestDuplicatePATHEntryDoesNotWarn() {
+	// No manifest here declares a CLI version bound, so this override has no
+	// effect on the outcome — it just proves the assertions below are not
+	// silently passing only because of the "dev" bypass in `go test`.
+	restore := setCurrentCLIVersionForTest(s.T(), "1.0.0")
+	defer restore()
+
 	createMockPlugin(s.T(), s.pluginDir, "dr-ctx-dup",
 		`{"name":"ctx-dup","version":"1.0.0","description":"Dup"}`)
 	// The same directory listed twice in PATH used to make discovery scan it
@@ -622,28 +629,127 @@ func (s *DiscoverWithContextSuite) TestDuplicatePATHEntryDoesNotWarn() {
 	s.Equal(1, matches, "plugin must only appear once even though its dir is listed twice in PATH")
 }
 
+// TestVersionIncompatiblePluginDoesNotBlockCompatibleSameNamePlugin covers the
+// spec's "Skip Ordering Relative to Name Deduplication" requirement end-to-end:
+// two PATH directories export the same manifest name, the lexicographically-first
+// violates maxCLIVersion. The version-incompatible manifest must not reserve the
+// name, so the second, compatible manifest still registers under it — and the
+// skip must be reported as a version incompatibility, never as a name conflict.
+func (s *DiscoverWithContextSuite) TestVersionIncompatiblePluginDoesNotBlockCompatibleSameNamePlugin() {
+	restore := setCurrentCLIVersionForTest(s.T(), "2.0.0")
+	defer restore()
+
+	dir2, err := os.MkdirTemp("", "plugin-discoverctx-dir2")
+	s.Require().NoError(err)
+
+	defer os.RemoveAll(dir2)
+
+	// s.pluginDir sorts before dir2's basename in setDiscoveryPath's PATH
+	// ordering below, so it is scanned first; its manifest violates
+	// maxCLIVersion against the running (overridden) CLI version.
+	incompatibleManifest := `{"name":"shared-ctx-plugin","version":"1.0.0","description":"Old","maxCLIVersion":"1.5.0"}`
+	compatibleManifest := `{"name":"shared-ctx-plugin","version":"2.0.0","description":"New"}`
+
+	exe1 := createMockPlugin(s.T(), s.pluginDir, "dr-shared-ctx", incompatibleManifest)
+	exe2 := createMockPlugin(s.T(), dir2, "dr-shared-ctx", compatibleManifest)
+
+	setDiscoveryPath(s.T(), s.pluginDir+string(os.PathListSeparator)+dir2)
+
+	plugins, conflicts := DiscoverPluginsWithContext(context.Background())
+
+	registered := pluginByName(plugins, "shared-ctx-plugin")
+	s.Require().NotNil(registered, "the compatible plugin must still register under the shared name")
+	s.Equal(exe2, registered.Executable)
+
+	versionConflicts := ConflictsForReason(conflicts, SkipReasonVersionIncompatible)
+	s.Require().Len(versionConflicts, 1)
+	s.Equal(exe1, versionConflicts[0].Path)
+
+	s.Empty(ConflictsForReason(conflicts, SkipReasonNameConflict),
+		"the incompatible plugin must be reported as a version incompatibility, not a name conflict")
+}
+
 // createManagedTestPlugin creates a minimal managed plugin directory structure under pluginsDir.
 func createManagedTestPlugin(t *testing.T, pluginsDir, dirName, pluginName string) {
+	t.Helper()
+
+	createManagedTestPluginWithBounds(t, pluginsDir, dirName, pluginName, "", "")
+}
+
+// createManagedTestPluginWithBounds is createManagedTestPlugin extended with
+// optional minCLIVersion/maxCLIVersion manifest fields, for exercising the CLI
+// version compatibility check against managed plugin discovery. Empty bounds
+// behave identically to createManagedTestPlugin (no constraint declared).
+func createManagedTestPluginWithBounds(t *testing.T, pluginsDir, dirName, pluginName, minCLIVersion, maxCLIVersion string) {
 	t.Helper()
 
 	pluginDir := filepath.Join(pluginsDir, dirName)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(pluginDir, "scripts"), 0o755))
 
-	manifestJSON := fmt.Sprintf(
-		`{"name":%q,"version":"1.0.0","scripts":{"posix":"scripts/run.sh","windows":"scripts/run.ps1"}}`,
-		pluginName,
-	)
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: pluginName, Version: "1.0.0"},
+		Scripts:             &PluginScripts{Posix: "scripts/run.sh", Windows: "scripts/run.ps1"},
+		MinCLIVersion:       minCLIVersion,
+		MaxCLIVersion:       maxCLIVersion,
+	}
 
-	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte(manifestJSON), 0o644))
+	manifestJSON, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "manifest.json"), manifestJSON, 0o644))
 	createScript(t, filepath.Join(pluginDir, "scripts", "run.sh"), "#!/bin/sh\nexit 0\n")
 	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "scripts", "run.ps1"), []byte("exit 0"), 0o644))
+}
+
+// TestDiscoverPlugins_ManagedPluginBelowMinimumIsSkipped verifies loadManagedPlugin
+// evaluates cliVersionSkip before reserving the manifest name: a managed plugin
+// declaring a minCLIVersion above the running CLI version must not load and must
+// be reported as a version incompatibility, not loaded and not a name conflict.
+func TestDiscoverPlugins_ManagedPluginBelowMinimumIsSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME env override is Unix-specific")
+	}
+
+	restore := setCurrentCLIVersionForTest(t, "1.0.0")
+	defer restore()
+
+	tmpHome := t.TempDir()
+	tmpXDG := t.TempDir()
+
+	t.Setenv("HOME", tmpHome)
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
+
+	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
+
+	pluginsDir := filepath.Join(tmpXDG, "datarobot", "plugins")
+	createManagedTestPluginWithBounds(t, pluginsDir, "future-plugin", "future-plugin", "2.0.0", "")
+
+	plugins, conflicts := DiscoverPluginsWithContext(context.Background())
+
+	assert.Nil(t, pluginByName(plugins, "future-plugin"),
+		"a managed plugin declaring a minCLIVersion above the running CLI version must not load")
+
+	versionConflicts := ConflictsForReason(conflicts, SkipReasonVersionIncompatible)
+	require.Len(t, versionConflicts, 1)
+	assert.Equal(t, "future-plugin", versionConflicts[0].Name)
+	assert.Contains(t, versionConflicts[0].Detail, "2.0.0")
+
+	assert.Empty(t, ConflictsForReason(conflicts, SkipReasonNameConflict),
+		"a version-incompatibility skip must never be reported as a name conflict")
 }
 
 func TestDiscoverPlugins_FindsPluginsInXDGConfigDirs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("HOME env override is Unix-specific")
 	}
+
+	// Neither managed plugin below declares a CLI version bound, so this
+	// override has no effect on the outcome — it just proves the assertions
+	// below are not silently passing only because of the "dev" bypass.
+	restore := setCurrentCLIVersionForTest(t, "1.0.0")
+	defer restore()
 
 	tmpHome := t.TempDir()
 	tmpXDG := t.TempDir()
@@ -680,6 +786,9 @@ func TestUniqueDirs(t *testing.T) {
 }
 
 func TestLogConflicts(t *testing.T) {
+	// Byte-identical to the pre-existing wording: these are all name
+	// conflicts (the zero-value Reason), so the level/text split introduced
+	// for version incompatibility must not change this output at all.
 	output := captureLogOutput(t, func() {
 		LogConflicts([]PluginConflict{
 			{Name: "potato", Path: "/usr/local/bin/dr-potato"},
@@ -691,6 +800,27 @@ func TestLogConflicts(t *testing.T) {
 	assert.Contains(t, output, "/usr/local/bin/dr-potato")
 	assert.Contains(t, output, "carrot")
 	assert.Contains(t, output, "/opt/bin/dr-carrot")
+	assert.Contains(t, output, "WARN")
+	assert.NotContains(t, output, "INFO")
+}
+
+func TestLogConflictsVersionIncompatible(t *testing.T) {
+	output := captureLogOutput(t, func() {
+		LogConflicts([]PluginConflict{
+			{
+				Name:   "widget",
+				Path:   "/usr/local/bin/dr-widget",
+				Reason: SkipReasonVersionIncompatible,
+				Detail: "requires dr >= 2.0.0 (running 1.9.0); run 'dr self update'",
+			},
+		})
+	})
+
+	assert.Contains(t, output, "widget")
+	assert.Contains(t, output, "/usr/local/bin/dr-widget")
+	assert.Contains(t, output, "requires dr >= 2.0.0")
+	assert.Contains(t, output, "INFO", "version-incompatibility skips must log at Info level, not Warn")
+	assert.NotContains(t, output, "WARN")
 }
 
 func TestLogConflictsEmpty(t *testing.T) {
@@ -705,14 +835,49 @@ func TestConflictsForName(t *testing.T) {
 	conflicts := []PluginConflict{
 		{Name: "potato", Path: "/usr/local/bin/dr-potato"},
 		{Name: "carrot", Path: "/opt/bin/dr-carrot"},
-		{Name: "potato", Path: "/opt/bin/dr-potato"},
+		{
+			Name:   "potato",
+			Path:   "/opt/bin/dr-potato",
+			Reason: SkipReasonVersionIncompatible,
+			Detail: "requires dr >= 2.0.0 (running 1.9.0); run 'dr self update'",
+		},
 	}
 
+	// The filter must stay reason-agnostic: a name match returns regardless
+	// of whether the conflict is a name collision or a version incompatibility.
 	assert.Equal(t, []PluginConflict{
 		{Name: "potato", Path: "/usr/local/bin/dr-potato"},
-		{Name: "potato", Path: "/opt/bin/dr-potato"},
+		{
+			Name:   "potato",
+			Path:   "/opt/bin/dr-potato",
+			Reason: SkipReasonVersionIncompatible,
+			Detail: "requires dr >= 2.0.0 (running 1.9.0); run 'dr self update'",
+		},
 	}, ConflictsForName(conflicts, "potato"))
 
 	assert.Empty(t, ConflictsForName(conflicts, "turnip"))
 	assert.Empty(t, ConflictsForName(nil, "potato"))
+}
+
+func TestConflictsForReason(t *testing.T) {
+	versionConflict := PluginConflict{
+		Name:   "widget",
+		Path:   "/usr/local/bin/dr-widget",
+		Reason: SkipReasonVersionIncompatible,
+		Detail: "requires dr >= 2.0.0 (running 1.9.0); run 'dr self update'",
+	}
+	conflicts := []PluginConflict{
+		{Name: "potato", Path: "/usr/local/bin/dr-potato"},
+		versionConflict,
+		{Name: "carrot", Path: "/opt/bin/dr-carrot"},
+	}
+
+	assert.Equal(t, []PluginConflict{
+		{Name: "potato", Path: "/usr/local/bin/dr-potato"},
+		{Name: "carrot", Path: "/opt/bin/dr-carrot"},
+	}, ConflictsForReason(conflicts, SkipReasonNameConflict))
+
+	assert.Equal(t, []PluginConflict{versionConflict}, ConflictsForReason(conflicts, SkipReasonVersionIncompatible))
+
+	assert.Empty(t, ConflictsForReason(nil, SkipReasonNameConflict))
 }

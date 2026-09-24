@@ -59,12 +59,15 @@ The `manifest.json` inside each package defines platform-specific executables:
   "version": "0.1.6",
   "description": "AI agent design, coding, and deployment assistant",
   "minCLIVersion": "0.2.0",
+  "maxCLIVersion": "1.0.0",
   "scripts": {
     "posix": "scripts/dr-assist.sh",
     "windows": "scripts/dr-assist.ps1"
   }
 }
 ```
+
+`minCLIVersion`/`maxCLIVersion` are optional, inclusive semver bounds on the running `dr` version — see [Manifest JSON schema](./plugins.md#manifest-json-schema) for the full compatibility semantics (comparison basis, malformed-bound handling, and the `dev`-build bypass).
 
 ## Implementation steps
 
