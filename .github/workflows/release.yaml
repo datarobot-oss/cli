@@ -117,7 +117,12 @@ jobs:
           # List the failed jobs once, then fetch each one's logs. jq is
           # preinstalled on the runner.
           JOBS_URL="repos/{owner}/{repo}/actions/runs/$RUN_ID/jobs?per_page=100"
-          JOBS_JSON="$(gh api "$JOBS_URL" 2>/dev/null || echo '{"jobs":[]}')"
+          # gh api writes a failed call's error JSON to stdout, so the
+          # fallback must REPLACE that output, not append to it — the
+          # substitution form `$(gh api ... || echo x)` concatenates both, jq
+          # then rejects the result, and this -e shell would abort the step
+          # before the Slack alert could send.
+          JOBS_JSON="$(gh api "$JOBS_URL" 2>/dev/null)" || JOBS_JSON='{"jobs":[]}'
           FAILED_JOB_IDS="$(jq -r '.jobs[] | select(.conclusion == "failure") | .id' <<<"$JOBS_JSON")"
           # Names of the failed steps, so the fallback diagnosis can at least
           # say where the job died even when no signature matches.
