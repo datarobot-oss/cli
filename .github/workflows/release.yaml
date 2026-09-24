@@ -61,8 +61,114 @@ jobs:
         run: |
           gh release edit ${{ github.ref_name }} --prerelease
 
+  # Failure notification is a separate job, not a step in the release job: a
+  # job's logs only exist once that job has finished. The diagnosis below also
+  # cannot use the run-level log archive (gh run view --log-failed) — GitHub
+  # serves it only after the whole run completes, and this job is part of that
+  # run — so it fetches the concluded release job's logs directly instead.
+  notify-release-failure:
+    needs: release
+    # always() + explicit result check: a bare failure() is unreliable when the
+    # needs graph skips jobs (same reasoning as notify-verification-failure).
+    if: always() && needs.release.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The diagnosis fetches the failed jobs' logs via the Actions jobs/logs
+    # API, which gates log access behind actions:read. This job-scoped block
+    # grants exactly that (and nothing else) for this job.
+    permissions:
+      actions: read
+    steps:
+      # Match the goreleaser output against known infrastructure failure
+      # signatures so the Slack alert says what broke and who can fix it,
+      # instead of sending everyone to read the raw log. Add new signatures
+      # here as they are diagnosed in the wild.
+      #
+      # Signatures seen in real runs (both from the failed v0.8.1 attempts):
+      # - "Team is not yet configured for notarization":
+      #   https://github.com/datarobot-oss/cli/actions/runs/35128057233
+      # - "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED":
+      #   https://github.com/datarobot-oss/cli/actions/runs/35382156489
+      # The notarization catch-all has no motivating run; it is a fallback for
+      # notarization failures with a signature not listed above. It requires
+      # failure-adjacent wording (failed to notarize / fail / error / reject)
+      # because successful runs also mention "notariz" — a later publish,
+      # Homebrew, or Docker failure in the same log must not be mislabeled as
+      # a notarization failure.
+      - name: Diagnose failure
+        id: diagnose
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This job never checks out the repo, so gh has no git remote to
+          # infer the repository from; GH_REPO provides it explicitly.
+          GH_REPO: ${{ github.repository }}
+          # Optional repo variable: link to the IT ticket portal, included in
+          # the Slack message so the responder can file the ticket directly.
+          IT_TICKET_URL: ${{ vars.IT_TICKET_URL }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          SUMMARY=""
+          ACTION=""
+
+          # gh run view --log-failed only serves the run-level log archive,
+          # which GitHub holds back until the whole run completes — and this
+          # job is part of that run. Per-job logs have no such gate: the
+          # release job has already concluded by the time this job starts.
+          # List the failed jobs once, then fetch each one's logs. jq is
+          # preinstalled on the runner.
+          JOBS_URL="repos/{owner}/{repo}/actions/runs/$RUN_ID/jobs?per_page=100"
+          # gh api writes a failed call's error JSON to stdout, so the
+          # fallback must REPLACE that output, not append to it — the
+          # substitution form `$(gh api ... || echo x)` concatenates both, jq
+          # then rejects the result, and this -e shell would abort the step
+          # before the Slack alert could send.
+          JOBS_JSON="$(gh api "$JOBS_URL" 2>/dev/null)" || JOBS_JSON='{"jobs":[]}'
+          FAILED_JOB_IDS="$(jq -r '.jobs[] | select(.conclusion == "failure") | .id' <<<"$JOBS_JSON")"
+          # Names of the failed steps, so the fallback diagnosis can at least
+          # say where the job died even when no signature matches.
+          FAILED_STEPS="$(jq -r \
+            '[.jobs[] | select(.conclusion == "failure") | .steps[] | select(.conclusion == "failure") | .name] | unique | join(", ")' \
+            <<<"$JOBS_JSON")"
+
+          LOGS=""
+          for job_id in $FAILED_JOB_IDS; do
+            LOGS+="$(gh api --allow-escape-sequences "repos/{owner}/{repo}/actions/jobs/$job_id/logs" 2>/dev/null || true)"$'\n'
+          done
+
+          if grep -q "REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED" <<<"$LOGS"; then
+            SUMMARY="Apple notarization was rejected: a required Apple Developer Program agreement is missing or expired."
+            ACTION="The Apple account holder must sign the pending agreement (https://developer.apple.com/account or App Store Connect → Business). Open a ticket with IT to route this, then re-run the failed workflow — no code or tag changes are needed."
+          elif grep -q "Team is not yet configured for notarization" <<<"$LOGS"; then
+            SUMMARY="Apple notarization was rejected: the team is not yet configured for notarization."
+            ACTION="Open a ticket with IT to check the Apple Developer account's notarization entitlement (Apple Developer Programs Support), then re-run the failed workflow."
+          elif grep -qiE "failed to notarize|notariz.*(fail|error|reject)" <<<"$LOGS"; then
+            SUMMARY="macOS notarization failed; see the goreleaser step output for Apple's response."
+            ACTION="Open a ticket with IT to check the Apple signing/notarization credentials, then re-run the failed workflow."
+          fi
+
+          if [ -z "$SUMMARY" ]; then
+            SUMMARY="The release job failed${FAILED_STEPS:+ at: $FAILED_STEPS}. See the workflow run for the failing step."
+            ACTION="Open a ticket with IT and include a link to this run."
+          fi
+
+          if [ -n "$IT_TICKET_URL" ]; then
+            ACTION="$ACTION IT ticket portal: $IT_TICKET_URL"
+          fi
+
+          {
+            echo "summary=$SUMMARY"
+            echo "action=$ACTION"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Release failure diagnosis"
+            echo
+            echo "**What happened:** $SUMMARY"
+            echo
+            echo "**What to do:** $ACTION"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Notify Slack on Failure
-        if: failure()
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -90,6 +196,13 @@ jobs:
                       "text": "*Repository:*\n<${{ github.event.repository.html_url }}|${{ github.repository }}>"
                     }
                   ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*What happened:*\n${{ steps.diagnose.outputs.summary }}\n\n*What to do:*\n${{ steps.diagnose.outputs.action }}"
+                  }
                 },
                 {
                   "type": "section",
