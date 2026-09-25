@@ -76,7 +76,7 @@ For contributors and developers:
 - [Main README](https://github.com/datarobot-oss/cli/blob/main/README.md)&mdash;project overview.
 - [Contributing guidelines](https://github.com/datarobot-oss/cli/blob/main/CONTRIBUTING.md)&mdash;how to contribute.
 - [Code of conduct](https://github.com/datarobot-oss/cli/blob/main/CODE_OF_CONDUCT.md)&mdash;community guidelines.
-- [Changelog](https://github.com/datarobot-oss/cli/blob/main/CHANGELOG.md)&mdash;version history.
+- [Release notes](https://github.com/datarobot-oss/cli/releases)&mdash;version history.
 
 ## Getting help
 
