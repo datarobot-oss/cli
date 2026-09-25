@@ -37,7 +37,12 @@ Plugins are deduplicated by `manifest.name` (not by filename). If multiple binar
 ### Timeouts
 
 - Overall discovery is bounded by the global flag `--plugin-discovery-timeout` (default `2s`).
-  - Set to `0s` to disable plugin discovery entirely.
+  - Put it before the command name: `dr --plugin-discovery-timeout=500ms ...`.
+  - Set to `0s` to disable startup discovery entirely.
+  - `DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT` is also honored during startup.
+  - Config-file values are read after command discovery, so they only affect lazy
+    discovery paths such as `dr plugin list` when startup discovery did not already
+    seed the plugin cache.
 - Manifest retrieval is bounded by `plugin.manifest_timeout_ms` (default `500ms`).
 
 #### Testing notes
