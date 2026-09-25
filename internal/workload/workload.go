@@ -26,6 +26,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
 // Workload statuses as serialized by the server (lowercase StrEnum).
@@ -363,7 +364,7 @@ func CreateWorkload(payload any) (*Workload, error) {
 
 	var workload Workload
 
-	err = drapi.PostJSON(url, "workload", payload, &workload)
+	err = apiclient.PostJSON(url, "workload", payload, &workload)
 	if err != nil {
 		return nil, err
 	}

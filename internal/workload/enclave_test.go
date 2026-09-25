@@ -125,3 +125,129 @@ func TestApplyEnclavePin_RejectsNullSpec(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "must be a JSON object")
 }
+
+// A Use Case on its own is an organizational link: no placement is added.
+func TestApplyUseCase_SetsIdAndLeavesPlacementAlone(t *testing.T) {
+	out, err := ApplyUseCase([]byte(`{"name":"my-app","artifactId":"art-1"}`), "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+	assert.NotContains(t, doc, "runtime")
+}
+
+func TestApplyUseCase_KeepsASpecAvailabilityPolicy(t *testing.T) {
+	spec := `{"name":"my-app","artifactId":"art-1","runtime":{"enclaveSelectionPolicy":"availability"}}`
+
+	out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+
+	runtime, ok := doc["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, EnclaveSelectionPolicyAvailability, runtime["enclaveSelectionPolicy"])
+}
+
+func TestApplyUseCase_KeepsAnAppliedPin(t *testing.T) {
+	pinned, err := ApplyEnclavePin([]byte(`{"name":"my-app","artifactId":"art-1"}`), "prod-east")
+	require.NoError(t, err)
+
+	out, err := ApplyUseCase(pinned, "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+
+	runtime, ok := doc["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, EnclaveSelectionPolicyManual, runtime["enclaveSelectionPolicy"])
+	assert.Equal(t, []any{"prod-east"}, runtime["enclaves"])
+}
+
+func TestApplyUseCase_KeepsASpecChosenPolicy(t *testing.T) {
+	// "manual", not the "availability" default: an unconditional overwrite
+	// would change it, so this fails if the spec's choice is not kept.
+	spec := `{"name":"my-app","artifactId":"art-1","runtime":{"enclaveSelectionPolicy":"manual","enclaves":["prod-east"]}}`
+
+	out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	var doc map[string]any
+
+	require.NoError(t, json.Unmarshal(out, &doc))
+
+	runtime, ok := doc["runtime"].(map[string]any)
+
+	require.True(t, ok)
+	assert.Equal(t, EnclaveSelectionPolicyManual, runtime["enclaveSelectionPolicy"])
+	assert.Equal(t, []any{"prod-east"}, runtime["enclaves"])
+}
+
+func TestSpecSetsUseCase(t *testing.T) {
+	for name, c := range map[string]struct {
+		spec string
+		want bool
+	}{
+		"set":          {`{"name":"my-app","useCaseId":"68b0aa11bb22cc33dd44ee55"}`, true},
+		"absent":       {`{"name":"my-app"}`, false},
+		"null":         {`{"name":"my-app","useCaseId":null}`, false},
+		"empty string": {`{"name":"my-app","useCaseId":""}`, false},
+		"blank string": {`{"name":"my-app","useCaseId":"   "}`, false},
+		"not a string": {`{"name":"my-app","useCaseId":123}`, false},
+		"invalid json": {`{`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, c.want, SpecSetsUseCase([]byte(c.spec)))
+		})
+	}
+}
+
+func TestApplyUseCase_RejectsSpecWithUseCaseId(t *testing.T) {
+	spec := `{"name":"my-app","useCaseId":"68b0aa11bb22cc33dd44ee55"}`
+
+	_, err := ApplyUseCase([]byte(spec), "68b0ffffffffffffffffffff")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already sets useCaseId")
+}
+
+func TestApplyUseCase_RejectsNonObjectSpec(t *testing.T) {
+	_, err := ApplyUseCase([]byte(`null`), "68b0aa11bb22cc33dd44ee55")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a JSON object")
+}
+
+// A spec whose useCaseId names nothing (null or blank) is filled in, so the
+// flag can always be used with it; before, --enclave refused it for lacking a
+// Use Case and --use-case-id refused it for already having one.
+func TestApplyUseCase_FillsANullOrBlankUseCaseId(t *testing.T) {
+	for name, spec := range map[string]string{
+		"null":  `{"name":"my-app","useCaseId":null}`,
+		"empty": `{"name":"my-app","useCaseId":""}`,
+		"blank": `{"name":"my-app","useCaseId":"  "}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := ApplyUseCase([]byte(spec), "68b0aa11bb22cc33dd44ee55")
+			require.NoError(t, err)
+
+			var doc map[string]any
+
+			require.NoError(t, json.Unmarshal(out, &doc))
+			assert.Equal(t, "68b0aa11bb22cc33dd44ee55", doc["useCaseId"])
+		})
+	}
+}
+
+func TestApplyUseCase_RejectsANonStringUseCaseId(t *testing.T) {
+	_, err := ApplyUseCase([]byte(`{"name":"my-app","useCaseId":123}`), "68b0aa11bb22cc33dd44ee55")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "'useCaseId' must be a string")
+}
