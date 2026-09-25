@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,13 +76,9 @@ func TestExists_ParentIsAFile(t *testing.T) {
 // An unreadable parent directory stats as EACCES, the other error class that
 // returns no FileInfo.
 func TestExists_UnreadableParent(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("directory permission bits do not gate stat the same way on Windows")
-	}
+	testutil.SkipIfWindows(t, "directory permission bits do not gate stat the same way on Windows")
 
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores directory permission bits")
-	}
+	testutil.SkipIfRoot(t)
 
 	tmp := t.TempDir()
 

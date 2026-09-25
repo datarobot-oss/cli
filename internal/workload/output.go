@@ -243,6 +243,14 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 		fmt.Printf("Build %s: %s in %s\n", summary.BuildID, summary.Status, dur)
 	}
 
+	// Before the log tail, and on stderr with it: the platform's own reason
+	// is the shortest account of why a build failed, and a reader who has to
+	// find it in fifty log lines mostly does not. Text and JSON carry the
+	// same facts.
+	if summary.FailureReason != "" {
+		fmt.Fprintf(os.Stderr, "Reason: %s\n", summary.FailureReason)
+	}
+
 	if len(summary.LogTail) > 0 {
 		fmt.Fprintf(os.Stderr, "--- last %d log lines ---\n", len(summary.LogTail))
 

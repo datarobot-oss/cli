@@ -277,6 +277,7 @@ This is useful for verifying installation scripts work correctly before or after
 
 ### Release workflow fails
 
+- Check the Slack alert or the `notify-release-failure` job summary first: known infrastructure failures (e.g. Apple notarization account problems) are diagnosed automatically, with the remediation — usually an IT ticket — spelled out. The `IT_TICKET_URL` repository variable adds the ticket portal link to the alert.
 - Check the **Actions** tab for error messages.
 - Verify that`goreleaser.yaml` is valid: `goreleaser check`.
 - Ensure all required secrets are configured.

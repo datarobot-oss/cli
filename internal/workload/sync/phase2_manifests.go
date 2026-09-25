@@ -22,6 +22,13 @@ import (
 	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
+// hashEntriesFn is a test seam in the style of availableBytesFn
+// (diskspace.go): tests swap it to inject a local manifest that a real
+// filesystem walk can never produce. Case-insensitive hosts (macOS, Windows)
+// collapse case-colliding paths, so the collision check below can only be
+// exercised on every host by injecting the manifest rather than walking one.
+var hashEntriesFn = hashEntries
+
 // phase2Manifests builds the LOCAL manifest by walking + hashing the
 // project, and either fetches REMOTE from FilesAPI (when drifted) or
 // copies it from BASE (the solo-developer fast path).
@@ -55,7 +62,7 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("walk project directory: %w", err)
 	}
 
-	local, err := hashEntries(entries)
+	local, err := hashEntriesFn(entries)
 	if err != nil {
 		return err
 	}

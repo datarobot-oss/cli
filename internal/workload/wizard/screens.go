@@ -113,7 +113,7 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// Printed here rather than from inside the flow: until tui.Run returns,
 	// the alt screen owns the terminal and anything written to stderr lands
 	// underneath a full-screen redraw.
-	reportImport(opts.Stderr, finished.imports)
+	reportImport(opts.Stderr, finished.imports, nil)
 
 	content, draft, err := finished.result()
 

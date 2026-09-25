@@ -419,10 +419,11 @@ Key tests:
 
 - `internal/telemetry/wire_test.go` — exercises `Track`, `TrackWith`, `TrackPlugin`, `EventFor`, `IsPluginCommand`, `FirstArg`.
 - `internal/telemetry/properties_test.go` — exercises common properties including `command_kind`.
-- `cmd/telemetry_wiring_test.go` — verifies that every expected core command path is wired in the static command tree.
+- `cmd/telemetry_wiring_test.go` — verifies that every expected core command path is wired in the static command tree, and separately walks the `dr workload`, `dr artifact` and `dr pipeline` groups asserting every leaf under them is wired, listed or not.
 
 ## Maintenance checklist
 
 - **Renaming a command?** The event type follows `cmd.CommandPath()` automatically, but you must update `expectedTrackedCommands` in `cmd/telemetry_wiring_test.go`.
 - **Removing a command?** Remove its `expectedTrackedCommands` entry.
+- **Adding a leaf under `dr workload`, `dr artifact` or `dr pipeline`?** Wire it with `Track` / `TrackWith` and add it to `expectedTrackedCommands`. The subtree walk fails on an unwired leaf whether or not the list mentions it, which is what a list alone cannot check.
 - **Changing event properties?** Update the closure passed to `TrackWith`.

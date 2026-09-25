@@ -51,10 +51,10 @@ is not deleted with it; remove that separately with
 
 If the .datarobot.yaml found from --dir (the current directory by default,
 searched upward from there) is bound to the workload being deleted, its
-workloadId is removed too, so the next 'dr workload up' creates a new
-workload rather than pointing at one that is gone. Only a manifest naming
-that exact id is touched. Pass the same --dir you deployed with: a manifest
-in a subdirectory is not visible from its parent.
+workloadId is removed too, so the project stops pointing at a workload that
+is gone. Only a manifest naming that exact id is touched. Pass the same
+--dir you deployed with: a manifest in a subdirectory is not visible from
+its parent.
 
 Without --yes the command asks for confirmation.
 
@@ -241,7 +241,7 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 
 	fmt.Fprintln(w, tui.DimStyle.Render(
 		"Removed workloadId from "+idargs.DisplayPath(path)+
-			"; the next 'dr workload up"+manifest.DirFlag(dir)+"' creates a new workload."))
+			"; this project no longer points at a workload."))
 
 	noteLinkedArtifact(w, filepath.Dir(path))
 }

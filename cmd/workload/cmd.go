@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/status"
 	"github.com/datarobot/cli/cmd/workload/stop"
 	"github.com/datarobot/cli/cmd/workload/up"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
@@ -41,13 +42,23 @@ func Cmd() *cobra.Command {
 Manage and monitor workloads in your deployment infrastructure.`,
 	}
 
-	features.SetGate(cmd, "workload")
+	// The gate that used to hide this whole tree now hides only the two
+	// commands that are not finished. Everything else is generally available;
+	// `config` and `up` stay behind DATAROBOT_CLI_FEATURE_WORKLOAD=true, and
+	// the adder leaves them out at registration while it is unset, so they are
+	// absent from help, completion and dispatch rather than merely hidden.
+	gated := func(c *cobra.Command) *cobra.Command {
+		features.SetGate(c, "workload")
 
-	cmd.AddCommand(
+		return c
+	}
+
+	adder := &cli.CommandAdder{Command: cmd}
+	adder.AddCommand(
 		// Setup, and the one subcommand here that never calls the API: it
 		// writes the committed .datarobot.yaml that `up` deploys from. Listed
 		// apart from the verbs below so it does not read as one of them.
-		config.Cmd(),
+		gated(config.Cmd()),
 
 		// The workload itself is the primary resource: direct verbs, like
 		// `dr pipeline create|get|...`.
@@ -60,7 +71,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		start.Cmd(),
 		status.Cmd(),
 		stop.Cmd(),
-		up.Cmd(),
+		gated(up.Cmd()),
 	)
 
 	return cmd

@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/workload"
-	wlmanifest "github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
@@ -58,13 +57,16 @@ func phase1Gather(e *Engine) error {
 	// the exemption cannot let a write through.
 	if art.IsLocked() {
 		if !e.previewOnly() {
+			// The remedy names only commands the reader can run. A deploy
+			// gets past a lock by minting a new version, but the command
+			// that does it is not generally available, and a project
+			// holding a committed manifest is no evidence that this user
+			// has it.
 			return fmt.Errorf(
 				"artifact %s is locked (immutable); cannot sync.\n"+
-					"  A project with a %s deploys past this on its own: 'dr workload up' creates a new "+
-					"version, points this directory at it, and rolls onto it.\n"+
-					"  Otherwise make one with 'dr artifact create' (or in the DataRobot UI), then delete %s "+
-					"and re-link with 'dr artifact code init <new-id>'",
-				art.ID, wlmanifest.FileName, wapi.Dir(e.projectDir))
+					"  Syncing needs an unlocked artifact: make one with 'dr artifact create' (or in the "+
+					"DataRobot UI), then delete %s and re-link with 'dr artifact code init <new-id>'",
+				art.ID, wapi.Dir(e.projectDir))
 		}
 
 		e.lockedNote = fmt.Sprintf(

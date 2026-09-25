@@ -102,7 +102,13 @@ func runGet(
 
 	var waitErr error
 
-	if !workload.IsTerminalBuildStatus(build.Status) {
+	// Not "is it terminal": COMPLETED is terminal and still not the end of
+	// the wait, because the artifact is repointed at the image a moment
+	// after. Skipping the wait there returned success inside exactly the
+	// window this is supposed to close (RAPTOR-20311). Only a build that
+	// failed has nothing left to wait for; an already-deployable one costs
+	// one poll, which returns immediately.
+	if !workload.IsBuildErrorStatus(build.Status) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Waiting for build %s...\n", buildID)
 
 		build, waitErr = workload.WaitForBuild(artifactID, buildID, poll.Interval, poll.Timeout, nil)

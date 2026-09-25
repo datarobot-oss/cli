@@ -18,11 +18,11 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
@@ -131,6 +131,11 @@ func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, parsed.WorkloadID())
 	assert.Contains(t, out, "Removed workloadId")
+
+	// The note says what the removal means for the project, not which
+	// command to run next: `dr workload up` is not generally available, and
+	// this line prints for everyone who deletes a bound workload.
+	assert.NotContains(t, out, "workload up")
 }
 
 // delete is addressed by id and can be run from any directory. A manifest
@@ -252,13 +257,9 @@ func TestClearStaleBinding_FindsAManifestUnderDir(t *testing.T) {
 // fails must not fail the command. It does have to say so, because the user is
 // the one who has to finish the job.
 func TestClearStaleBinding_WarnsWhenTheManifestCannotBeWritten(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("directory permission bits do not block rename the same way on Windows")
-	}
+	testutil.SkipIfWindows(t, "directory permission bits do not block rename the same way on Windows")
 
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores directory permission bits")
-	}
+	testutil.SkipIfRoot(t)
 
 	dir := t.TempDir()
 	path := writeManifest(t, dir, boundManifest)
