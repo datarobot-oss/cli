@@ -42,6 +42,43 @@ Use **PATCH** version when making backward-compatible bug fixes, including:
 - Documentation updates
 - Performance improvements
 
+### Pre-1.0 versions
+
+The CLI is still on `0.x`, and SemVer treats a major version of zero as an
+unstable public API ([SemVer item 4](https://semver.org/#spec-item-4)). Until
+`v1.0.0` ships, shift the guidelines above one position to the right:
+
+| Change | At 1.0 and later | Pre-1.0 (today) |
+| --- | --- | --- |
+| Breaks an existing workflow | MAJOR | **MINOR** (`v0.2.7` to `v0.3.0`) |
+| Adds functionality, backward-compatible | MINOR | **PATCH** (`v0.2.7` to `v0.2.8`) |
+| Fixes a bug, backward-compatible | PATCH | **PATCH** (`v0.2.7` to `v0.2.8`) |
+
+Two consequences worth stating plainly:
+
+- A breaking change bumps the **minor** version. It does not force `v1.0.0`.
+  Reserve `v1.0.0` for a deliberate decision to freeze the command-line
+  interface, never as a side effect of a single breaking change.
+- New features and bug fixes share the patch slot, so a breaking change is the
+  only thing that moves the minor version. That makes identifying one the whole
+  job of step 3.
+
+### Identifying a breaking change
+
+Review the diff since the last stable tag and ask:
+
+- Does an invocation that succeeded on the previous release now fail?
+- Does a command now reject a project or repository shape it previously accepted?
+- Does a default change such that an unmodified workflow behaves differently?
+- Does existing output change shape in a way a script could be parsing?
+
+Any "yes" is a breaking change, even when the change is a bug fix and the old
+behavior was wrong. Fixing a permissive check to be correctly strict still
+breaks whoever depended on the permissive version.
+
+When you find one, bump the minor version, record it in `CHANGELOG.md` with
+migration notes, and repeat it prominently in the GitHub release description.
+
 ## Create a release
 
 ### 1. Configure remotes (if using a fork)
@@ -81,7 +118,11 @@ task lint
 
 ### 3. Determine the next version
 
-Review any recent changes and decide on the next version number based on the [semantic versioning](#versioning) guidelines.
+Review any recent changes and decide on the next version number based on the
+[semantic versioning](#versioning) guidelines. While the CLI is on `0.x`, the
+[pre-1.0 mapping](#pre-10-versions) is the one that applies; work through
+[identifying a breaking change](#identifying-a-breaking-change) against the diff
+since the last stable tag before settling on the number.
 
 ### 4. Run smoke tests (recommended)
 
@@ -267,7 +308,7 @@ This is useful for verifying installation scripts work correctly before or after
 5. Communicate breaking changes.
    - Update documentation
    - Add prominent notes in the release description
-   - Consider a major version bump
+   - Bump the minor version while on `0.x`, per the [pre-1.0 mapping](#pre-10-versions)
 
 6. Test the installation.
    - Test the install script after the release
