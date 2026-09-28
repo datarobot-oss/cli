@@ -39,24 +39,34 @@ const (
 // that allows registering new enclaves (server: CAN_CREATE).
 const PermissionCreate = "create"
 
+// PermissionPin is the user-facing name of the collection-level permission that
+// allows pinning a workload to one chosen enclave, overriding the scheduler's
+// placement (server: CAN_OVERRIDE_WORKLOAD_PLACEMENT). Pinning is separate from
+// deploy access: the pinned enclave must still be one the workload's use case
+// allows and the user can deploy to. The create permission implies pin.
+const PermissionPin = "pin"
+
 // createAccessUpdate is the PATCH body (server EnclaveCreateAccessRequest).
 // The endpoint identifies recipients by id only — there is no username form, so
-// users must be named with their DataRobot user id.
+// users must be named with their DataRobot user id. Permission is omitted for
+// "create" so the request stays compatible with servers that predate "pin".
 type createAccessUpdate struct {
 	Operation          string `json:"operation"`
 	ShareRecipientType string `json:"shareRecipientType"`
 	ID                 string `json:"id"`
+	Permission         string `json:"permission,omitempty"`
 }
 
 // ParsePermission maps a user-facing permission name to its canonical form.
-// Only "create" exists today; the flag is kept so further collection-level
-// permissions can be added without changing the command surface.
 func ParsePermission(value string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case PermissionCreate:
 		return PermissionCreate, nil
+	case PermissionPin:
+		return PermissionPin, nil
 	default:
-		return "", fmt.Errorf("invalid permission %q: the only supported permission is create", value)
+		return "", fmt.Errorf(
+			"invalid permission %q: the supported permissions are create and pin", value)
 	}
 }
 
@@ -111,13 +121,14 @@ func RecipientTypeByIDOf(userID, group, org string) (string, bool) {
 	return r.Type, true
 }
 
-// updateCreateAccess PATCHes a grant or revoke of the create permission for the
-// given recipient. The server replies 204 on success. Requires
-// ENCLAVE_RBAC_ENABLED server-side; when disabled the endpoint is a 204 no-op.
-func updateCreateAccess(operation string, r Recipient) error {
+// updateCollectionAccess PATCHes a grant or revoke of a collection-level
+// permission for the given recipient. The server replies 204 on success.
+// Requires ENCLAVE_RBAC_ENABLED server-side; when disabled the endpoint is a
+// 204 no-op.
+func updateCollectionAccess(operation, permission string, r Recipient) error {
 	if r.ID == "" {
 		return errors.New(
-			"the enclave create permission is granted by id: use --user-id, --group, or --org")
+			"collection-level enclave permissions are granted by id: use --user-id, --group, or --org")
 	}
 
 	// Named endpoint, not url: the net/url package is imported in this file.
@@ -131,18 +142,26 @@ func updateCreateAccess(operation string, r Recipient) error {
 		ShareRecipientType: r.Type,
 		ID:                 r.ID,
 	}
+	// "create" is the server default; omitting it keeps the request compatible
+	// with servers that predate the pin permission.
+	if permission != PermissionCreate {
+		body.Permission = permission
+	}
 
 	return drapi.PatchJSON(endpoint, "enclave", body, nil)
 }
 
-// GrantCreatePermission allows the recipient to create (register) enclaves.
-func GrantCreatePermission(r Recipient) error {
-	return updateCreateAccess(operationGrant, r)
+// GrantCollectionPermission grants the named collection-level permission
+// ("create" or "pin") to the recipient.
+func GrantCollectionPermission(permission string, r Recipient) error {
+	return updateCollectionAccess(operationGrant, permission, r)
 }
 
-// RevokeCreatePermission withdraws the recipient's ability to create enclaves.
-func RevokeCreatePermission(r Recipient) error {
-	return updateCreateAccess(operationRevoke, r)
+// RevokeCollectionPermission withdraws the named collection-level permission
+// from the recipient. The server refuses to revoke pin from a recipient who
+// holds create, since create implies pin — revoke create instead.
+func RevokeCollectionPermission(permission string, r Recipient) error {
+	return updateCollectionAccess(operationRevoke, permission, r)
 }
 
 // permissionsSuffix is the effective-permissions sub-resource on an enclave:
@@ -223,7 +242,8 @@ type CollectionPermissions struct {
 	ViaSysAdmin        bool     `json:"viaSysAdmin"`
 }
 
-// CreateAccessHolder is a recipient that may create enclaves.
+// CreateAccessHolder is a recipient holding a collection-level enclave
+// permission.
 type CreateAccessHolder struct {
 	ShareRecipientType string   `json:"shareRecipientType"`
 	ID                 string   `json:"id"`
@@ -252,9 +272,17 @@ func GetCollectionPermissions(userID string) (*CollectionPermissions, error) {
 	return &permissions, nil
 }
 
-// ListCreateAccess returns who may create enclaves. System administrators only.
-func ListCreateAccess() ([]CreateAccessHolder, error) {
-	endpoint, err := config.GetEndpointURL(basePath + createAccessPath)
+// ListCollectionAccess returns who holds the named collection-level permission
+// ("create" or "pin"). System administrators only. The query parameter is
+// omitted for "create", the server default, so the request stays compatible
+// with servers that predate the pin permission.
+func ListCollectionAccess(permission string) ([]CreateAccessHolder, error) {
+	path := basePath + createAccessPath
+	if permission != PermissionCreate {
+		path += "?permission=" + url.QueryEscape(permission)
+	}
+
+	endpoint, err := config.GetEndpointURL(path)
 	if err != nil {
 		return nil, err
 	}

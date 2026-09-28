@@ -37,8 +37,11 @@ func Cmd() *cobra.Command {
 		Short: "Revoke a collection-level enclave permission from a recipient.",
 		Long: `Revoke a collection-level enclave permission from a single recipient.
 
-The permission is:
-  create   register new enclaves
+The permissions are:
+  create   register new enclaves (implies pin, so revoking create also
+           removes pin)
+  pin      pin a workload to one chosen enclave. Pin cannot be revoked from a
+           recipient who holds create — revoke create instead.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -55,7 +58,8 @@ call succeeds but changes nothing. Revoking requires a system administrator.
 
 Example:
   dr enclave permission revoke --permission create --org 656f0000000000000000abcd
-  dr enclave permission revoke --permission create --user-id 656f0000000000000000abce`,
+  dr enclave permission revoke --permission create --user-id 656f0000000000000000abce
+  dr enclave permission revoke --permission pin --user-id 656f0000000000000000abce`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -72,7 +76,7 @@ Example:
 				return err
 			}
 
-			if err := enclave.RevokeCreatePermission(recipient); err != nil {
+			if err := enclave.RevokeCollectionPermission(name, recipient); err != nil {
 				return err
 			}
 
@@ -87,7 +91,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().StringVar(&permission, "permission", "", "Permission to revoke: create (required)")
+	cmd.Flags().StringVar(&permission, "permission", "", "Permission to revoke: create or pin (required)")
 	_ = cmd.MarkFlagRequired("permission")
 
 	cmd.Flags().StringVar(&userID, "user-id", "", "Revoke from a user by DataRobot user id")

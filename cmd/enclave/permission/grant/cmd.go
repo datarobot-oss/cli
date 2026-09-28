@@ -37,8 +37,11 @@ func Cmd() *cobra.Command {
 		Short: "Grant a collection-level enclave permission to a recipient.",
 		Long: `Grant a collection-level enclave permission to a single recipient.
 
-The permission is:
-  create   register new enclaves
+The permissions are:
+  create   register new enclaves (implies pin)
+  pin      pin a workload to one chosen enclave, overriding the scheduler's
+           placement; the enclave must still be allowed by the workload's use
+           case, and deploy access to it is still required
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -54,7 +57,8 @@ call succeeds but grants nothing. Granting requires a system administrator.
 
 Example:
   dr enclave permission grant --permission create --org 656f0000000000000000abcd
-  dr enclave permission grant --permission create --user-id 656f0000000000000000abce`,
+  dr enclave permission grant --permission create --user-id 656f0000000000000000abce
+  dr enclave permission grant --permission pin --user-id 656f0000000000000000abce`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -71,7 +75,7 @@ Example:
 				return err
 			}
 
-			if err := enclave.GrantCreatePermission(recipient); err != nil {
+			if err := enclave.GrantCollectionPermission(name, recipient); err != nil {
 				return err
 			}
 
@@ -86,7 +90,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().StringVar(&permission, "permission", "", "Permission to grant: create (required)")
+	cmd.Flags().StringVar(&permission, "permission", "", "Permission to grant: create or pin (required)")
 	_ = cmd.MarkFlagRequired("permission")
 
 	cmd.Flags().StringVar(&userID, "user-id", "", "Grant a user by DataRobot user id")
