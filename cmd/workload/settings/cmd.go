@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -288,15 +289,22 @@ func consent(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
 // reportRequested is the answer without --wait: the change is accepted and
 // the replacement named, with where to follow it.
 func reportRequested(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref, started *workload.Replacement) error {
-	if format != outputformat.OutputFormatJSON {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload settings "+ref.ID)
-	}
-
-	return render(cmd.OutOrStdout(), format, settingsOutput{
+	if err := render(cmd.OutOrStdout(), format, settingsOutput{
 		WorkloadID:  ref.ID,
 		Status:      "requested",
 		Replacement: started,
-	})
+	}); err != nil {
+		return err
+	}
+
+	if format != outputformat.OutputFormatJSON {
+		tui.PrintNextSteps(cmd.ErrOrStderr(), tui.NextStep{
+			Command:     "dr workload settings " + ref.ID,
+			Description: "Check the rollout's progress",
+		})
+	}
+
+	return nil
 }
 
 // payloadFor is the runtime block the change asks to send.

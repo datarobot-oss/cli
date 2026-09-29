@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -116,8 +117,9 @@ func TestCmd_StdoutCarriesOnlyTheEndpoint(t *testing.T) {
 func TestCmd_JSONEnvelopeIsTheWholeOfStdout(t *testing.T) {
 	stubRun(t, deployed(), nil)
 
-	stdout, _, err := runCmd(t, "--output-format", "json")
+	stdout, stderr, err := runCmd(t, "--output-format", "json")
 	require.NoError(t, err)
+	assert.NotContains(t, stderr, "Next:", "the follow-ups are for a reader, and JSON has none")
 
 	var envelope map[string]any
 
@@ -860,8 +862,12 @@ func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
 	assert.True(t, draftWarned(stderr), "the run left a draft running and has to say so")
 	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
-	assert.NotContains(t, stderr, "  dr workload up --lock  Lock the artifact")
 	assert.NotContains(t, stderr, "dr workload stop")
+
+	// Scoped to the block, since the warning above it names --lock as prose.
+	_, next, found := strings.Cut(stderr, "Next:")
+	require.True(t, found)
+	assert.NotContains(t, next, "--lock")
 }
 
 // A run that started a workload which then reached the end of its life warns
@@ -943,6 +949,64 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	assert.Contains(t, stderr, "dr workload logs"+at)
 	assert.Contains(t, stderr, "dr workload up --lock"+at,
 		"every line in the block has to run as printed, --lock included")
+}
+
+// The setup wizard can write the project into a directory below the one the
+// command ran in, and the deploy follows it there. A search from here walks
+// upward and cannot see it, so the follow-ups, and the warning's --lock with
+// them, name the project the run actually deployed.
+func TestCmd_NextStepsFollowAProjectTheWizardMoved(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	result := deployed()
+	result.ProjectDir = filepath.Join(root, "service")
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	stderr = ansi.Strip(stderr)
+	at := manifest.DirFlag(result.ProjectDir)
+	require.NotEmpty(t, at)
+
+	assert.Contains(t, stderr, "dr workload logs"+at+"  ")
+	assert.Contains(t, stderr, "Run 'dr workload up --lock"+at+"' to version the artifact")
+}
+
+// A project at or above the directory the command ran in is found by the
+// search from there, so the commands stay as short as the reader typed them.
+func TestCmd_NextStepsStayBareForAProjectAbove(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(sub, 0o750))
+	t.Chdir(sub)
+
+	result := deployed()
+	result.ProjectDir = root
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+
+	stderr = ansi.Strip(stderr)
+	assert.Contains(t, stderr, "dr workload logs  ")
+	assert.NotContains(t, stderr, "--dir")
+}
+
+// A dry run returns before the Next: block, so the warning's remedy is the
+// only command it prints, and it has to reach the project the preview was of.
+func TestCmd_DryRunDraftWarningCarriesDir(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	dir := t.TempDir()
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, ansi.Strip(stderr), "Run 'dr workload up --lock"+manifest.DirFlag(dir)+"' to version the artifact")
 }
 
 // The one shape where bare commands would not resolve: a workload was created

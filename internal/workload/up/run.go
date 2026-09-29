@@ -167,6 +167,13 @@ type Result struct {
 	// the caller can say which logs to read.
 	BuildID string
 
+	// ProjectDir is the directory holding the manifest this run deployed,
+	// empty when it failed before finding one. It is not always the one the
+	// command was pointed at: the manifest search walks upward, and the setup
+	// wizard can write the project into a directory below, where a bare
+	// follow-up command could not find it.
+	ProjectDir string
+
 	// Env is what --sync-env did to the manifest before
 	// the plan was computed, zero when neither was asked for. The counts
 	// travel because a rotation is the one edit the plan cannot show: it
@@ -219,7 +226,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// happened. A rotation in particular leaves no file behind, so a failure
 	// that dropped it would let the next bare run call the workload up to date
 	// while it goes on serving the old value.
-	early := Result{WorkloadID: loaded.WorkloadID(), Env: loaded.Env}
+	early := Result{WorkloadID: loaded.WorkloadID(), ProjectDir: loaded.ProjectDir, Env: loaded.Env}
 
 	live, err := lookSettled(ctx, loaded.WorkloadID(), opts)
 	if err != nil {
@@ -250,8 +257,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		// acted. Seeding it from the plan reported a mutation for every run
 		// that failed before attempting one, including the two returns just
 		// below this. What was wanted stays readable under plan.action.
-		Action: ActionUnchanged,
-		Locked: live.Locked,
+		Action:     ActionUnchanged,
+		Locked:     live.Locked,
+		ProjectDir: loaded.ProjectDir,
 		// What the .env flags did before any of this, so a run that re-sent a
 		// secret and found nothing else to do can say so: that edit changes no
 		// file and appears in no plan.

@@ -645,6 +645,7 @@ func TestRun_WizardRedirectIsFollowed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "wl-new", result.WorkloadID)
 	assert.Equal(t, manifest.Path(app), boundPath, "the id lands in the manifest the wizard wrote")
+	assert.Equal(t, app, result.ProjectDir, "the follow-ups have to reach the project the deploy followed")
 }
 
 func TestRun_DryRunAppliesNothing(t *testing.T) {
