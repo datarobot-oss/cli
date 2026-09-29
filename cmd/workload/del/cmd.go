@@ -36,6 +36,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// The platform calls the credential cleanup makes, as seams the tests replace:
+// a real teardown must never reach a tenant from a unit test. DeleteWorkload
+// stays a direct call because the existing tests exercise the delete path
+// through confirmDelete and clearStaleBinding, not against a server.
+var (
+	getWorkloadFn           = workload.GetWorkload
+	credentialsWithPrefixFn = workload.CredentialsWithPrefix
+	deleteCredentialFn      = workload.DeleteCredential
+)
+
+// credentialCleanupNoLimit walks the whole credential store rather than a
+// bounded slice of it. The placeholder-message lookup passes a positive bound
+// because it only wants one id and a large tenant should not turn that into a
+// long walk; teardown is the opposite, because a scan that stopped at a page
+// boundary would leave behind the very orphaned credentials it runs to remove.
+const credentialCleanupNoLimit = 0
+
 func Cmd() *cobra.Command {
 	var ref idargs.Ref
 
@@ -48,6 +65,11 @@ Deleting a running workload is allowed: the platform stops the backing
 replicas first, then removes the workload. The artifact it was created from
 is not deleted with it; remove that separately with
 'dr artifact delete <artifact-id>' once no workload references it.
+
+The credentials the CLI created for the workload (named
+'<workload-name>/<env-var>') are deleted with it, so the name is free to be
+reused. A credential the platform will not remove because something else still
+uses it is named rather than forced.
 
 If the .datarobot.yaml found from --dir (the current directory by default,
 searched upward from there) is bound to the workload being deleted, its
@@ -80,11 +102,22 @@ Example:
 				return err
 			}
 
+			// Read the workload before deleting it: its name is the prefix of
+			// the credentials to clean up afterwards, and a workload that is
+			// gone cannot be read back for it. A lookup that fails is not
+			// fatal — the delete still runs — it only means the credential
+			// cleanup is skipped, which is exactly the old behaviour.
+			wl, getErr := getWorkloadFn(ref.ID)
+
 			if err := workload.DeleteWorkload(ref.ID); err != nil {
 				return handleDeleteError(err, ref)
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
+
+			if getErr == nil && wl.Name != "" {
+				cleanupCredentials(cmd.ErrOrStderr(), wl.Name)
+			}
 
 			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID)
 
@@ -134,7 +167,7 @@ func confirmDelete(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
 
 // deleteConsequence is what agreeing to this question costs, and the one part
 // of it `stop` and `start` have no equivalent of.
-const deleteConsequence = "This stops and removes a running workload."
+const deleteConsequence = "This stops and removes a running workload and deletes the credentials created for it."
 
 // deleteQuestion is the question itself, split out because Confirm refuses
 // before printing anything when there is no terminal, which is every test.
@@ -244,6 +277,53 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 			"; this project no longer points at a workload."))
 
 	noteLinkedArtifact(w, filepath.Dir(path))
+}
+
+// cleanupCredentials removes the credentials the CLI minted for the workload,
+// which all carry the "<workloadName>/" prefix (see wizard.CredentialName).
+// Deleting them is what lets the name be reused: a credential the platform
+// still holds under "<workloadName>/OPENAI_API_KEY" makes the next deploy of a
+// workload by that name collide on it, which is the bug this fixes.
+//
+// Like clearStaleBinding, nothing here can fail the command. The workload is
+// already gone, so a lookup or delete that fails is reported — with what the
+// user has to finish by hand — and stepped over rather than turned into a
+// failure for a delete that succeeded. A credential the platform refuses to
+// remove (a 409, still used by a data connection or batch prediction job) is
+// named for the same reason: the remedy is the user's, not ours to force.
+func cleanupCredentials(w io.Writer, workloadName string) {
+	prefix := workloadName + "/"
+
+	creds, err := credentialsWithPrefixFn(prefix, credentialCleanupNoLimit)
+	if err != nil {
+		fmt.Fprintln(w, tui.DimStyle.Render(
+			"Could not list credentials to clean up for workload "+workloadName+": "+err.Error()+
+				". Remove any "+prefix+"* credentials by hand before reusing this name."))
+
+		return
+	}
+
+	if len(creds) == 0 {
+		return
+	}
+
+	var failed []string
+
+	for _, c := range creds {
+		if err := deleteCredentialFn(c.CredentialID); err != nil {
+			failed = append(failed, c.Name)
+
+			continue
+		}
+
+		fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
+	}
+
+	for _, name := range failed {
+		fmt.Fprintln(w, tui.DimStyle.Render(
+			"Could not delete credential "+name+"; it may still be in use. "+
+				"Remove it by hand before reusing this workload name."))
+	}
 }
 
 // noteLinkedArtifact names the artifact this project is linked to, and how to
