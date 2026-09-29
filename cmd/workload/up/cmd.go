@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -590,7 +591,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		}
 
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
-		draftWarning(cmd.ErrOrStderr(), draft, true)
+		draftWarning(cmd.ErrOrStderr(), draft, true, projectAt(f.dir, result.ProjectDir))
 
 		return nil
 	}
@@ -612,7 +613,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
-	draftWarning(cmd.ErrOrStderr(), draft, false)
+	draftWarning(cmd.ErrOrStderr(), draft, false, projectAt(f.dir, result.ProjectDir))
 	nextSteps(cmd.ErrOrStderr(), result, f.dir, draft, failed)
 
 	return nil
@@ -635,8 +636,9 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 //
 // The command is named inline rather than left to nextSteps, because a dry run
 // returns before nextSteps ever gets to speak and would otherwise state a
-// problem with no remedy attached.
-func draftWarning(w io.Writer, draft, planned bool) {
+// problem with no remedy attached. at is the --dir that reaches the project,
+// as the Next: block carries it, so the two never name different workloads.
+func draftWarning(w io.Writer, draft, planned bool, at string) {
 	if !draft {
 		return
 	}
@@ -657,7 +659,7 @@ func draftWarning(w io.Writer, draft, planned bool) {
 	// leaving trailing spaces on every other one.
 	for _, line := range []string{
 		"Draft workloads are stopped after 8 hours, whether or not they are in use.",
-		"Run 'dr workload up --lock' to version the artifact and make it permanent.",
+		"Run 'dr workload up --lock" + at + "' to version the artifact and make it permanent.",
 	} {
 		fmt.Fprintf(w, "    %s\n", tui.HintStyle.Render(line))
 	}
@@ -667,17 +669,31 @@ func draftWarning(w io.Writer, draft, planned bool) {
 // on stderr so the endpoint on stdout stays pipeable. Nothing is printed when
 // there is nothing worth running: see followUps.
 func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
-	steps := followUps(result, dir, draft, failed)
-	if len(steps) == 0 {
-		return
+	tui.PrintNextSteps(w, followUps(result, dir, draft, failed)...)
+}
+
+// projectAt is the --dir that reaches the project this run deployed, from
+// where the command was run. The one the run was given does, as long as the
+// project sits at or above it, since that is where the manifest search looks.
+// Otherwise it names the project itself: the setup wizard can write the
+// manifest into a directory below, and the deploy follows it there while a
+// bare follow-up would search upward from the old one and miss it.
+func projectAt(dir, projectDir string) string {
+	if projectDir == "" {
+		return manifest.DirFlag(dir)
 	}
 
-	fmt.Fprintf(w, "\n%s\n", tui.HintStyle.Render("Next:"))
-
-	for _, step := range steps {
-		fmt.Fprintf(w, "  %s  %s\n",
-			tui.InfoStyle.Render(step[0]), tui.HintStyle.Render(step[1]))
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return manifest.DirFlag(projectDir)
 	}
+
+	if rel, err := filepath.Rel(projectDir, abs); err == nil &&
+		rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return manifest.DirFlag(dir)
+	}
+
+	return manifest.DirFlag(projectDir)
 }
 
 // followUps is what is worth running against this workload now, empty when
@@ -685,8 +701,8 @@ func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 // commands that all name a workload is no help to someone who has not got one.
 //
 // The commands carry no id. A successful deploy leaves the manifest bound, so
-// they resolve from the project directory, and --dir carries a deploy that ran
-// somewhere else.
+// they resolve from the project directory, and --dir carries a deploy whose
+// project is somewhere a search from here would not look: see projectAt.
 //
 // A failed run is the exception, and takes the id instead. One of its shapes is
 // a workload created whose id could not be written back, where the binding the
@@ -718,12 +734,12 @@ func nextSteps(w io.Writer, result up.Result, dir string, draft, failed bool) {
 // to switch a workload off goes looking for the command; someone whose workload
 // switches itself off does not know there is anything to look for, and this
 // list is the one place they will read either way.
-func followUps(result up.Result, dir string, draft, failed bool) [][2]string {
+func followUps(result up.Result, dir string, draft, failed bool) []tui.NextStep {
 	if result.WorkloadID == "" {
 		return nil
 	}
 
-	at := manifest.DirFlag(dir)
+	at := projectAt(dir, result.ProjectDir)
 	if failed {
 		at = " " + result.WorkloadID
 	}
@@ -734,26 +750,26 @@ func followUps(result up.Result, dir string, draft, failed bool) [][2]string {
 	// still serving until the swap lands. Pairing them would send the reader to
 	// a 404 at exactly the moment they need the logs. The error from a failed
 	// build already names the right pair.
-	logs := [2]string{"dr workload logs" + at, "View the container logs"}
-	status := [2]string{"dr workload status" + at, "Check the workload status"}
+	logs := tui.NextStep{Command: "dr workload logs" + at, Description: "View the container logs"}
+	status := workload.StatusStep(at)
 
 	if failed {
 		if terminated(result) {
 			return nil
 		}
 
-		return [][2]string{logs, status}
+		return []tui.NextStep{logs, status}
 	}
 
 	if draft {
-		return [][2]string{
-			{"dr workload up --lock" + at, "Lock the artifact to make it permanent"},
+		return []tui.NextStep{
+			{Command: "dr workload up --lock" + at, Description: "Lock the artifact to make it permanent"},
 			logs, status,
 		}
 	}
 
-	return [][2]string{
+	return []tui.NextStep{
 		logs, status,
-		{"dr workload stop" + at, "Stop the workload, retaining its version"},
+		{Command: "dr workload stop" + at, Description: "Stop the workload, retaining its version"},
 	}
 }

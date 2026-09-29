@@ -17,9 +17,11 @@ package initcmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/tui"
 )
@@ -49,7 +51,9 @@ func newInitResult(art workload.Artifact, dir string) initResult {
 	return r
 }
 
-func renderInitResult(format outputformat.OutputFormat, result initResult) error {
+// renderInitResult reports the link on stdout, and in text mode what to run
+// next on stderr, so a script capturing stdout gets the report alone.
+func renderInitResult(stderr io.Writer, format outputformat.OutputFormat, result initResult) error {
 	if format == outputformat.OutputFormatJSON {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
@@ -61,13 +65,22 @@ func renderInitResult(format outputformat.OutputFormat, result initResult) error
 		return nil
 	}
 
+	// The --dir goes along: init may have been pointed at, or prompted for, a
+	// directory the shell is not standing in, and a bare sync run from here
+	// would find no link.
+	step := tui.NextStep{Command: "dr artifact code sync" + manifest.DirFlag(result.Dir)}
+
 	if result.CatalogVersionID != nil {
 		printLinkedExistingCode(result.Name, result.ArtifactID, shortVer(*result.CatalogVersionID))
 
-		return nil
+		step.Description = "Reconcile any local changes"
+	} else {
+		printLinkedEmptyArtifact(result.Name, result.ArtifactID)
+
+		step.Description = "Upload your files"
 	}
 
-	printLinkedEmptyArtifact(result.Name, result.ArtifactID)
+	tui.PrintNextSteps(stderr, step)
 
 	return nil
 }
@@ -76,14 +89,12 @@ func printLinkedExistingCode(name, artifactID, verShort string) {
 	fmt.Println(tui.SuccessStyle.Render(
 		fmt.Sprintf("Linked to %s (%s) at version %s.", name, artifactID, verShort),
 	))
-	fmt.Println(tui.DimStyle.Render("Run 'dr artifact code sync' to reconcile any local changes."))
 }
 
 func printLinkedEmptyArtifact(name, artifactID string) {
 	fmt.Println(tui.SuccessStyle.Render(
 		fmt.Sprintf("Linked to empty artifact %s (%s).", name, artifactID),
 	))
-	fmt.Println(tui.DimStyle.Render("Run 'dr artifact code sync' to upload your files."))
 }
 
 func printAlreadyLinked(artifactID, dir string) {
