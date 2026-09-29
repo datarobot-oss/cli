@@ -16,6 +16,7 @@ package del
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
@@ -381,13 +383,151 @@ func TestDeleteQuestion_AsksInTheSharedShapeWithItsOwnConsequence(t *testing.T) 
 
 	assert.Equal(t,
 		"Delete workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
-			"rather than on the command line. This stops and removes a running workload. [y/N] ",
+			"rather than on the command line. This stops and removes a running workload "+
+			"and deletes the credentials created for it. [y/N] ",
 		deleteQuestion(ambient))
 
 	typed := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceExplicit}
 
 	assert.Equal(t,
-		"Delete workload "+boundID+"? This stops and removes a running workload. [y/N] ",
+		"Delete workload "+boundID+"? This stops and removes a running workload "+
+			"and deletes the credentials created for it. [y/N] ",
 		deleteQuestion(typed),
 		"a typed id has no manifest to attribute it to")
+}
+
+// stubCredCleanup swaps the two platform seams the credential cleanup uses and
+// restores them when the test ends, so nothing here can reach a real tenant.
+func stubCredCleanup(
+	t *testing.T,
+	list func(prefix string, limit int) ([]workload.Credential, error),
+	del func(id string) error,
+) {
+	t.Helper()
+
+	origList, origDel := credentialsWithPrefixFn, deleteCredentialFn
+	credentialsWithPrefixFn = list
+	deleteCredentialFn = del
+
+	t.Cleanup(func() {
+		credentialsWithPrefixFn = origList
+		deleteCredentialFn = origDel
+	})
+}
+
+// The fix: every credential the workload owns is deleted, matched by the
+// "<workloadName>/" prefix and walked without a bound so none is left behind.
+func TestCleanupCredentials_DeletesEachOwnedCredential(t *testing.T) {
+	var (
+		gotPrefix string
+		gotLimit  int
+		deleted   []string
+	)
+
+	stubCredCleanup(t,
+		func(prefix string, limit int) ([]workload.Credential, error) {
+			gotPrefix, gotLimit = prefix, limit
+
+			return []workload.Credential{
+				{CredentialID: "c1", Name: "my-app/LLM_API_KEY"},
+				{CredentialID: "c2", Name: "my-app/DATAROBOT_API_TOKEN"},
+			}, nil
+		},
+		func(id string) error {
+			deleted = append(deleted, id)
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app")
+
+	assert.Equal(t, "my-app/", gotPrefix, "the workload name is the credential prefix")
+	assert.Equal(t, 0, gotLimit, "cleanup walks the whole store, not a bounded slice")
+	assert.Equal(t, []string{"c1", "c2"}, deleted)
+	assert.Contains(t, out.String(), "Deleted credential my-app/LLM_API_KEY")
+	assert.Contains(t, out.String(), "Deleted credential my-app/DATAROBOT_API_TOKEN")
+}
+
+// A delete that fails is named, and the next one still runs: the command must
+// not abandon the rest of the cleanup on the first refusal.
+func TestCleanupCredentials_ReportsAFailedDeleteButKeepsGoing(t *testing.T) {
+	var deleted []string
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "c1", Name: "my-app/A"},
+				{CredentialID: "c2", Name: "my-app/B"},
+			}, nil
+		},
+		func(id string) error {
+			deleted = append(deleted, id)
+
+			if id == "c1" {
+				return errors.New("still in use")
+			}
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app")
+
+	assert.Equal(t, []string{"c1", "c2"}, deleted, "a failure on one does not stop the next")
+	assert.Contains(t, out.String(), "Could not delete credential my-app/A")
+	assert.Contains(t, out.String(), "Deleted credential my-app/B")
+}
+
+// A lookup that fails leaves the command succeeding: the workload is already
+// gone, and the user is told to remove the credentials by hand.
+func TestCleanupCredentials_ReportsAListError(t *testing.T) {
+	deleteCalled := false
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return nil, errors.New("network down")
+		},
+		func(string) error {
+			deleteCalled = true
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app")
+
+	assert.False(t, deleteCalled, "no credential is deleted when the list itself failed")
+	assert.Contains(t, out.String(), "Could not list credentials to clean up for workload my-app")
+	assert.Contains(t, out.String(), "my-app/* credentials by hand")
+}
+
+// A workload with no secrets owns no credentials: the cleanup finds nothing,
+// deletes nothing, and says nothing.
+func TestCleanupCredentials_SilentWhenNoneOwned(t *testing.T) {
+	deleteCalled := false
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return nil, nil
+		},
+		func(string) error {
+			deleteCalled = true
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app")
+
+	assert.False(t, deleteCalled)
+	assert.Empty(t, out.String())
 }
