@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/del"
 	"github.com/datarobot/cli/cmd/workload/diagnose"
 	"github.com/datarobot/cli/cmd/workload/endpoint"
+	"github.com/datarobot/cli/cmd/workload/events"
 	"github.com/datarobot/cli/cmd/workload/get"
 	"github.com/datarobot/cli/cmd/workload/list"
 	"github.com/datarobot/cli/cmd/workload/logs"
@@ -67,6 +68,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		del.Cmd(),
 		diagnose.Cmd(),
 		endpoint.Cmd(),
+		events.Cmd(),
 		get.Cmd(),
 		list.Cmd(),
 		logs.Cmd(),
