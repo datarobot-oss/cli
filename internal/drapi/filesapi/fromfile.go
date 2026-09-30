@@ -33,17 +33,24 @@ import (
 // duplicate while the original keeps its old bytes. The contract does not
 // say which location is authoritative, so the query copy stays until it
 // does; the form field is the one that takes effect today.
+//
+// useArchiveContents travels in the form only. It used to be sent in the
+// query, where the server discards it the same way, and extraction happened
+// regardless because the server's form default for the field is true: the
+// request stated an intent in a place nobody read, and stayed correct only
+// for as long as that default did. Verified against staging with the query
+// set to false, which changed nothing (RAPTOR-19915).
 func (c *httpClient) UploadFromZipExisting(catalogID, filename, overwrite string, size int64, body io.Reader) (*FromFileResp, error) {
 	if overwrite == "" {
 		overwrite = OverwriteReplace
 	}
 
 	q := url.Values{}
-	q.Set("useArchiveContents", "true")
 	q.Set("overwrite", overwrite)
 
 	fields := url.Values{}
 	fields.Set("overwrite", overwrite)
+	fields.Set("useArchiveContents", "true")
 
 	requestURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/fromFile/", q)
 	if err != nil {

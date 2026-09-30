@@ -38,6 +38,17 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 		{".git", true},
 		{".git/HEAD", true},
 		{".gitignore", true},
+		// At any depth, the way a user's own `.git` line would apply: a
+		// vendored checkout's git internals are never code (RAPTOR-19751).
+		{"sub/.git", true},
+		{"sub/.git/HEAD", true},
+		{"vendor/lib/.git/HEAD", true},
+		{"sub/.gitignore", true},
+		{"sub/.wapi/config.json", true},
+		{"sub/.datarobot.yaml", true},
+		// Names that merely contain an excluded one are not it.
+		{"sub/.github/workflows/ci.yml", false},
+		{"sub/.gitattributes", false},
 		{"agent.py", false},
 		{".drignore", false},   // user-editable, lives at root
 		{".wapiignore", false}, // same, under the name it used to have
@@ -46,6 +57,9 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 		{".datarobot.yaml", true},
 		{".datarobot/cli", false}, // the CLI's own tool state is not sync state
 		{".datarobot/cli/state.yaml", false},
+		// The state directory stays root-anchored: only the project's own
+		// state is the CLI's to hide.
+		{"sub/.datarobot/workload/config.json", false},
 	}
 
 	for _, tc := range cases {
@@ -113,6 +127,44 @@ func TestSystemExcludes_NotOverridable(t *testing.T) {
 	assert.True(t, m.Match(".datarobot/workload/manifest.json", false))
 	assert.True(t, m.Match(".wapi", true))
 	assert.True(t, m.Match(".git", true))
+	assert.True(t, m.Match("sub/.git", true), "nor at depth")
+}
+
+// A negation that brings a directory back has to be consulted. With `*`
+// followed by `!build/`, the old code probed "build" first, matched it on the
+// `*` rule and returned before the negation was ever looked at: the one line
+// the user wrote to keep the directory was the one line that never ran
+// (RAPTOR-19751). The engine applies patterns in file order and a negation
+// only clears an earlier match, so a directory is probed once, in the slashed
+// form the negation was written against.
+func TestUserPatterns_DirectoryNegation(t *testing.T) {
+	m := FromLines([]string{"*", "!build/", "!*.py"})
+
+	cases := []struct {
+		path  string
+		isDir bool
+		want  bool
+	}{
+		{path: "build", isDir: true, want: false},
+		{path: "app.py", want: false},
+		{path: "notes.txt", want: true},
+		{path: "dist", isDir: true, want: true},
+		// A file called build is not the directory the negation names.
+		{path: "build", isDir: false, want: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			assert.Equal(t, tc.want, m.Match(tc.path, tc.isDir))
+		})
+	}
+
+	// The bare form of a directory pattern keeps matching a directory
+	// through the single slashed probe.
+	bare := FromLines([]string{"build"})
+	assert.True(t, bare.Match("build", true))
+	assert.True(t, bare.Match("build", false))
+	assert.True(t, bare.Match("src/build", true))
 }
 
 func TestUserPatterns(t *testing.T) {
