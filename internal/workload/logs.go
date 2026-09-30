@@ -189,6 +189,10 @@ func logTimeFormat(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+// logDateLayout is a bare day, the one form whose meaning depends on which
+// end of the window it bounds.
+const logDateLayout = "2006-01-02"
+
 // logTimeLayouts are the absolute forms ParseLogTime reads, most specific
 // first. A form without a zone is read as UTC, which is what the route
 // speaks and what the printed timestamps carry.
@@ -196,7 +200,14 @@ var logTimeLayouts = []string{
 	time.RFC3339Nano,
 	"2006-01-02T15:04:05",
 	"2006-01-02 15:04:05",
-	"2006-01-02",
+	logDateLayout,
+}
+
+// Narrows reports whether the filter drops anything at all, so an empty
+// result can be told apart from a workload with no logs.
+func (f LogFilter) Narrows() bool {
+	return f.Level != "" || len(f.Grep) > 0 || len(f.Exclude) > 0 ||
+		f.TraceID != "" || f.SpanID != "" || !f.Since.IsZero() || !f.Until.IsZero()
 }
 
 // ParseLogTime reads a --since or --until value: an absolute time in RFC 3339
@@ -222,6 +233,22 @@ func ParseLogTime(value string, now time.Time) (time.Time, error) {
 	return time.Time{}, fmt.Errorf(
 		"invalid time %q: use RFC 3339 (2026-06-11T14:04:15Z), a date (2026-06-11), or a duration back from now (15m, 2h, 1d, 1w)",
 		value)
+}
+
+// ParseLogUntil is ParseLogTime for the closing end of a window, where a
+// bare date means the whole of that day: --until 2026-06-11 keeps what was
+// logged on the 11th, rather than ending the window as the day began.
+func ParseLogUntil(value string, now time.Time) (time.Time, error) {
+	t, err := ParseLogTime(value, now)
+	if err != nil {
+		return t, err
+	}
+
+	if _, isDate := time.Parse(logDateLayout, strings.TrimSpace(value)); isDate == nil {
+		return t.AddDate(0, 0, 1).Add(-time.Nanosecond), nil
+	}
+
+	return t, nil
 }
 
 // parseRelativeDuration reads a positive duration, accepting Go's forms plus

@@ -182,5 +182,48 @@ func TestFilterFlags_Build(t *testing.T) {
 	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", filter.TraceID)
 	assert.Equal(t, "00f067aa0ba902b7", filter.SpanID)
 	assert.Equal(t, now.Add(-2*time.Hour), filter.Since)
-	assert.Equal(t, time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), filter.Until)
+	// A date as the closing bound is the whole of that day.
+	assert.Equal(t, time.Date(2026, 6, 12, 23, 59, 59, 999_999_999, time.UTC), filter.Until)
+
+	// So the same date on both sides is that day, not an empty window.
+	f.since, f.until = "2026-06-12", "2026-06-12"
+
+	filter, err = f.build("", false, now)
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), filter.Since)
+	assert.True(t, filter.Until.After(filter.Since))
+}
+
+// An empty result under a filter is reported as such, not as a workload
+// with no logs; the wording without a filter is unchanged, and JSON keeps
+// its [] on stdout either way.
+func TestCmd_EmptyResultNamesTheFilter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"data": [], "count": 0, "next": null, "previous": null}`)
+	}))
+
+	defer srv.Close()
+
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(viperx.Reset)
+
+	run := func(args ...string) string {
+		cmd := Cmd()
+		cmd.PreRunE = nil
+		cmd.SetArgs(append([]string{"68b0c1d2e3f4a5b6c7d8e9f0"}, args...))
+
+		var stderr bytes.Buffer
+
+		cmd.SetErr(&stderr)
+		require.NoError(t, cmd.Execute())
+
+		return stderr.String()
+	}
+
+	assert.Equal(t, "No logs matched the filters.\n", run("--grep", "refused"))
+	assert.Equal(t, "No logs matched the filters.\n", run("--since", "1h"))
+	assert.Empty(t, run("--grep", "refused", "--output-format", "json"), "JSON keeps stderr clean")
 }

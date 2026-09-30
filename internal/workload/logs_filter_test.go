@@ -175,6 +175,43 @@ func TestGetWorkloadLogs_AppliesTheClientSideFilterAfterTheFetch(t *testing.T) {
 	assert.Equal(t, "refused by upstream", entries[0].Message)
 }
 
+// A bare date as the closing bound covers the whole day; every other form
+// is read exactly as ParseLogTime reads it.
+func TestParseLogUntil(t *testing.T) {
+	now := time.Date(2026, 6, 11, 14, 0, 0, 0, time.UTC)
+
+	got, err := ParseLogUntil("2026-06-11", now)
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2026, 6, 11, 23, 59, 59, 999_999_999, time.UTC), got)
+
+	got, err = ParseLogUntil("2026-06-11T12:30:00Z", now)
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2026, 6, 11, 12, 30, 0, 0, time.UTC), got)
+
+	got, err = ParseLogUntil("2h", now)
+	require.NoError(t, err)
+	assert.Equal(t, now.Add(-2*time.Hour), got)
+
+	_, err = ParseLogUntil("yesterday", now)
+	require.Error(t, err)
+}
+
+func TestLogFilter_Narrows(t *testing.T) {
+	assert.False(t, LogFilter{}.Narrows())
+
+	for name, f := range map[string]LogFilter{
+		"level":   {Level: "error"},
+		"grep":    {Grep: []string{"x"}},
+		"exclude": {Exclude: []string{"x"}},
+		"trace":   {TraceID: "t"},
+		"span":    {SpanID: "s"},
+		"since":   {Since: time.Unix(1, 0)},
+		"until":   {Until: time.Unix(1, 0)},
+	} {
+		assert.True(t, f.Narrows(), name)
+	}
+}
+
 func TestParseLogTime(t *testing.T) {
 	now := time.Date(2026, 6, 11, 14, 0, 0, 0, time.UTC)
 

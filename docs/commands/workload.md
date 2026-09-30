@@ -268,7 +268,7 @@ dr workload logs [<workload-id>] [--dir <path>] [--limit N] [--level <level>] [-
 - `--grep <text>`: only lines containing the text, case-insensitive. Repeat it to require every term.
 - `--exclude <text>`: drop lines containing the text, case-insensitive. Repeatable.
 - `--trace-id <id>`, `--span-id <id>`: only the lines of one trace or span.
-- `--since <time>`, `--until <time>`: a time window. A time is RFC 3339 (`2026-06-11T14:04:15Z`), a date (`2026-06-11`, read as midnight UTC), or a duration back from now (`15m`, `2h30m`, `1d`, `1w`). With `--follow`, `--since` narrows the first batch and `--until` is refused, since a stream has no end.
+- `--since <time>`, `--until <time>`: a time window. A time is RFC 3339 (`2026-06-11T14:04:15Z`), a date (`2026-06-11`), or a duration back from now (`15m`, `2h30m`, `1d`, `1w`). A time without a zone is UTC, matching the printed timestamps. A date given to `--until` covers the whole of that day, so `--since 2026-06-11 --until 2026-06-11` is everything from the 11th. With `--follow`, `--since` narrows the first batch and `--until` is refused, since a stream has no end. When a filter leaves nothing, the command says `No logs matched the filters.` rather than `No logs found.`, so the note below about empty output does not apply.
 - `--follow`, `-f`: stream new lines as they arrive.
 - `--output-format <text|json>`: output format. Defaults to `text`. With `--follow`, JSON is emitted as one object per line (JSON Lines).
 

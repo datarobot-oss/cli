@@ -17,6 +17,7 @@ package logs
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -33,6 +34,38 @@ import (
 // followPollInterval is the default cadence at which --follow polls for new
 // log lines. Hidden behind --poll-interval for tuning.
 const followPollInterval = 2 * time.Second
+
+// renderOnce prints a single fetch and, on stderr, what an empty one means.
+//
+// An empty result under a filter is not "the workload has no logs", which is
+// what the plain wording (and the docs note it points at) would say; JSON
+// still gets its [] on stdout. An empty unfiltered answer is not a dead end
+// either: a container that never started wrote nothing, and a cluster
+// without log collection answers 200 with nothing for a healthy workload
+// too; the per-replica status details are where the reason lives. Both notes
+// go to stderr so stdout stays log lines only, and neither under JSON, where
+// stderr is kept clear for `2>&1 | jq .`.
+func renderOnce(stderr io.Writer, format outputformat.OutputFormat, ref idargs.Ref,
+	filter workload.LogFilter, entries []workload.WorkloadLogEntry,
+) error {
+	if len(entries) == 0 && filter.Narrows() && format != outputformat.OutputFormatJSON {
+		fmt.Fprintln(stderr, "No logs matched the filters.")
+
+		return nil
+	}
+
+	if err := workload.RenderWorkloadLogs(format, entries); err != nil {
+		return err
+	}
+
+	if len(entries) == 0 && format != outputformat.OutputFormatJSON {
+		fmt.Fprintf(stderr,
+			"Run 'dr workload diagnose %s' to see why the containers are not running; "+
+				"an empty log can also mean this cluster has no log collection.\n", ref.ID)
+	}
+
+	return nil
+}
 
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
@@ -61,7 +94,8 @@ Narrow further with --grep (lines containing the text, case-insensitive;
 repeat it to require every term), --exclude (drop lines containing the
 text; repeatable), --trace-id and --span-id, and a time window from --since
 to --until. A time is RFC 3339 (2026-06-11T14:04:15Z), a date, or a duration
-back from now: 15m, 2h30m, 1d, 1w. --limit bounds what is fetched, before
+back from now: 15m, 2h30m, 1d, 1w. A time without a zone is UTC, and a date
+given to --until covers the whole of that day. --limit bounds what is fetched, before
 --exclude and any second --grep term are applied, so a filtered result can
 be shorter than the limit.
 
@@ -126,26 +160,7 @@ Example:
 				return ref.Wrap(err)
 			}
 
-			if err := workload.RenderWorkloadLogs(outputFormat, entries); err != nil {
-				return err
-			}
-
-			// An empty answer is not a dead end. A container that never
-			// started wrote nothing, and a cluster without log collection
-			// answers 200 with nothing for a healthy workload too; the
-			// per-replica status details are where the reason lives. On
-			// stderr, beside the "No logs found." line, so stdout stays log
-			// lines only and a pipe is not polluted; not under JSON, where
-			// stderr is kept clear for `2>&1 | jq .`. Not under --level
-			// either: a healthy workload with no error lines is the usual
-			// answer there, and nothing about it needs diagnosing.
-			if len(entries) == 0 && level == "" && outputFormat != outputformat.OutputFormatJSON {
-				fmt.Fprintf(cmd.ErrOrStderr(),
-					"Run 'dr workload diagnose %s' to see why the containers are not running; "+
-						"an empty log can also mean this cluster has no log collection.\n", ref.ID)
-			}
-
-			return nil
+			return renderOnce(cmd.ErrOrStderr(), outputFormat, ref, filter, entries)
 		},
 	}
 
@@ -166,9 +181,9 @@ Example:
 	cmd.Flags().StringVar(&f.traceID, "trace-id", "", "Only lines from this trace.")
 	cmd.Flags().StringVar(&f.spanID, "span-id", "", "Only lines from this span.")
 	cmd.Flags().StringVar(&f.since, "since", "",
-		"Only lines from this time on: RFC 3339, a date, or a duration back from now (15m, 2h, 1d, 1w).")
+		"Only lines from this time on: RFC 3339, a date, or a duration back from now (15m, 2h, 1d, 1w). Times without a zone are UTC.")
 	cmd.Flags().StringVar(&f.until, "until", "",
-		"Only lines up to this time, in the same forms as --since. Not with --follow.")
+		"Only lines up to this time, in the same forms as --since; a date covers the whole day. Not with --follow.")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
@@ -228,10 +243,13 @@ func (f filterFlags) build(level string, follow bool, now time.Time) (workload.L
 // checkTerms refuses an empty search term: it matches every line, which is
 // never what was meant, and would quietly turn a filter into no filter.
 func (f filterFlags) checkTerms() error {
-	for flag, terms := range map[string][]string{"--grep": f.grep, "--exclude": f.exclude} {
-		for _, term := range terms {
+	for _, flag := range []struct {
+		name  string
+		terms []string
+	}{{"--grep", f.grep}, {"--exclude", f.exclude}} {
+		for _, term := range flag.terms {
 			if strings.TrimSpace(term) == "" {
-				return fmt.Errorf("%s: an empty search term matches every line; give it text", flag)
+				return fmt.Errorf("%s: an empty search term matches every line; give it text", flag.name)
 			}
 		}
 	}
@@ -253,7 +271,7 @@ func (f filterFlags) window(follow bool, now time.Time) (since, until time.Time,
 			return time.Time{}, time.Time{}, errors.New("--until cannot be combined with --follow: a follow has no end")
 		}
 
-		if until, err = workload.ParseLogTime(f.until, now); err != nil {
+		if until, err = workload.ParseLogUntil(f.until, now); err != nil {
 			return time.Time{}, time.Time{}, fmt.Errorf("--until: %w", err)
 		}
 	}
