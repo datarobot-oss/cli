@@ -15,6 +15,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -146,9 +147,26 @@ func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
 		},
 	}
 
-	final, err := Run(m)
-	if err != nil {
-		return err
+	return spinnerVerdict(Run(m))
+}
+
+// spinnerVerdict turns what Run handed back into the phase's answer. It is
+// the one read that decides whether an abandoned phase counts as a finished
+// one, so it lives apart from the terminal it needs, where a test can hold
+// every branch: the suite never has a TTY, and inside RunWithSpinnerNote the
+// whole of this was dead code to it (RAPTOR-19963).
+func spinnerVerdict(final tea.Model, runErr error) error {
+	if runErr != nil {
+		// Bubble Tea answers a SIGINT that reaches the process while it is
+		// drawing with an error of its own, distinct from the keystroke the
+		// wrapper catches. Both mean the user stopped waiting, and a caller
+		// checking for ErrInterrupted has to see them as one thing, or an
+		// external `kill -INT` skips the explanation the keystroke gets.
+		if errors.Is(runErr, tea.ErrInterrupted) {
+			return ErrInterrupted
+		}
+
+		return runErr
 	}
 
 	// Asked before the model is read, because an interrupted run quits with

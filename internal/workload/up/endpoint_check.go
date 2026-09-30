@@ -96,9 +96,13 @@ var checkEndpointFn = func(rawURL string) (int, error) {
 // judged for exactly that reason: a 404 at / is how a healthy API-only
 // framework answers, and only the person who wrote the app knows whether it
 // is fine.
-func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
+//
+// It reports whether the check was interrupted, and nothing else: the deploy
+// is not failed over it, but the caller has one irreversible step left and
+// must not take it after the user asked to stop.
+func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interrupted bool) {
 	if result.Endpoint == "" {
-		return
+		return false
 	}
 
 	authMode, endpointErr := endpointCheckAuthForURL(result.Endpoint)
@@ -107,7 +111,7 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 		report.say("    %s\n", tui.HintStyle.Render(
 			"The workload API returned an endpoint URL the CLI cannot GET."))
 
-		return
+		return false
 	}
 
 	var (
@@ -138,7 +142,7 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 		report.say("    %s\n", tui.HintStyle.Render(
 			"The workload is running; nothing here was cancelled. GET "+result.Endpoint+" to check it yourself."))
 
-		return
+		return true
 	}
 
 	if err != nil {
@@ -149,7 +153,7 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 		report.say("    %s\n", tui.HintStyle.Render(
 			"Check 'dr workload logs "+result.WorkloadID+"', then GET the endpoint again."))
 
-		return
+		return false
 	}
 
 	report.say("  %s\n", tui.HintStyle.Render(
@@ -166,6 +170,8 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 			"The deploy could not tell whether the previous version has stopped answering, because "+
 				unconfirmed+". The line above may describe it."))
 	}
+
+	return false
 }
 
 // endpointCheckAuthForURL keeps the credential-safety decision next to the

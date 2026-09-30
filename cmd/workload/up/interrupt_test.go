@@ -15,8 +15,10 @@
 package up
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/up"
@@ -41,7 +43,7 @@ func TestExplainInterrupt(t *testing.T) {
 			name:   "keystroke, workload known",
 			err:    tui.ErrInterrupted,
 			result: up.Result{WorkloadID: "wl-42"},
-			wants:  []string{"still rolling", "dr workload status wl-42"},
+			wants:  []string{"already submitted carries on", "dr workload status wl-42"},
 		},
 		{
 			name:   "signal, workload known",
@@ -50,7 +52,19 @@ func TestExplainInterrupt(t *testing.T) {
 			wants:  []string{"dr workload status wl-42"},
 		},
 		{
-			name: "interrupted before the workload had an id",
+			// A first deploy stopped mid-build: no workload exists yet, and
+			// the build is the thing still running. Pointing at a status
+			// command for a workload that does not exist would be wrong.
+			name:   "interrupted mid-build, before any workload",
+			err:    tui.ErrInterrupted,
+			result: up.Result{BuildID: "b-7"},
+			wants:  []string{"dr artifact build logs b-7"},
+			// The claim must not be specific to a rollout, since none was
+			// started.
+			unwanted: "rolling",
+		},
+		{
+			name: "interrupted before anything had an id",
 			err:  tui.ErrInterrupted,
 			// No id to name, so the bare command is the best that can be
 			// said; it must not print a dangling "status ".
@@ -83,6 +97,10 @@ func TestExplainInterrupt(t *testing.T) {
 				assert.Contains(t, got.Error(), want)
 			}
 
+			if tc.unwanted != "" {
+				assert.NotContains(t, got.Error(), tc.unwanted)
+			}
+
 			// The cause survives, so a caller can still tell an interrupt
 			// from anything else.
 			assert.ErrorIs(t, got, tc.err)
@@ -93,13 +111,26 @@ func TestExplainInterrupt(t *testing.T) {
 // The command has to hand the deploy the context it was given, or nothing
 // below can be interrupted at all: main.go's signal.NotifyContext has already
 // taken away the process's default death on SIGINT.
+//
+// Run through ExecuteContext with a context that is already cancelled, and
+// checked by that cancellation reaching the deploy: cobra fills in a
+// background context when none was given, so "not nil" would pass with
+// `Context: context.Background()` in the command and prove nothing.
 func TestUpPassesTheCommandContextToTheDeploy(t *testing.T) {
-	dir := t.TempDir()
-
 	seen := stubRun(t, up.Result{WorkloadID: "wl-1", Status: "running"}, nil)
 
-	_, _, err := runCmd(t, "--dir", dir, "--yes")
-	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetArgs([]string{"--dir", t.TempDir(), "--yes"})
+
+	require.NoError(t, cmd.ExecuteContext(ctx))
 
 	require.NotNil(t, seen.Context, "a deploy with no context cannot be stopped")
+	assert.ErrorIs(t, seen.Context.Err(), context.Canceled, "the deploy was handed some other context")
 }

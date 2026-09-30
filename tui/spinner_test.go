@@ -240,3 +240,77 @@ func TestSpinnerModel_UpdateReturnsSelf(t *testing.T) {
 
 	assert.True(t, ok)
 }
+
+// foreignModel is a model Run never produces: something that is neither a
+// wrapper nor the spinner. It stands in for a wrapper added without Unwrap.
+type foreignModel struct{}
+
+func (foreignModel) Init() tea.Cmd                       { return nil }
+func (foreignModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return foreignModel{}, nil }
+func (foreignModel) View() string                        { return "" }
+
+// The read that turned an abandoned deploy into a healthy one, held branch by
+// branch. Tests have no TTY, so RunWithSpinnerNote never reaches this in the
+// suite; swapping any of its returns for nil used to leave everything green
+// (RAPTOR-19963).
+func TestSpinnerVerdict(t *testing.T) {
+	failed := errors.New("the build failed")
+
+	for _, tc := range []struct {
+		name   string
+		final  tea.Model
+		runErr error
+		want   error
+		lost   bool
+	}{
+		{
+			name:  "ctrl-c: the wrapper says interrupted, whatever the model holds",
+			final: InterruptibleModel{Model: spinnerModel{err: nil}, interrupted: true},
+			want:  ErrInterrupted,
+		},
+		{
+			name:   "a SIGINT bubble tea caught itself is the same interrupt",
+			runErr: tea.ErrInterrupted,
+			want:   ErrInterrupted,
+		},
+		{
+			name:   "any other run error is handed back as it is",
+			runErr: failed,
+			want:   failed,
+		},
+		{
+			name:  "fn failed: its error is the verdict",
+			final: InterruptibleModel{Model: spinnerModel{err: failed}},
+			want:  failed,
+		},
+		{
+			name:  "fn finished cleanly",
+			final: InterruptibleModel{Model: spinnerModel{}},
+			want:  nil,
+		},
+		{
+			name:  "a wrapper that cannot be peeled is never read as success",
+			final: foreignModel{},
+			lost:  true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := spinnerVerdict(tc.final, tc.runErr)
+
+			if tc.lost {
+				require.Error(t, got)
+				assert.Contains(t, got.Error(), "lost behind")
+
+				return
+			}
+
+			if tc.want == nil {
+				assert.NoError(t, got)
+
+				return
+			}
+
+			assert.ErrorIs(t, got, tc.want)
+		})
+	}
+}

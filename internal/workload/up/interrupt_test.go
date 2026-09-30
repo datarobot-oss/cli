@@ -163,45 +163,77 @@ func TestHeld_SurvivesAWriterThatOutlivesTheReader(t *testing.T) {
 // loop does — pollWorkload hands back its last successful read alongside the
 // cancellation. A stub returning nil there would make this pass for a reason
 // the production path does not have.
+//
+// Both ways of stopping are held: the signal a piped run gets, which arrives
+// as the context's cancellation, and the keystroke the terminal UI catches,
+// which arrives as tui.ErrInterrupted with the context still live. Checking
+// only the first would let `!Interrupted(err)` become a bare context check
+// and quietly report the outgoing version for the second.
 func TestAwaitRunning_AnInterruptedWaitIsNotASuccess(t *testing.T) {
-	fixedClock(t, time.Second)
+	for _, tc := range []struct {
+		name      string
+		cancelled bool
+		fail      func(ctx context.Context) error
+		want      error
+	}{
+		{
+			name:      "signal: the context is cancelled",
+			cancelled: true,
+			fail:      abandonedLikeThePollLoop,
+			want:      context.Canceled,
+		},
+		{
+			name: "keystroke: the spinner was quit, the context is still live",
+			fail: func(context.Context) error { return tui.ErrInterrupted },
+			want: tui.ErrInterrupted,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixedClock(t, time.Second)
 
-	// The rollout mid-flight: the workload still reports running, on the
-	// artifact being replaced, at the endpoint the old version answers.
-	midRoll := &workload.Workload{
-		ID:         "wl-1",
-		Status:     workload.WorkloadStatusRunning,
-		ArtifactID: "art-outgoing",
-		Endpoint:   "https://example.invalid/old",
+			// The rollout mid-flight: the workload still reports running, on
+			// the artifact being replaced, at the endpoint the old version
+			// answers.
+			midRoll := &workload.Workload{
+				ID:         "wl-1",
+				Status:     workload.WorkloadStatusRunning,
+				ArtifactID: "art-outgoing",
+				Endpoint:   "https://example.invalid/old",
+			}
+
+			var out bytes.Buffer
+
+			swap(t, &waitWorkloadFn, func(ctx context.Context, _ string, _ workload.Serving,
+				_, _ time.Duration, _ func(*workload.Workload),
+			) (*workload.Workload, error) {
+				return midRoll, tc.fail(ctx)
+			})
+
+			ctx, cancel := context.WithCancel(t.Context())
+			if tc.cancelled {
+				cancel()
+			} else {
+				defer cancel()
+			}
+
+			report := newReporter(&out, false)
+			opts := Options{Context: ctx, Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
+
+			result, err := awaitRunning("wl-1", workload.Serving{ArtifactID: "art-new"},
+				Result{WorkloadID: "wl-1"}, opts, report)
+
+			require.ErrorIs(t, err, tc.want, "an abandoned wait must never come back nil")
+
+			// None of the outgoing version's details are recorded. Reporting
+			// them would put the artifact being rolled off, under a status
+			// that reads as arrived, into the summary and the JSON envelope
+			// of a deploy nobody waited for.
+			assert.Empty(t, result.Status)
+			assert.Empty(t, result.Endpoint)
+			assert.NotEqual(t, "art-outgoing", result.ArtifactID)
+			assert.NotContains(t, out.String(), "✓")
+		})
 	}
-
-	var out bytes.Buffer
-
-	swap(t, &waitWorkloadFn, func(ctx context.Context, _ string, _ workload.Serving,
-		_, _ time.Duration, _ func(*workload.Workload),
-	) (*workload.Workload, error) {
-		return midRoll, abandonedLikeThePollLoop(ctx)
-	})
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	report := newReporter(&out, false)
-	opts := Options{Context: ctx, Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
-
-	result, err := awaitRunning("wl-1", workload.Serving{ArtifactID: "art-new"},
-		Result{WorkloadID: "wl-1"}, opts, report)
-
-	require.ErrorIs(t, err, context.Canceled, "an abandoned wait must never come back nil")
-
-	// None of the outgoing version's details are recorded. Reporting them
-	// would put the artifact being rolled off, under a status that reads as
-	// arrived, into the summary and the JSON envelope of a deploy nobody
-	// waited for.
-	assert.Empty(t, result.Status)
-	assert.Empty(t, result.Endpoint)
-	assert.NotEqual(t, "art-outgoing", result.ArtifactID)
-	assert.NotContains(t, out.String(), "✓")
 }
 
 // A timeout is the other half of the same decision: that wait ran the whole
@@ -248,4 +280,118 @@ func TestOptionsCtx_DefaultsToBackground(t *testing.T) {
 	defer cancel()
 
 	assert.Equal(t, ctx, Options{Context: ctx}.ctx())
+}
+
+// Ctrl-C during the endpoint check lands after the rollout finished, so the
+// deploy is not failed over it. But --lock is the one irreversible step left,
+// and taking it after the user asked the run to stop is the opposite of what
+// the keystroke meant: the lock is withheld, said out loud, and the summary
+// carries locked=false.
+func TestFinishSettle_AnInterruptedEndpointCheckWithholdsTheLock(t *testing.T) {
+	var locked int
+
+	swap(t, &lockArtifactFn, func(string) (*workload.Artifact, error) {
+		locked++
+
+		return &workload.Artifact{ID: "art-1"}, nil
+	})
+
+	var out bytes.Buffer
+
+	report := newReporter(&out, false)
+	running := Result{WorkloadID: "wl-1", ArtifactID: "art-1", Status: workload.WorkloadStatusRunning}
+
+	result, err := finishSettle(running, true, Options{Lock: true, Stderr: &out}, report)
+	require.NoError(t, err, "the rollout finished; the deploy is a success")
+	assert.False(t, result.Locked)
+	assert.Zero(t, locked, "the irreversible step was taken after the user asked to stop")
+	assert.Contains(t, out.String(), "--lock skipped: interrupted")
+	assert.Contains(t, out.String(), "dr workload up --lock")
+
+	// The other half: an uninterrupted check locks as asked.
+	result, err = finishSettle(running, false, Options{Lock: true, Stderr: &out}, report)
+	require.NoError(t, err)
+	assert.True(t, result.Locked)
+	assert.Equal(t, 1, locked)
+}
+
+// The three waits besides awaitRunning that a keystroke or a signal can end.
+// Each hands its poll the phase's context and returns the interrupt rather
+// than swallowing it; awaitSteady matters most, because a nil there lets the
+// deploy carry on into planning after Ctrl-C. A stub that ignored the context
+// it was given would pass with context.Background() wired in, so each one
+// derives its error from the context it actually received.
+func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
+	fixedClock(t, time.Second)
+
+	promoting := &workload.Replacement{ID: "rep-1", Status: "promoting"}
+
+	stubReplacement := func(t *testing.T) {
+		t.Helper()
+
+		swap(t, &waitReplacementFn, func(ctx context.Context, _ string, _ *workload.Replacement,
+			_, _ time.Duration, _ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return promoting, fmt.Errorf("stopped waiting for replacement rep-1: %w", ctx.Err())
+		})
+	}
+
+	for _, tc := range []struct {
+		name string
+		stub func(t *testing.T)
+		wait func(opts Options, report *reporter) error
+	}{
+		{
+			name: "awaitSteady",
+			stub: func(t *testing.T) {
+				t.Helper()
+
+				swap(t, &waitSteadyFn, func(ctx context.Context, _ string,
+					_, _ time.Duration, _ func(*workload.Workload),
+				) (*workload.Workload, error) {
+					return &workload.Workload{ID: "wl-1", Status: workload.WorkloadStatusStopping},
+						abandonedLikeThePollLoop(ctx)
+				})
+			},
+			wait: func(opts Options, report *reporter) error {
+				live := Live{State: StateSettling, Status: workload.WorkloadStatusStopping}
+				live.WorkloadID = "wl-1"
+
+				_, err := awaitSteady(live, opts)
+
+				return err
+			},
+		},
+		{
+			name: "awaitRollout",
+			stub: stubReplacement,
+			wait: func(opts Options, report *reporter) error {
+				return awaitRollout("wl-1", promoting, opts, report)
+			},
+		},
+		{
+			name: "awaitResize",
+			stub: stubReplacement,
+			wait: func(opts Options, report *reporter) error {
+				return awaitResize("wl-1", promoting, opts, report)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.stub(t)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+
+			var out bytes.Buffer
+
+			opts := Options{Context: ctx, Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
+
+			err := tc.wait(opts, newReporter(&out, false))
+
+			require.ErrorIs(t, err, context.Canceled, "an abandoned wait must never come back nil")
+			assert.True(t, Interrupted(err))
+			assert.NotContains(t, out.String(), "✓", "an interrupted phase must not be check-marked")
+		})
+	}
 }

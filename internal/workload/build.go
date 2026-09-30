@@ -481,9 +481,14 @@ func WaitForBuild(
 ) (*Build, error) {
 	deadline := time.Now().Add(timeout)
 
+	// The last successful read travels with a cancellation, as it does from
+	// every other waiter: a caller saying where the build got to has nothing
+	// else to say it from, and buildImage reads a nil build as "never ran".
+	var last *Build
+
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, abandonedBuild(buildID, err)
+			return last, abandonedBuild(buildID, err)
 		}
 
 		// The reads below carry no context; see abandoned in workload.go for
@@ -492,6 +497,8 @@ func WaitForBuild(
 		if err != nil {
 			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
 		}
+
+		last = build
 
 		if onTick != nil {
 			onTick(build)

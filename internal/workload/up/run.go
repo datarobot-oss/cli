@@ -1454,9 +1454,31 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 	// One GET against the endpoint, reported and never fatal. Running means
 	// the container started; with no probe written by default, whether
 	// anything answers is a question nobody has asked yet.
-	verifyEndpoint(result, unconfirmed, report)
+	interrupted := verifyEndpoint(result, unconfirmed, report)
 
+	return finishSettle(result, interrupted, opts, report)
+}
+
+// finishSettle is the last step of a settle: the lock, when one was asked
+// for. It is its own function so the one decision in it can be tested without
+// a terminal to interrupt.
+//
+// An interrupt during the endpoint check does not fail the deploy — the
+// rollout finished, and the workload is serving — but it does withhold the
+// lock. Locking is the one irreversible step of the run, and taking it after
+// the user asked the run to stop is the opposite of what the keystroke meant.
+// The deploy stays a success, the run says the lock was not taken, and the
+// summary's locked=false carries the same fact to anything reading JSON.
+func finishSettle(result Result, interrupted bool, opts Options, report *reporter) (Result, error) {
 	if !opts.Lock {
+		return result, nil
+	}
+
+	if interrupted {
+		report.say("  %s\n", tui.WarnStyle.Render("⚠ --lock skipped: interrupted."))
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The artifact is running and unlocked. Run 'dr workload up --lock' to lock it."))
+
 		return result, nil
 	}
 

@@ -384,23 +384,36 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 
 // explainInterrupt turns "interrupted" into something worth reading.
 //
-// Stopping the wait does not stop the deploy: the platform was asked to roll
-// and goes on rolling whether or not anybody is watching, so the one thing the
-// user needs to know is that the thing they just abandoned is still happening
-// and where to look for how it ended. Saying only "interrupted" would read as
-// though pressing Ctrl-C had called it off.
+// Stopping the wait does not stop the deploy: whatever the platform was asked
+// to do before the keystroke — build, create, start, roll — goes on whether or
+// not anybody is watching, so the one thing the user needs to know is that
+// what they abandoned may still be happening and where to look for how it
+// ended. Saying only "interrupted" would read as though pressing Ctrl-C had
+// called it off.
+//
+// "Anything already submitted" rather than "this rollout", because the
+// interrupt can land before anything was: during the settle before planning,
+// or mid-build on a first deploy. The result cannot say which — a roll records
+// its action after the wait, not after the POST — so the sentence is true of
+// every case rather than specific to the common one, and the wrapped error
+// says the rest. Where to look follows the ids in hand: the workload when
+// there is one, the build when only a build exists yet.
 func explainInterrupt(runErr error, result up.Result) error {
 	if !up.Interrupted(runErr) {
 		return runErr
 	}
 
 	where := "dr workload status"
-	if result.WorkloadID != "" {
+
+	switch {
+	case result.WorkloadID != "":
 		where += " " + result.WorkloadID
+	case result.BuildID != "":
+		where = "dr artifact build logs " + result.BuildID
 	}
 
-	return fmt.Errorf("stopped waiting; the platform is still rolling this out. Check '%s' for where it ended up: %w",
-		where, runErr)
+	return fmt.Errorf("stopped waiting; anything already submitted carries on at the platform. "+
+		"Check '%s' for where it got to: %w", where, runErr)
 }
 
 // resolveDir defaults --dir to where the shell is standing.

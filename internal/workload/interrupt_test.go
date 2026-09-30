@@ -112,13 +112,15 @@ func TestWaitForWorkloadStopsPollingWhenTheContextEndsMidWait(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 
-	// Cancelled from the third poll, standing in for the keystroke.
-	wl, err := WaitForWorkload(ctx, "wl-1", Serving{}, time.Millisecond, time.Minute,
-		func(*Workload) {
-			if atomic.LoadInt32(&polls) >= 3 {
-				cancel()
-			}
-		})
+	// Cancelled from inside the first poll, standing in for the keystroke,
+	// with an interval no test can sit through. What this proves is that the
+	// sleep between polls is the thing that listens: a plain time.Sleep in its
+	// place would hold the wait for an hour, and the suite's timeout is the
+	// failure report. The 20ms "did it keep polling" check this replaces could
+	// never fail — pollWorkload is synchronous, so the count was fixed the
+	// moment the wait returned.
+	wl, err := WaitForWorkload(ctx, "wl-1", Serving{}, time.Hour, 2*time.Hour,
+		func(*Workload) { cancel() })
 
 	require.ErrorIs(t, err, context.Canceled)
 
@@ -127,14 +129,8 @@ func TestWaitForWorkloadStopsPollingWhenTheContextEndsMidWait(t *testing.T) {
 	require.NotNil(t, wl)
 	assert.Equal(t, WorkloadStatusSubmitted, wl.Status)
 
-	settled := atomic.LoadInt32(&polls)
-
-	// Nothing keeps polling after the wait returned. A minute's timeout at a
-	// millisecond's interval would be tens of thousands of requests if the
-	// loop had carried on.
-	time.Sleep(20 * time.Millisecond)
-	assert.Equal(t, settled, atomic.LoadInt32(&polls),
-		"the wait went on calling the API after it returned")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&polls),
+		"the cancellation was noticed only after another poll")
 }
 
 func wantsBuild(r *http.Request) bool {
