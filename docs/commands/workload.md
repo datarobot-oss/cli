@@ -48,6 +48,7 @@ Starting from source code rather than from a spec you already have? The [spec re
 | `dr workload delete`   | `DELETE /api/v2/workloads/{id}/`          | Delete a workload.                             |
 | `dr workload start`    | `POST   /api/v2/workloads/{id}/start`     | Start a stopped workload.                      |
 | `dr workload stop`     | `POST   /api/v2/workloads/{id}/stop`      | Stop a running workload.                       |
+| `dr workload settings` | `GET/PATCH /api/v2/workloads/{id}/settings/` | Show or change replicas, autoscaling and resources. |
 | `dr workload status`   | `GET    /api/v2/workloads/{id}/`          | Print the bare status value.                   |
 | `dr workload diagnose` | `GET    /api/v2/workloads/{id}/protons/…` | Explain why a workload is in its state.        |
 | `dr workload endpoint` | `GET    /api/v2/workloads/{id}/`          | Print the endpoint URL.                        |
@@ -207,6 +208,38 @@ dr workload stop  [<workload-id>] [--dir <path>] [--yes] [--output-format text|j
 ```
 
 A workload whose id is specified in the manifest rather than on the command line is confirmed first; `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) skips the question. A typed id is never questioned.
+
+### `settings`
+
+Show or change how much a workload runs with: replicas, autoscaling, resource bundles, and the CPU and memory of each container. This is the same runtime that `dr workload up` reconciles from `.datarobot.yaml`, so it is the place to look at, or resize, a workload that no manifest describes.
+
+```bash
+dr workload settings [<workload-id>] [--dir <path>] [--output-format text|json]
+dr workload settings [<workload-id>] --replicas <N> [--group <name>] [--yes] [--wait]
+dr workload settings [<workload-id>] --spec-file <path> [--yes] [--wait]
+```
+
+With no change flags the current settings are printed, one row per container, and the replacement in flight when a change is still being rolled out:
+
+```
+╭─────────┬──────────┬──────────────────────────────────┬────────────┬───────────┬─────┬────────────┬─────╮
+│ GROUP   │ REPLICAS │ AUTOSCALING                      │ BUNDLE     │ CONTAINER │ CPU │ MEMORY     │ GPU │
+├─────────┼──────────┼──────────────────────────────────┼────────────┼───────────┼─────┼────────────┼─────┤
+│ default │ auto     │ 0-3 on httpRequestsConcurrency=2 │ cpu.xlarge │ primary   │ 1   │ 2147483648 │ -   │
+╰─────────┴──────────┴──────────────────────────────────┴────────────┴───────────┴─────┴────────────┴─────╯
+```
+
+Memory is spelled the way a manifest spells it: the largest 1000-based unit that divides it exactly, or the bare byte count when none does (2 GiB above), since a binary size is never rounded down to a decimal one.
+
+**Flags:**
+
+- `--replicas <N>`: scale one container group to `N` replicas. A workload with one group needs no `--group`; with several, name it. A group that autoscales is refused, because its count belongs to the autoscaler: change the policy with `--spec-file` instead.
+- `--spec-file <path>`: apply a whole settings body, JSON or YAML, either `{"runtime": ...}` or the runtime block itself, which is what `--output-format json` prints and what a manifest carries under `runtime`.
+- `--yes`, `-y`: skip the confirmation. The rolling restart is still announced on stderr. `DATAROBOT_CLI_NON_INTERACTIVE=1` also skips it.
+- `--wait`: follow the replacement to its end, wait for the workload to be running on the new settings, and print them. A replacement that ends `failed` leaves the workload on the settings it had, and the command says so and exits non-zero.
+- `--output-format <text|json>`: output format. Defaults to `text`. JSON is one `{"settings": …}` document with the runtime in the platform's own field names, the replacement, and for a change the status `requested` or `applied`.
+
+A change is a rolling replacement: the platform brings up containers with the new settings and retires the old ones, and the endpoint keeps answering throughout. A change is refused while another replacement is in flight. Applied to a stopped workload, the platform starts it. Without `--wait` the command returns once the change is accepted and names the replacement; follow it with `dr workload status`.
 
 ### `status`
 
