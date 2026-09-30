@@ -429,11 +429,17 @@ func TestRun_NoManifestWithoutATerminalRunsTheSetupHeadlessly(t *testing.T) {
 
 			assert.True(t, opts.NonInteractive,
 				"a run with nobody watching must not leave the wizard able to prompt")
+			assert.False(t, opts.DryRun, "a deploy needs the file on disk")
 			assert.Equal(t, dir, opts.Dir)
 
 			writeManifest(t, dir, unboundImageManifest)
 
-			return wizard.Result{Path: manifest.Path(opts.Dir)}, nil
+			return wizard.Result{
+				Path:    manifest.Path(opts.Dir),
+				Action:  wizard.ActionCreated,
+				Content: []byte(unboundImageManifest),
+				Draft:   manifest.Draft{EnvVars: []manifest.EnvVar{{Name: "LOG_LEVEL", Value: "debug"}}},
+			}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
 		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
@@ -447,6 +453,16 @@ func TestRun_NoManifestWithoutATerminalRunsTheSetupHeadlessly(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, asked, "the setup has to run; refusing is what left the agent stuck")
 	assert.Equal(t, "wl-new", result.WorkloadID)
+
+	// Nobody saw the wizard, so the run is the only place its answers are
+	// shown, and the file has to be named because it has to be committed: a
+	// CI job that never commits it would create a workload per run.
+	out := stderr.String()
+	assert.Contains(t, out, "✓ Wrote "+manifest.Path(dir))
+	assert.Contains(t, out, "commit it")
+	assert.Contains(t, out, unboundImageManifest, "a headless run prints the file it wrote")
+	assert.Contains(t, out, "Values written in the clear: LOG_LEVEL",
+		"the same warning `dr workload config` gives for the same file")
 }
 
 // The rule the refusal was really protecting: nothing is deployed from a
@@ -471,32 +487,58 @@ func TestRun_NoManifestAndNothingToInferIsStillRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "dr workload config", "and the flags are named as that command's")
 }
 
-// A preview must not write the file it is previewing, so --dry-run is the one
-// non-interactive path that still refuses — and it names both commands,
-// because one of them is the step this run just declined to take.
-func TestRun_DryRunWithNoManifestWritesNothingAndNamesBothCommands(t *testing.T) {
-	dir := t.TempDir()
+// A preview must not write the file it is previewing, and it must not refuse
+// either: looking before deploying is the natural first move on a fresh
+// project, for an agent above all. The wizard renders without writing, and
+// the plan is computed from what it rendered. On a terminal as well as off
+// one — the interactive wizard used to write the manifest during a dry run.
+func TestRun_DryRunWithNoManifestPreviewsTheFileAndThePlan(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		nonInteractive bool
+	}{
+		{name: "headless", nonInteractive: true},
+		{name: "on a terminal", nonInteractive: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
 
-	install(t, fakes{
-		wizard: func(wizard.Options) (wizard.Result, error) {
-			t.Fatal("a dry run must not write a manifest")
+			install(t, fakes{
+				wizard: func(opts wizard.Options) (wizard.Result, error) {
+					assert.True(t, opts.DryRun, "the wizard must be told not to write")
+					assert.Equal(t, tc.nonInteractive, opts.NonInteractive)
 
-			return wizard.Result{}, nil
-		},
-	})
+					// Rendered, not written: what the real wizard does under DryRun.
+					return wizard.Result{
+						Path:    manifest.Path(opts.Dir),
+						Action:  wizard.ActionPlanned,
+						Content: []byte(unboundImageManifest),
+					}, nil
+				},
+				create: func(any) (*workload.Workload, error) {
+					t.Fatal("a dry run must not create anything")
 
-	var stderr bytes.Buffer
+					return nil, nil
+				},
+			})
 
-	_, err := Run(t.Context(), Options{Dir: dir, NonInteractive: true, DryRun: true, Stderr: &stderr})
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNoManifest)
+			var stderr bytes.Buffer
 
-	assert.Contains(t, err.Error(), "dr workload config --yes")
-	assert.Contains(t, err.Error(), "dr workload up --yes")
+			result, err := Run(t.Context(), Options{Dir: dir, NonInteractive: tc.nonInteractive, DryRun: true, Stderr: &stderr})
+			require.NoError(t, err)
+			assert.Equal(t, ActionCreated, result.Action, "the plan is the one a real run would carry out")
+			assert.True(t, result.Plan.Creates)
 
-	entries, readErr := os.ReadDir(dir)
-	require.NoError(t, readErr)
-	assert.Empty(t, entries, "a dry run left a file behind")
+			out := stderr.String()
+			assert.Contains(t, out, "Dry run: "+manifest.Path(dir)+" was not written")
+			assert.Contains(t, out, unboundImageManifest, "the file it would write is the whole of the preview")
+			assert.Contains(t, out, "+ workload", "followed by what it would then do")
+
+			entries, readErr := os.ReadDir(dir)
+			require.NoError(t, readErr)
+			assert.Empty(t, entries, "a dry run left a file behind")
+		})
+	}
 }
 
 // TestRun_NoManifestOnATerminalRunsTheWizard: setup and the first deploy are

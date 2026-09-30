@@ -75,8 +75,9 @@ type Options struct {
 	// upward from here.
 	Dir string
 
-	// NonInteractive forbids prompting. With no manifest it turns the setup
-	// wizard into an error naming the command that writes one.
+	// NonInteractive forbids prompting. With no manifest the setup answers
+	// itself from the project, the way `dr workload config --yes` does, and
+	// writes the file before the deploy reads it.
 	NonInteractive bool
 
 	// DryRun stops after the plan.
@@ -536,10 +537,21 @@ func noteUnusedForce(plan Plan, opts Options) {
 		"  --force-build had no effect: this manifest does not build its image, so there is nothing to rebuild.\n")
 }
 
-// load finds the manifest, running the setup wizard when there is none and a
-// person is there to answer it. In CI there is nobody, so a missing manifest
-// is an error that names the command which writes one: deploying by guessing
-// is the one thing this command must never do.
+// load finds the manifest, running the setup wizard when there is none: the
+// screens on a terminal, the same answers taken from the project without
+// one. Either way the file is written before the deploy reads it, so the
+// choices the run made are on disk to read and to commit.
+//
+// A missing manifest used to be an error without a terminal, on the rule
+// that this command never deploys by guessing. The refusal was never
+// preventing a guess — `dr workload config --yes` makes the identical one,
+// from ./Dockerfile and its EXPOSE — it only required that the guess be made
+// by the other command, and the cost was a dead end: the error named a
+// command whose own help says it opens a wizard, so an agent asked for a
+// human and stopped (RAPTOR-19537). What keeps the rule honest is the
+// committed file, which is as true here as it is there, and the report below
+// that says the file was written: nobody commits a file they were not told
+// about, and a CI job that never commits it would create a workload per run.
 func load(dir string, opts Options) (Loaded, error) {
 	loaded, err := Load(dir)
 	if err == nil {
@@ -550,29 +562,16 @@ func load(dir string, opts Options) (Loaded, error) {
 		return loaded, err
 	}
 
-	// A preview must not write the file it is previewing, so this is the one
-	// non-interactive path that still refuses. It names both halves of the
-	// recipe, because the command it used to name opens a wizard by default
-	// and an agent reading "run dr workload config" met exactly that.
-	if opts.NonInteractive && opts.DryRun {
-		return Loaded{}, fmt.Errorf(
-			"%w. Run 'dr workload config --yes%s' to create one, then 'dr workload up --yes%s'",
-			err, manifest.DirFlag(dir), manifest.DirFlag(dir))
-	}
-
 	// Remedy for the same reason the deploy path sets it: nothing setup prints
 	// today names a flag, but the fallback is `dr workload config`, and a
 	// default that is wrong for this caller is one nobody will notice going
 	// wrong.
 	//
-	// Non-interactive runs go through the same wizard rather than being
-	// refused. The refusal was never preventing a guess — `dr workload config
-	// --yes` makes the identical one, from ./Dockerfile and its EXPOSE — it
-	// only required that the guess be made by the other command, and the cost
-	// was a dead end: the error named a command whose own help says it opens
-	// a wizard, so an agent asked for a human and stopped (RAPTOR-19537).
-	// What keeps "never deploy by guessing" honest is that the guess is
-	// written to a committed file first, which is as true here as it is there.
+	// DryRun travels: a preview must not write the file it is previewing, and
+	// the wizard already knows how to render one without writing it. The plan
+	// is then computed from those bytes, so a dry run on a fresh project shows
+	// the file a real run would write and what it would do next, which is the
+	// natural first move for anyone looking before they deploy.
 	//
 	// A project the wizard cannot read still refuses, in its own words: with
 	// no Dockerfile it cannot infer an image source and says which flags
@@ -581,11 +580,18 @@ func load(dir string, opts Options) (Loaded, error) {
 	setup, err := runWizardFn(wizard.Options{
 		Dir:            dir,
 		NonInteractive: opts.NonInteractive,
+		DryRun:         opts.DryRun,
 		Remedy:         "dr workload up" + manifest.DirFlag(dir),
 		Stderr:         opts.Stderr,
 	})
 	if err != nil {
 		return Loaded{}, setupRefused(err, opts.NonInteractive, dir)
+	}
+
+	reportSetup(setup, opts)
+
+	if opts.DryRun {
+		return LoadRendered(setup.Content, setup.Path)
 	}
 
 	// The wizard's directory question may have moved the project, and the
@@ -596,6 +602,41 @@ func load(dir string, opts Options) (Loaded, error) {
 	}
 
 	return Load(dir)
+}
+
+// reportSetup says what setup just did to the project, because nothing else
+// in this run will: the deploy reports the workload, and the file it read on
+// the way is not part of that story.
+//
+// The path is always named, since the file has to be committed for the next
+// deploy to find the workload this one creates. The contents are printed only
+// when nobody saw them: a headless run answered every question itself, and
+// this is the one place its answers are shown; on a terminal the person just
+// walked through the screens. A dry run prints them either way, because the
+// file is the whole of what it is previewing. Literals get the same warning
+// `dr workload config` gives, for the same file.
+func reportSetup(setup wizard.Result, opts Options) {
+	if opts.Stderr == nil {
+		return
+	}
+
+	short := wizard.ShortPath(setup.Path)
+
+	// The plan that follows opens with a blank line of its own.
+	switch {
+	case opts.DryRun:
+		fmt.Fprintf(opts.Stderr, "Dry run: %s was not written. A real run writes it first, then deploys:\n\n%s",
+			short, setup.Content)
+
+		return
+	case opts.NonInteractive:
+		fmt.Fprintf(opts.Stderr, "✓ Wrote %s from the project; commit it, every later deploy reads it.\n\n%s",
+			short, setup.Content)
+	default:
+		fmt.Fprintf(opts.Stderr, "✓ Wrote %s; commit it, every later deploy reads it.\n", short)
+	}
+
+	wizard.WarnLiterals(opts.Stderr, setup.Draft.EnvVars)
 }
 
 // setupRefused says which command the flags in a headless setup failure

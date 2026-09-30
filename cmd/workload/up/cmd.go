@@ -194,13 +194,21 @@ next run puts it back, and says so.
 With no manifest, this runs the same setup 'dr workload config' runs and
 continues straight into the deploy: the wizard on a terminal, and the same
 answers taken from the project without one. Either way the file is written
-before anything is deployed, so what was inferred is on disk to read and to
-commit. A project it cannot read — no Dockerfile, so no image source to infer
-— is refused, naming the flags that settle it.
+before anything is deployed and the run says so, with the contents when nobody
+saw them chosen: commit it, because every later deploy reads it to find the
+workload this one created. The answers come from the project: the Dockerfile
+and its EXPOSE for the image, and .env for the variables, where a value that
+looks secret is stored as a credential on the tenant and referenced from the
+file, one that looks like a local convenience is left out, and the rest are
+written in the clear. A project it cannot read — no Dockerfile, so no image
+source to infer — is refused, naming the flags that settle it. --dry-run on
+such a project prints the file it would write and the plan it would then carry
+out, and writes nothing.
 
 Non-interactive:
 
   dr workload up --yes                      deploy, asking nothing
+  dr workload up --yes --dry-run            show the file and the plan first
   dr workload config --yes && dr workload up --yes
                                             the same, in two steps
 
@@ -209,11 +217,11 @@ is set, when --output-format json is used, or when stdin is not a terminal. That
 covers CI and anything driving this command programmatically: no flag is needed
 to make it safe to run unattended, and a fresh project needs no second command.
 
-One question outlives all but two of those. Rolling a workload whose live
-version is locked asks for its name to be typed back, and only --yes and the
-absence of a terminal answer it in advance: --output-format json says how to
-print stdout, not that production may be replaced without a word, and on a
-terminal somebody is still there to be asked.
+One question outlives one of those. Rolling a workload whose live version is
+locked asks for its name to be typed back; --yes, DATAROBOT_CLI_NON_INTERACTIVE
+and the absence of a terminal each answer it in advance, but --output-format
+json does not: it says how to print stdout, not that production may be
+replaced without a word, and on a terminal somebody is still there to be asked.
 
 A manifest that names a published image deploys in one call. One that asks the
 platform to build creates an artifact, pushes the working tree to it and waits
@@ -292,9 +300,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
 		"Run unattended: nothing is prompted for, including the typed confirmation that rolling a locked "+
 			"version asks for. With no manifest the setup answers itself from the project and writes the "+
-			"file before deploying. DATAROBOT_CLI_NON_INTERACTIVE=true is the same flag by another name; "+
-			"--output-format json and a non-terminal stdin also suppress the setup, but only this flag and "+
-			"the absence of a terminal answer the locked-roll question.")
+			"file before deploying. DATAROBOT_CLI_NON_INTERACTIVE=true is the same flag by another name. "+
+			"--output-format json and a non-terminal stdin also suppress the setup, but json alone does "+
+			"not answer the locked-roll question on a terminal.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
@@ -484,23 +492,16 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 
 // rollConfirm is how a locked production roll gets its answer, and nil when
 // there is nobody to ask or the answer is already in. --yes is that answer,
-// and a run with no terminal has nobody to give one.
-//
-// Deliberately not keyed on --output json. That flag says how to format
-// stdout; it is not consent, and folding it in here would mean
-// `dr workload up --output json` on a terminal rolls production without a
-// word. The question and its answer never touch stdout, so a run that asks
-// still emits exactly one document.
-// rollConfirm returns the confirmer for rolling a locked live version, and nil
-// when there is nobody to ask.
+// DATAROBOT_CLI_NON_INTERACTIVE is the same answer by another name, and a run
+// with no terminal has nobody to give one.
 //
 // yes rather than the run's wider non-interactive signal, deliberately.
 // `--output-format json` also suppresses the wizard, but it says how to format
 // stdout rather than that production may be rolled without a word, and on a
 // terminal somebody is still standing there; the question survives for them.
-// It is the same line `dr workload delete` draws for
-// DATAROBOT_CLI_NON_INTERACTIVE, and the reason the help below names json as a
-// signal for the setup while saying the locked-roll question outlives it.
+// The question and its answer never touch stdout, so a run that asks still
+// emits exactly one document. This is the reason the help above names json as
+// a signal for the setup while saying the locked-roll question outlives it.
 func rollConfirm(cmd *cobra.Command, yes bool, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	if yes || !isStdinTerminalFn() {
 		return nil

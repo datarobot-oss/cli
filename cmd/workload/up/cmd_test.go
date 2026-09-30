@@ -1023,11 +1023,17 @@ func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
 		name     string
 		args     []string
 		terminal bool
+		envVar   bool
 	}{
 		{name: "no terminal, no flag", args: nil},
 		{name: "--yes on a terminal", args: []string{"--yes"}, terminal: true},
 		{name: "--yes with no terminal", args: []string{"--yes"}},
 		{name: "json output with no terminal", args: []string{"--output-format", "json"}},
+
+		// The variable is --yes by another name, which the help says and this
+		// pins: a pipeline that sets it once, on a runner that happens to
+		// allocate a terminal, must not block on a question nobody will see.
+		{name: "DATAROBOT_CLI_NON_INTERACTIVE on a terminal", envVar: true, terminal: true},
 
 		// Deliberately absent: JSON *on a terminal*. That suppresses the
 		// wizard but not the locked-roll question, because somebody is still
@@ -1035,6 +1041,10 @@ func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
 		// which holds the other half of that distinction.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.envVar {
+				t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "true")
+			}
+
 			prev := isStdinTerminalFn
 			isStdinTerminalFn = func() bool { return tc.terminal }
 

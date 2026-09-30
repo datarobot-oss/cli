@@ -321,10 +321,18 @@ dr workload up --dry-run  # plan and stop
 
 ### CI, scripts, and agents
 
-**`dr workload up --yes` asks nothing, including on a project that has never deployed.** With no manifest it answers the setup from the project — the `Dockerfile` and its `EXPOSE` — writes `.datarobot.yaml`, and deploys. The file is written before anything is deployed, so what was inferred is on disk to read and to commit; nothing is deployed from a guess that leaves no trace.
+**`dr workload up --yes` asks nothing, including on a project that has never deployed.** With no manifest it answers the setup from the project, writes `.datarobot.yaml`, prints the path and the contents, and deploys. The file is written before anything is deployed, so what was inferred is on disk to read and to commit; nothing is deployed from a guess that leaves no trace.
+
+**Commit the file.** It records the id of the workload this run created, and every later deploy reads it to find that workload. A CI job that runs `up --yes` on a checkout with no manifest and never commits the one it wrote would create a new workload on every run.
+
+The answers come from the project, exactly as `dr workload config --yes` would take them:
+
+- the `Dockerfile` and its `EXPOSE` decide the image source and the port;
+- `.env`, when present, decides the variables. A value that looks secret is stored as a credential on the tenant and referenced from the file, a name that looks like a local convenience is left out, and the rest are written into the file in the clear, which the run warns about by name. Nothing is read from `.env` at deploy time; the file is the interface.
 
 ```bash
 dr workload up --yes                    # a fresh project, in one command
+dr workload up --yes --dry-run          # the file it would write, and the plan, without writing
 ```
 
 Four things put the command in that mode, and any one is enough:
@@ -338,7 +346,7 @@ Four things put the command in that mode, and any one is enough:
 
 So a deploy from CI needs no flag to be safe to run unattended, and neither does one driven by a tool.
 
-One question outlives most of that. Rolling a workload whose **live version is locked** asks for its name to be typed back, and only `--yes` and the absence of a terminal answer it in advance. `--output-format json` says how to print stdout, not that production may be replaced without a word — on a terminal somebody is still there to ask. It is the same line `delete` draws for `DATAROBOT_CLI_NON_INTERACTIVE`.
+One question outlives one of those. Rolling a workload whose **live version is locked** asks for its name to be typed back. `--yes`, `DATAROBOT_CLI_NON_INTERACTIVE` and the absence of a terminal each answer it in advance; `--output-format json` does not. It says how to print stdout, not that production may be replaced without a word — on a terminal somebody is still there to ask. Note that this is looser than `delete`, which does not take the variable as consent: a pipeline that sets it once and runs `up` rolls a locked version without a word, which is what a pipeline is for.
 
 A project it cannot read is still refused rather than guessed at. With no `Dockerfile` there is no image source to infer, and the error names the flags that settle it — pass them to `dr workload config`, which is where they live:
 
@@ -347,7 +355,7 @@ dr workload config --yes --build-mode image --image registry.example.com/app:v1
 dr workload up --yes
 ```
 
-`--dry-run` is the one non-interactive path that still refuses on a project with no manifest: a preview must not write the file it is previewing. It prints both commands to run.
+`--dry-run` on a project with no manifest writes nothing. It prints the `.datarobot.yaml` a real run would write, then the plan that run would carry out, so looking before deploying is one command on a fresh project too. A project the setup cannot read is refused the same way with or without `--dry-run`.
 
 ## Shared flags
 
