@@ -15,9 +15,20 @@
 package tui
 
 import (
+	"errors"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/datarobot/cli/internal/log"
 )
+
+// ErrInterrupted reports that the user pressed Ctrl-C. It exists because
+// Bubble Tea cannot say so on its own: the wrapper below answers an interrupt
+// with tea.Quit, tea.Quit becomes a QuitMsg, and a QuitMsg ends Program.Run
+// with a nil error — the same nil a model that finished its work returns. A
+// caller that only reads that error cannot tell "the user gave up" from "the
+// work is done", which is how an abandoned deploy came to be reported as a
+// healthy one (RAPTOR-19963).
+var ErrInterrupted = errors.New("interrupted")
 
 // InterruptibleModel wraps any Bubble Tea model to ensure Ctrl-C always works.
 // This wrapper intercepts ALL messages before they reach the underlying model,
@@ -25,6 +36,12 @@ import (
 // users can never get stuck in the program, regardless of what the model does.
 type InterruptibleModel struct {
 	Model tea.Model
+
+	// interrupted records that the quit came from Ctrl-C rather than from the
+	// wrapped model finishing. Bubble Tea hands the final model back from
+	// Program.Run, so setting it here is what lets WasInterrupted answer the
+	// question afterwards.
+	interrupted bool
 }
 
 // NewInterruptibleModel wraps a model to ensure Ctrl-C always works everywhere.
@@ -51,6 +68,8 @@ func (m InterruptibleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Log the interrupt for debugging purposes
 			log.Info("Ctrl-C detected, quitting...")
 
+			m.interrupted = true
+
 			return m, tea.Quit
 		}
 	}
@@ -73,4 +92,18 @@ func (m InterruptibleModel) View() string {
 // See Unwrap (package-level) for why this exists.
 func (m InterruptibleModel) Unwrap() tea.Model {
 	return m.Model
+}
+
+// WasInterrupted reports whether the program tui.Run() just finished ended on
+// Ctrl-C. It reads the outermost wrapper rather than peeling layers, because
+// the interrupt is recorded by the wrapper Run() puts on the outside.
+//
+// Callers opt in: Run() keeps returning a nil error for an interrupt, so a
+// model that already treats Ctrl-C as its own kind of cancellation is
+// unaffected. A caller that runs work behind the model, where quitting early
+// means the work never finished, asks this instead of assuming success.
+func WasInterrupted(final tea.Model) bool {
+	m, ok := final.(InterruptibleModel)
+
+	return ok && m.interrupted
 }

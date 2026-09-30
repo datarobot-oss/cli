@@ -19,6 +19,7 @@ package up
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -358,11 +359,18 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 			// other way round: it hands the wizard no writer at all under
 			// JSON, so there the table really is absent.
 		}),
+		// The one main.go derives from SIGINT. Without it a deploy could not
+		// be stopped: signal.NotifyContext takes away the process's default
+		// death on a signal, and nothing below read the context it put in its
+		// place, so Ctrl-C on a piped or CI run did nothing at all.
+		Context:      cmd.Context(),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,
 		Stderr:       cmd.ErrOrStderr(),
 		Spinner:      !json && !nonInteractive,
 	})
+
+	runErr = explainInterrupt(runErr, result)
 
 	if runErr != nil && !reportable(result) {
 		return runErr
@@ -373,6 +381,27 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	}
 
 	return runErr
+}
+
+// explainInterrupt turns "interrupted" into something worth reading.
+//
+// Stopping the wait does not stop the deploy: the platform was asked to roll
+// and goes on rolling whether or not anybody is watching, so the one thing the
+// user needs to know is that the thing they just abandoned is still happening
+// and where to look for how it ended. Saying only "interrupted" would read as
+// though pressing Ctrl-C had called it off.
+func explainInterrupt(runErr error, result up.Result) error {
+	if !errors.Is(runErr, tui.ErrInterrupted) && !errors.Is(runErr, context.Canceled) {
+		return runErr
+	}
+
+	where := "dr workload status"
+	if result.WorkloadID != "" {
+		where += " " + result.WorkloadID
+	}
+
+	return fmt.Errorf("stopped waiting; the platform is still rolling this out. Check '%s' for where it ended up: %w",
+		where, runErr)
 }
 
 // resolveDir defaults --dir to where the shell is standing.

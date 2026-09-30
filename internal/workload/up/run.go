@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,6 +130,16 @@ type Options struct {
 	// put one in front of somebody.
 	ConfirmEnv func() (bool, error)
 
+	// Context ends the deploy's waits. The command hands down the one
+	// main.go derives from SIGINT, which is what makes a piped or CI run
+	// killable: signal.NotifyContext disarms Go's die-on-signal, so before
+	// this reached the waits a `dr workload up --yes` could not be stopped
+	// with Ctrl-C at all (RAPTOR-19963).
+	//
+	// Nil is read as context.Background(), so a caller that never waits, and
+	// every test that predates this, keeps working.
+	Context context.Context
+
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
 	PollTimeout  time.Duration
@@ -179,6 +190,16 @@ type EnvEdit struct {
 	// Literals names the variables this run left in the manifest in the
 	// clear, the same list `dr workload config` reports for the same edit.
 	Literals []string
+}
+
+// ctx is opts.Context, defaulted. Every wait goes through it rather than
+// reading the field, so a zero Options cannot panic a deploy.
+func (o Options) ctx() context.Context {
+	if o.Context == nil {
+		return context.Background()
+	}
+
+	return o.Context
 }
 
 // Run reads, plans, and applies as much of the plan as this release can.
@@ -398,16 +419,17 @@ func awaitSteady(live Live, opts Options) (Live, error) {
 			"Waiting for it to settle before planning; --detach applies to the deploy."))
 	}
 
-	var settled *workload.Workload
+	var settled held[workload.Workload]
 
-	err := report.run("Waiting for the workload to settle", func() error {
-		wl, waitErr := waitSteadyFn(live.WorkloadID, opts.PollInterval, opts.PollTimeout, nil)
-		settled = wl
+	err := report.wait(opts.ctx(), "Waiting for the workload to settle",
+		func(ctx context.Context, _ tui.Noter) error {
+			wl, waitErr := waitSteadyFn(ctx, live.WorkloadID, opts.PollInterval, opts.PollTimeout, nil)
+			settled.set(wl)
 
-		return waitErr
-	})
+			return waitErr
+		})
 	if err != nil {
-		if failure := settleFailed(live, settled, err); failure != nil {
+		if failure := settleFailed(live, settled.get(), err); failure != nil {
 			return live, failure
 		}
 
@@ -1439,22 +1461,22 @@ func awaitRunning(
 	opts Options,
 	report *reporter,
 ) (Result, error) {
-	var final *workload.Workload
+	var final held[workload.Workload]
 
 	label := waitLabel(want, result)
 
-	err := report.run(label, func() error {
-		wl, waitErr := waitWorkloadFn(workloadID, want, opts.PollInterval, opts.PollTimeout,
-			heartbeat(strings.ToLower(label), opts, report))
-		final = wl
+	err := report.wait(opts.ctx(), label, func(ctx context.Context, note tui.Noter) error {
+		wl, waitErr := waitWorkloadFn(ctx, workloadID, want, opts.PollInterval, opts.PollTimeout,
+			progress(strings.ToLower(label), opts, report, note))
+		final.set(wl)
 
 		return waitErr
 	})
 
-	if final != nil {
-		result.Status = final.Status
-		result.Endpoint = final.Endpoint
-		result.ArtifactID = final.ArtifactID
+	if f := final.get(); f != nil {
+		result.Status = f.Status
+		result.Endpoint = f.Endpoint
+		result.ArtifactID = f.ArtifactID
 	}
 
 	if err != nil {
@@ -1525,19 +1547,34 @@ func budgetLeft(opts Options, since time.Time) Options {
 // minPollBudget is what a wait gets when the one before it spent everything.
 const minPollBudget = 30 * time.Second
 
-// heartbeat prints a line every so often while a long wait runs, and nil when
-// there is a spinner to do that job.
+// progress narrates a long wait, in whichever way the output it is going to
+// can carry.
 //
-// report.run prints nothing until a phase ends, so without this the longest
-// phase in the deploy emits no bytes at all: on a live rollout it sat for eight
-// and a half minutes, which from outside is indistinguishable from a hang.
+// A phase prints nothing until it ends, so without this the longest phase in
+// the deploy emits no bytes at all: on a live rollout it sat for eight and a
+// half minutes, which from outside is indistinguishable from a hang.
 //
-// The line carries the phase name because it is printed before the checkmark it
-// belongs to. Read top to bottom, an unlabelled line sits under the previous
-// phase's tick and reads as belonging to that one.
-func heartbeat(label string, opts Options, report *reporter) func(*workload.Workload) {
-	if opts.Spinner || opts.PollInterval <= 0 {
+// With a spinner the narration is the label's own suffix, rewritten on every
+// poll. That path used to get nothing — this returned nil whenever a spinner
+// was drawn, on the grounds that the spinner was already moving — which left
+// the one reader who is definitely watching with a glyph that says only that
+// the process is alive. Its own comment said the interval was "short enough
+// that nobody reaches for Ctrl-C"; it was disabled on the path where somebody
+// did (RAPTOR-19963).
+func progress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Workload) {
+	if opts.PollInterval <= 0 {
 		return nil
+	}
+
+	if opts.Spinner {
+		started := phaseClock()
+
+		// No label: the spinner is already rendering it, and this is written
+		// in the parentheses after it.
+		return func(wl *workload.Workload) {
+			note(fmt.Sprintf("%s so far; the workload is %s",
+				phaseClock().Sub(started).Truncate(time.Second), wl.Status))
+		}
 	}
 
 	every := int(heartbeatEvery / opts.PollInterval)

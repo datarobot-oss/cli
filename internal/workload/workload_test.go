@@ -764,11 +764,11 @@ func TestWaitForSteadyWorkload_ReturnsAtStoppedWhereWaitForWorkloadWouldNot(t *t
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForSteadyWorkload("wl-1", time.Millisecond, time.Second, nil)
+	wl, err := WaitForSteadyWorkload(t.Context(), "wl-1", time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, WorkloadStatusStopped, wl.Status)
 
-	_, err = WaitForWorkload("wl-1", Serving{}, 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err = WaitForWorkload(t.Context(), "wl-1", Serving{}, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }
@@ -795,7 +795,7 @@ func TestWaitForSteadyWorkload_PollsUntilTheTransitionLands(t *testing.T) {
 
 	var ticks int
 
-	wl, err := WaitForSteadyWorkload("wl-1", time.Millisecond, time.Second, func(*Workload) {
+	wl, err := WaitForSteadyWorkload(t.Context(), "wl-1", time.Millisecond, time.Second, func(*Workload) {
 		ticks++
 	})
 	require.NoError(t, err)
@@ -819,7 +819,7 @@ func TestWaitForSteadyWorkload_ErroredIsAnAnswerNotAFailure(t *testing.T) {
 
 			installEndpoint(t, srv.URL)
 
-			wl, err := WaitForSteadyWorkload("wl-1", time.Millisecond, time.Second, nil)
+			wl, err := WaitForSteadyWorkload(t.Context(), "wl-1", time.Millisecond, time.Second, nil)
 			require.NoError(t, err)
 			assert.Equal(t, status, wl.Status)
 		})
@@ -837,7 +837,7 @@ func TestWaitForSteadyWorkload_TimeoutKeepsTheLastSeen(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForSteadyWorkload("wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	wl, err := WaitForSteadyWorkload(t.Context(), "wl-1", 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 	require.NotNil(t, wl, "the caller can still say where it got to")
@@ -866,7 +866,7 @@ func TestWaitForWorkload_RunningReturnsNil(t *testing.T) {
 
 	var ticks int
 
-	wl, err := WaitForWorkload("wl-1", Serving{}, time.Millisecond, time.Second, func(*Workload) {
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{}, time.Millisecond, time.Second, func(*Workload) {
 		ticks++
 	})
 	require.NoError(t, err)
@@ -885,7 +885,7 @@ func TestWaitForWorkload_ErroredReturnsError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", Serving{}, time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{}, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl, "errored returns final Workload alongside error")
 	assert.Equal(t, WorkloadStatusErrored, wl.Status)
@@ -914,7 +914,7 @@ func TestWaitForWorkload_PollsThroughStoppedUntilRunning(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", Serving{}, time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{}, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, WorkloadStatusRunning, wl.Status)
 }
@@ -930,7 +930,7 @@ func TestWaitForWorkload_Timeout(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForWorkload("wl-1", Serving{}, 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err := WaitForWorkload(t.Context(), "wl-1", Serving{}, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }
@@ -952,7 +952,7 @@ func TestWaitForWorkload_KeepsPollingWhileTheOldArtifactServes(t *testing.T) {
 		},
 		func() string { return serverProtonList([2]string{"art-2", ProtonStatusRunning}) })
 
-	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "art-2", wl.ArtifactID, "the wait must settle on the version it was told to wait for")
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3),
@@ -984,7 +984,7 @@ func TestWaitForWorkload_WaitsOutTheDrainingGeneration(t *testing.T) {
 			)
 		})
 
-	_, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
+	_, err := WaitForWorkload(t.Context(), "wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3),
 		"the old generation was still answering the endpoint")
@@ -1017,7 +1017,7 @@ func TestWaitForWorkload_RefusedProtonRouteFallsBackToTheArtifact(t *testing.T) 
 				OnUnconfirmed: func(string) { unconfirmed++ },
 			}
 
-			wl, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Second, nil)
+			wl, err := WaitForWorkload(t.Context(), "wl-1", want, time.Millisecond, time.Second, nil)
 			require.NoError(t, err)
 			assert.Equal(t, "art-2", wl.ArtifactID)
 			assert.Positive(t, unconfirmed, "the caller has to know the handover went unconfirmed")
@@ -1038,7 +1038,7 @@ func TestWaitForWorkload_TimesOutWhenTheNewArtifactNeverServes(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, 5*time.Millisecond, 25*time.Millisecond, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl, "a timeout returns the last-seen workload so a caller can say where it got to")
 	assert.Contains(t, err.Error(), "art-1", "the error names the version still serving")
@@ -1059,7 +1059,7 @@ func TestWaitForWorkload_ErroredBeatsTheArtifactCheck(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Minute, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Minute, nil)
 	require.Error(t, err)
 	require.NotNil(t, wl)
 	assert.Contains(t, err.Error(), WorkloadStatusErrored)
@@ -1088,7 +1088,7 @@ func TestWaitForWorkload_ForgivesAProtonRouteThatKeepsFailing(t *testing.T) {
 		OnUnconfirmed: func(string) { reasons++ },
 	}
 
-	wl, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Minute, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", want, time.Millisecond, time.Minute, nil)
 	require.NoError(t, err, "the deploy itself was fine; only the corroborating read was not")
 	require.NotNil(t, wl)
 	assert.Equal(t, "art-2", wl.ArtifactID)
@@ -1111,7 +1111,7 @@ func TestWaitForWorkload_SettlesOnAnEmptyProtonListThatPersists(t *testing.T) {
 
 	want := Serving{ArtifactID: "art-2", AwaitDrain: true}
 
-	_, err := WaitForWorkload("wl-1", want, time.Millisecond, time.Minute, nil)
+	_, err := WaitForWorkload(t.Context(), "wl-1", want, time.Millisecond, time.Minute, nil)
 	require.NoError(t, err, "an absence that never resolves must not run to the timeout")
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&polls), int32(uncorroboratedAbsences),
 		"but it is given a few polls to resolve first")
@@ -1132,7 +1132,7 @@ func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
 		},
 		func() string { return serverProtonList([2]string{"art-2", ProtonStatusRunning}) })
 
-	wl, err := WaitForWorkload("wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
+	wl, err := WaitForWorkload(t.Context(), "wl-1", Serving{ArtifactID: "art-2", AwaitDrain: true}, time.Millisecond, time.Second, nil)
 	require.NoError(t, err, "a 502 between polls must not fail a deploy that is going fine")
 	assert.Equal(t, "art-2", wl.ArtifactID)
 }

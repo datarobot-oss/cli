@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -366,19 +367,20 @@ func replace(
 // promoted, and a failed one leaves the old version serving, so reporting the
 // workload as healthy afterwards would be true and completely misleading.
 func awaitRollout(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
-	var settled *workload.Replacement
+	var last held[workload.Replacement]
 
-	err := report.run("Waiting for the rollout", func() error {
-		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
-		settled = replacement
+	err := report.wait(opts.ctx(), "Waiting for the rollout",
+		func(ctx context.Context, _ tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
+			last.set(replacement)
 
-		return waitErr
-	})
+			return waitErr
+		})
 	if err == nil {
 		return nil
 	}
 
-	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+	if settled := last.get(); settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return fmt.Errorf(
 			"the rollout of workload %s ended as %s, so it is still running the version it was; "+
 				"check 'dr workload logs %s': %w",

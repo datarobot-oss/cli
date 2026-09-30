@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -68,15 +69,74 @@ func (r *reporter) run(label string, fn func() error) error {
 	return nil
 }
 
+// wait is run for a phase that polls: the function is handed a context ended
+// the moment the phase returns, and a note it can use to say how the wait is
+// going while it runs.
+//
+// The context is the whole point. Ctrl-C leaves the goroutine running fn
+// alive — Bubble Tea leaks its Cmd goroutines by design, and nothing here can
+// stop a function it was handed — so an abandoned wait went on polling the
+// API until the process exited. Ending its context stops it at the next poll
+// boundary. On a phase that succeeds the cancel is a no-op, because the
+// function has already returned.
+func (r *reporter) wait(ctx context.Context, label string, fn func(context.Context, tui.Noter) error) error {
+	started := phaseClock()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if err := r.workNoted(label, func(note tui.Noter) error { return fn(ctx, note) }); err != nil {
+		return err
+	}
+
+	r.done(label, phaseClock().Sub(started))
+
+	return nil
+}
+
 // work performs the phase, with a spinner when there is a terminal to spin on.
 // The two-space prefix keeps the animated glyph in the column where stream's
 // ⠿ header and done's ✓ sit.
 func (r *reporter) work(label string, fn func() error) error {
+	return r.workNoted(label, func(tui.Noter) error { return fn() })
+}
+
+// workNoted is work for a phase that has something to say while it runs.
+// Without a spinner the note goes nowhere: a plain stream gets its progress
+// from heartbeat, which prints whole lines rather than rewriting one.
+func (r *reporter) workNoted(label string, fn func(tui.Noter) error) error {
 	if r.spinner {
-		return tui.RunWithSpinnerPrefix("  ", label, fn)
+		return tui.RunWithSpinnerNote("  ", label, fn)
 	}
 
-	return fn()
+	return fn(func(string) {})
+}
+
+// held carries what a polling phase saw out to the code that runs after it.
+//
+// It replaces the plain captured variable each of these phases used, which was
+// safe only for as long as a phase could not outlive its function. Ctrl-C
+// broke that: the wait goroutine keeps running, and it writes that variable
+// while the deploy reads it to decide what to report. The lock makes the read
+// well defined, and the value being nil is what tells the reader the phase
+// never got an answer (RAPTOR-19963).
+type held[T any] struct {
+	mu sync.Mutex
+	v  *T
+}
+
+func (h *held[T]) set(v *T) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.v = v
+}
+
+func (h *held[T]) get() *T {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.v
 }
 
 // streamSpinnerFrames are spinner.Dot's frames, so a streamed phase's header
@@ -107,8 +167,20 @@ const streamWindowRows = 20
 // the error, with the full log a command away. On a plain writer (no TTY,
 // JSON mode) every line prints permanently, which is how CI logs stay
 // complete.
-func (r *reporter) stream(label string, fn func(say func(line string, style lipgloss.Style)) error) error {
+// The context is the only way to interrupt this phase. Nothing here runs a
+// Bubble Tea program, so Ctrl-C arrives as a signal rather than a keystroke,
+// and main.go's signal.NotifyContext has already taken the process's default
+// death away from it: an image build could not be stopped at all before the
+// context reached the wait beneath (RAPTOR-19963).
+func (r *reporter) stream(
+	ctx context.Context,
+	label string,
+	fn func(ctx context.Context, say func(line string, style lipgloss.Style)) error,
+) error {
 	started := phaseClock()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	fmt.Fprintf(r.out, "  %s %s\n", tui.HintStyle.Render("⠿"), label)
 
@@ -174,7 +246,7 @@ func (r *reporter) stream(label string, fn func(say func(line string, style lipg
 		}
 	}
 
-	err := fn(say)
+	err := fn(ctx, say)
 
 	halt()
 

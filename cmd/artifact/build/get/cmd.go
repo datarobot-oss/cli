@@ -111,7 +111,7 @@ func runGet(
 	if !workload.IsBuildErrorStatus(build.Status) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Waiting for build %s...\n", buildID)
 
-		build, waitErr = workload.WaitForBuild(artifactID, buildID, poll.Interval, poll.Timeout, nil)
+		build, waitErr = workload.WaitForBuild(cmd.Context(), artifactID, buildID, poll.Interval, poll.Timeout, nil)
 
 		if build == nil {
 			// WaitForBuild errored before its first successful GET; render a

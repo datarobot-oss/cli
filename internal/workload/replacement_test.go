@@ -455,7 +455,7 @@ func TestWaitForReplacement_TerminalCompletedReturnsNoError(t *testing.T) {
 		fmt.Fprintf(w, `{"candidateArtifactId":"art-2","status":"%s"}`, status)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ReplacementStatusCompleted, replacement.Status)
 }
@@ -465,7 +465,7 @@ func TestWaitForReplacement_FailedReturnsError(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"failed"}`)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, replacement, "a failure returns the final replacement alongside the error")
 	assert.Equal(t, ReplacementStatusFailed, replacement.Status)
@@ -483,7 +483,7 @@ func TestWaitForReplacement_FailedCarriesThePlatformsReason(t *testing.T) {
 			`"message":"Candidate proton failed: ErrImagePull: not found"}`)
 	})
 
-	_, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "errored (Candidate proton failed: ErrImagePull: not found)")
 }
@@ -506,7 +506,7 @@ func TestWaitForReplacement_ErroredClearedViaNotFound(t *testing.T) {
 		notFound(w)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err, "an errored candidate must not read as success just because it was later cleared")
 	require.NotNil(t, replacement)
 	assert.Equal(t, ReplacementStatusErrored, replacement.Status)
@@ -519,7 +519,7 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 		notFound(w)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	assert.Nil(t, replacement)
 	assert.Contains(t, err.Error(), "no replacement is in flight")
@@ -552,7 +552,7 @@ func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 
 	started := &Replacement{ArtifactID: "art-2", Status: "submitted"}
 
-	replacement, err := WaitForReplacement("wl-1", started, time.Millisecond, time.Second, func(*Replacement) {
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", started, time.Millisecond, time.Second, func(*Replacement) {
 		t.Error("onTick must not fire when the seed carries the wait")
 	})
 	require.NoError(t, err)
@@ -584,7 +584,7 @@ func TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord(t *testing.T)
 
 	started := &Replacement{ArtifactID: "art-2", Status: "submitted"}
 
-	replacement, err := WaitForReplacement("wl-1", started, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", started, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	require.NotNil(t, replacement)
 	assert.Equal(t, ReplacementStatusCompleted, replacement.Status,
@@ -608,7 +608,7 @@ func TestWaitForReplacement_NonTerminalClearedViaNotFoundIsSuccess(t *testing.T)
 		notFound(w)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	require.NotNil(t, replacement)
 	assert.Equal(t, "switching", replacement.Status)
@@ -623,7 +623,7 @@ func TestWaitForReplacement_TimeoutReturnsTheLastSeen(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"candidate-warming"}`)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, 5*time.Millisecond, 25*time.Millisecond, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 	require.NotNil(t, replacement, "a timeout must still say what the rollout was doing")
@@ -641,7 +641,7 @@ func TestWaitForReplacement_PollsAtLeastOnce(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"completed"}`)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, 0, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, 0, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ReplacementStatusCompleted, replacement.Status)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&hits), "a zero budget still buys one look")
@@ -658,7 +658,7 @@ func TestWaitForReplacement_NonPositiveIntervalDoesNotSpin(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"switching"}`)
 	})
 
-	_, err := WaitForReplacement("wl-1", nil, 0, 10*time.Millisecond, nil)
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, 0, 10*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(2),
 		"a non-positive interval must fall back to the default, not busy-spin")
@@ -678,7 +678,7 @@ func TestWaitForReplacement_OnTickSeesEveryPoll(t *testing.T) {
 
 	var seen []string
 
-	_, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, func(r *Replacement) {
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, func(r *Replacement) {
 		require.NotNil(t, r, "onTick is never handed a nil")
 
 		seen = append(seen, r.Status)
@@ -693,7 +693,7 @@ func TestWaitForReplacement_PropagatesPollFailure(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 	})
 
-	_, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "poll replacement")
 }

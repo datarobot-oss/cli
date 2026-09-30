@@ -15,11 +15,13 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 )
 
 // retune applies a change that moved only the sizing: a replica count, a
@@ -112,19 +114,20 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 // leaves the workload on the sizing it had, so it is the difference between a
 // resize that happened and one that was merely accepted.
 func awaitResize(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
-	var settled *workload.Replacement
+	var last held[workload.Replacement]
 
-	err := report.run("Waiting for the new settings", func() error {
-		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
-		settled = replacement
+	err := report.wait(opts.ctx(), "Waiting for the new settings",
+		func(ctx context.Context, _ tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
+			last.set(replacement)
 
-		return waitErr
-	})
+			return waitErr
+		})
 	if err == nil {
 		return nil
 	}
 
-	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+	if settled := last.get(); settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return fmt.Errorf(
 			"the settings update for workload %s ended as %s, so it is still running with the sizing it had; "+
 				"check 'dr workload status %s': %w",

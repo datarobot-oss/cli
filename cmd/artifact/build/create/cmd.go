@@ -185,7 +185,7 @@ func waitStreaming(
 	// Terminal statuses are left to the summary.
 	lastStatus := ""
 
-	build, err := workload.WaitForBuild(artifactID, buildID, poll.Interval, poll.Timeout,
+	build, err := workload.WaitForBuild(cmd.Context(), artifactID, buildID, poll.Interval, poll.Timeout,
 		func(b *workload.Build) {
 			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
 				lastStatus = b.Status
