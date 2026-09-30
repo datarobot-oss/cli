@@ -509,6 +509,14 @@ func getManifest(ctx context.Context, executable string) (*PluginManifest, error
 
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 
+	// The timeout kills the plugin binary, but a shell-script plugin can leave
+	// an orphaned child holding the stdout pipe, which would block Output()
+	// until that child exits and defeat the timeout in wall-clock terms.
+	// WaitDelay closes the pipes shortly after the process dies. Unlike plugin
+	// execution (exec.go, 5s graceful stop), a manifest probe is read-only and
+	// its result is discarded on error, so the grace is short.
+	cmd.WaitDelay = 100 * time.Millisecond
+
 	output, err := cmd.Output()
 	if err != nil {
 		// TODO: Wrap error with executable path for better debugging context
