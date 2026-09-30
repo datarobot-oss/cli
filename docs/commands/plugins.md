@@ -252,7 +252,8 @@ When no plugins are found, the command displays a message and the discovery loca
 ### Notes
 
 - Plugin manifest retrieval has its own timeout (see `plugin.manifest_timeout_ms` in configuration).
-- The global flag `--plugin-discovery-timeout` controls overall discovery time and disables discovery when set to `0s`.
+- The global flag `--plugin-discovery-timeout` controls startup discovery time only when placed before the command name, and disables discovery when set to `0s`.
+- `DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT` is also honored during startup.
 
 ## Passing global flags to plugins
 

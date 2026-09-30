@@ -716,3 +716,60 @@ func TestConflictsForName(t *testing.T) {
 	assert.Empty(t, ConflictsForName(conflicts, "turnip"))
 	assert.Empty(t, ConflictsForName(nil, "potato"))
 }
+
+func TestDiscoveryTimeout_EnvBeatsViper(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	viperx.Set(DiscoveryTimeoutKey, "5s")
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "10ms")
+
+	assert.Equal(t, 10*time.Millisecond, DiscoveryTimeout())
+}
+
+func TestGetPlugins_ZeroTimeoutSkipsDiscovery(t *testing.T) {
+	oldRegistry := registry
+
+	registry = &DiscoveredPluginsRegistry{}
+
+	t.Cleanup(func() { registry = oldRegistry })
+
+	tempDir := t.TempDir()
+	createMockPlugin(t, tempDir, "dr-skipped", `{"name":"skipped","version":"1.0.0"}`)
+	setDiscoveryPath(t, tempDir)
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "0s")
+
+	plugins, conflicts := GetPlugins()
+
+	assert.Empty(t, plugins)
+	assert.Empty(t, conflicts)
+}
+
+func TestGetManifest_OrphanedChildDoesNotBlockPastTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script plugin reproduction is Unix-specific")
+	}
+
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+	// Plain int on purpose: viperx.GetInt reads this key as milliseconds.
+	viperx.Set("plugin.manifest_timeout_ms", 2000)
+
+	// The script forks a background child that inherits stdout, prints its
+	// manifest, then blocks until the timeout kills the shell. The orphaned
+	// child keeps the stdout pipe open, so without cmd.WaitDelay Output()
+	// blocks until the orphan exits, defeating the timeout in wall-clock
+	// terms.
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "dr-orphan")
+	script := "#!/bin/sh\nsleep 30 &\necho '{\"name\":\"orphan\",\"version\":\"1.0.0\"}'\nsleep 30\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+
+	start := time.Now()
+	_, err := getManifest(context.Background(), scriptPath)
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "manifest fetch should be killed by the timeout")
+	assert.Less(t, elapsed, 10*time.Second,
+		"an orphaned child holding the stdout pipe must not block past the manifest timeout")
+}

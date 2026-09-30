@@ -16,7 +16,7 @@ These flags are available for all commands:
       --skip-auth                Skip authentication checks (for advanced users)
       --force-interactive        Force the setup wizard to run even if already completed
       --all-commands             Display all available commands and their flags in tree format
-      --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
+      --plugin-discovery-timeout duration   Timeout for plugin discovery when placed before the command (0s disables; config is read too late for startup discovery)
   -k, --skip-certificate-check   Skip TLS certificate verification (insecure)
       --ca-cert string           Path to a PEM-encoded CA certificate bundle
       --export-windows-certs     Export the Windows certificate store to the DataRobot CA bundle (Windows only)
