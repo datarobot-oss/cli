@@ -223,8 +223,8 @@ Enclave placement is opt-in, and it is governed by a Use Case: an administrator 
 | Field | Notes |
 | --- | --- |
 | `useCaseId` | Top-level. The Use Case whose Enclaves the workload may run on. `dr workload create --use-case-id <id>` writes it. |
-| `runtime.enclaveSelectionPolicy` | `availability`: DataRobot picks among the Enclaves granted to the Use Case. `manual`: run on the Enclaves named in `runtime.enclaves`. |
-| `runtime.enclaves` | The Enclave to pin with the `manual` policy. Rather than writing it by hand, pass [`dr workload create --enclave <name>`](workload.md#create), which sets both fields. |
+| `runtime.enclaveSelectionPolicy` | `availability`: DataRobot picks among the Enclaves granted to the Use Case. `manual`: run on the Enclaves listed in `runtime.enclaves`. |
+| `runtime.enclaves` | A list of Enclave names, read with the `manual` policy. Rather than writing it by hand, pass [`dr workload create --enclave <name>`](workload.md#create), which sets the policy and a one-element list. |
 
 ```yaml
 name: my-app
