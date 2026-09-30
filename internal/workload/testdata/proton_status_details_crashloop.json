@@ -1,0 +1,74 @@
+{
+    "overallStatus": {
+        "state": "errored",
+        "summary": "Workload is in state errored based on pod states",
+        "lastUpdated": "2026-09-30T15:27:47.011589394Z"
+    },
+    "replicas": [
+        {
+            "name": "lrs-6abd2a3ec4b5e3476a311779-6945b6ddd7-6mhh8",
+            "status": "running",
+            "address": "10.190.174.152",
+            "nodeAddress": "10.190.129.187",
+            "startedAt": "2026-09-30T15:26:54Z",
+            "conditions": [
+                {
+                    "type": "PodReadyToStartContainers",
+                    "value": true,
+                    "lastTransitionTime": "2026-09-30T15:26:56Z",
+                    "reason": "",
+                    "message": ""
+                },
+                {
+                    "type": "Initialized",
+                    "value": true,
+                    "lastTransitionTime": "2026-09-30T15:26:54Z",
+                    "reason": "",
+                    "message": ""
+                },
+                {
+                    "type": "Ready",
+                    "value": false,
+                    "lastTransitionTime": "2026-09-30T15:26:54Z",
+                    "reason": "ContainersNotReady",
+                    "message": "containers with unready status: [lrs-6abd2a3ec4b5e3476a311779-primary]"
+                },
+                {
+                    "type": "ContainersReady",
+                    "value": false,
+                    "lastTransitionTime": "2026-09-30T15:26:54Z",
+                    "reason": "ContainersNotReady",
+                    "message": "containers with unready status: [lrs-6abd2a3ec4b5e3476a311779-primary]"
+                },
+                {
+                    "type": "PodScheduled",
+                    "value": true,
+                    "lastTransitionTime": "2026-09-30T15:26:54Z",
+                    "reason": "",
+                    "message": ""
+                }
+            ],
+            "containers": [
+                {
+                    "name": "lrs-6abd2a3ec4b5e3476a311779-primary",
+                    "status": "waiting",
+                    "startedAt": null,
+                    "ready": false,
+                    "restartCount": 3,
+                    "image": "docker.io/library/busybox:1.36",
+                    "reason": "CrashLoopBackOff",
+                    "exitCode": null,
+                    "message": "back-off 40s restarting failed container=lrs-6abd2a3ec4b5e3476a311779-primary pod=lrs-6abd2a3ec4b5e3476a311779-6945b6ddd7-6mhh8_lrs-6abd2a3ec4b5e3476a311779(6396541c-7d22-4f3f-88d4-171ac70d928e)",
+                    "lastState": {
+                        "status": "terminated",
+                        "reason": "Completed",
+                        "exitCode": 0,
+                        "message": "",
+                        "startedAt": "2026-09-30T15:27:34Z",
+                        "finishedAt": "2026-09-30T15:27:34Z"
+                    }
+                }
+            ]
+        }
+    ]
+}

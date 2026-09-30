@@ -107,7 +107,24 @@ Example:
 				return ref.Wrap(err)
 			}
 
-			return workload.RenderWorkloadLogs(outputFormat, entries)
+			if err := workload.RenderWorkloadLogs(outputFormat, entries); err != nil {
+				return err
+			}
+
+			// An empty answer is not a dead end. A container that never
+			// started wrote nothing, and a cluster without log collection
+			// answers 200 with nothing for a healthy workload too; the
+			// per-replica status details are where the reason lives. On
+			// stderr, beside the "No logs found." line, so stdout stays log
+			// lines only and a pipe is not polluted; not under JSON, where
+			// stderr is kept clear for `2>&1 | jq .` (RAPTOR-18958).
+			if len(entries) == 0 && outputFormat != outputformat.OutputFormatJSON {
+				fmt.Fprintf(cmd.ErrOrStderr(),
+					"Run 'dr workload diagnose %s' to see why the containers are not running; "+
+						"an empty log can also mean this cluster has no log collection.\n", ref.ID)
+			}
+
+			return nil
 		},
 	}
 

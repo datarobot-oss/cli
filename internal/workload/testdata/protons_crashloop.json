@@ -1,0 +1,48 @@
+{
+    "totalCount": 1,
+    "count": 1,
+    "data": [
+        {
+            "id": "6abd2a3ec4b5e3476a311779",
+            "name": "review-18958-crashloop-artifact",
+            "createdAt": "2026-09-30T15:26:54.349000+00:00",
+            "updatedAt": "2026-09-30T15:27:47.025000+00:00",
+            "creator": {
+                "id": "683e3b2eb7aefb434d49763b",
+                "fullName": "Adam Alpire",
+                "email": "adam.alpire@datarobot.com",
+                "username": "adam.alpire@datarobot.com",
+                "userhash": "af4faa64d53da58ad89b282b8830ac34e7730f0cc33a99458caaff6087588a7a"
+            },
+            "status": "errored",
+            "artifactId": "6abd2a3ec4b5e3476a311777",
+            "workloadId": "6abd2a3ec4b5e3476a311778",
+            "runtime": {
+                "containerGroups": [
+                    {
+                        "name": "default",
+                        "resourceBundles": [
+                            "cpu.micro"
+                        ],
+                        "bundleSelectionPolicy": "availability",
+                        "replicaCount": 1,
+                        "containers": [
+                            {
+                                "name": "primary",
+                                "resourceAllocation": {
+                                    "cpu": 0.25,
+                                    "memory": 256000000
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "endpoint": "https://staging.datarobot.com/api/v2/endpoints/workloads/6abd2a3ec4b5e3476a311778?protonId=6abd2a3ec4b5e3476a311779",
+            "role": "active",
+            "deployedImages": {
+                "primary": "busybox:1.36"
+            }
+        }
+    ]
+}

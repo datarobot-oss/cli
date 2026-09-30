@@ -1,0 +1,337 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package workload
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/tui"
+)
+
+// Diagnosis is why a workload is in the state it is in, read off every
+// container generation the platform lists for it.
+//
+// `dr workload status` says "errored" and `dr workload logs` can legitimately
+// say nothing at all: container stdout is gathered by a collector that is
+// rolled out per cluster, and a container that never started wrote nothing
+// anyway. The per-replica status details are where the platform keeps the
+// reason, the restart count and the exit code, and nothing else in the CLI
+// showed them (RAPTOR-18958).
+type Diagnosis struct {
+	WorkloadID  string                `json:"workloadId"`
+	Name        string                `json:"name"`
+	Status      string                `json:"status"`
+	Generations []GenerationDiagnosis `json:"generations"`
+}
+
+// GenerationDiagnosis is one generation's snapshot and what stands out in it.
+// Details is nil when the platform's monitor has not reported yet, which the
+// route answers with 204 rather than an empty document.
+type GenerationDiagnosis struct {
+	ID         string               `json:"id"`
+	ArtifactID string               `json:"artifactId"`
+	Status     string               `json:"status"`
+	Role       string               `json:"role,omitempty"`
+	Details    *ProtonStatusDetails `json:"details"`
+	Findings   []string             `json:"findings"`
+}
+
+// Diagnose reads the workload, its generations and each generation's status
+// details. The generation marked active comes first, because it is the one
+// answering the endpoint; the others are what a rolling replacement leaves
+// behind and are listed after it.
+//
+// An errored workload is an answer, not a failure: the command exists to
+// explain that state, so only a read that could not be made is an error.
+func Diagnose(workloadID string) (*Diagnosis, error) {
+	wl, err := GetWorkload(workloadID)
+	if err != nil {
+		return nil, err
+	}
+
+	protons, err := ListProtons(workloadID)
+	if err != nil {
+		return nil, fmt.Errorf("cannot list the container generations of workload %s: %w", workloadID, err)
+	}
+
+	d := &Diagnosis{
+		WorkloadID:  wl.ID,
+		Name:        wl.Name,
+		Status:      wl.Status,
+		Generations: make([]GenerationDiagnosis, 0, len(protons)),
+	}
+
+	for _, p := range activeFirst(protons) {
+		details, err := GetProtonStatusDetails(workloadID, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read the status details of generation %s: %w", p.ID, err)
+		}
+
+		d.Generations = append(d.Generations, GenerationDiagnosis{
+			ID:         p.ID,
+			ArtifactID: p.ArtifactID,
+			Status:     p.Status,
+			Role:       p.Role,
+			Details:    details,
+			Findings:   findings(p.ID, details),
+		})
+	}
+
+	return d, nil
+}
+
+// activeFirst orders the generation marked active ahead of the rest, keeping
+// the platform's order otherwise. A copy, so the caller's slice is untouched.
+func activeFirst(protons []Proton) []Proton {
+	ordered := slices.Clone(protons)
+
+	slices.SortStableFunc(ordered, func(a, b Proton) int {
+		switch {
+		case IsActiveProtonRole(a.Role) == IsActiveProtonRole(b.Role):
+			return 0
+		case IsActiveProtonRole(a.Role):
+			return -1
+		default:
+			return 1
+		}
+	})
+
+	return ordered
+}
+
+// findings is what stands out in a snapshot, one line per container that
+// has something to say: a waiting reason (CrashLoopBackOff, ImagePullBackOff,
+// ErrImagePull), a previous run that ended badly (a non-zero exit, OOMKilled),
+// or restarts on a container that is otherwise quiet. The lines are the ones
+// `dr workload up` prints beside an errored state, so the two agree.
+//
+// Never nil, so the JSON envelope carries [] rather than null for a
+// generation with nothing wrong: a consumer can tell "checked, clean" from
+// "not checked".
+func findings(protonID string, details *ProtonStatusDetails) []string {
+	out := []string{}
+
+	if details == nil {
+		return out
+	}
+
+	for _, replica := range details.Replicas {
+		for _, c := range replica.Containers {
+			if line := c.failure(protonID); line != "" {
+				out = append(out, line)
+
+				continue
+			}
+
+			if c.RestartCount > 0 {
+				out = append(out, fmt.Sprintf("%s: restarted %d %s", shortContainerName(protonID, c.Name),
+					c.RestartCount, plural(c.RestartCount, "time", "times")))
+			}
+		}
+	}
+
+	return out
+}
+
+// RenderDiagnosis prints a diagnosis to stdout in the requested format.
+func RenderDiagnosis(format outputformat.OutputFormat, d Diagnosis) error {
+	return RenderDiagnosisTo(os.Stdout, format, d)
+}
+
+// RenderDiagnosisTo is RenderDiagnosis with the writer chosen by the caller,
+// so a command can hand it the stream cobra gave it and a test can read it
+// back. Under JSON the writer receives exactly one document and nothing else.
+func RenderDiagnosisTo(w io.Writer, format outputformat.OutputFormat, d Diagnosis) error {
+	if format == outputformat.OutputFormatJSON {
+		return outputformat.PrintJSONEnvelope(w, "diagnosis", d)
+	}
+
+	printDiagnosis(w, d)
+
+	return nil
+}
+
+func printDiagnosis(w io.Writer, d Diagnosis) {
+	fmt.Fprintf(w, "Workload %s (%s) is %s\n", d.WorkloadID, d.Name, statusStyle(d.Status).Render(d.Status))
+
+	if len(d.Generations) == 0 {
+		fmt.Fprintln(w, tui.HintStyle.Render(
+			"The platform lists no container generations for it, so there is nothing to diagnose yet."))
+
+		return
+	}
+
+	for _, g := range d.Generations {
+		fmt.Fprintln(w)
+		printGeneration(w, g)
+	}
+}
+
+func printGeneration(w io.Writer, g GenerationDiagnosis) {
+	title := "Generation " + g.ID + " · " + g.Status
+	if IsActiveProtonRole(g.Role) {
+		title += " · active"
+	}
+
+	fmt.Fprintf(w, "%s  %s\n", tui.InfoStyle.Render(title), tui.DimStyle.Render("artifact "+g.ArtifactID))
+
+	if g.Details == nil {
+		fmt.Fprintf(w, "  %s\n", tui.HintStyle.Render(
+			"No status snapshot yet: the platform's monitor has not reported for this generation."))
+
+		return
+	}
+
+	if summary := g.Details.OverallStatus.Summary; summary != "" {
+		fmt.Fprintf(w, "  %s\n", tui.DimStyle.Render(summary))
+	}
+
+	printReplicaTable(w, g.ID, g.Details.Replicas)
+
+	if len(g.Findings) == 0 {
+		fmt.Fprintf(w, "  %s\n", tui.HintStyle.Render("No container is reporting a problem."))
+
+		return
+	}
+
+	fmt.Fprintln(w, "  Findings:")
+
+	for _, line := range g.Findings {
+		fmt.Fprintf(w, "    %s %s\n", tui.WarnStyle.Render("⚠"), line)
+	}
+}
+
+// printReplicaTable is one row per container, grouped under its replica. The
+// replica and container names drop the cluster's lrs-<generation>- prefix,
+// which every name in a generation shares and which says nothing.
+func printReplicaTable(w io.Writer, protonID string, replicas []ReplicaStatus) {
+	if len(replicas) == 0 {
+		fmt.Fprintf(w, "  %s\n", tui.HintStyle.Render("No replicas are reported for this generation."))
+
+		return
+	}
+
+	cellStyle := tui.BaseTextStyle.Padding(0, 1)
+
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(tui.TableBorderStyle).
+		StyleFunc(func(row, _ int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return cellStyle.Bold(true)
+			}
+
+			return cellStyle
+		}).
+		Headers("REPLICA", "CONTAINER", "STATE", "REASON", "RESTARTS", "READY", "LAST EXIT")
+
+	for _, r := range replicas {
+		replica := shortContainerName(protonID, r.Name) + " (" + orPlaceholder(r.Status) + ")"
+
+		if len(r.Containers) == 0 {
+			t.Row(replica, "-", "-", "-", "-", "-", "-")
+
+			continue
+		}
+
+		for _, c := range r.Containers {
+			t.Row(
+				replica,
+				shortContainerName(protonID, c.Name),
+				orPlaceholder(c.Status),
+				orPlaceholder(c.Reason),
+				strconv.Itoa(c.RestartCount),
+				yesNo(c.Ready),
+				lastExitCell(c),
+			)
+		}
+	}
+
+	for line := range strings.SplitSeq(t.String(), "\n") {
+		fmt.Fprintf(w, "  %s\n", line)
+	}
+}
+
+// lastExitCell is how the container's most recent run ended: the previous
+// state when the cluster recorded one, otherwise the container's own exit
+// code when it is terminated right now. The reason rides along when the
+// cluster gave one, since "exit 137 (OOMKilled)" says more than the number.
+func lastExitCell(c ContainerStatus) string {
+	code, reason := c.ExitCode, ""
+
+	if c.LastState != nil && c.LastState.ExitCode != nil {
+		code, reason = c.LastState.ExitCode, c.LastState.Reason
+	} else if c.LastState == nil && c.ExitCode != nil {
+		reason = c.Reason
+	}
+
+	if code == nil {
+		return "-"
+	}
+
+	cell := "exit " + strconv.Itoa(*code)
+
+	if reason != "" {
+		cell += " (" + reason + ")"
+	}
+
+	return cell
+}
+
+// shortContainerName drops the cluster's lrs-<generation>- prefix, the way
+// every message in this package names a container.
+func shortContainerName(protonID, name string) string {
+	short := strings.TrimPrefix(name, "lrs-"+protonID+"-")
+	if short == "" {
+		return name
+	}
+
+	return short
+}
+
+func statusStyle(status string) lipgloss.Style {
+	switch {
+	case IsWorkloadErrorStatus(status):
+		return tui.ErrorStyle
+	case strings.EqualFold(status, WorkloadStatusRunning):
+		return tui.SuccessStyle
+	default:
+		return tui.WarnStyle
+	}
+}
+
+func yesNo(v bool) string {
+	if v {
+		return "yes"
+	}
+
+	return "no"
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+
+	return many
+}

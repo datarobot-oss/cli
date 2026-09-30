@@ -49,6 +49,7 @@ Starting from source code rather than from a spec you already have? The [spec re
 | `dr workload start`    | `POST   /api/v2/workloads/{id}/start`     | Start a stopped workload.                      |
 | `dr workload stop`     | `POST   /api/v2/workloads/{id}/stop`      | Stop a running workload.                       |
 | `dr workload status`   | `GET    /api/v2/workloads/{id}/`          | Print the bare status value.                   |
+| `dr workload diagnose` | `GET    /api/v2/workloads/{id}/protons/…` | Explain why a workload is in its state.        |
 | `dr workload endpoint` | `GET    /api/v2/workloads/{id}/`          | Print the endpoint URL.                        |
 | `dr workload logs`     | `GET    /api/v2/otel/workload/{id}/logs/` | Show a workload's container logs.              |
 
@@ -184,6 +185,30 @@ Print a workload's current status as a bare value (for example `running`), so it
 dr workload status [<workload-id>] [--dir <path>] [--output-format text|json]
 ```
 
+### `diagnose`
+
+Explain why a workload is in its current state. `status` says `errored` and stops there, and `logs` can be empty for a container that never started; this command reads the platform's per-replica status details for every container generation of the workload and prints the overall verdict, then a table of each replica and container with its state, reason, restart count, readiness and how its last run ended. Anything that stands out is listed as a finding: `CrashLoopBackOff`, `ImagePullBackOff`, `ErrImagePull`, `OOMKilled`, a non-zero exit code, restarts. The generation answering the endpoint comes first; during a rolling replacement the one on its way out follows it.
+
+```bash
+dr workload diagnose [<workload-id>] [--dir <path>] [--output-format text|json]
+```
+
+```
+Workload 6abd2a3ec4b5e3476a311778 (review-crashloop) is errored
+
+Generation 6abd2a3ec4b5e3476a311779 · errored · active  artifact 6abd2a3ec4b5e3476a311777
+  Workload is in state errored based on pod states
+  ╭─────────────────────────────┬───────────┬─────────┬──────────────────┬──────────┬───────┬────────────────────╮
+  │ REPLICA                     │ CONTAINER │ STATE   │ REASON           │ RESTARTS │ READY │ LAST EXIT          │
+  ├─────────────────────────────┼───────────┼─────────┼──────────────────┼──────────┼───────┼────────────────────┤
+  │ 6945b6ddd7-6mhh8 (running)  │ primary   │ waiting │ CrashLoopBackOff │ 3        │ no    │ exit 0 (Completed) │
+  ╰─────────────────────────────┴───────────┴─────────┴──────────────────┴──────────┴───────┴────────────────────╯
+  Findings:
+    ⚠ primary: CrashLoopBackOff; last run exited 0 (Completed)
+```
+
+An `errored` workload is the answer, not a command failure, so the command exits `0`, like `status`. A generation the platform's monitor has not reported for yet is said to have no snapshot. With `--output-format json`, stdout is one `{"diagnosis": …}` document carrying the platform's own field names, with `findings` as a list on every generation, empty when nothing stands out.
+
 ### `endpoint`
 
 Print only the workload's endpoint URL and nothing else, so it composes directly in scripts. The URL ends with a trailing slash, so append sub-paths without a leading slash of their own:
@@ -214,7 +239,7 @@ dr workload logs [<workload-id>] [--dir <path>] [--limit N] [--level <level>] [-
 - `--output-format <text|json>`: output format. Defaults to `text`. With `--follow`, JSON is emitted as one object per line (JSON Lines).
 
 > [!NOTE]
-> **Empty output is not always a bug.** Container stdout is gathered by a platform log collector that is rolled out per cluster. On an installation that does not run it, the logs endpoint answers `200` with an empty list however healthy the workload is, and raising `--limit` changes nothing. When a workload is failing and its logs are empty, the status is in `dr workload get`, and the per-replica detail lives on the platform at `GET /api/v2/workloads/{id}/protons/{proton-id}/statusDetails`, which names the reason (`ErrImagePull`, `CrashLoopBackOff`) and the exit code of the run that failed.
+> **Empty output is not always a bug.** Container stdout is gathered by a platform log collector that is rolled out per cluster. On an installation that does not run it, the logs endpoint answers `200` with an empty list however healthy the workload is, and raising `--limit` changes nothing. A container that never started wrote nothing either. When the result is empty, the command says so on stderr and points at [`dr workload diagnose`](#diagnose), which reads the per-replica status details and names the reason (`ErrImagePull`, `CrashLoopBackOff`) and the exit code of the run that failed; stdout stays log lines only, so a pipe is unaffected.
 
 ## Working in a project directory
 

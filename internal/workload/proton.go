@@ -271,15 +271,41 @@ func anyRunning(protons []Proton, wantArtifactID string) bool {
 }
 
 // ProtonStatusDetails is GET /workloads/{id}/protons/{protonId}/statusDetails,
-// the one place the platform says why a generation is not running. Only the
-// fields a failure reason is read from are decoded.
+// the one place the platform says why a generation is not running: the
+// overall verdict, then every pod and every container in it. The shape is the
+// platform's own, kept field for field so `dr workload diagnose` can re-emit
+// it as JSON without inventing a second vocabulary for the same facts.
 type ProtonStatusDetails struct {
-	Replicas []ReplicaStatus `json:"replicas"`
+	OverallStatus OverallStatus   `json:"overallStatus"`
+	Replicas      []ReplicaStatus `json:"replicas"`
+}
+
+// OverallStatus is the platform's one-line verdict on a generation.
+type OverallStatus struct {
+	State       string     `json:"state"`
+	Summary     string     `json:"summary"`
+	LastUpdated *time.Time `json:"lastUpdated"`
 }
 
 // ReplicaStatus is one pod of a generation.
 type ReplicaStatus struct {
-	Containers []ContainerStatus `json:"containers"`
+	Name        string             `json:"name"`
+	Status      string             `json:"status"`
+	Address     string             `json:"address"`
+	NodeAddress string             `json:"nodeAddress"`
+	StartedAt   *time.Time         `json:"startedAt"`
+	Conditions  []ReplicaCondition `json:"conditions"`
+	Containers  []ContainerStatus  `json:"containers"`
+}
+
+// ReplicaCondition is one of a pod's lifecycle conditions, as the cluster
+// reports it: whether it holds, and when it last changed.
+type ReplicaCondition struct {
+	Type               string     `json:"type"`
+	Value              bool       `json:"value"`
+	LastTransitionTime *time.Time `json:"lastTransitionTime"`
+	Reason             string     `json:"reason"`
+	Message            string     `json:"message"`
 }
 
 // ContainerStatus is one container of a replica. A container waiting between
@@ -287,16 +313,26 @@ type ReplicaStatus struct {
 // that caused it under LastState; one that never started has only the current
 // reason (ErrImagePull) and no last state.
 type ContainerStatus struct {
-	Name      string          `json:"name"`
-	Reason    string          `json:"reason"`
-	Message   string          `json:"message"`
-	LastState *ContainerState `json:"lastState"`
+	Name         string          `json:"name"`
+	Status       string          `json:"status"`
+	StartedAt    *time.Time      `json:"startedAt"`
+	Ready        bool            `json:"ready"`
+	RestartCount int             `json:"restartCount"`
+	Image        string          `json:"image"`
+	Reason       string          `json:"reason"`
+	ExitCode     *int            `json:"exitCode"`
+	Message      string          `json:"message"`
+	LastState    *ContainerState `json:"lastState"`
 }
 
 // ContainerState is a container's previous state, recorded when it terminates.
 type ContainerState struct {
-	Reason   string `json:"reason"`
-	ExitCode *int   `json:"exitCode"`
+	Status     string     `json:"status"`
+	Reason     string     `json:"reason"`
+	ExitCode   *int       `json:"exitCode"`
+	Message    string     `json:"message"`
+	StartedAt  *time.Time `json:"startedAt"`
+	FinishedAt *time.Time `json:"finishedAt"`
 }
 
 // GetProtonStatusDetails fetches the snapshot for one generation. The route
@@ -366,12 +402,13 @@ var imagePullReasons = []string{"ErrImagePull", "ImagePullBackOff", "InvalidImag
 // the detail that reason needs.
 func (c ContainerStatus) failure(protonID string) string {
 	// The cluster names containers lrs-<protonId>-<name>.
-	name := strings.TrimPrefix(c.Name, "lrs-"+protonID+"-")
-	if name == "" {
-		name = c.Name
-	}
+	name := shortContainerName(protonID, c.Name)
 
-	last := c.lastRun()
+	last := c.lastExit()
+
+	if c.isCleanStop(last) {
+		return ""
+	}
 
 	switch {
 	case c.Reason != "":
@@ -393,6 +430,29 @@ func (c ContainerStatus) failure(protonID string) string {
 	default:
 		return ""
 	}
+}
+
+// lastExit is lastRun, or, for a container that is terminated right now with
+// no previous state recorded, its own exit: the code then sits on the
+// container itself, and it is the run worth naming.
+func (c ContainerStatus) lastExit() string {
+	if last := c.lastRun(); last != "" {
+		return last
+	}
+
+	if c.LastState == nil && c.ExitCode != nil && *c.ExitCode != 0 {
+		return fmt.Sprintf("exited %d", *c.ExitCode)
+	}
+
+	return ""
+}
+
+// isCleanStop reports a container that ended the way the cluster expects it
+// to: Completed is its word for an exit of zero. On a stopped workload that
+// is the whole story rather than a fault, and reporting it would make every
+// clean stop read as a finding.
+func (c ContainerStatus) isCleanStop(last string) bool {
+	return c.Reason == "Completed" && last == ""
 }
 
 // lastRun names how the previous run ended, "" when there was none. The
