@@ -233,10 +233,11 @@ type RootFactory struct {
 	// here so Exit() can flush events when main's error path fires.
 	telemetryClient *telemetry.Client
 
-	// pluginsRegistered guards the execution-time plugin discovery pass. The
-	// production binary executes one tree once, but tests may call the helper
-	// more than once and should not get duplicate plugin commands.
-	pluginsRegistered bool
+	// pluginsRegistered guards the execution-time plugin discovery pass,
+	// tracked per command tree because one factory can Build() many trees.
+	// Each tree must register plugins exactly once: idempotent for repeated
+	// calls, but never silently skipped for a freshly built tree.
+	pluginsRegistered map[*cobra.Command]bool
 }
 
 // NewRootFactory creates a RootFactory with the given functional options
@@ -334,7 +335,11 @@ func (f *RootFactory) Build() *cli.CommandAdder {
 // flags have been parsed. That lets --plugin-discovery-timeout=0s disable the
 // expensive PATH scan before Cobra tries to resolve a command.
 func (f *RootFactory) RegisterPlugins(adder *cli.CommandAdder) {
-	if f.pluginsRegistered {
+	if f.pluginsRegistered == nil {
+		f.pluginsRegistered = make(map[*cobra.Command]bool)
+	}
+
+	if f.pluginsRegistered[adder.Command] {
 		return
 	}
 
@@ -344,7 +349,7 @@ func (f *RootFactory) RegisterPlugins(adder *cli.CommandAdder) {
 	// at execution time follow the same parent-command behaviour as built-ins.
 	setUnknownArgGuards(adder.Command)
 
-	f.pluginsRegistered = true
+	f.pluginsRegistered[adder.Command] = true
 }
 
 // buildRootCommand constructs the bare cobra.Command with its Use, Long, and

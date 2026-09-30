@@ -38,6 +38,11 @@ func RegisterPluginCommands(rootCmd *cobra.Command) {
 	if timeout <= 0 {
 		log.Debug("Plugin discovery disabled", "timeout", timeout)
 
+		// Seed the cache as empty so a later lazy GetPlugins() call (e.g. from
+		// `dr plugin list`) cannot re-run discovery under a lower-priority
+		// timeout source, such as an env value undoing an explicit 0s flag.
+		internalPlugin.PrimeCache(nil, nil)
+
 		return
 	}
 

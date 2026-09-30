@@ -224,6 +224,32 @@ func TestBuildDefersPluginRegistrationUntilExecuteTime(t *testing.T) {
 	assert.NotNil(t, findCommandByPath(root.Command, "dr deferred-plugin"))
 }
 
+func TestRegisterPlugins_RegistersEveryBuiltTree(t *testing.T) {
+	var calls int
+
+	factory := NewIsolatedRootFactory(
+		WithPluginRegistrar(func(cmd *cobra.Command) {
+			calls++
+
+			cmd.AddCommand(&cobra.Command{
+				Use: "deferred-plugin",
+				Run: func(_ *cobra.Command, _ []string) {},
+			})
+		}),
+	)
+
+	first := factory.Build()
+	second := factory.Build()
+
+	factory.RegisterPlugins(first)
+	factory.RegisterPlugins(second)
+	factory.RegisterPlugins(first)
+
+	assert.Equal(t, 2, calls, "each built tree registers exactly once")
+	assert.NotNil(t, findCommandByPath(first.Command, "dr deferred-plugin"))
+	assert.NotNil(t, findCommandByPath(second.Command, "dr deferred-plugin"))
+}
+
 func TestProfileFlag_RegisteredAndUniversal(t *testing.T) {
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)

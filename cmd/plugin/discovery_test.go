@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -100,4 +101,29 @@ func TestPluginDiscoveryTimeout_InvalidEnvFallsBackToDefault(t *testing.T) {
 	root := newPluginDiscoveryTimeoutRoot(t)
 
 	assert.Equal(t, internalPlugin.DefaultDiscoveryTimeout, pluginDiscoveryTimeout(root))
+}
+
+// This test consumes the package-global plugin registry (PrimeCache/GetPlugins
+// use sync.Once); no other test in this package reads that registry.
+func TestRegisterPluginCommands_DisabledSeedsEmptyLazyCache(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "9s")
+
+	tempDir := t.TempDir()
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tempDir)
+
+	// A valid plugin on PATH: if the lazy path re-discovered despite the
+	// startup flag, the 9s env value would find it and this test would fail.
+	pluginPath := filepath.Join(tempDir, "dr-fakeplugin")
+	script := "#!/bin/sh\necho '{\"name\":\"fakeplugin\",\"version\":\"1.0.0\"}'\n"
+	require.NoError(t, os.WriteFile(pluginPath, []byte(script), 0o755))
+	t.Setenv("PATH", tempDir)
+
+	root := newPluginDiscoveryTimeoutRoot(t)
+	require.NoError(t, root.PersistentFlags().Set(internalPlugin.DiscoveryTimeoutKey, "0s"))
+
+	RegisterPluginCommands(root)
+
+	plugins, conflicts := internalPlugin.GetPlugins()
+	assert.Empty(t, plugins, "lazy discovery must not re-run after startup disabled it")
+	assert.Empty(t, conflicts)
 }
