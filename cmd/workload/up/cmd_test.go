@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1001,4 +1002,68 @@ func TestCmd_JSONRefusalDoesNotDisownTheTableItPrinted(t *testing.T) {
 
 	assert.Contains(t, err.Error(), "The table above")
 	assert.NotContains(t, err.Error(), "cannot show you what it would do")
+}
+
+// readSpy reports whether anything read from it. Stdin is where a prompt's
+// answer would come from, so a read is the tell that a question was asked.
+type readSpy struct{ read bool }
+
+func (r *readSpy) Read([]byte) (int, error) {
+	r.read = true
+
+	return 0, io.EOF
+}
+
+// The property Carson's agent doubted, held by a test rather than by reading
+// the code: with no terminal, `up` prompts for nothing and the deploy goes
+// ahead — including the one question it would otherwise insist on, typing the
+// workload name back to roll a locked live version (RAPTOR-19537).
+func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		terminal bool
+	}{
+		{name: "no terminal, no flag", args: nil},
+		{name: "--yes on a terminal", args: []string{"--yes"}, terminal: true},
+		{name: "--yes with no terminal", args: []string{"--yes"}},
+		{name: "json output with no terminal", args: []string{"--output-format", "json"}},
+
+		// Deliberately absent: JSON *on a terminal*. That suppresses the
+		// wizard but not the locked-roll question, because somebody is still
+		// standing there — see TestCmd_JSONOutputStillHandsOverTheQuestion,
+		// which holds the other half of that distinction.
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prev := isStdinTerminalFn
+			isStdinTerminalFn = func() bool { return tc.terminal }
+
+			t.Cleanup(func() { isStdinTerminalFn = prev })
+
+			// A locked live version is the case that asks: without one of
+			// these signals the deploy stops for a typed confirmation.
+			seen := stubRun(t, up.Result{
+				WorkloadID: "wl-1",
+				Status:     "running",
+				Locked:     true,
+				Action:     up.ActionRolled,
+			}, nil)
+
+			spy := &readSpy{}
+
+			cmd := Cmd()
+			cmd.PreRunE = nil
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetIn(spy)
+			cmd.SetArgs(append([]string{"--dir", t.TempDir()}, tc.args...))
+
+			require.NoError(t, cmd.Execute())
+
+			assert.Nil(t, seen.Confirm,
+				"a deploy handed a confirmer would stop and ask, with nobody there to answer")
+			assert.True(t, seen.NonInteractive)
+			assert.False(t, spy.read, "something asked a question and waited for an answer")
+		})
+	}
 }

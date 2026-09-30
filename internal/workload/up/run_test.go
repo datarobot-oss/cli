@@ -409,12 +409,77 @@ func running(id string) *workload.Workload {
 	}
 }
 
-// TestRun_NoManifestWithoutATerminalNamesTheFix is the rule that keeps a CI
-// job from deploying a workload nobody described.
-func TestRun_NoManifestWithoutATerminalNamesTheFix(t *testing.T) {
+// A fresh project deploys without a human, which is the whole of
+// RAPTOR-19537: the refusal that used to stand here sent an agent to a
+// command whose own help says it opens a wizard, and it gave up.
+//
+// It replaces TestRun_NoManifestWithoutATerminalNamesTheFix, which held the
+// opposite rule. What that rule was protecting — never deploying a workload
+// nobody described — is still held, by the two tests below it: the setup runs
+// headlessly and writes the file first, and a project it cannot read is
+// refused rather than guessed at.
+func TestRun_NoManifestWithoutATerminalRunsTheSetupHeadlessly(t *testing.T) {
+	dir := t.TempDir()
+
+	var asked bool
+
+	install(t, fakes{
+		wizard: func(opts wizard.Options) (wizard.Result, error) {
+			asked = true
+
+			assert.True(t, opts.NonInteractive,
+				"a run with nobody watching must not leave the wizard able to prompt")
+			assert.Equal(t, dir, opts.Dir)
+
+			writeManifest(t, dir, unboundImageManifest)
+
+			return wizard.Result{Path: manifest.Path(opts.Dir)}, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	var stderr bytes.Buffer
+
+	result, err := Run(t.Context(), Options{Dir: dir, NonInteractive: true, Stderr: &stderr})
+	require.NoError(t, err)
+	assert.True(t, asked, "the setup has to run; refusing is what left the agent stuck")
+	assert.Equal(t, "wl-new", result.WorkloadID)
+}
+
+// The rule the refusal was really protecting: nothing is deployed from a
+// guess the project does not support. The wizard says which flags settle it,
+// and this adds the command they belong to — they are `dr workload config`'s,
+// not this one's, and a reader told to pass --image to a command with no such
+// flag finds that out the hard way.
+func TestRun_NoManifestAndNothingToInferIsStillRefused(t *testing.T) {
+	refusal := errors.New(
+		"no Dockerfile found in x, so the image source cannot be guessed: " +
+			"pass --build-mode image with --image, or --build-mode generated " +
+			"with --execution-environment and --entrypoint")
+
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) { return wizard.Result{}, refusal },
+	})
+
+	var stderr bytes.Buffer
+
+	_, err := Run(t.Context(), Options{Dir: t.TempDir(), NonInteractive: true, Stderr: &stderr})
+	require.ErrorIs(t, err, refusal, "the wizard's own words survive; it knows the project")
+	assert.Contains(t, err.Error(), "dr workload config", "and the flags are named as that command's")
+}
+
+// A preview must not write the file it is previewing, so --dry-run is the one
+// non-interactive path that still refuses — and it names both commands,
+// because one of them is the step this run just declined to take.
+func TestRun_DryRunWithNoManifestWritesNothingAndNamesBothCommands(t *testing.T) {
+	dir := t.TempDir()
+
 	install(t, fakes{
 		wizard: func(wizard.Options) (wizard.Result, error) {
-			t.Fatal("the wizard must not run without a terminal")
+			t.Fatal("a dry run must not write a manifest")
 
 			return wizard.Result{}, nil
 		},
@@ -422,10 +487,16 @@ func TestRun_NoManifestWithoutATerminalNamesTheFix(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	_, err := Run(t.Context(), Options{Dir: t.TempDir(), NonInteractive: true, Stderr: &stderr})
+	_, err := Run(t.Context(), Options{Dir: dir, NonInteractive: true, DryRun: true, Stderr: &stderr})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoManifest)
-	assert.Contains(t, err.Error(), "dr workload config")
+
+	assert.Contains(t, err.Error(), "dr workload config --yes")
+	assert.Contains(t, err.Error(), "dr workload up --yes")
+
+	entries, readErr := os.ReadDir(dir)
+	require.NoError(t, readErr)
+	assert.Empty(t, entries, "a dry run left a file behind")
 }
 
 // TestRun_NoManifestOnATerminalRunsTheWizard: setup and the first deploy are

@@ -307,6 +307,48 @@ Because `stop`, `start` and `delete` change something, they ask for confirmation
 
 `stop` and `start` also accept `DATAROBOT_CLI_NON_INTERACTIVE=1` in place of `--yes`. `delete` does not, when the id is specified in a manifest: that variable is usually set once across a whole CI pipeline, and deleting something nobody named is not what it was set for. Pass `--yes` explicitly there.
 
+## Deploying from a project: `config` and `up`
+
+> These two are still behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to see them in `--help`.
+
+`dr workload config` writes the `.datarobot.yaml` that describes your project, and `dr workload up` deploys the difference between that file and what is running. Together they are the deploy loop for a repository, where `create` deploys an artifact you already have.
+
+```bash
+dr workload config      # write .datarobot.yaml (a wizard, on a terminal)
+dr workload up          # plan, then apply
+dr workload up --dry-run  # plan and stop
+```
+
+### CI, scripts, and agents
+
+**`dr workload up --yes` asks nothing, including on a project that has never deployed.** With no manifest it answers the setup from the project — the `Dockerfile` and its `EXPOSE` — writes `.datarobot.yaml`, and deploys. The file is written before anything is deployed, so what was inferred is on disk to read and to commit; nothing is deployed from a guess that leaves no trace.
+
+```bash
+dr workload up --yes                    # a fresh project, in one command
+```
+
+Four things put the command in that mode, and any one is enough:
+
+| | |
+|---|---|
+| `--yes` / `-y` | the explicit form |
+| `DATAROBOT_CLI_NON_INTERACTIVE=true` | usually set once for a whole pipeline |
+| `--output-format json` | a machine is reading stdout |
+| stdin is not a terminal | a pipe, a job runner, a harness |
+
+So a deploy from CI needs no flag to be safe to run unattended, and neither does one driven by a tool.
+
+One question outlives most of that. Rolling a workload whose **live version is locked** asks for its name to be typed back, and only `--yes` and the absence of a terminal answer it in advance. `--output-format json` says how to print stdout, not that production may be replaced without a word — on a terminal somebody is still there to ask. It is the same line `delete` draws for `DATAROBOT_CLI_NON_INTERACTIVE`.
+
+A project it cannot read is still refused rather than guessed at. With no `Dockerfile` there is no image source to infer, and the error names the flags that settle it — pass them to `dr workload config`, which is where they live:
+
+```bash
+dr workload config --yes --build-mode image --image registry.example.com/app:v1
+dr workload up --yes
+```
+
+`--dry-run` is the one non-interactive path that still refuses on a project with no manifest: a preview must not write the file it is previewing. It prints both commands to run.
+
 ## Shared flags
 
 ### `--output-format`

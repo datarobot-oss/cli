@@ -550,22 +550,42 @@ func load(dir string, opts Options) (Loaded, error) {
 		return loaded, err
 	}
 
-	if opts.NonInteractive {
+	// A preview must not write the file it is previewing, so this is the one
+	// non-interactive path that still refuses. It names both halves of the
+	// recipe, because the command it used to name opens a wizard by default
+	// and an agent reading "run dr workload config" met exactly that.
+	if opts.NonInteractive && opts.DryRun {
 		return Loaded{}, fmt.Errorf(
-			"%w. Run 'dr workload config' to create one, then deploy", err)
+			"%w. Run 'dr workload config --yes%s' to create one, then 'dr workload up --yes%s'",
+			err, manifest.DirFlag(dir), manifest.DirFlag(dir))
 	}
 
 	// Remedy for the same reason the deploy path sets it: nothing setup prints
 	// today names a flag, but the fallback is `dr workload config`, and a
 	// default that is wrong for this caller is one nobody will notice going
 	// wrong.
+	//
+	// Non-interactive runs go through the same wizard rather than being
+	// refused. The refusal was never preventing a guess — `dr workload config
+	// --yes` makes the identical one, from ./Dockerfile and its EXPOSE — it
+	// only required that the guess be made by the other command, and the cost
+	// was a dead end: the error named a command whose own help says it opens
+	// a wizard, so an agent asked for a human and stopped (RAPTOR-19537).
+	// What keeps "never deploy by guessing" honest is that the guess is
+	// written to a committed file first, which is as true here as it is there.
+	//
+	// A project the wizard cannot read still refuses, in its own words: with
+	// no Dockerfile it cannot infer an image source and says which flags
+	// settle it. That error is better than one written here, because it is
+	// the one `dr workload config` gives for the same project.
 	setup, err := runWizardFn(wizard.Options{
-		Dir:    dir,
-		Remedy: "dr workload up" + manifest.DirFlag(dir),
-		Stderr: opts.Stderr,
+		Dir:            dir,
+		NonInteractive: opts.NonInteractive,
+		Remedy:         "dr workload up" + manifest.DirFlag(dir),
+		Stderr:         opts.Stderr,
 	})
 	if err != nil {
-		return Loaded{}, err
+		return Loaded{}, setupRefused(err, opts.NonInteractive, dir)
 	}
 
 	// The wizard's directory question may have moved the project, and the
@@ -576,6 +596,23 @@ func load(dir string, opts Options) (Loaded, error) {
 	}
 
 	return Load(dir)
+}
+
+// setupRefused says which command the flags in a headless setup failure
+// belong to.
+//
+// The wizard's own message names them — "--build-mode image with --image", and
+// the rest — but it is the same message whether `dr workload config` or this
+// deploy ran it, and those flags exist only on the first. Left alone, a reader
+// told to pass --image to a command that has no such flag learns that the hard
+// way. An interactive run is left untouched: nobody there was given flags to
+// be confused about.
+func setupRefused(err error, nonInteractive bool, dir string) error {
+	if !nonInteractive {
+		return err
+	}
+
+	return fmt.Errorf("%w. Pass them to 'dr workload config%s', then run this again", err, manifest.DirFlag(dir))
 }
 
 // editEnv applies the .env re-entry this run asked for, against the manifest
