@@ -26,7 +26,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "uninstall <plugin-name>",
-		Short:   "🗑️ Uninstall a managed plugin",
+		Short:   "🚫 Uninstall a managed plugin",
 		Long:    "Remove a plugin that was installed via `dr plugin install`.",
 		Example: "  dr plugin uninstall assist",
 		Args:    cobra.ExactArgs(1),

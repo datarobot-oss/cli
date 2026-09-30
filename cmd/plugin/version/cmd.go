@@ -35,7 +35,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "version <plugin-name>",
-		Short:   "🏷️ Show a plugin's version",
+		Short:   "🔖 Show a plugin's version",
 		Long:    "Display the version of a discovered plugin, as reported in its manifest.",
 		Example: "  dr plugin version assist\n  dr plugin version assist --output-format json",
 		Args:    cobra.ExactArgs(1),
