@@ -96,6 +96,7 @@ nav:
       - component: commands/component-managed-updates.md
       - dependencies: commands/dependencies.md
       - artifact: commands/artifact.md
+      - enclave: commands/enclave.md
       - workload: commands/workload.md
       - spec reference: commands/workload-spec.md
       - pipeline: commands/pipeline.md
