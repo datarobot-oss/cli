@@ -137,9 +137,10 @@ var ErrGroupAutoscales = errors.New("the container group autoscales, so its repl
 // the block as the platform holds it, re-sent whole with one number changed.
 //
 // Whole, because the route reads a PATCH as the entire runtime. Measured on
-// staging: a body naming only the group and the count was accepted and came
-// back as a replacement whose runtime had no containers and no bundles in
-// it, which on a running workload would be a resize to nothing. The
+// staging: a body naming only the group and the count was accepted with a
+// 202 and a replacement whose runtime had no containers and no bundles in
+// it; that replacement then errored (ResourceBundleInferenceError: at least
+// one resource signal is required) and the workload stayed as it was. The
 // platform's own answer to the bundle request, resolvedBundle, is dropped on
 // the way out: it is a result, not a request, and re-sending it would pin
 // the platform to a choice it made once.
@@ -185,6 +186,10 @@ func (s *WorkloadSettings) WithReplicaCount(group string, replicas int) (json.Ra
 	}
 
 	if !found {
+		if len(names) == 0 {
+			return nil, fmt.Errorf("no container group named %q; the workload has no container groups", group)
+		}
+
 		return nil, fmt.Errorf("no container group named %q; the workload has %s", group, strings.Join(names, ", "))
 	}
 
@@ -200,6 +205,15 @@ func (s *WorkloadSettings) WithReplicaCount(group string, replicas int) (json.Ra
 // wrote: either the settings body itself, {"runtime": ...}, or the runtime
 // block bare. Both are accepted because the first is what the route takes
 // and the second is what a manifest carries under the same name.
+//
+// The block is checked for what the route accepts and then fails on. A
+// PATCH is the entire runtime, and the route answers 202 to a group with no
+// containers or no resource signal; the replacement then errors on its own
+// time, which without --wait nobody sees. So a group has to carry a name,
+// its containers, and either resourceBundles or a resourceAllocation on
+// every container, which is the platform's own list. The check reads the
+// document loosely, since a file may spell memory the manifest's way
+// ("512MB") where the platform answers in bytes.
 func RuntimeFromSettingsFile(doc json.RawMessage) (json.RawMessage, error) {
 	var body struct {
 		Runtime json.RawMessage `json:"runtime"`
@@ -209,16 +223,66 @@ func RuntimeFromSettingsFile(doc json.RawMessage) (json.RawMessage, error) {
 		return nil, fmt.Errorf("the settings file is not a JSON object: %w", err)
 	}
 
+	runtime := doc
 	if len(body.Runtime) > 0 && string(body.Runtime) != "null" {
-		return body.Runtime, nil
+		runtime = body.Runtime
 	}
 
-	var runtime RuntimeSettings
+	if err := checkRuntimeDoc(runtime); err != nil {
+		return nil, err
+	}
+
+	return runtime, nil
+}
+
+func checkRuntimeDoc(doc json.RawMessage) error {
+	var runtime struct {
+		ContainerGroups []map[string]json.RawMessage `json:"containerGroups"`
+	}
 
 	if err := json.Unmarshal(doc, &runtime); err != nil || len(runtime.ContainerGroups) == 0 {
-		return nil, errors.New("the settings file carries neither a runtime block nor containerGroups; " +
+		return errors.New("the settings file carries neither a runtime block nor containerGroups; " +
 			"see 'dr workload settings <id> --output-format json' for the shape")
 	}
 
-	return doc, nil
+	for i, group := range runtime.ContainerGroups {
+		if err := checkGroupDoc(group); err != nil {
+			return fmt.Errorf("the settings file's containerGroups[%d] %w", i, err)
+		}
+	}
+
+	return nil
+}
+
+// checkGroupDoc is the platform's own conditions on a group, applied before
+// the send: a name, at least one container, and a resource signal.
+func checkGroupDoc(group map[string]json.RawMessage) error {
+	var name string
+
+	if json.Unmarshal(group["name"], &name) != nil || name == "" {
+		return errors.New("needs a name")
+	}
+
+	var containers []map[string]json.RawMessage
+
+	if json.Unmarshal(group["containers"], &containers) != nil || len(containers) == 0 {
+		return fmt.Errorf("(%s) needs at least one container: the body replaces the whole runtime", name)
+	}
+
+	var bundles []string
+
+	if json.Unmarshal(group["resourceBundles"], &bundles) == nil && len(bundles) > 0 {
+		return nil
+	}
+
+	for _, c := range containers {
+		var allocation map[string]any
+
+		if json.Unmarshal(c["resourceAllocation"], &allocation) != nil || len(allocation) == 0 {
+			return fmt.Errorf("(%s) needs a resource signal: resourceBundles on the group, "+
+				"or a resourceAllocation on every container", name)
+		}
+	}
+
+	return nil
 }

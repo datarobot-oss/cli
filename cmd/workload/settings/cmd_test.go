@@ -266,10 +266,16 @@ func TestCmd_ReplicasRefusesAnAutoscaledGroup(t *testing.T) {
 // shapes the file used.
 func TestCmd_SpecFileSendsTheRuntime(t *testing.T) {
 	for name, doc := range map[string]string{
-		"settings body": `{"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2}]}}`,
+		"settings body": `{"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2,
+			"resourceBundles": ["cpu.small"], "containers": [{"name": "primary"}]}]}}`,
 		"runtime block": `containerGroups:
   - name: default
     replicaCount: 2
+    containers:
+      - name: primary
+        resourceAllocation:
+          cpu: 1
+          memory: 512MB
 `,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -296,6 +302,20 @@ func TestCmd_SpecFileSendsTheRuntime(t *testing.T) {
 	}
 }
 
+// A body the platform would accept and then fail on is refused before the
+// send, naming the group and what it lacks; nothing is confirmed or sent.
+func TestCmd_SpecFileRefusesAGroupTheRolloutWouldFailOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2}]}}`), 0o600))
+
+	install(t, seams{})
+
+	_, stderr, err := run(t, id, "--spec-file", path, "--yes")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "containerGroups[0] (default) needs at least one container")
+	assert.NotContains(t, stderr, "rolls the workload's containers", "no restart is announced for a refused change")
+}
+
 // The flags are checked against each other before anything reaches the
 // network, and the errors name the flags.
 func TestCmd_RefusesInconsistentFlags(t *testing.T) {
@@ -307,6 +327,7 @@ func TestCmd_RefusesInconsistentFlags(t *testing.T) {
 		{"replicas and spec-file", []string{"--replicas", "2", "--spec-file", "x"}, "exclusive"},
 		{"negative replicas", []string{"--replicas", "-1"}, "cannot be negative"},
 		{"group alone", []string{"--group", "default"}, "--group says which container group --replicas applies to"},
+		{"wait on a read", []string{"--wait"}, "--wait follows a change"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			install(t, seams{})
@@ -327,15 +348,50 @@ func TestCmd_ChangeUnderJSONNeedsYes(t *testing.T) {
 	assert.Contains(t, err.Error(), "--yes")
 }
 
-// A rollout already in flight refuses the change before anything is sent.
+// A rollout already in flight refuses the change before anything is sent,
+// and before any restart is announced.
 func TestCmd_RefusesWhileAReplacementIsInFlight(t *testing.T) {
 	install(t, seams{
 		get:   func(string) (*workload.WorkloadSettings, error) { return settingsDoc(t, stopped), nil },
 		guard: func(string) error { return workload.ErrReplacementInFlight },
 	})
 
-	_, _, err := run(t, id, "--replicas", "2", "--yes")
+	_, stderr, err := run(t, id, "--replicas", "2", "--yes")
 	require.ErrorIs(t, err, workload.ErrReplacementInFlight)
+	assert.NotContains(t, stderr, "rolls the workload's containers")
+}
+
+// The body is the whole runtime, so it is built from a read taken after
+// the confirmation: a change that landed while the question stood travels
+// with the resize instead of being reverted by it.
+func TestCmd_ReplicasSendsTheRuntimeAsItIsAfterConfirming(t *testing.T) {
+	retuned := strings.Replace(stopped, `"cpu":0.5`, `"cpu":2`, 1)
+	reads := 0
+
+	var sent json.RawMessage
+
+	install(t, seams{
+		get: func(string) (*workload.WorkloadSettings, error) {
+			reads++
+
+			if reads == 1 {
+				return settingsDoc(t, stopped), nil
+			}
+
+			return settingsDoc(t, retuned), nil
+		},
+		update: func(_ string, runtime json.RawMessage) (*workload.Replacement, error) {
+			sent = runtime
+
+			return &workload.Replacement{ID: "rep-5", Status: "unknown"}, nil
+		},
+	})
+
+	_, _, err := run(t, id, "--replicas", "3", "--yes")
+	require.NoError(t, err)
+	assert.Equal(t, 2, reads, "one read for the refusals, one after the question for the body")
+	assert.Contains(t, string(sent), `"cpu":2`, "the later change travels")
+	assert.Contains(t, string(sent), `"replicaCount":3`)
 }
 
 // --wait follows the replacement, then the workload, then prints the
@@ -377,6 +433,59 @@ func TestCmd_WaitFollowsToTheNewSettings(t *testing.T) {
 	assert.Contains(t, stdout, "Settings applied; workload "+id+" is running on them (replacement rep-3)")
 	assert.Contains(t, stdout, "3")
 	assert.NotContains(t, stdout, "being rolled out", "applied is not in flight")
+}
+
+// "applied" is a claim about the count read back, not about the wait having
+// returned: a count that is not the one asked for is an error naming both.
+func TestCmd_WaitRefusesToCallAMismatchedCountApplied(t *testing.T) {
+	install(t, seams{
+		get: func(string) (*workload.WorkloadSettings, error) { return settingsDoc(t, stopped), nil },
+		update: func(string, json.RawMessage) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-6", Status: "unknown"}, nil
+		},
+		waitR: func(_ string, started *workload.Replacement, _, _ time.Duration, _ func(*workload.Replacement)) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: started.ID, Status: "completed"}, nil
+		},
+		waitW: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
+		},
+	})
+
+	_, _, err := run(t, id, "--replicas", "3", "--yes", "--wait")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reports 1 replicas, not 3")
+}
+
+// A settings body has no single number to read back, so it is applied on
+// the replacement's own completed status, and unconfirmed when the wait
+// settled without one: the seed comes back when the platform collects a
+// fast rollout before the first poll.
+func TestCmd_WaitWithoutAVerdictIsUnconfirmed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"containerGroups": [{"name": "default", "replicaCount": 2,
+		"resourceBundles": ["cpu.small"], "containers": [{"name": "primary"}]}]}`), 0o600))
+
+	install(t, seams{
+		get: func(string) (*workload.WorkloadSettings, error) { return settingsDoc(t, stopped), nil },
+		update: func(string, json.RawMessage) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-7", Status: "submitted"}, nil
+		},
+		waitR: func(_ string, started *workload.Replacement, _, _ time.Duration, _ func(*workload.Replacement)) (*workload.Replacement, error) {
+			return started, nil
+		},
+		waitW: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
+		},
+	})
+
+	stdout, _, err := run(t, id, "--spec-file", path, "--yes", "--wait")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "no final status for replacement rep-7 (last seen submitted)")
+	assert.NotContains(t, stdout, "Settings applied")
+
+	stdout, _, err = run(t, id, "--spec-file", path, "--yes", "--wait", "--output-format", "json")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, `"status": "unconfirmed"`)
 }
 
 // A replacement that ends failed leaves the workload on the settings it had,

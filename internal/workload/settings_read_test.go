@@ -144,22 +144,49 @@ func TestWorkloadSettings_WithReplicaCountRefusals(t *testing.T) {
 // A settings file is either the body the route takes or the runtime block
 // a manifest carries; both are read, and neither is sent inside the other.
 func TestRuntimeFromSettingsFile(t *testing.T) {
-	body, err := RuntimeFromSettingsFile(json.RawMessage(`{"runtime": {"containerGroups": [{"name": "default", "replicaCount": 2}]}}`))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"containerGroups": [{"name": "default", "replicaCount": 2}]}`, string(body))
+	// A complete group: a name, a container, and a bundle as its resource
+	// signal.
+	const group = `{"name": "default", "replicaCount": 2, "resourceBundles": ["cpu.small"],
+		"containers": [{"name": "primary"}]}`
 
-	bare, err := RuntimeFromSettingsFile(json.RawMessage(`{"containerGroups": [{"name": "default", "replicaCount": 2}]}`))
+	body, err := RuntimeFromSettingsFile(json.RawMessage(`{"runtime": {"containerGroups": [` + group + `]}}`))
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"containerGroups": [{"name": "default", "replicaCount": 2}]}`, string(bare))
+	assert.JSONEq(t, `{"containerGroups": [`+group+`]}`, string(body))
 
-	for name, doc := range map[string]string{
-		"neither shape": `{"name": "my-app", "artifactId": "art-1"}`,
-		"null runtime":  `{"runtime": null}`,
-		"not an object": `[1, 2]`,
+	bare, err := RuntimeFromSettingsFile(json.RawMessage(`{"containerGroups": [` + group + `]}`))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"containerGroups": [`+group+`]}`, string(bare))
+
+	// An allocation on every container is the other resource signal, and
+	// memory may be spelled the manifest's way.
+	allocated, err := RuntimeFromSettingsFile(json.RawMessage(`{"containerGroups": [{"name": "default", "replicaCount": 2,
+		"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "512MB"}}]}]}`))
+	require.NoError(t, err)
+	assert.Contains(t, string(allocated), "512MB")
+
+	for name, tc := range map[string]struct{ doc, want string }{
+		"neither shape": {`{"name": "my-app", "artifactId": "art-1"}`, "neither a runtime block nor containerGroups"},
+		"null runtime":  {`{"runtime": null}`, "neither a runtime block nor containerGroups"},
+		"not an object": {`[1, 2]`, "not a JSON object"},
+		"nameless group": {
+			`{"containerGroups": [{"replicaCount": 2, "containers": [{"name": "primary"}]}]}`,
+			"containerGroups[0] needs a name",
+		},
+		"no containers": {
+			`{"containerGroups": [{"name": "default", "replicaCount": 2}]}`,
+			"(default) needs at least one container",
+		},
+		"no resource signal": {
+			`{"containerGroups": [{"name": "default", "containers": [{"name": "primary"}]}]}`,
+			"(default) needs a resource signal",
+		},
+		"one container without an allocation": {`{"containerGroups": [{"name": "default", "containers": [
+			{"name": "a", "resourceAllocation": {"cpu": 1}}, {"name": "b"}]}]}`, "(default) needs a resource signal"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := RuntimeFromSettingsFile(json.RawMessage(doc))
+			_, err := RuntimeFromSettingsFile(json.RawMessage(tc.doc))
 			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
 }

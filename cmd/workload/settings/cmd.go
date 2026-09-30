@@ -90,7 +90,11 @@ because its count belongs to the autoscaler: change the policy instead,
 with --spec-file. --spec-file <path> sends a whole settings body, JSON or
 YAML, either {"runtime": ...} or the runtime block itself, which is the
 shape 'dr workload settings <id> --output-format json' prints and the
-shape a manifest carries under runtime.
+shape a manifest carries under runtime. The body replaces the whole
+runtime, so every group needs its name, its containers, and either
+resourceBundles or a resourceAllocation on each container; a body missing
+those is refused here, because the platform accepts it and then fails the
+rollout.
 
 A change is a rolling replacement: the platform brings up containers with
 the new settings and retires the old ones, and the endpoint keeps
@@ -102,13 +106,16 @@ Applied to a stopped workload, the platform starts it.
 Without --wait the command returns once the platform has accepted the
 change and names the replacement to follow. With --wait it follows the
 replacement to its end, waits for the workload to be running on the new
-settings, and prints them. A replacement that ends failed leaves the
-workload on the settings it had, and the command says so and exits
-non-zero.
+settings, reads them back and prints them. A replica change is reported
+applied when the count read back is the one asked for, and is an error
+otherwise; a settings body is applied when the replacement ended
+completed, and "unconfirmed" when the platform gave no final status for
+it. A replacement that ends failed leaves the workload on the settings it
+had, and the command says so and exits non-zero.
 
 JSON output is one {"settings": ...} document: the runtime in the
 platform's own field names, the replacement, and for a change the status
-"requested" or "applied".
+"requested", "applied" or "unconfirmed".
 
 ` + idargs.HelpText + `
 
@@ -126,7 +133,7 @@ Example:
 			outputFormat = outputformat.GetFormat(cmd)
 			c.hasReplicas = cmd.Flags().Changed("replicas")
 
-			if err := c.check(); err != nil {
+			if err := c.check(poll.Wait); err != nil {
 				return err
 			}
 
@@ -175,7 +182,7 @@ Example:
 }
 
 // check refuses the flag combinations that cannot mean one thing.
-func (c change) check() error {
+func (c change) check(wait bool) error {
 	if c.hasReplicas && c.specFile != "" {
 		return errors.New("--replicas and --spec-file are exclusive: one number on one group, or a whole settings body")
 	}
@@ -186,6 +193,10 @@ func (c change) check() error {
 
 	if c.group != "" && !c.hasReplicas {
 		return errors.New("--group says which container group --replicas applies to; it does nothing on its own")
+	}
+
+	if wait && !c.requested() {
+		return errors.New("--wait follows a change; with no --replicas or --spec-file there is nothing to wait for")
 	}
 
 	return nil
@@ -208,33 +219,26 @@ func show(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref) 
 // apply builds the runtime to send, confirms, starts the replacement and,
 // with --wait, follows it to the workload running on the new settings.
 func apply(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref, c change, poll pollflags.Set) error {
+	// Built once before the question, so a group that does not exist or
+	// autoscales is refused before anyone is asked anything.
 	runtime, err := payloadFor(ref, c)
 	if err != nil {
 		return err
 	}
 
-	confirmed, err := idargs.Confirm(cmd,
-		idargs.Prompt("Update the runtime settings of", ref, "The change rolls its containers onto the new settings."),
-		idargs.EnvMayConsent)
+	confirmed, err := consent(cmd, ref)
 	if err != nil || !confirmed {
 		return err
 	}
 
-	// Said whether or not a question was asked: the restart is the part
-	// worth knowing about, and --yes skips the question, not the fact. Not
-	// under JSON, where stderr is kept clear for `2>&1 | jq .`.
-	if format != outputformat.OutputFormatJSON {
-		fmt.Fprintln(cmd.ErrOrStderr(),
-			"Applying the settings rolls the workload's containers; the endpoint keeps answering "+
-				"from the previous generation until the new one is ready.")
-	}
-
-	if err := guardFn(ref.ID); err != nil {
-		if errors.Is(err, workload.ErrReplacementInFlight) {
+	// And built again after it, from a fresh read: the body is the whole
+	// runtime, so a change that landed while the question stood (someone
+	// else's resize, a policy edit) would be reverted by the copy taken
+	// before it.
+	if c.hasReplicas {
+		if runtime, err = payloadFor(ref, c); err != nil {
 			return err
 		}
-
-		return ref.Wrap(fmt.Errorf("cannot check for a rollout in flight: %w", err))
 	}
 
 	started, err := updateSettingsFn(ref.ID, runtime)
@@ -242,19 +246,57 @@ func apply(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref,
 		return ref.Wrap(fmt.Errorf("cannot update the runtime settings: %w", err))
 	}
 
-	if !poll.Wait {
-		if format != outputformat.OutputFormatJSON {
-			fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+ref.ID)
-		}
-
-		return render(cmd.OutOrStdout(), format, settingsOutput{
-			WorkloadID:  ref.ID,
-			Status:      "requested",
-			Replacement: started,
-		})
+	// Said whether or not a question was asked: the restart is the part
+	// worth knowing about, and --yes skips the question, not the fact. Said
+	// after the send, so a refused change leaves no announcement of a
+	// restart that is not happening. Not under JSON, where stderr is kept
+	// clear for `2>&1 | jq .`.
+	if format != outputformat.OutputFormatJSON {
+		fmt.Fprintln(cmd.ErrOrStderr(),
+			"The settings change rolls the workload's containers; the endpoint keeps answering "+
+				"from the previous generation until the new one is ready.")
 	}
 
-	return follow(cmd, format, ref, started, poll)
+	if !poll.Wait {
+		return reportRequested(cmd, format, ref, started)
+	}
+
+	return follow(cmd, format, ref, c, started, poll)
+}
+
+// consent asks, unless --yes or the environment answers, and then makes
+// sure no other rollout is in flight. False with no error is a decline.
+func consent(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
+	confirmed, err := idargs.Confirm(cmd,
+		idargs.Prompt("Update the runtime settings of", ref, "The change rolls its containers onto the new settings."),
+		idargs.EnvMayConsent)
+	if err != nil || !confirmed {
+		return false, err
+	}
+
+	if err := guardFn(ref.ID); err != nil {
+		if errors.Is(err, workload.ErrReplacementInFlight) {
+			return false, err
+		}
+
+		return false, ref.Wrap(fmt.Errorf("cannot check for a rollout in flight: %w", err))
+	}
+
+	return true, nil
+}
+
+// reportRequested is the answer without --wait: the change is accepted and
+// the replacement named, with where to follow it.
+func reportRequested(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref, started *workload.Replacement) error {
+	if format != outputformat.OutputFormatJSON {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+ref.ID)
+	}
+
+	return render(cmd.OutOrStdout(), format, settingsOutput{
+		WorkloadID:  ref.ID,
+		Status:      "requested",
+		Replacement: started,
+	})
 }
 
 // payloadFor is the runtime block the change asks to send.
@@ -317,7 +359,7 @@ func groupFor(runtime *workload.RuntimeSettings, group string) (string, error) {
 
 // follow waits for the replacement and then for the workload, and prints
 // the settings as they are once it is running on them.
-func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref,
+func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref, c change,
 	started *workload.Replacement, poll pollflags.Set,
 ) error {
 	progress := func(msg string) {
@@ -355,12 +397,60 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 		return ref.Wrap(err)
 	}
 
+	status, err := outcome(ref, c, settings, final)
+	if err != nil {
+		return err
+	}
+
 	return render(cmd.OutOrStdout(), format, settingsOutput{
 		WorkloadID:  ref.ID,
-		Status:      "applied",
+		Status:      status,
 		Runtime:     settings.Runtime,
 		Replacement: final,
 	})
+}
+
+// outcome is what the wait is entitled to claim once it has settled.
+//
+// "applied" needs evidence. For a replica change the evidence is the count
+// read back. For a settings body it is the replacement's own completed
+// status, which the wait does not guarantee: a rollout the platform
+// collects before the first poll comes back as the seed, still saying
+// submitted. With neither, the status is "unconfirmed": the workload is
+// running and these are its settings, but nothing said the change is why.
+func outcome(ref idargs.Ref, c change, settings *workload.WorkloadSettings, final *workload.Replacement) (string, error) {
+	if !c.hasReplicas {
+		if final != nil && strings.EqualFold(final.Status, workload.ReplacementStatusCompleted) {
+			return "applied", nil
+		}
+
+		return "unconfirmed", nil
+	}
+
+	runtime, err := settings.Decode()
+	if err != nil {
+		return "", ref.Wrap(err)
+	}
+
+	group, err := groupFor(runtime, c.group)
+	if err != nil {
+		return "", err
+	}
+
+	for _, g := range runtime.ContainerGroups {
+		if g.Name != group {
+			continue
+		}
+
+		if g.ReplicaCount != nil && *g.ReplicaCount == c.replicas {
+			return "applied", nil
+		}
+
+		return "", fmt.Errorf("the rollout settled but container group %s of workload %s reports %s replicas, not %d; "+
+			"check 'dr workload settings %s'", group, ref.ID, replicasCell(g), c.replicas, ref.ID)
+	}
+
+	return "", fmt.Errorf("the rollout settled but workload %s no longer has a container group named %s", ref.ID, group)
 }
 
 // settingsOutput is the stable JSON shape, and what the text renderer reads.
@@ -402,6 +492,15 @@ func printSettings(w io.Writer, out settingsOutput) error {
 		}
 
 		fmt.Fprint(w, ".\n\n")
+	case "unconfirmed":
+		fmt.Fprintf(w, "Workload %s is running, and these are its settings now", out.WorkloadID)
+
+		if out.Replacement != nil {
+			fmt.Fprintf(w, "; the platform reported no final status for replacement %s (last seen %s)",
+				out.Replacement.ID, out.Replacement.Status)
+		}
+
+		fmt.Fprint(w, ". Compare them with what you sent.\n\n")
 	}
 
 	if len(out.Runtime) == 0 {
