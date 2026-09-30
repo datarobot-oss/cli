@@ -71,12 +71,6 @@ func example() {
 - Always wrap new TUI models with the InterruptibleModel from the `tui` package to ensure global Ctrl-C handling
 - Reuse existing TUI components from `tui` package or Bubbles library (https://github.com/charmbracelet/bubbles)
 - Use styles from `tui/styles.go` for consistency
-
-### Terminal Emoji
-
-- Only use emoji whose width terminals render consistently: single codepoint, `East_Asian_Width=Wide`, no variation selector (e.g. `📦`, `🚀`, `🔀`, `🧰`, `🔧`).
-- Avoid presentation-selector emoji like `⚙️`, `🛠️`, `✏️` — fonts often render the glyph narrow while terminal width math counts it as wide, collapsing the space after it in help output.
-- See [.cursor/bugbot-cmd.md](.cursor/bugbot-cmd.md) ("Emoji in Terminal Output") for the full rule and rationale.
 - When `--debug` is enabled, logs are written to `.dr-tui-debug.log`
 
 ## Quality Tools
