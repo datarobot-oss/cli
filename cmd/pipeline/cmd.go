@@ -38,7 +38,7 @@ func Cmd() *cobra.Command {
 		Use:     "pipeline",
 		Aliases: []string{"pipelines"},
 		GroupID: "core",
-		Short:   "Pipelines API management commands",
+		Short:   "🔀 Pipelines API management commands",
 		Long: `Manage AI/ML pipelines orchestrated by Covalent.
 
 Create, list, inspect, and update pipelines registered with the
