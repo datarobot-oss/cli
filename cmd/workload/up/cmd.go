@@ -19,7 +19,6 @@ package up
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -391,7 +390,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 // and where to look for how it ended. Saying only "interrupted" would read as
 // though pressing Ctrl-C had called it off.
 func explainInterrupt(runErr error, result up.Result) error {
-	if !errors.Is(runErr, tui.ErrInterrupted) && !errors.Is(runErr, context.Canceled) {
+	if !up.Interrupted(runErr) {
 		return runErr
 	}
 

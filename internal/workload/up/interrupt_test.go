@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -155,20 +156,31 @@ func TestHeld_SurvivesAWriterThatOutlivesTheReader(t *testing.T) {
 }
 
 // The whole point of the change, at the level a user meets it: a wait that was
-// interrupted reports a failure, and says the rollout is still going.
+// interrupted reports a failure, and claims nothing about where the rollout
+// got to.
+//
+// The stub returns a workload beside the error, which is what the real poll
+// loop does — pollWorkload hands back its last successful read alongside the
+// cancellation. A stub returning nil there would make this pass for a reason
+// the production path does not have.
 func TestAwaitRunning_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 	fixedClock(t, time.Second)
+
+	// The rollout mid-flight: the workload still reports running, on the
+	// artifact being replaced, at the endpoint the old version answers.
+	midRoll := &workload.Workload{
+		ID:         "wl-1",
+		Status:     workload.WorkloadStatusRunning,
+		ArtifactID: "art-outgoing",
+		Endpoint:   "https://example.invalid/old",
+	}
 
 	var out bytes.Buffer
 
 	swap(t, &waitWorkloadFn, func(ctx context.Context, _ string, _ workload.Serving,
 		_, _ time.Duration, _ func(*workload.Workload),
 	) (*workload.Workload, error) {
-		<-ctx.Done()
-
-		// What the real wait does once its context ends: report where it got
-		// to, and that it did not get there.
-		return nil, ctx.Err()
+		return midRoll, abandonedLikeThePollLoop(ctx)
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -177,15 +189,56 @@ func TestAwaitRunning_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 	report := newReporter(&out, false)
 	opts := Options{Context: ctx, Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
 
-	result, err := awaitRunning("wl-1", workload.Serving{}, Result{WorkloadID: "wl-1"}, opts, report)
+	result, err := awaitRunning("wl-1", workload.Serving{ArtifactID: "art-new"},
+		Result{WorkloadID: "wl-1"}, opts, report)
 
 	require.ErrorIs(t, err, context.Canceled, "an abandoned wait must never come back nil")
 
-	// Nothing was learned, so nothing is claimed. Reporting the status of the
-	// version being rolled off is how --lock came to lock the wrong artifact.
+	// None of the outgoing version's details are recorded. Reporting them
+	// would put the artifact being rolled off, under a status that reads as
+	// arrived, into the summary and the JSON envelope of a deploy nobody
+	// waited for.
 	assert.Empty(t, result.Status)
 	assert.Empty(t, result.Endpoint)
+	assert.NotEqual(t, "art-outgoing", result.ArtifactID)
 	assert.NotContains(t, out.String(), "✓")
+}
+
+// A timeout is the other half of the same decision: that wait ran the whole
+// way, so where it got to is the finding and still gets reported.
+func TestAwaitRunning_ATimeoutStillReportsWhereItGotTo(t *testing.T) {
+	fixedClock(t, time.Second)
+
+	stalled := &workload.Workload{
+		ID:         "wl-1",
+		Status:     workload.WorkloadStatusRunning,
+		ArtifactID: "art-outgoing",
+		Endpoint:   "https://example.invalid/old",
+	}
+
+	var out bytes.Buffer
+
+	swap(t, &waitWorkloadFn, func(context.Context, string, workload.Serving,
+		time.Duration, time.Duration, func(*workload.Workload),
+	) (*workload.Workload, error) {
+		return stalled, errors.New("timeout waiting for workload wl-1 after 30m0s")
+	})
+
+	report := newReporter(&out, false)
+	opts := Options{Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
+
+	result, err := awaitRunning("wl-1", workload.Serving{ArtifactID: "art-new"},
+		Result{WorkloadID: "wl-1"}, opts, report)
+
+	require.Error(t, err)
+	assert.Equal(t, workload.WorkloadStatusRunning, result.Status)
+	assert.Equal(t, "art-outgoing", result.ArtifactID)
+}
+
+// abandonedLikeThePollLoop wraps the context's error the way the package's
+// poll loops do, so the shape the caller inspects is the real one.
+func abandonedLikeThePollLoop(ctx context.Context) error {
+	return fmt.Errorf("stopped waiting for workload wl-1: %w", ctx.Err())
 }
 
 func TestOptionsCtx_DefaultsToBackground(t *testing.T) {

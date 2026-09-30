@@ -117,14 +117,29 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) {
 
 	// Wrapped like every other wait in the package, because it can sit for
 	// the whole timeout: a check that blocks for ten seconds printing nothing
-	// reads as a hang. The closure returns nil whatever happened — the
+	// reads as a hang. The closure returns nil whatever the GET did — the
 	// check-marked line says the GET was made, and the lines below say what
-	// it found; failing the run is the one thing this must never do.
-	_ = report.run("Checking the endpoint", func() error {
+	// it found; failing the run over what this observes is the one thing it
+	// must never do.
+	phaseErr := report.run("Checking the endpoint", func() error {
 		status, err = checkEndpointFn(result.Endpoint)
 
 		return nil
 	})
+
+	// The phase can still end without the GET having happened, because Ctrl-C
+	// ends any phase. That is not a verdict on the deploy — the rollout
+	// finished, which is why this runs at all — so the deploy stays a success
+	// and only the check is dropped. Said out loud, because a deploy that
+	// printed no endpoint line would otherwise look like one whose check
+	// passed quietly.
+	if Interrupted(phaseErr) {
+		report.say("  %s\n", tui.WarnStyle.Render("⚠ Endpoint check skipped: interrupted."))
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The workload is running; nothing here was cancelled. GET "+result.Endpoint+" to check it yourself."))
+
+		return
+	}
 
 	if err != nil {
 		report.say("  %s\n", tui.WarnStyle.Render("⚠ The endpoint did not answer a GET: "+err.Error()))

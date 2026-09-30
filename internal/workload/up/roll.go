@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
@@ -369,9 +370,12 @@ func replace(
 func awaitRollout(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
 	var last held[workload.Replacement]
 
-	err := report.wait(opts.ctx(), "Waiting for the rollout",
-		func(ctx context.Context, _ tui.Noter) error {
-			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
+	const label = "Waiting for the rollout"
+
+	err := report.wait(opts.ctx(), label,
+		func(ctx context.Context, note tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout,
+				rolloutProgress(strings.ToLower(label), opts, report, note))
 			last.set(replacement)
 
 			return waitErr

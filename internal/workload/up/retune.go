@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
@@ -116,9 +117,12 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 func awaitResize(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
 	var last held[workload.Replacement]
 
-	err := report.wait(opts.ctx(), "Waiting for the new settings",
-		func(ctx context.Context, _ tui.Noter) error {
-			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
+	const label = "Waiting for the new settings"
+
+	err := report.wait(opts.ctx(), label,
+		func(ctx context.Context, note tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout,
+				rolloutProgress(strings.ToLower(label), opts, report, note))
 			last.set(replacement)
 
 			return waitErr

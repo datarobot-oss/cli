@@ -202,6 +202,18 @@ func (o Options) ctx() context.Context {
 	return o.Context
 }
 
+// Interrupted reports a wait the user stopped, whether by the keystroke the
+// terminal UI catches or by the signal a piped run gets. Both mean the same
+// thing to a deploy — nobody is waiting for this any more — and neither is a
+// verdict on the rollout, which carries on platform-side either way.
+//
+// Exported because the command turns it into the sentence the user reads, and
+// two places answering "was this interrupted" differently is how the summary
+// and the exit code come to disagree.
+func Interrupted(err error) bool {
+	return errors.Is(err, tui.ErrInterrupted) || errors.Is(err, context.Canceled)
+}
+
 // Run reads, plans, and applies as much of the plan as this release can.
 func Run(opts Options) (Result, error) {
 	dir, err := filepath.Abs(opts.Dir)
@@ -421,9 +433,12 @@ func awaitSteady(live Live, opts Options) (Live, error) {
 
 	var settled held[workload.Workload]
 
-	err := report.wait(opts.ctx(), "Waiting for the workload to settle",
-		func(ctx context.Context, _ tui.Noter) error {
-			wl, waitErr := waitSteadyFn(ctx, live.WorkloadID, opts.PollInterval, opts.PollTimeout, nil)
+	const label = "Waiting for the workload to settle"
+
+	err := report.wait(opts.ctx(), label,
+		func(ctx context.Context, note tui.Noter) error {
+			wl, waitErr := waitSteadyFn(ctx, live.WorkloadID, opts.PollInterval, opts.PollTimeout,
+				progress(strings.ToLower(label), opts, report, note))
 			settled.set(wl)
 
 			return waitErr
@@ -1473,7 +1488,14 @@ func awaitRunning(
 		return waitErr
 	})
 
-	if f := final.get(); f != nil {
+	// An abandoned wait saw a workload — the poll loop hands back its last
+	// read alongside the cancellation — but what it saw is the rollout
+	// mid-flight, which for a roll is the version being replaced. Recording
+	// that would put the outgoing artifact and endpoint in the summary and in
+	// the JSON envelope of a deploy nobody waited for, under a status that
+	// reads as arrived. A timeout is different: it waited the whole way and
+	// where it got to is the finding, so that one still reports.
+	if f := final.get(); f != nil && !Interrupted(err) {
 		result.Status = f.Status
 		result.Endpoint = f.Endpoint
 		result.ArtifactID = f.ArtifactID
@@ -1562,18 +1584,50 @@ const minPollBudget = 30 * time.Second
 // that nobody reaches for Ctrl-C"; it was disabled on the path where somebody
 // did (RAPTOR-19963).
 func progress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Workload) {
+	return narrate(label, opts, report, note, func(wl *workload.Workload) string {
+		return "the workload is " + wl.Status
+	})
+}
+
+// rolloutProgress is progress for the waits that follow a replacement rather
+// than the workload: the rollout a new version rides in on, and the one a
+// sizing change starts.
+func rolloutProgress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Replacement) {
+	return narrate(label, opts, report, note, func(r *workload.Replacement) string {
+		return "the rollout is " + r.Status
+	})
+}
+
+// narrate builds the per-poll callback a wait says it is still alive with.
+// state is the only part that differs between the things being waited on, and
+// is never handed a nil: both poll loops call their tick only after a
+// successful read.
+//
+// Elapsed time, never the version being waited for. Naming that reads as
+// though it had arrived, which is the opposite of the question this answers:
+// the wait is progressing, not stuck.
+func narrate[T any](
+	label string,
+	opts Options,
+	report *reporter,
+	note tui.Noter,
+	state func(T) string,
+) func(T) {
 	if opts.PollInterval <= 0 {
 		return nil
 	}
 
-	if opts.Spinner {
-		started := phaseClock()
+	started := phaseClock()
 
-		// No label: the spinner is already rendering it, and this is written
-		// in the parentheses after it.
-		return func(wl *workload.Workload) {
-			note(fmt.Sprintf("%s so far; the workload is %s",
-				phaseClock().Sub(started).Truncate(time.Second), wl.Status))
+	// On a terminal the spinner is already rendering the label, so this goes
+	// in the parentheses after it and is rewritten on every poll. Anywhere
+	// else there is nothing to rewrite, so it is a whole line, carrying the
+	// label because it prints before the checkmark it belongs to — unlabelled,
+	// it would sit under the previous phase's tick and read as that one's.
+	if opts.Spinner {
+		return func(v T) {
+			note(fmt.Sprintf("%s so far; %s",
+				phaseClock().Sub(started).Truncate(time.Second), state(v)))
 		}
 	}
 
@@ -1582,22 +1636,18 @@ func progress(label string, opts Options, report *reporter, note tui.Noter) func
 		every = 1
 	}
 
-	started := phaseClock()
 	ticks := 0
 
-	return func(wl *workload.Workload) {
+	return func(v T) {
 		ticks++
 
 		if ticks%every != 0 {
 			return
 		}
 
-		// Elapsed, not the artifact. Naming the version being waited for reads
-		// as though it had arrived, which is the question this line exists to
-		// answer: the wait is progressing, not stuck.
 		report.say("    %s\n", tui.HintStyle.Render(fmt.Sprintf(
-			"%s, %s so far; the workload is %s",
-			label, phaseClock().Sub(started).Truncate(time.Second), wl.Status)))
+			"%s, %s so far; %s",
+			label, phaseClock().Sub(started).Truncate(time.Second), state(v))))
 	}
 }
 

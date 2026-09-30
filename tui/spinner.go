@@ -158,9 +158,17 @@ func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
 		return ErrInterrupted
 	}
 
-	if done, ok := Unwrap(final).(spinnerModel); ok {
-		return done.err
+	done, ok := Unwrap(final).(spinnerModel)
+	if !ok {
+		// Never nil. Falling through to a nil here would be the same defect
+		// this function exists to fix: an error that reads as success because
+		// it was not where it was looked for. The chain Run() wraps this in
+		// (InterruptibleModel, then the Konami overlay) is peeled by Unwrap,
+		// so reaching this means a wrapper was added that does not implement
+		// unwrapper — a programming error, and one that would otherwise turn
+		// every failed phase in the CLI into a silent success.
+		return fmt.Errorf("spinner finished but its model was lost behind %T; the phase's own result is unknown", final)
 	}
 
-	return nil
+	return done.err
 }
