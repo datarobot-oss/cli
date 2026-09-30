@@ -316,6 +316,24 @@ func TestDiagnose_NoGenerations(t *testing.T) {
 	assert.Contains(t, out.String(), "lists no container generations")
 }
 
+// An install without the protons route is a platform with nothing to say,
+// and the sentence is about that, not about HTTP.
+func TestDiagnose_RouteAbsentIsSaidAsSuch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v2/workloads/wl-1/", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, serverWorkloadDoc("wl-1", "x", WorkloadStatusErrored))
+	})
+	mux.HandleFunc("/api/v2/workloads/wl-1/protons/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	serveAPI(t, mux)
+
+	_, err := Diagnose("wl-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not expose the container generations")
+	assert.Contains(t, err.Error(), "dr workload get wl-1")
+}
+
 // A read that cannot be made is an error that names which read.
 func TestDiagnose_ReadFailuresAreErrors(t *testing.T) {
 	mux := http.NewServeMux()
@@ -377,6 +395,34 @@ func TestFindings(t *testing.T) {
 				Name: "lrs-p1-primary", Status: "terminated", Reason: "Error", ExitCode: &two,
 			}}}}},
 			[]string{"primary: Error; exited 2"},
+		},
+		{
+			"a replica the scheduler could not place has no containers and says why on its conditions",
+			&ProtonStatusDetails{Replicas: []ReplicaStatus{{
+				Name: "lrs-p1-7d9f-abcde", Status: "pending",
+				Conditions: []ReplicaCondition{
+					{
+						Type: "PodScheduled", Value: false, Reason: "Unschedulable",
+						Message: "0/3 nodes are available: 3 Insufficient nvidia.com/gpu.",
+					},
+					{Type: "Initialized", Value: true},
+				},
+			}}},
+			[]string{"7d9f-abcde: Unschedulable: 0/3 nodes are available: 3 Insufficient nvidia.com/gpu."},
+		},
+		{
+			"the pod repeating its containers is not a second finding",
+			&ProtonStatusDetails{Replicas: []ReplicaStatus{{
+				Name: "lrs-p1-7d9f-abcde", Status: "running",
+				Conditions: []ReplicaCondition{
+					{Type: "Ready", Value: false, Reason: "ContainersNotReady", Message: "containers with unready status: [x]"},
+				},
+				Containers: []ContainerStatus{{
+					Name: "lrs-p1-primary", Reason: "CrashLoopBackOff",
+					LastState: &ContainerState{Reason: "Error", ExitCode: &one},
+				}},
+			}}},
+			[]string{"primary: CrashLoopBackOff; last run exited 1"},
 		},
 		{
 			"every container is heard, across replicas",

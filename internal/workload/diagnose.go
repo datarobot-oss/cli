@@ -15,8 +15,10 @@
 package workload
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 )
@@ -71,6 +74,18 @@ func Diagnose(workloadID string) (*Diagnosis, error) {
 
 	protons, err := ListProtons(workloadID)
 	if err != nil {
+		// The route is absent on some installs. That is not a broken read,
+		// it is a platform with nothing to say, and the sentence should be
+		// about that rather than about HTTP.
+		var httpErr *drapi.HTTPError
+
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf(
+				"this platform does not expose the container generations of workload %s, "+
+					"so there is nothing to diagnose here; 'dr workload get %s' has the status: %w",
+				workloadID, workloadID, err)
+		}
+
 		return nil, fmt.Errorf("cannot list the container generations of workload %s: %w", workloadID, err)
 	}
 
@@ -125,6 +140,11 @@ func activeFirst(protons []Proton) []Proton {
 // or restarts on a container that is otherwise quiet. The lines are the ones
 // `dr workload up` prints beside an errored state, so the two agree.
 //
+// A replica that never got as far as running a container is heard too: a
+// pod the scheduler could not place has no container statuses at all, and
+// the reason (Unschedulable, with the cluster's message about what was short)
+// sits on its conditions.
+//
 // Never nil, so the JSON envelope carries [] rather than null for a
 // generation with nothing wrong: a consumer can tell "checked, clean" from
 // "not checked".
@@ -136,6 +156,8 @@ func findings(protonID string, details *ProtonStatusDetails) []string {
 	}
 
 	for _, replica := range details.Replicas {
+		out = append(out, replicaFindings(protonID, replica)...)
+
 		for _, c := range replica.Containers {
 			if line := c.failure(protonID); line != "" {
 				out = append(out, line)
@@ -148,6 +170,34 @@ func findings(protonID string, details *ProtonStatusDetails) []string {
 					c.RestartCount, plural(c.RestartCount, "time", "times")))
 			}
 		}
+	}
+
+	return out
+}
+
+// benignConditionReasons are the condition reasons that say nothing a
+// container line does not say better, or nothing at all. ContainersNotReady
+// is the pod repeating what its containers already report; PodCompleted is
+// how a clean stop reads on the pod.
+var benignConditionReasons = []string{"", "ContainersNotReady", "PodCompleted"}
+
+// replicaFindings is what the pod's own conditions say went wrong, which is
+// the only account there is of a replica that never ran a container: the
+// scheduler's verdict on one it could not place.
+func replicaFindings(protonID string, replica ReplicaStatus) []string {
+	var out []string
+
+	for _, cond := range replica.Conditions {
+		if cond.Value || slices.Contains(benignConditionReasons, cond.Reason) {
+			continue
+		}
+
+		line := shortContainerName(protonID, replica.Name) + ": " + cond.Reason
+		if cond.Message != "" {
+			line += ": " + cond.Message
+		}
+
+		out = append(out, line)
 	}
 
 	return out
