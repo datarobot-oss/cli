@@ -1175,7 +1175,16 @@ func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
 		f.failed = errors.New("no execution environments are available; go back and pick another image source")
 	default:
 		f.execEnvs = msg.environments
-		f.picker = newExecEnvPicker(msg.environments, f.liveExecEnvID(), f.width, f.height)
+
+		// Through enterPicker, not by building the picker here, because the
+		// cursor has to go back on the draft's answer and enterPicker is
+		// where that is written. Building it directly left the cursor on row
+		// 0, and acceptExecEnv records whatever the cursor is on: a run given
+		// --execution-environment walked into this screen, pressed Enter, and
+		// had its flag quietly replaced by the first row — which, since the
+		// live environment is lifted to the top and labelled "· in use",
+		// wears the most authoritative label on the list (RAPTOR-20231).
+		f.enterPicker(screenExecEnv)
 	}
 
 	return f, nil

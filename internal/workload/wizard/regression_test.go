@@ -1877,3 +1877,61 @@ func TestFlow_BindWaitsForTheDirectoryAnswer(t *testing.T) {
 	assert.NotNil(t, cmd, "the deferred fetch starts once the directory is settled")
 	assert.NotEmpty(t, next.loading)
 }
+
+// The base-image picker is built twice on a first visit: once empty by
+// enterPicker, and again when the async fetch lands. The second build used to
+// skip putting the cursor back on the draft's answer, so the list opened on
+// row 0 — and acceptExecEnv records whatever is under the cursor, so a single
+// Enter replaced the answer with the first row. Row 0 is the workload's live
+// environment, lifted to the top and labelled "· in use", which is the most
+// authoritative-looking row on the screen (RAPTOR-20231).
+func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
+	stubLiveDocs(t)
+
+	envs := []workload.ExecutionEnvironment{
+		{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}},
+		{ID: "68b1", Name: "second", LatestSuccessfulVersion: &workload.EEVersion{ID: "v2"}},
+		{ID: "68c1", Name: "third", LatestSuccessfulVersion: &workload.EEVersion{ID: "v3"}},
+	}
+
+	originalList := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) { return envs, nil }
+
+	t.Cleanup(func() { listExecEnvsFn = originalList })
+
+	originalResolve := resolveExecEnvFn
+	resolveExecEnvFn = func(name string) (string, string, error) {
+		for _, env := range envs {
+			if env.Name == name || env.ID == name {
+				return env.ID, env.LatestSuccessfulVersion.ID, nil
+			}
+		}
+
+		return "", "", fmt.Errorf("no such execution environment %q", name)
+	}
+
+	t.Cleanup(func() { resolveExecEnvFn = originalResolve })
+
+	// The flag names a base image that is not the one the picker would offer
+	// first, which is the whole point: an overwrite has to be visible.
+	model := newFlow(dockerfileProject(t), nil, Answers{
+		ExecutionEnvironment: "third",
+		Entrypoint:           "python main.py",
+	})
+
+	model = press(t, pastName(t, model), "enter")
+	model = press(t, model, "2", "enter") // build from an execution environment
+	require.Equal(t, screenExecEnv, model.at)
+	require.Len(t, model.execEnvs, 3, "the async load has landed")
+
+	// The cursor is on what the flag asked for, not on row 0.
+	selected := model.picker.selected()
+	require.NotNil(t, selected)
+	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3"}, selected.value,
+		"the picker opened on row 0 and would overwrite the flag on the next Enter")
+
+	// And Enter keeps it, which is the consequence the user actually meets.
+	model = press(t, model, "enter")
+	assert.Equal(t, "68c1", model.draft.Build.ExecutionEnvironmentID)
+	assert.Equal(t, "v3", model.draft.Build.ExecutionEnvironmentVersionID)
+}

@@ -139,6 +139,35 @@ func MemoryBytes(value string) (int64, bool) {
 	return amount * scale, true
 }
 
+// MemoryString is MemoryBytes backwards: the spelling a file should carry for
+// a size the platform handed back as a number of bytes. Zero and below return
+// "", meaning "nothing to say" — the caller keeps whatever default it had.
+//
+// The largest unit that divides exactly wins, and a size that divides by
+// nothing keeps its byte count. That last case is not hypothetical: a
+// workload running on 2147483648 bytes is on 2 GiB, and this package refuses
+// binary units on purpose, because the platform reads 2Gi as its decimal
+// namesake. Rounding that to "2GB" would quietly take 7% of a running
+// workload's memory away on the next deploy, so it is written as
+// "2147483648B" — unlovely, exact, and it round-trips through MemoryBytes.
+func MemoryString(bytes int64) string {
+	if bytes <= 0 {
+		return ""
+	}
+
+	// Largest first, so 20000000000 is 20GB rather than 20000MB.
+	for i := len(memoryUnits) - 1; i >= 1; i-- {
+		unit := memoryUnits[i]
+		scale := memoryScale[unit]
+
+		if bytes >= scale && bytes%scale == 0 {
+			return strconv.FormatInt(bytes/scale, 10) + unit
+		}
+	}
+
+	return strconv.FormatInt(bytes, 10) + "B"
+}
+
 // MemoryUnits lists the suffixes a size may carry, for a prompt that would
 // rather show them than describe them.
 func MemoryUnits() []string {
