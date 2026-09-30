@@ -156,8 +156,7 @@ func MemoryString(bytes int64) string {
 	}
 
 	// Largest first, so 20000000000 is 20GB rather than 20000MB.
-	for i := len(memoryUnits) - 1; i >= 1; i-- {
-		unit := memoryUnits[i]
+	for _, unit := range memoryUnitsLargestFirst {
 		scale := memoryScale[unit]
 
 		if bytes >= scale && bytes%scale == 0 {
@@ -167,6 +166,19 @@ func MemoryString(bytes int64) string {
 
 	return strconv.FormatInt(bytes, 10) + "B"
 }
+
+// memoryUnitsLargestFirst is the order MemoryString tries units in, and it is
+// its own list on purpose. Walking memoryUnits backwards would have read the
+// same today and been silently wrong the day somebody sorted that slice: it is
+// documented as "the suffixes as the file should spell them", which is a
+// statement about spelling and not about scale, and it is also what the
+// validator's error message lists. A reorder there would have MemoryString
+// answer 20000000KB for a 20GB workload with every test still passing, because
+// the sizes worth testing divide cleanly at more than one unit.
+//
+// B is absent because it is the fallback, not a candidate: every size divides
+// by one, so including it would end the loop before any real unit was tried.
+var memoryUnitsLargestFirst = []string{"TB", "GB", "MB", "KB"}
 
 // MemoryUnits lists the suffixes a size may carry, for a prompt that would
 // rather show them than describe them.

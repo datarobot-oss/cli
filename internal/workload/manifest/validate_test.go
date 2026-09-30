@@ -931,3 +931,73 @@ func TestValidMemory_AcceptsWhatPeopleType(t *testing.T) {
 		})
 	}
 }
+
+// MemoryString is what turns the platform's byte count back into something a
+// manifest can carry, and it has to pick the largest unit that divides
+// exactly: 20000000MB is the same size as 20GB and nobody writes it.
+func TestMemoryString_PicksTheLargestExactUnit(t *testing.T) {
+	for _, tc := range []struct {
+		bytes int64
+		want  string
+	}{
+		{0, ""},
+		{-1, ""},
+		{1, "1B"},
+		{999, "999B"},
+		{1_000, "1KB"},
+		{128_000_000, "128MB"},
+		{512_000_000, "512MB"},
+		{20_000_000_000, "20GB"},
+		{2_000_000_000_000, "2TB"},
+
+		// No decimal unit divides these, so the byte count stands. The first
+		// is 2 GiB, which is what a workload on staging is running: rounding
+		// it to 2GB would be a 7% cut, and 2Gi is refused by this package
+		// because the platform reads it as 2GB anyway.
+		{2_147_483_648, "2147483648B"},
+		{1_500, "1500B"},
+		{1_048_576, "1048576B"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			got := MemoryString(tc.bytes)
+			assert.Equal(t, tc.want, got)
+
+			if got == "" {
+				return
+			}
+
+			// Whatever it writes has to be a size this package accepts and
+			// reads back as the same number. Without that the two halves
+			// could drift and a re-bind would resize a workload.
+			require.True(t, ValidMemory(got), "MemoryString wrote a size ValidMemory rejects")
+
+			bytes, ok := MemoryBytes(got)
+			require.True(t, ok)
+			assert.Equal(t, tc.bytes, bytes, "MemoryString and MemoryBytes must be inverses")
+		})
+	}
+}
+
+// The order MemoryString tries units in is its own list, so it cannot be
+// broken by a reorder of memoryUnits — but it can be broken by a unit being
+// added to one list and not the other, which would leave MemoryString unable
+// to use it and nothing to say so.
+func TestMemoryString_KnowsEveryUnitThereIs(t *testing.T) {
+	for _, unit := range memoryUnits {
+		if unit == "B" {
+			continue // the fallback, deliberately not a candidate
+		}
+
+		assert.Contains(t, memoryUnitsLargestFirst, unit,
+			"%s is a unit the file may carry, but MemoryString would never write it", unit)
+	}
+
+	// And in descending order, which is the property the loop relies on.
+	for i := 1; i < len(memoryUnitsLargestFirst); i++ {
+		bigger := memoryScale[memoryUnitsLargestFirst[i-1]]
+		smaller := memoryScale[memoryUnitsLargestFirst[i]]
+
+		assert.Greater(t, bigger, smaller,
+			"%s must come before %s", memoryUnitsLargestFirst[i-1], memoryUnitsLargestFirst[i])
+	}
+}
