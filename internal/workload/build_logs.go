@@ -47,7 +47,7 @@ const buildLogLagAllowance = 60 * time.Second
 // fetchArtifactBuildLogs retrieves one build's log lines newest-first across
 // pages, by filtering the artifact's OTEL stream on external_build_id.
 func fetchArtifactBuildLogs(artifactID, buildID string, maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
-	query := logsQueryParams(maxEntries, level, since)
+	query := logsQueryParams(maxEntries, LogFilter{Level: level}, since)
 	query.Set("searchKeys", "external_build_id")
 	query.Set("searchValues", buildID)
 

@@ -112,18 +112,162 @@ type workloadLogsResponse struct {
 	Previous string             `json:"previous"`
 }
 
-// GetWorkloadLogs returns up to limit of the most recent log lines,
-// oldest-first for display (like `kubectl logs --tail`). Empty level keeps
-// the server default.
-func GetWorkloadLogs(workloadID string, limit int, level string) ([]WorkloadLogEntry, error) {
+// LogFilter narrows a log fetch. The zero value is no filter.
+//
+// The route takes what it takes and no more, measured against it rather than
+// assumed (RAPTOR-18069): a level, a single case-insensitive substring search
+// on the message (searchKeys/searchValues), a trace id, a span id, and a time
+// window in RFC 3339 with a Z suffix. It refuses unknown parameters with a
+// 400 and has no exclusion parameter at all. So the first search term and
+// the ids and the window go to the server, and everything the server cannot
+// do is done here after the fetch: the second and later search terms, and
+// every exclusion.
+type LogFilter struct {
+	// Level is the minimum severity, already validated by ParseLogLevel.
+	Level string
+
+	// Grep is the substrings a line must contain, every one of them, matched
+	// without regard to case. The first narrows the fetch server-side; all
+	// of them are checked here, so a line is never shown on the strength of
+	// the server's reading alone.
+	Grep []string
+
+	// Exclude is the substrings a line must not contain, matched without
+	// regard to case. Client-side only.
+	Exclude []string
+
+	// TraceID and SpanID select the lines of one trace or span.
+	TraceID string
+	SpanID  string
+
+	// Since and Until bound the window. Zero means unbounded on that side.
+	Since time.Time
+	Until time.Time
+}
+
+// keep returns the entries the client-side half of the filter admits, in
+// the order given. A filter with nothing client-side hands the slice back.
+func (f LogFilter) keep(entries []WorkloadLogEntry) []WorkloadLogEntry {
+	if len(f.Grep) == 0 && len(f.Exclude) == 0 {
+		return entries
+	}
+
+	kept := entries[:0:0]
+
+	for _, e := range entries {
+		if f.admits(e.Message) {
+			kept = append(kept, e)
+		}
+	}
+
+	return kept
+}
+
+func (f LogFilter) admits(message string) bool {
+	lower := strings.ToLower(message)
+
+	for _, term := range f.Grep {
+		if !strings.Contains(lower, strings.ToLower(term)) {
+			return false
+		}
+	}
+
+	for _, term := range f.Exclude {
+		if strings.Contains(lower, strings.ToLower(term)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// logTimeFormat is the one shape the route accepts for a bound: RFC 3339 in
+// UTC with the Z suffix. The same instant spelled with a +00:00 offset is
+// refused as an invalid date string, so a bound is always converted to UTC
+// before it is formatted.
+func logTimeFormat(t time.Time) string {
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+// logTimeLayouts are the absolute forms ParseLogTime reads, most specific
+// first. A form without a zone is read as UTC, which is what the route
+// speaks and what the printed timestamps carry.
+var logTimeLayouts = []string{
+	time.RFC3339Nano,
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+}
+
+// ParseLogTime reads a --since or --until value: an absolute time in RFC 3339
+// or a date, or a duration back from now such as 15m, 2h30m, 1d or 1w. Go's
+// own duration syntax stops at hours, and "yesterday" is what a person means
+// by 1d, so days and weeks are read here and turned into hours.
+func ParseLogTime(value string, now time.Time) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, errors.New("empty time")
+	}
+
+	for _, layout := range logTimeLayouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, nil
+		}
+	}
+
+	if d, ok := parseRelativeDuration(value); ok {
+		return now.Add(-d), nil
+	}
+
+	return time.Time{}, fmt.Errorf(
+		"invalid time %q: use RFC 3339 (2026-06-11T14:04:15Z), a date (2026-06-11), or a duration back from now (15m, 2h, 1d, 1w)",
+		value)
+}
+
+// parseRelativeDuration reads a positive duration, accepting Go's forms plus
+// a trailing d or w for days and weeks.
+func parseRelativeDuration(value string) (time.Duration, bool) {
+	if d, err := time.ParseDuration(value); err == nil {
+		return d, d > 0
+	}
+
+	unit := time.Duration(0)
+
+	switch {
+	case strings.HasSuffix(value, "d"):
+		unit = 24 * time.Hour
+	case strings.HasSuffix(value, "w"):
+		unit = 7 * 24 * time.Hour
+	default:
+		return 0, false
+	}
+
+	n, err := strconv.ParseFloat(strings.TrimSuffix(value, value[len(value)-1:]), 64)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+
+	return time.Duration(n * float64(unit)), true
+}
+
+// GetWorkloadLogs returns up to limit of the most recent log lines that pass
+// filter, oldest-first for display (like `kubectl logs --tail`).
+//
+// limit bounds what is fetched, before the client-side half of the filter
+// runs, so a fetch with exclusions or several search terms can return fewer
+// lines than limit. Bounding the result instead would mean fetching pages
+// until enough survived, with no upper bound on how far back that reaches.
+func GetWorkloadLogs(workloadID string, limit int, filter LogFilter) ([]WorkloadLogEntry, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	all, err := fetchWorkloadLogs(workloadID, limit, level, "", "workload logs")
+	all, err := fetchWorkloadLogs(workloadID, limit, filter, "", "workload logs")
 	if err != nil {
 		return nil, err
 	}
+
+	all = filter.keep(all)
 
 	// Server returns newest first; reverse to chronological for display.
 	slices.Reverse(all)
@@ -131,9 +275,11 @@ func GetWorkloadLogs(workloadID string, limit int, level string) ([]WorkloadLogE
 	return all, nil
 }
 
-// logsQueryParams assembles the limit, optional level, and optional startTime
-// query params.
-func logsQueryParams(maxEntries int, level, since string) url.Values {
+// logsQueryParams assembles the query: the page size, the server-side half of
+// the filter, and the window's start. cursor, when set, is a follow's own
+// start time and takes the place of the filter's Since: the follow has
+// already shown everything before it.
+func logsQueryParams(maxEntries int, filter LogFilter, cursor string) url.Values {
 	pageSize := maxLogsPageSize
 	if maxEntries > 0 {
 		pageSize = min(maxEntries, maxLogsPageSize)
@@ -142,12 +288,32 @@ func logsQueryParams(maxEntries int, level, since string) url.Values {
 	query := url.Values{}
 	query.Set("limit", strconv.Itoa(pageSize))
 
-	if level != "" {
-		query.Set("level", strings.ToLower(level))
+	if filter.Level != "" {
+		query.Set("level", strings.ToLower(filter.Level))
 	}
 
-	if since != "" {
-		query.Set("startTime", since)
+	if len(filter.Grep) > 0 {
+		query.Set("searchKeys", "message")
+		query.Set("searchValues", filter.Grep[0])
+	}
+
+	if filter.TraceID != "" {
+		query.Set("traceId", filter.TraceID)
+	}
+
+	if filter.SpanID != "" {
+		query.Set("spanId", filter.SpanID)
+	}
+
+	switch {
+	case cursor != "":
+		query.Set("startTime", cursor)
+	case !filter.Since.IsZero():
+		query.Set("startTime", logTimeFormat(filter.Since))
+	}
+
+	if !filter.Until.IsZero() {
+		query.Set("endTime", logTimeFormat(filter.Until))
 	}
 
 	return query
@@ -170,13 +336,18 @@ func appendUnseenPageEntries(all, page []WorkloadLogEntry, priorPages map[string
 	return all
 }
 
-// fetchWorkloadLogs retrieves log lines newest-first across pages. since (if
-// set) is the startTime filter; maxEntries <= 0 drains every page. An empty
-// page stops the loop even if a next link is present. reqInfo is drapi's
+// fetchWorkloadLogs retrieves log lines newest-first across pages, as the
+// server filtered them. cursor (if set) is a follow's startTime and overrides
+// the filter's own Since; maxEntries <= 0 drains every page. An empty page
+// stops the loop even if a next link is present. reqInfo is drapi's
 // per-request log label; the follow loop passes "" to silence the per-poll
 // "Fetching ..." line so it does not interleave with the streamed log lines.
-func fetchWorkloadLogs(workloadID string, maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
-	pageURL, err := drapi.EndpointURL("/otel/workload/"+escapeID(workloadID)+"/logs/", logsQueryParams(maxEntries, level, since))
+//
+// The client-side half of the filter is not applied here on purpose: the
+// follower needs the unfiltered batch for its cursor and its gap arithmetic,
+// and applies the filter as it prints.
+func fetchWorkloadLogs(workloadID string, maxEntries int, filter LogFilter, cursor, reqInfo string) ([]WorkloadLogEntry, error) {
+	pageURL, err := drapi.EndpointURL("/otel/workload/"+escapeID(workloadID)+"/logs/", logsQueryParams(maxEntries, filter, cursor))
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +407,11 @@ type logsFetchFn func(maxEntries int, level, since, reqInfo string) ([]WorkloadL
 // back to a re-fetched window when timestamps are unparseable or the
 // startTime filter is rejected.
 //
+// filter applies throughout: the server-side half on every poll, the
+// client-side half as lines are printed. Since bounds the seed only, since
+// every later poll starts from the cursor; Until is refused, because a
+// follow is by definition open-ended.
+//
 // onLine receives each new line in chronological order (a non-nil return
 // ends the follow); onWarn (nil-safe) receives non-fatal conditions.
 // Transient failures retry up to maxTransientPollErrors; others are terminal.
@@ -243,21 +419,26 @@ func FollowWorkloadLogs(
 	ctx context.Context,
 	workloadID string,
 	limit int,
-	level string,
+	filter LogFilter,
 	interval time.Duration,
 	onLine func(WorkloadLogEntry) error,
 	onWarn func(string),
 ) error {
-	fetch := func(maxEntries int, lvl, since, reqInfo string) ([]WorkloadLogEntry, error) { //nolint:contextcheck // drapi does not yet accept context; ctx gates the inter-poll sleeps
-		return fetchWorkloadLogs(workloadID, maxEntries, lvl, since, reqInfo)
+	if !filter.Until.IsZero() {
+		return errors.New("an end time cannot be combined with following: a follow has no end")
 	}
 
-	f, err := newLogFollower(fetch, limit, level, interval, onLine, onWarn)
+	fetch := func(maxEntries int, _, cursor, reqInfo string) ([]WorkloadLogEntry, error) { //nolint:contextcheck // drapi does not yet accept context; ctx gates the inter-poll sleeps
+		return fetchWorkloadLogs(workloadID, maxEntries, filter, cursor, reqInfo)
+	}
+
+	f, err := newLogFollower(fetch, limit, filter.Level, interval, onLine, onWarn)
 	if err != nil {
 		return err
 	}
 
 	f.gapHint = " (re-run with a larger --limit)"
+	f.keep = filter.keep
 
 	for {
 		entries, hadSince, err := f.fetch()
@@ -305,6 +486,13 @@ type logFollower struct {
 	// late-ingested lines are caught by the dedup overlap rather than
 	// skipped. Callers whose source ingests slowly (build logs) widen it.
 	lag time.Duration
+
+	// keep is the client-side filter, applied to the lines about to be
+	// printed and to nothing else: the cursor, the dedup and the gap check
+	// all work on the batch as the server returned it, so a line filtered
+	// out here still moves the cursor and still counts toward a full window.
+	// nil keeps everything.
+	keep func([]WorkloadLogEntry) []WorkloadLogEntry
 
 	dedup           *logDedup
 	cursor          time.Time // newest parsed timestamp; zero means window mode
@@ -418,10 +606,8 @@ func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 		f.onWarn(fmt.Sprintf("possible gap: more than %d new lines arrived since the last poll and some may have been skipped%s", f.limit, f.gapHint))
 	}
 
-	for _, e := range fresh {
-		if err := f.onLine(e); err != nil {
-			return err
-		}
+	if err := f.print(fresh); err != nil {
+		return err
 	}
 
 	f.advanceCursor(entries)
@@ -443,6 +629,23 @@ func (f *logFollower) emit(entries []WorkloadLogEntry, hadSince bool) error {
 	// lost, when it is just the seed being as big as it was asked to be.
 	if len(entries) > 0 {
 		f.seeded = true
+	}
+
+	return nil
+}
+
+// print hands the unseen lines to the caller, the client-side filter applied
+// on the way: this is the one place it runs, so the cursor and the gap check
+// keep seeing the batch as the server returned it.
+func (f *logFollower) print(fresh []WorkloadLogEntry) error {
+	if f.keep != nil {
+		fresh = f.keep(fresh)
+	}
+
+	for _, e := range fresh {
+		if err := f.onLine(e); err != nil {
+			return err
+		}
 	}
 
 	return nil
