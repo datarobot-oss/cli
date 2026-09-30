@@ -82,7 +82,7 @@ func TestCmd_PassesTheFilterAndRendersATable(t *testing.T) {
 	})
 
 	out, err := run(t, "68b0c1d2e3f4a5b6c7d8e9f0", "--type", "errored", "--type", "Completed",
-		"--since", "2026-09-30", "--until", "2026-10-01", "--proton-id", "p1", "--limit", "5")
+		"--since", "2026-09-30", "--until", "2026-09-30", "--proton-id", "p1", "--limit", "5")
 	require.NoError(t, err)
 
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", gotID)
@@ -90,7 +90,8 @@ func TestCmd_PassesTheFilterAndRendersATable(t *testing.T) {
 	assert.Equal(t, []string{"errored", "Completed"}, gotFilter.Types)
 	assert.Equal(t, "p1", gotFilter.ProtonID)
 	assert.Equal(t, time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), gotFilter.Since)
-	assert.Equal(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), gotFilter.Until)
+	// The same date on both sides is the whole of that day, not an empty window.
+	assert.Equal(t, time.Date(2026, 9, 30, 23, 59, 59, 999_999_999, time.UTC), gotFilter.Until)
 
 	assert.Contains(t, out, "Replacement Errored")
 	assert.Contains(t, out, "no bundle fits")

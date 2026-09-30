@@ -52,7 +52,7 @@ func (f filterFlags) build(now time.Time) (workload.EventFilter, error) {
 	}
 
 	if f.until != "" {
-		if filter.Until, err = workload.ParseLogTime(f.until, now); err != nil {
+		if filter.Until, err = workload.ParseLogUntil(f.until, now); err != nil {
 			return filter, fmt.Errorf("--until: %w", err)
 		}
 	}
@@ -85,7 +85,8 @@ rollout that failed and why, a start or a stop.
 The most recent --limit events are printed oldest first. Narrow them with
 --type (a substring of the event type, any case, repeatable), --since and
 --until (an RFC 3339 time, a date, or a duration back from now such as
-2h or 1d), and --proton-id (events that name the given generation).
+2h or 1d; a date given to --until covers the whole of that day), and
+--proton-id (events that name the given generation).
 
 By default, output is a table with the platform's own message for each
 event. Use --output-format json for the complete records, details
@@ -133,7 +134,8 @@ Example:
 	cmd.Flags().StringArrayVar(&filters.types, "type", nil,
 		"Only events whose type contains this text, any case (repeatable, any of them)")
 	cmd.Flags().StringVar(&filters.since, "since", "", "Only events at or after this time (RFC 3339, a date, or 15m/2h/1d/1w back)")
-	cmd.Flags().StringVar(&filters.until, "until", "", "Only events at or before this time (same forms as --since)")
+	cmd.Flags().StringVar(&filters.until, "until", "",
+		"Only events at or before this time (same forms as --since; a date covers the whole day)")
 	cmd.Flags().StringVar(&filters.protonID, "proton-id", "", "Only events that name this generation (proton) id")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, args []string) map[string]any {

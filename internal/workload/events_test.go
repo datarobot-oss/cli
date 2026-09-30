@@ -22,18 +22,19 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // eventsFixture is the platform's own answer, captured on staging: the trail
-// of a workload that had two settings changes roll out and one fail
-// (RAPTOR-18071). The entries are not in time order, which is the point of
-// the sort.
+// of a workload that had two settings changes roll out and one fail. The
+// entries are not in time order, which is the point of the sort.
 func eventsFixture(t *testing.T) string {
 	t.Helper()
 
@@ -190,6 +191,14 @@ func TestRenderWorkloadEvents(t *testing.T) {
 	assert.NotContains(t, text.String(), "replacementId", "a sentence stands in for the details")
 	assert.Contains(t, text.String(), `{"replicas":3}`, "details with no sentence are shown as they are")
 	assert.Contains(t, text.String(), "u1")
+
+	// On a terminal the table is bounded and a long message wraps inside
+	// its column rather than spilling past the right edge.
+	events[0].Details = json.RawMessage(`{"message":"` + strings.Repeat("word ", 60) + `"}`)
+
+	for _, line := range strings.Split(eventsTable(events, 100), "\n") {
+		assert.LessOrEqual(t, lipgloss.Width(line), 100, "line wider than the terminal: %q", line)
+	}
 
 	var empty bytes.Buffer
 

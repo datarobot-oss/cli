@@ -295,7 +295,7 @@ dr workload events [<workload-id>] [--dir <path>] [--limit N] [--type <text>]...
 
 - `--limit <N>`: number of recent events to show. Defaults to `100`.
 - `--type <text>`: only events whose type contains this text, in any case. Repeatable; any of them matches, so `--type errored --type completed` shows both outcomes of a rollout.
-- `--since <time>`, `--until <time>`: bound the window. Each takes an RFC 3339 time (`2026-09-30T18:00:00Z`), a date (`2026-09-30`), or a duration back from now (`15m`, `2h`, `1d`, `1w`).
+- `--since <time>`, `--until <time>`: bound the window. Each takes an RFC 3339 time (`2026-09-30T18:00:00Z`), a date (`2026-09-30`), or a duration back from now (`15m`, `2h`, `1d`, `1w`). A date given to `--until` covers the whole of that day, so `--since 2026-09-30 --until 2026-09-30` is everything from the 30th.
 - `--proton-id <id>`: only events that name the given generation (proton), such as the rollout that promoted it or the one that failed to launch it.
 - `--output-format <text|json>`: output format. Defaults to `text`. JSON is one `{"events": [...]}` document, with `[]` when nothing matched.
 

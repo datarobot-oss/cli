@@ -17,11 +17,13 @@ package workload
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
+	"golang.org/x/term"
 )
 
 // RenderWorkloadEventsTo prints a trail to w in the requested format. Under
@@ -43,6 +45,31 @@ func RenderWorkloadEventsTo(w io.Writer, format outputformat.OutputFormat, event
 		return nil
 	}
 
+	fmt.Fprintln(w, eventsTable(events, terminalWidth(w)))
+
+	return nil
+}
+
+// terminalWidth is the width of the terminal behind w, or 0 when w is not
+// one (a pipe, a file, a test buffer), which leaves the table unbounded.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+
+	width, _, err := term.GetSize(int(f.Fd()))
+	if err != nil || width <= 0 {
+		return 0
+	}
+
+	return width
+}
+
+// eventsTable lays the trail out as a table. A positive width bounds it,
+// so the platform's messages, which run to a few hundred characters, wrap
+// inside the DETAILS column instead of the terminal wrapping the rows.
+func eventsTable(events []WorkloadEvent, width int) string {
 	cellStyle := tui.BaseTextStyle.Padding(0, 1)
 	dimStyle := tui.DimStyle.Padding(0, 1)
 
@@ -61,13 +88,15 @@ func RenderWorkloadEventsTo(w io.Writer, format outputformat.OutputFormat, event
 		}).
 		Headers("TIME", "EVENT", "ACTOR", "DETAILS")
 
+	if width > 0 {
+		t = t.Width(width)
+	}
+
 	for _, e := range events {
 		t.Row(e.Timestamp.UTC().Format(timestampFormat), e.EventType, orPlaceholder(e.ActorID), eventDetailsCell(e))
 	}
 
-	fmt.Fprintln(w, t.String())
-
-	return nil
+	return t.String()
 }
 
 // eventDetailsCell is the platform's sentence for the event when it wrote
