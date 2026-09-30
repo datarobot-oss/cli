@@ -942,21 +942,23 @@ func TestMemoryString_PicksTheLargestExactUnit(t *testing.T) {
 	}{
 		{0, ""},
 		{-1, ""},
-		{1, "1B"},
-		{999, "999B"},
+		{1, "1"},
+		{999, "999"},
 		{1_000, "1KB"},
 		{128_000_000, "128MB"},
 		{512_000_000, "512MB"},
 		{20_000_000_000, "20GB"},
 		{2_000_000_000_000, "2TB"},
 
-		// No decimal unit divides these, so the byte count stands. The first
-		// is 2 GiB, which is what a workload on staging is running: rounding
-		// it to 2GB would be a 7% cut, and 2Gi is refused by this package
-		// because the platform reads it as 2GB anyway.
-		{2_147_483_648, "2147483648B"},
-		{1_500, "1500B"},
-		{1_048_576, "1048576B"},
+		// No decimal unit divides these, so the byte count stands, bare: the
+		// documented form a string size already reads back as, and the one
+		// that has been through a deploy. The first is 2 GiB, which is what a
+		// workload on staging is running: rounding it to 2GB would be a 7%
+		// cut, and 2Gi is refused by this package because the platform reads
+		// it as 2GB anyway.
+		{2_147_483_648, "2147483648"},
+		{1_500, "1500"},
+		{1_048_576, "1048576"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {
 			got := MemoryString(tc.bytes)

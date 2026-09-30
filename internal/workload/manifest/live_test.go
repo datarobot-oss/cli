@@ -1897,16 +1897,20 @@ func TestLive_ReadsMemoryBackWhenTheServerSendsBytes(t *testing.T) {
 		name  string
 		bytes string
 		want  string
+		// file is how want is spelled in the rendered manifest when that
+		// differs from want itself; empty means the same.
+		file string
 	}{
-		{"the documented default, as bytes", "512000000", "512MB"},
-		{"a smaller allocation", "128000000", "128MB"},
-		{"a GPU workload's 20GB", "20000000000", "20GB"},
+		{"the documented default, as bytes", "512000000", "512MB", ""},
+		{"a smaller allocation", "128000000", "128MB", ""},
+		{"a GPU workload's 20GB", "20000000000", "20GB", ""},
 		{
 			// 2 GiB. This package refuses binary units on purpose — the
 			// platform reads 2Gi as 2GB — so rounding here would take 7% of a
 			// running workload's memory away. The byte count is exact and
-			// round-trips.
-			"a binary size no decimal unit divides", "2147483648", "2147483648B",
+			// round-trips. Quoted in the file, because a bare number would
+			// otherwise read back as a YAML integer rather than a size.
+			"a binary size no decimal unit divides", "2147483648", "2147483648", `"2147483648"`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1940,7 +1944,12 @@ func TestLive_ReadsMemoryBackWhenTheServerSendsBytes(t *testing.T) {
 			rendered, err := applied.Render()
 			require.NoError(t, err)
 
-			assert.Contains(t, string(rendered), "memory: "+tc.want)
+			inFile := tc.file
+			if inFile == "" {
+				inFile = tc.want
+			}
+
+			assert.Contains(t, string(rendered), "memory: "+inFile)
 
 			// Only meaningful for a workload that is not on the default: one
 			// that is should of course be written as it.

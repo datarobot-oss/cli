@@ -1078,11 +1078,18 @@ func stringAt(document map[string]any, key string) string {
 // never do (RAPTOR-19697). CPU escaped because it is read with floatAt.
 //
 // A string is still accepted first: it is what a manifest round-tripped
-// through Apply carries, and normalizing it here means a file and a live
-// workload describing the same size describe it the same way.
+// through Apply carries. It goes through the same bytes-and-back as the
+// number, so a file and a live workload describing the same size describe it
+// the same way whichever form it arrived in — "20000000000" and 20000000000
+// both come back as 20GB. A string this package cannot read as a size is
+// returned as it is, for the validator to refuse in its own words.
 func memoryAt(document map[string]any, key string) string {
 	if value := stringAt(document, key); value != "" {
-		return NormalizeMemory(value)
+		if bytes, ok := MemoryBytes(value); ok {
+			return MemoryString(bytes)
+		}
+
+		return value
 	}
 
 	bytes, ok := floatAt(document, key)

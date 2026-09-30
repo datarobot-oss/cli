@@ -148,8 +148,11 @@ func MemoryBytes(value string) (int64, bool) {
 // workload running on 2147483648 bytes is on 2 GiB, and this package refuses
 // binary units on purpose, because the platform reads 2Gi as its decimal
 // namesake. Rounding that to "2GB" would quietly take 7% of a running
-// workload's memory away on the next deploy, so it is written as
-// "2147483648B" — unlovely, exact, and it round-trips through MemoryBytes.
+// workload's memory away on the next deploy, so it is written as a bare
+// "2147483648" — unlovely, exact, and it round-trips through MemoryBytes.
+// Bare rather than with a B suffix: both are accepted by the validator, but
+// the bare form is what a string size already reads back as, and it is the
+// one the CLI has actually put through a deploy.
 func MemoryString(bytes int64) string {
 	if bytes <= 0 {
 		return ""
@@ -164,7 +167,7 @@ func MemoryString(bytes int64) string {
 		}
 	}
 
-	return strconv.FormatInt(bytes, 10) + "B"
+	return strconv.FormatInt(bytes, 10)
 }
 
 // memoryUnitsLargestFirst is the order MemoryString tries units in, and it is

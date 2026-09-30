@@ -1935,3 +1935,75 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
 	assert.Equal(t, "68c1", model.draft.Build.ExecutionEnvironmentID)
 	assert.Equal(t, "v3", model.draft.Build.ExecutionEnvironmentVersionID)
 }
+
+// The ticket's own case: the flag names one environment while the bound
+// workload runs on another, and the workload's is lifted to row 0 as "· in
+// use" — the most authoritative-looking row on the screen. The async reload
+// used to open the picker there, so a single Enter swapped the flag's answer
+// for the live environment (RAPTOR-20231).
+func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoadOnABoundWorkload(t *testing.T) {
+	// Bound to a workload built from "first", so that is the live row.
+	stubLive(t,
+		documentFrom(t, `{"name": "live-agent", "importance": "low", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "agent", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000,
+				 "imageBuildConfig": {"dockerfile": {"source": "generated",
+				   "entrypoint": ["python", "old.py"],
+				   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+	envs := []workload.ExecutionEnvironment{
+		{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}},
+		{ID: "68b1", Name: "second", LatestSuccessfulVersion: &workload.EEVersion{ID: "v2"}},
+		{ID: "68c1", Name: "third", LatestSuccessfulVersion: &workload.EEVersion{ID: "v3"}},
+	}
+
+	originalList := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) { return envs, nil }
+
+	t.Cleanup(func() { listExecEnvsFn = originalList })
+
+	originalResolve := resolveExecEnvFn
+	resolveExecEnvFn = func(name string) (string, string, error) {
+		for _, env := range envs {
+			if env.Name == name || env.ID == name {
+				return env.ID, env.LatestSuccessfulVersion.ID, nil
+			}
+		}
+
+		return "", "", fmt.Errorf("no such execution environment %q", name)
+	}
+
+	t.Cleanup(func() { resolveExecEnvFn = originalResolve })
+
+	model := newFlow(dockerfileProject(t), nil, Answers{
+		WorkloadID:           "68b0c1d2e3f4a5b6c7d8e9f0",
+		ExecutionEnvironment: "third",
+		Entrypoint:           "python main.py",
+	})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	model = press(t, model, "enter") // kind: agent, as the workload is
+	model = press(t, model, "enter") // a2a
+	model = press(t, model, "enter") // image source: the live build, generated
+	require.Equal(t, screenExecEnv, model.at)
+	require.Len(t, model.execEnvs, 3, "the async load has landed")
+
+	// Row 0 is the live environment, not the flag's.
+	require.NotNil(t, model.picker)
+	require.Equal(t, "68a1", model.liveExecEnvID())
+
+	// The cursor is on what the flag asked for, not on the live row.
+	selected := model.picker.selected()
+	require.NotNil(t, selected)
+	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3"}, selected.value,
+		"the picker opened on the live row and would overwrite the flag on the next Enter")
+
+	model = press(t, model, "enter")
+	assert.Equal(t, "68c1", model.draft.Build.ExecutionEnvironmentID)
+	assert.Equal(t, "v3", model.draft.Build.ExecutionEnvironmentVersionID)
+}
