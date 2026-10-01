@@ -163,6 +163,7 @@ A container reads its environment once, at startup. Rotating a secret (`PATCH /a
 | `artifactId` | one of the two | An existing artifact, normally a locked one. |
 | `artifact` | one of the two | An inline artifact definition, created and deployed in the same call. Takes the same fields as the artifact spec above. |
 | `importance` | no | `low` (the default), `moderate`, `high` or `critical`. |
+| `useCaseId` | no | Links the workload to a Use Case. On its own an organizational link; it is also what Enclave placement is governed by. See [Placement](#placement). |
 | `runtime` | no | Replicas, resources and placement. Without it the platform applies its own defaults. |
 
 ### Runtime
@@ -217,7 +218,31 @@ runtime:
 
 ### Placement
 
-`runtime.enclaveSelectionPolicy` and `runtime.enclaves` pin a workload to a named Enclave. Rather than writing them by hand, pass [`dr workload create --enclave <name>`](workload.md#create), which sets both and refuses to override a spec that already sets either. Without them, DataRobot picks the placement.
+Enclave placement is opt-in, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload that names that Use Case in `useCaseId` can be placed on them. Without `useCaseId` a workload runs outside any Enclave. `useCaseId` on its own changes nothing about placement when the Use Case has no Enclaves; when it has some, a spec that names the Use Case must also set a policy, or the server refuses it with `ENCLAVE_TARGETING_REQUIRED`.
+
+| Field | Notes |
+| --- | --- |
+| `useCaseId` | Top-level. The Use Case whose Enclaves the workload may run on. `dr workload create --use-case-id <id>` writes it. |
+| `runtime.enclaveSelectionPolicy` | `availability`: DataRobot picks among the Enclaves granted to the Use Case. `manual`: run on the Enclaves listed in `runtime.enclaves`. |
+| `runtime.enclaves` | A list of Enclave names, read with the `manual` policy. Rather than writing it by hand, pass [`dr workload create --enclave <name>`](workload.md#create), which sets the policy and a one-element list. |
+
+```yaml
+name: my-app
+artifactId: 68b0c1d2e3f4a5b6c7d8e9f0
+useCaseId: 68b0aa11bb22cc33dd44ee55
+runtime:
+  enclaveSelectionPolicy: availability
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation:
+            cpu: 1
+            memory: 512MB
+```
+
+The server refuses a spec that asks for placement without a Use Case (`MISSING_USE_CASE`), and one whose Use Case has Enclaves but sets no policy (`ENCLAVE_TARGETING_REQUIRED`). The `create` flags refuse to override a spec that already sets the fields they write. The flag-level story, including the breaking change to `--enclave`, is in [`dr workload create`](workload.md#use-case-and-enclave-placement).
 
 ---
 

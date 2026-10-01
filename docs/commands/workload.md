@@ -59,14 +59,44 @@ Starting from source code rather than from a spec you already have? The [spec re
 Deploy a workload from a JSON or YAML spec file. The spec needs a `name` and exactly one of `artifactId` (an existing artifact) or an inline `artifact` object. JSON is sent to the server byte-for-byte; YAML is converted to JSON first. Startup is asynchronous, and the response includes the stable endpoint URL. Every field the spec accepts is documented in the [spec reference](workload-spec.md#workload-spec), which also walks the whole path from source code to a URL that answers.
 
 ```bash
-dr workload create --spec-file <path> [--enclave <name>] [--output-format text|json]
+dr workload create --spec-file <path> [--use-case-id <id>] [--enclave <name>] [--output-format text|json]
 ```
 
 **Flags:**
 
 - `--spec-file <path>`: path to the JSON or YAML spec (required).
-- `--enclave <name>`: pin the workload to a named Enclave. It sets `runtime.enclaveSelectionPolicy` to `manual` and `runtime.enclaves` to that Enclave, which must be eligible and grant you deploy access. The flag refuses to override a spec that already sets either field, and using it means the spec is re-encoded rather than sent byte-for-byte. Without it, DataRobot picks the placement; confirm where a workload landed with `dr workload list --enclave <name>`.
+- `--use-case-id <id>`: link the workload to a Use Case at create time, the same as a top-level `useCaseId` in the spec. When the Use Case has no Enclaves this is an organizational link and places nothing: the workload runs outside any Enclave, like any other asset in the Use Case. When the Use Case has Enclaves, the flag alone is refused with `ENCLAVE_TARGETING_REQUIRED`; a selection policy or `--enclave` is needed too. The id must be a 24-character hex id, checked locally. See [Use Case and Enclave placement](#use-case-and-enclave-placement).
+- `--enclave <name>`: pin the workload to a named Enclave. It sets `runtime.enclaveSelectionPolicy` to `manual` and `runtime.enclaves` to that Enclave, which must be granted to the workload's Use Case, and pinning needs the `CAN_OVERRIDE_WORKLOAD_PLACEMENT` permission on workloads. It requires a Use Case, from `--use-case-id` or `useCaseId` in the spec. Confirm where a workload landed with `dr workload list --enclave <name>`.
 - `--output-format <text|json>`: output format. Defaults to `text`.
+
+Both placement flags refuse to override a spec that already sets the field they write (`useCaseId`, or `runtime.enclaveSelectionPolicy` and `runtime.enclaves`), and using either means the spec is re-encoded rather than sent byte-for-byte.
+
+#### Use Case and Enclave placement
+
+Enclave placement is opt-in per workload, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload linked to that Use Case can be placed on them. Three shapes cover it:
+
+| You want | Spec or flags |
+|---|---|
+| A workload linked to a Use Case that has no Enclaves | `--use-case-id <id>` alone, or `useCaseId` in the spec. If the Use Case has Enclaves, this is refused with `ENCLAVE_TARGETING_REQUIRED`; use one of the rows below |
+| DataRobot to pick among the Use Case's Enclaves | `useCaseId` plus `runtime.enclaveSelectionPolicy: "availability"` in the spec |
+| One specific Enclave | `--use-case-id <id> --enclave <name>`, which sets the policy to `manual` |
+
+```bash
+dr workload create --spec-file workload.yaml --use-case-id 68b0aa11bb22cc33dd44ee55
+dr workload create --spec-file workload.yaml --use-case-id 68b0aa11bb22cc33dd44ee55 --enclave prod-east
+```
+
+Placement rejections are typed on the server, and the CLI prints the server's sentence with the machine code in parentheses rather than a raw JSON dump:
+
+- `MISSING_USE_CASE`: the spec asks for Enclave placement but names no Use Case.
+- `ENCLAVE_TARGETING_REQUIRED`: the Use Case has Enclaves and the spec sets no selection policy. Set `runtime.enclaveSelectionPolicy` to `"availability"`, or pin one with `--enclave`.
+
+> [!IMPORTANT]
+> **Breaking change in v0.10.0.** `--enclave` on its own is refused locally with `--enclave requires --use-case-id (or useCaseId in the spec)`, where earlier releases sent the request and let the server reject it. A script that pinned an Enclave without naming a Use Case needs `--use-case-id` added.
+
+The spec fields themselves, `useCaseId` and `runtime.enclaveSelectionPolicy`, are documented in the [spec reference](workload-spec.md#placement).
+
+#### Examples
 
 **Example (fixed replica count):**
 
