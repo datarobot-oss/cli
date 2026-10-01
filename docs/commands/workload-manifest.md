@@ -34,9 +34,6 @@ artifact:
             imageBuildConfig: # built from this repository's Dockerfile
               dockerfile:
                 source: provided
-            readinessProbe:
-              path: /
-              port: 8080
 
 runtime:
   containerGroups:
@@ -47,11 +44,13 @@ runtime:
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 ```
 
-After the first write the file is yours. `config` never rewrites an existing manifest; `up` edits exactly one key, `workloadId`, and keeps your comments, your key order and any keys it does not know.
+No readiness probe is written unless you give a health path (`--health /ready`): a guessed path kills a healthy deploy whose framework answers 404 there.
+
+After the first write the file is yours. `config` leaves an existing manifest alone, except `--sync-env`, which edits only the environment variables after showing what it would change; `up` edits exactly one key, `workloadId`. Both keep your comments, your key order and any keys they do not know.
 
 ## Where the image comes from
 
-Each container builds its image one of three ways. `config` picks the first when `./Dockerfile` exists and asks otherwise; the flags name them for headless use.
+Each container builds its image one of three ways. `config` asks, preselecting the first when `./Dockerfile` exists; without a terminal the Dockerfile is chosen for you, and with no Dockerfile the flags have to say which.
 
 | Build mode | In the file | `config` flags |
 | --- | --- | --- |
@@ -77,23 +76,33 @@ Drift is measured against the running object, not against a record of the last d
 
 Every run prints a plan, then carries it out. `--dry-run` prints the plan and stops. Nothing is confirmed: the plan is the review.
 
+A first deploy is one line:
+
 ```
   + workload   my-app will be created, with its first artifact
-  + artifact   new version, 1 spec change; keeps the running image, so no rebuild
-      containerGroups[default].containers[primary].environmentVars[GREETING].value: changed
-  ~ runtime    containerGroups[default].replicaCount: 1 → 3
-  ✓ Already up to date
 ```
+
+A later one lists what differs, one line per kind of change:
+
+```
+my-app (68b0c1d2), running
+  ~ code       3 files changed since the last deploy
+  + artifact   new version, 1 spec change
+      containerGroups[default].containers[primary].environmentVars[GREETING].value: changed
+  ~ runtime    containerGroups[default].replicaCount: 1 -> 3
+```
+
+When nothing differs the plan is `✓ Already up to date`.
 
 Three kinds of change, each applied one way:
 
 | Change | How it is detected | What `up` does |
 | --- | --- | --- |
-| **Code** (only when the file builds the image) | the working tree is hashed and compared with what the artifact last built | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it |
+| **Code** (only when the file builds the image) | the working tree is compared with what was last pushed to the artifact; code pushed by `dr artifact code sync` but never built counts too | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it |
 | **Artifact spec** (environment variables, port, probes, image) | the file's `artifact` block is compared with the artifact the workload runs | mints a new artifact version and rolls the workload onto it; a change that does not affect the image keeps the running image, so no rebuild |
 | **Runtime** (replicas, CPU, memory) | the file's `runtime` block is compared with the live runtime | a settings update in place, with no new version; when a roll is happening anyway, the sizing rides along on it |
 
-A workload that does not exist yet is created from the file in one call. A stopped one is started; an errored one is rolled, since what it runs has failed. A file whose live state matches it prints `Already up to date` and exits 0 without touching anything.
+A workload that does not exist yet is created from the file in one call. A stopped one is started. An errored one is rolled when the file has something new to roll onto it; when nothing differs the run refuses and says why, since deploying the same thing again would only fail again (`--force-build` rebuilds a platform-built image). A file whose live state matches it prints `Already up to date` and exits 0 without touching anything.
 
 A roll makes a new version and swaps the workload onto it; the endpoint never changes, and the version already serving keeps serving until the new one is ready. Locking is one-way: the next version of a locked artifact is a new artifact in the same lineage, locked to match, so a locked workload keeps deploying.
 
@@ -124,8 +133,9 @@ A deploy that fails after the workload exists still reports the workload, so the
 - an inline artifact has `spec.containerGroups` with at least one group, and each group has at least one named container.
 - each container sets either `imageUri` or `imageBuildConfig`, and `imageBuildConfig.dockerfile.source` is `provided` or `generated`.
 - `generated` carries `executionEnvironmentId`, `executionEnvironmentVersionId` and a non-empty `entrypoint`; `provided` needs `./Dockerfile` beside the manifest.
-- the primary container has a numeric `port` of 1024 or above, since containers run unprivileged.
-- every environment variable has a `value` or a credential source.
+- the primary container has a numeric `port` of 1024 or above, since containers run unprivileged; no other container sets one.
+- at most one container per group is marked `primary`.
+- every environment variable has a `value` or a credential source, and a `dr-credential:` reference is well formed.
 - `runtime` groups and containers match the artifact's by name.
 - a group sets `replicaCount` or `autoscaling`, not both.
 - `resourceAllocation.memory` is a byte count or a 1000-based unit (`512MB`, `2GB`).
@@ -134,16 +144,16 @@ Everything else is the server's to check; a rejected deploy comes back as a `422
 
 ## When a deploy fails
 
-The failures people hit most, and what the CLI does about each. `dr workload diagnose` prints the same words.
+The failures people hit most. `up` prints the platform's reason beside the errored state, and `dr workload status` shows it afterwards.
 
-| Failure | What it means | What the CLI can do |
+| Failure | What it means | What to do |
 | --- | --- | --- |
-| `getpwuid(): uid not found` | containers run as a non-root user with no password-database entry, so anything calling `getpwuid` dies | write `USER` and `HOME` defaults on image-based tracks and warn when a spec has neither |
-| `exec format error` | the image has no `linux/amd64` manifest, the standard Apple-silicon mistake | detect at the wizard, name the fix |
-| endless restart during startup | liveness with no startup probe, or a startup budget shorter than the model load | validate client-side |
-| readiness never passes | port declared but not listened on, or the wrong path | the readiness screen in `config` exists for this |
-| `ImagePullBackOff` | registry not on the allowlist (private ECR, ACR and GCR are excluded by default), or a bad tag | preflight the URI |
-| pod never schedules | bundle shape unavailable in the cluster | report it as capacity, not as a broken deploy |
+| `getpwuid(): uid not found` | containers run as a non-root user with no password-database entry, so anything calling `getpwuid` dies | set `USER` and `HOME` in the Dockerfile, or avoid the lookup |
+| `exec format error` | the image has no `linux/amd64` manifest, the standard Apple-silicon mistake | build with `--platform linux/amd64` |
+| endless restart during startup | liveness with no startup probe, or a startup budget shorter than the model load | add a `startupProbe`, or lengthen it |
+| readiness never passes | port declared but not listened on, or the wrong path | check the port the app listens on and the probe path |
+| `ImagePullBackOff` | the registry is not reachable from the platform, or a bad tag | check the registry and the tag |
+| pod never schedules | bundle shape unavailable in the cluster | pick a smaller resource bundle |
 
 ## See also
 
