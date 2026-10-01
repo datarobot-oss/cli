@@ -173,7 +173,62 @@ func TestCmd_ShowsTheSettingsAsATable(t *testing.T) {
 		assert.Contains(t, stdout, want)
 	}
 
-	assert.NotContains(t, stdout, "Replacement in flight")
+	assert.NotContains(t, stdout, "settings change", "nothing is in flight and nothing has finished")
+}
+
+// A change still being rolled out is printed under the table, and a finished
+// one is reported as the last change rather than as one in flight.
+func TestCmd_ShowsTheReplacementInFlight(t *testing.T) {
+	for status, want := range map[string]string{
+		"promoting": "A settings change is being rolled out: replacement rep-9 (promoting)",
+		"completed": "Last settings change: replacement rep-9 (completed)",
+	} {
+		t.Run(status, func(t *testing.T) {
+			doc := strings.Replace(stopped, `"replacement":null`,
+				`"replacement":{"id":"rep-9","status":"`+status+`"}`, 1)
+
+			install(t, seams{get: func(string) (*workload.WorkloadSettings, error) { return settingsDoc(t, doc), nil }})
+
+			stdout, _, err := run(t, id)
+			require.NoError(t, err)
+			assert.Contains(t, stdout, want)
+		})
+	}
+}
+
+// The JSON the read prints is a valid --spec-file: the envelope is unwrapped
+// and the platform's resolvedBundle is not sent back.
+func TestCmd_SpecFileTakesTheJSONOutput(t *testing.T) {
+	install(t, seams{get: func(string) (*workload.WorkloadSettings, error) { return settingsDoc(t, stopped), nil }})
+
+	printed, _, err := run(t, id, "--output-format", "json")
+	require.NoError(t, err)
+
+	path := filepath.Join(t.TempDir(), "settings.json")
+	require.NoError(t, os.WriteFile(path, []byte(printed), 0o600))
+
+	var sent json.RawMessage
+
+	install(t, seams{update: func(_ string, runtime json.RawMessage) (*workload.Replacement, error) {
+		sent = runtime
+
+		return &workload.Replacement{ID: "rep-2", Status: "unknown"}, nil
+	}})
+
+	_, _, err = run(t, id, "--spec-file", path, "--yes")
+	require.NoError(t, err)
+
+	assert.Contains(t, string(sent), `"containerGroups"`)
+	assert.Contains(t, string(sent), `"replicaCount":1`)
+	assert.NotContains(t, string(sent), "resolvedBundle", "the platform's answer is not a request")
+	assert.NotContains(t, string(sent), `"settings"`, "the envelope is not sent inside itself")
+}
+
+// --poll-timeout bounds the whole --wait: the second wait gets what the
+// first left, floored so a spent budget still buys one look.
+func TestBudgetLeft(t *testing.T) {
+	assert.InDelta(t, 20*time.Minute, budgetLeft(30*time.Minute, time.Now().Add(-10*time.Minute)), float64(time.Second))
+	assert.Equal(t, minPollBudget, budgetLeft(30*time.Minute, time.Now().Add(-40*time.Minute)))
 }
 
 func TestCmd_ShowsAutoscalingAndAnIndivisibleMemory(t *testing.T) {
@@ -251,7 +306,7 @@ func TestCmd_ReplicasSendsTheWholeRuntime(t *testing.T) {
 	assert.Contains(t, stdout, "Settings update requested for workload "+id)
 	assert.Contains(t, stdout, "rep-1")
 	assert.Contains(t, stderr, "rolls the workload's containers", "the restart is announced even under --yes")
-	assert.Contains(t, stderr, "dr workload status "+id)
+	assert.Contains(t, stderr, "dr workload settings "+id, "status stays running throughout; settings prints the replacement")
 }
 
 func TestCmd_ReplicasRefusesAnAutoscaledGroup(t *testing.T) {
@@ -413,15 +468,18 @@ func TestCmd_WaitFollowsToTheNewSettings(t *testing.T) {
 		update: func(string, json.RawMessage) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-3", Status: "unknown"}, nil
 		},
-		waitR: func(_ string, started *workload.Replacement, _, _ time.Duration, onTick func(*workload.Replacement)) (*workload.Replacement, error) {
+		waitR: func(_ string, started *workload.Replacement, _, timeout time.Duration, onTick func(*workload.Replacement)) (*workload.Replacement, error) {
 			assert.Equal(t, "rep-3", started.ID)
+			assert.Equal(t, settleTimeout, timeout)
 
 			onTick(&workload.Replacement{ID: "rep-3", Status: "promoting"})
 
 			return &workload.Replacement{ID: "rep-3", Status: "completed"}, nil
 		},
-		waitW: func(_ string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		waitW: func(_ string, want workload.Serving, _, timeout time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			assert.True(t, want.AwaitDrain, "a resize replaces a generation, so the old one has to stop answering")
+			assert.LessOrEqual(t, timeout, settleTimeout, "the second wait gets what the first left, not a fresh budget")
+			assert.Positive(t, timeout)
 
 			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
 		},

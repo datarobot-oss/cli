@@ -37,8 +37,7 @@ func fixture(t *testing.T, name string) string {
 }
 
 // The fixtures are the platform's own answers, captured on staging: a
-// one-group workload on a fixed count, and a group that autoscales
-// (RAPTOR-18076).
+// one-group workload on a fixed count, and a group that autoscales.
 func TestGetWorkloadSettings_ReadsTheFixture(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/workloads/wl-1/settings/", r.URL.Path)
@@ -143,6 +142,20 @@ func TestWorkloadSettings_WithReplicaCountRefusals(t *testing.T) {
 
 // A settings file is either the body the route takes or the runtime block
 // a manifest carries; both are read, and neither is sent inside the other.
+// What the read prints is a valid file to send back: the envelope is
+// unwrapped and the platform's own resolvedBundle is dropped on the way out,
+// the same as a replica change drops it.
+func TestRuntimeFromSettingsFile_RoundTripsTheJSONOutput(t *testing.T) {
+	printed := `{"settings": {"workloadId": "68b0", "runtime": {"containerGroups": [{"name": "default",
+		"replicaCount": 1, "resourceBundles": ["cpu.small"], "containers": [{"name": "primary"}],
+		"resolvedBundle": {"id": "cpu.small", "cpuCount": 1, "memoryBytes": 536870912}}]}, "replacement": null}}`
+
+	body, err := RuntimeFromSettingsFile(json.RawMessage(printed))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"containerGroups": [{"name": "default", "replicaCount": 1,
+		"resourceBundles": ["cpu.small"], "containers": [{"name": "primary"}]}]}`, string(body))
+}
+
 func TestRuntimeFromSettingsFile(t *testing.T) {
 	// A complete group: a name, a container, and a bundle as its resource
 	// signal.
@@ -166,6 +179,11 @@ func TestRuntimeFromSettingsFile(t *testing.T) {
 
 	for name, tc := range map[string]struct{ doc, want string }{
 		"neither shape": {`{"name": "my-app", "artifactId": "art-1"}`, "neither a runtime block nor containerGroups"},
+		"replicas beside an enabled policy": {
+			`{"containerGroups": [{"name": "default", "replicaCount": 2, "resourceBundles": ["cpu.small"],
+				"autoscaling": {"enabled": true}, "containers": [{"name": "primary"}]}]}`,
+			"replicaCount and autoscaling.enabled=true are mutually exclusive",
+		},
 		"null runtime":  {`{"runtime": null}`, "neither a runtime block nor containerGroups"},
 		"not an object": {`[1, 2]`, "not a JSON object"},
 		"nameless group": {

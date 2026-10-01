@@ -88,9 +88,9 @@ manifest describes.
 no --group; with several, name it. A group that autoscales is refused,
 because its count belongs to the autoscaler: change the policy instead,
 with --spec-file. --spec-file <path> sends a whole settings body, JSON or
-YAML, either {"runtime": ...} or the runtime block itself, which is the
-shape 'dr workload settings <id> --output-format json' prints and the
-shape a manifest carries under runtime. The body replaces the whole
+YAML: the document 'dr workload settings <id> --output-format json'
+prints, {"runtime": ...}, or the runtime block itself, which is what a
+manifest carries under runtime. The body replaces the whole
 runtime, so every group needs its name, its containers, and either
 resourceBundles or a resourceAllocation on each container; a body missing
 those is refused here, because the platform accepts it and then fails the
@@ -162,7 +162,7 @@ Example:
 	cmd.Flags().StringVar(&c.group, "group", "",
 		"The container group --replicas applies to. Needed only when the workload has more than one.")
 	cmd.Flags().StringVar(&c.specFile, "spec-file", "",
-		"A settings body to apply, JSON or YAML: {\"runtime\": ...} or the runtime block itself.")
+		"A settings body to apply, JSON or YAML: what this command prints as JSON, {\"runtime\": ...} or the runtime block itself.")
 
 	pollflags.RegisterWithDefaults(cmd, &poll, settleInterval, settleTimeout,
 		"Wait until the new settings are rolled out and the workload is running on them.")
@@ -289,7 +289,7 @@ func consent(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
 // the replacement named, with where to follow it.
 func reportRequested(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref, started *workload.Replacement) error {
 	if format != outputformat.OutputFormatJSON {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+ref.ID)
+		fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload settings "+ref.ID)
 	}
 
 	return render(cmd.OutOrStdout(), format, settingsOutput{
@@ -370,6 +370,10 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 
 	var last string
 
+	// One deadline for both waits: --poll-timeout is how long the whole
+	// --wait may take, not how long each half may.
+	begun := time.Now()
+
 	final, err := waitReplacementFn(ref.ID, started, poll.Interval, poll.Timeout, func(r *workload.Replacement) {
 		if r != nil && r.Status != last {
 			last = r.Status
@@ -380,7 +384,7 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 	if err != nil {
 		if final != nil && workload.IsFailedReplacementStatus(final.Status) {
 			return fmt.Errorf("the settings update for workload %s ended as %s, so it is still running with the "+
-				"settings it had; check 'dr workload status %s': %w", ref.ID, final.Status, ref.ID, err)
+				"settings it had; check 'dr workload settings %s': %w", ref.ID, final.Status, ref.ID, err)
 		}
 
 		return ref.Wrap(err)
@@ -388,7 +392,8 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 
 	progress("Waiting for workload " + ref.ID + " to run on the new settings")
 
-	if _, err := waitWorkloadFn(ref.ID, workload.Serving{AwaitDrain: true}, poll.Interval, poll.Timeout, nil); err != nil {
+	if _, err := waitWorkloadFn(ref.ID, workload.Serving{AwaitDrain: true}, poll.Interval,
+		budgetLeft(poll.Timeout, begun), nil); err != nil {
 		return ref.Wrap(err)
 	}
 
@@ -408,6 +413,20 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 		Runtime:     settings.Runtime,
 		Replacement: final,
 	})
+}
+
+// minPollBudget is what the second wait gets when the first spent everything:
+// enough for a look, so the error names the workload rather than the clock.
+const minPollBudget = 30 * time.Second
+
+// budgetLeft is the timeout less what has been spent of it since `since`.
+func budgetLeft(timeout time.Duration, since time.Time) time.Duration {
+	left := timeout - time.Since(since)
+	if left < minPollBudget {
+		return minPollBudget
+	}
+
+	return left
 }
 
 // outcome is what the wait is entitled to claim once it has settled.

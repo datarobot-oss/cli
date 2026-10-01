@@ -26,7 +26,7 @@ import (
 
 // WorkloadSettings is GET /workloads/{id}/settings/: how much the workload
 // runs with, as the platform holds it, and the replacement carrying a change
-// that is still being rolled out, nil when none is (RAPTOR-18076).
+// that is still being rolled out, nil when none is.
 //
 // Runtime is kept as the platform sent it. It is re-emitted under JSON, and
 // it is what a replica change is built from, whole, because the settings
@@ -202,9 +202,10 @@ func (s *WorkloadSettings) WithReplicaCount(group string, replicas int) (json.Ra
 }
 
 // RuntimeFromSettingsFile is the runtime block to send from a file the user
-// wrote: either the settings body itself, {"runtime": ...}, or the runtime
-// block bare. Both are accepted because the first is what the route takes
-// and the second is what a manifest carries under the same name.
+// wrote: the {"settings": ...} document the read prints, the {"runtime": ...}
+// body the route takes, or the runtime block bare, which is what a manifest
+// carries under the same name. All three, so that the read's output can be
+// saved, edited and sent back as it is.
 //
 // The block is checked for what the route accepts and then fails on. A
 // PATCH is the entire runtime, and the route answers 202 to a group with no
@@ -215,24 +216,80 @@ func (s *WorkloadSettings) WithReplicaCount(group string, replicas int) (json.Ra
 // document loosely, since a file may spell memory the manifest's way
 // ("512MB") where the platform answers in bytes.
 func RuntimeFromSettingsFile(doc json.RawMessage) (json.RawMessage, error) {
-	var body struct {
-		Runtime json.RawMessage `json:"runtime"`
-	}
-
-	if err := json.Unmarshal(doc, &body); err != nil {
-		return nil, fmt.Errorf("the settings file is not a JSON object: %w", err)
-	}
-
-	runtime := doc
-	if len(body.Runtime) > 0 && string(body.Runtime) != "null" {
-		runtime = body.Runtime
+	runtime, err := unwrapRuntime(doc)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := checkRuntimeDoc(runtime); err != nil {
 		return nil, err
 	}
 
-	return runtime, nil
+	return cleanRuntimeDoc(runtime)
+}
+
+// unwrapRuntime finds the runtime block in a document: under "settings" when
+// the file is what `--output-format json` printed, under "runtime" when it is
+// the body the route takes, or the document itself.
+func unwrapRuntime(doc json.RawMessage) (json.RawMessage, error) {
+	var body struct {
+		Settings json.RawMessage `json:"settings"`
+		Runtime  json.RawMessage `json:"runtime"`
+	}
+
+	if err := json.Unmarshal(doc, &body); err != nil {
+		return nil, fmt.Errorf("the settings file is not a JSON object: %w", err)
+	}
+
+	if present(body.Settings) {
+		return unwrapRuntime(body.Settings)
+	}
+
+	if present(body.Runtime) {
+		return body.Runtime, nil
+	}
+
+	return doc, nil
+}
+
+func present(raw json.RawMessage) bool {
+	return len(raw) > 0 && string(raw) != "null"
+}
+
+// cleanRuntimeDoc drops what the platform answers but does not take, and
+// refuses what it takes and then fails on. resolvedBundle is in every
+// document the read prints and is the platform's own answer to the bundle
+// request; sent back, it would pin the platform to a choice it made once,
+// which is why WithReplicaCount drops it too. A replicaCount beside an
+// enabled autoscaling policy is the check `create` makes on the same block.
+func cleanRuntimeDoc(doc json.RawMessage) (json.RawMessage, error) {
+	var runtime map[string]any
+
+	if err := json.Unmarshal(doc, &runtime); err != nil {
+		return nil, fmt.Errorf("cannot read the settings file's runtime: %w", err)
+	}
+
+	groups, _ := runtime["containerGroups"].([]any)
+
+	for i, raw := range groups {
+		group, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		delete(group, "resolvedBundle")
+
+		if err := validateContainerGroupAutoscaling(i, group); err != nil {
+			return nil, fmt.Errorf("the settings file: %w", err)
+		}
+	}
+
+	payload, err := json.Marshal(runtime)
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode the settings file's runtime: %w", err)
+	}
+
+	return payload, nil
 }
 
 func checkRuntimeDoc(doc json.RawMessage) error {
