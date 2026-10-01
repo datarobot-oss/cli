@@ -100,6 +100,7 @@ nav:
       - enclave: commands/enclave.md
       - workload: commands/workload.md
       - spec reference: commands/workload-spec.md
+      - manifest reference: commands/workload-manifest.md
       - pipeline: commands/pipeline.md
       - pipeline reference: commands/pipelines-reference.md
       - llm-gateway: commands/llm-gateway.md

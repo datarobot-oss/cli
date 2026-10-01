@@ -169,7 +169,9 @@ dr
 │   ├── stop           Stop a workload
 │   ├── status         Show a workload's status
 │   ├── endpoint       Print a workload's endpoint URL
-│   └── logs           Show a workload's container logs
+│   ├── logs           Show a workload's container logs
+│   ├── config         Write the .datarobot.yaml manifest for a project (feature-gated)
+│   └── up             Deploy the difference between .datarobot.yaml and what is running (feature-gated)
 ├── enclave            Enclave management (alias: enclaves, outpost(s), feature-gated)
 │   ├── register       Register an enclave, returning one-shot install secrets
 │   ├── get            Display details of an enclave
