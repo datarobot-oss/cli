@@ -179,3 +179,30 @@ func TestRenderPlanJSON_NilPlan_KeepsSkippedSymlinks(t *testing.T) {
 	require.IsType(t, []any{}, sym)
 	assert.Len(t, sym, 1)
 }
+
+// The skippedSymlinks field is distinct from the action arrays: a symlink path
+// never appears in uploads, downloads, deletes, or conflicts.
+func TestRenderPlanJSON_SkippedSymlinksDistinctFromActions(t *testing.T) {
+	plan := &sync.SyncPlan{
+		Uploads: []sync.FileAction{{Path: "real.py"}},
+	}
+	symlinks := []sync.SkippedSymlink{{Path: "link.py", IsDir: false}}
+
+	doc := planDocWithSymlinks(t, plan, symlinks)
+
+	// The symlink path is only in skippedSymlinks, not in any action array.
+	symList, ok := doc["skippedSymlinks"]
+	require.True(t, ok)
+	require.IsType(t, []any{}, symList)
+
+	uploads, ok := doc["uploads"]
+	require.True(t, ok)
+
+	uploadList, ok := uploads.([]any)
+	require.True(t, ok)
+	require.Len(t, uploadList, 1)
+
+	uploadEntry, ok := uploadList[0].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "real.py", uploadEntry["path"])
+}
