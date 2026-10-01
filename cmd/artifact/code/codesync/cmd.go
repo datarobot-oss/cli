@@ -83,14 +83,14 @@ type runFlags struct {
 	Yes    bool
 	// AcceptRemote opts a non-interactive run into letting the remote
 	// overwrite or delete local files. Without it, such a run is refused
-	// rather than silently destroying local work (RAPTOR-19348).
+	// rather than silently destroying local work.
 	AcceptRemote bool
 }
 
 // Preview reports whether this run only shows a plan and writes nothing, on
 // either the local or the remote side. Such a run must never block on a
 // prompt: an operation that by definition changes nothing has no confirmation
-// to ask for (RAPTOR-19348).
+// to ask for.
 func (f runFlags) Preview() bool {
 	return f.DryRun || f.Diff
 }
@@ -301,8 +301,8 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 // files may proceed. A plan that only uploads passes straight through. When it
 // would write the working tree from the remote side, an interactive run asks
 // first (default No), and a non-interactive run is refused unless --accept-remote
-// opted in — so CI fails loud instead of silently rewriting its checkout
-// (RAPTOR-19348). Either way, the files it would replace are backed up to
+// opted in — so CI fails loud instead of silently rewriting its checkout.
+// Either way, the files it would replace are backed up to
 // *.LOCAL before the remote lands.
 func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, flags runFlags, deps Deps) (bool, error) {
 	// Only conflicts gate: a REMOTE_MODIFIED or REMOTE_DELETED file is
@@ -391,7 +391,7 @@ func formatPathList(paths []string) string {
 // exactly one JSON document: the plan at the top level and, when a
 // version-writing Execute runs, its result under a "result" key. Emitting the
 // plan and the result as two concatenated documents broke every consumer's
-// json.loads (RAPTOR-19348).
+// json.loads.
 //
 // An Execute runs only when neither preview mode is set, the plan is non-empty,
 // and it does not require explicit confirmation. Conflicts without --yes are
@@ -411,7 +411,7 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 		// rather than inferring it from an absent "result"; a script re-invokes
 		// with --yes --accept-remote to proceed. With --yes but no opt-in, the
 		// run is refused loudly (non-zero exit) rather than silently letting the
-		// remote win over local changes (RAPTOR-19348).
+		// remote win over local changes.
 		if !flags.Yes {
 			return display.RenderRefusedJSON(out, plan, locked)
 		}

@@ -105,7 +105,7 @@ func runGet(
 	// Not "is it terminal": COMPLETED is terminal and still not the end of
 	// the wait, because the artifact is repointed at the image a moment
 	// after. Skipping the wait there returned success inside exactly the
-	// window this is supposed to close (RAPTOR-20311). Only a build that
+	// window this is supposed to close. Only a build that
 	// failed has nothing left to wait for; an already-deployable one costs
 	// one poll, which returns immediately.
 	if !workload.IsBuildErrorStatus(build.Status) {

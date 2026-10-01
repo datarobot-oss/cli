@@ -39,7 +39,7 @@ import (
 // regardless because the server's form default for the field is true: the
 // request stated an intent in a place nobody read, and stayed correct only
 // for as long as that default did. Verified against staging with the query
-// set to false, which changed nothing (RAPTOR-19915).
+// set to false, which changed nothing.
 func (c *httpClient) UploadFromZipExisting(catalogID, filename, overwrite string, size int64, body io.Reader) (*FromFileResp, error) {
 	if overwrite == "" {
 		overwrite = OverwriteReplace

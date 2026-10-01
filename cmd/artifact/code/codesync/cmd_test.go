@@ -150,7 +150,7 @@ func TestCmd_NotLinked(t *testing.T) {
 
 // TestRunE_DryRun_DoesNotPromptForDirectory: --dry-run writes nothing, so it
 // resolves the directory without the prompt that used to block it forever
-// before the plan (RAPTOR-19348). No --dir and no --yes: the old code prompted.
+// before the plan. No --dir and no --yes: the old code prompted.
 func TestRunE_DryRun_DoesNotPromptForDirectory(t *testing.T) {
 	asked := false
 
@@ -328,7 +328,7 @@ func TestRunE_IgnoreFileNotice_GoesToStderrAndLeavesStdoutParseable(t *testing.T
 // assertOnlyJSON drains r and requires it to be exactly one JSON document. The
 // command emits a single object — the plan, with the result nested under
 // "result" when one ran — so a consumer's json.loads sees one document and no
-// longer needs a splitter (RAPTOR-19348).
+// longer needs a splitter.
 func assertOnlyJSON(t *testing.T, r io.Reader) {
 	t.Helper()
 
@@ -354,7 +354,7 @@ func assertOnlyJSON(t *testing.T, r io.Reader) {
 
 // TestRunE_JSONOutput emits exactly one JSON document on the non-conflict,
 // non-dry-run path: the plan at the top level with the executed result nested
-// under "result", parseable in a single Unmarshal (RAPTOR-19348).
+// under "result", parseable in a single Unmarshal.
 func TestRunE_JSONOutput(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -390,7 +390,7 @@ func TestRunE_JSONOutput(t *testing.T) {
 // A sync that fails during Execute leaves stdout empty and surfaces the error,
 // rather than the old behavior of leaving a plan document on stdout. stdout
 // carries a document only when there is a result to report; a consumer keys off
-// the exit status (RAPTOR-19348).
+// the exit status.
 func TestRunE_JSONOutput_ExecuteError_LeavesStdoutEmpty(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -481,7 +481,7 @@ func TestRunE_JSONOutput_ConflictWithoutYes(t *testing.T) {
 
 // TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote: in JSON mode,
 // --yes alone must not silently overwrite local files — it is refused loudly so
-// CI fails red instead of rewriting its checkout (RAPTOR-19348).
+// CI fails red instead of rewriting its checkout.
 func TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -691,7 +691,7 @@ func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
 // TestRunE_FastForwardPull_RunsWithoutConfirmation: a REMOTE_MODIFIED /
 // REMOTE_DELETED plan (no conflicts) is a fast-forward with no unsaved work, so
 // it runs under --yes with no --accept-remote and no prompt. The engine still
-// backs those files up to .LOCAL; only conflicts gate (RAPTOR-19348).
+// backs those files up to .LOCAL; only conflicts gate.
 func TestRunE_FastForwardPull_RunsWithoutConfirmation(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)

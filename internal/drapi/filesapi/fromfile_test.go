@@ -86,8 +86,7 @@ func readMultipartParts(r *http.Request) ([]multipartPart, error) {
 // the server default did; a default flip, or the Files API starting to reject
 // recognised parameters sent in the query, would have turned every zip upload
 // into a single archive file or a failure with no CLI change. It travels in
-// the form now, before the file part, and not in the query at all
-// (RAPTOR-19915).
+// the form now, before the file part, and not in the query at all.
 func TestUploadFromZipExisting_UseArchiveContentsTravelsInTheForm(t *testing.T) {
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.False(t, r.URL.Query().Has("useArchiveContents"),

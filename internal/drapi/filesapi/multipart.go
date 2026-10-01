@@ -50,7 +50,7 @@ const multipartFormField = "file"
 // anything else, with extraction happening only because the server's
 // declared form default for that field is already true: inert rather than
 // honoured, and one default flip away from zips landing as a single file
-// with no error (RAPTOR-19915).
+// with no error.
 //
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing

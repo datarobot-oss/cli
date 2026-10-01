@@ -1183,7 +1183,7 @@ func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
 		// --execution-environment walked into this screen, pressed Enter, and
 		// had its flag quietly replaced by the first row — which, since the
 		// live environment is lifted to the top and labelled "· in use",
-		// wears the most authoritative label on the list (RAPTOR-20231).
+		// wears the most authoritative label on the list.
 		f.enterPicker(screenExecEnv)
 	}
 
