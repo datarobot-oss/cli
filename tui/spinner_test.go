@@ -251,8 +251,7 @@ func (foreignModel) View() string                        { return "" }
 
 // The read that turned an abandoned deploy into a healthy one, held branch by
 // branch. Tests have no TTY, so RunWithSpinnerNote never reaches this in the
-// suite; swapping any of its returns for nil used to leave everything green
-// (RAPTOR-19963).
+// suite; swapping any of its returns for nil used to leave everything green.
 func TestSpinnerVerdict(t *testing.T) {
 	failed := errors.New("the build failed")
 

@@ -32,8 +32,7 @@ import (
 // A polling phase hands its function a context that dies with the phase. The
 // phase is what Ctrl-C ends, and ending it is the only handle anybody has on
 // the wait it left running: Bubble Tea keeps the goroutine alive, so without
-// this the abandoned poll went on calling the API until the process exited
-// (RAPTOR-19963).
+// this the abandoned poll went on calling the API until the process exited.
 func TestReporterWait_EndsThePhaseContextOnTheWayOut(t *testing.T) {
 	fixedClock(t, time.Second)
 

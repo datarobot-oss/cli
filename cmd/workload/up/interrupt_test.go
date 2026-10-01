@@ -29,7 +29,7 @@ import (
 
 // Stopping the wait does not stop the deploy, so "interrupted" on its own
 // would read as though Ctrl-C had called the rollout off. The message has to
-// say the platform is still going and where to look (RAPTOR-19963).
+// say the platform is still going and where to look.
 func TestExplainInterrupt(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

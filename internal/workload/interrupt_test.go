@@ -31,7 +31,7 @@ import (
 // The property every one of these holds: a wait whose context ended must
 // report an error. Every caller reads a nil error as "it arrived", so a wait
 // that gives up quietly is reported as a healthy deploy — which is the whole
-// of RAPTOR-19963. The workload or build it last saw still comes back, because
+// bug. The workload or build it last saw still comes back, because
 // a caller that has to say where things got to needs it.
 
 func TestWaitsRefuseToSucceedOnACancelledContext(t *testing.T) {
