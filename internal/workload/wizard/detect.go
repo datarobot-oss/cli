@@ -126,6 +126,9 @@ func (d Detected) generatedBuildProblem() string {
 	switch {
 	case has("pyproject.toml") && has("uv.lock"), has("package.json") && has("package-lock.json"):
 		return ""
+	case has("pyproject.toml") && has("package.json"):
+		return "pyproject.toml has no uv.lock beside it and package.json has no package-lock.json; " +
+			"run 'uv lock' or 'npm install' and commit the result"
 	case has("pyproject.toml"):
 		return "pyproject.toml has no uv.lock beside it; run 'uv lock' and commit the result"
 	case has("package.json"):

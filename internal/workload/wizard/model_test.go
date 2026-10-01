@@ -465,6 +465,62 @@ func TestFlow_GeneratedBuildPicksABaseImage(t *testing.T) {
 	assert.Equal(t, []string{"uvicorn", "app:app", "--host", "0.0.0.0"}, model.draft.Build.Entrypoint)
 }
 
+// A project the platform cannot build a generated image from is told so on
+// the source screen, where the pick is made, rather than after the sync.
+func TestFlow_GeneratedSourceIsRefusedWithoutTheProjectFiles(t *testing.T) {
+	model := newFlow(dockerfileProject(t), nil, Answers{})
+
+	model = press(t, pastName(t, model), "enter") // name, kind
+	require.Equal(t, screenSource, model.at)
+	assert.Contains(t, model.View(), "needs pyproject.toml + uv.lock or package.json + package-lock.json")
+
+	model = press(t, model, "2", "enter") // build from a base image
+
+	assert.Equal(t, screenSource, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "neither pyproject.toml with uv.lock nor package.json with package-lock.json")
+	assert.Contains(t, model.failed.Error(), "or pick another source")
+	assert.Equal(t, manifest.BuildModeDockerfile, model.draft.Build.Mode, "a refused pick records nothing")
+}
+
+// Keeping a bound workload's generated build does not need the project files:
+// its code lives in the artifact, and up pulls it into an empty directory.
+// Refusing here would make the empty-directory bind impossible to finish.
+func TestFlow_BoundGeneratedBuildIsKeptWithoutTheProjectFiles(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000,
+				 "imageBuildConfig": {"dockerfile": {"source": "generated",
+				   "entrypoint": ["python", "old.py"],
+				   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+	original := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+		return []workload.ExecutionEnvironment{{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}}}, nil
+	}
+
+	t.Cleanup(func() { listExecEnvsFn = original })
+
+	model := newFlow(Detect(t.TempDir()), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	model = press(t, model, "enter") // kind
+	require.Equal(t, screenSource, model.at)
+	assert.Contains(t, model.View(), "built from the workload's current code")
+	assert.NotContains(t, model.View(), "needs pyproject.toml")
+
+	model = press(t, model, "enter") // keep the live build
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenExecEnv, model.at)
+	assert.Equal(t, "68a1", model.draft.Build.ExecutionEnvironmentID, "the live build survives being kept")
+}
+
 // Confirming is the only thing that ends the flow with something to write.
 func TestFlow_ConfirmProducesTheManifest(t *testing.T) {
 	model := newFlow(dockerfileProject(t), nil, Answers{})

@@ -314,6 +314,13 @@ func (f flow) sourceOptions() []option {
 	if f.detected.generatedBuildProblem() != "" {
 		generatedNote = "needs pyproject.toml + uv.lock or package.json + package-lock.json"
 		generatedMissing = true
+
+		// The bound workload's own build is kept, not chosen: up pulls its
+		// code into an empty directory, so the missing pair is not a problem.
+		if f.liveBuildMode() == manifest.BuildModeGenerated {
+			generatedNote = "built from the workload's current code"
+			generatedMissing = false
+		}
 	}
 
 	return []option{

@@ -276,6 +276,7 @@ func TestAnswers_GeneratedModeNeedsAProjectThePlatformCanBuild(t *testing.T) {
 		"requirements.txt only":         {[]string{"requirements.txt"}, "neither pyproject.toml with uv.lock"},
 		"pyproject without the lock":    {[]string{"pyproject.toml"}, "run 'uv lock'"},
 		"package.json without the lock": {[]string{"package.json"}, "run 'npm install'"},
+		"both manifests, no lock":       {[]string{"pyproject.toml", "package.json"}, "run 'uv lock' or 'npm install'"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()

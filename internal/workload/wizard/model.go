@@ -771,9 +771,12 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 		return nil, fmt.Errorf("no %s in %s: pick another source or add one", DockerfileName, f.detected.Dir)
 	}
 
-	if mode == manifest.BuildModeGenerated {
+	// Keeping a bound workload's generated build is an edit, not a choice, the
+	// same rule the headless bind applies: its code lives in the artifact, and
+	// `up` pulls it into an empty directory before it reads the tree.
+	if mode == manifest.BuildModeGenerated && mode != f.liveBuildMode() {
 		if problem := f.detected.generatedBuildProblem(); problem != "" {
-			return nil, errors.New(problem + ": pick another source or add the files")
+			return nil, fmt.Errorf("%s (or pick another source)", problem)
 		}
 	}
 
@@ -782,6 +785,16 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 	}
 
 	return nil, nil
+}
+
+// liveBuildMode is how the bound workload is built today, "" when the run is
+// not bound to one.
+func (f flow) liveBuildMode() string {
+	if f.live == nil {
+		return ""
+	}
+
+	return f.live.Defaults().Build.Mode
 }
 
 func (f *flow) acceptBinding() (tea.Cmd, error) {
