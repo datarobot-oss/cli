@@ -715,7 +715,7 @@ func pollWorkload(
 // abandoned reports a wait that stopped because its context ended rather than
 // because the workload arrived anywhere. The last-seen workload still comes
 // back with it, so a caller can say where it had got to; what must not happen
-// is a nil error, which every caller reads as "it is up" (RAPTOR-19963).
+// is a nil error, which every caller reads as "it is up".
 //
 // It is also where the //nolint:contextcheck directives in this package's poll
 // loops point, because this is the function that says how far the context

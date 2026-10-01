@@ -332,7 +332,12 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	// second question when both were typed ahead or pasted together.
 	stdin := bufio.NewReader(cmd.InOrStdin())
 
-	result, runErr := runFn(up.Options{
+	// Under the command's own context: the one main.go derives from SIGINT.
+	// Without it a deploy could not be stopped: signal.NotifyContext takes
+	// away the process's default death on a signal, and nothing below read
+	// the context it put in its place, so Ctrl-C on a piped or CI run did
+	// nothing at all.
+	result, runErr := runFn(cmd.Context(), up.Options{
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
@@ -358,11 +363,6 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 			// other way round: it hands the wizard no writer at all under
 			// JSON, so there the table really is absent.
 		}),
-		// The one main.go derives from SIGINT. Without it a deploy could not
-		// be stopped: signal.NotifyContext takes away the process's default
-		// death on a signal, and nothing below read the context it put in its
-		// place, so Ctrl-C on a piped or CI run did nothing at all.
-		Context:      cmd.Context(),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,
 		Stderr:       cmd.ErrOrStderr(),
@@ -397,7 +397,10 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 // its action after the wait, not after the POST — so the sentence is true of
 // every case rather than specific to the common one, and the wrapped error
 // says the rest. Where to look follows the ids in hand: the workload when
-// there is one, the build when only a build exists yet.
+// there is one, the build when only a build exists yet. The build hint
+// carries the artifact id too: the one-argument form resolves the artifact
+// from the current directory, which is not the project's when the deploy
+// was given --dir, so the hint would fail or name another project's build.
 func explainInterrupt(runErr error, result up.Result) error {
 	if !up.Interrupted(runErr) {
 		return runErr
@@ -408,6 +411,8 @@ func explainInterrupt(runErr error, result up.Result) error {
 	switch {
 	case result.WorkloadID != "":
 		where += " " + result.WorkloadID
+	case result.BuildID != "" && result.ArtifactID != "":
+		where = "dr artifact build logs " + result.ArtifactID + " " + result.BuildID
 	case result.BuildID != "":
 		where = "dr artifact build logs " + result.BuildID
 	}

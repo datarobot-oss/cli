@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +65,7 @@ type version struct {
 // Every step here is recoverable except by leaving a draft artifact behind,
 // which is why the next run looks for one before making another.
 func buildVersion(
+	ctx context.Context,
 	loaded Loaded,
 	live Live,
 	plan Plan,
@@ -89,7 +91,7 @@ func buildVersion(
 		return made, err
 	}
 
-	buildID, err := maybeBuild(loaded.ProjectDir, made, plan.Code, synced, opts, report)
+	buildID, err := maybeBuild(ctx, loaded.ProjectDir, made, plan.Code, synced, opts, report)
 	made.BuildID = buildID
 
 	return made, err

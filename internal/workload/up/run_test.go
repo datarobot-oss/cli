@@ -397,7 +397,7 @@ func runIn(t *testing.T, content string, opts Options) (Result, string, error) {
 	opts.Dir = dir
 	opts.Stderr = &stderr
 
-	result, err := Run(opts)
+	result, err := Run(t.Context(), opts)
 
 	return result, stderr.String(), err
 }
@@ -422,7 +422,7 @@ func TestRun_NoManifestWithoutATerminalNamesTheFix(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	_, err := Run(Options{Dir: t.TempDir(), NonInteractive: true, Stderr: &stderr})
+	_, err := Run(t.Context(), Options{Dir: t.TempDir(), NonInteractive: true, Stderr: &stderr})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoManifest)
 	assert.Contains(t, err.Error(), "dr workload config")
@@ -454,7 +454,7 @@ func TestRun_NoManifestOnATerminalRunsTheWizard(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	result, err := Run(Options{Dir: dir, Stderr: &stderr})
+	result, err := Run(t.Context(), Options{Dir: dir, Stderr: &stderr})
 	require.NoError(t, err)
 	assert.True(t, asked)
 	assert.Equal(t, "wl-new", result.WorkloadID)
@@ -490,7 +490,7 @@ func TestRun_WizardRedirectIsFollowed(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	result, err := Run(Options{Dir: dir, Stderr: &stderr})
+	result, err := Run(t.Context(), Options{Dir: dir, Stderr: &stderr})
 	require.NoError(t, err)
 	assert.Equal(t, "wl-new", result.WorkloadID)
 	assert.Equal(t, manifest.Path(app), boundPath, "the id lands in the manifest the wizard wrote")

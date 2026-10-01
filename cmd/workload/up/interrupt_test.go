@@ -57,11 +57,19 @@ func TestExplainInterrupt(t *testing.T) {
 			// command for a workload that does not exist would be wrong.
 			name:   "interrupted mid-build, before any workload",
 			err:    tui.ErrInterrupted,
-			result: up.Result{BuildID: "b-7"},
-			wants:  []string{"dr artifact build logs b-7"},
+			result: up.Result{ArtifactID: "art-3", BuildID: "b-7"},
+			// Both ids: the one-argument form resolves the artifact from the
+			// current directory, which is not the project's under --dir.
+			wants: []string{"dr artifact build logs art-3 b-7"},
 			// The claim must not be specific to a rollout, since none was
 			// started.
 			unwanted: "rolling",
+		},
+		{
+			name:   "interrupted mid-build with only the build id in hand",
+			err:    tui.ErrInterrupted,
+			result: up.Result{BuildID: "b-7"},
+			wants:  []string{"dr artifact build logs b-7"},
 		},
 		{
 			name: "interrupted before anything had an id",
@@ -115,7 +123,7 @@ func TestExplainInterrupt(t *testing.T) {
 // Run through ExecuteContext with a context that is already cancelled, and
 // checked by that cancellation reaching the deploy: cobra fills in a
 // background context when none was given, so "not nil" would pass with
-// `Context: context.Background()` in the command and prove nothing.
+// `context.Background()` in the command and prove nothing.
 func TestUpPassesTheCommandContextToTheDeploy(t *testing.T) {
 	seen := stubRun(t, up.Result{WorkloadID: "wl-1", Status: "running"}, nil)
 
@@ -131,6 +139,6 @@ func TestUpPassesTheCommandContextToTheDeploy(t *testing.T) {
 
 	require.NoError(t, cmd.ExecuteContext(ctx))
 
-	require.NotNil(t, seen.Context, "a deploy with no context cannot be stopped")
-	assert.ErrorIs(t, seen.Context.Err(), context.Canceled, "the deploy was handed some other context")
+	require.NotNil(t, seen.ctx, "a deploy with no context cannot be stopped")
+	assert.ErrorIs(t, seen.ctx.Err(), context.Canceled, "the deploy was handed some other context")
 }

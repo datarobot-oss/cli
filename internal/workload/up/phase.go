@@ -119,7 +119,7 @@ func (r *reporter) workNoted(label string, fn func(tui.Noter) error) error {
 // broke that: the wait goroutine keeps running, and it writes that variable
 // while the deploy reads it to decide what to report. The lock makes the read
 // well defined, and the value being nil is what tells the reader the phase
-// never got an answer (RAPTOR-19963).
+// never got an answer.
 type held[T any] struct {
 	mu sync.Mutex
 	v  *T
@@ -171,7 +171,7 @@ const streamWindowRows = 20
 // Bubble Tea program, so Ctrl-C arrives as a signal rather than a keystroke,
 // and main.go's signal.NotifyContext has already taken the process's default
 // death away from it: an image build could not be stopped at all before the
-// context reached the wait beneath (RAPTOR-19963).
+// context reached the wait beneath.
 func (r *reporter) stream(
 	ctx context.Context,
 	label string,

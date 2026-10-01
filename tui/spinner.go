@@ -25,9 +25,10 @@ import (
 )
 
 // Noter appends a live suffix to a running spinner's label, replacing whatever
-// the last call set. It is safe to call from the worker goroutine, and it is a
-// no-op when there is no spinner drawing, so a caller can install one
-// unconditionally.
+// the last call set. RunWithSpinnerNote hands one to the function it runs,
+// and it is safe to call from that function's goroutine while the spinner
+// draws. It is a no-op when there is no spinner drawing, so a caller can
+// install one unconditionally.
 type Noter func(string)
 
 type spinnerModel struct {
@@ -42,7 +43,7 @@ type spinnerModel struct {
 	// the final model, which is the only way to read it with a
 	// happens-before edge: a captured variable is written by the goroutine
 	// running fn and read after Program.Run returns, and on Ctrl-C that read
-	// wins the race and sees a nil nobody wrote (RAPTOR-19963).
+	// wins the race and sees a nil nobody wrote.
 	err error
 
 	// note is the live label suffix, shared with the worker. A pointer so
@@ -113,17 +114,24 @@ func RunWithSpinnerPrefix(prefix, label string, fn func() error) error {
 	return RunWithSpinnerNote(prefix, label, func(Noter) error { return fn() })
 }
 
-// RunWithSpinnerNote is RunWithSpinnerPrefix with a live label. fn is handed a
-// Noter that rewrites the parenthesised suffix after the label, so a phase
-// that knows how it is progressing can say so while it runs rather than only
-// once it ends. Without a spinner on screen the Noter does nothing: the
-// caller is expected to have its own way of reporting progress to a plain
-// stream, and a spinner's job is the terminal.
+// RunWithSpinnerNote runs fn while a spinner draws, and returns what fn
+// returned, or ErrInterrupted when the user stopped waiting first.
 //
-// An interrupt comes back as ErrInterrupted. fn keeps running — Bubble Tea
-// leaks its Cmd goroutines by design and nothing here can stop somebody
-// else's function — so a caller whose fn polls a remote thing should give it
-// a context it cancels when this returns.
+// The cancellation contract: an interrupt (Ctrl-C as a keystroke, or SIGINT
+// reaching the process) ends the spinner and this call, but not fn. Bubble
+// Tea leaks its Cmd goroutines by design, and nothing here can stop a
+// function it was handed, so fn keeps running until it returns on its own.
+// A caller whose fn does anything long-lived, such as polling a remote
+// service, should give it a context it cancels when this returns, which is
+// what the deploy's phase runner does. ErrInterrupted is never nil and never
+// fn's own result: an abandoned fn has no result yet, and reporting that
+// absence as success is the mistake this is built to avoid.
+//
+// fn is handed a Noter that rewrites the parenthesised suffix after the
+// label, so a phase that knows how it is progressing can say so while it
+// runs rather than only once it ends. Without a spinner on screen (no
+// terminal, or a non-interactive run) fn runs inline, the Noter does
+// nothing, and interrupts are whatever fn's own context makes of them.
 func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
 	if !reader.IsStdinTerminal() {
 		return fn(func(string) {})
@@ -150,11 +158,13 @@ func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
 	return spinnerVerdict(Run(m))
 }
 
-// spinnerVerdict turns what Run handed back into the phase's answer. It is
-// the one read that decides whether an abandoned phase counts as a finished
-// one, so it lives apart from the terminal it needs, where a test can hold
-// every branch: the suite never has a TTY, and inside RunWithSpinnerNote the
-// whole of this was dead code to it (RAPTOR-19963).
+// spinnerVerdict turns what Run handed back (the final model and its error)
+// into the answer RunWithSpinnerNote gives: the run's error, ErrInterrupted
+// for either kind of interrupt, or otherwise what fn returned. It is the one
+// read that decides whether an abandoned call counts as a finished one, so it
+// lives apart from the terminal it needs, where a test can hold every branch;
+// the suite never has a TTY, so inside RunWithSpinnerNote none of this would
+// be exercised.
 func spinnerVerdict(final tea.Model, runErr error) error {
 	if runErr != nil {
 		// Bubble Tea answers a SIGINT that reaches the process while it is

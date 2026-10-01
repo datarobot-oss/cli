@@ -217,9 +217,9 @@ func TestAwaitRunning_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 			}
 
 			report := newReporter(&out, false)
-			opts := Options{Context: ctx, Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
+			opts := Options{Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
 
-			result, err := awaitRunning("wl-1", workload.Serving{ArtifactID: "art-new"},
+			result, err := awaitRunning(ctx, "wl-1", workload.Serving{ArtifactID: "art-new"},
 				Result{WorkloadID: "wl-1"}, opts, report)
 
 			require.ErrorIs(t, err, tc.want, "an abandoned wait must never come back nil")
@@ -259,7 +259,7 @@ func TestAwaitRunning_ATimeoutStillReportsWhereItGotTo(t *testing.T) {
 	report := newReporter(&out, false)
 	opts := Options{Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
 
-	result, err := awaitRunning("wl-1", workload.Serving{ArtifactID: "art-new"},
+	result, err := awaitRunning(t.Context(), "wl-1", workload.Serving{ArtifactID: "art-new"},
 		Result{WorkloadID: "wl-1"}, opts, report)
 
 	require.Error(t, err)
@@ -271,15 +271,6 @@ func TestAwaitRunning_ATimeoutStillReportsWhereItGotTo(t *testing.T) {
 // poll loops do, so the shape the caller inspects is the real one.
 func abandonedLikeThePollLoop(ctx context.Context) error {
 	return fmt.Errorf("stopped waiting for workload wl-1: %w", ctx.Err())
-}
-
-func TestOptionsCtx_DefaultsToBackground(t *testing.T) {
-	assert.Equal(t, context.Background(), Options{}.ctx())
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	assert.Equal(t, ctx, Options{Context: ctx}.ctx())
 }
 
 // Ctrl-C during the endpoint check lands after the rollout finished, so the
@@ -339,7 +330,7 @@ func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		stub func(t *testing.T)
-		wait func(opts Options, report *reporter) error
+		wait func(ctx context.Context, opts Options, report *reporter) error
 	}{
 		{
 			name: "awaitSteady",
@@ -353,11 +344,11 @@ func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 						abandonedLikeThePollLoop(ctx)
 				})
 			},
-			wait: func(opts Options, report *reporter) error {
+			wait: func(ctx context.Context, opts Options, _ *reporter) error {
 				live := Live{State: StateSettling, Status: workload.WorkloadStatusStopping}
 				live.WorkloadID = "wl-1"
 
-				_, err := awaitSteady(live, opts)
+				_, err := awaitSteady(ctx, live, opts)
 
 				return err
 			},
@@ -365,15 +356,15 @@ func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 		{
 			name: "awaitRollout",
 			stub: stubReplacement,
-			wait: func(opts Options, report *reporter) error {
-				return awaitRollout("wl-1", promoting, opts, report)
+			wait: func(ctx context.Context, opts Options, report *reporter) error {
+				return awaitRollout(ctx, "wl-1", promoting, opts, report)
 			},
 		},
 		{
 			name: "awaitResize",
 			stub: stubReplacement,
-			wait: func(opts Options, report *reporter) error {
-				return awaitResize("wl-1", promoting, opts, report)
+			wait: func(ctx context.Context, opts Options, report *reporter) error {
+				return awaitResize(ctx, "wl-1", promoting, opts, report)
 			},
 		},
 	} {
@@ -385,9 +376,9 @@ func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 
 			var out bytes.Buffer
 
-			opts := Options{Context: ctx, Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
+			opts := Options{Stderr: &out, PollInterval: time.Millisecond, PollTimeout: time.Minute}
 
-			err := tc.wait(opts, newReporter(&out, false))
+			err := tc.wait(ctx, opts, newReporter(&out, false))
 
 			require.ErrorIs(t, err, context.Canceled, "an abandoned wait must never come back nil")
 			assert.True(t, Interrupted(err))

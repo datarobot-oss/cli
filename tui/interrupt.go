@@ -27,7 +27,7 @@ import (
 // with a nil error — the same nil a model that finished its work returns. A
 // caller that only reads that error cannot tell "the user gave up" from "the
 // work is done", which is how an abandoned deploy came to be reported as a
-// healthy one (RAPTOR-19963).
+// healthy one.
 var ErrInterrupted = errors.New("interrupted")
 
 // InterruptibleModel wraps any Bubble Tea model to ensure Ctrl-C always works.
