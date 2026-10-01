@@ -108,7 +108,7 @@ func eventDetailsCell(e WorkloadEvent) string {
 	}
 
 	if len(e.Details) == 0 || string(e.Details) == "null" {
-		return "-"
+		return emptyValuePlaceholder
 	}
 
 	return string(e.Details)

@@ -18,9 +18,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -149,7 +153,7 @@ func TestCmd_RefusesBadFlags(t *testing.T) {
 	}
 }
 
-func TestCmd_WrapsClientErrorsWithTheWorkload(t *testing.T) {
+func TestCmd_ClientErrorsSurface(t *testing.T) {
 	stubList(t, func(string, int, workload.EventFilter) ([]workload.WorkloadEvent, error) {
 		return nil, errors.New("boom")
 	})
@@ -157,6 +161,27 @@ func TestCmd_WrapsClientErrorsWithTheWorkload(t *testing.T) {
 	_, err := run(t, "68b0c1d2e3f4a5b6c7d8e9f0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
+}
+
+// A 404 for an id that came from .datarobot.yaml is explained in terms of
+// the manifest, since the same file read against the wrong instance answers
+// exactly this way; a typed id gets the error as it is.
+func TestCmd_WrapsANotFoundForAManifestWorkload(t *testing.T) {
+	stubList(t, func(string, int, workload.EventFilter) ([]workload.WorkloadEvent, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound, URL: "https://example.test/api/v2/workloads/68b0c1d2e3f4a5b6c7d8e9f0/events/"}
+	})
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".datarobot.yaml"), []byte("workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n"), 0o600))
+
+	_, err := run(t, "--dir", dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not on this instance")
+	assert.Contains(t, err.Error(), ".datarobot.yaml")
+
+	_, err = run(t, "68b0c1d2e3f4a5b6c7d8e9f0")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "is not on this instance", "a typed id is not explained by a manifest")
 }
 
 func TestCmd_HasNoWaitFlag(t *testing.T) {
