@@ -38,7 +38,6 @@ header:
     - 'tools/'
     - 'tui/'
     - 'main.go'
-
   paths-ignore:
     - 'cmd/task/run/testdata/**'
     - 'internal/workload/testdata/**'

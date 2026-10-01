@@ -1,0 +1,206 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package workload
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/datarobot/cli/internal/drapi"
+)
+
+// WorkloadEvent is one entry of a workload's lifecycle trail: what changed,
+// when, and who did it. Details is the platform's own account of the event
+// and differs by type, so it is kept as it came and re-emitted under JSON.
+type WorkloadEvent struct {
+	ID         string          `json:"id"`
+	WorkloadID string          `json:"workloadId"`
+	Timestamp  time.Time       `json:"timestamp"`
+	EventType  string          `json:"eventType"`
+	ActorID    string          `json:"actorId"`
+	Details    json.RawMessage `json:"details"`
+}
+
+// Message is the sentence the platform wrote for the event, "" when the
+// details carry none.
+func (e WorkloadEvent) Message() string {
+	var details struct {
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(e.Details, &details); err != nil {
+		return ""
+	}
+
+	return details.Message
+}
+
+type workloadEventList struct {
+	Data []WorkloadEvent `json:"data"`
+	Next string          `json:"next"`
+}
+
+// maxEventPages bounds the walk through a workload's trail. A trail is a
+// few dozen entries on a busy workload; anything approaching this is a route
+// that is not ending rather than a workload with an unusual history.
+const maxEventPages = 50
+
+// EventFilter narrows a trail. The zero value keeps everything.
+//
+// Everything here is applied client-side. The events route takes limit and
+// offset and nothing else: every filter parameter proposed for it was
+// refused with extra_forbidden when measured on staging.
+type EventFilter struct {
+	// Types are substrings an event's type must contain, any of them,
+	// matched without regard to case, so "replacement" finds both
+	// "Replacement Completed" and "Replacement Errored".
+	Types []string
+
+	// ProtonID keeps the events whose details mention the generation, by id.
+	ProtonID string
+
+	// Since and Until bound the window. Zero means unbounded on that side.
+	Since time.Time
+	Until time.Time
+}
+
+func (f EventFilter) admits(e WorkloadEvent) bool {
+	if len(f.Types) > 0 && !slices.ContainsFunc(f.Types, func(t string) bool {
+		return strings.Contains(strings.ToLower(e.EventType), strings.ToLower(t))
+	}) {
+		return false
+	}
+
+	if !f.Since.IsZero() && e.Timestamp.Before(f.Since) {
+		return false
+	}
+
+	if !f.Until.IsZero() && e.Timestamp.After(f.Until) {
+		return false
+	}
+
+	return f.ProtonID == "" || mentions(e.Details, f.ProtonID)
+}
+
+// mentions reports whether id appears as a string anywhere in a details
+// document, at any depth. The details differ by event type and name their
+// generations under more than one key (candidateProtonIds, protonStatuses),
+// so the search is by value rather than by field.
+func mentions(details json.RawMessage, id string) bool {
+	var doc any
+
+	if err := json.Unmarshal(details, &doc); err != nil {
+		return false
+	}
+
+	return valueMentions(doc, id)
+}
+
+func valueMentions(v any, id string) bool {
+	switch v := v.(type) {
+	case string:
+		return v == id
+	case []any:
+		return slices.ContainsFunc(v, func(item any) bool { return valueMentions(item, id) })
+	case map[string]any:
+		for key, item := range v {
+			if key == id || valueMentions(item, id) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// ListWorkloadEvents returns the most recent limit events that pass filter,
+// oldest first.
+//
+// The whole trail is read, filtered here and sorted by time, because the
+// route filters by nothing and does not promise an order: the entries of one
+// rollout came back a few milliseconds out of sequence on staging. A trail
+// is short, so reading it whole costs a page or two; the bound on pages is
+// there for a route that stops ending, not for a workload with history.
+func ListWorkloadEvents(workloadID string, limit int, filter EventFilter) ([]WorkloadEvent, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
+	}
+
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(maxPageSize))
+
+	pageURL, err := drapi.EndpointURL("/workloads/"+escapeID(workloadID)+"/events/", query)
+	if err != nil {
+		return nil, err
+	}
+
+	all, err := drainEventPages(workloadID, pageURL)
+	if err != nil {
+		return nil, err
+	}
+
+	kept := make([]WorkloadEvent, 0, len(all))
+
+	for _, e := range all {
+		if filter.admits(e) {
+			kept = append(kept, e)
+		}
+	}
+
+	slices.SortStableFunc(kept, func(a, b WorkloadEvent) int { return a.Timestamp.Compare(b.Timestamp) })
+
+	if len(kept) > limit {
+		kept = kept[len(kept)-limit:]
+	}
+
+	return kept, nil
+}
+
+// drainEventPages follows next-links from pageURL until the trail ends.
+func drainEventPages(workloadID, pageURL string) ([]WorkloadEvent, error) {
+	var all []WorkloadEvent
+
+	for page := 0; pageURL != ""; page++ {
+		if page >= maxEventPages {
+			return nil, fmt.Errorf("the event trail of workload %s did not end after %d pages; refusing to follow more",
+				workloadID, maxEventPages)
+		}
+
+		var list workloadEventList
+
+		if err := drapi.GetJSON(pageURL, "workload events", &list); err != nil {
+			return nil, err
+		}
+
+		all = append(all, list.Data...)
+
+		if list.Next == "" || len(list.Data) == 0 {
+			break
+		}
+
+		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
+			return nil, err
+		}
+
+		pageURL = list.Next
+	}
+
+	return all, nil
+}
