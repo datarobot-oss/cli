@@ -191,37 +191,20 @@ survives every deploy, and deleting a line stops managing that field rather
 than reverting it. Change something in the UI that the file does name and the
 next run puts it back, and says so.
 
-With no manifest, this runs the same setup 'dr workload config' runs and
-continues straight into the deploy: the wizard on a terminal, and the same
-answers taken from the project without one. Either way the file is written
-before anything is deployed and the run says so, with the contents when nobody
-saw them chosen: commit it, because every later deploy reads it to find the
-workload this one created. The answers come from the project: the Dockerfile
-and its EXPOSE for the image, and .env for the variables, where a value that
-looks secret is stored as a credential on the tenant and referenced from the
-file, one that looks like a local convenience is left out, and the rest are
-written in the clear. A project it cannot read — no Dockerfile, so no image
-source to infer — is refused, naming the flags that settle it. --dry-run on
-such a project prints the file it would write and the plan it would then carry
-out, and writes nothing.
+With no manifest, this runs the same setup 'dr workload config' runs, writes
+.datarobot.yaml, says so, and deploys. Commit that file: later deploys read
+it to find the workload. A project with no Dockerfile is refused, naming the
+flags that settle it. --dry-run shows the file and the plan without writing.
 
 Non-interactive:
 
   dr workload up --yes                      deploy, asking nothing
   dr workload up --yes --dry-run            show the file and the plan first
-  dr workload config --yes && dr workload up --yes
-                                            the same, in two steps
 
---yes answers every prompt in advance, including the typed confirmation that
-rolling a locked live version asks for, and with no manifest it lets the setup
-take its answers from the project. In a pipeline, DATAROBOT_CLI_NON_INTERACTIVE=true
-set once does the same for this command. That is the supported way to run it
-unattended.
-
-Two things are worth knowing but are not a substitute for --yes: without a
-terminal on stdin nothing is asked either, and --output-format json suppresses
-the setup wizard but not the locked-roll confirmation, which on a terminal is
-still put to the person there.
+--yes answers every prompt, including the confirmation for rolling a locked
+version. DATAROBOT_CLI_NON_INTERACTIVE=true does the same in a pipeline.
+Without a terminal nothing is asked either; --output-format json skips the
+setup wizard only.
 
 A manifest that names a published image deploys in one call. One that asks the
 platform to build creates an artifact, pushes the working tree to it and waits

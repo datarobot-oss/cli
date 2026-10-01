@@ -442,7 +442,7 @@ func TestRun_NoManifestWithoutATerminalRunsTheSetupHeadlessly(t *testing.T) {
 			}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
