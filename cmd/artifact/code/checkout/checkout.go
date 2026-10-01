@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
@@ -198,13 +199,9 @@ type preflightResult struct {
 }
 
 func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
-	cfg, err := wapi.LoadConfig(dir)
+	cfg, err := syncedCatalog(dir)
 	if err != nil {
-		return preflightResult{}, fmt.Errorf("read %s: %w", wapi.ConfigPath(dir), err)
-	}
-
-	if cfg.CatalogID == nil || *cfg.CatalogID == "" {
-		return preflightResult{}, errors.New("no code has been synced yet. Run 'dr artifact code sync' first")
+		return preflightResult{}, err
 	}
 
 	if err := probeArtifact(deps.GetArtifact, cfg.ArtifactID); err != nil {
@@ -221,6 +218,21 @@ func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
 		versionID:   versionID,
 		checkoutDir: wapi.CheckoutDir(dir, versionID),
 	}, nil
+}
+
+// syncedCatalog reads the linked project's state, or says that nothing has been
+// synced yet, in which case there is no catalog and so no version to check out.
+func syncedCatalog(dir string) (wapi.Config, error) {
+	cfg, err := wapi.LoadConfig(dir)
+	if err != nil {
+		return cfg, fmt.Errorf("read %s: %w", wapi.ConfigPath(dir), err)
+	}
+
+	if cfg.CatalogID == nil || *cfg.CatalogID == "" {
+		return cfg, fmt.Errorf("no code has been synced yet. Run 'dr artifact code sync%s' first", manifest.DirFlag(dir))
+	}
+
+	return cfg, nil
 }
 
 func prepareCheckoutsParent(parent string, totalSize int64) error {

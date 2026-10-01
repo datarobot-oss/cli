@@ -21,7 +21,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,7 +55,6 @@ func TestPrintLinkedExistingCode_IncludesShortVersion(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Linked to my-agent (art-abc-123) at version fedcba09.")
-	assert.Contains(t, out, "Run 'dr artifact code sync' to reconcile any local changes.")
 }
 
 func TestPrintLinkedEmptyArtifact_IncludesArtifactName(t *testing.T) {
@@ -62,7 +63,6 @@ func TestPrintLinkedEmptyArtifact_IncludesArtifactName(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Linked to empty artifact blank-artifact (art-empty-001).")
-	assert.Contains(t, out, "Run 'dr artifact code sync' to upload your files.")
 }
 
 func TestPrintAlreadyLinked_IncludesPath(t *testing.T) {
@@ -78,8 +78,10 @@ func TestRenderInitResult_TextWithCodeRef(t *testing.T) {
 	catalogID := "cat-xyz-789"
 	versionID := "fedcba0987654321"
 
+	var stderr bytes.Buffer
+
 	out := captureStdout(t, func() {
-		require.NoError(t, renderInitResult(outputformat.OutputFormatText, initResult{
+		require.NoError(t, renderInitResult(&stderr, outputformat.OutputFormatText, initResult{
 			ArtifactID:       "art-abc-123",
 			Name:             "my-agent",
 			Status:           "draft",
@@ -90,11 +92,19 @@ func TestRenderInitResult_TextWithCodeRef(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Linked to my-agent (art-abc-123) at version fedcba09.")
+	assert.NotContains(t, out, "dr artifact code sync", "stdout is the report alone")
+
+	// The --dir goes along, since the shell need not be standing in the
+	// project init linked.
+	assert.Contains(t, ansi.Strip(stderr.String()),
+		"Next:\n  dr artifact code sync"+manifest.DirFlag("/tmp/proj")+"  Reconcile any local changes\n")
 }
 
 func TestRenderInitResult_TextWithoutCodeRef(t *testing.T) {
+	var stderr bytes.Buffer
+
 	out := captureStdout(t, func() {
-		require.NoError(t, renderInitResult(outputformat.OutputFormatText, initResult{
+		require.NoError(t, renderInitResult(&stderr, outputformat.OutputFormatText, initResult{
 			ArtifactID: "art-empty-001",
 			Name:       "blank-artifact",
 			Status:     "draft",
@@ -103,17 +113,23 @@ func TestRenderInitResult_TextWithoutCodeRef(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "Linked to empty artifact blank-artifact (art-empty-001).")
+	assert.Contains(t, ansi.Strip(stderr.String()),
+		"Next:\n  dr artifact code sync"+manifest.DirFlag("/tmp/proj")+"  Upload your files\n")
 }
 
 func TestRenderInitResult_JSON_NullsForEmpty(t *testing.T) {
+	var stderr bytes.Buffer
+
 	out := captureStdout(t, func() {
-		require.NoError(t, renderInitResult(outputformat.OutputFormatJSON, initResult{
+		require.NoError(t, renderInitResult(&stderr, outputformat.OutputFormatJSON, initResult{
 			ArtifactID: "art-empty-001",
 			Name:       "blank-artifact",
 			Status:     "draft",
 			Dir:        "/tmp/proj",
 		}))
 	})
+
+	assert.Empty(t, stderr.String(), "JSON mode prints the document and nothing else")
 
 	var parsed map[string]any
 
