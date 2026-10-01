@@ -733,6 +733,18 @@ func TestIsErroredWorkloadStatus(t *testing.T) {
 	}
 }
 
+func TestIsRunningWorkloadStatus(t *testing.T) {
+	assert.True(t, IsRunningWorkloadStatus(WorkloadStatusRunning))
+	assert.True(t, IsRunningWorkloadStatus("RUNNING"), "it folds like every other status")
+
+	for _, s := range []string{
+		WorkloadStatusSubmitted, WorkloadStatusProvisioning, WorkloadStatusStopped,
+		WorkloadStatusErrored, "",
+	} {
+		assert.False(t, IsRunningWorkloadStatus(s), "%q is not running", s)
+	}
+}
+
 func TestIsStoppedWorkloadStatus(t *testing.T) {
 	for _, s := range []string{WorkloadStatusStopped, WorkloadStatusSuspended, WorkloadStatusInterrupted} {
 		assert.True(t, IsStoppedWorkloadStatus(s), "%s is a way of being switched off", s)
