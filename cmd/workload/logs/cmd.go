@@ -117,8 +117,10 @@ Example:
 			// per-replica status details are where the reason lives. On
 			// stderr, beside the "No logs found." line, so stdout stays log
 			// lines only and a pipe is not polluted; not under JSON, where
-			// stderr is kept clear for `2>&1 | jq .` (RAPTOR-18958).
-			if len(entries) == 0 && outputFormat != outputformat.OutputFormatJSON {
+			// stderr is kept clear for `2>&1 | jq .`. Not under --level
+			// either: a healthy workload with no error lines is the usual
+			// answer there, and nothing about it needs diagnosing.
+			if len(entries) == 0 && level == "" && outputFormat != outputformat.OutputFormatJSON {
 				fmt.Fprintf(cmd.ErrOrStderr(),
 					"Run 'dr workload diagnose %s' to see why the containers are not running; "+
 						"an empty log can also mean this cluster has no log collection.\n", ref.ID)

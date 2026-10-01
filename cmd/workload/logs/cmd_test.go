@@ -15,11 +15,51 @@
 package logs
 
 import (
+	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The diagnose hint goes with an empty answer on the plain path only: not
+// under JSON, where stderr stays clear, and not under --level, where an
+// empty answer is the usual one for a healthy workload.
+func TestCmd_EmptyAnswerPointsAtDiagnose(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"data": [], "count": 0, "next": null, "previous": null}`)
+	}))
+
+	defer srv.Close()
+
+	viperx.Set(config.DataRobotURL, srv.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+	viperx.Set(config.SkipAuthKey, true)
+
+	t.Cleanup(viperx.Reset)
+
+	run := func(args ...string) string {
+		cmd := Cmd()
+		cmd.PreRunE = nil
+		cmd.SetArgs(append([]string{"68b0c1d2e3f4a5b6c7d8e9f0"}, args...))
+
+		var stderr bytes.Buffer
+
+		cmd.SetErr(&stderr)
+		require.NoError(t, cmd.Execute())
+
+		return stderr.String()
+	}
+
+	assert.Contains(t, run(), "dr workload diagnose 68b0c1d2e3f4a5b6c7d8e9f0")
+	assert.NotContains(t, run("--level", "error"), "diagnose", "no error lines is the usual answer under a level")
+	assert.Empty(t, run("--output-format", "json"), "JSON keeps stderr clean")
+}
 
 func TestCmd_ArgIsOptional(t *testing.T) {
 	// Args is called directly: with the id optional, cmd.Execute() would run

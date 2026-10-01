@@ -8,8 +8,8 @@
         {
             "name": "lrs-6abd2a3ec4b5e3476a311779-6945b6ddd7-6mhh8",
             "status": "running",
-            "address": "10.190.174.152",
-            "nodeAddress": "10.190.129.187",
+            "address": "10.0.0.12",
+            "nodeAddress": "10.0.1.7",
             "startedAt": "2026-09-30T15:26:54Z",
             "conditions": [
                 {

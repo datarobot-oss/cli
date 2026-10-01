@@ -39,7 +39,7 @@ import (
 // rolled out per cluster, and a container that never started wrote nothing
 // anyway. The per-replica status details are where the platform keeps the
 // reason, the restart count and the exit code, and nothing else in the CLI
-// showed them (RAPTOR-18958).
+// showed them.
 type Diagnosis struct {
 	WorkloadID  string                `json:"workloadId"`
 	Name        string                `json:"name"`
@@ -57,7 +57,18 @@ type GenerationDiagnosis struct {
 	Role       string               `json:"role,omitempty"`
 	Details    *ProtonStatusDetails `json:"details"`
 	Findings   []string             `json:"findings"`
+
+	// Error is why this generation's status details could not be read,
+	// empty when they were. Only a generation that is not the active one
+	// carries it: the active generation's details are what the diagnosis
+	// is for, so a failure there fails the whole read instead.
+	Error string `json:"error,omitempty"`
 }
+
+// ErrGenerationsUnavailable reports an install without the protons route.
+// It stands in for the platform's 404 rather than wrapping it, so a caller
+// matching HTTP errors does not read it as the workload being missing.
+var ErrGenerationsUnavailable = errors.New("this platform does not expose the container generations")
 
 // Diagnose reads the workload, its generations and each generation's status
 // details. The generation marked active comes first, because it is the one
@@ -81,9 +92,8 @@ func Diagnose(workloadID string) (*Diagnosis, error) {
 
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf(
-				"this platform does not expose the container generations of workload %s, "+
-					"so there is nothing to diagnose here; 'dr workload get %s' has the status: %w",
-				workloadID, workloadID, err)
+				"%w of workload %s, so there is nothing to diagnose here; 'dr workload get %s' has the status",
+				ErrGenerationsUnavailable, workloadID, workloadID)
 		}
 
 		return nil, fmt.Errorf("cannot list the container generations of workload %s: %w", workloadID, err)
@@ -96,23 +106,44 @@ func Diagnose(workloadID string) (*Diagnosis, error) {
 		Generations: make([]GenerationDiagnosis, 0, len(protons)),
 	}
 
+	stopped := wl.Status == WorkloadStatusStopped
+
 	for _, p := range activeFirst(protons) {
+		g := GenerationDiagnosis{ID: p.ID, ArtifactID: p.ArtifactID, Status: p.Status, Role: p.Role, Findings: []string{}}
+
 		details, err := GetProtonStatusDetails(workloadID, p.ID)
-		if err != nil {
+
+		switch {
+		case err != nil && IsActiveProtonRole(p.Role):
+			// The active generation is the one answering the endpoint and
+			// the one the user came for; without its details there is no
+			// diagnosis to give.
 			return nil, fmt.Errorf("cannot read the status details of generation %s: %w", p.ID, err)
+		case err != nil:
+			// A draining generation can be collected between the list and
+			// this read, or refused on its own. That is a note on it, not a
+			// reason to throw away the active generation's answer.
+			g.Error = err.Error()
+		default:
+			g.Details = details
+			g.Findings = findings(p.ID, details, stopped)
 		}
 
-		d.Generations = append(d.Generations, GenerationDiagnosis{
-			ID:         p.ID,
-			ArtifactID: p.ArtifactID,
-			Status:     p.Status,
-			Role:       p.Role,
-			Details:    details,
-			Findings:   findings(p.ID, details),
-		})
+		d.Generations = append(d.Generations, g)
 	}
 
 	return d, nil
+}
+
+// startupReasons are the waiting reasons a container passes through on its
+// way up. During a rolling replacement, which is what this command is for,
+// the new generation shows them for a while; they are progress, not faults.
+var startupReasons = []string{"ContainerCreating", "PodInitializing"}
+
+// starting reports a container that is still coming up and has not failed
+// before: a startup reason with no previous run to name.
+func (c ContainerStatus) starting() bool {
+	return slices.Contains(startupReasons, c.Reason) && c.lastExit() == ""
 }
 
 // activeFirst orders the generation marked active ahead of the rest, keeping
@@ -148,10 +179,14 @@ func activeFirst(protons []Proton) []Proton {
 // Never nil, so the JSON envelope carries [] rather than null for a
 // generation with nothing wrong: a consumer can tell "checked, clean" from
 // "not checked".
-func findings(protonID string, details *ProtonStatusDetails) []string {
+func findings(protonID string, details *ProtonStatusDetails, stopped bool) []string {
 	out := []string{}
 
-	if details == nil {
+	// A stopped workload's containers ended because they were told to. A
+	// Completed, or an Error with the exit code of a process that did not
+	// trap the signal, is the whole story there rather than a fault, and
+	// naming it would make every clean stop read as a finding.
+	if details == nil || stopped {
 		return out
 	}
 
@@ -159,6 +194,10 @@ func findings(protonID string, details *ProtonStatusDetails) []string {
 		out = append(out, replicaFindings(protonID, replica)...)
 
 		for _, c := range replica.Containers {
+			if c.starting() {
+				continue
+			}
+
 			if line := c.failure(protonID); line != "" {
 				out = append(out, line)
 
@@ -244,6 +283,12 @@ func printGeneration(w io.Writer, g GenerationDiagnosis) {
 	}
 
 	fmt.Fprintf(w, "%s  %s\n", tui.InfoStyle.Render(title), tui.DimStyle.Render("artifact "+g.ArtifactID))
+
+	if g.Error != "" {
+		fmt.Fprintf(w, "  %s\n", tui.WarnStyle.Render("Status details could not be read: "+g.Error))
+
+		return
+	}
 
 	if g.Details == nil {
 		fmt.Fprintf(w, "  %s\n", tui.HintStyle.Render(

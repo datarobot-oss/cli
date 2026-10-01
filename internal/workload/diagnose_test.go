@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ import (
 // The fixtures are the platform's own answers, captured on staging: a busybox
 // workload whose container exits at once and so crash-loops, and a workload
 // that was stopped cleanly. The shape is theirs, not an assumed one, which is
-// what makes the decoding worth testing (RAPTOR-18958).
+// what makes the decoding worth testing.
 const (
 	crashLoopWorkloadID = "6abd2a3ec4b5e3476a311778"
 	crashLoopProtonID   = "6abd2a3ec4b5e3476a311779"
@@ -330,8 +331,15 @@ func TestDiagnose_RouteAbsentIsSaidAsSuch(t *testing.T) {
 
 	_, err := Diagnose("wl-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not expose the container generations")
+	require.ErrorIs(t, err, ErrGenerationsUnavailable)
 	assert.Contains(t, err.Error(), "dr workload get wl-1")
+
+	// The platform's 404 is not in the chain: a caller that reads a 404 as
+	// "no such workload" (the manifest-sourced id wording) must not, since
+	// the workload itself was just read.
+	var httpErr *drapi.HTTPError
+
+	assert.NotErrorAs(t, err, &httpErr, "the route's 404 must not pass as the workload being missing")
 }
 
 // A read that cannot be made is an error that names which read.
@@ -347,7 +355,70 @@ func TestDiagnose_ReadFailuresAreErrors(t *testing.T) {
 
 	_, err := Diagnose("wl-1")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "container generations", err.Error())
+	assert.Contains(t, err.Error(), "cannot list the container generations", err.Error())
+}
+
+// One generation's details failing to read does not sink the diagnosis when
+// it is not the active one: the failure is recorded on that generation and
+// the active generation's answer, which is what the user came for, stands.
+// The active generation's read failing is the whole read failing.
+func TestDiagnose_ADrainingGenerationsFailedReadIsANote(t *testing.T) {
+	serve := func(t *testing.T, activeStatus, oldStatus int) {
+		t.Helper()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/v2/workloads/wl-1/", func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprint(w, serverWorkloadDoc("wl-1", "x", WorkloadStatusRunning))
+		})
+		mux.HandleFunc("/api/v2/workloads/wl-1/protons/", func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprint(w, `{"count":2,"totalCount":2,"next":null,"data":[
+				{"id":"p-old","artifactId":"art-1","status":"running","role":"draining"},
+				{"id":"p-new","artifactId":"art-2","status":"running","role":"active"}]}`)
+		})
+		mux.HandleFunc("/api/v2/workloads/wl-1/protons/p-old/statusDetails", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(oldStatus)
+		})
+		mux.HandleFunc("/api/v2/workloads/wl-1/protons/p-new/statusDetails", func(w http.ResponseWriter, _ *http.Request) {
+			if activeStatus != http.StatusOK {
+				w.WriteHeader(activeStatus)
+
+				return
+			}
+
+			fmt.Fprint(w, fixture(t, "proton_status_details_stopped.json"))
+		})
+		serveAPI(t, mux)
+	}
+
+	t.Run("the draining generation", func(t *testing.T) {
+		serve(t, http.StatusOK, http.StatusNotFound)
+
+		d, err := Diagnose("wl-1")
+		require.NoError(t, err)
+		require.Len(t, d.Generations, 2)
+
+		assert.Equal(t, "p-new", d.Generations[0].ID)
+		assert.Empty(t, d.Generations[0].Error)
+		assert.NotNil(t, d.Generations[0].Details)
+
+		assert.Equal(t, "p-old", d.Generations[1].ID)
+		assert.Contains(t, d.Generations[1].Error, "404")
+		assert.Nil(t, d.Generations[1].Details)
+		assert.NotNil(t, d.Generations[1].Findings, "findings stay a list under JSON")
+
+		var out bytes.Buffer
+
+		require.NoError(t, RenderDiagnosisTo(&out, outputformat.OutputFormatText, *d))
+		assert.Contains(t, out.String(), "Status details could not be read")
+	})
+
+	t.Run("the active generation", func(t *testing.T) {
+		serve(t, http.StatusForbidden, http.StatusOK)
+
+		_, err := Diagnose("wl-1")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot read the status details of generation p-new")
+	})
 }
 
 // The findings a snapshot yields, beyond the crash loop the fixture holds.
@@ -383,11 +454,28 @@ func TestFindings(t *testing.T) {
 			[]string{},
 		},
 		{
-			"a clean stop is not a fault: Completed with exit 0 and no previous run",
+			// On a workload that is not stopped, a process that exited zero
+			// and did not come back is the reason it is not serving.
+			"a completed container is named on a workload that should be running",
 			&ProtonStatusDetails{Replicas: []ReplicaStatus{{Containers: []ContainerStatus{{
 				Name: "lrs-p1-primary", Status: "terminated", Reason: "Completed", ExitCode: new(int),
 			}}}}},
+			[]string{"primary: Completed"},
+		},
+		{
+			"a container still coming up is progress, not a fault",
+			&ProtonStatusDetails{Replicas: []ReplicaStatus{{Containers: []ContainerStatus{{
+				Name: "lrs-p1-primary", Status: "waiting", Reason: "ContainerCreating",
+			}}}}},
 			[]string{},
+		},
+		{
+			"a container coming up again after a failed run is named",
+			&ProtonStatusDetails{Replicas: []ReplicaStatus{{Containers: []ContainerStatus{{
+				Name: "lrs-p1-primary", Status: "waiting", Reason: "PodInitializing",
+				LastState: &ContainerState{Reason: "Error", ExitCode: &one},
+			}}}}},
+			[]string{"primary: PodInitializing; last run exited 1"},
 		},
 		{
 			"a container terminated right now carries its own exit code",
@@ -439,7 +527,18 @@ func TestFindings(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, findings("p1", tc.details))
+			assert.Equal(t, tc.want, findings("p1", tc.details, false))
 		})
 	}
+
+	// On a stopped workload nothing is a finding: its containers ended
+	// because they were told to, whether as Completed or as an Error with
+	// the exit code of a process that did not trap the signal.
+	stopped := &ProtonStatusDetails{Replicas: []ReplicaStatus{{Containers: []ContainerStatus{
+		{Name: "lrs-p1-primary", Status: "terminated", Reason: "Completed", ExitCode: new(int)},
+		{Name: "lrs-p1-sidecar", Status: "terminated", Reason: "Error", ExitCode: func() *int { c := 143; return &c }()},
+	}}}}
+
+	assert.Equal(t, []string{}, findings("p1", stopped, true))
+	assert.NotEmpty(t, findings("p1", stopped, false), "the same snapshot on a workload that should be running is a finding")
 }

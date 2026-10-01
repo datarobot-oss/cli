@@ -8,8 +8,8 @@
         {
             "name": "lrs-6abbbaea720810ff290d71ec-6c855fdfbf-f5jjk",
             "status": "succeeded",
-            "address": "10.190.174.157",
-            "nodeAddress": "10.190.129.187",
+            "address": "10.0.0.17",
+            "nodeAddress": "10.0.1.7",
             "startedAt": "2026-09-29T13:19:39Z",
             "conditions": [
                 {
@@ -55,7 +55,7 @@
                     "startedAt": null,
                     "ready": false,
                     "restartCount": 0,
-                    "image": "057600194195.dkr.ecr.us-east-1.amazonaws.com/workload-api/service-artifact:6abbbac64df5d926abdf03ff",
+                    "image": "000000000000.dkr.ecr.us-east-1.amazonaws.com/workload-api/service-artifact:6abbbac64df5d926abdf03ff",
                     "reason": "Completed",
                     "exitCode": 0,
                     "message": "",

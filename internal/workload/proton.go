@@ -406,10 +406,6 @@ func (c ContainerStatus) failure(protonID string) string {
 
 	last := c.lastExit()
 
-	if c.isCleanStop(last) {
-		return ""
-	}
-
 	switch {
 	case c.Reason != "":
 		line := name + ": " + c.Reason
@@ -424,7 +420,7 @@ func (c ContainerStatus) failure(protonID string) string {
 
 		return line
 
-	case last != "":
+	case last != "" && !c.cleanLastRun():
 		return name + ": " + last
 
 	default:
@@ -447,12 +443,12 @@ func (c ContainerStatus) lastExit() string {
 	return ""
 }
 
-// isCleanStop reports a container that ended the way the cluster expects it
-// to: Completed is its word for an exit of zero. On a stopped workload that
-// is the whole story rather than a fault, and reporting it would make every
-// clean stop read as a finding.
-func (c ContainerStatus) isCleanStop(last string) bool {
-	return c.Reason == "Completed" && last == ""
+// cleanLastRun reports a previous run that exited zero. Beside a current
+// reason such as CrashLoopBackOff it is worth naming, since a process that
+// keeps exiting zero is the loop; on its own it is a restart worth counting,
+// not a fault worth naming.
+func (c ContainerStatus) cleanLastRun() bool {
+	return c.LastState != nil && c.LastState.ExitCode != nil && *c.LastState.ExitCode == 0
 }
 
 // lastRun names how the previous run ended, "" when there was none. The

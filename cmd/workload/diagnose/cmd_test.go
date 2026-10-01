@@ -114,8 +114,9 @@ func TestCmd_JSONIsTheWholeOfStdout(t *testing.T) {
 	assert.Equal(t, "errored", body["status"])
 }
 
-// A read that fails is reported as the command's failure, naming the workload
-// the way every other workload command does.
+// A read that fails is the command's failure, carrying the client's message.
+// (With a typed id and a plain error, ref.Wrap passes the error through; the
+// manifest-sourced wording is idargs' own and tested there.)
 func TestCmd_ReadFailureIsAnError(t *testing.T) {
 	stubDiagnose(t, nil, errors.New("proton status details: HTTP 403"))
 
