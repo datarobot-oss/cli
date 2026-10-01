@@ -218,7 +218,7 @@ runtime:
 
 ### Placement
 
-Enclave placement is opt-in, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload that names that Use Case in `useCaseId` can be placed on them. Without `useCaseId` a workload runs outside any Enclave, and `useCaseId` on its own changes nothing about placement either; the policy is what asks for it.
+Enclave placement is opt-in, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload that names that Use Case in `useCaseId` can be placed on them. Without `useCaseId` a workload runs outside any Enclave. `useCaseId` on its own changes nothing about placement when the Use Case has no Enclaves; when it has some, a spec that names the Use Case must also set a policy, or the server refuses it with `ENCLAVE_TARGETING_REQUIRED`.
 
 | Field | Notes |
 | --- | --- |
