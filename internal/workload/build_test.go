@@ -707,7 +707,7 @@ func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 		page := atomic.AddInt32(&hits, 1)
 
 		// IN_PROGRESS, then COMPLETED with the image not yet applied, then
-		// applied. The middle state is the window RAPTOR-20311 is about:
+		// applied. The middle state is the window the fix is about:
 		// --wait must poll through it rather than return there.
 		status, applied := BuildStatusInProgress, "false"
 		if page >= 2 {

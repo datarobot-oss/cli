@@ -710,10 +710,10 @@ func TestPlanAction_RemoteWinsResolution(t *testing.T) {
 // TestSyncLock_SecondConcurrentSyncRejected verifies that a second concurrent
 // sync against the same project is rejected by the sync lock. On Unix, the
 // second Plan() must fail with a lock error; on Windows the lock is a no-op
-// (tracked in RAPTOR-16928) so the test skips.
+// so the test skips.
 func TestSyncLock_SecondConcurrentSyncRejected(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("v1 sync lock is a no-op on windows; tracked in RAPTOR-16928")
+		t.Skip("v1 sync lock is a no-op on windows")
 	}
 
 	dir := initProject(t, map[string]string{"app.py": "print('hi')\n"})

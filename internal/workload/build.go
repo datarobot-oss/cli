@@ -110,7 +110,7 @@ func (b Build) ImageIsApplied() bool {
 // image is the one a deploy would now get. This, not the status alone, is
 // what --wait waits for: COMPLETED lands a moment before the artifact is
 // repointed, and a script that deploys in that window gets the previous
-// build's image, or none at all (RAPTOR-20311).
+// build's image, or none at all.
 //
 // False when the server said nothing, which is not the same as "no". Use
 // buildIsDeployable for the question a caller actually has, since it can
@@ -512,7 +512,7 @@ func WaitForBuild(
 		// the artifact is repointed at it a moment later, and a caller that
 		// deploys in between gets the build before this one, or an artifact
 		// with no runtime image at all. Waiting for the artifact to catch up
-		// is the whole point of --wait (RAPTOR-20311).
+		// is the whole point of --wait.
 		if buildIsDeployable(build) { //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
 			return build, nil
 		}

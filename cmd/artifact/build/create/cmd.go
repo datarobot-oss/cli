@@ -113,7 +113,7 @@ func runTrigger(
 
 	// With --wait the canonical stdout contract is the BuildSummary(ies)
 	// emitted after polling. Print the loose IDs to stderr so Ctrl-C
-	// users keep the handle (per RAPTOR-17387) but the captured stdout
+	// users keep the handle, but the captured stdout
 	// stream stays uncontaminated and `jq` works in JSON mode.
 	if outputFormat == outputformat.OutputFormatText {
 		for _, id := range resp.BuildIDs {

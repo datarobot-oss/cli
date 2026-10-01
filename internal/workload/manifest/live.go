@@ -1075,7 +1075,7 @@ func stringAt(document map[string]any, key string) string {
 // reported the documented 512MB default no matter what the workload was
 // actually running on. A re-bind then wrote that default into the file and
 // the next deploy silently shrank it, which is the one thing a re-bind must
-// never do (RAPTOR-19697). CPU escaped because it is read with floatAt.
+// never do. CPU escaped because it is read with floatAt.
 //
 // A string is still accepted first: it is what a manifest round-tripped
 // through Apply carries. It goes through the same bytes-and-back as the

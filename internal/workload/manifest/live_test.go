@@ -1417,7 +1417,7 @@ func TestLive_RenderPreservesNameInOpaqueMappings(t *testing.T) {
 
 // An artifact doc whose container carries imageUri alongside an
 // imageBuildConfig with only server-managed keys (codeRef + dockerfile:null)
-// is the exact review repro for RAPTOR-19533. stripKeys purges dockerfile:null
+// is the exact review repro. stripKeys purges dockerfile:null
 // first; stripBuildOutputs then deletes codeRef, which empties the map. The
 // fix keeps the user-declared imageUri and drops the emptied imageBuildConfig
 // key entirely, so the rendered file has a single valid image source and
@@ -1890,7 +1890,7 @@ func TestLive_RenderRoundTripsEnvironmentVarsAllVariants(t *testing.T) {
 // spelled memory as a string — which is how a re-bind came to report the
 // documented 512MB default for every workload, whatever it was running on,
 // and then write that default into the file for the next deploy to shrink it
-// to (RAPTOR-19697). The byte counts below are the ones actually in use on
+// to. The byte counts below are the ones actually in use on
 // staging.
 func TestLive_ReadsMemoryBackWhenTheServerSendsBytes(t *testing.T) {
 	for _, tc := range []struct {

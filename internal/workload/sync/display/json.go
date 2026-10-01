@@ -64,7 +64,7 @@ type PlanStatsJSON struct {
 //
 // One document per invocation: emitting the plan and the result as two
 // concatenated top-level objects made stdout unparseable by a plain json.loads
-// and forced every consumer to write a splitter (RAPTOR-19348).
+// and forced every consumer to write a splitter.
 //
 // The plan sits at the top level (result nested), which is the opposite of
 // `dr workload up` (scalars at the top level, plan under "plan"). The shapes
@@ -80,7 +80,7 @@ type SyncJSON struct {
 	// it needs a confirmation the run could not give (conflicts under
 	// --output-format json without --yes). It is the positive signal that the
 	// run is a no-op — uploads included — so a consumer does not have to infer
-	// that from a missing "result" (RAPTOR-19348).
+	// that from a missing "result".
 	Refused bool `json:"refused,omitempty"`
 }
 

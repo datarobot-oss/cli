@@ -14,7 +14,10 @@
 
 package sync
 
-import "github.com/datarobot/cli/internal/drapi/filesapi"
+import (
+	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/workload/ignore"
+)
 
 // FileEntry is the minimal per-file shape needed by Diff.
 type FileEntry struct {
@@ -39,6 +42,19 @@ func Diff(base, local, remote BaseManifest) *SyncPlan {
 		r := remote[path]
 
 		cls := Classify(b.Hash, l.Hash, r.Hash)
+
+		// A system-excluded path is never on the local side, since the walk
+		// does not list it, so a remote copy is an older CLI's upload from
+		// before the excludes reached every depth. Read as it stands, that
+		// copy is REMOTE_ADDED on a machine with no base, or EDIT_DEL_CONFLICT
+		// when a teammate touched it, and either downloads over the real
+		// local file (a vendored checkout's .git/HEAD). It is a remote delete
+		// instead: the local file is left alone, and the remote is brought
+		// in line with what the walk uploads.
+		if r.Hash != "" && ignore.IsSystemExcluded(path) {
+			cls = ClsLocalDeleted
+		}
+
 		act := ActionFor(cls)
 
 		if act == ActSkip {

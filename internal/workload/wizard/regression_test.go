@@ -1884,7 +1884,7 @@ func TestFlow_BindWaitsForTheDirectoryAnswer(t *testing.T) {
 // row 0 — and acceptExecEnv records whatever is under the cursor, so a single
 // Enter replaced the answer with the first row. Row 0 is the workload's live
 // environment, lifted to the top and labelled "· in use", which is the most
-// authoritative-looking row on the screen (RAPTOR-20231).
+// authoritative-looking row on the screen.
 func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
 	stubLiveDocs(t)
 
@@ -1940,7 +1940,7 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
 // workload runs on another, and the workload's is lifted to row 0 as "· in
 // use" — the most authoritative-looking row on the screen. The async reload
 // used to open the picker there, so a single Enter swapped the flag's answer
-// for the live environment (RAPTOR-20231).
+// for the live environment.
 func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoadOnABoundWorkload(t *testing.T) {
 	// Bound to a workload built from "first", so that is the live row.
 	stubLive(t,
