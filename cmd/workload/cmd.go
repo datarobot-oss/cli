@@ -18,6 +18,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/config"
 	"github.com/datarobot/cli/cmd/workload/create"
 	"github.com/datarobot/cli/cmd/workload/del"
+	"github.com/datarobot/cli/cmd/workload/diagnose"
 	"github.com/datarobot/cli/cmd/workload/endpoint"
 	"github.com/datarobot/cli/cmd/workload/get"
 	"github.com/datarobot/cli/cmd/workload/list"
@@ -64,6 +65,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		// `dr pipeline create|get|...`.
 		create.Cmd(),
 		del.Cmd(),
+		diagnose.Cmd(),
 		endpoint.Cmd(),
 		get.Cmd(),
 		list.Cmd(),
