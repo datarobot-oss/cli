@@ -261,7 +261,7 @@ func (l Live) runtimeDefaults() Runtime {
 		runtime.CPU = cpu
 	}
 
-	if memory := stringAt(allocation, keyMemory); memory != "" {
+	if memory := memoryAt(allocation, keyMemory); memory != "" {
 		runtime.Memory = memory
 	}
 
@@ -1065,6 +1065,39 @@ func stringAt(document map[string]any, key string) string {
 	value, _ := document[key].(string)
 
 	return value
+}
+
+// memoryAt reads a memory allocation whichever way it arrived, and returns
+// "" when there is none to read, so the caller keeps its default.
+//
+// The platform answers with a number of bytes — 512000000, 20000000000 — and
+// reading that with stringAt returned "" for every workload, so the wizard
+// reported the documented 512MB default no matter what the workload was
+// actually running on. A re-bind then wrote that default into the file and
+// the next deploy silently shrank it, which is the one thing a re-bind must
+// never do (RAPTOR-19697). CPU escaped because it is read with floatAt.
+//
+// A string is still accepted first: it is what a manifest round-tripped
+// through Apply carries. It goes through the same bytes-and-back as the
+// number, so a file and a live workload describing the same size describe it
+// the same way whichever form it arrived in — "20000000000" and 20000000000
+// both come back as 20GB. A string this package cannot read as a size is
+// returned as it is, for the validator to refuse in its own words.
+func memoryAt(document map[string]any, key string) string {
+	if value := stringAt(document, key); value != "" {
+		if bytes, ok := MemoryBytes(value); ok {
+			return MemoryString(bytes)
+		}
+
+		return value
+	}
+
+	bytes, ok := floatAt(document, key)
+	if !ok {
+		return ""
+	}
+
+	return MemoryString(int64(bytes))
 }
 
 // floatAt reads a number that arrived as JSON (always float64), as YAML (int

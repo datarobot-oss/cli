@@ -1885,3 +1885,136 @@ func TestLive_RenderRoundTripsEnvironmentVarsAllVariants(t *testing.T) {
 	require.Len(t, compiled.CredentialRefs, 1)
 	assert.Equal(t, "68f0cccc0000000000000003", compiled.CredentialRefs[0].CredentialID)
 }
+
+// The platform answers with a number of bytes, and every fixture in this file
+// spelled memory as a string — which is how a re-bind came to report the
+// documented 512MB default for every workload, whatever it was running on,
+// and then write that default into the file for the next deploy to shrink it
+// to (RAPTOR-19697). The byte counts below are the ones actually in use on
+// staging.
+func TestLive_ReadsMemoryBackWhenTheServerSendsBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bytes string
+		want  string
+		// file is how want is spelled in the rendered manifest when that
+		// differs from want itself; empty means the same.
+		file string
+	}{
+		{"the documented default, as bytes", "512000000", "512MB", ""},
+		{"a smaller allocation", "128000000", "128MB", ""},
+		{"a GPU workload's 20GB", "20000000000", "20GB", ""},
+		{
+			// 2 GiB. This package refuses binary units on purpose — the
+			// platform reads 2Gi as 2GB — so rounding here would take 7% of a
+			// running workload's memory away. The byte count is exact and
+			// round-trips. Quoted in the file, because a bare number would
+			// otherwise read back as a YAML integer rather than a size.
+			"a binary size no decimal unit divides", "2147483648", "2147483648", `"2147483648"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var workloadDoc, artifactDoc map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "sized",
+              "runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+                "containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": `+tc.bytes+`}}]}]}
+            }`), &workloadDoc))
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "a",
+              "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+                {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+            }`), &artifactDoc))
+
+			live, err := NewLive("68b0", workloadDoc, artifactDoc)
+			require.NoError(t, err)
+
+			draft := live.Defaults()
+			assert.Equal(t, tc.want, draft.Runtime.Memory,
+				"the wizard must report what the workload is running on, not the default")
+			assert.InDelta(t, 1.0, draft.Runtime.CPU, 0.0001, "cpu was never broken; it must stay unbroken")
+
+			// The whole point: what the wizard reports is what gets written,
+			// so a re-bind that changes nothing must not change the sizing.
+			applied, err := live.Apply(draft)
+			require.NoError(t, err)
+
+			rendered, err := applied.Render()
+			require.NoError(t, err)
+
+			inFile := tc.file
+			if inFile == "" {
+				inFile = tc.want
+			}
+
+			assert.Contains(t, string(rendered), "memory: "+inFile)
+
+			// Only meaningful for a workload that is not on the default: one
+			// that is should of course be written as it.
+			if tc.want != DefaultMemory {
+				assert.NotContains(t, string(rendered), "memory: "+DefaultMemory,
+					"a workload not running on the default must never be written as the default")
+			}
+		})
+	}
+}
+
+// A string is still the other way a size arrives — a manifest that has been
+// through Apply carries one — and it comes back normalized, so a file and a
+// live workload describing the same size describe it the same way.
+func TestLive_StillReadsMemoryWrittenAsAString(t *testing.T) {
+	for _, tc := range []struct{ written, want string }{
+		{`"1GB"`, "1GB"},
+		{`"512 mb"`, "512MB"},
+		{`"2147483648"`, "2147483648"},
+	} {
+		t.Run(tc.written, func(t *testing.T) {
+			var workloadDoc, artifactDoc map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "sized",
+              "runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+                "containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": `+tc.written+`}}]}]}
+            }`), &workloadDoc))
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "a",
+              "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+                {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+            }`), &artifactDoc))
+
+			live, err := NewLive("68b0", workloadDoc, artifactDoc)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.want, live.Defaults().Runtime.Memory)
+		})
+	}
+}
+
+// A container with no allocation at all still reports the documented
+// defaults: there is nothing to read back, which is not the same as reading
+// back a zero.
+func TestLive_NoAllocationKeepsTheDefaults(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "unsized",
+      "runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+        "containers": [{"name": "app"}]}]}
+    }`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+    }`), &artifactDoc))
+
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
+
+	draft := live.Defaults()
+	assert.Equal(t, DefaultMemory, draft.Runtime.Memory)
+	assert.InDelta(t, DefaultCPU, draft.Runtime.CPU, 0.0001)
+}
