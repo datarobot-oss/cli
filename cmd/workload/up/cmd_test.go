@@ -17,6 +17,7 @@ package up
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -33,14 +34,21 @@ import (
 
 // stubRun replaces the deploy and hands back what the caller asked for,
 // recording the options the shell built.
-func stubRun(t *testing.T, result up.Result, err error) *up.Options {
+// runCall is what the command handed the deploy: the context it ran under
+// and the options, the latter embedded so a test reads seen.DryRun as before.
+type runCall struct {
+	ctx context.Context
+	up.Options
+}
+
+func stubRun(t *testing.T, result up.Result, err error) *runCall {
 	t.Helper()
 
-	seen := &up.Options{}
+	seen := &runCall{}
 	prev := runFn
 
-	runFn = func(opts up.Options) (up.Result, error) {
-		*seen = opts
+	runFn = func(ctx context.Context, opts up.Options) (up.Result, error) {
+		seen.ctx, seen.Options = ctx, opts
 
 		return result, err
 	}

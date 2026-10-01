@@ -15,9 +15,11 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
@@ -45,12 +47,14 @@ import (
 // locked for a rollout that is then refused can be neither unlocked nor
 // deleted. Taking the lock only once nothing is left that can say no is what
 // keeps a lost race from leaving one behind.
-func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Options, report *reporter) (Result, error) {
+func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
 	if err := guardRollout(live.WorkloadID, "nothing was built or rolled out"); err != nil {
 		return result, err
 	}
 
-	made, err := candidateArtifact(loaded, live, plan, opts, report)
+	made, err := candidateArtifact(ctx, loaded, live, plan, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
@@ -78,7 +82,7 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 		return result, err
 	}
 
-	return replace(live.WorkloadID, made, lock, sizing, result, opts, report)
+	return replace(ctx, live.WorkloadID, made, lock, sizing, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -93,6 +97,7 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 // workload deployed ten times reads as ten versions of one thing rather than
 // ten artifacts that happen to share a name.
 func candidateArtifact(
+	ctx context.Context,
 	loaded Loaded,
 	live Live,
 	plan Plan,
@@ -109,7 +114,7 @@ func candidateArtifact(
 	// tree: two answers to "does the platform build this image" coming apart is
 	// how a plan describes a deploy that does not happen.
 	if plan.Code.Applies {
-		return buildVersion(loaded, live, plan, repository, opts, report)
+		return buildVersion(ctx, loaded, live, plan, repository, opts, report)
 	}
 
 	return createVersion(loaded, repository, labelNewVersion, report)
@@ -296,6 +301,7 @@ func stateClause(live Live) string {
 // "running" throughout a swap, so naming the artifact is what makes the wait
 // that follows wait for this rollout rather than the state it was already in.
 func replace(
+	ctx context.Context,
 	workloadID string,
 	made version,
 	lock bool,
@@ -351,13 +357,13 @@ func replace(
 	// --poll-timeout the user set is a bound on the deploy, not on each half.
 	waitFrom := time.Now()
 
-	if err := awaitRollout(workloadID, started, opts, report); err != nil {
+	if err := awaitRollout(ctx, workloadID, started, opts, report); err != nil {
 		return result, err
 	}
 
 	result.Action = ActionRolled
 
-	return settle(workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
+	return settle(ctx, workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
 		result, budgetLeft(opts, waitFrom), report)
 }
 
@@ -365,20 +371,26 @@ func replace(
 // They are two questions: the rollout says whether the new version was
 // promoted, and a failed one leaves the old version serving, so reporting the
 // workload as healthy afterwards would be true and completely misleading.
-func awaitRollout(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
-	var settled *workload.Replacement
+func awaitRollout(ctx context.Context, workloadID string, started *workload.Replacement, opts Options,
+	report *reporter,
+) error {
+	var last held[workload.Replacement]
 
-	err := report.run("Waiting for the rollout", func() error {
-		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
-		settled = replacement
+	const label = "Waiting for the rollout"
 
-		return waitErr
-	})
+	err := report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout,
+				rolloutProgress(strings.ToLower(label), opts, report, note))
+			last.set(replacement)
+
+			return waitErr
+		})
 	if err == nil {
 		return nil
 	}
 
-	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+	if settled := last.get(); settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return fmt.Errorf(
 			"the rollout of workload %s ended as %s, so it is still running the version it was; "+
 				"check 'dr workload logs %s': %w",

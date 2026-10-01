@@ -481,7 +481,7 @@ func TestWaitForBuild_ServerWithoutImageApplied_FallsBackToTheImageTag(t *testin
 
 	installEndpoint(t, srv.URL)
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, time.Second, nil)
 	require.NoError(t, err, "a released server must not be polled to the timeout")
 	assert.Equal(t, BuildStatusCompleted, build.Status)
 	assert.Positive(t, artifactReads, "the tag check is what answered")
@@ -516,7 +516,7 @@ func TestWaitForBuild_ServerWithoutImageApplied_WaitsWhileTagIsStale(t *testing.
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForBuild("art-1", "b-2", time.Millisecond, 20*time.Millisecond, nil)
+	_, err := WaitForBuild(t.Context(), "art-1", "b-2", time.Millisecond, 20*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "still not using its image")
 }
@@ -552,7 +552,7 @@ func TestWaitForBuild_ExplicitFalseIsNotSecondGuessed(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForBuild("art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
+	_, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
 	require.Error(t, err, "the server said not yet")
 	assert.Zero(t, artifactReads, "an answered question is not asked again")
 }
@@ -731,7 +731,7 @@ func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 
 	var ticks int
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, func(*Build) {
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, time.Second, func(*Build) {
 		ticks++
 	})
 	require.NoError(t, err)
@@ -758,7 +758,7 @@ func TestWaitForBuild_CompletedButNeverAppliedTimesOutDistinctly(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
 	require.Error(t, err)
 	require.NotNil(t, build)
 	assert.Equal(t, BuildStatusCompleted, build.Status)
@@ -783,7 +783,7 @@ func TestWaitForBuild_FailedReturnsError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, build, "FAILED returns final Build alongside error")
 	assert.Equal(t, BuildStatusFailed, build.Status)
@@ -805,7 +805,7 @@ func TestWaitForBuild_Timeout(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForBuild("art-1", "b-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err := WaitForBuild(t.Context(), "art-1", "b-1", 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }

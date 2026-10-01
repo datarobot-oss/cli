@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -473,17 +474,31 @@ func GetArtifactBuildLogs(artifactID, buildID string) ([]BuildLogEntry, error) {
 // cannot redraw the spinner label from inside fn(), so this is a passive
 // seam in PR 1).
 func WaitForBuild(
+	ctx context.Context,
 	artifactID, buildID string,
 	interval, timeout time.Duration,
 	onTick func(*Build),
 ) (*Build, error) {
 	deadline := time.Now().Add(timeout)
 
+	// The last successful read travels with a cancellation, as it does from
+	// every other waiter: a caller saying where the build got to has nothing
+	// else to say it from, and buildImage reads a nil build as "never ran".
+	var last *Build
+
 	for {
-		build, err := fetchArtifactBuild(artifactID, buildID, "")
+		if err := ctx.Err(); err != nil {
+			return last, abandonedBuild(buildID, err)
+		}
+
+		// The reads below carry no context; see abandoned in workload.go for
+		// how far it reaches and why the loop is still worth gating.
+		build, err := fetchArtifactBuild(artifactID, buildID, "") //nolint:contextcheck // drapi takes no context
 		if err != nil {
 			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
 		}
+
+		last = build
 
 		if onTick != nil {
 			onTick(build)
@@ -498,7 +513,7 @@ func WaitForBuild(
 		// deploys in between gets the build before this one, or an artifact
 		// with no runtime image at all. Waiting for the artifact to catch up
 		// is the whole point of --wait (RAPTOR-20311).
-		if buildIsDeployable(build) {
+		if buildIsDeployable(build) { //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
 			return build, nil
 		}
 
@@ -513,8 +528,16 @@ func WaitForBuild(
 			return build, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return build, abandonedBuild(buildID, ctx.Err())
+		}
 	}
+}
+
+// abandonedBuild is abandoned's counterpart for a build wait: the build is
+// still running server-side, so the last read comes back with the error.
+func abandonedBuild(buildID string, err error) error {
+	return fmt.Errorf("stopped waiting for build %s: %w", buildID, err)
 }
 
 // BuildSummaryFor composes the terminal-state summary RenderBuildSummary

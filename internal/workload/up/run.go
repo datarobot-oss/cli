@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -181,8 +182,20 @@ type EnvEdit struct {
 	Literals []string
 }
 
+// Interrupted reports a wait the user stopped, whether by the keystroke the
+// terminal UI catches or by the signal a piped run gets. Both mean the same
+// thing to a deploy — nobody is waiting for this any more — and neither is a
+// verdict on the rollout, which carries on platform-side either way.
+//
+// Exported because the command turns it into the sentence the user reads, and
+// two places answering "was this interrupted" differently is how the summary
+// and the exit code come to disagree.
+func Interrupted(err error) bool {
+	return errors.Is(err, tui.ErrInterrupted) || errors.Is(err, context.Canceled)
+}
+
 // Run reads, plans, and applies as much of the plan as this release can.
-func Run(opts Options) (Result, error) {
+func Run(ctx context.Context, opts Options) (Result, error) {
 	dir, err := filepath.Abs(opts.Dir)
 	if err != nil {
 		return Result{}, fmt.Errorf("cannot resolve %s: %w", opts.Dir, err)
@@ -201,7 +214,7 @@ func Run(opts Options) (Result, error) {
 	// while it goes on serving the old value.
 	early := Result{WorkloadID: loaded.WorkloadID(), Env: loaded.Env}
 
-	live, err := lookSettled(loaded.WorkloadID(), opts)
+	live, err := lookSettled(ctx, loaded.WorkloadID(), opts)
 	if err != nil {
 		return early, err
 	}
@@ -264,7 +277,7 @@ func Run(opts Options) (Result, error) {
 		return lockOnly(loaded, live, result, opts)
 	}
 
-	return apply(loaded, live, plan, result, opts)
+	return apply(ctx, loaded, live, plan, result, opts)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -335,13 +348,13 @@ func guardRollout(workloadID, consequence string) error {
 
 // lookSettled is the live read a plan is built from: the workload as it is,
 // once it has stopped moving.
-func lookSettled(workloadID string, opts Options) (Live, error) {
+func lookSettled(ctx context.Context, workloadID string, opts Options) (Live, error) {
 	found, err := Look(workloadID)
 	if err != nil {
 		return Live{}, err
 	}
 
-	return awaitSteady(found, opts)
+	return awaitSteady(ctx, found, opts)
 }
 
 // awaitSteady waits out a workload that is still moving, and hands back what
@@ -369,7 +382,7 @@ func lookSettled(workloadID string, opts Options) (Live, error) {
 // the answer: the plan for a workload halfway through a transition depends on
 // where the transition lands, so the state travels on unchanged and Render
 // declines to call it up to date.
-func awaitSteady(live Live, opts Options) (Live, error) {
+func awaitSteady(ctx context.Context, live Live, opts Options) (Live, error) {
 	if live.State != StateSettling {
 		return live, nil
 	}
@@ -398,16 +411,20 @@ func awaitSteady(live Live, opts Options) (Live, error) {
 			"Waiting for it to settle before planning; --detach applies to the deploy."))
 	}
 
-	var settled *workload.Workload
+	var settled held[workload.Workload]
 
-	err := report.run("Waiting for the workload to settle", func() error {
-		wl, waitErr := waitSteadyFn(live.WorkloadID, opts.PollInterval, opts.PollTimeout, nil)
-		settled = wl
+	const label = "Waiting for the workload to settle"
 
-		return waitErr
-	})
+	err := report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			wl, waitErr := waitSteadyFn(ctx, live.WorkloadID, opts.PollInterval, opts.PollTimeout,
+				progress(strings.ToLower(label), opts, report, note))
+			settled.set(wl)
+
+			return waitErr
+		})
 	if err != nil {
-		if failure := settleFailed(live, settled, err); failure != nil {
+		if failure := settleFailed(live, settled.get(), err); failure != nil {
 			return live, failure
 		}
 
@@ -778,7 +795,7 @@ func name(loaded Loaded, live Live) string {
 // work it will not attempt. deployable stays here as the backstop it always
 // was, and is the only thing that answers for a workload which was steady when
 // it was read and is moving again by the time it is acted on.
-func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
+func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
@@ -820,7 +837,7 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	// read describe the artifact rather than the workload, so faking a refresh
 	// would advertise a consistency this value does not have.
 	if live.State == StateStopped {
-		result, err = startFirst(live, plan, result, opts, report)
+		result, err = startFirst(ctx, live, plan, result, opts, report)
 		if err != nil || plan.OnlyStarts() {
 			return result, err
 		}
@@ -834,23 +851,23 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	// are the same question, and answering it twice is how a roll comes to skip
 	// a check or a resize comes to fail one.
 	if plan.Retunes() {
-		return retune(loaded, result, opts, report)
+		return retune(ctx, loaded, result, opts, report)
 	}
 
 	// A workload that already exists is replaced rather than created: the
 	// endpoint has to survive, and something is serving on it meanwhile.
 	if plan.RollsArtifact() {
-		return roll(loaded, live, plan, lock, result, opts, report)
+		return roll(ctx, loaded, live, plan, lock, result, opts, report)
 	}
 
 	// A published image is one POST. Anything the platform builds has to be
 	// given somewhere to put the code and time to turn it into an image
 	// first, which is a different shape of deploy rather than a longer one.
 	if plan.Code.Applies {
-		return buildAndCreate(loaded, plan.Code, result, opts, report)
+		return buildAndCreate(ctx, loaded, plan.Code, result, opts, report)
 	}
 
-	return create(loaded, loaded.Compiled.Payload, result, opts, report)
+	return create(ctx, loaded, loaded.Compiled.Payload, result, opts, report)
 }
 
 // beforeAnything runs every check that can still refuse, and settles the one
@@ -1116,6 +1133,7 @@ func startable(live Live, workloadName string) error {
 // else can fail, so a run that dies during the wait still leaves the next one
 // able to find what it made.
 func create(
+	ctx context.Context,
 	loaded Loaded,
 	payload json.RawMessage,
 	result Result,
@@ -1158,7 +1176,7 @@ func create(
 		return result, nil
 	}
 
-	return settle(created.ID, workload.Serving{}, result, opts, report)
+	return settle(ctx, created.ID, workload.Serving{}, result, opts, report)
 }
 
 // startFirst brings a stopped workload up so the rest of the plan has
@@ -1175,7 +1193,7 @@ func create(
 // cannot be requested against a workload that is not up yet, and it is the
 // rollout that --detach returns without waiting for. Saying so is better than
 // silently blocking, so the note goes out before the wait rather than after it.
-func startFirst(live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
+func startFirst(ctx context.Context, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
 	if err := requestStart(result.WorkloadID, report); err != nil {
 		return result, err
 	}
@@ -1201,10 +1219,10 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 	// Only the run that ends here may lock: locking is about the artifact left
 	// serving, and a start that is about to be rolled off is not that.
 	if only {
-		return settle(result.WorkloadID, workload.Serving{}, result, opts, report)
+		return settle(ctx, result.WorkloadID, workload.Serving{}, result, opts, report)
 	}
 
-	result, err := awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
+	result, err := awaitRunning(ctx, result.WorkloadID, workload.Serving{}, result, opts, report)
 	if err != nil && workload.IsErroredWorkloadStatus(result.Status) {
 		// The start is a prerequisite rather than the deploy, and what follows
 		// replaces the generation that just failed. Failing here closed a loop:
@@ -1400,7 +1418,9 @@ func isConflict(err error) bool {
 // It is also what puts verifyEndpoint after the cutover rather than inside it.
 // Before this wait existed, a roll GETted the endpoint mid-swap and reported
 // the version being replaced.
-func settle(workloadID string, want workload.Serving, result Result, opts Options, report *reporter) (Result, error) {
+func settle(ctx context.Context, workloadID string, want workload.Serving, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
 	// Whether the drain wait actually happened decides what the endpoint line
 	// below is allowed to claim. On an install without the proton route the
 	// wait rests on the artifact alone, and the artifact moves about a minute
@@ -1409,7 +1429,7 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 	unconfirmed := ""
 	want.OnUnconfirmed = func(reason string) { unconfirmed = reason }
 
-	result, err := awaitRunning(workloadID, want, result, opts, report)
+	result, err := awaitRunning(ctx, workloadID, want, result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -1417,9 +1437,31 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 	// One GET against the endpoint, reported and never fatal. Running means
 	// the container started; with no probe written by default, whether
 	// anything answers is a question nobody has asked yet.
-	verifyEndpoint(result, unconfirmed, report)
+	interrupted := verifyEndpoint(result, unconfirmed, report)
 
+	return finishSettle(result, interrupted, opts, report)
+}
+
+// finishSettle is the last step of a settle: the lock, when one was asked
+// for. It is its own function so the one decision in it can be tested without
+// a terminal to interrupt.
+//
+// An interrupt during the endpoint check does not fail the deploy — the
+// rollout finished, and the workload is serving — but it does withhold the
+// lock. Locking is the one irreversible step of the run, and taking it after
+// the user asked the run to stop is the opposite of what the keystroke meant.
+// The deploy stays a success, the run says the lock was not taken, and the
+// summary's locked=false carries the same fact to anything reading JSON.
+func finishSettle(result Result, interrupted bool, opts Options, report *reporter) (Result, error) {
 	if !opts.Lock {
+		return result, nil
+	}
+
+	if interrupted {
+		report.say("  %s\n", tui.WarnStyle.Render("⚠ --lock skipped: interrupted."))
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The artifact is running and unlocked. Run 'dr workload up --lock' to lock it."))
+
 		return result, nil
 	}
 
@@ -1433,28 +1475,36 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 // the status alone would settle the wait too early; a resize asks for the drain
 // with no artifact to name; a create and a start ask for neither.
 func awaitRunning(
+	ctx context.Context,
 	workloadID string,
 	want workload.Serving,
 	result Result,
 	opts Options,
 	report *reporter,
 ) (Result, error) {
-	var final *workload.Workload
+	var final held[workload.Workload]
 
 	label := waitLabel(want, result)
 
-	err := report.run(label, func() error {
-		wl, waitErr := waitWorkloadFn(workloadID, want, opts.PollInterval, opts.PollTimeout,
-			heartbeat(strings.ToLower(label), opts, report))
-		final = wl
+	err := report.wait(ctx, label, func(ctx context.Context, note tui.Noter) error {
+		wl, waitErr := waitWorkloadFn(ctx, workloadID, want, opts.PollInterval, opts.PollTimeout,
+			progress(strings.ToLower(label), opts, report, note))
+		final.set(wl)
 
 		return waitErr
 	})
 
-	if final != nil {
-		result.Status = final.Status
-		result.Endpoint = final.Endpoint
-		result.ArtifactID = final.ArtifactID
+	// An abandoned wait saw a workload — the poll loop hands back its last
+	// read alongside the cancellation — but what it saw is the rollout
+	// mid-flight, which for a roll is the version being replaced. Recording
+	// that would put the outgoing artifact and endpoint in the summary and in
+	// the JSON envelope of a deploy nobody waited for, under a status that
+	// reads as arrived. A timeout is different: it waited the whole way and
+	// where it got to is the finding, so that one still reports.
+	if f := final.get(); f != nil && !Interrupted(err) {
+		result.Status = f.Status
+		result.Endpoint = f.Endpoint
+		result.ArtifactID = f.ArtifactID
 	}
 
 	if err != nil {
@@ -1525,19 +1575,66 @@ func budgetLeft(opts Options, since time.Time) Options {
 // minPollBudget is what a wait gets when the one before it spent everything.
 const minPollBudget = 30 * time.Second
 
-// heartbeat prints a line every so often while a long wait runs, and nil when
-// there is a spinner to do that job.
+// progress narrates a long wait, in whichever way the output it is going to
+// can carry.
 //
-// report.run prints nothing until a phase ends, so without this the longest
-// phase in the deploy emits no bytes at all: on a live rollout it sat for eight
-// and a half minutes, which from outside is indistinguishable from a hang.
+// A phase prints nothing until it ends, so without this the longest phase in
+// the deploy emits no bytes at all: on a live rollout it sat for eight and a
+// half minutes, which from outside is indistinguishable from a hang.
 //
-// The line carries the phase name because it is printed before the checkmark it
-// belongs to. Read top to bottom, an unlabelled line sits under the previous
-// phase's tick and reads as belonging to that one.
-func heartbeat(label string, opts Options, report *reporter) func(*workload.Workload) {
-	if opts.Spinner || opts.PollInterval <= 0 {
+// With a spinner the narration is the label's own suffix, rewritten on every
+// poll. That path used to get nothing — this returned nil whenever a spinner
+// was drawn, on the grounds that the spinner was already moving — which left
+// the one reader who is definitely watching with a glyph that says only that
+// the process is alive. Its own comment said the interval was "short enough
+// that nobody reaches for Ctrl-C"; it was disabled on the path where somebody
+// did.
+func progress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Workload) {
+	return narrate(label, opts, report, note, func(wl *workload.Workload) string {
+		return "the workload is " + wl.Status
+	})
+}
+
+// rolloutProgress is progress for the waits that follow a replacement rather
+// than the workload: the rollout a new version rides in on, and the one a
+// sizing change starts.
+func rolloutProgress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Replacement) {
+	return narrate(label, opts, report, note, func(r *workload.Replacement) string {
+		return "the rollout is " + r.Status
+	})
+}
+
+// narrate builds the per-poll callback a wait says it is still alive with.
+// state is the only part that differs between the things being waited on, and
+// is never handed a nil: both poll loops call their tick only after a
+// successful read.
+//
+// Elapsed time, never the version being waited for. Naming that reads as
+// though it had arrived, which is the opposite of the question this answers:
+// the wait is progressing, not stuck.
+func narrate[T any](
+	label string,
+	opts Options,
+	report *reporter,
+	note tui.Noter,
+	state func(T) string,
+) func(T) {
+	if opts.PollInterval <= 0 {
 		return nil
+	}
+
+	started := phaseClock()
+
+	// On a terminal the spinner is already rendering the label, so this goes
+	// in the parentheses after it and is rewritten on every poll. Anywhere
+	// else there is nothing to rewrite, so it is a whole line, carrying the
+	// label because it prints before the checkmark it belongs to — unlabelled,
+	// it would sit under the previous phase's tick and read as that one's.
+	if opts.Spinner {
+		return func(v T) {
+			note(fmt.Sprintf("%s so far; %s",
+				phaseClock().Sub(started).Truncate(time.Second), state(v)))
+		}
 	}
 
 	every := int(heartbeatEvery / opts.PollInterval)
@@ -1545,22 +1642,18 @@ func heartbeat(label string, opts Options, report *reporter) func(*workload.Work
 		every = 1
 	}
 
-	started := phaseClock()
 	ticks := 0
 
-	return func(wl *workload.Workload) {
+	return func(v T) {
 		ticks++
 
 		if ticks%every != 0 {
 			return
 		}
 
-		// Elapsed, not the artifact. Naming the version being waited for reads
-		// as though it had arrived, which is the question this line exists to
-		// answer: the wait is progressing, not stuck.
 		report.say("    %s\n", tui.HintStyle.Render(fmt.Sprintf(
-			"%s, %s so far; the workload is %s",
-			label, phaseClock().Sub(started).Truncate(time.Second), wl.Status)))
+			"%s, %s so far; %s",
+			label, phaseClock().Sub(started).Truncate(time.Second), state(v))))
 	}
 }
 

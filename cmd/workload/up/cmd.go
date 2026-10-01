@@ -332,7 +332,12 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	// second question when both were typed ahead or pasted together.
 	stdin := bufio.NewReader(cmd.InOrStdin())
 
-	result, runErr := runFn(up.Options{
+	// Under the command's own context: the one main.go derives from SIGINT.
+	// Without it a deploy could not be stopped: signal.NotifyContext takes
+	// away the process's default death on a signal, and nothing below read
+	// the context it put in its place, so Ctrl-C on a piped or CI run did
+	// nothing at all.
+	result, runErr := runFn(cmd.Context(), up.Options{
 		Dir:            dir,
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
@@ -364,6 +369,8 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Spinner:      !json && !nonInteractive,
 	})
 
+	runErr = explainInterrupt(runErr, result)
+
 	if runErr != nil && !reportable(result) {
 		return runErr
 	}
@@ -373,6 +380,45 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 	}
 
 	return runErr
+}
+
+// explainInterrupt turns "interrupted" into something worth reading.
+//
+// Stopping the wait does not stop the deploy: whatever the platform was asked
+// to do before the keystroke — build, create, start, roll — goes on whether or
+// not anybody is watching, so the one thing the user needs to know is that
+// what they abandoned may still be happening and where to look for how it
+// ended. Saying only "interrupted" would read as though pressing Ctrl-C had
+// called it off.
+//
+// "Anything already submitted" rather than "this rollout", because the
+// interrupt can land before anything was: during the settle before planning,
+// or mid-build on a first deploy. The result cannot say which — a roll records
+// its action after the wait, not after the POST — so the sentence is true of
+// every case rather than specific to the common one, and the wrapped error
+// says the rest. Where to look follows the ids in hand: the workload when
+// there is one, the build when only a build exists yet. The build hint
+// carries the artifact id too: the one-argument form resolves the artifact
+// from the current directory, which is not the project's when the deploy
+// was given --dir, so the hint would fail or name another project's build.
+func explainInterrupt(runErr error, result up.Result) error {
+	if !up.Interrupted(runErr) {
+		return runErr
+	}
+
+	where := "dr workload status"
+
+	switch {
+	case result.WorkloadID != "":
+		where += " " + result.WorkloadID
+	case result.BuildID != "" && result.ArtifactID != "":
+		where = "dr artifact build logs " + result.ArtifactID + " " + result.BuildID
+	case result.BuildID != "":
+		where = "dr artifact build logs " + result.BuildID
+	}
+
+	return fmt.Errorf("stopped waiting; anything already submitted carries on at the platform. "+
+		"Check '%s' for where it got to: %w", where, runErr)
 }
 
 // resolveDir defaults --dir to where the shell is standing.

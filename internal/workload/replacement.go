@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -354,6 +355,7 @@ func confirmWorkloadExists(workloadID string) error {
 // status should ask IsTerminalReplacementStatus rather than read a nil error
 // as "completed".
 func WaitForReplacement(
+	ctx context.Context,
 	workloadID string,
 	started *Replacement,
 	interval, timeout time.Duration,
@@ -367,7 +369,11 @@ func WaitForReplacement(
 	wait := &replacementWait{workloadID: workloadID, lastSeen: started, onTick: onTick}
 
 	for {
-		done, err := wait.step()
+		if err := ctx.Err(); err != nil {
+			return wait.lastSeen, abandoned(workloadID, err)
+		}
+
+		done, err := wait.step() //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
 		if done {
 			return wait.lastSeen, err
 		}
@@ -376,7 +382,9 @@ func WaitForReplacement(
 			return wait.lastSeen, timedOut(workloadID, timeout)
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return wait.lastSeen, abandoned(workloadID, ctx.Err())
+		}
 	}
 }
 

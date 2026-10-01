@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -41,7 +42,9 @@ import (
 // of starting again. A workload created up front would instead sit there
 // pointing at an image that does not exist yet, visible in the UI and unable
 // to start, for as long as the build took.
-func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options, report *reporter) (Result, error) {
+func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
 	made, err := ensureArtifact(loaded, report)
 
 	// Recorded before the error check, the same way roll records the build it
@@ -71,7 +74,7 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 		return result, err
 	}
 
-	buildID, err := maybeBuild(loaded.ProjectDir, made, code, synced, opts, report)
+	buildID, err := maybeBuild(ctx, loaded.ProjectDir, made, code, synced, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
@@ -86,7 +89,7 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 		return result, err
 	}
 
-	result, err = create(loaded, payload, result, opts, report)
+	result, err = create(ctx, loaded, payload, result, opts, report)
 	if err != nil && !fresh {
 		// The artifact was not minted by this run, so a refusal to create a
 		// workload on it is most likely the platform's one-per-draft-artifact
@@ -304,6 +307,7 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 // build it ran so the caller can report it. An empty id means no build
 // happened, which is not the same as a build that produced nothing.
 func maybeBuild(
+	ctx context.Context,
 	projectDir string,
 	made version,
 	code CodeChange,
@@ -332,11 +336,11 @@ func maybeBuild(
 		if running := runningBuild(builds, attachMaxAge(opts)); running != "" {
 			report.say("  A build of this code is already running; attaching to it (--force-build starts a new one).\n")
 
-			return buildAndRecord(projectDir, made.ID, running, opts, report)
+			return buildAndRecord(ctx, projectDir, made.ID, running, opts, report)
 		}
 	}
 
-	return buildAndRecord(projectDir, made.ID, "", opts, report)
+	return buildAndRecord(ctx, projectDir, made.ID, "", opts, report)
 }
 
 // imageInHand reports whether the candidate already has something to run, and
@@ -361,8 +365,10 @@ func imageInHand(made version) (bool, []workload.Build, error) {
 
 // buildAndRecord builds and notes what the image was made from, the one fact
 // nothing on the platform keeps.
-func buildAndRecord(projectDir, artifactID, attachTo string, opts Options, report *reporter) (string, error) {
-	buildID, err := buildImage(artifactID, attachTo, opts, report)
+func buildAndRecord(ctx context.Context, projectDir, artifactID, attachTo string, opts Options,
+	report *reporter,
+) (string, error) {
+	buildID, err := buildImage(ctx, artifactID, attachTo, opts, report)
 	if err == nil && buildID != "" {
 		recordBuiltFn(projectDir)
 	}
@@ -456,10 +462,10 @@ const buildHistoryLimit = 20
 // The wait is not optional even under --detach: a workload created against an
 // artifact with no image would come up unable to start, and --detach promises
 // not to wait for the workload, not to deploy something that cannot run.
-func buildImage(artifactID, attachTo string, opts Options, report *reporter) (string, error) {
+func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, report *reporter) (string, error) {
 	var built *workload.Build
 
-	err := report.stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := report.stream(ctx, "Building the image", func(ctx context.Context, say func(string, lipgloss.Style)) error {
 		buildID := attachTo
 		if buildID == "" {
 			triggered, triggerErr := triggerBuild(artifactID)
@@ -481,7 +487,7 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		// build wait carries on. Its notices go into the stream marked as the
 		// CLI's own — silence here is indistinguishable from a hang, which is
 		// worse than one meta line among the build's output.
-		tail := workload.NewBuildLogTail(artifactID, buildID,
+		tail := workload.NewBuildLogTail(artifactID, buildID, //nolint:contextcheck // drapi takes no context; see abandoned in internal/workload
 			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
 			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
 
@@ -504,7 +510,7 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it
 		// before the error is looked at: it is the only way to the logs.
-		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
+		b, waitErr := waitBuildFn(ctx, artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
 		built = b
 
 		// The final catch-up: ingestion lags the build, so the last lines

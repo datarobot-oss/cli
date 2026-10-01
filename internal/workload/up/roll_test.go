@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +160,7 @@ func wiredRoll(tr *track) fakes {
 
 			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID, ArtifactID: artifactID}, nil
 		},
-		waitReplace: func(_ string, started *workload.Replacement, _, _ time.Duration,
+		waitReplace: func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 			_ func(*workload.Replacement),
 		) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "await-rollout")
@@ -170,7 +171,7 @@ func wiredRoll(tr *track) fakes {
 		// The artifact this fake is asked to wait for is recorded rather than
 		// ignored: returning "art-2" unprompted is how a wait that settled on
 		// the old version read as a passing test.
-		wait: func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			tr.steps = append(tr.steps, servingLabel(want))
 
 			return &workload.Workload{
@@ -523,7 +524,7 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 	var settleTimeout time.Duration
 
 	f := wiredRoll(&tr)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		tr.steps = append(tr.steps, "await-rollout")
@@ -531,7 +532,7 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 
 		return started, nil
 	}
-	f.wait = func(id string, want workload.Serving, _, timeout time.Duration,
+	f.wait = func(_ context.Context, id string, want workload.Serving, _, timeout time.Duration,
 		_ func(*workload.Workload),
 	) (*workload.Workload, error) {
 		settleTimeout = timeout
@@ -582,14 +583,14 @@ func TestRun_FailedRolloutSaysTheOldVersionIsStillServing(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		started.Status = workload.ReplacementStatusFailed
 
 		return started, errors.New("replacement rep-1 ended with status failed")
 	}
-	f.wait = func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a failed rollout has nothing to settle")
 
 		return nil, nil
@@ -879,7 +880,7 @@ func stoppedRoll(tr *track) fakes {
 	// The artifact each is told to expect rides along in the label: a start
 	// carries none, only the roll that follows names one.
 	settled := false
-	f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 		step := "await-start"
 		artifact := "68a0000000000000000000a1"
 
@@ -1067,7 +1068,7 @@ func TestRun_StoppedWorkloadThatStartsErroredIsStillRolled(t *testing.T) {
 			f := stoppedRoll(&tr)
 
 			started := false
-			f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			f.wait = func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 				if started {
 					tr.steps = append(tr.steps, servingLabel(want))
 
@@ -1135,7 +1136,7 @@ func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	}
 
 	started := false
-	f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 		if started {
 			tr.steps = append(tr.steps, servingLabel(want))
 
@@ -1172,7 +1173,7 @@ func TestRun_StartAloneThatLandsErroredStillFails(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return &workload.Workload{ID: id, Status: workload.WorkloadStatusErrored},
 				errors.New("workload " + id + " ended with status errored")
 		},
@@ -1247,7 +1248,7 @@ func builtRoll(tr *track) fakes {
 
 		return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-2"}}, nil
 	}
-	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusCompleted}, nil
 	}
 
@@ -1520,7 +1521,7 @@ func TestRun_FailedRolloutDoesNotReportThatItRolled(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		started.Status = workload.ReplacementStatusFailed
@@ -1745,7 +1746,7 @@ func TestRun_FailedBuildOnARollLeavesTheOldVersionServing(t *testing.T) {
 	f.project = syncedProject("68a0000000000000000000a1")
 	// WaitForBuild's own contract: a terminal failure comes back as the build
 	// and an error together.
-	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 	}
@@ -2157,7 +2158,7 @@ func TestRun_RecordingWhatABuildWasMadeFrom(t *testing.T) {
 			f.recordBuilt = func(dir string) { recorded = append(recorded, dir) }
 
 			if c.fails {
-				f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+				f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 					return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 						fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 				}
