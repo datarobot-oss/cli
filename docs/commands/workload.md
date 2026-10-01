@@ -255,18 +255,27 @@ dr workload endpoint [<workload-id>] [--dir <path>]
 
 ### `logs`
 
-Show the application logs from a workload's containers. By default it prints the most recent `--limit` lines oldest-first, like `kubectl logs --tail`. Use `--level` to drop everything below a severity, and `--follow` (`-f`) to keep streaming new lines as they arrive (Ctrl-C to stop).
+Show the application logs from a workload's containers. By default it prints the most recent `--limit` lines oldest-first, like `kubectl logs --tail`. Use `--level` to drop everything below a severity, the filters below to narrow further, and `--follow` (`-f`) to keep streaming new lines as they arrive (Ctrl-C to stop).
 
 ```bash
-dr workload logs [<workload-id>] [--dir <path>] [--limit N] [--level <level>] [--follow] [--output-format text|json]
+dr workload logs [<workload-id>] [--dir <path>] [--limit N] [--level <level>] [--grep <text>]... [--exclude <text>]... [--trace-id <id>] [--span-id <id>] [--since <time>] [--until <time>] [--follow] [--output-format text|json]
 ```
 
 **Flags:**
 
-- `--limit <N>`: number of recent lines to fetch. Defaults to `100`.
+- `--limit <N>`: number of recent lines to fetch. Defaults to `100`. It bounds what is fetched, before `--exclude` and any second `--grep` term are applied, so a filtered result can be shorter.
 - `--level <level>`: minimum level to show (`debug`, `info`, `warn`, `warning`, `error`, `critical`). Empty keeps every line.
+- `--grep <text>`: only lines containing the text, case-insensitive. Repeat it to require every term.
+- `--exclude <text>`: drop lines containing the text, case-insensitive. Repeatable.
+- `--trace-id <id>`, `--span-id <id>`: only the lines of one trace or span.
+- `--since <time>`, `--until <time>`: a time window. A time is RFC 3339 (`2026-06-11T14:04:15Z`), a date (`2026-06-11`), or a duration back from now (`15m`, `2h30m`, `1d`, `1w`). A timestamp as the command prints it can be pasted back as it is; a time without a zone is UTC. A date given to `--until` covers the whole of that day, so `--since 2026-06-11 --until 2026-06-11` is everything from the 11th. With `--follow`, `--since` narrows the first batch and `--until` is refused, since a stream has no end. When a filter leaves nothing, the command says `No logs matched the filters.` rather than `No logs found.`; if the same command without the filter is empty too, the note below about empty output is the reason.
 - `--follow`, `-f`: stream new lines as they arrive.
 - `--output-format <text|json>`: output format. Defaults to `text`. With `--follow`, JSON is emitted as one object per line (JSON Lines).
+
+```bash
+dr workload logs --grep "connection refused" --since 1h
+dr workload logs --level error --exclude healthz --follow
+```
 
 > [!NOTE]
 > **Empty output is not always a bug.** Container stdout is gathered by a platform log collector that is rolled out per cluster. On an installation that does not run it, the logs endpoint answers `200` with an empty list however healthy the workload is, and raising `--limit` changes nothing. A container that never started wrote nothing either. When the result is empty, the command says so on stderr and points at [`dr workload diagnose`](#diagnose), which reads the per-replica status details and names the reason (`ErrImagePull`, `CrashLoopBackOff`) and the exit code of the run that failed; stdout stays log lines only, so a pipe is unaffected.
