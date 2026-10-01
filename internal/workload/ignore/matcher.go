@@ -60,7 +60,7 @@ func IsBackupCopy(relPath string) bool {
 // are gitignore patterns compiled by the same engine as the user's file, so
 // they match at any depth the way a user's own `.git` line would: a vendored
 // checkout's `sub/.git/` used to be uploaded because the old prefix check
-// only saw the project root (RAPTOR-19751).
+// only saw the project root.
 //
 // The state directory is listed at its full path, not as a bare ".datarobot",
 // and root-anchored by the leading slash: a bare one would also exclude the
@@ -79,7 +79,11 @@ var systemPatterns = []string{
 	"/.datarobot/workload", // the leading slash keeps the state dir root-anchored
 	".wapi",
 	".git",
-	".gitignore",
+	// Root-anchored: a nested .gitignore is often the "keep this empty
+	// directory" placeholder (`logs/.gitignore` holding `*` and `!.gitignore`),
+	// and since a system exclude cannot be overridden from .drignore, matching
+	// it at depth would keep that directory out of every image for good.
+	"/.gitignore",
 	".datarobot.yaml",
 }
 
@@ -283,7 +287,7 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 	// "build" and returned before the negation the user wrote to bring the
 	// directory back was ever consulted. The engine applies patterns in file
 	// order and a negation only clears an earlier match, so the probe has to
-	// be the one the negation was written against (RAPTOR-19751).
+	// be the one the negation was written against.
 	probe := relPath
 	if isDir {
 		probe += "/"
@@ -308,4 +312,13 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 // something inside.
 func matchesSystemExclude(relPath string) bool {
 	return system.MatchesPath(strings.ToLower(relPath))
+}
+
+// IsSystemExcluded is matchesSystemExclude for callers outside the walk. The
+// sync engine asks it about the remote manifest: a path the walk would never
+// list, but that an older CLI uploaded before the excludes reached every
+// depth, is something to delete from the remote rather than download over
+// the real local file.
+func IsSystemExcluded(relPath string) bool {
+	return matchesSystemExclude(relPath)
 }

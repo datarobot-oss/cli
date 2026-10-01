@@ -39,11 +39,15 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 		{".git/HEAD", true},
 		{".gitignore", true},
 		// At any depth, the way a user's own `.git` line would apply: a
-		// vendored checkout's git internals are never code (RAPTOR-19751).
+		// vendored checkout's git internals are never code.
 		{"sub/.git", true},
 		{"sub/.git/HEAD", true},
 		{"vendor/lib/.git/HEAD", true},
-		{"sub/.gitignore", true},
+		// Only the root one: a nested .gitignore is the usual "keep this
+		// empty directory" placeholder, and there is no opting back in from
+		// a system exclude.
+		{"sub/.gitignore", false},
+		{"logs/.gitignore", false},
 		{"sub/.wapi/config.json", true},
 		{"sub/.datarobot.yaml", true},
 		// Names that merely contain an excluded one are not it.
@@ -71,7 +75,7 @@ func TestSystemExcludes_AlwaysApply(t *testing.T) {
 
 // The engine's own *.LOCAL backups are excluded from the sync walk at any
 // depth, so a copy of an overwritten file is never uploaded as new content and
-// the next sync does not see it (RAPTOR-19348).
+// the next sync does not see it.
 func TestMatch_ExcludesLocalBackups(t *testing.T) {
 	m := FromLines(nil)
 
@@ -133,8 +137,8 @@ func TestSystemExcludes_NotOverridable(t *testing.T) {
 // A negation that brings a directory back has to be consulted. With `*`
 // followed by `!build/`, the old code probed "build" first, matched it on the
 // `*` rule and returned before the negation was ever looked at: the one line
-// the user wrote to keep the directory was the one line that never ran
-// (RAPTOR-19751). The engine applies patterns in file order and a negation
+// the user wrote to keep the directory was the one line that never ran.
+// The engine applies patterns in file order and a negation
 // only clears an earlier match, so a directory is probed once, in the slashed
 // form the negation was written against.
 func TestUserPatterns_DirectoryNegation(t *testing.T) {
