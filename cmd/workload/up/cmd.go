@@ -212,16 +212,16 @@ Non-interactive:
   dr workload config --yes && dr workload up --yes
                                             the same, in two steps
 
-The setup asks nothing when --yes is passed, when DATAROBOT_CLI_NON_INTERACTIVE
-is set, when --output-format json is used, or when stdin is not a terminal. That
-covers CI and anything driving this command programmatically: no flag is needed
-to make it safe to run unattended, and a fresh project needs no second command.
+--yes answers every prompt in advance, including the typed confirmation that
+rolling a locked live version asks for, and with no manifest it lets the setup
+take its answers from the project. In a pipeline, DATAROBOT_CLI_NON_INTERACTIVE=true
+set once does the same for this command. That is the supported way to run it
+unattended.
 
-One question outlives one of those. Rolling a workload whose live version is
-locked asks for its name to be typed back; --yes, DATAROBOT_CLI_NON_INTERACTIVE
-and the absence of a terminal each answer it in advance, but --output-format
-json does not: it says how to print stdout, not that production may be
-replaced without a word, and on a terminal somebody is still there to be asked.
+Two things are worth knowing but are not a substitute for --yes: without a
+terminal on stdin nothing is asked either, and --output-format json suppresses
+the setup wizard but not the locked-roll confirmation, which on a terminal is
+still put to the person there.
 
 A manifest that names a published image deploys in one call. One that asks the
 platform to build creates an artifact, pushes the working tree to it and waits
@@ -297,12 +297,7 @@ Examples:
 
 func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory; the manifest is searched upward from here.")
-	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
-		"Run unattended: nothing is prompted for, including the typed confirmation that rolling a locked "+
-			"version asks for. With no manifest the setup answers itself from the project and writes the "+
-			"file before deploying. DATAROBOT_CLI_NON_INTERACTIVE=true is the same flag by another name. "+
-			"--output-format json and a non-terminal stdin also suppress the setup, but json alone does "+
-			"not answer the locked-roll question on a terminal.")
+	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false, `Assume "yes" as answer to all prompts.`)
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,

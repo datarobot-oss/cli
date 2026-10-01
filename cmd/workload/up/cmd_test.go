@@ -1014,10 +1014,10 @@ func (r *readSpy) Read([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-// The property Carson's agent doubted, held by a test rather than by reading
-// the code: with no terminal, `up` prompts for nothing and the deploy goes
-// ahead — including the one question it would otherwise insist on, typing the
-// workload name back to roll a locked live version (RAPTOR-19537).
+// TestUp_WithoutATerminalNothingIsReadFromStdin pins the unattended contract:
+// with --yes, with DATAROBOT_CLI_NON_INTERACTIVE set, or with no terminal on
+// stdin, up reads nothing from stdin and the deploy goes ahead, including the
+// typed confirmation that rolling a locked live version otherwise asks for.
 func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -1030,9 +1030,10 @@ func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
 		{name: "--yes with no terminal", args: []string{"--yes"}},
 		{name: "json output with no terminal", args: []string{"--output-format", "json"}},
 
-		// The variable is --yes by another name, which the help says and this
-		// pins: a pipeline that sets it once, on a runner that happens to
-		// allocate a terminal, must not block on a question nobody will see.
+		// The variable stands in for --yes on this command, which the help
+		// says and this pins: a pipeline that sets it once, on a runner that
+		// happens to allocate a terminal, must not block on a question nobody
+		// will see.
 		{name: "DATAROBOT_CLI_NON_INTERACTIVE on a terminal", envVar: true, terminal: true},
 
 		// Deliberately absent: JSON *on a terminal*. That suppresses the

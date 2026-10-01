@@ -548,7 +548,7 @@ func noteUnusedForce(plan Plan, opts Options) {
 // from ./Dockerfile and its EXPOSE — it only required that the guess be made
 // by the other command, and the cost was a dead end: the error named a
 // command whose own help says it opens a wizard, so an agent asked for a
-// human and stopped (RAPTOR-19537). What keeps the rule honest is the
+// human and stopped. What keeps the rule honest is the
 // committed file, which is as true here as it is there, and the report below
 // that says the file was written: nobody commits a file they were not told
 // about, and a CI job that never commits it would create a workload per run.

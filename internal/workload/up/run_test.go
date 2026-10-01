@@ -409,9 +409,9 @@ func running(id string) *workload.Workload {
 	}
 }
 
-// A fresh project deploys without a human, which is the whole of
-// RAPTOR-19537: the refusal that used to stand here sent an agent to a
-// command whose own help says it opens a wizard, and it gave up.
+// A fresh project deploys without a human. The refusal that used to stand
+// here sent an agent to a command whose own help says it opens a wizard, and
+// it gave up.
 //
 // It replaces TestRun_NoManifestWithoutATerminalNamesTheFix, which held the
 // opposite rule. What that rule was protecting — never deploying a workload

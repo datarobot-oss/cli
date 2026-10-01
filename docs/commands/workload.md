@@ -335,18 +335,9 @@ dr workload up --yes                    # a fresh project, in one command
 dr workload up --yes --dry-run          # the file it would write, and the plan, without writing
 ```
 
-Four things put the command in that mode, and any one is enough:
+`--yes` is the supported way to run `up` unattended. It answers every prompt in advance, including the typed confirmation that rolling a workload whose **live version is locked** asks for, and with no manifest it lets the setup take its answers from the project. In a pipeline, `DATAROBOT_CLI_NON_INTERACTIVE=true` set once does the same for this command. (That is looser than `delete`, which does not take the variable as consent when the id comes from the manifest.)
 
-| | |
-|---|---|
-| `--yes` / `-y` | the explicit form |
-| `DATAROBOT_CLI_NON_INTERACTIVE=true` | usually set once for a whole pipeline |
-| `--output-format json` | a machine is reading stdout |
-| stdin is not a terminal | a pipe, a job runner, a harness |
-
-So a deploy from CI needs no flag to be safe to run unattended, and neither does one driven by a tool.
-
-One question outlives one of those. Rolling a workload whose **live version is locked** asks for its name to be typed back. `--yes`, `DATAROBOT_CLI_NON_INTERACTIVE` and the absence of a terminal each answer it in advance; `--output-format json` does not. It says how to print stdout, not that production may be replaced without a word — on a terminal somebody is still there to ask. Note that this is looser than `delete`, which does not take the variable as consent: a pipeline that sets it once and runs `up` rolls a locked version without a word, which is what a pipeline is for.
+Two things are worth knowing but are not a substitute for the flag. Without a terminal on stdin, `up` asks nothing either, which is what lets a job runner or a harness drive it; a test holds that behaviour. `--output-format json` suppresses the setup wizard but not the locked-roll confirmation: on a terminal that question is still put to the person there.
 
 A project it cannot read is still refused rather than guessed at. With no `Dockerfile` there is no image source to infer, and the error names the flags that settle it — pass them to `dr workload config`, which is where they live:
 
