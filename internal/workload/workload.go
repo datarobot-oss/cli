@@ -147,6 +147,14 @@ func IsErroredWorkloadStatus(s string) bool {
 	return strings.EqualFold(s, WorkloadStatusErrored)
 }
 
+// IsRunningWorkloadStatus reports whether the platform says the workload is
+// running. Named for the same reason as IsTerminatedWorkloadStatus: the shell
+// asks it of a deploy's result, where the status arrives either from the
+// platform or through State.String(), and the two must not be spelled apart.
+func IsRunningWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusRunning)
+}
+
 // IsStoppedWorkloadStatus reports whether s is one of the three ways a
 // workload can be switched off. They are grouped because a deploy treats them
 // alike, and named here because three files ask the same question: this one,
