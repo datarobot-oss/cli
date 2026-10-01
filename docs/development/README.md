@@ -28,7 +28,7 @@ If you're new to developing the CLI, start here:
 - **[Workload state directory validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
 - **[Editing user-owned files](editing-user-files.md)**&mdash;rules for in-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry, and when a refusal beats a rewrite.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.
-- **[Telemetry](telemetry.md)**&mdash;how usage analytics linked to your DataRobot user ID are collected, how to add events, and how to opt out.
+- **[Telemetry](telemetry.md)**&mdash;how telemetry is implemented and how to add events to a command. For what is collected and how to opt out, see the [user guide](../user-guide/telemetry.md).
 
 ## Quick reference
 

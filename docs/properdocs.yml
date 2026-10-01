@@ -78,6 +78,7 @@ nav:
       - Quick reference: user-guide/quick-reference.md
       - Shell completions: user-guide/shell-completions.md
       - Configuration: user-guide/configuration.md
+      - Telemetry: user-guide/telemetry.md
   - Template system:
       - template-system/README.md
       - Structure: template-system/structure.md
@@ -111,7 +112,7 @@ nav:
       - Authentication: development/authentication.md
       - Releasing: development/releasing.md
       - Plugins: development/plugins.md
-      - Telemetry: development/telemetry.md
+      - Telemetry (contributors): development/telemetry.md
       - Configuration & viper: development/configuration.md
       - Flags: development/flags.md
       - Feature gates: development/feature-gates.md

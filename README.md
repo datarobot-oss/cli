@@ -49,6 +49,7 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Telemetry](#telemetry)
 - [Next steps](#next-steps)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -406,6 +407,23 @@ dr run test
 
 > [!TIP]
 > **What's next?** Your application is now running! Explore the [Template system](docs/template-system/) documentation, set up [shell completions](docs/user-guide/shell-completions.md), or review the [Command reference](docs/commands/) for detailed command documentation.
+
+## Telemetry
+
+The CLI collects usage analytics linked to your DataRobot user ID to help the DataRobot team improve the tool. Telemetry is enabled by default, and all telemetry data is stored in the USA. To opt out, use any one of the following:
+
+```bash
+# Per-invocation
+dr --disable-telemetry templates list
+
+# Per-session (environment variable)
+export DATAROBOT_CLI_DISABLE_TELEMETRY=true
+
+# Permanently (add to ~/.config/datarobot/drconfig.yaml)
+disable-telemetry: true
+```
+
+When telemetry is disabled, no data is sent over the network. See [Telemetry](docs/user-guide/telemetry.md) for what is collected, where it is sent, and the hosts to allowlist.
 
 ## Next steps
 
