@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -111,7 +112,28 @@ type DirCandidate struct {
 // suspicion, not proof, in both directions: a directory with none can still
 // be a deployable project, which is why nothing here refuses.
 var rootMarkers = []string{
-	DockerfileName, "pyproject.toml", "uv.lock", "requirements.txt", "package.json", "go.mod", "setup.py",
+	DockerfileName, "pyproject.toml", "uv.lock", "requirements.txt", "package.json", "package-lock.json", "go.mod", "setup.py",
+}
+
+// generatedBuildProblem says why the platform could not build a generated
+// image from the directory, "" when it could. The platform detects the
+// runtime from pyproject.toml with uv.lock, or package.json with
+// package-lock.json, and refuses anything else only once the artifact exists
+// and the code is synced; this asks the same question before either.
+func (d Detected) generatedBuildProblem() string {
+	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
+
+	switch {
+	case has("pyproject.toml") && has("uv.lock"), has("package.json") && has("package-lock.json"):
+		return ""
+	case has("pyproject.toml"):
+		return "pyproject.toml has no uv.lock beside it; run 'uv lock' and commit the result"
+	case has("package.json"):
+		return "package.json has no package-lock.json beside it; run 'npm install' and commit the result"
+	default:
+		return fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json with package-lock.json, "+
+			"which is what a generated image is built from", d.Dir)
+	}
 }
 
 // maxDirCandidates caps the offer. Past a handful the list stops being an

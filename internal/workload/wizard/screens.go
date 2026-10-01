@@ -310,6 +310,12 @@ func (f flow) sourceOptions() []option {
 		dockerfileNote, missing = "no "+DockerfileName+" detected", true
 	}
 
+	generatedNote, generatedMissing := "", false
+	if f.detected.generatedBuildProblem() != "" {
+		generatedNote = "needs pyproject.toml + uv.lock or package.json + package-lock.json"
+		generatedMissing = true
+	}
+
 	return []option{
 		{
 			value: manifest.BuildModeDockerfile,
@@ -317,7 +323,12 @@ func (f flow) sourceOptions() []option {
 			note:  dockerfileNote,
 			warn:  missing,
 		},
-		{value: manifest.BuildModeGenerated, label: "Build from a managed execution environment"},
+		{
+			value: manifest.BuildModeGenerated,
+			label: "Build from a managed execution environment",
+			note:  generatedNote,
+			warn:  generatedMissing,
+		},
 		{value: manifest.BuildModeImage, label: "Use an already published image"},
 	}
 }

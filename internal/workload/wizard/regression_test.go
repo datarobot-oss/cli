@@ -238,7 +238,7 @@ func TestFlow_FailedBaseImageListShowsNoStaleRows(t *testing.T) {
 	t.Cleanup(func() { listExecEnvsFn = original })
 
 	workloads := []workload.Workload{{ID: "68b0", Name: "triage-agent", UpdatedAt: time.Now()}}
-	model := newFlow(dockerfileProject(t), workloads, Answers{})
+	model := newFlow(generatedProject(t), workloads, Answers{})
 
 	model = press(t, model, "enter")      // create new
 	model = pastName(t, model)            // name
@@ -920,7 +920,7 @@ func TestFlow_BaseImageListSurvivesBackNavigation(t *testing.T) {
 
 	t.Cleanup(func() { listExecEnvsFn = original })
 
-	model := newFlow(dockerfileProject(t), nil, Answers{})
+	model := newFlow(generatedProject(t), nil, Answers{})
 	model = press(t, pastName(t, model), "enter") // name, kind
 	model = press(t, model, "2", "enter")         // build from a base image
 
@@ -1090,7 +1090,7 @@ func TestFlow_GeneratedBuildAnswersSurviveBackAndForth(t *testing.T) {
 
 	t.Cleanup(func() { listExecEnvsFn = original })
 
-	model := press(t, pastName(t, newFlow(dockerfileProject(t), nil, Answers{})), "enter")
+	model := press(t, pastName(t, newFlow(generatedProject(t), nil, Answers{})), "enter")
 	model = press(t, model, "2", "enter") // build from an execution environment
 	require.Equal(t, screenExecEnv, model.at)
 
@@ -1914,7 +1914,7 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
 
 	// The flag names a base image that is not the one the picker would offer
 	// first, which is the whole point: an overwrite has to be visible.
-	model := newFlow(dockerfileProject(t), nil, Answers{
+	model := newFlow(generatedProject(t), nil, Answers{
 		ExecutionEnvironment: "third",
 		Entrypoint:           "python main.py",
 	})
@@ -1977,7 +1977,7 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoadOnABoundWorkload(t *test
 
 	t.Cleanup(func() { resolveExecEnvFn = originalResolve })
 
-	model := newFlow(dockerfileProject(t), nil, Answers{
+	model := newFlow(generatedProject(t), nil, Answers{
 		WorkloadID:           "68b0c1d2e3f4a5b6c7d8e9f0",
 		ExecutionEnvironment: "third",
 		Entrypoint:           "python main.py",

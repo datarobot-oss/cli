@@ -109,6 +109,16 @@ func dockerfileProject(t *testing.T) Detected {
 	return Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n"))
 }
 
+// generatedProject is dockerfileProject with the pair a generated build is
+// made from, so the execution-environment track is open as well.
+func generatedProject(t *testing.T) Detected {
+	t.Helper()
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+
+	return Detect(writeGeneratedProject(t, dir))
+}
+
 // With no workloads to bind to there is no binding question, and once the
 // workload is named the Dockerfile path is Enter on every remaining screen.
 func TestFlow_DockerfileHappyPathIsAllEnterAfterTheName(t *testing.T) {
@@ -434,7 +444,7 @@ func TestFlow_GeneratedBuildPicksABaseImage(t *testing.T) {
 
 	t.Cleanup(func() { listExecEnvsFn = original })
 
-	model := newFlow(dockerfileProject(t), nil, Answers{})
+	model := newFlow(generatedProject(t), nil, Answers{})
 
 	model = press(t, pastName(t, model), "enter") // name, kind
 	model = press(t, model, "2", "enter")         // build from a base image

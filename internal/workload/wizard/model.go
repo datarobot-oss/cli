@@ -771,6 +771,12 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 		return nil, fmt.Errorf("no %s in %s: pick another source or add one", DockerfileName, f.detected.Dir)
 	}
 
+	if mode == manifest.BuildModeGenerated {
+		if problem := f.detected.generatedBuildProblem(); problem != "" {
+			return nil, errors.New(problem + ": pick another source or add the files")
+		}
+	}
+
 	if mode != f.draft.Build.Mode {
 		f.draft.Build = manifest.Build{Mode: mode}
 	}
