@@ -133,7 +133,7 @@ func TestCmd_RejectsNonPositivePollInterval(t *testing.T) {
 }
 
 // The filter flags are checked against each other before anything reaches
-// the network, and the error names the flag at fault (RAPTOR-18069).
+// the network, and the error names the flag at fault.
 func TestCmd_RefusesInconsistentFilters(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -195,8 +195,9 @@ func TestFilterFlags_Build(t *testing.T) {
 }
 
 // An empty result under a filter is reported as such, not as a workload
-// with no logs; the wording without a filter is unchanged, and JSON keeps
-// its [] on stdout either way.
+// with no logs, and nothing reaches stderr under JSON. The unfiltered
+// wording and the [] JSON prints are the renderer's, written straight to the
+// process streams, and output_test.go holds them.
 func TestCmd_EmptyResultNamesTheFilter(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"data": [], "count": 0, "next": null, "previous": null}`)

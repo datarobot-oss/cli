@@ -29,7 +29,7 @@ import (
 // The server-side half of a filter travels as the query parameters the route
 // accepts, measured on staging: camelCase, one search term on the message,
 // and a window in RFC 3339 with a Z suffix, which is the one spelling it
-// takes (RAPTOR-18069).
+// takes.
 func TestGetWorkloadLogs_SendsTheServerSideFilter(t *testing.T) {
 	installSkipAuth(t)
 
@@ -144,12 +144,18 @@ func TestLogFilter_Keep(t *testing.T) {
 			LogFilter{Grep: []string{"upstream"}, Exclude: []string{"refused"}},
 			[]string{"upstream ok"},
 		},
-		{"everything excluded is an empty list, not nil", LogFilter{Exclude: []string{"e"}}, []string{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, messages(tc.filter.keep(lines)))
 		})
 	}
+
+	// Everything excluded is an empty list, not nil: JSON output prints it
+	// as [] rather than null. Asserted on keep's own result, since the
+	// messages helper above would build a non-nil slice either way.
+	kept := LogFilter{Exclude: []string{"e"}}.keep(lines)
+	assert.NotNil(t, kept)
+	assert.Empty(t, kept)
 }
 
 // The second search term is checked here even though the first went to the
@@ -223,6 +229,9 @@ func TestParseLogTime(t *testing.T) {
 		{"2026-06-11T12:30:00.5+02:00", time.Date(2026, 6, 11, 12, 30, 0, 500_000_000, time.FixedZone("", 2*60*60))},
 		{"2026-06-11T12:30:00", time.Date(2026, 6, 11, 12, 30, 0, 0, time.UTC)},
 		{"2026-06-11 12:30:00", time.Date(2026, 6, 11, 12, 30, 0, 0, time.UTC)},
+		// The shape the command prints on every line, pasted back as it is.
+		{"2026-06-11 12:30:00.000001+00:00", time.Date(2026, 6, 11, 12, 30, 0, 1000, time.UTC)},
+		{"2026-06-11 12:30:00.5", time.Date(2026, 6, 11, 12, 30, 0, 500_000_000, time.UTC)},
 		{"2026-06-11", time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)},
 		{"15m", now.Add(-15 * time.Minute)},
 		{"2h30m", now.Add(-150 * time.Minute)},
@@ -308,6 +317,56 @@ func TestFollowWorkloadLogs_FilterSeedsSinceThenFollowsTheCursor(t *testing.T) {
 		}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"refused by upstream", "refused again"}, lines)
+	assert.GreaterOrEqual(t, calls, 2)
+}
+
+// The cursor never reaches back before --since. The lag allowance trails the
+// newest seed line by ten seconds, so a seed whose newest line sits within
+// that of the window's start would otherwise pull in older lines on the next
+// poll: never seen by the dedup, printed after newer ones, and outside the
+// window the user asked for.
+func TestFollowWorkloadLogs_CursorIsFlooredAtSince(t *testing.T) {
+	installSkipAuth(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	calls := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+
+		switch calls {
+		case 1:
+			assert.Equal(t, "2026-06-11T14:00:05Z", r.URL.Query().Get("startTime"))
+			fmt.Fprint(w, logsPage("",
+				logEntryDocAt("2026-06-11 14:00:07.000000+00:00", "INFO", "inside the window"),
+			))
+		default:
+			// 14:00:07 minus the allowance is before the window's start, so
+			// the start is what travels.
+			assert.Equal(t, "2026-06-11T14:00:05Z", r.URL.Query().Get("startTime"))
+			fmt.Fprint(w, logsPage(""))
+
+			cancel()
+		}
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	var lines []string
+
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{Since: time.Date(2026, 6, 11, 14, 0, 5, 0, time.UTC)},
+		time.Millisecond, func(e WorkloadLogEntry) error {
+			lines = append(lines, e.Message)
+
+			return nil
+		}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"inside the window"}, lines)
 	assert.GreaterOrEqual(t, calls, 2)
 }
 

@@ -115,7 +115,7 @@ type workloadLogsResponse struct {
 // LogFilter narrows a log fetch. The zero value is no filter.
 //
 // The route takes what it takes and no more, measured against it rather than
-// assumed (RAPTOR-18069): a level, a single case-insensitive substring search
+// assumed: a level, a single case-insensitive substring search
 // on the message (searchKeys/searchValues), a trace id, a span id, and a time
 // window in RFC 3339 with a Z suffix. It refuses unknown parameters with a
 // 400 and has no exclusion parameter at all. So the first search term and
@@ -194,12 +194,15 @@ func logTimeFormat(t time.Time) string {
 const logDateLayout = "2006-01-02"
 
 // logTimeLayouts are the absolute forms ParseLogTime reads, most specific
-// first. A form without a zone is read as UTC, which is what the route
-// speaks and what the printed timestamps carry.
+// first: the RFC 3339 the route speaks, the shape the command itself prints
+// on every line (so a printed timestamp can be pasted straight back into
+// --since or --until), and the shorter spellings a person types. A form
+// without a zone is read as UTC, which is what the printed timestamps carry.
 var logTimeLayouts = []string{
 	time.RFC3339Nano,
+	"2006-01-02 15:04:05.999999999Z07:00",
 	"2006-01-02T15:04:05",
-	"2006-01-02 15:04:05",
+	"2006-01-02 15:04:05.999999999",
 	logDateLayout,
 }
 
@@ -466,6 +469,7 @@ func FollowWorkloadLogs(
 
 	f.gapHint = " (re-run with a larger --limit)"
 	f.keep = filter.keep
+	f.since = filter.Since
 
 	for {
 		entries, hadSince, err := f.fetch()
@@ -513,6 +517,12 @@ type logFollower struct {
 	// late-ingested lines are caught by the dedup overlap rather than
 	// skipped. Callers whose source ingests slowly (build logs) widen it.
 	lag time.Duration
+
+	// since is the window's start, when the caller gave one. The cursor
+	// never reaches back before it: the lag allowance would otherwise pull
+	// in lines older than the window on the poll after a seed whose newest
+	// line sits within the allowance of the start. Zero means no floor.
+	since time.Time
 
 	// keep is the client-side filter, applied to the lines about to be
 	// printed and to nothing else: the cursor, the dedup and the gap check
@@ -576,7 +586,12 @@ func (f *logFollower) fetch() (entries []WorkloadLogEntry, hadSince bool, err er
 	maxEntries := f.limit
 
 	if f.seeded && f.cursorUsable && !f.cursor.IsZero() {
-		since = f.cursor.Add(-f.lag).UTC().Format(time.RFC3339Nano)
+		start := f.cursor.Add(-f.lag)
+		if start.Before(f.since) {
+			start = f.since
+		}
+
+		since = start.UTC().Format(time.RFC3339Nano)
 		maxEntries = 0
 	}
 
