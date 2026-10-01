@@ -254,6 +254,25 @@ When no plugins are found, the command displays a message and the discovery loca
 - Plugin manifest retrieval has its own timeout (see `plugin.manifest_timeout_ms` in configuration).
 - The global flag `--plugin-discovery-timeout` controls startup discovery time only when placed before the command name, and disables discovery when set to `0s`.
 - `DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT` is also honored during startup.
+- Manifest probe results are cached on disk to speed up startup (default TTL 24h); see [Discovery cache](#discovery-cache).
+
+## Discovery cache
+
+Manifest probes are cached at `~/.local/state/dr/plugin-discovery-cache.json`.
+Entries expire after the configured TTL (default `24h`) or immediately when the
+executable changes (mtime, size, or symlink target).
+
+- The global flag `--plugin-discovery-cache-ttl` sets the TTL when placed
+  before the command name; `0s` disables the cache entirely.
+- `DATAROBOT_CLI_PLUGIN_DISCOVERY_CACHE_TTL` is also honored during startup.
+
+```bash
+# Inspect the cache: location, entry counts, effective TTL
+dr plugin cache status
+
+# Delete the cache; the next run re-probes everything
+dr plugin cache clear
+```
 
 ## Passing global flags to plugins
 
