@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/stretchr/testify/assert"
@@ -441,19 +442,32 @@ func TestCmd_NoTerminalHandsTheDeployNoQuestion(t *testing.T) {
 	assert.Nil(t, seen.Confirm)
 }
 
-// The warning leads with one of these, and which one is not cosmetic. A dry
-// run has changed nothing and may be previewing a workload that does not exist
-// yet, so the present tense would contradict the "nothing was changed" line
-// printed directly above it.
+// The warning leads with one of these, and which one is not cosmetic. Only a
+// workload the platform reports as running has a clock already counting; one
+// still coming up after a real run is starting, a preview against a stopped
+// one describes a clock the deploy would start, and a preview of a first
+// deploy has no workload to talk about at all.
 const (
-	draftHeadline     = "This workload is running a draft artifact."
-	draftHeadlinePlan = "This workload would run a draft artifact."
+	draftHeadline         = "This workload is running a draft artifact."
+	draftHeadlineStarting = "This workload is starting on a draft artifact."
+	draftHeadlinePlan     = "This workload would run a draft artifact."
+	draftHeadlineCreate   = "This deploy would create a workload on a draft artifact."
 )
 
-// draftWarned reports whether either tense reached the stream, for the tests
-// that assert silence and have no reason to care which one was suppressed.
+// The two remedies. A clock already counting needs a command; one the previewed
+// deploy would start needs only the flag on that deploy.
+const (
+	draftRunLock = "Run 'dr workload up --lock'"
+	draftAddLock = "Add --lock to version the artifact"
+)
+
+// draftWarned reports whether any shape reached the stream, for the tests that
+// assert silence and have no reason to care which one was suppressed.
 func draftWarned(stderr string) bool {
-	return strings.Contains(stderr, draftHeadline) || strings.Contains(stderr, draftHeadlinePlan)
+	return strings.Contains(stderr, draftHeadline) ||
+		strings.Contains(stderr, draftHeadlineStarting) ||
+		strings.Contains(stderr, draftHeadlinePlan) ||
+		strings.Contains(stderr, draftHeadlineCreate)
 }
 
 // A deploy onto a draft is on a clock nothing in the output used to mention:
@@ -508,6 +522,23 @@ func TestCmd_DraftDeployTradesStopForLock(t *testing.T) {
 	assert.Contains(t, stderr, "dr workload status")
 }
 
+// --detach returns once the deploy is requested, so the workload may not have
+// come up yet. Whether it is running is the platform's answer, not the run's,
+// and saying it is running a draft before it is would be taking the run's word.
+func TestCmd_DetachedDeployDoesNotClaimTheWorkloadIsRunning(t *testing.T) {
+	result := deployed()
+	result.Status = workload.WorkloadStatusSubmitted
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t, "--detach")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, draftHeadlineStarting)
+	assert.NotContains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, draftRunLock, "the deploy has already run, so the remedy is the command")
+}
+
 // A locked artifact is permanent, so there is nothing to warn about and the
 // stop line keeps its slot.
 func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
@@ -536,19 +567,60 @@ func TestCmd_LockFlagSaysNothingAboutDrafts(t *testing.T) {
 
 // Someone previewing a first deploy is exactly who the warning is for, and a
 // first deploy has no workload id yet, so the dry run cannot be gated on one.
-func TestCmd_DryRunWarnsAboutADraftItWouldDeploy(t *testing.T) {
-	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
+// What it may not do is talk about a workload that does not exist yet, or send
+// the reader to a second command when the one they are previewing has not run.
+func TestCmd_DryRunOfAFirstDeployTalksAboutTheDeploy(t *testing.T) {
+	stubRun(t, up.Result{Name: "my-app", Action: up.ActionCreated, Plan: up.Plan{Creates: true}}, nil)
 
 	stdout, stderr, err := runCmd(t, "--dry-run")
 	require.NoError(t, err)
 
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "nothing was changed")
-	assert.Contains(t, stderr, draftHeadlinePlan,
-		"a preview has deployed nothing, so it may not claim the workload is already running one")
-	assert.NotContains(t, stderr, draftHeadline)
-	assert.Contains(t, stderr, "dr workload up --lock",
+	assert.Contains(t, stderr, draftHeadlineCreate)
+	assert.NotContains(t, stderr, "This workload", "there is no workload yet")
+	assert.Contains(t, stderr, draftAddLock,
 		"a dry run never reaches the Next list, so the warning has to carry the remedy itself")
+	assert.NotContains(t, stderr, draftRunLock, "the flag belongs on the deploy being previewed")
+}
+
+// A preview against a workload already serving a draft is the reader who most
+// needs the warning: its eight hours have been counting since the last deploy,
+// so the tense is the present one and the remedy is the command, exactly as a
+// real run against the same workload says it.
+func TestCmd_DryRunAgainstARunningDraftSaysItIsRunning(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionUnchanged
+	result.Plan.State = up.StateRunning
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t, "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, draftHeadline)
+	assert.NotContains(t, stderr, draftHeadlinePlan)
+	assert.Contains(t, stderr, draftRunLock)
+}
+
+// A stopped workload exists but runs nothing, so saying it is running a draft
+// would be false. The deploy being previewed is what would start its clock,
+// which makes this the create's case rather than the running one's.
+func TestCmd_DryRunAgainstAStoppedDraftSaysItWouldRun(t *testing.T) {
+	result := deployed()
+	result.Status = up.StateStopped.String()
+	result.Action = up.ActionStarted
+	result.Plan.State = up.StateStopped
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t, "--dry-run")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, draftHeadlinePlan)
+	assert.NotContains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, draftAddLock)
+	assert.NotContains(t, stderr, draftRunLock)
 }
 
 func TestCmd_DryRunWithLockDoesNotWarn(t *testing.T) {
