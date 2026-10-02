@@ -52,6 +52,45 @@ func (e WorkloadEvent) Message() string {
 	return details.Message
 }
 
+// ArtifactID is the artifact a replacement event rolled onto, "" for an
+// event that names none.
+func (e WorkloadEvent) ArtifactID() string {
+	var details struct {
+		ArtifactID string `json:"artifactId"`
+	}
+
+	if err := json.Unmarshal(e.Details, &details); err != nil {
+		return ""
+	}
+
+	return details.ArtifactID
+}
+
+// Landed reports whether a replacement event records a rollout that
+// completed. Anything else it records, failed, errored or cancelled, left the
+// workload on the generation it had.
+func (e WorkloadEvent) Landed() bool {
+	_, status, _ := strings.Cut(e.EventType, " ")
+
+	return strings.EqualFold(status, ReplacementStatusCompleted)
+}
+
+// LastRollout is the most recent replacement the platform recorded for the
+// workload, nil when it has recorded none. The event trail is where finished
+// replacements end up, so the newest replacement event is that record.
+func LastRollout(workloadID string) (*WorkloadEvent, error) {
+	events, err := ListWorkloadEvents(workloadID, 1, EventFilter{Types: []string{"replacement"}})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(events) == 0 {
+		return nil, nil
+	}
+
+	return &events[len(events)-1], nil
+}
+
 type workloadEventList struct {
 	Data []WorkloadEvent `json:"data"`
 	Next string          `json:"next"`

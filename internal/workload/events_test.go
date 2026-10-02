@@ -95,6 +95,33 @@ func TestListWorkloadEvents_LimitKeepsTheMostRecent(t *testing.T) {
 	assert.Equal(t, "2026-09-30T18:10:08.607Z", events[0].Timestamp.UTC().Format(time.RFC3339Nano))
 }
 
+// The newest replacement on the trail, with what the plan reads off it: the
+// artifact it rolled onto and whether it landed.
+func TestLastRollout_IsTheNewestReplacement(t *testing.T) {
+	serveEvents(t, eventsFixture(t))
+
+	last, err := LastRollout("wl-1")
+	require.NoError(t, err)
+	require.NotNil(t, last)
+
+	assert.Equal(t, "Replacement Completed", last.EventType)
+	assert.True(t, last.Landed())
+	assert.Equal(t, "6abbbac04df5d926abdf03fc", last.ArtifactID())
+
+	errored := WorkloadEvent{EventType: "Replacement Errored", Details: json.RawMessage(`{"artifactId":"a1"}`)}
+	assert.False(t, errored.Landed())
+	assert.Equal(t, "a1", errored.ArtifactID())
+	assert.Empty(t, WorkloadEvent{EventType: "Started"}.ArtifactID())
+}
+
+func TestLastRollout_NoneRecorded(t *testing.T) {
+	serveEvents(t, `{"data":[],"next":""}`)
+
+	last, err := LastRollout("wl-1")
+	require.NoError(t, err)
+	assert.Nil(t, last)
+}
+
 func TestListWorkloadEvents_Filters(t *testing.T) {
 	at := func(s string) time.Time {
 		ts, err := time.Parse(time.RFC3339Nano, s)
