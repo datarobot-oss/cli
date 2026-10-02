@@ -297,6 +297,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 // anything in it rolls or restarts the workload anyway, and a locked artifact
 // cannot have been written to. A read that fails is logged and the plan left
 // as it was, rather than failing a run that was about to change nothing.
+//
+// A stop and a start after the failure reschedule onto the artifact as it
+// stands, which leaves no record here, so the run after that rolls once more
+// than it needed to. The workload is up throughout, so that is the cheaper
+// mistake.
 func noteFailedRollout(live Live, plan Plan) Plan {
 	if !plan.Empty() || live.State != StateRunning || live.Locked {
 		return plan

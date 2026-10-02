@@ -70,9 +70,7 @@ func (e WorkloadEvent) ArtifactID() string {
 // completed. Anything else it records, failed, errored or cancelled, left the
 // workload on the generation it had.
 func (e WorkloadEvent) Landed() bool {
-	_, status, _ := strings.Cut(e.EventType, " ")
-
-	return strings.EqualFold(status, ReplacementStatusCompleted)
+	return strings.Contains(strings.ToLower(e.EventType), strings.ToLower(ReplacementStatusCompleted))
 }
 
 // LastRollout is the most recent replacement the platform recorded for the
