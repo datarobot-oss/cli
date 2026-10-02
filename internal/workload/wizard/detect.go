@@ -124,9 +124,9 @@ var rootMarkers = []string{
 // that is where to look when it learns another package manager.
 //
 // Problem is a shape nothing in the deploy can repair, and the mode is
-// refused with it. Note is a gap the deploy fills on its own: a
-// pyproject.toml with no uv.lock gets one generated with uv before the
-// upload, so the mode is accepted and the note says what to commit.
+// refused with it. Note is a gap the deploy fills itself when uv is installed
+// where it runs: a pyproject.toml with no uv.lock gets one generated before
+// the upload, so the mode is accepted and the note says what to commit.
 type generatedBuild struct {
 	problem string
 	note    string
@@ -139,8 +139,8 @@ func (d Detected) generatedBuild() generatedBuild {
 	case has("pyproject.toml") && has("uv.lock"), has("package.json") && has("package-lock.json"):
 		return generatedBuild{}
 	case has("pyproject.toml"):
-		return generatedBuild{note: "pyproject.toml has no uv.lock beside it; the deploy generates one with uv " +
-			"before the upload, so commit it (or run 'uv lock' now)"}
+		return generatedBuild{note: "pyproject.toml has no uv.lock beside it; the deploy generates one before the " +
+			"upload if uv is installed where it runs, so commit it (or run 'uv lock' now)"}
 	case has("package.json"):
 		return generatedBuild{problem: "package.json has no package-lock.json beside it; run 'npm install' and commit the result"}
 	default:

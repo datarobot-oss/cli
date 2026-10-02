@@ -304,6 +304,58 @@ func TestRun_BindsToALiveWorkload(t *testing.T) {
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", parsed.WorkloadID())
 }
 
+// Binding keeps a generated build from an empty directory, which up seeds
+// from the artifact; a directory with files of its own is judged on them.
+func TestRun_HeadlessBindJudgesAGeneratedBuildOnADirectoryWithFiles(t *testing.T) {
+	bindGenerated := func(t *testing.T) {
+		t.Helper()
+
+		stubLive(t,
+			documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+				"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+					"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+			documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+					{"name": "primary", "primary": true, "port": 8000,
+					 "imageBuildConfig": {"dockerfile": {"source": "generated", "entrypoint": ["python", "old.py"],
+					   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+	}
+
+	t.Run("an empty directory keeps it", func(t *testing.T) {
+		bindGenerated(t)
+
+		_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}))
+		require.NoError(t, err)
+	})
+
+	t.Run("requirements.txt alone is refused", func(t *testing.T) {
+		bindGenerated(t)
+
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
+
+		_, err := Run(headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be kept from here")
+		assert.Contains(t, err.Error(), "neither pyproject.toml with uv.lock")
+		assert.Contains(t, err.Error(), "--build-mode")
+	})
+
+	t.Run("pyproject.toml alone is kept with the lock warning", func(t *testing.T) {
+		bindGenerated(t)
+
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0o600))
+
+		stderr := &bytes.Buffer{}
+		opts := headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+		opts.Stderr = stderr
+
+		_, err := Run(opts)
+		require.NoError(t, err)
+		assert.Contains(t, stderr.String(), "if uv is installed")
+	})
+}
+
 // A workload id that does not resolve fails at setup, which is the whole
 // point of resolving it here instead of at deploy time.
 func TestRun_UnknownWorkloadID(t *testing.T) {

@@ -548,6 +548,70 @@ func TestFlow_BoundGeneratedBuildIsKeptWithoutTheProjectFiles(t *testing.T) {
 	assert.Equal(t, "68a1", model.draft.Build.ExecutionEnvironmentID, "the live build survives being kept")
 }
 
+// The exemption above is for the empty directory only, because that is the
+// one shape `up` seeds from the artifact. A directory with files of its own
+// is uploaded as it is, so keeping the generated build is judged on them:
+// refused when they cannot be built from, hinted at when the deploy fills the
+// gap itself.
+func TestFlow_BoundGeneratedBuildIsJudgedOnADirectoryWithFiles(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		file    string
+		shows   string
+		refused string
+	}{
+		{"requirements.txt alone cannot be built from", "requirements.txt", "needs pyproject.toml + uv.lock", "or pick another source"},
+		{"pyproject.toml alone gets the lock hint", "pyproject.toml", "uv.lock is generated at deploy if uv is installed", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stubLive(t,
+				documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+					"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+						"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+				documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+						{"name": "primary", "primary": true, "port": 8000,
+						 "imageBuildConfig": {"dockerfile": {"source": "generated",
+						   "entrypoint": ["python", "old.py"],
+						   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+			original := listExecEnvsFn
+			listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+				return []workload.ExecutionEnvironment{{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}}}, nil
+			}
+
+			t.Cleanup(func() { listExecEnvsFn = original })
+
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, c.file), []byte("x\n"), 0o600))
+
+			model := newFlow(Detect(dir), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+			updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+			model, ok := updated.(flow)
+			require.True(t, ok)
+
+			model = press(t, model, "enter") // kind
+			require.Equal(t, screenSource, model.at)
+			assert.Contains(t, model.View(), c.shows)
+			assert.NotContains(t, model.View(), "built from the workload's current code",
+				"only an empty directory is seeded from the artifact")
+
+			model = press(t, model, "enter") // keep the live build
+
+			if c.refused == "" {
+				require.NoError(t, model.failed)
+				assert.Equal(t, screenExecEnv, model.at)
+
+				return
+			}
+
+			require.Error(t, model.failed)
+			assert.Contains(t, model.failed.Error(), c.refused)
+			assert.Equal(t, screenSource, model.at)
+		})
+	}
+}
+
 // Confirming is the only thing that ends the flow with something to write.
 func TestFlow_ConfirmProducesTheManifest(t *testing.T) {
 	model := newFlow(dockerfileProject(t), nil, Answers{})

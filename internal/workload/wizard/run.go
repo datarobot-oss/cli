@@ -1394,6 +1394,16 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 		return nil, manifest.Draft{}, err
 	}
 
+	// Only an empty directory is seeded from the artifact; one with files of
+	// its own is uploaded as it is, so it has to be buildable.
+	if draft.Build.Mode == manifest.BuildModeGenerated && !detected.SuspectDir() {
+		if problem := detected.generatedBuild().problem; problem != "" {
+			return nil, manifest.Draft{}, fmt.Errorf(
+				"the workload's generated build cannot be kept from here: %s (pass --build-mode to pick another source)",
+				problem)
+		}
+	}
+
 	// A name the workload already declares keeps its running value, so it is
 	// not something this run added. Narrowing the draft here rather than
 	// leaving it to Apply's own skip is what keeps the reported counts equal
