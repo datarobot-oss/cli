@@ -305,13 +305,9 @@ func TestFinishSettle_AnInterruptedEndpointCheckWithholdsTheLock(t *testing.T) {
 	assert.Equal(t, 1, locked)
 }
 
-// The waits besides awaitRunning that a keystroke or a signal can end. Each
-// hands its poll the phase's context and returns the interrupt rather than
-// swallowing it; the two pre-plan waits, awaitReplaced and awaitSteady, matter
-// most, because a nil there lets the deploy carry on into planning after
-// Ctrl-C. A stub that ignored the context
-// it was given would pass with context.Background() wired in, so each one
-// derives its error from the context it actually received.
+// Each wait hands its poll the phase's context and returns the interrupt rather
+// than swallowing it. The stubs derive their error from the context received,
+// so a wait wired to context.Background() fails here.
 func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 	fixedClock(t, time.Second)
 

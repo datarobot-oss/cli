@@ -340,11 +340,8 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 // about the run it just stopped, and the reader is looking at a deploy rather
 // than at a route.
 //
-// This is the guard immediately before a mutation. The pre-plan read in
-// awaitReplaced asks the same route for a different reason, to wait a swap
-// out before planning, and the two are not folded together: a swap can start
-// between the plan and the apply, and only a check in front of the POST
-// catches that one.
+// Kept apart from awaitReplaced: a swap can start between the plan and the
+// apply, and only a check in front of the POST catches that one.
 func guardRollout(workloadID, consequence string) error {
 	err := guardReplacementFn(workloadID)
 	if err == nil || errors.Is(err, workload.ErrReplacementInFlight) {
@@ -356,11 +353,8 @@ func guardRollout(workloadID, consequence string) error {
 }
 
 // lookSettled is the live read a plan is built from: the workload as it is,
-// once it has stopped moving.
-//
-// Two things can be moving: a rollout, then the workload's own status. The
-// rollout is waited out first because a swap that lands leaves the workload
-// coming up. Both waits share one --poll-timeout.
+// once it has stopped moving. A rollout is waited out first, then the
+// workload's own status; both waits share one --poll-timeout.
 func lookSettled(ctx context.Context, workloadID string, opts Options) (Live, error) {
 	found, err := Look(workloadID)
 	if err != nil {
@@ -382,14 +376,9 @@ func lookSettled(ctx context.Context, workloadID string, opts Options) (Live, er
 	return awaitSteady(ctx, replaced, budgetLeft(opts, waitFrom))
 }
 
-// awaitReplaced waits out a swap somebody else already started and re-reads
-// the workload once it has landed. A workload being replaced reports itself
-// running for the whole swap, so awaitSteady cannot see this; the replacement
-// route can. The guards at the apply sites stay: a rollout that appears after
-// this read is a concurrent deploy, and waiting there would apply a stale plan.
-//
-// A dry run never waits. The bool is true only when the preview has already
-// said a deploy would wait, so the caller does not say it twice.
+// awaitReplaced waits out a swap somebody else started and re-reads the
+// workload once it has landed. A dry run never waits; the bool reports that
+// the preview already said a deploy would.
 func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, error) {
 	if !replaceable(live) {
 		return live, false, nil
@@ -410,10 +399,8 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 		return live, false, nil
 	}
 
-	// A settled record lingers after the rollout ends, so it is not waited on.
-	// It is re-read rather than returned as is: the swap may have landed
-	// between the two reads, and the snapshot in hand names the outgoing
-	// artifact, which a --lock run would then make permanent.
+	// A settled record lingers, so it is not waited on, but the workload is
+	// re-read: the snapshot in hand may name the outgoing artifact.
 	if workload.IsTerminalReplacementStatus(active.Status) {
 		log.Debug("the rollout already settled; re-reading before planning",
 			"workload_id", live.WorkloadID, "replacement_id", active.ID, "status", active.Status)
@@ -470,11 +457,8 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 }
 
 // previewedMidSwap is the state a dry run plans against while a swap is in
-// flight. A workload mid-swap must not plan as "up to date" or as "to be
-// started": the swap decides what differs, and a replacement onto a stopped
-// workload is what starts it, so the deploy would find it running. Settling
-// says so for both. Errored keeps its verdict: a swap that fails leaves it
-// errored, and the plan exists to report that.
+// flight: running and stopped both read as settling, since the swap decides
+// what differs. Errored keeps its verdict.
 func previewedMidSwap(live Live) Live {
 	live.SwapInFlight = true
 
@@ -520,10 +504,9 @@ func replacingNote(workloadID string, active *workload.Replacement) string {
 	return note + "."
 }
 
-// replacedFailed is the verdict on a wait that did not come back clean. A
-// rollout that ended failed never promoted, so the workload is still on the
-// version it was and the run carries on; anything else names where the
-// rollout got to.
+// replacedFailed is the verdict on a wait that did not come back clean: a
+// failed rollout never promoted, so the run carries on; anything else is an
+// error naming where the rollout got to.
 func replacedFailed(live Live, settled *workload.Replacement, err error) error {
 	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return nil

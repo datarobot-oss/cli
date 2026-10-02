@@ -690,11 +690,8 @@ func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
 // outgoing version permanent and the rollout unable to complete. deployable
 // cannot catch it: the workload reports itself running for the whole of a swap.
 //
-// This is the backstop rather than the ordinary answer. A swap that was already
-// under way when the workload was read is waited out before the plan is built,
-// so what reaches this guard is one that started after that read, which is
-// somebody else deploying concurrently. Refusing is the only safe verdict
-// there: waiting would take a one-way lock on a plan that is already stale.
+// A swap that starts after the pre-plan read is a concurrent deploy; waiting
+// would take a one-way lock on a stale plan, so it is refused.
 func TestRun_LockWithNothingToDoRefusesARolloutThatStartedLate(t *testing.T) {
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
@@ -1333,15 +1330,8 @@ func TestRun_SettlingIntoErroredIsNotReportedAsUpToDate(t *testing.T) {
 	}
 }
 
-// A rollout already in flight used to be refused outright, which is the same
-// dead end a settling workload was: "wait for it to settle, then deploy" is
-// work the command can do itself. It is the one transition awaitSteady cannot
-// see, because the workload reports itself running for the whole of a swap.
-//
-// The re-read is the point. Planning against the state as it was would roll a
-// version onto a workload the platform is already moving, so the fixture
-// carries drift on the first read and none on the second: the swap that was in
-// flight is what closed the gap, and the deploy has nothing left to do.
+// The fixture carries drift on the first read and none on the second: the swap
+// in flight is what closed the gap, so the deploy has nothing left to do.
 func TestRun_RolloutInFlightIsWaitedOutAndThenDeployed(t *testing.T) {
 	var (
 		artifacts int
@@ -1402,10 +1392,8 @@ func TestRun_RolloutInFlightIsWaitedOutAndThenDeployed(t *testing.T) {
 	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
 }
 
-// A rollout that ends failed never promotes, so the version that was serving is
-// still serving and the workload is deployable. Refusing here would strand the
-// user on the same "run it again" dead end; the run says what it saw and plans
-// against the state the failure left behind.
+// A failed rollout never promotes, so the workload is still deployable; the run
+// says what it saw and carries on.
 func TestRun_RolloutThatEndsFailedIsNotedAndTheRunContinues(t *testing.T) {
 	var started string
 
@@ -1673,13 +1661,8 @@ func TestRun_ErroredWorkloadWithARolloutInFlightIsReadAgainAfterIt(t *testing.T)
 	assert.Equal(t, "running", result.Status)
 }
 
-// The counterpart to the backstop above, and the reason the wait is placed
-// before the plan rather than at the apply sites. A `--lock` run whose swap was
-// already under way when the workload was read waits it out and locks whatever
-// the swap left serving, instead of refusing a run whose only fault was
-// arriving early. Getting this order wrong is not cosmetic: locking is one-way,
-// so a lock taken against the pre-swap read would make the outgoing version
-// permanent.
+// A --lock run that arrives mid-swap waits it out and locks whatever the swap
+// left serving. Locking is one-way, so the pre-swap read must not be locked.
 func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
 	var (
 		locked    string
@@ -1721,15 +1704,9 @@ func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
 	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
 }
 
-// The narrow race the pre-plan read opens, and the reason a terminal record is
-// re-read rather than returned as it stands. The swap lands between the
-// workload read and the replacement read, so the route answers "completed" and
-// there is nothing to wait for — but the snapshot in hand is from before the
-// swap and names the artifact being rolled off.
-//
-// --lock is where that costs something that cannot be taken back: the lock
-// lands on result.ArtifactID, which is seeded from that snapshot, so a run
-// missing the re-read makes the outgoing version permanent.
+// The swap lands between the workload read and the replacement read, so there
+// is nothing to wait for, but the snapshot in hand names the outgoing artifact.
+// Without the re-read, --lock would make that version permanent.
 func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
 	const (
 		outgoing = "68a0000000000000000000a1"
@@ -1811,14 +1788,8 @@ func TestRun_NoRolloutRecordCostsNoSecondRead(t *testing.T) {
 	assert.Equal(t, 1, looks, "nothing in flight is nothing to re-read")
 }
 
-// A preview during a swap must not print the one verdict it cannot support. The
-// plan is computed against a workload the platform is already moving, so an
-// empty one says the swap has not landed yet, not that there is nothing to do —
-// and "Already up to date" directly beneath "a deploy would wait" is a preview
-// contradicting itself.
-//
-// The fixture matches the live state field for field, which is what makes the
-// plan empty and is exactly the shape that used to print the wrong answer.
+// The fixture matches the live state field for field, so the plan is empty;
+// "Already up to date" beneath "a deploy would wait" would contradict itself.
 func TestRun_DryRunDuringARolloutDoesNotClaimUpToDate(t *testing.T) {
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
@@ -1868,10 +1839,8 @@ func TestRun_DryRunDuringARolloutOnAStoppedWorkloadDoesNotPlanAStart(t *testing.
 	assert.Contains(t, stderr, "plan against where it lands")
 }
 
-// A manifest with nothing to resolve has no workload to ask about, and the
-// replacement route answers the same 404 for "no such workload" as it does for
-// "nothing in flight". Asking would be a round trip whose answer cannot be
-// read either way.
+// With no workload to ask about, the replacement route's 404 could mean
+// anything, so it is not asked.
 func TestRun_ARunWithNoLiveWorkloadNeverAsksAboutARollout(t *testing.T) {
 	install(t, fakes{
 		activeReplacement: func(string) (*workload.Replacement, error) {
