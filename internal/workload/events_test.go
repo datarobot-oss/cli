@@ -95,33 +95,46 @@ func TestListWorkloadEvents_LimitKeepsTheMostRecent(t *testing.T) {
 	assert.Equal(t, "2026-09-30T18:10:08.607Z", events[0].Timestamp.UTC().Format(time.RFC3339Nano))
 }
 
-// One replacement's record, found by id, with what the poller reads off it.
-// Two records here share a timestamp, as they do on staging once the cleanup
-// pass has touched them, which is why the lookup is by id and not by time.
-func TestRolloutRecord_FindsOneReplacementByID(t *testing.T) {
+// The trail writes a finished replacement under a new id, so its record is
+// found by the generations it launched, or, for one that launched none, by
+// its artifact among the records written after it began. Two records here
+// share a timestamp, as they do on staging once the cleanup pass has touched
+// them; the record's id carries when it was written.
+func TestRolloutRecord_FindsTheReplacementByWhatItLaunched(t *testing.T) {
+	// 6abfac1a… was written at 13:08:10Z, 6abfacc8… at 13:08:24Z, 6abfa9c6… at 13:05:26Z.
 	serveEvents(t, `{"data":[
 		{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
-		 "details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"a1","message":"candidate is stuck"}},
+		 "details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"a1","candidateProtonIds":["gen-2"],"message":"candidate is stuck"}},
 		{"id":"6abfac1a06bc8e5874e02dea","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
-		 "details":{"replacementId":"6abfac1a06bc8e5874e02dea","artifactId":"a1"}},
+		 "details":{"replacementId":"6abfac1a06bc8e5874e02dea","artifactId":"a1","candidateProtonIds":["gen-1"]}},
+		{"id":"6abfa9c6a610d6e5cd45e913","workloadId":"wl-1","timestamp":"2026-10-02T13:16:00Z","eventType":"Replacement Completed",
+		 "details":{"replacementId":"6abfa9c6a610d6e5cd45e913","artifactId":"a1","candidateProtonIds":[]}},
 		{"id":"e-started","workloadId":"wl-1","timestamp":"2026-10-02T13:16:00Z","eventType":"Started","details":null}
 	],"next":""}`)
 
-	errored, err := RolloutRecord("wl-1", "6abfacc806bc8e5874e02dec")
+	byProton, err := RolloutRecord("wl-1", &Replacement{ID: "rep-x", ArtifactID: "a1", CandidateProtonIDs: []string{"gen-2"}})
 	require.NoError(t, err)
-	require.NotNil(t, errored)
-	assert.Equal(t, "errored", errored.ReplacementStatus())
-	assert.Equal(t, "a1", errored.ArtifactID())
-	assert.Contains(t, errored.Message(), "stuck")
+	require.NotNil(t, byProton)
+	assert.Equal(t, "errored", byProton.ReplacementStatus())
+	assert.Contains(t, byProton.Message(), "stuck")
 
-	completed, err := RolloutRecord("wl-1", "6abfac1a06bc8e5874e02dea")
-	require.NoError(t, err)
-	require.NotNil(t, completed)
-	assert.Equal(t, ReplacementStatusCompleted, completed.ReplacementStatus())
+	// Launched nothing: the newest record of its artifact written since it
+	// began, which is the errored one at 13:08:24, not the one at 13:16 whose
+	// timestamp is a later cleanup touch on a record written at 13:05.
+	began := time.Date(2026, 10, 2, 13, 7, 0, 0, time.UTC)
 
-	none, err := RolloutRecord("wl-1", "6abf000000000000000000ff")
+	byArtifact, err := RolloutRecord("wl-1", &Replacement{ID: "rep-y", ArtifactID: "a1", CreatedAt: began})
 	require.NoError(t, err)
-	assert.Nil(t, none)
+	require.NotNil(t, byArtifact)
+	assert.Equal(t, "6abfacc806bc8e5874e02dec", byArtifact.ReplacementID())
+
+	none, err := RolloutRecord("wl-1", &Replacement{ID: "rep-z", ArtifactID: "a9", CreatedAt: began})
+	require.NoError(t, err)
+	assert.Nil(t, none, "another artifact's records are not it")
+
+	tooOld, err := RolloutRecord("wl-1", &Replacement{ID: "rep-w", ArtifactID: "a1", CreatedAt: time.Date(2026, 10, 2, 13, 30, 0, 0, time.UTC)})
+	require.NoError(t, err)
+	assert.Nil(t, tooOld, "records written before it began are not it")
 
 	assert.Equal(t, "e-started", WorkloadEvent{ID: "e-started"}.ReplacementID(), "no details: the event's own id")
 	assert.Empty(t, WorkloadEvent{EventType: "Started"}.ArtifactID())
@@ -130,7 +143,7 @@ func TestRolloutRecord_FindsOneReplacementByID(t *testing.T) {
 func TestRolloutRecord_EmptyTrail(t *testing.T) {
 	serveEvents(t, `{"data":[],"next":""}`)
 
-	record, err := RolloutRecord("wl-1", "rep-1")
+	record, err := RolloutRecord("wl-1", &Replacement{ID: "rep-1", ArtifactID: "a1"})
 	require.NoError(t, err)
 	assert.Nil(t, record)
 }

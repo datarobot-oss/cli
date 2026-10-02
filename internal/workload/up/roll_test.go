@@ -2146,6 +2146,71 @@ func TestRun_ADraftChangedAfterItsGenerationStartedIsRolledAgain(t *testing.T) {
 	}
 }
 
+// A sizing-only change launches the new generation from the artifact as it
+// stands, so a change that did not land rides along with it; the plan says
+// so and rolls both in one swap, rather than blaming the sizing if it fails.
+func TestRun_ASizingChangeOnAStaleDraftRollsTheArtifactToo(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	changed := time.Date(2026, 10, 2, 13, 5, 42, 0, time.UTC)
+
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) {
+		d := draftLiveArtifact()
+		d["updatedAt"] = changed.Format(time.RFC3339Nano)
+
+		return d, nil
+	}
+	f.activeProton = func(string) (*workload.Proton, error) {
+		return &workload.Proton{ID: "gen-1", ArtifactID: live, Role: workload.ProtonRoleActive, CreatedAt: changed.Add(-time.Minute)}, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"guard", "guard", "replace:" + live, "await-rollout", "settle:+drain"}, tr.steps)
+	assert.NotEmpty(t, tr.rolledRuntime, "the sizing travels with the swap")
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.Contains(t, stderr, "~ runtime")
+	assert.Contains(t, stderr, "rolling it again")
+}
+
+// A code sync moves the artifact's code reference, which bumps it, and leaves
+// the image stale. Restarting the old image onto itself would help nothing,
+// so that artifact is not read as ahead of its generation.
+func TestRun_AStaleDraftWithAStaleImageIsNotRerolled(t *testing.T) {
+	changed := time.Date(2026, 10, 2, 13, 5, 42, 0, time.UTC)
+
+	var tr track
+
+	f := unchangedTree(builtRoll(&tr), &tr)
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true, ImageStale: true}, nil }
+	f.artifactD = func(string) (workload.Document, error) {
+		d := draftLiveArtifact()
+		d["updatedAt"] = changed.Format(time.RFC3339Nano)
+
+		return d, nil
+	}
+	f.activeProton = func(string) (*workload.Proton, error) {
+		t.Fatal("a plan that rebuilds does not ask about the generation")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Empty(t, tr.steps)
+	assert.NotContains(t, stderr, "rolling it again")
+}
+
 // A generation list that cannot be read does not fail a run that was about
 // to change nothing; the plan stands on the two documents, as it did.
 func TestRun_UnreadableGenerationsLeaveAnEmptyPlanAlone(t *testing.T) {
@@ -2425,9 +2490,10 @@ func TestRun_ALeftoverWithItsOwnCodeIsStillReAnchored(t *testing.T) {
 	var tr track
 
 	f := builtRoll(&tr)
-	// One file changed, so the version is built rather than the draft written
-	// to in place, which is the path that finds the leftover.
-	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true, Files: 1}, nil }
+	// The tree matches, yet the project pushes to a leftover rather than the
+	// version serving, so the draft is not written to in place: the leftover
+	// may hold code an earlier attempt synced and never built.
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
 	f.sync = emptySync(&tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("art-abandoned")

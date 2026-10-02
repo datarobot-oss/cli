@@ -577,14 +577,14 @@ type PlanJSON struct {
 	// legitimate first deploy.
 	PriorWorkloadID string `json:"priorWorkloadId"`
 
-	// KeepsImage reports that the version this run mints runs the image the
-	// current one runs, so no build happens. Intent under --dry-run, and what
-	// happened after a real run.
+	// KeepsImage reports that the generation this run brings up runs the
+	// image the current one runs, so no build happens. Intent under
+	// --dry-run, and what happened after a real run.
 	KeepsImage bool `json:"keepsImage"`
 
-	// InPlace reports that the spec change is written to the draft artifact
-	// the workload runs, which is then rolled onto itself, so the artifact id
-	// does not change. False whenever a version is minted.
+	// InPlace reports that the workload is rolled onto the draft artifact it
+	// already runs, after any spec change is written to it, so the artifact
+	// id does not change. False whenever a version is minted.
 	InPlace bool `json:"inPlace"`
 
 	// Reroll is why the version serving is rolled onto itself with nothing in

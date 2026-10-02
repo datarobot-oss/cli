@@ -75,6 +75,11 @@ type Replacement struct {
 	Status     string `json:"status"`
 	Strategy   string `json:"strategy,omitempty"`
 
+	// CandidateProtonIDs are the generations the replacement launched, set
+	// once it has. They are what identifies the replacement in the trail
+	// afterwards: the finished record there is written under a new id.
+	CandidateProtonIDs []string `json:"candidateProtonIds,omitempty"`
+
 	// Message is the platform's account of how a failed rollout ended, which
 	// for a candidate that never became healthy carries the container's reason.
 	Message string `json:"message,omitempty"`
@@ -483,11 +488,7 @@ func absenceMeans(workloadID string, lastSeen *Replacement, watched bool, absenc
 // answer. A trail that cannot be read, or has no record yet, leaves the last
 // status seen, which is what the wait used to settle on.
 func recordedOutcome(workloadID string, lastSeen *Replacement) *Replacement {
-	if lastSeen.ID == "" {
-		return lastSeen
-	}
-
-	record, err := RolloutRecord(workloadID, lastSeen.ID)
+	record, err := RolloutRecord(workloadID, lastSeen)
 	if err != nil || record == nil {
 		log.Debug("replacement record gone and not yet in the trail; settling on the last status seen",
 			"workload_id", workloadID, "replacement_id", lastSeen.ID, "err", err)
@@ -533,7 +534,7 @@ func terminalReplacementErr(workloadID string, replacement *Replacement) error {
 	}
 
 	return fmt.Errorf(
-		"replacement for workload %s ended with status %s%s; the workload reverted to its previous artifact",
+		"replacement for workload %s ended with status %s%s; the workload is still on the generation it was running",
 		workloadID, replacement.Status, why,
 	)
 }

@@ -105,10 +105,10 @@ type Plan struct {
 	// What the plan intends, not a promise; the envelope is corrected after.
 	InheritsImage bool
 
-	// InPlace reports that the spec change is written to the draft artifact
-	// the workload runs, and the workload rolled onto it again, so no version
-	// is minted. A draft can be rewritten; a locked artifact cannot, and its
-	// successor is a new version as before.
+	// InPlace reports that the workload is rolled onto the draft artifact it
+	// already runs, after the spec change, if there is one, is written to
+	// that artifact; no version is minted. A draft can be rewritten; a locked
+	// artifact cannot, and its successor is a new version as before.
 	InPlace bool
 
 	// Reroll is why the version serving is rolled onto itself with nothing
@@ -318,10 +318,12 @@ func (p Plan) MintsVersion() bool {
 }
 
 // rerolling is the plan for a draft whose last rollout did not land: the
-// version serving is rolled onto itself, and nothing is written to it first.
+// version serving is rolled onto itself, keeping its image, and nothing is
+// written to it first.
 func (p Plan) rerolling(reason string) Plan {
 	p.Reroll = reason
 	p.InPlace = true
+	p.InheritsImage = true
 
 	return p
 }
