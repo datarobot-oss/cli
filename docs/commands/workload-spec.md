@@ -98,7 +98,7 @@ containers:
         entrypoint: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-The platform works out the runtime from the project's own files: `pyproject.toml` with `uv.lock`, or `package.json` with `package-lock.json`. A project with neither cannot be built this way, and `dr workload config` refuses the mode up front rather than letting the build fail after the code is synced. Binding to a workload already built this way keeps its build regardless: `dr workload up` pulls its code into an empty directory. `executionEnvironmentId` and `executionEnvironmentVersionId` are only valid when `source` is `generated`. No CLI command lists execution environments yet; take the ids from the DataRobot UI or from `GET /api/v2/executionEnvironments/`.
+The platform works out the runtime from the project's own files: `pyproject.toml` with `uv.lock`, or `package.json` with `package-lock.json`. A `pyproject.toml` without `uv.lock` is accepted: the deploy's sync generates the lock with `uv` before the upload, so commit it. A project with neither file pair, or a `package.json` without its lock, cannot be built this way, and `dr workload config` refuses the mode up front rather than letting the build fail after the code is synced. Binding to a workload already built this way keeps its build regardless: `dr workload up` pulls its code into an empty directory. `executionEnvironmentId` and `executionEnvironmentVersionId` are only valid when `source` is `generated`. No CLI command lists execution environments yet; take the ids from the DataRobot UI or from `GET /api/v2/executionEnvironments/`.
 
 `imageBuildConfig.codeRef` names the catalog version the build compiles, and `dr artifact code sync` writes it for you:
 

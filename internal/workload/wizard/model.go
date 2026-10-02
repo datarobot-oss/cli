@@ -775,7 +775,7 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 	// same rule the headless bind applies: its code lives in the artifact, and
 	// `up` pulls it into an empty directory before it reads the tree.
 	if mode == manifest.BuildModeGenerated && mode != f.liveBuildMode() {
-		if problem := f.detected.generatedBuildProblem(); problem != "" {
+		if problem := f.detected.generatedBuild().problem; problem != "" {
 			return nil, fmt.Errorf("%s (or pick another source)", problem)
 		}
 	}

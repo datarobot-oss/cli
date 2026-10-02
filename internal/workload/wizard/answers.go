@@ -417,7 +417,7 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 		return manifest.Build{Mode: manifest.BuildModeImage, ImageURI: a.Image}, nil
 
 	case manifest.BuildModeGenerated:
-		if problem := detected.generatedBuildProblem(); problem != "" {
+		if problem := detected.generatedBuild().problem; problem != "" {
 			return manifest.Build{}, fmt.Errorf("--build-mode %s: %s", manifest.BuildModeGenerated, problem)
 		}
 

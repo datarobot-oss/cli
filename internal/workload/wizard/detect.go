@@ -115,27 +115,37 @@ var rootMarkers = []string{
 	DockerfileName, "pyproject.toml", "uv.lock", "requirements.txt", "package.json", "package-lock.json", "go.mod", "setup.py",
 }
 
-// generatedBuildProblem says why the platform could not build a generated
-// image from the directory, "" when it could. The platform detects the
-// runtime from pyproject.toml with uv.lock, or package.json with
-// package-lock.json, and refuses anything else only once the artifact exists
-// and the code is synced; this asks the same question before either.
-func (d Detected) generatedBuildProblem() string {
+// generatedBuild is what the directory says about a generated image.
+//
+// The platform detects the runtime from pyproject.toml with uv.lock, or
+// package.json with package-lock.json, and refuses anything else only once
+// the artifact exists and the code is synced. The pairs are the platform's
+// (workload-api, src/workload_api/code_to_workload/runtime_detectors/), so
+// that is where to look when it learns another package manager.
+//
+// Problem is a shape nothing in the deploy can repair, and the mode is
+// refused with it. Note is a gap the deploy fills on its own: a
+// pyproject.toml with no uv.lock gets one generated with uv before the
+// upload, so the mode is accepted and the note says what to commit.
+type generatedBuild struct {
+	problem string
+	note    string
+}
+
+func (d Detected) generatedBuild() generatedBuild {
 	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
 
 	switch {
 	case has("pyproject.toml") && has("uv.lock"), has("package.json") && has("package-lock.json"):
-		return ""
-	case has("pyproject.toml") && has("package.json"):
-		return "pyproject.toml has no uv.lock beside it and package.json has no package-lock.json; " +
-			"run 'uv lock' or 'npm install' and commit the result"
+		return generatedBuild{}
 	case has("pyproject.toml"):
-		return "pyproject.toml has no uv.lock beside it; run 'uv lock' and commit the result"
+		return generatedBuild{note: "pyproject.toml has no uv.lock beside it; the deploy generates one with uv " +
+			"before the upload, so commit it (or run 'uv lock' now)"}
 	case has("package.json"):
-		return "package.json has no package-lock.json beside it; run 'npm install' and commit the result"
+		return generatedBuild{problem: "package.json has no package-lock.json beside it; run 'npm install' and commit the result"}
 	default:
-		return fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json with package-lock.json, "+
-			"which is what a generated image is built from", d.Dir)
+		return generatedBuild{problem: fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json "+
+			"with package-lock.json, which is what a generated image is built from", d.Dir)}
 	}
 }
 

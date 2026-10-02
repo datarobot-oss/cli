@@ -15,6 +15,8 @@
 package wizard
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -481,6 +483,31 @@ func TestFlow_GeneratedSourceIsRefusedWithoutTheProjectFiles(t *testing.T) {
 	assert.Contains(t, model.failed.Error(), "neither pyproject.toml with uv.lock nor package.json with package-lock.json")
 	assert.Contains(t, model.failed.Error(), "or pick another source")
 	assert.Equal(t, manifest.BuildModeDockerfile, model.draft.Build.Mode, "a refused pick records nothing")
+}
+
+// A pyproject.toml with no uv.lock is accepted on the source screen, with a
+// hint rather than a warning: the deploy generates the lock during the sync.
+func TestFlow_GeneratedSourceIsAcceptedWhenOnlyTheLockIsMissing(t *testing.T) {
+	original := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+		return []workload.ExecutionEnvironment{{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}}}, nil
+	}
+
+	t.Cleanup(func() { listExecEnvsFn = original })
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0o600))
+
+	model := newFlow(Detect(dir), nil, Answers{})
+
+	model = press(t, pastName(t, model), "enter") // name, kind
+	require.Equal(t, screenSource, model.at)
+	assert.Contains(t, model.View(), "uv.lock is generated at deploy")
+	assert.NotContains(t, model.View(), "needs pyproject.toml")
+
+	model = press(t, model, "2", "enter") // build from a base image
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenExecEnv, model.at)
 }
 
 // Keeping a bound workload's generated build does not need the project files:

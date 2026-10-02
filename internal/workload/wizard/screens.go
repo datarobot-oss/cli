@@ -311,16 +311,17 @@ func (f flow) sourceOptions() []option {
 	}
 
 	generatedNote, generatedMissing := "", false
-	if f.detected.generatedBuildProblem() != "" {
+
+	switch check := f.detected.generatedBuild(); {
+	case f.liveBuildMode() == manifest.BuildModeGenerated && (check.problem != "" || check.note != ""):
+		// The bound workload's own build is kept, not chosen: up pulls its
+		// code into an empty directory, so the missing files are no problem.
+		generatedNote = "built from the workload's current code"
+	case check.problem != "":
 		generatedNote = "needs pyproject.toml + uv.lock or package.json + package-lock.json"
 		generatedMissing = true
-
-		// The bound workload's own build is kept, not chosen: up pulls its
-		// code into an empty directory, so the missing pair is not a problem.
-		if f.liveBuildMode() == manifest.BuildModeGenerated {
-			generatedNote = "built from the workload's current code"
-			generatedMissing = false
-		}
+	case check.note != "":
+		generatedNote = "uv.lock is generated at deploy; commit it"
 	}
 
 	return []option{

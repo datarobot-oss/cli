@@ -658,6 +658,39 @@ func TestRun_HeadlessWarnsAboutASuspectDirectory(t *testing.T) {
 	assert.Contains(t, warning, "--dir", "and the flag that takes it")
 }
 
+// A headless generated build on a pyproject.toml with no uv.lock goes
+// through, and stderr says the deploy will generate the lock and that it
+// should be committed. A project with its lock gets no such line.
+func TestRun_HeadlessWarnsWhenTheDeployWillGenerateTheLock(t *testing.T) {
+	stubExecEnv(t, "68a1", "68a2", nil)
+
+	answers := Answers{
+		Name: "my-app", BuildMode: manifest.BuildModeGenerated,
+		ExecutionEnvironment: "[DataRobot] Python 3.12 Applications Base", Entrypoint: "python app.py",
+	}
+
+	unlocked := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(unlocked, "pyproject.toml"), []byte("[project]\n"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{Dir: unlocked, NonInteractive: true, Stderr: &stderr, Answers: answers})
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "Warning: pyproject.toml has no uv.lock")
+	assert.Contains(t, stderr.String(), "commit it")
+
+	locked := t.TempDir()
+	for _, f := range []string{"pyproject.toml", "uv.lock"} {
+		require.NoError(t, os.WriteFile(filepath.Join(locked, f), []byte("# x\n"), 0o644))
+	}
+
+	stderr.Reset()
+
+	_, err = Run(Options{Dir: locked, NonInteractive: true, Stderr: &stderr, Answers: answers})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "uv.lock")
+}
+
 // An image-mode run never syncs local directory contents, so the suspect-dir
 // warning would describe a risk that cannot happen — it stays quiet.
 func TestRun_HeadlessImageModeSkipsTheSuspectDirWarning(t *testing.T) {

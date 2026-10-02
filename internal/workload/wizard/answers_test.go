@@ -274,9 +274,7 @@ func TestAnswers_GeneratedModeNeedsAProjectThePlatformCanBuild(t *testing.T) {
 	}{
 		"no project files":              {nil, "neither pyproject.toml with uv.lock nor package.json with package-lock.json"},
 		"requirements.txt only":         {[]string{"requirements.txt"}, "neither pyproject.toml with uv.lock"},
-		"pyproject without the lock":    {[]string{"pyproject.toml"}, "run 'uv lock'"},
 		"package.json without the lock": {[]string{"package.json"}, "run 'npm install'"},
-		"both manifests, no lock":       {[]string{"pyproject.toml", "package.json"}, "run 'uv lock' or 'npm install'"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -311,6 +309,40 @@ func TestAnswers_GeneratedModeNeedsAProjectThePlatformCanBuild(t *testing.T) {
 		Entrypoint:           "node server.js",
 	}.draft(Detect(dir))
 	require.NoError(t, err)
+}
+
+// A pyproject.toml with no uv.lock is not refused: the deploy's sync generates
+// the lock itself before the upload, so refusing here would turn away a
+// project that deploys. The gap is a note for the user, not a problem.
+func TestAnswers_GeneratedModeAcceptsAProjectTheSyncCanLock(t *testing.T) {
+	stubExecEnv(t, "68a1", "68a2", nil)
+
+	for name, files := range map[string][]string{
+		"pyproject without the lock": {"pyproject.toml"},
+		"both manifests, no lock":    {"pyproject.toml", "package.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o600))
+			}
+
+			detected := Detect(dir)
+
+			draft, err := Answers{
+				BuildMode:            manifest.BuildModeGenerated,
+				ExecutionEnvironment: "[DataRobot] Python 3.12 Applications Base",
+				Entrypoint:           "python app.py",
+			}.draft(detected)
+			require.NoError(t, err)
+			assert.Equal(t, manifest.BuildModeGenerated, draft.Build.Mode)
+
+			check := detected.generatedBuild()
+			assert.Empty(t, check.problem)
+			assert.Contains(t, check.note, "uv.lock")
+			assert.Contains(t, check.note, "commit")
+		})
+	}
 }
 
 // A base image that does not resolve fails at setup, where the user is
