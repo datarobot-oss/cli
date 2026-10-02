@@ -391,8 +391,15 @@ func replace(
 
 	result.Action = ActionRolled
 
-	return settle(ctx, workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
-		result, budgetLeft(opts, waitFrom), report)
+	// Both generations of an in-place roll run the same artifact, so naming
+	// it would read the outgoing one as the new one; the drain is what tells
+	// them apart, as for a resize.
+	want := workload.Serving{ArtifactID: made.ID, AwaitDrain: true}
+	if inPlace {
+		want = workload.Serving{AwaitDrain: true}
+	}
+
+	return settle(ctx, workloadID, want, result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.

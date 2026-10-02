@@ -174,9 +174,16 @@ func wiredRoll(tr *track) fakes {
 		wait: func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			tr.steps = append(tr.steps, servingLabel(want))
 
+			// The platform reports what is running; a wait that names no
+			// artifact (a resize, an in-place roll) finds the one it had.
+			artifact := want.ArtifactID
+			if artifact == "" {
+				artifact = "68a0000000000000000000a1"
+			}
+
 			return &workload.Workload{
 				ID: id, Name: "my-app", Status: workload.WorkloadStatusRunning,
-				ArtifactID: want.ArtifactID, Endpoint: "https://app.datarobot.com/workloads/68b0/",
+				ArtifactID: artifact, Endpoint: "https://app.datarobot.com/workloads/68b0/",
 			}, nil
 		},
 	})
@@ -1934,7 +1941,7 @@ func TestRun_RuntimeOnlyRollKeepsTheRunningImage(t *testing.T) {
 			name:    "a draft is written to in place",
 			fixture: runtimeOnlyRoll,
 			steps: []string{
-				"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain",
+				"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:+drain",
 			},
 			artifact: live,
 			line:     "~ artifact   1 spec change, written to the draft in place; keeps the running image, so no rebuild",
@@ -1997,7 +2004,7 @@ func TestRun_ImageManifestDraftTakesAnEnvVarInPlace(t *testing.T) {
 	result, stderr, err := runIn(t, withEnv, Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain"},
+	assert.Equal(t, []string{"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:+drain"},
 		tr.steps)
 	assert.Equal(t, live, result.ArtifactID)
 	assert.Contains(t, stderr, "written to the draft in place")
@@ -2042,7 +2049,7 @@ func TestRun_InPlaceWriteThatLosesTheImageBuildsOne(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"guard", "update-spec:" + live, "build", "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain",
+		"guard", "update-spec:" + live, "build", "guard", "replace:" + live, "await-rollout", "settle:+drain",
 	}, tr.steps)
 	assert.Equal(t, "bld-2", result.BuildID)
 	assert.Equal(t, live, result.ArtifactID)
@@ -2129,7 +2136,7 @@ func TestRun_ADraftChangedAfterItsGenerationStartedIsRolledAgain(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, []string{"guard", "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain"},
+			assert.Equal(t, []string{"guard", "guard", "replace:" + live, "await-rollout", "settle:+drain"},
 				tr.steps, "nothing is written: the artifact already says what the file says")
 			assert.Equal(t, ActionRolled, result.Action)
 			assert.Equal(t, live, result.ArtifactID)
