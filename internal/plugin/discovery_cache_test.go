@@ -428,7 +428,11 @@ func writeCountingPluginScript(t *testing.T, dir, name, manifestJSON, counterFil
 
 	if runtime.GOOS == "windows" {
 		scriptPath = filepath.Join(dir, name+".ps1")
-		scriptContent = fmt.Sprintf("Add-Content -Path '%s' -Value 'x'\n"+
+		// -NoNewline keeps one probe at exactly one byte, matching the
+		// Unix fixture: without it Add-Content appends "x\r\n" (3 bytes),
+		// and countProbes, which counts bytes, then reports every probe
+		// as three probes.
+		scriptContent = fmt.Sprintf("Add-Content -Path '%s' -Value 'x' -NoNewline\n"+
 			"if ($args[0] -eq '--dr-plugin-manifest') {\n"+
 			"  Write-Output '%s'\n"+
 			"}\n", counterFile, manifestJSON)
