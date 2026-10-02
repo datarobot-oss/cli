@@ -98,7 +98,7 @@ wl::pass "workload reached stopped"
 
 wl::dr_capture workload up --yes --output-format json
 wl::assert_cmd_ok "$WL_RC" "$WL_OUT" "$WL_ERR" "workload up --yes (reconcile from stopped)"
-GOT_WID="$(printf '%s' "$WL_OUT" | jq -r '.workloadId')"
+GOT_WID="$(printf '%s' "$WL_OUT" | jq -r '.up.workloadId')"
 [[ "$GOT_WID" == "$WID" ]] \
     || wl::fail "up after stop created/targeted a different workload: got $GOT_WID, want $WID"
 wl::pass "up reconciled the stopped workload in one run (no recreate)"
