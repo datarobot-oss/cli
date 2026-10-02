@@ -104,7 +104,7 @@ Three kinds of change, each applied one way:
 
 A workload that does not exist yet is created from the file in one call. A stopped one is started. An errored one is rolled when the file has something new to roll onto it; when nothing differs the run refuses and says why, since deploying the same thing again would only fail again (`--force-build` rebuilds a platform-built image). A file whose live state matches it prints `Already up to date` and exits 0 without touching anything.
 
-A roll swaps the workload onto a version, new or the same one rewritten; the endpoint never changes, and the generation already serving keeps serving until the new one is ready. Locking is one-way: a locked artifact is never written to, so the next version of one is a new artifact in the same lineage, locked to match, and a locked workload keeps deploying. A rollout of a rewritten draft that fails leaves the artifact ahead of what is running, and the next `up` notices from the platform's rollout record and rolls it again.
+A roll swaps the workload onto a version, new or the same one rewritten; the endpoint never changes, and the generation already serving keeps serving until the new one is ready. Locking is one-way: a locked artifact is never written to, so the next version of one is a new artifact in the same lineage, locked to match, and a locked workload keeps deploying. A rollout of a rewritten draft that does not land leaves the artifact ahead of what is running, and the next `up` notices, because the artifact changed after the serving generation started, and rolls it again.
 
 ### Local state
 

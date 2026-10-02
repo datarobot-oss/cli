@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
@@ -132,6 +133,12 @@ type Live struct {
 	// state above is what the swap will change, so a dry run reports it but
 	// does not refuse on it.
 	SwapInFlight bool
+
+	// ArtifactUpdatedAt is when the running artifact was last changed, zero
+	// when the platform did not say. A generation is launched from the
+	// artifact as it stands at that moment, so an artifact changed after the
+	// serving generation was created is ahead of what is running.
+	ArtifactUpdatedAt time.Time
 }
 
 // liveArtifactType reads the discriminator off the artifact document, falling
@@ -224,7 +231,21 @@ func Look(workloadID string) (Live, error) {
 		Locked:               isLocked(artifactDoc.String(keyStatus)),
 		ImageURI:             containerImageURI(primary),
 		CodeVersionID:        containerCodeVersionID(primary),
+		ArtifactUpdatedAt:    timeOf(artifactDoc.String(keyUpdatedAt)),
 	}, nil
+}
+
+// keyUpdatedAt is the platform's last-change stamp on an artifact.
+const keyUpdatedAt = "updatedAt"
+
+// timeOf parses a platform timestamp, zero for anything it cannot read.
+func timeOf(s string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return parsed
 }
 
 // failureReason asks the platform why the workload is errored, and nothing of

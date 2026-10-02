@@ -82,7 +82,7 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 		return result, err
 	}
 
-	return replace(ctx, live.WorkloadID, made, lock, sizing, result, opts, report)
+	return replace(ctx, live.WorkloadID, made, lock, sizing, plan.InPlace, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -310,15 +310,27 @@ func replace(
 	made version,
 	lock bool,
 	sizing json.RawMessage,
+	inPlace bool,
 	result Result,
 	opts Options,
 	report *reporter,
 ) (Result, error) {
+	// What is being rolled, and what a refusal at the last guard leaves
+	// behind, differ: a minted version sits unpromoted, while a change
+	// written to the serving draft is already on it and rolls out with the
+	// next run.
+	label := "Rolling out the new version"
+	consequence := "the version serving keeps serving and the one just minted is left unpromoted"
+
+	if inPlace {
+		label = "Rolling out the change"
+		consequence = "the version serving keeps serving, and the change written to it rolls out on the next run"
+	}
+
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
-	if err := guardRollout(workloadID,
-		"the version serving keeps serving and the one just minted is left unpromoted"); err != nil {
+	if err := guardRollout(workloadID, consequence); err != nil {
 		return result, err
 	}
 
@@ -333,7 +345,7 @@ func replace(
 
 	var started *workload.Replacement
 
-	err := report.run("Rolling out the new version", func() error {
+	err := report.run(label, func() error {
 		replacement, startErr := startReplacementFn(workloadID, made.ID, sizing)
 		started = replacement
 

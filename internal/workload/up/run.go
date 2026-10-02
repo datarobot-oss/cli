@@ -58,7 +58,7 @@ var (
 	findCredentialFn     = workload.FindCredentialNamed
 	activeReplacementFn  = workload.GetActiveReplacement
 	guardReplacementFn   = workload.RefuseActiveReplacement
-	lastRolloutFn        = workload.LastRollout
+	activeProtonFn       = workload.ActiveProton
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
@@ -239,7 +239,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// tests can stay there too.
 	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
 
-	plan = noteFailedRollout(live, plan)
+	plan = noteStaleGeneration(live, plan)
 
 	result := Result{
 		Plan:       plan,
@@ -286,45 +286,46 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	return apply(ctx, loaded, live, plan, result, opts)
 }
 
-// noteFailedRollout catches the one drift the two documents cannot show. A
+// noteStaleGeneration catches the one drift the two documents cannot show. A
 // change written to a draft in place lands on the artifact before the rollout
-// that carries it, so a rollout that then fails leaves the file and the
-// artifact agreeing while the generation serving runs the spec before it.
-// Comparing the two says up to date. The platform's own record of the last
-// rollout says otherwise, and that is what settles it.
+// that carries it, so a rollout that is refused, fails or is interrupted
+// leaves the file and the artifact agreeing while the generation serving runs
+// the spec before it. Comparing the two says up to date.
+//
+// What settles it is when things happened. A generation is launched from the
+// artifact as it stands at that moment, so an artifact changed after the
+// serving generation was created is ahead of it, whatever did or did not
+// follow the change. That reads off two timestamps the platform already
+// keeps, and needs no record of the rollout that went missing.
 //
 // Asked only of an otherwise empty plan on a running draft: a plan with
 // anything in it rolls or restarts the workload anyway, and a locked artifact
 // cannot have been written to. A read that fails is logged and the plan left
 // as it was, rather than failing a run that was about to change nothing.
 //
-// A stop and a start after the failure reschedule onto the artifact as it
-// stands, which leaves no record here, so the run after that rolls once more
-// than it needed to. The workload is up throughout, so that is the cheaper
-// mistake.
-func noteFailedRollout(live Live, plan Plan) Plan {
-	if !plan.Empty() || live.State != StateRunning || live.Locked {
+// A start after a stop reuses the generation, so a change written while the
+// workload was stopped reads as ahead of it once, and the run after that
+// rolls once more than it needed to. The workload is up throughout, so that
+// is the cheaper mistake.
+func noteStaleGeneration(live Live, plan Plan) Plan {
+	if !plan.Empty() || live.State != StateRunning || live.Locked || live.ArtifactUpdatedAt.IsZero() {
 		return plan
 	}
 
-	last, err := lastRolloutFn(live.WorkloadID)
+	active, err := activeProtonFn(live.WorkloadID)
 	if err != nil {
-		log.Debug("cannot read the last rollout; planning on the documents alone",
+		log.Debug("cannot read the serving generation; planning on the documents alone",
 			"workload_id", live.WorkloadID, "err", err)
 
 		return plan
 	}
 
-	if last == nil || last.Landed() || last.ArtifactID() != live.ArtifactID {
+	if active == nil || active.ArtifactID != live.ArtifactID || active.CreatedAt.IsZero() ||
+		!active.CreatedAt.Before(live.ArtifactUpdatedAt) {
 		return plan
 	}
 
-	reason := "the last rollout of this version ended " + last.ReplacementStatus()
-	if message := last.Message(); message != "" {
-		reason += " (" + message + ")"
-	}
-
-	return plan.rerolling(reason)
+	return plan.rerolling("the artifact was changed after the generation serving it started")
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.

@@ -48,10 +48,15 @@ import (
 // the workload ended up running (see WaitForWorkload). A resize has no artifact
 // change to confirm, and is covered instead by that same wait refusing to
 // settle while a generation is still draining.
+//
+// "cancelled" is the fourth terminal status, read off the platform's own
+// replacement history: a rollout somebody stopped leaves the workload where it
+// was, exactly as a failed one does, so it is classed with them.
 const (
 	ReplacementStatusCompleted = "completed"
 	ReplacementStatusFailed    = "failed"
 	ReplacementStatusErrored   = "errored"
+	ReplacementStatusCancelled = "cancelled"
 )
 
 // rollingStrategy is the only strategy the platform ships. Blue-green and
@@ -94,11 +99,13 @@ func IsTerminalReplacementStatus(s string) bool {
 	return IsFailedReplacementStatus(s) || strings.EqualFold(s, ReplacementStatusCompleted)
 }
 
-// IsFailedReplacementStatus reports whether s is a terminal failure. On
-// failure the workload reverts to the artifact it was running before the
-// replacement started, so a failed rollout never promotes.
+// IsFailedReplacementStatus reports whether s is a terminal status under
+// which nothing was promoted: failed, errored or cancelled. The workload stays
+// on the artifact it was running before the replacement started.
 func IsFailedReplacementStatus(s string) bool {
-	return strings.EqualFold(s, ReplacementStatusFailed) || strings.EqualFold(s, ReplacementStatusErrored)
+	return strings.EqualFold(s, ReplacementStatusFailed) ||
+		strings.EqualFold(s, ReplacementStatusErrored) ||
+		strings.EqualFold(s, ReplacementStatusCancelled)
 }
 
 // replacementURL builds the single route all three verbs share.

@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -560,6 +561,11 @@ func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
 		wantStatus string
 	}{
 		{"the trail says it errored", trail(errored, http.StatusOK), "is stuck in launching", ReplacementStatusErrored},
+		{
+			"the trail says it was cancelled",
+			trail(strings.Replace(completed, "Replacement Completed", "Replacement Cancelled", 1), http.StatusOK),
+			"ended with status cancelled", ReplacementStatusCancelled,
+		},
 		{"the trail says it completed", trail(completed, http.StatusOK), "", ReplacementStatusCompleted},
 		{"the trail has no record for it yet", trail(another, http.StatusOK), "", "switching"},
 		{"the trail cannot be read", trail(`{"detail":"boom"}`, http.StatusBadGateway), "", "switching"},
