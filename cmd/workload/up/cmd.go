@@ -218,14 +218,16 @@ and takes seconds rather than minutes. Anything else builds: the code, the
 Dockerfile, the execution environment, a container or group added, a change of
 workload kind, a current version that was never built, and --force-build.
 
-Deploying onto a workload that already exists rolls it: a new version is made
-from the file and swapped in, the endpoint does not change, and the version
-already serving keeps serving until the new one is ready. When that version is
-locked, an interactive run asks for the workload name to be typed back. A run
-with no terminal, or --yes, rolls without asking. Locking is one-way, so the
-new version is a new artifact rather than a change to the locked one, and it is
-locked to match. That is why a locked workload keeps deploying without --lock
-being passed again.
+Deploying onto a workload that already exists rolls it: the file's version is
+swapped in, the endpoint does not change, and the generation already serving
+keeps serving until the new one is ready. A change the image can take, on a
+draft, is written to that artifact and the workload rolled onto it again, so
+no new version is made; anything else is a new version. When the version
+serving is locked, an interactive run asks for the workload name to be typed
+back. A run with no terminal, or --yes, rolls without asking. Locking is
+one-way, so the next version of a locked artifact is a new artifact rather
+than a change to it, and it is locked to match. That is why a locked workload
+keeps deploying without --lock being passed again.
 
 A change that moves only the sizing, such as a replica count or a resource
 allocation, is applied in place instead. Nothing is built and no version is
