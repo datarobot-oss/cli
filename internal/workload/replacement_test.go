@@ -512,6 +512,78 @@ func TestWaitForReplacement_ErroredClearedViaNotFound(t *testing.T) {
 	assert.Equal(t, ReplacementStatusErrored, replacement.Status)
 }
 
+// A record that vanishes after being watched used to read as success whatever
+// had happened to it. Seen on staging: a rollout errored at 13:08:22 and was
+// finalized and cleared two seconds later, between two polls, and the CLI
+// printed the rollout as done. The trail has the finished record by the time
+// the active route answers 404, so the wait reads the outcome from there; a
+// trail that cannot be read, or has no record for it, settles as before.
+func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
+	const eventsPath = "/api/v2/workloads/wl-1/events/"
+
+	trail := func(body string, status int) func(*testing.T) {
+		return func(t *testing.T) {
+			t.Helper()
+
+			var hits int32
+
+			mux := http.NewServeMux()
+			mux.HandleFunc(replacementPath, func(w http.ResponseWriter, _ *http.Request) {
+				if atomic.AddInt32(&hits, 1) == 1 {
+					fmt.Fprint(w, `{"id":"rep-9","candidateArtifactId":"art-2","status":"switching"}`)
+
+					return
+				}
+
+				notFound(w)
+			})
+			mux.HandleFunc(eventsPath, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				fmt.Fprint(w, body)
+			})
+
+			serveAPI(t, mux)
+		}
+	}
+
+	errored := `{"data":[{"id":"rep-9","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"rep-9","artifactId":"art-2","message":"candidate rep-9 is stuck in launching"}}],"next":""}`
+	completed := `{"data":[{"id":"rep-9","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
+		"details":{"replacementId":"rep-9","artifactId":"art-2"}}],"next":""}`
+	another := `{"data":[{"id":"rep-8","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"rep-8","artifactId":"art-1"}}],"next":""}`
+
+	for _, c := range []struct {
+		name       string
+		serve      func(*testing.T)
+		wantErr    string
+		wantStatus string
+	}{
+		{"the trail says it errored", trail(errored, http.StatusOK), "is stuck in launching", ReplacementStatusErrored},
+		{"the trail says it completed", trail(completed, http.StatusOK), "", ReplacementStatusCompleted},
+		{"the trail has no record for it yet", trail(another, http.StatusOK), "", "switching"},
+		{"the trail cannot be read", trail(`{"detail":"boom"}`, http.StatusBadGateway), "", "switching"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.serve(t)
+
+			replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
+			require.NotNil(t, replacement)
+			assert.Equal(t, c.wantStatus, replacement.Status)
+
+			if c.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantErr)
+			assert.Contains(t, err.Error(), "reverted to its previous artifact")
+		})
+	}
+}
+
 // TestWaitForReplacement_NotFoundOnFirstPollIsError still holds when the
 // caller has nothing to seed the wait with, which is the attach case.
 func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
