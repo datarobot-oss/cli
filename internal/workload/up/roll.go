@@ -64,6 +64,7 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 	// copy, a platform with no copy endpoint and a tree that moved between the
 	// plan and the sync all reach this line having built anyway.
 	result.Plan.InheritsImage = plan.InheritsImage && err == nil && made.BuildID == ""
+	result.Plan.InPlace = plan.InPlace
 
 	if err != nil {
 		return result, err
@@ -109,7 +110,18 @@ func candidateArtifact(
 	}
 
 	if plan.InPlace {
-		return patchedVersion(loaded, live, plan, report)
+		made, err := patchedVersion(loaded, live, plan, report)
+		if err != nil || made.ImageURI != "" || !plan.Code.Applies {
+			return made, err
+		}
+
+		// The platform keeps the image on a write that omits it; a readback
+		// without one is not promoted on trust.
+		report.say("  The write left artifact %s without an image, so one is built.\n", made.ID)
+
+		made.BuildID, err = buildAndRecord(ctx, loaded.ProjectDir, made.ID, "", opts, report)
+
+		return made, err
 	}
 
 	repository := sameRepository(loaded, live)
