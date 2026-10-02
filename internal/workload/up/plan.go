@@ -468,11 +468,26 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	// Last: every drift has to be in hand before RebuildsImage can answer.
 	plan.InheritsImage = inheritsImage(live, plan, kind, loaded.Compiled.ArtifactName)
 
-	// A change the running image can take needs no new version either, when
-	// the artifact can still be written to. Locked is what rules it out:
-	// immutable is the point of locking, so a locked artifact's successor is
-	// a copy, as before.
-	plan.InPlace = plan.InheritsImage && !live.Locked
+	plan.InPlace = patchesInPlace(live, plan)
 
 	return plan, nil
+}
+
+// patchesInPlace reports whether the change can be written to the artifact
+// the workload runs instead of minting a version: the artifact is a draft,
+// the workload is not errored, and nothing changed that the image is built
+// from. Locked is what rules it out first: immutable is the point of locking,
+// so a locked artifact's successor is a copy, as before. A source-built
+// artifact has to be carrying an image already, which inheritsImage settles;
+// a published image is the spec's own, so only the change matters.
+func patchesInPlace(live Live, plan Plan) bool {
+	if live.Locked || live.State == StateErrored || live.ImageURI == "" {
+		return false
+	}
+
+	if plan.Code.Applies {
+		return plan.InheritsImage
+	}
+
+	return plan.RollsArtifact() && !plan.RebuildsImage()
 }

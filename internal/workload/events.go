@@ -90,47 +90,15 @@ func (e WorkloadEvent) ReplacementStatus() string {
 	return status
 }
 
-// Landed reports whether a replacement event records a rollout that
-// completed. Anything else it records, failed, errored or cancelled, left the
-// workload on the generation it had.
-func (e WorkloadEvent) Landed() bool {
-	return strings.EqualFold(e.ReplacementStatus(), ReplacementStatusCompleted)
-}
-
-// LastRollout is the most recent replacement the platform recorded for the
-// workload, nil when it has recorded none. The event trail is where finished
-// replacements end up, so the newest replacement event is that record.
-//
-// Newest by when the replacement was created, not by the event's timestamp.
-// The platform stamps these events with the record's last update, and a
-// cleanup pass touches finished records minutes later, so two rollouts ten
-// minutes apart can carry one timestamp and the one that failed can sort
-// under the one before it. A replacement id is a Mongo ObjectId, which
-// carries its creation second, and only one replacement runs at a time, so
-// creation order is the order they ran in.
-func LastRollout(workloadID string) (*WorkloadEvent, error) {
-	events, err := ListWorkloadEvents(workloadID, maxPageSize, EventFilter{Types: []string{"replacement"}})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(events) == 0 {
-		return nil, nil
-	}
-
-	newest := 0
-
-	for i := range events {
-		if replacementOrder(events[i]).After(replacementOrder(events[newest])) {
-			newest = i
-		}
-	}
-
-	return &events[newest], nil
-}
-
 // RolloutRecord is the platform's record of one replacement once it has
-// finished, nil when the trail has none for it yet.
+// finished, nil when the trail has none for it yet. The trail is where
+// finished replacements end up, written before the workload's active slot is
+// cleared, so a record the active route no longer answers for is here.
+//
+// Found by id rather than by time: the trail stamps an event with the
+// record's last update, and a cleanup pass touches finished records minutes
+// later, so timestamps say when a record was last touched, not when the
+// rollout ended.
 func RolloutRecord(workloadID, replacementID string) (*WorkloadEvent, error) {
 	events, err := ListWorkloadEvents(workloadID, maxPageSize, EventFilter{Types: []string{"replacement"}})
 	if err != nil {
@@ -144,23 +112,6 @@ func RolloutRecord(workloadID, replacementID string) (*WorkloadEvent, error) {
 	}
 
 	return nil, nil
-}
-
-// replacementOrder is when the replacement an event records was created,
-// from its ObjectId, with the event's timestamp standing in for an id of
-// another shape.
-func replacementOrder(e WorkloadEvent) time.Time {
-	id := e.ReplacementID()
-	if len(id) != 24 {
-		return e.Timestamp
-	}
-
-	seconds, err := strconv.ParseInt(id[:8], 16, 64)
-	if err != nil {
-		return e.Timestamp
-	}
-
-	return time.Unix(seconds, 0)
 }
 
 type workloadEventList struct {

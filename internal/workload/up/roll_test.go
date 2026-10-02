@@ -1973,6 +1973,48 @@ func TestRun_RuntimeOnlyRollKeepsTheRunningImage(t *testing.T) {
 	}
 }
 
+// A published image has nothing to build, so a change the container reads at
+// start is written to the draft the same way; the image itself changing is
+// still a new version.
+func TestRun_ImageManifestDraftTakesAnEnvVarInPlace(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.updateSpec = updateSpecStep(&tr)
+	f.artifactD = readBackStep(&tr, copiedArtifact(), func() workload.Document { return docOf(liveImageArtifactJSON) })
+
+	install(t, f)
+
+	withEnv := strings.Replace(boundImageManifest, "            port: 8080\n",
+		"            port: 8080\n            environmentVars:\n              - name: GREETING\n                value: hello\n", 1)
+
+	result, stderr, err := runIn(t, withEnv, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain"},
+		tr.steps)
+	assert.Equal(t, live, result.ArtifactID)
+	assert.Contains(t, stderr, "written to the draft in place")
+	assert.NotContains(t, stderr, "new version")
+	assert.Contains(t, string(tr.updatedSpec), "GREETING")
+
+	// The image moving is a rebuild of what runs, so that one is still minted.
+	tr = track{}
+	f = wiredRoll(&tr)
+	install(t, f)
+
+	result, stderr, err = runIn(t, newImage(), Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, tr.steps, "create-artifact")
+	assert.Equal(t, "art-2", result.ArtifactID)
+	assert.Contains(t, stderr, "new version")
+}
+
 // A write to the draft that fails rolls nothing: the version serving is
 // unchanged and the error names it, so the reader knows what was touched.
 func TestRun_InPlaceWriteThatFailsRollsNothing(t *testing.T) {
@@ -1997,38 +2039,44 @@ func TestRun_InPlaceWriteThatFailsRollsNothing(t *testing.T) {
 }
 
 // A change written to the draft lands on the artifact before the rollout that
-// carries it, so a rollout that then fails leaves the file and the artifact
-// agreeing while the generation serving does not. The plan reads as up to
-// date; the platform's record of the last rollout says otherwise.
-func TestRun_FailedRolloutOfADraftIsRolledAgain(t *testing.T) {
+// carries it, so a rollout that is refused, fails or is interrupted leaves
+// the file and the artifact agreeing while the generation serving does not.
+// The plan reads as up to date; the artifact's own last change, set against
+// when the serving generation was launched, says otherwise.
+func TestRun_ADraftChangedAfterItsGenerationStartedIsRolledAgain(t *testing.T) {
 	const live = "68a0000000000000000000a1"
 
-	event := func(kind, artifactID string) *workload.WorkloadEvent {
-		return &workload.WorkloadEvent{
-			EventType: "Replacement " + kind,
-			Details:   json.RawMessage(`{"artifactId":"` + artifactID + `","message":"candidate never became healthy"}`),
-		}
+	changed := time.Date(2026, 10, 2, 13, 5, 42, 0, time.UTC)
+
+	proton := func(artifactID string, createdAt time.Time) *workload.Proton {
+		return &workload.Proton{ID: "gen-1", ArtifactID: artifactID, Role: workload.ProtonRoleActive, CreatedAt: createdAt}
 	}
 
 	for _, c := range []struct {
 		name   string
-		last   *workload.WorkloadEvent
+		active *workload.Proton
 		rolls  bool
 		stderr string
 	}{
 		{
-			name: "the last rollout of this version failed", last: event("Errored", live), rolls: true,
-			stderr: "~ artifact   the last rollout of this version ended errored (candidate never became healthy); rolling it again",
+			name: "the generation predates the change", active: proton(live, changed.Add(-23*time.Second)), rolls: true,
+			stderr: "~ artifact   the artifact was changed after the generation serving it started; rolling it again",
 		},
-		{name: "the last rollout landed", last: event("Completed", live), stderr: "Already up to date"},
-		{name: "the last rollout was of another version", last: event("Errored", "art-9"), stderr: "Already up to date"},
-		{name: "nothing was ever rolled", stderr: "Already up to date"},
+		{name: "the generation was launched after the change", active: proton(live, changed.Add(10*time.Second)), stderr: "Already up to date"},
+		{name: "the generation runs another artifact", active: proton("art-9", changed.Add(-time.Minute)), stderr: "Already up to date"},
+		{name: "no generation is marked as serving", stderr: "Already up to date"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var tr track
 
 			f := runtimeOnlyRoll(&tr)
-			f.lastRollout = func(string) (*workload.WorkloadEvent, error) { return c.last, nil }
+			f.artifactD = func(string) (workload.Document, error) {
+				d := draftLiveArtifact()
+				d["updatedAt"] = changed.Format(time.RFC3339Nano)
+
+				return d, nil
+			}
+			f.activeProton = func(string) (*workload.Proton, error) { return c.active, nil }
 
 			install(t, f)
 
@@ -2051,18 +2099,24 @@ func TestRun_FailedRolloutOfADraftIsRolledAgain(t *testing.T) {
 			assert.Equal(t, ActionRolled, result.Action)
 			assert.Equal(t, live, result.ArtifactID)
 			assert.True(t, result.Plan.JSON().InPlace, "the envelope says the version was rolled onto itself")
-			assert.Contains(t, result.Plan.JSON().Reroll, "ended errored")
+			assert.Contains(t, result.Plan.JSON().Reroll, "changed after the generation")
 		})
 	}
 }
 
-// A record that cannot be read does not fail a run that was about to change
-// nothing; the plan stands on the two documents, as it did.
-func TestRun_UnreadableRolloutRecordLeavesAnEmptyPlanAlone(t *testing.T) {
+// A generation list that cannot be read does not fail a run that was about
+// to change nothing; the plan stands on the two documents, as it did.
+func TestRun_UnreadableGenerationsLeaveAnEmptyPlanAlone(t *testing.T) {
 	var tr track
 
 	f := runtimeOnlyRoll(&tr)
-	f.lastRollout = func(string) (*workload.WorkloadEvent, error) { return nil, errors.New("events route: 503") }
+	f.artifactD = func(string) (workload.Document, error) {
+		d := draftLiveArtifact()
+		d["updatedAt"] = "2026-10-02T13:05:42Z"
+
+		return d, nil
+	}
+	f.activeProton = func(string) (*workload.Proton, error) { return nil, errors.New("protons route: 503") }
 
 	install(t, f)
 

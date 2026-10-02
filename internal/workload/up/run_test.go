@@ -211,9 +211,9 @@ type fakes struct {
 	// checkEndpoint is the one GET a deploy ends with.
 	checkEndpoint func(string) (int, error)
 
-	// lastRollout is the platform's record of the last replacement, which an
-	// otherwise empty plan on a draft consults.
-	lastRollout func(string) (*workload.WorkloadEvent, error)
+	// activeProton is the generation marked as serving, which an otherwise
+	// empty plan on a draft sets the artifact's last change against.
+	activeProton func(string) (*workload.Proton, error)
 
 	// The roll track: refuse to queue a second swap, start one, follow it.
 	guard       func(string) error
@@ -343,10 +343,10 @@ func install(t *testing.T, f fakes) {
 	force(t, &guardReplacementFn, func(string) error { return nil })
 	swap(t, &guardReplacementFn, f.guard)
 
-	// No rollout on record unless a test says so: the real read would ask
-	// whatever tenant the developer is logged into.
-	force(t, &lastRolloutFn, func(string) (*workload.WorkloadEvent, error) { return nil, nil })
-	swap(t, &lastRolloutFn, f.lastRollout)
+	// No generation marked as serving unless a test says so: the real read
+	// would ask whatever tenant the developer is logged into.
+	force(t, &activeProtonFn, func(string) (*workload.Proton, error) { return nil, nil })
+	swap(t, &activeProtonFn, f.activeProton)
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)

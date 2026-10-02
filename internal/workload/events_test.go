@@ -95,64 +95,44 @@ func TestListWorkloadEvents_LimitKeepsTheMostRecent(t *testing.T) {
 	assert.Equal(t, "2026-09-30T18:10:08.607Z", events[0].Timestamp.UTC().Format(time.RFC3339Nano))
 }
 
-// The newest replacement on the trail, with what the plan reads off it: the
-// artifact it rolled onto and whether it landed.
-func TestLastRollout_IsTheNewestReplacement(t *testing.T) {
-	serveEvents(t, eventsFixture(t))
-
-	last, err := LastRollout("wl-1")
-	require.NoError(t, err)
-	require.NotNil(t, last)
-
-	assert.Equal(t, "Replacement Completed", last.EventType)
-	assert.True(t, last.Landed())
-	assert.Equal(t, "6abbbac04df5d926abdf03fc", last.ArtifactID())
-
-	errored := WorkloadEvent{EventType: "Replacement Errored", Details: json.RawMessage(`{"artifactId":"a1"}`)}
-	assert.False(t, errored.Landed())
-	assert.Equal(t, "a1", errored.ArtifactID())
-	assert.Empty(t, WorkloadEvent{EventType: "Started"}.ArtifactID())
-}
-
-// The trail stamps a replacement event with the record's last update, which a
-// cleanup pass bumps minutes after the rollout ended, so two rollouts can share
-// one timestamp with the one that failed sorted under the one before it. Seen
-// on staging: an errored rollout at 13:08 and the completed one at 13:05 both
-// stamped 13:15:10. The replacement id carries its creation second, and that
-// is what decides which is newest.
-func TestLastRollout_OrdersByReplacementIDNotTimestamp(t *testing.T) {
+// One replacement's record, found by id, with what the poller reads off it.
+// Two records here share a timestamp, as they do on staging once the cleanup
+// pass has touched them, which is why the lookup is by id and not by time.
+func TestRolloutRecord_FindsOneReplacementByID(t *testing.T) {
 	serveEvents(t, `{"data":[
 		{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
 		 "details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"a1","message":"candidate is stuck"}},
 		{"id":"6abfac1a06bc8e5874e02dea","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
 		 "details":{"replacementId":"6abfac1a06bc8e5874e02dea","artifactId":"a1"}},
-		{"id":"6abfa9c6a610d6e5cd45e913","workloadId":"wl-1","timestamp":"2026-10-02T13:16:00Z","eventType":"Replacement Completed",
-		 "details":{"replacementId":"6abfa9c6a610d6e5cd45e913","artifactId":"a0"}}
+		{"id":"e-started","workloadId":"wl-1","timestamp":"2026-10-02T13:16:00Z","eventType":"Started","details":null}
 	],"next":""}`)
 
-	last, err := LastRollout("wl-1")
+	errored, err := RolloutRecord("wl-1", "6abfacc806bc8e5874e02dec")
 	require.NoError(t, err)
-	require.NotNil(t, last)
-	assert.Equal(t, "6abfacc806bc8e5874e02dec", last.ReplacementID(), "the youngest id, not the latest timestamp")
-	assert.Equal(t, "errored", last.ReplacementStatus())
-	assert.False(t, last.Landed())
+	require.NotNil(t, errored)
+	assert.Equal(t, "errored", errored.ReplacementStatus())
+	assert.Equal(t, "a1", errored.ArtifactID())
+	assert.Contains(t, errored.Message(), "stuck")
 
-	record, err := RolloutRecord("wl-1", "6abfac1a06bc8e5874e02dea")
+	completed, err := RolloutRecord("wl-1", "6abfac1a06bc8e5874e02dea")
 	require.NoError(t, err)
-	require.NotNil(t, record)
-	assert.True(t, record.Landed())
+	require.NotNil(t, completed)
+	assert.Equal(t, ReplacementStatusCompleted, completed.ReplacementStatus())
 
 	none, err := RolloutRecord("wl-1", "6abf000000000000000000ff")
 	require.NoError(t, err)
 	assert.Nil(t, none)
+
+	assert.Equal(t, "e-started", WorkloadEvent{ID: "e-started"}.ReplacementID(), "no details: the event's own id")
+	assert.Empty(t, WorkloadEvent{EventType: "Started"}.ArtifactID())
 }
 
-func TestLastRollout_NoneRecorded(t *testing.T) {
+func TestRolloutRecord_EmptyTrail(t *testing.T) {
 	serveEvents(t, `{"data":[],"next":""}`)
 
-	last, err := LastRollout("wl-1")
+	record, err := RolloutRecord("wl-1", "rep-1")
 	require.NoError(t, err)
-	assert.Nil(t, last)
+	assert.Nil(t, record)
 }
 
 func TestListWorkloadEvents_Filters(t *testing.T) {
