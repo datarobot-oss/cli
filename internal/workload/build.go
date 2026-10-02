@@ -631,9 +631,7 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {
 				// Kept on the summary rather than failing it: the terminal
-				// state is still worth showing when the logs endpoint is
-				// unavailable, which is common right after a CANCELLED
-				// build once the logs have been garbage-collected.
+				// state is still worth showing when the logs are gone.
 				summary.LogTailErr = lerr
 
 				log.Debug("BuildSummaryFor: log tail fetch failed", "build_id", build.ID, "err", lerr)
