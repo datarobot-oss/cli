@@ -1801,6 +1801,33 @@ func TestRun_DryRunDuringARolloutDoesNotClaimUpToDate(t *testing.T) {
 		"the envelope reports the state, and a workload mid-swap is not settled")
 }
 
+// A replacement onto a stopped workload is what starts it, so a preview taken
+// mid-swap must not promise a start the deploy will find already done.
+func TestRun_DryRunDuringARolloutOnAStoppedWorkloadDoesNotPlanAStart(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusStopped
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "initializing"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "settling", result.Status)
+	assert.NotEqual(t, ActionStarted, result.Action, "the swap starts it; the deploy will not")
+	assert.NotContains(t, stderr, "having been stopped")
+	assert.Contains(t, stderr, "plan against where it lands")
+}
+
 // A manifest with nothing to resolve has no workload to ask about, and the
 // replacement route answers the same 404 for "no such workload" as it does for
 // "nothing in flight". Asking would be a round trip whose answer cannot be

@@ -339,6 +339,12 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 // replacement route that answered 500, or timed out, says nothing at all
 // about the run it just stopped, and the reader is looking at a deploy rather
 // than at a route.
+//
+// This is the guard immediately before a mutation. The pre-plan read in
+// awaitReplaced asks the same route for a different reason, to wait a swap
+// out before planning, and the two are not folded together: a swap can start
+// between the plan and the apply, and only a check in front of the POST
+// catches that one.
 func guardRollout(workloadID, consequence string) error {
 	err := guardReplacementFn(workloadID)
 	if err == nil || errors.Is(err, workload.ErrReplacementInFlight) {
@@ -425,10 +431,12 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 		report.say("  %s\n", tui.HintStyle.Render(
 			"A deploy would wait for this rollout to finish and plan against where it lands."))
 
-		// A running workload mid-swap must not plan as "up to date": the swap
-		// decides what differs. Settling says so. Any other state (stopped,
-		// errored) keeps its own verdict, which the plan exists to report.
-		if live.State == StateRunning {
+		// A workload mid-swap must not plan as "up to date" or as "to be
+		// started": the swap decides what differs, and a replacement onto a
+		// stopped workload is what starts it, so the deploy would find it
+		// running. Settling says so for both. Errored keeps its verdict: a swap
+		// that fails leaves it errored, and the plan exists to report that.
+		if live.State == StateRunning || live.State == StateStopped {
 			live.State = StateSettling
 		}
 
