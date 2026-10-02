@@ -463,7 +463,10 @@ const buildHistoryLimit = 20
 // artifact with no image would come up unable to start, and --detach promises
 // not to wait for the workload, not to deploy something that cannot run.
 func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, report *reporter) (string, error) {
-	var built *workload.Build
+	var (
+		built  *workload.Build
+		logged bool
+	)
 
 	err := report.stream(ctx, "Building the image", func(ctx context.Context, say func(string, lipgloss.Style)) error {
 		buildID := attachTo
@@ -487,7 +490,7 @@ func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, 
 		// build wait carries on. Its notices go into the stream marked as the
 		// CLI's own — silence here is indistinguishable from a hang, which is
 		// worse than one meta line among the build's output.
-		tail := workload.NewBuildLogTail(artifactID, buildID, //nolint:contextcheck // drapi takes no context; see abandoned in internal/workload
+		tail := newBuildLogTailFn(artifactID, buildID,
 			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
 			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
 
@@ -516,6 +519,7 @@ func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, 
 		// The final catch-up: ingestion lags the build, so the last lines
 		// routinely land after the wait, and the reorder buffer must drain.
 		tail.Finish()
+		logged = tail.Emitted()
 
 		return waitErr
 	})
@@ -526,10 +530,14 @@ func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, 
 	}
 
 	if workload.IsBuildErrorStatus(built.Status) {
-		// Said here rather than left to the wait's own wording, because this
-		// is the only place that knows which artifact the build belongs to.
-		return built.ID, fmt.Errorf("build %s finished as %s; see 'dr artifact build logs %s %s'",
-			built.ID, built.Status, artifactID, built.ID)
+		// The tail already knows whether the build said anything; only a
+		// silent one costs a fetch to tell "nothing yet" from "unreadable".
+		logs := workload.LogsCaptured
+		if !logged {
+			logs = hasLogsFn(artifactID, built.ID)
+		}
+
+		return built.ID, workload.BuildFailureMessage(artifactID, built.ID, built.Status, logs)
 	}
 
 	// A build still running when the wait expires keeps its id too: it is

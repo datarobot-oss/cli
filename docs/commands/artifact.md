@@ -204,7 +204,7 @@ dr artifact build get    [<artifact-id>] <build-id> [--wait]  # show one build
 dr artifact build logs   [<artifact-id>] <build-id> [--level debug|info|warn|error]
 ```
 
-`build create` prints the new build id(s) and returns right away. With `--wait` it polls until each build reaches a terminal status (`COMPLETED`, `FAILED`, or `CANCELLED`), prints a summary with the duration and resulting image, and on failure dumps the tail of the build log. `build logs` shows one structured record per line and hides anything below `info` unless you lower `--level`.
+`build create` prints the new build id(s) and returns right away. With `--wait` it polls until each build reaches a terminal status (`COMPLETED`, `FAILED`, or `CANCELLED`), prints a summary with the duration and resulting image, and on failure dumps the tail of the build log. `build logs` shows one structured record per line and hides anything below `info` unless you lower `--level`; it says so when the only lines sit below that level, and prints `No logs found.` on stderr when there are none. A failed build's error names `build logs` as the place to read when lines exist, and says that none have arrived yet when the builder produced nothing.
 
 ### `code`
 

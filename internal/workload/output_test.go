@@ -530,6 +530,25 @@ func TestRenderBuildLogs_JSONPassthroughPreservesRaw(t *testing.T) {
 	assert.Equal(t, "raw", got[0]["message"])
 }
 
+// An empty result is said on stderr, so stdout stays log lines and a pipe is
+// not polluted; JSON gets [] rather than null.
+func TestRenderBuildLogs_Empty(t *testing.T) {
+	var stderr string
+
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			require.NoError(t, RenderBuildLogs(outputformat.OutputFormatText, nil))
+		})
+	})
+	assert.Empty(t, stdout)
+	assert.Equal(t, "No logs found.\n", stderr)
+
+	asJSON := captureStdout(t, func() {
+		require.NoError(t, RenderBuildLogs(outputformat.OutputFormatJSON, nil))
+	})
+	assert.JSONEq(t, `[]`, asJSON)
+}
+
 func TestFilterLogsByLevel(t *testing.T) {
 	entries := []BuildLogEntry{
 		{Levelname: "DEBUG", Message: "d"},
