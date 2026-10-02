@@ -61,7 +61,7 @@ Manage your '.env' file and application configuration:
 
 var EditCmd = &cobra.Command{
 	Use:   "edit",
-	Short: "✏️ Edit '.env' file using built-in editor",
+	Short: "📝 Edit '.env' file using built-in editor",
 
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		cwd, err := os.Getwd()
@@ -107,10 +107,10 @@ var SetupCmd = &cobra.Command{
 	Long: `Launch the interactive environment configuration wizard.
 
 This wizard will help you:
-  1️⃣  Review required environment variables
-  2️⃣  Configure API keys and credentials
-  3️⃣  Set up database connections (if needed)
-  4️⃣  Validate your configuration
+  1. Review required environment variables
+  2. Configure API keys and credentials
+  3. Set up database connections (if needed)
+  4. Validate your configuration
 
 💡 Perfect for first-time setup or when adding new integrations.`,
 	PreRunE: auth.EnsureAuthenticatedE,
