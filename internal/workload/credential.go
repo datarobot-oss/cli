@@ -17,6 +17,7 @@ package workload
 import (
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
@@ -42,6 +43,89 @@ type CredentialList struct {
 	Next string       `json:"next"`
 }
 
+// scanCredentials walks the credentials route page by page and returns every
+// credential keep accepts. keep answers (take, stop): take collects the
+// credential, stop ends the scan because the caller already has what it needs
+// (a name lookup stops at its first match; a prefix collection never does).
+//
+// limit bounds the whole scan, not one page: a lookup that follows next links
+// until a large tenant runs out would turn a courtesy into a long walk. A
+// limit of 0 or less means walk to the end, which teardown wants so it does
+// not leave a credential behind for being one page too far down. Every
+// paginator in this package shares the same two safety checks it carries here:
+// it refuses a next link that points at another host (drapi attaches the
+// user's token to whatever URL it is given) and breaks on an empty page so a
+// paginator that never advances cannot loop for ever.
+func scanCredentials(limit int, keep func(Credential) (take, stop bool)) ([]Credential, error) {
+	query := url.Values{}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+
+	pageURL, err := drapi.EndpointURL("/credentials/", query)
+	if err != nil {
+		return nil, err
+	}
+
+	var found []Credential
+
+	for scanned := 0; pageURL != "" && (limit <= 0 || scanned < limit); {
+		var list CredentialList
+
+		if err := drapi.GetJSON(pageURL, "credentials", &list); err != nil {
+			return nil, err
+		}
+
+		if stop := collectMatches(list.Data, keep, &found); stop {
+			return found, nil
+		}
+
+		scanned += len(list.Data)
+
+		pageURL, err = nextCredentialPage(list)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return found, nil
+}
+
+// collectMatches appends the credentials keep accepts to found and reports
+// whether keep asked to stop, which is how the first-match lookup ends its
+// scan the moment it has an answer.
+func collectMatches(page []Credential, keep func(Credential) (take, stop bool), found *[]Credential) bool {
+	for i := range page {
+		take, stop := keep(page[i])
+		if take {
+			*found = append(*found, page[i])
+		}
+
+		if stop {
+			return true
+		}
+	}
+
+	return false
+}
+
+// nextCredentialPage returns the URL of the page after list, or "" when the
+// scan should stop: an empty next link, or a page that came back empty (which
+// would otherwise let a paginator that never advances loop for ever). It
+// refuses a next link on another host, because drapi attaches the user's token
+// to whatever URL it is given.
+func nextCredentialPage(list CredentialList) (string, error) {
+	if list.Next == "" || len(list.Data) == 0 {
+		return "", nil
+	}
+
+	if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
+		return "", err
+	}
+
+	return list.Next, nil
+}
+
 // FindCredentialNamed returns the credential called name, or nil when the
 // organisation has none. Names are unique tenant-wide, so this is how a
 // caller turns a name it expected to create into the id that already holds it.
@@ -52,46 +136,32 @@ type CredentialList struct {
 // answers nil, the same as a name that is genuinely not there, because to the
 // caller the two mean the same thing: no id to offer.
 func FindCredentialNamed(name string, limit int) (*Credential, error) {
-	query := url.Values{}
-	query.Set("limit", strconv.Itoa(limit))
+	found, err := scanCredentials(limit, func(c Credential) (bool, bool) {
+		match := c.Name == name
 
-	pageURL, err := drapi.EndpointURL("/credentials/", query)
+		// Stop on the first match: the name is unique, so there is no second.
+		return match, match
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	for scanned := 0; pageURL != "" && scanned < limit; {
-		var list CredentialList
-
-		if err := drapi.GetJSON(pageURL, "credentials", &list); err != nil {
-			return nil, err
-		}
-
-		for i := range list.Data {
-			if list.Data[i].Name == name {
-				return &list.Data[i], nil
-			}
-		}
-
-		scanned += len(list.Data)
-
-		// A page that came back empty would otherwise leave scanned where it
-		// was and follow next for ever.
-		if list.Next == "" || len(list.Data) == 0 {
-			break
-		}
-
-		// Every paginator in this package checks this: drapi attaches the
-		// user's token to whatever URL it is given, so a next link naming
-		// another host would send it there.
-		if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
-			return nil, err
-		}
-
-		pageURL = list.Next
+	if len(found) == 0 {
+		return nil, nil
 	}
 
-	return nil, nil
+	return &found[0], nil
+}
+
+// CredentialsWithPrefix returns every credential whose name starts with prefix,
+// which is how teardown finds the "<workloadName>/<envName>" credentials the
+// CLI minted for a workload. A limit of 0 or less walks the whole tenant,
+// because a cleanup that stopped early would leave exactly the orphans it
+// exists to remove.
+func CredentialsWithPrefix(prefix string, limit int) ([]Credential, error) {
+	return scanCredentials(limit, func(c Credential) (bool, bool) {
+		return strings.HasPrefix(c.Name, prefix), false
+	})
 }
 
 // CreateCredential stores a secret and returns the credential holding it, so a
@@ -181,4 +251,20 @@ func UpdateCredential(credentialID, value string) (*Credential, error) {
 	}
 
 	return &cred, nil
+}
+
+// DeleteCredential removes a stored credential by id. It is what teardown uses
+// to clean up the credentials a workload owned, so a name is free to be reused.
+//
+// The two failures worth telling apart both arrive as *drapi.HTTPError: a 404
+// for an id already gone (nothing to do), and a 409 for a credential still in
+// use by a data connection or batch prediction job (the platform refuses, and
+// the caller reports it rather than pretending it was removed).
+func DeleteCredential(credentialID string) error {
+	url, err := config.GetEndpointURL("/api/v2/credentials/" + escapeID(credentialID) + "/")
+	if err != nil {
+		return err
+	}
+
+	return drapi.DeleteJSON(url, "credential", nil, nil)
 }

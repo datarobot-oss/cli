@@ -236,3 +236,113 @@ func TestFindCredentialNamed_AnswersNilWhenThereIsNone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, found)
 }
+
+// Teardown collects every "<workloadName>/" credential, and it has to follow
+// next to do it: the orphans it exists to remove could sit on any page.
+func TestCredentialsWithPrefix_CollectsMatchesAcrossPages(t *testing.T) {
+	var base string
+
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			fmt.Fprint(w, `{"data":[{"credentialId":"c3","name":"my-app/DATAROBOT_API_TOKEN"},{"credentialId":"c4","name":"other/KEY"}],"next":""}`)
+
+			return
+		}
+
+		fmt.Fprintf(w,
+			`{"data":[{"credentialId":"c1","name":"my-app/LLM_API_KEY"},{"credentialId":"c2","name":"my-app-staging/LLM_API_KEY"}],"next":%q}`,
+			base+"?page=2")
+	}))
+
+	var err error
+
+	base, err = drapi.EndpointURL("/credentials/", url.Values{})
+	require.NoError(t, err)
+
+	creds, err := CredentialsWithPrefix("my-app/", 0)
+	require.NoError(t, err)
+
+	// c2 starts with "my-app" but not "my-app/", so the prefix boundary keeps
+	// one workload from deleting a differently-named workload's credentials.
+	require.Len(t, creds, 2)
+	assert.Equal(t, "my-app/LLM_API_KEY", creds[0].Name)
+	assert.Equal(t, "my-app/DATAROBOT_API_TOKEN", creds[1].Name)
+}
+
+// The same-host guard the name lookup carries has to hold for the prefix scan
+// too: drapi would send the token to whatever host a next link named.
+func TestCredentialsWithPrefix_RefusesANextOnAnotherHost(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w,
+			`{"data":[{"credentialId":"c1","name":"my-app/A"}],"next":"https://elsewhere.example.com/api/v2/credentials/"}`)
+	}))
+
+	_, err := CredentialsWithPrefix("my-app/", 0)
+	require.Error(t, err)
+}
+
+// Nothing matching the prefix is an empty result, not an error: a workload
+// with no secrets owns no credentials, and its delete cleans up nothing.
+func TestCredentialsWithPrefix_EmptyWhenNoneMatch(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"data":[{"credentialId":"c1","name":"other/KEY"}],"next":""}`)
+	}))
+
+	creds, err := CredentialsWithPrefix("my-app/", 0)
+	require.NoError(t, err)
+	assert.Empty(t, creds)
+}
+
+func TestDeleteCredential_DeletesByID(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/v2/credentials/66f1a2b3c4d5e6f7a8b9c0d1/", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	require.NoError(t, DeleteCredential("66f1a2b3c4d5e6f7a8b9c0d1"))
+}
+
+// A pasted id with a slash in it must stay inside the credentials route rather
+// than walk out to some other resource, the same guard GetCredential has.
+func TestDeleteCredential_EscapesID(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/credentials/a%2Fb/", r.URL.EscapedPath())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	require.NoError(t, DeleteCredential("a/b"))
+}
+
+// A 404 is an id already gone, and it surfaces as the HTTP error it is so the
+// caller can tell it apart from a credential it actually removed.
+func TestDeleteCredential_MissingIsAnHTTPError(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	err := DeleteCredential("does-not-exist")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+}
+
+// A credential still in use by a data connection or batch job comes back 409;
+// the caller reports it rather than pretending the value is gone.
+func TestDeleteCredential_InUseSurvivesAsAConflict(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"message":"Credentials are in use by one or more data connections or batch prediction jobs."}`)
+	}))
+
+	err := DeleteCredential("in-use")
+	require.Error(t, err)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
+}
