@@ -3,7 +3,8 @@ name: qa-cli
 description: >
   Functional QA for the Go DataRobot CLI: command discovery, isolated auth
   configuration, dotenv TUIs, task execution, local validation, and approved
-  staging workload/artifact flows. Uses Droid Control terminal interactions.
+  staging workload/artifact flows. Drives the terminal through tuistory (Droid
+  Control in Droid, the tuistory CLI in Claude Code).
 ---
 
 # DataRobot CLI functional QA
@@ -19,20 +20,34 @@ Resolve `dist/dr` to an absolute path before switching to scratch directories.
 Go must satisfy `go.mod` (currently 1.27.1); Task and Git must be available.
 Do not substitute a released binary if the build fails.
 
-Invoke `droid-control` for all terminal interactions. Route through its terminal
-tuistory backend and `tctl` wrapper, using a unique run-prefixed session and
-110 columns by 36 rows. Use Capture and Verify; load Compose only when both
-`video_evidence` and `droid_control.compose` in config are enabled. Let the
-installed plugin own launch, keystroke, capture, and verification mechanics.
-Do not launch raw tuistory. Text capture needs tuistory; recording additionally
-needs asciinema, and terminal Compose needs agg and the Compose prerequisites.
+Use a unique run-prefixed session and 110 columns by 36 rows for every flow.
+Follow the driver route for the agent you are running in (see `qa` section 3):
 
-Launch a shell via Droid Control, then type invocations of the absolute `dr`
+- **Droid:** invoke `droid-control` for all terminal interactions. Route through
+  its terminal tuistory backend and `tctl` wrapper. Use Capture and Verify; load
+  Compose only when both `video_evidence` and `droid_control.compose` in config
+  are enabled. Let the installed plugin own launch, keystroke, capture, and
+  verification mechanics. Do not launch raw tuistory. Recording additionally
+  needs asciinema, and terminal Compose needs agg and the Compose prerequisites.
+- **Claude Code:** call the tuistory CLI directly from Bash. `--env` only adds
+  to the inherited environment (and `env -i` discards it), so start the child
+  from an empty environment and pass every value inside the `env -i` list:
+  `tuistory launch "env -i PATH=$PATH HOME=<scratch>/home TERM=xterm-256color
+  DATAROBOT_CLI_DISABLE_TELEMETRY=true bash --norc --noprofile"
+  -s <RUN_ID>-<flow> --cols 110 --rows 36 --cwd <scratch>/project --background`,
+  adding the remaining isolation variables the same way. Then use `type`,
+  `press` (e.g. `enter`, `ctrl c`), `wait <pattern>`, `wait-idle`, and
+  `snapshot --trim` for evidence. Run `close -s <session>` after each flow and
+  confirm `tuistory sessions` lists nothing from this run before reporting.
+  Never change Claude Code's own environment to isolate the child.
+
+Launch a shell through the driver, then type invocations of the absolute `dr`
 binary. Wait for the shell prompt between commands. Assert exit status immediately
-after each invocation. `dr` is a command-oriented CLI with per-command TUIs, not
-a REPL: type `dr --help`, never `/help`. Exercise real keystrokes for a relevant
-TUI flow when the changed path offers one; do not substitute unit tests or a
-non-interactive `droid exec` transcript for functional proof.
+after each invocation (e.g. type `echo "exit=$?"` and wait for it). `dr` is a
+command-oriented CLI with per-command TUIs, not a REPL: type `dr --help`, never
+`/help`. Exercise real keystrokes for a relevant TUI flow when the changed path
+offers one; do not substitute unit tests or a non-interactive agent transcript
+(`droid exec`, `claude -p`) for functional proof.
 
 ### Isolation
 
@@ -40,7 +55,8 @@ Create a new scratch directory with `mktemp` and record its path for cleanup.
 Use separate scratch home, config, state, cache, and project directories. For
 the **child application only**, set `HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
 `XDG_CACHE_HOME`, and `DATAROBOT_CLI_CONFIG` to run-owned paths. Never change the
-parent Droid's home, authentication, or plugin directories.
+parent agent's (Droid's or Claude Code's) home, authentication, or plugin
+directories.
 
 Start a clean child environment. Remove all inherited `DATAROBOT_*` and
 `DR_API_TOKEN` values, including endpoint, token, profile, config, certificate,
@@ -50,7 +66,7 @@ plugins. Clear `SSH_AUTH_SOCK` and do not inherit private service credentials.
 Disable application telemetry with `DATAROBOT_CLI_DISABLE_TELEMETRY=true`.
 Use the absolute binary and operate from the scratch project, not this repo.
 
-In CI, the generic terminal launch prefix is
+In CI under Droid, the generic terminal launch prefix is
 `env -u CI FACTORY_DISABLE_KEYRING=true`. `dr` uses Bubble Tea, not Ink or Factory
 keyring authentication; these generic controls do not replace the isolation
 above. Keep `DATAROBOT_CLI_NON_INTERACTIVE` unset for interactive flows. Set it
@@ -211,7 +227,8 @@ it in the local-only PR workflow.
 Capture distinct text snapshots at meaningful transitions. Tuistory does not
 provide compositor PNG screenshots; use its text snapshots, not an unsupported
 screenshot command. Real rendered-image proof requires the plugin's appropriate
-terminal route and prerequisites.
+terminal route and prerequisites (Droid only). Under Claude Code, text snapshots
+are the evidence; save each one as a labeled file under `qa-results/<RUN_ID>/`.
 
 Close each session after its flow, even after failure. Preserve sanitized evidence
 before removing this run's scratch directory. Never put tokens or secret-bearing

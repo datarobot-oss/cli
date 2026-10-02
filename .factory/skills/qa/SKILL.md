@@ -1,7 +1,8 @@
 ---
 name: qa
 description: >
-  Run diff-targeted functional QA for the DataRobot CLI using Droid Control.
+  Run diff-targeted functional QA for the DataRobot CLI through a tuistory
+  terminal driver (Droid Control in Droid, the tuistory CLI in Claude Code).
   Test branch-built CLI behavior with isolated configuration, capture terminal
   evidence, and report results for PRs, releases, or explicit smoke checks.
 ---
@@ -57,25 +58,39 @@ explain the changed behavior, report INCONCLUSIVE rather than PASS.
 
 ## 3. Pre-flight and interaction routing
 
-For the selected CLI, invoke `droid-control` before terminal interaction. Follow
-its terminal/TUI route through the tuistory backend and `tctl` wrapper. Let the
-installed skill resolve its own plugin paths and driver mechanics.
+Both agents read the whole config, but each acts only on its own driver block:
+`droid_control` in Droid, `claude_code` in Claude Code. Shared keys (targets,
+personas, `video_evidence`, cleanup) apply to both. Pick the route for the agent
+you are running in:
 
-Verify `droid-control@factory-plugins` is effectively active and the project
-settings declare its dependency. An active inherited user-scope installation is
-valid; do not uninstall it to force a duplicate project-scope install. An inactive
-or policy-blocked plugin is BLOCKED. Build with the configured build command only
-when the CLI is selected. Use the current checkout's
-binary, never a system-installed or released `dr`. Establish run-scoped sessions,
-fresh app configuration, and scratch directories as described in `qa-cli`.
+- **Droid:** for the selected CLI, invoke `droid-control` before terminal
+  interaction. Follow its terminal/TUI route through the tuistory backend and
+  `tctl` wrapper. Let the installed skill resolve its own plugin paths and driver
+  mechanics. Verify `droid-control@factory-plugins` is effectively active and the
+  project settings declare its dependency. An active inherited user-scope
+  installation is valid; do not uninstall it to force a duplicate project-scope
+  install. An inactive or policy-blocked plugin is BLOCKED.
+- **Claude Code:** there is no Droid Control plugin. Drive the same tuistory
+  backend directly through its CLI (`claude_code.tool`). Verify `tuistory` is on
+  PATH; if missing, report BLOCKED with the install hint `npm i -g tuistory`. Use
+  `launch --background`, `type`, `press`, `wait`, `wait-idle`, `snapshot --trim`,
+  and `close` as described in `qa-cli`. Compose is Droid-only: never load it here.
 
-Use Capture and Verify on every flow. Read `video_evidence` and
-`droid_control.compose` at runtime:
+Build with the configured build command only when the CLI is selected. Use the
+current checkout's binary, never a system-installed or released `dr`. Establish
+run-scoped sessions, fresh app configuration, and scratch directories as
+described in `qa-cli`.
+
+Capture and verify every flow (Droid: Capture and Verify; Claude Code: labeled
+`tuistory snapshot --trim` output plus exit-status checks). Read `video_evidence`
+and the active driver's `compose` flag at runtime:
 
 - Text snapshots remain primary evidence in every branch.
 - When `video_evidence` is enabled, record one raw cast per interactive flow.
-- Invoke Compose only when both flags are enabled. Otherwise do not load Compose
-  or install its dependencies.
+  Under Claude Code, record with `asciinema` if installed; otherwise rely on text
+  snapshots and note the missing recorder as an action item.
+- Invoke Compose only in Droid and only when both flags are enabled. Otherwise
+  do not load Compose or install its dependencies.
 - Compose owns prerequisite checks and plugin-root resolution. Install its locked
   Remotion dependencies only when needed. Render a single-layout MP4 with literal
   `"preset": "factory"`, trim dead time, and keep it at most 60 seconds.
@@ -88,7 +103,7 @@ error and remediation. Never invent mocked DataRobot responses to bypass a block
 
 Run only selected flows with the configured persona. Drive actual terminal
 keystrokes, observe transitions, and verify the app's output and exit status.
-The CLI is not Droid: it has subcommands, not `/help` or a chat prompt.
+The CLI is not an agent: it has subcommands, not `/help` or a chat prompt.
 
 Generate a unique RUN_ID and save sanitized evidence under
 `qa-results/<RUN_ID>/`. Capture a distinct, labeled terminal text snapshot after

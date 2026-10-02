@@ -6,6 +6,13 @@ video_evidence: false
 droid_control:
   plugin: droid-control@factory-plugins
   compose: false
+# Claude Code has no Droid Control plugin; it drives the same tuistory backend
+# directly. Each agent reads the whole file but acts only on its own driver block.
+claude_code:
+  tool: tuistory
+  cols: 110
+  rows: 36
+  compose: false # Compose is Droid-only.
 
 default_target: local
 environments:

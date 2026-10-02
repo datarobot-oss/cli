@@ -61,6 +61,11 @@ installation can satisfy this dependency locally; fresh environments can install
 it at project scope. Local terminal QA needs tuistory. Recording/Compose tools are
 resolved conditionally from the runtime configuration.
 
+The same skills are exposed to Claude Code through the `.claude/skills/qa` and
+`.claude/skills/qa-cli` symlinks, so `/qa` and `/qa-cli` work there too. Claude
+Code needs no plugin: it drives tuistory directly (`npm i -g tuistory`) and
+records text snapshots as evidence. Edit the skills here, in `.factory/skills/`.
+
 Staging is disabled until dedicated QA accounts and secret references are
 configured. Each staging run also requires explicit approval of its target and
 mutations. Never reuse personal credentials or existing resources. Public
