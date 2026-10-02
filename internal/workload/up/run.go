@@ -431,16 +431,7 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 		report.say("  %s\n", tui.HintStyle.Render(
 			"A deploy would wait for this rollout to finish and plan against where it lands."))
 
-		// A workload mid-swap must not plan as "up to date" or as "to be
-		// started": the swap decides what differs, and a replacement onto a
-		// stopped workload is what starts it, so the deploy would find it
-		// running. Settling says so for both. Errored keeps its verdict: a swap
-		// that fails leaves it errored, and the plan exists to report that.
-		if live.State == StateRunning || live.State == StateStopped {
-			live.State = StateSettling
-		}
-
-		return live, true, nil
+		return previewedMidSwap(live), true, nil
 	}
 
 	if opts.Detach {
@@ -476,6 +467,20 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 	refreshed, err := Look(live.WorkloadID)
 
 	return refreshed, false, err
+}
+
+// previewedMidSwap is the state a dry run plans against while a swap is in
+// flight. A workload mid-swap must not plan as "up to date" or as "to be
+// started": the swap decides what differs, and a replacement onto a stopped
+// workload is what starts it, so the deploy would find it running. Settling
+// says so for both. Errored keeps its verdict: a swap that fails leaves it
+// errored, and the plan exists to report that.
+func previewedMidSwap(live Live) Live {
+	if live.State == StateRunning || live.State == StateStopped {
+		live.State = StateSettling
+	}
+
+	return live
 }
 
 // replaceable says whether there is a workload for the replacement route to
