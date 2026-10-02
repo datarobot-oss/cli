@@ -1801,17 +1801,18 @@ func updateSpecStep(tr *track) func(string, json.RawMessage) error {
 	return func(artifactID string, spec json.RawMessage) error {
 		tr.steps = append(tr.steps, "update-spec:"+artifactID)
 		tr.updatedSpec = spec
+		tr.updatedTo = artifactID
 
 		return nil
 	}
 }
 
 // readBackStep answers the read after the write the way the platform does: the
-// written spec with the server-owned image put back. Anything that is not the
-// copy is the version now serving.
+// written spec with the server-owned image put back. An artifact nothing was
+// written to reads as the version now serving.
 func readBackStep(tr *track, copied *workload.Artifact, live func() workload.Document) func(string) (workload.Document, error) {
 	return func(id string) (workload.Document, error) {
-		if id != copied.ID || tr.updatedSpec == nil {
+		if id != tr.updatedTo || tr.updatedSpec == nil {
 			return live(), nil
 		}
 
@@ -1821,10 +1822,18 @@ func readBackStep(tr *track, copied *workload.Artifact, live func() workload.Doc
 			return nil, err
 		}
 
-		doc := workload.Document{"id": copied.ID, "status": copied.Status, "spec": spec}
+		// The write landed on the copy, or on the version serving itself.
+		written, image := live(), ""
+		if id == copied.ID {
+			written, image = workload.Document{"status": copied.Status}, workload.GetPrimaryContainerImageURI(*copied)
+		} else if uri, ok := primaryOf(written)["imageUri"].(string); ok {
+			image = uri
+		}
 
-		if uri := workload.GetPrimaryContainerImageURI(*copied); uri != "" {
-			workload.PrimaryContainerInDocument(doc)["imageUri"] = uri
+		doc := workload.Document{"id": id, "status": written["status"], "spec": spec}
+
+		if image != "" {
+			workload.PrimaryContainerInDocument(doc)["imageUri"] = image
 		}
 
 		return doc, nil
@@ -1838,19 +1847,41 @@ func draftLiveArtifact() workload.Document {
 	return d
 }
 
-func runtimeOnlyRoll(tr *track) fakes {
-	return runtimeOnlyRollOf(tr, copiedArtifact())
+func lockedLiveArtifact() workload.Document {
+	return docOf(liveArtifactJSON)
 }
 
-func runtimeOnlyRollOf(tr *track, copied *workload.Artifact) fakes {
+// liveTyped is the version serving as the typed read returns it, which the
+// in-place write asks for its code reference.
+func liveTyped(id string) (*workload.Artifact, error) {
+	artifact := copiedArtifact()
+	artifact.ID = id
+
+	return artifact, nil
+}
+
+// runtimeOnlyRoll is a spec change the running image can take, on a draft:
+// the version serving is written to and rolled onto itself.
+func runtimeOnlyRoll(tr *track) fakes {
+	return runtimeOnlyRollOf(tr, copiedArtifact(), draftLiveArtifact)
+}
+
+// lockedRuntimeOnlyRoll is the same change on a locked version, which cannot
+// be written to and so is copied, the copy written over and locked to match.
+func lockedRuntimeOnlyRoll(tr *track) fakes {
+	return runtimeOnlyRollOf(tr, copiedArtifact(), lockedLiveArtifact)
+}
+
+func runtimeOnlyRollOf(tr *track, copied *workload.Artifact, live func() workload.Document) fakes {
 	f := builtRoll(tr)
 
 	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
 	f.sync = emptySync(tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("68a0000000000000000000a1")
+	f.getArtifact = liveTyped
 	f.copyArtifact = copyStep(tr, copied)
-	f.artifactD = readBackStep(tr, copied, draftLiveArtifact)
+	f.artifactD = readBackStep(tr, copied, live)
 	f.updateSpec = updateSpecStep(tr)
 	f.deleteArtifact = func(id string) error {
 		tr.steps = append(tr.steps, "delete:"+id)
@@ -1881,53 +1912,167 @@ func buildDrift() string {
 				"                entrypoint: [\"python\", \"app.py\"]\n", 1)
 }
 
-// The deploy this whole path exists for. The copy's code reference has to
-// survive the write, since the manifest states none.
-// Production is the same deploy plus the lock, and is where the saving is worth
-// most: the platform checks image provenance across the tenant, precisely so a
-// copy can still be locked.
-func TestRun_RuntimeOnlyRollCopiesTheRunningVersion(t *testing.T) {
+// The deploy this whole path exists for. A draft takes the change itself and
+// is rolled onto again, so no version is minted and the project's link stays
+// put. Production is copied instead, since a locked version cannot be written
+// to, and the copy is locked to match: the platform checks image provenance
+// across the tenant precisely so a copy can still be locked. Either way the
+// code reference has to survive the write, since the manifest states none.
+func TestRun_RuntimeOnlyRollKeepsTheRunningImage(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
 	for _, c := range []struct {
-		name  string
-		live  func() workload.Document
-		steps []string
+		name     string
+		fixture  func(*track) fakes
+		steps    []string
+		artifact string
+		relinked string
+		line     string
 	}{
 		{
-			name:  "a draft is replaced by a draft",
-			live:  draftLiveArtifact,
-			steps: []string{"guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+			name:    "a draft is written to in place",
+			fixture: runtimeOnlyRoll,
+			steps: []string{
+				"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain",
+			},
+			artifact: live,
+			line:     "~ artifact   1 spec change, written to the draft in place; keeps the running image, so no rebuild",
 		},
 		{
-			name:  "a locked one is replaced by a locked one",
-			live:  func() workload.Document { return docOf(liveArtifactJSON) },
-			steps: []string{"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+			name:    "a locked one is replaced by a locked copy",
+			fixture: lockedRuntimeOnlyRoll,
+			steps: []string{
+				"guard", "copy:" + live, "update-spec:art-2", "relink", "sync",
+				"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain",
+			},
+			artifact: "art-2",
+			relinked: "art-2",
+			line:     "+ artifact   new version, 1 spec change; keeps the running image, so no rebuild",
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var tr track
 
-			f := runtimeOnlyRoll(&tr)
-			f.artifactD = readBackStep(&tr, copiedArtifact(), c.live)
+			install(t, c.fixture(&tr))
 
-			install(t, f)
-
-			result, _, err := runIn(t, envDrift(), Options{NonInteractive: true})
+			result, stderr, err := runIn(t, envDrift(), Options{NonInteractive: true})
 			require.NoError(t, err)
 
-			assert.Equal(t, append([]string{
-				"guard", "copy:68a0000000000000000000a1", "update-spec:art-2", "relink", "sync",
-			}, c.steps...), tr.steps)
+			assert.Equal(t, c.steps, tr.steps)
 			assert.Empty(t, result.BuildID, "a version that inherits an image has none to build")
 			assert.Equal(t, ActionRolled, result.Action)
-			assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the project pushes to the version it made")
-			assert.Equal(t, "gpt-oss-20b-vllm-artifact", tr.copiedAs)
+			assert.Equal(t, c.artifact, result.ArtifactID)
+			assert.Equal(t, c.relinked, tr.savedCfg.ArtifactID, "the project pushes to the version it made, if any")
+			assert.Contains(t, stderr, c.line)
 
 			spec := string(tr.updatedSpec)
 			assert.Contains(t, spec, "LOG_LEVEL", "the change that started the run has to land")
-			assert.Contains(t, spec, `"catalogId":"cat1"`, "and must not cost the copy its code reference")
+			assert.Contains(t, spec, `"catalogId":"cat1"`, "and must not cost the artifact its code reference")
 			assert.Contains(t, spec, `"catalogVersionId":"ver1"`)
 		})
 	}
+}
+
+// A write to the draft that fails rolls nothing: the version serving is
+// unchanged and the error names it, so the reader knows what was touched.
+func TestRun_InPlaceWriteThatFailsRollsNothing(t *testing.T) {
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.updateSpec = func(id string, _ json.RawMessage) error {
+		tr.steps = append(tr.steps, "update-spec:"+id)
+
+		return errors.New("spec rejected")
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, envDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "cannot write the change to artifact 68a0000000000000000000a1")
+	assert.Contains(t, err.Error(), "spec rejected")
+	assert.Equal(t, []string{"guard", "update-spec:68a0000000000000000000a1"}, tr.steps)
+	assert.Equal(t, ActionUnchanged, result.Action)
+}
+
+// A change written to the draft lands on the artifact before the rollout that
+// carries it, so a rollout that then fails leaves the file and the artifact
+// agreeing while the generation serving does not. The plan reads as up to
+// date; the platform's record of the last rollout says otherwise.
+func TestRun_FailedRolloutOfADraftIsRolledAgain(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	event := func(kind, artifactID string) *workload.WorkloadEvent {
+		return &workload.WorkloadEvent{
+			EventType: "Replacement " + kind,
+			Details:   json.RawMessage(`{"artifactId":"` + artifactID + `","message":"candidate never became healthy"}`),
+		}
+	}
+
+	for _, c := range []struct {
+		name   string
+		last   *workload.WorkloadEvent
+		rolls  bool
+		stderr string
+	}{
+		{
+			name: "the last rollout of this version failed", last: event("Errored", live), rolls: true,
+			stderr: "~ artifact   the last rollout of this version ended errored (candidate never became healthy); rolling it again",
+		},
+		{name: "the last rollout landed", last: event("Completed", live), stderr: "Already up to date"},
+		{name: "the last rollout was of another version", last: event("Errored", "art-9"), stderr: "Already up to date"},
+		{name: "nothing was ever rolled", stderr: "Already up to date"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var tr track
+
+			f := runtimeOnlyRoll(&tr)
+			f.lastRollout = func(string) (*workload.WorkloadEvent, error) { return c.last, nil }
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			assert.Contains(t, stderr, c.stderr)
+
+			if !c.rolls {
+				assert.Empty(t, tr.steps)
+				assert.Equal(t, ActionUnchanged, result.Action)
+
+				return
+			}
+
+			assert.Equal(t, []string{"guard", "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain"},
+				tr.steps, "nothing is written: the artifact already says what the file says")
+			assert.Equal(t, ActionRolled, result.Action)
+			assert.Equal(t, live, result.ArtifactID)
+			assert.True(t, result.Plan.JSON().InPlace, "the envelope says the version was rolled onto itself")
+			assert.Contains(t, result.Plan.JSON().Reroll, "ended errored")
+		})
+	}
+}
+
+// A record that cannot be read does not fail a run that was about to change
+// nothing; the plan stands on the two documents, as it did.
+func TestRun_UnreadableRolloutRecordLeavesAnEmptyPlanAlone(t *testing.T) {
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.lastRollout = func(string) (*workload.WorkloadEvent, error) { return nil, errors.New("events route: 503") }
+
+	install(t, f)
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Already up to date")
+	assert.Empty(t, tr.steps)
 }
 
 // The four ways a roll still pays for a build.
@@ -2035,7 +2180,7 @@ func TestRun_CopiesThatGoWrong(t *testing.T) {
 			breaks: func(f *fakes, _ *track, copied *workload.Artifact) {
 				copied.ArtifactRepositoryID = "repo-other"
 				f.artifactD = func(string) (workload.Document, error) {
-					d := draftLiveArtifact()
+					d := lockedLiveArtifact()
 					d["artifactRepositoryId"] = "repo-1"
 
 					return d, nil
@@ -2067,12 +2212,14 @@ func TestRun_CopiesThatGoWrong(t *testing.T) {
 		},
 	}
 
+	// A locked version is the one that is copied now; a draft takes the change
+	// itself and has no copy to go wrong.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var tr track
 
 			copied := copiedArtifact()
-			f := runtimeOnlyRollOf(&tr, copied)
+			f := runtimeOnlyRollOf(&tr, copied, lockedLiveArtifact)
 			c.breaks(&f, &tr, copied)
 
 			install(t, f)
@@ -2182,7 +2329,9 @@ func TestRun_ALeftoverWithItsOwnCodeIsStillReAnchored(t *testing.T) {
 	var tr track
 
 	f := builtRoll(&tr)
-	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	// One file changed, so the version is built rather than the draft written
+	// to in place, which is the path that finds the leftover.
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true, Files: 1}, nil }
 	f.sync = emptySync(&tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("art-abandoned")

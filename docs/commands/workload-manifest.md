@@ -99,12 +99,12 @@ Three kinds of change, each applied one way:
 | Change | How it is detected | What `up` does |
 | --- | --- | --- |
 | **Code** (only when the file builds the image) | the working tree is compared with what was last pushed to the artifact; code pushed by `dr artifact code sync` but never built counts too | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it |
-| **Artifact spec** (environment variables, port, probes, image) | the file's `artifact` block is compared with the artifact the workload runs | mints a new artifact version and rolls the workload onto it; a change that does not affect the image keeps the running image, so no rebuild |
+| **Artifact spec** (environment variables, port, probes, image) | the file's `artifact` block is compared with the artifact the workload runs | mints a new artifact version and rolls the workload onto it; a change that does not affect the image keeps the running image, so no rebuild. When the artifact is a draft and the image is kept, the change is written to that artifact in place and the workload rolled onto it again, so no new version |
 | **Runtime** (replicas, CPU, memory) | the file's `runtime` block is compared with the live runtime | a settings update in place, with no new version; when a roll is happening anyway, the sizing rides along on it |
 
 A workload that does not exist yet is created from the file in one call. A stopped one is started. An errored one is rolled when the file has something new to roll onto it; when nothing differs the run refuses and says why, since deploying the same thing again would only fail again (`--force-build` rebuilds a platform-built image). A file whose live state matches it prints `Already up to date` and exits 0 without touching anything.
 
-A roll makes a new version and swaps the workload onto it; the endpoint never changes, and the version already serving keeps serving until the new one is ready. Locking is one-way: the next version of a locked artifact is a new artifact in the same lineage, locked to match, so a locked workload keeps deploying.
+A roll swaps the workload onto a version, new or the same one rewritten; the endpoint never changes, and the generation already serving keeps serving until the new one is ready. Locking is one-way: a locked artifact is never written to, so the next version of one is a new artifact in the same lineage, locked to match, and a locked workload keeps deploying. A rollout of a rewritten draft that fails leaves the artifact ahead of what is running, and the next `up` notices from the platform's rollout record and rolls it again.
 
 ### Local state
 

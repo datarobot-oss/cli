@@ -401,17 +401,26 @@ func artifactLines(plan Plan) []string {
 		return nil
 	}
 
-	reason := "rebuilt from the synced code"
+	if plan.Reroll != "" {
+		return []string{entry("~", "artifact", plan.Reroll+"; rolling it again")}
+	}
+
+	marker, reason := "+", "rebuilt from the synced code"
+
 	if len(plan.Artifact) > 0 {
-		reason = fmt.Sprintf("new version, %d spec %s",
-			len(plan.Artifact), plural(len(plan.Artifact), "change", "changes"))
+		changes := fmt.Sprintf("%d spec %s", len(plan.Artifact), plural(len(plan.Artifact), "change", "changes"))
+
+		reason = "new version, " + changes
+		if plan.InPlace {
+			marker, reason = "~", changes+", written to the draft in place"
+		}
 	}
 
 	if plan.InheritsImage {
 		reason += "; keeps the running image, so no rebuild"
 	}
 
-	return append([]string{entry("+", "artifact", reason)}, details(plan.Artifact)...)
+	return append([]string{entry(marker, "artifact", reason)}, details(plan.Artifact)...)
 }
 
 // runtimeLines describes a sizing change, which needs no new version. A
@@ -573,6 +582,15 @@ type PlanJSON struct {
 	// happened after a real run.
 	KeepsImage bool `json:"keepsImage"`
 
+	// InPlace reports that the spec change is written to the draft artifact
+	// the workload runs, which is then rolled onto itself, so the artifact id
+	// does not change. False whenever a version is minted.
+	InPlace bool `json:"inPlace"`
+
+	// Reroll is why the version serving is rolled onto itself with nothing in
+	// the file changed: its last rollout did not land. "" otherwise.
+	Reroll string `json:"reroll"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -611,6 +629,8 @@ func (p Plan) JSON() PlanJSON {
 
 		// Already gated on there being a version to mint.
 		KeepsImage: p.InheritsImage,
+		InPlace:    p.InPlace,
+		Reroll:     p.Reroll,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),

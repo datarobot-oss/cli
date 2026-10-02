@@ -240,6 +240,27 @@ func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
 	assert.NotContains(t, building, "no rebuild", "a deploy about to build says nothing about keeping an image")
 }
 
+// A draft takes the change itself, so the plan says the artifact is changed
+// rather than that a new one is made, and the envelope says no version is
+// minted: a lock fact gated on minting is not reported for it.
+func TestRender_InPlaceSaysTheDraftIsWrittenTo(t *testing.T) {
+	change := absent(inEnv("primary", "LOG_LEVEL"))
+	plan := Plan{State: StateRunning, InheritsImage: true, InPlace: true, Artifact: []Change{change}}
+
+	out := render(t, appSummary, plan)
+	assert.Contains(t, out, "~ artifact   1 spec change, written to the draft in place; keeps the running image, so no rebuild")
+	assert.NotContains(t, out, "new version")
+
+	encoded := plan.JSON()
+	assert.True(t, encoded.InPlace)
+	assert.True(t, encoded.KeepsImage)
+	assert.Equal(t, "rolled", encoded.Action)
+	assert.False(t, plan.MintsVersion())
+
+	again := render(t, appSummary, plan.rerolling("the last rollout of this version ended errored"))
+	assert.Contains(t, again, "~ artifact   the last rollout of this version ended errored; rolling it again")
+}
+
 // An errored workload's line says what the deploy does about the failure,
 // with the platform's reason beside the state, and the reason travels in the
 // envelope too.

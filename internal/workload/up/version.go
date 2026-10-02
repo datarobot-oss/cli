@@ -203,6 +203,61 @@ func copiedVersion(loaded Loaded, live Live, report *reporter) (version, error) 
 	return made, err
 }
 
+// patchedVersion is the version a spec-only change rolls onto when the one
+// serving is a draft: that same artifact, with the file's spec written over
+// it. A draft can be rewritten, and the platform rolls a workload onto the
+// artifact it already runs, so nothing is minted, the project's link stays
+// where it is, and no leftover is made for the next run to find.
+//
+// A re-roll after a rollout that did not land writes nothing: the artifact
+// already says what the file says, and the swap is the whole of the deploy.
+func patchedVersion(loaded Loaded, live Live, plan Plan, report *reporter) (version, error) {
+	made := version{ID: live.ArtifactID, ImageURI: live.ImageURI, HasCode: live.CodeVersionID != ""}
+
+	if len(plan.Artifact) == 0 {
+		return made, nil
+	}
+
+	err := report.run(labelPatchedVersion, func() error {
+		spec, specErr := loaded.Compiled.ArtifactSpecPayload()
+		if specErr != nil {
+			return specErr
+		}
+
+		// Read for its code reference, which the file does not state and the
+		// write would otherwise take away. The document the plan was built
+		// from carries it, but not in a form keepCodeRef can read.
+		current, readErr := getArtifactFn(live.ArtifactID)
+		if readErr != nil {
+			return readErr
+		}
+
+		spec, specErr = keepCodeRef(spec, current)
+		if specErr != nil {
+			return specErr
+		}
+
+		if err := updateArtifactSpecFn(live.ArtifactID, spec); err != nil {
+			return err
+		}
+
+		hasCode, imageURI, matches := carried(loaded, live.ArtifactID)
+		if !matches {
+			return errors.New("it took the write and still does not say what " + manifest.FileName + " asks for")
+		}
+
+		made.HasCode, made.ImageURI = hasCode, imageURI
+
+		return nil
+	})
+	if err != nil {
+		return made, fmt.Errorf("cannot write the change to artifact %s, which the workload is running: %w",
+			live.ArtifactID, err)
+	}
+
+	return made, nil
+}
+
 // sameLineage refuses a copy the platform put somewhere other than where the
 // running version lives: an artifact cannot be moved once it exists, so
 // promoting one from elsewhere forks the version history permanently. A copy
@@ -288,7 +343,8 @@ const (
 	labelFirstArtifact = "Creating the artifact"
 	labelNewVersion    = "Creating the new version"
 
-	labelCopiedVersion = "Copying the running version"
+	labelCopiedVersion  = "Copying the running version"
+	labelPatchedVersion = "Writing the change to the running version"
 )
 
 // createVersion mints an artifact from the file's artifact block, into

@@ -108,6 +108,10 @@ func candidateArtifact(
 		return version{ID: id}, nil
 	}
 
+	if plan.InPlace {
+		return patchedVersion(loaded, live, plan, report)
+	}
+
 	repository := sameRepository(loaded, live)
 
 	// The same reading the plan used, rather than a second one off the parse

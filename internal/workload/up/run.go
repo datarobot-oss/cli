@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -56,6 +57,7 @@ var (
 	getCredentialFn      = workload.GetCredential
 	findCredentialFn     = workload.FindCredentialNamed
 	guardReplacementFn   = workload.RefuseActiveReplacement
+	lastRolloutFn        = workload.LastRollout
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
@@ -236,6 +238,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// tests can stay there too.
 	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
 
+	plan = noteFailedRollout(live, plan)
+
 	result := Result{
 		Plan:       plan,
 		WorkloadID: boundID(live),
@@ -279,6 +283,43 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	return apply(ctx, loaded, live, plan, result, opts)
+}
+
+// noteFailedRollout catches the one drift the two documents cannot show. A
+// change written to a draft in place lands on the artifact before the rollout
+// that carries it, so a rollout that then fails leaves the file and the
+// artifact agreeing while the generation serving runs the spec before it.
+// Comparing the two says up to date. The platform's own record of the last
+// rollout says otherwise, and that is what settles it.
+//
+// Asked only of an otherwise empty plan on a running draft: a plan with
+// anything in it rolls or restarts the workload anyway, and a locked artifact
+// cannot have been written to. A read that fails is logged and the plan left
+// as it was, rather than failing a run that was about to change nothing.
+func noteFailedRollout(live Live, plan Plan) Plan {
+	if !plan.Empty() || live.State != StateRunning || live.Locked {
+		return plan
+	}
+
+	last, err := lastRolloutFn(live.WorkloadID)
+	if err != nil {
+		log.Debug("cannot read the last rollout; planning on the documents alone",
+			"workload_id", live.WorkloadID, "err", err)
+
+		return plan
+	}
+
+	if last == nil || last.Landed() || last.ArtifactID() != live.ArtifactID {
+		return plan
+	}
+
+	reason := "the last rollout of this version ended " +
+		strings.ToLower(strings.TrimPrefix(last.EventType, "Replacement "))
+	if message := last.Message(); message != "" {
+		reason += " (" + message + ")"
+	}
+
+	return plan.rerolling(reason)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -1331,6 +1372,7 @@ func afterStart(plan Plan, result Result, report *reporter) Plan {
 	}
 
 	plan.InheritsImage = false
+	plan.InPlace = false
 
 	report.say("  The image it failed to come up on cannot be trusted, " +
 		"so the new version is built rather than copied.\n")
