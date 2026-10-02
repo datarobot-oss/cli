@@ -1161,6 +1161,7 @@ func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	assert.Equal(t, "bld-2", result.BuildID)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.False(t, result.Plan.InheritsImage)
+	assert.False(t, result.Plan.InPlace, "the envelope follows the plan the run actually carried out")
 	assert.Contains(t, stderr, "so the new version is built rather than copied")
 }
 
@@ -2013,6 +2014,40 @@ func TestRun_ImageManifestDraftTakesAnEnvVarInPlace(t *testing.T) {
 	assert.Contains(t, tr.steps, "create-artifact")
 	assert.Equal(t, "art-2", result.ArtifactID)
 	assert.Contains(t, stderr, "new version")
+}
+
+// A write the platform answers without an image is not rolled on trust: the
+// image is built onto the same artifact first.
+func TestRun_InPlaceWriteThatLosesTheImageBuildsOne(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.artifactD = func(id string) (workload.Document, error) {
+		if id != tr.updatedTo || tr.updatedSpec == nil {
+			return draftLiveArtifact(), nil
+		}
+
+		var spec map[string]any
+
+		require.NoError(t, json.Unmarshal(tr.updatedSpec, &spec))
+
+		return workload.Document{"id": id, "status": workload.ArtifactStatusDraft, "spec": spec}, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, envDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "update-spec:" + live, "build", "guard", "replace:" + live, "await-rollout", "settle:" + live + "+drain",
+	}, tr.steps)
+	assert.Equal(t, "bld-2", result.BuildID)
+	assert.Equal(t, live, result.ArtifactID)
+	assert.Contains(t, stderr, "without an image, so one is built")
+	assert.False(t, result.Plan.InheritsImage, "a run that built kept no image")
 }
 
 // A write to the draft that fails rolls nothing: the version serving is
