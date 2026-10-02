@@ -62,27 +62,40 @@ const maxExecEnvPages = 100
 // silently would build against the wrong base image and only show up as a
 // puzzling runtime failure.
 func ResolveExecutionEnvironment(nameOrID string) (id, versionID string, err error) {
-	byID, byName, err := scanExecutionEnvironments(nameOrID)
+	ee, err := FindExecutionEnvironment(nameOrID)
 	if err != nil {
 		return "", "", err
 	}
 
+	return ee.ID, ee.LatestSuccessfulVersion.ID, nil
+}
+
+// FindExecutionEnvironment is ResolveExecutionEnvironment returning the whole
+// record, for a caller that also wants its name or language. The record
+// always carries a successful version.
+func FindExecutionEnvironment(nameOrID string) (ExecutionEnvironment, error) {
+	byID, byName, err := scanExecutionEnvironments(nameOrID)
+	if err != nil {
+		return ExecutionEnvironment{}, err
+	}
+
 	if byID != nil {
-		return resolveVersion(*byID, nameOrID)
+		return withVersion(*byID, nameOrID)
 	}
 
 	if len(byName) > 1 {
-		return "", "", fmt.Errorf(
+		return ExecutionEnvironment{}, fmt.Errorf(
 			"execution environment %q is ambiguous: %d environments share that name (%s). Pass the id instead",
 			nameOrID, len(byName), strings.Join(execEnvIDs(byName), ", "),
 		)
 	}
 
 	if len(byName) == 1 {
-		return resolveVersion(byName[0], nameOrID)
+		return withVersion(byName[0], nameOrID)
 	}
 
-	return "", "", fmt.Errorf("execution environment %q not found; check the name in the DataRobot UI under Registry > Environments", nameOrID)
+	return ExecutionEnvironment{}, fmt.Errorf(
+		"execution environment %q not found; check the name in the DataRobot UI under Registry > Environments", nameOrID)
 }
 
 // ListExecutionEnvironments returns up to limit environments that have a
@@ -241,12 +254,12 @@ func scanExecutionEnvironments(nameOrID string) (byID *ExecutionEnvironment, byN
 // resolveVersion unwraps the version a build can actually target. nameOrID is
 // carried through so the error names what the user typed rather than whichever
 // of the id or name matched.
-func resolveVersion(ee ExecutionEnvironment, nameOrID string) (id, versionID string, err error) {
+func withVersion(ee ExecutionEnvironment, nameOrID string) (ExecutionEnvironment, error) {
 	if ee.LatestSuccessfulVersion == nil {
-		return "", "", fmt.Errorf("execution environment %q has no successful version to build from", nameOrID)
+		return ExecutionEnvironment{}, fmt.Errorf("execution environment %q has no successful version to build from", nameOrID)
 	}
 
-	return ee.ID, ee.LatestSuccessfulVersion.ID, nil
+	return ee, nil
 }
 
 func execEnvIDs(envs []ExecutionEnvironment) []string {

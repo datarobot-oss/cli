@@ -20,6 +20,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
@@ -421,7 +422,7 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 			return manifest.Build{}, fmt.Errorf("--build-mode %s: %s", manifest.BuildModeGenerated, problem)
 		}
 
-		return a.generatedBuild()
+		return a.generatedBuild(detected)
 
 	default:
 		return manifest.Build{}, fmt.Errorf(
@@ -450,7 +451,7 @@ func (a Answers) buildMode(detected Detected) string {
 	}
 }
 
-func (a Answers) generatedBuild() (manifest.Build, error) {
+func (a Answers) generatedBuild(detected Detected) (manifest.Build, error) {
 	var missing []string
 
 	if a.ExecutionEnvironment == "" {
@@ -471,20 +472,32 @@ func (a Answers) generatedBuild() (manifest.Build, error) {
 		return manifest.Build{}, fmt.Errorf("--entrypoint %q: %w", a.Entrypoint, err)
 	}
 
-	// Resolved at setup, not at deploy: the file records both ids so the same
-	// manifest builds the same image after the environment moves on, and a
-	// name that does not exist fails now rather than after a sync.
-	id, versionID, err := resolveExecEnvFn(a.ExecutionEnvironment)
+	ee, err := a.executionEnvironment(detected)
 	if err != nil {
 		return manifest.Build{}, err
 	}
 
 	return manifest.Build{
 		Mode:                          manifest.BuildModeGenerated,
-		ExecutionEnvironmentID:        id,
-		ExecutionEnvironmentVersionID: versionID,
+		ExecutionEnvironmentID:        ee.ID,
+		ExecutionEnvironmentVersionID: ee.LatestSuccessfulVersion.ID,
 		Entrypoint:                    entrypoint,
 	}, nil
+}
+
+// executionEnvironment resolves --execution-environment at setup, so a missing
+// name or a wrong-language environment fails now rather than after a build.
+func (a Answers) executionEnvironment(detected Detected) (workload.ExecutionEnvironment, error) {
+	ee, err := findExecEnvFn(a.ExecutionEnvironment)
+	if err != nil {
+		return workload.ExecutionEnvironment{}, err
+	}
+
+	if problem := detected.environmentMismatch(ee); problem != "" {
+		return workload.ExecutionEnvironment{}, fmt.Errorf("--execution-environment %s: %s", a.ExecutionEnvironment, problem)
+	}
+
+	return ee, nil
 }
 
 // splitCommand parses a command line the way a shell would, so quoted

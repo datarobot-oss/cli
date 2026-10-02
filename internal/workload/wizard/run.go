@@ -55,7 +55,7 @@ func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Dr
 var (
 	getWorkloadFn        = workload.GetWorkloadDocument
 	getArtifactFn        = workload.GetArtifactDocument
-	resolveExecEnvFn     = workload.ResolveExecutionEnvironment
+	findExecEnvFn        = workload.FindExecutionEnvironment
 	isStdinTerminalFn    = reader.IsStdinTerminal
 	runInteractiveFlowFn = runInteractiveFlow
 )
@@ -1536,7 +1536,7 @@ func (a Answers) applyBuild(draft *manifest.Draft, detected Detected) error {
 	}
 
 	if mode == draft.Build.Mode {
-		return a.mergeBuild(&draft.Build)
+		return a.mergeBuild(&draft.Build, detected)
 	}
 
 	build, err := a.build(detected)
@@ -1550,7 +1550,7 @@ func (a Answers) applyBuild(draft *manifest.Draft, detected Detected) error {
 }
 
 // mergeBuild edits a build already in the requested mode, field by field.
-func (a Answers) mergeBuild(build *manifest.Build) error {
+func (a Answers) mergeBuild(build *manifest.Build, detected Detected) error {
 	switch build.Mode {
 	case manifest.BuildModeImage:
 		if a.Image != "" {
@@ -1568,12 +1568,12 @@ func (a Answers) mergeBuild(build *manifest.Build) error {
 		}
 
 		if a.ExecutionEnvironment != "" {
-			id, versionID, err := resolveExecEnvFn(a.ExecutionEnvironment)
+			ee, err := a.executionEnvironment(detected)
 			if err != nil {
 				return err
 			}
 
-			build.ExecutionEnvironmentID, build.ExecutionEnvironmentVersionID = id, versionID
+			build.ExecutionEnvironmentID, build.ExecutionEnvironmentVersionID = ee.ID, ee.LatestSuccessfulVersion.ID
 		}
 
 	case manifest.BuildModeDockerfile:
