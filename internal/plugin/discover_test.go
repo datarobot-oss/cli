@@ -92,7 +92,7 @@ func (s *DiscoverTestSuite) TearDownTest() {
 
 func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	s.Empty(plugins)
 	s.Empty(conflicts)
@@ -101,7 +101,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirEmptyDirectory() {
 
 func (s *DiscoverTestSuite) TestDiscoverInDirNonExistent() {
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), filepath.Join(s.tempDir, "nonexistent"), seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), filepath.Join(s.tempDir, "nonexistent"), seen, nil)
 
 	s.Nil(plugins)
 	s.Nil(conflicts)
@@ -112,7 +112,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirValidPlugin() {
 	createMockPlugin(s.T(), s.tempDir, "dr-testplugin", validManifest)
 
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	s.Require().Len(plugins, 1, "Expected exactly one plugin")
 	s.Empty(conflicts)
@@ -132,7 +132,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonDrFiles() {
 	s.Require().NoError(os.WriteFile(filepath.Join(s.tempDir, "random.txt"), []byte("text"), 0o644))
 
 	seen := make(map[string]bool)
-	plugins, _, _ := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, _, _ := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	s.Require().Len(plugins, 1, "Expected exactly one plugin (non-dr files should be skipped)")
 	s.Equal("test-plugin", plugins[0].Manifest.Name)
@@ -144,7 +144,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirSkipsNonExecutable() {
 	s.Require().NoError(os.WriteFile(path, []byte("not executable"), 0o644))
 
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	s.Empty(plugins)
 	s.Empty(conflicts)
@@ -159,7 +159,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirHandlesDuplicates() {
 		"test-plugin": true, // validManifest has name: "test-plugin"
 	}
 
-	plugins, conflicts, _ := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, _ := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	// Should be skipped due to duplicate manifest name
 	s.Empty(plugins)
@@ -174,7 +174,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirDeduplicatesByManifestName() {
 	createMockPlugin(s.T(), s.tempDir, "dr-second", manifest)
 
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	// Log manifest-fetch errors so future test failures show *why* discovery
 	// returned zero plugins instead of only asserting *that* it did.
@@ -194,7 +194,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirInvalidManifest() {
 	createMockPlugin(s.T(), s.tempDir, "dr-invalid", invalidManifest)
 
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	s.Empty(plugins)
 	s.Empty(conflicts)
@@ -209,7 +209,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirMultipleValidPlugins() {
 	createMockPlugin(s.T(), s.tempDir, "dr-two", manifest2)
 
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(context.Background(), s.tempDir, seen, nil)
 
 	s.Len(plugins, 2)
 	s.Empty(conflicts)
@@ -232,7 +232,7 @@ func (s *DiscoverTestSuite) TestDiscoverInDirCancelledContext() {
 	cancel()
 
 	seen := make(map[string]bool)
-	plugins, conflicts, errs := discoverInDir(ctx, s.tempDir, seen)
+	plugins, conflicts, errs := discoverInDir(ctx, s.tempDir, seen, nil)
 
 	s.Empty(plugins)
 	s.Empty(conflicts)
@@ -271,7 +271,7 @@ func (s *PathDirsTestSuite) TearDownTest() {
 }
 
 func (s *PathDirsTestSuite) TestEmptyPathDirs() {
-	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{}, map[string]bool{})
+	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{}, map[string]bool{}, nil)
 
 	s.Empty(plugins)
 	s.Empty(conflicts)
@@ -284,7 +284,7 @@ func (s *PathDirsTestSuite) TestMultipleDirsCollectsAll() {
 	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
 	createMockPlugin(s.T(), s.dir2, "dr-beta", m2)
 
-	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
+	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{}, nil)
 
 	s.Len(plugins, 2)
 	s.Empty(conflicts)
@@ -307,7 +307,7 @@ func (s *PathDirsTestSuite) TestCrossDirDeduplicationFirstDirWins() {
 	exe1 := createMockPlugin(s.T(), s.dir1, "dr-shared", manifest)
 	exe2 := createMockPlugin(s.T(), s.dir2, "dr-shared", manifest)
 
-	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{})
+	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1, s.dir2}, map[string]bool{}, nil)
 
 	s.Require().Len(plugins, 1)
 	s.Equal("shared-plugin", plugins[0].Manifest.Name)
@@ -323,7 +323,7 @@ func (s *PathDirsTestSuite) TestBaseSeenFiltersPlugins() {
 	createMockPlugin(s.T(), s.dir1, "dr-testplugin", validManifest)
 
 	baseSeen := map[string]bool{"test-plugin": true}
-	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen)
+	plugins, conflicts := discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen, nil)
 
 	s.Empty(plugins)
 	s.Require().Len(conflicts, 1)
@@ -336,7 +336,7 @@ func (s *PathDirsTestSuite) TestBaseSeenNotMutated() {
 	createMockPlugin(s.T(), s.dir1, "dr-alpha", m1)
 
 	baseSeen := map[string]bool{}
-	_, _ = discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen)
+	_, _ = discoverPathDirsParallel(context.Background(), []string{s.dir1}, baseSeen, nil)
 
 	s.Empty(baseSeen)
 }
@@ -347,7 +347,7 @@ func (s *PathDirsTestSuite) TestCancelledContextReturnsEmpty() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	plugins, _ := discoverPathDirsParallel(ctx, []string{s.dir1}, map[string]bool{})
+	plugins, _ := discoverPathDirsParallel(ctx, []string{s.dir1}, map[string]bool{}, nil)
 
 	s.Empty(plugins)
 }
@@ -366,7 +366,7 @@ func (s *PathDirsTestSuite) TestPartialResultsWhenContextExpiresAfterFastPlugin(
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	plugins, _ := discoverPathDirsParallel(ctx, []string{s.dir1, s.dir2}, map[string]bool{})
+	plugins, _ := discoverPathDirsParallel(ctx, []string{s.dir1, s.dir2}, map[string]bool{}, nil)
 
 	names := make(map[string]bool)
 	for _, p := range plugins {
