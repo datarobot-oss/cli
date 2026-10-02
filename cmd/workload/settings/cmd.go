@@ -374,7 +374,7 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 	// --wait may take, not how long each half may.
 	begun := time.Now()
 
-	final, err := waitReplacementFn(ref.ID, started, poll.Interval, poll.Timeout, func(r *workload.Replacement) {
+	final, err := waitReplacementFn(cmd.Context(), ref.ID, started, poll.Interval, poll.Timeout, func(r *workload.Replacement) {
 		if r != nil && r.Status != last {
 			last = r.Status
 
@@ -392,7 +392,7 @@ func follow(cmd *cobra.Command, format outputformat.OutputFormat, ref idargs.Ref
 
 	progress("Waiting for workload " + ref.ID + " to run on the new settings")
 
-	if _, err := waitWorkloadFn(ref.ID, workload.Serving{AwaitDrain: true}, poll.Interval,
+	if _, err := waitWorkloadFn(cmd.Context(), ref.ID, workload.Serving{AwaitDrain: true}, poll.Interval,
 		budgetLeft(poll.Timeout, begun), nil); err != nil {
 		return ref.Wrap(err)
 	}

@@ -18,23 +18,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// fixture reads a captured platform payload from testdata.
-func fixture(t *testing.T, name string) string {
-	t.Helper()
-
-	data, err := os.ReadFile(filepath.Join("testdata", name))
-	require.NoError(t, err)
-
-	return string(data)
-}
 
 // The fixtures are the platform's own answers, captured on staging: a
 // one-group workload on a fixed count, and a group that autoscales.

@@ -15,10 +15,9 @@
 package settings
 
 import (
-	"strconv"
-
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -40,32 +39,14 @@ func newTable(headers ...string) *table.Table {
 		Headers(headers...)
 }
 
-// memoryUnits are the 1000-based suffixes a manifest spells memory in,
-// largest first. Decimal on purpose: the platform reads MB as a million
-// bytes, and a binary size such as 2 GiB is left as its bare byte count
-// rather than rounded to a smaller decimal one.
-var memoryUnits = []struct {
-	suffix string
-	scale  int64
-}{
-	{"TB", 1_000_000_000_000},
-	{"GB", 1_000_000_000},
-	{"MB", 1_000_000},
-	{"KB", 1_000},
-}
-
-// memoryCell spells a byte count the way a manifest would: the largest
-// unit that divides it exactly, or the bare count when none does.
+// memoryCell spells a byte count the way a manifest would, which the
+// manifest package decides: the largest decimal unit that divides it
+// exactly, or the bare count when none does, so 2 GiB is never rounded to
+// a smaller 2GB.
 func memoryCell(bytes int64) string {
-	if bytes <= 0 {
-		return "-"
+	if spelled := manifest.MemoryString(bytes); spelled != "" {
+		return spelled
 	}
 
-	for _, unit := range memoryUnits {
-		if bytes >= unit.scale && bytes%unit.scale == 0 {
-			return strconv.FormatInt(bytes/unit.scale, 10) + unit.suffix
-		}
-	}
-
-	return strconv.FormatInt(bytes, 10)
+	return "-"
 }

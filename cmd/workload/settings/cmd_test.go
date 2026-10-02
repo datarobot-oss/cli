@@ -16,6 +16,7 @@ package settings
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -52,8 +53,8 @@ type seams struct {
 	get     func(string) (*workload.WorkloadSettings, error)
 	update  func(string, json.RawMessage) (*workload.Replacement, error)
 	guard   func(string) error
-	waitR   func(string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error)
-	waitW   func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	waitR   func(context.Context, string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error)
+	waitW   func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
 	readDoc func(string) (json.RawMessage, error)
 }
 
@@ -66,8 +67,8 @@ func install(t *testing.T, s seams) {
 		getSettingsFn = prev[0].(func(string) (*workload.WorkloadSettings, error))
 		updateSettingsFn = prev[1].(func(string, json.RawMessage) (*workload.Replacement, error))
 		guardFn = prev[2].(func(string) error)
-		waitReplacementFn = prev[3].(func(string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error))
-		waitWorkloadFn = prev[4].(func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error))
+		waitReplacementFn = prev[3].(func(context.Context, string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error))
+		waitWorkloadFn = prev[4].(func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error))
 		readSpecFileFn = prev[5].(func(string) (json.RawMessage, error))
 	})
 
@@ -84,12 +85,12 @@ func install(t *testing.T, s seams) {
 		return nil, nil
 	}
 	guardFn = func(string) error { return nil }
-	waitReplacementFn = func(string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error) {
+	waitReplacementFn = func(context.Context, string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error) {
 		t.Fatal("a replacement was waited on, which this test did not wire")
 
 		return nil, nil
 	}
-	waitWorkloadFn = func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	waitWorkloadFn = func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a workload was waited on, which this test did not wire")
 
 		return nil, nil
@@ -468,7 +469,7 @@ func TestCmd_WaitFollowsToTheNewSettings(t *testing.T) {
 		update: func(string, json.RawMessage) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-3", Status: "unknown"}, nil
 		},
-		waitR: func(_ string, started *workload.Replacement, _, timeout time.Duration, onTick func(*workload.Replacement)) (*workload.Replacement, error) {
+		waitR: func(_ context.Context, _ string, started *workload.Replacement, _, timeout time.Duration, onTick func(*workload.Replacement)) (*workload.Replacement, error) {
 			assert.Equal(t, "rep-3", started.ID)
 			assert.Equal(t, settleTimeout, timeout)
 
@@ -476,7 +477,7 @@ func TestCmd_WaitFollowsToTheNewSettings(t *testing.T) {
 
 			return &workload.Replacement{ID: "rep-3", Status: "completed"}, nil
 		},
-		waitW: func(_ string, want workload.Serving, _, timeout time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		waitW: func(_ context.Context, _ string, want workload.Serving, _, timeout time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			assert.True(t, want.AwaitDrain, "a resize replaces a generation, so the old one has to stop answering")
 			assert.LessOrEqual(t, timeout, settleTimeout, "the second wait gets what the first left, not a fresh budget")
 			assert.Positive(t, timeout)
@@ -501,10 +502,10 @@ func TestCmd_WaitRefusesToCallAMismatchedCountApplied(t *testing.T) {
 		update: func(string, json.RawMessage) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-6", Status: "unknown"}, nil
 		},
-		waitR: func(_ string, started *workload.Replacement, _, _ time.Duration, _ func(*workload.Replacement)) (*workload.Replacement, error) {
+		waitR: func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration, _ func(*workload.Replacement)) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: started.ID, Status: "completed"}, nil
 		},
-		waitW: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		waitW: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
 		},
 	})
@@ -528,10 +529,10 @@ func TestCmd_WaitWithoutAVerdictIsUnconfirmed(t *testing.T) {
 		update: func(string, json.RawMessage) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-7", Status: "submitted"}, nil
 		},
-		waitR: func(_ string, started *workload.Replacement, _, _ time.Duration, _ func(*workload.Replacement)) (*workload.Replacement, error) {
+		waitR: func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration, _ func(*workload.Replacement)) (*workload.Replacement, error) {
 			return started, nil
 		},
-		waitW: func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		waitW: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
 		},
 	})
@@ -554,7 +555,7 @@ func TestCmd_WaitReportsAFailedReplacement(t *testing.T) {
 		update: func(string, json.RawMessage) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-4", Status: "unknown"}, nil
 		},
-		waitR: func(string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error) {
+		waitR: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration, func(*workload.Replacement)) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-4", Status: "failed"}, errors.New("replacement rep-4 ended as failed")
 		},
 	})
