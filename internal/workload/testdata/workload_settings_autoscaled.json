@@ -1,0 +1,45 @@
+{
+    "runtime": {
+        "containerGroups": [
+            {
+                "name": "default",
+                "resourceBundles": [
+                    "cpu.xlarge"
+                ],
+                "bundleSelectionPolicy": "availability",
+                "replicaCount": null,
+                "autoscaling": {
+                    "enabled": true,
+                    "minReplicaCount": 0,
+                    "maxReplicaCount": 3,
+                    "policies": [
+                        {
+                            "scalingMetric": "httpRequestsConcurrency",
+                            "target": 2.0
+                        }
+                    ],
+                    "cooldownPeriodMinutes": null
+                },
+                "containers": [
+                    {
+                        "name": "primary",
+                        "resourceAllocation": {
+                            "gpu": null,
+                            "cpu": 1.0,
+                            "memory": 2147483648
+                        }
+                    }
+                ],
+                "resolvedBundle": {
+                    "id": "cpu.xlarge",
+                    "cpuCount": 2.0,
+                    "memoryBytes": 2147483648,
+                    "gpuCount": 0,
+                    "gpuMaker": null,
+                    "gpuTypeLabel": null
+                }
+            }
+        ]
+    },
+    "replacement": null
+}

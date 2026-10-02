@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/get"
 	"github.com/datarobot/cli/cmd/workload/list"
 	"github.com/datarobot/cli/cmd/workload/logs"
+	"github.com/datarobot/cli/cmd/workload/settings"
 	"github.com/datarobot/cli/cmd/workload/start"
 	"github.com/datarobot/cli/cmd/workload/status"
 	"github.com/datarobot/cli/cmd/workload/stop"
@@ -72,6 +73,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		get.Cmd(),
 		list.Cmd(),
 		logs.Cmd(),
+		settings.Cmd(),
 		start.Cmd(),
 		status.Cmd(),
 		stop.Cmd(),
