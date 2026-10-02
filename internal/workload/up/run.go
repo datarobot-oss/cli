@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -55,6 +56,7 @@ var (
 	listBuildsFn         = workload.ListArtifactBuilds
 	getCredentialFn      = workload.GetCredential
 	findCredentialFn     = workload.FindCredentialNamed
+	activeReplacementFn  = workload.GetActiveReplacement
 	guardReplacementFn   = workload.RefuseActiveReplacement
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
@@ -349,13 +351,176 @@ func guardRollout(workloadID, consequence string) error {
 
 // lookSettled is the live read a plan is built from: the workload as it is,
 // once it has stopped moving.
+//
+// Two things can be moving: a rollout, then the workload's own status. The
+// rollout is waited out first because a swap that lands leaves the workload
+// coming up. Both waits share one --poll-timeout.
 func lookSettled(ctx context.Context, workloadID string, opts Options) (Live, error) {
 	found, err := Look(workloadID)
 	if err != nil {
 		return Live{}, err
 	}
 
-	return awaitSteady(ctx, found, opts)
+	waitFrom := time.Now()
+
+	replaced, previewed, err := awaitReplaced(ctx, found, opts)
+	if err != nil {
+		return replaced, err
+	}
+
+	// A preview that already said a deploy would wait says nothing further.
+	if previewed {
+		return replaced, nil
+	}
+
+	return awaitSteady(ctx, replaced, budgetLeft(opts, waitFrom))
+}
+
+// awaitReplaced waits out a swap somebody else already started and re-reads
+// the workload once it has landed. A workload being replaced reports itself
+// running for the whole swap, so awaitSteady cannot see this; the replacement
+// route can. The guards at the apply sites stay: a rollout that appears after
+// this read is a concurrent deploy, and waiting there would apply a stale plan.
+//
+// A dry run never waits. The bool is true only when the preview has already
+// said a deploy would wait, so the caller does not say it twice.
+func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, error) {
+	if !replaceable(live) {
+		return live, false, nil
+	}
+
+	active, err := activeReplacementFn(live.WorkloadID)
+	if err != nil {
+		return live, false, fmt.Errorf(
+			"cannot tell whether workload %s already has a rollout in progress, so nothing was deployed: %w",
+			live.WorkloadID, err)
+	}
+
+	if active == nil {
+		// Logged so a --debug transcript shows the route was asked at all.
+		log.Debug("no rollout in flight; planning against the workload as read",
+			"workload_id", live.WorkloadID)
+
+		return live, false, nil
+	}
+
+	// A settled record lingers after the rollout ends, so it is not waited on.
+	// It is re-read rather than returned as is: the swap may have landed
+	// between the two reads, and the snapshot in hand names the outgoing
+	// artifact, which a --lock run would then make permanent.
+	if workload.IsTerminalReplacementStatus(active.Status) {
+		log.Debug("the rollout already settled; re-reading before planning",
+			"workload_id", live.WorkloadID, "replacement_id", active.ID, "status", active.Status)
+
+		refreshed, err := Look(live.WorkloadID)
+
+		return refreshed, false, err
+	}
+
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	report.say("  %s\n", tui.HintStyle.Render(replacingNote(live.WorkloadID, active)))
+
+	if opts.DryRun {
+		report.say("  %s\n", tui.HintStyle.Render(
+			"A deploy would wait for this rollout to finish and plan against where it lands."))
+
+		// A running workload mid-swap must not plan as "up to date": the swap
+		// decides what differs. Settling says so. Any other state (stopped,
+		// errored) keeps its own verdict, which the plan exists to report.
+		if live.State == StateRunning {
+			live.State = StateSettling
+		}
+
+		return live, true, nil
+	}
+
+	if opts.Detach {
+		// --detach is about the deploy; this wait comes before it.
+		report.say("  %s\n", tui.HintStyle.Render(
+			"Waiting for it to land before planning; --detach applies to the deploy."))
+	}
+
+	var settled held[workload.Replacement]
+
+	const label = "Waiting for the rollout already in progress"
+
+	err = report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			// Seeded with the record just read, so the wait can tell a rollout
+			// that settled before the first poll from one that was never there.
+			replacement, waitErr := waitReplacementFn(ctx, live.WorkloadID, active,
+				opts.PollInterval, opts.PollTimeout, rolloutProgress(strings.ToLower(label), opts, report, note))
+			settled.set(replacement)
+
+			return waitErr
+		})
+	if err != nil {
+		if failure := replacedFailed(live, settled.get(), err); failure != nil {
+			return live, false, failure
+		}
+
+		report.say("  %s\n", tui.WarnStyle.Render(fmt.Sprintf(
+			"⚠ That rollout ended as %s, so the workload is still on the version it was.",
+			settled.get().Status)))
+	}
+
+	refreshed, err := Look(live.WorkloadID)
+
+	return refreshed, false, err
+}
+
+// replaceable says whether there is a workload for the replacement route to
+// answer about: a missing or terminated one is not being replaced.
+func replaceable(live Live) bool {
+	if live.WorkloadID == "" {
+		return false
+	}
+
+	switch live.State {
+	case StateUnbound, StateMissing, StateTerminated:
+		return false
+
+	case StateStopped, StateSettling, StateRunning, StateErrored:
+		return true
+
+	default:
+		return true
+	}
+}
+
+// replacingNote says what is in flight, naming only the fields the platform
+// filled in: a settings-only rollout carries no candidate artifact.
+func replacingNote(workloadID string, active *workload.Replacement) string {
+	note := "Workload " + workloadID + " is being replaced"
+
+	if active.ArtifactID != "" {
+		note += " onto artifact " + active.ArtifactID
+	}
+
+	if active.Status != "" {
+		note += ", status " + active.Status
+	}
+
+	return note + "."
+}
+
+// replacedFailed is the verdict on a wait that did not come back clean. A
+// rollout that ended failed never promoted, so the run carries on and deploys
+// onto what is still serving; anything else names where the rollout got to.
+func replacedFailed(live Live, settled *workload.Replacement, err error) error {
+	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+		return nil
+	}
+
+	where := "did not finish rolling out"
+	if settled != nil && settled.Status != "" {
+		where = "was still " + settled.Status
+	}
+
+	return fmt.Errorf(
+		"the rollout of workload %s %s, so nothing was deployed; check 'dr workload status %s': %w",
+		live.WorkloadID, where, live.WorkloadID, err)
 }
 
 // awaitSteady waits out a workload that is still moving, and hands back what
