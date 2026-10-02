@@ -135,15 +135,10 @@ func runGet(
 	}
 
 	// Covers a build that was already failed on the first GET as well as one
-	// that failed during the wait. The logs are named only when the summary
-	// found some, or when one cheap check against the stream does.
+	// that failed during the wait. The summary fetched the logs already, so
+	// it says whether there are any.
 	if workload.IsBuildErrorStatus(build.Status) {
-		logs := workload.LogsCaptured
-		if len(summary.LogTail) == 0 {
-			logs = workload.BuildLogsAvailable(artifactID, build.ID)
-		}
-
-		return workload.BuildFailureMessage(artifactID, build.ID, build.Status, logs)
+		return workload.BuildFailureMessage(artifactID, build.ID, build.Status, summary.LogEvidence())
 	}
 
 	return waitErr

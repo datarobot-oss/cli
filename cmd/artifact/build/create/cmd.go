@@ -155,8 +155,8 @@ func waitForAllBuilds(
 }
 
 // waitOne follows one build to its end and summarises it. A failed build's
-// error names the logs only when there are some: the stream or the summary's
-// tail already say so, and a silent build gets one cheap check.
+// error names the logs only when there are some: lines the stream printed
+// count, and the summary says what its own fetch found.
 func waitOne(cmd *cobra.Command, artifactID, buildID string, poll pollflags.Set) (workload.BuildSummary, error) {
 	build, logged, err := waitStreaming(cmd, artifactID, buildID, poll)
 	if build == nil {
@@ -166,8 +166,12 @@ func waitOne(cmd *cobra.Command, artifactID, buildID string, poll pollflags.Set)
 	summary, serr := workload.BuildSummaryFor(build, workload.DefaultBuildLogTail)
 
 	if workload.IsBuildErrorStatus(build.Status) {
-		err = workload.BuildFailureMessage(artifactID, build.ID, build.Status,
-			logEvidence(artifactID, build.ID, logged || len(summary.LogTail) > 0))
+		logs := summary.LogEvidence()
+		if logged {
+			logs = workload.LogsCaptured
+		}
+
+		err = workload.BuildFailureMessage(artifactID, build.ID, build.Status, logs)
 	}
 
 	if serr != nil {
@@ -175,16 +179,6 @@ func waitOne(cmd *cobra.Command, artifactID, buildID string, poll pollflags.Set)
 	}
 
 	return summary, err
-}
-
-// logEvidence is what the failure message may claim about the logs: captured
-// when something was already seen, otherwise one check against the stream.
-func logEvidence(artifactID, buildID string, seen bool) workload.LogEvidence {
-	if seen {
-		return workload.LogsCaptured
-	}
-
-	return workload.BuildLogsAvailable(artifactID, buildID)
 }
 
 // waitStreaming polls the build to its terminal status while printing its

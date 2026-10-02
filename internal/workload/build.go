@@ -242,6 +242,22 @@ type BuildSummary struct {
 	// stable shape so consumers can jq it either way, while a reason that
 	// was never given is better absent than present and blank.
 	FailureReason string `json:"failureReason,omitempty"`
+
+	// LogTailErr is why LogTail is empty when the fetch failed, so an empty
+	// tail is not read as "no logs". Not rendered.
+	LogTailErr error `json:"-"`
+}
+
+// LogEvidence is what the summary can say about the build's logs.
+func (s BuildSummary) LogEvidence() LogEvidence {
+	switch {
+	case len(s.LogTail) > 0:
+		return LogsCaptured
+	case s.LogTailErr != nil:
+		return LogsUnknown
+	default:
+		return LogsAbsent
+	}
 }
 
 // IsTerminalBuildStatus reports whether s is a state from which the build
@@ -614,12 +630,12 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {
-				// Surface the fetch error via debug logging rather than
-				// failing the whole summary -- the user still benefits
-				// from seeing the build's terminal state even when the
-				// build-service logs endpoint is unavailable (which is
-				// common right after a CANCELLED build, when the logs
-				// have been garbage-collected).
+				// Kept on the summary rather than failing it: the terminal
+				// state is still worth showing when the logs endpoint is
+				// unavailable, which is common right after a CANCELLED
+				// build once the logs have been garbage-collected.
+				summary.LogTailErr = lerr
+
 				log.Debug("BuildSummaryFor: log tail fetch failed", "build_id", build.ID, "err", lerr)
 			} else {
 				summary.LogTail = lastN(logs, tailLen)
