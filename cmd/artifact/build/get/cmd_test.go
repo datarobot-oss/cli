@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -28,18 +29,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// serveFailedBuild answers the build as FAILED on its first read and the
-// build's log stream with logs, so the test controls the only thing the
-// failure message is allowed to claim.
-func serveFailedBuild(t *testing.T, logs func(w http.ResponseWriter)) {
+// serveFailedBuild answers the build's log stream with logs and the build
+// itself as FAILED, after runningFirst reads of it as RUNNING, so the test
+// controls the only thing the failure message is allowed to claim.
+func serveFailedBuild(t *testing.T, runningFirst int, logs func(w http.ResponseWriter)) {
 	t.Helper()
+
+	var reads atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/api/v2/otel/artifact/art-1/logs/"):
 			logs(w)
 		case strings.TrimSuffix(r.URL.Path, "/") == "/api/v2/artifacts/art-1/builds/b-1":
-			fmt.Fprint(w, `{"id":"b-1","artifactId":"art-1","status":"FAILED","failureReason":"step 3 exited 1"}`)
+			status := "FAILED"
+			if int(reads.Add(1)) <= runningFirst {
+				status = "RUNNING"
+			}
+
+			fmt.Fprintf(w, `{"id":"b-1","artifactId":"art-1","status":%q,"failureReason":"step 3 exited 1"}`, status)
 		default:
 			http.NotFound(w, r)
 		}
@@ -53,47 +61,48 @@ func serveFailedBuild(t *testing.T, logs func(w http.ResponseWriter)) {
 }
 
 // A build that failed before --wait had anything to wait for gets the same
-// error as one that failed during the wait, and that error names the logs
+// error as one that fails during the wait, and that error names the logs
 // only when there are some.
 func TestCmd_WaitOnAFailedBuildNamesTheLogsOnlyWhenThereAreSome(t *testing.T) {
+	lines := func(w http.ResponseWriter) {
+		fmt.Fprint(w, `{"data":[{"timestamp":"2026-10-02T10:00:00Z","level":"error","message":"step 3 exited 1"}],"count":1,"next":""}`)
+	}
+
 	for _, c := range []struct {
-		name string
-		logs func(w http.ResponseWriter)
-		want string
+		name         string
+		runningFirst int
+		logs         func(w http.ResponseWriter)
+		want         string
 	}{
+		{name: "already failed, the stream has lines", logs: lines, want: "see 'dr artifact build logs art-1 b-1'"},
 		{
-			name: "the stream has lines",
-			logs: func(w http.ResponseWriter) {
-				fmt.Fprint(w, `{"data":[{"timestamp":"2026-10-02T10:00:00Z","level":"error","message":"step 3 exited 1"}],"count":1,"next":""}`)
-			},
-			want: "see 'dr artifact build logs art-1 b-1'",
-		},
-		{
-			name: "the stream is empty",
+			name: "already failed, the stream is empty",
 			logs: func(w http.ResponseWriter) { fmt.Fprint(w, `{"data":[],"count":0,"next":""}`) },
 			want: "no log lines have been captured",
 		},
 		{
-			name: "the stream cannot be read",
+			name: "already failed, the stream cannot be read",
 			logs: func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadGateway) },
 			want: "could not be read just now",
 		},
+		{name: "fails during the wait", runningFirst: 1, logs: lines, want: "see 'dr artifact build logs art-1 b-1'"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			serveFailedBuild(t, c.logs)
+			serveFailedBuild(t, c.runningFirst, c.logs)
 
 			var stderr bytes.Buffer
 
 			cmd := Cmd()
 			cmd.PreRunE = nil
 			cmd.SetErr(&stderr)
-			cmd.SetArgs([]string{"art-1", "b-1", "--wait"})
+			cmd.SetArgs([]string{"art-1", "b-1", "--wait", "--poll-interval", "5ms"})
 
 			err := cmd.Execute()
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "ended with status FAILED")
 			assert.Contains(t, err.Error(), c.want)
-			assert.NotContains(t, stderr.String(), "Waiting for build", "a build already failed has nothing to wait for")
+			assert.Equal(t, c.runningFirst > 0, strings.Contains(stderr.String(), "Waiting for build"),
+				"only a build still running is waited for")
 		})
 	}
 }

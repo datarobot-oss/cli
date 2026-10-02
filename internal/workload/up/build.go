@@ -490,7 +490,7 @@ func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, 
 		// build wait carries on. Its notices go into the stream marked as the
 		// CLI's own — silence here is indistinguishable from a hang, which is
 		// worse than one meta line among the build's output.
-		tail := workload.NewBuildLogTail(artifactID, buildID, //nolint:contextcheck // drapi takes no context; see abandoned in internal/workload
+		tail := newBuildLogTailFn(artifactID, buildID,
 			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
 			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
 

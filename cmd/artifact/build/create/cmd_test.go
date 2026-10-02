@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -64,10 +65,22 @@ func TestCmd_WaitOnAFailedBuildNamesTheLogsOnlyWhenThereAreSome(t *testing.T) {
 		want string
 	}{
 		{
+			// The stream answers the tail's reads and nothing after, so the
+			// lines the tail printed are the only evidence there is.
 			name: "the stream has lines",
-			logs: func(w http.ResponseWriter) {
-				fmt.Fprint(w, `{"data":[{"timestamp":"2026-10-02T10:00:00Z","level":"error","message":"step 3 exited 1"}],"count":1,"next":""}`)
-			},
+			logs: func() func(w http.ResponseWriter) {
+				var reads atomic.Int32
+
+				return func(w http.ResponseWriter) {
+					if reads.Add(1) > 2 {
+						w.WriteHeader(http.StatusBadGateway)
+
+						return
+					}
+
+					fmt.Fprint(w, `{"data":[{"timestamp":"2026-10-02T10:00:00Z","level":"error","message":"step 3 exited 1"}],"count":1,"next":""}`)
+				}
+			}(),
 			want: "see 'dr artifact build logs art-1 b-1'",
 		},
 		{

@@ -16,6 +16,9 @@ package logs
 
 import (
 	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload"
@@ -70,6 +73,56 @@ func TestCmd_SaysWhenTheLinesSitBelowTheLevel(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, "No logs at level info or above; 2 below it. Use --level debug to see them.\n", stderr.String())
+}
+
+// Under JSON the same situation prints an empty list on stdout and nothing
+// on stderr, so `| jq` parses.
+func TestCmd_JSONPrintsAnEmptyListWhenTheLinesSitBelowTheLevel(t *testing.T) {
+	prev := getLogsFn
+	getLogsFn = func(string, string) ([]workload.BuildLogEntry, error) {
+		return []workload.BuildLogEntry{{Levelname: "DEBUG", Message: "pip install"}}, nil
+	}
+
+	t.Cleanup(func() { getLogsFn = prev })
+
+	stdout := captureStdout(t)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"art-1", "b-1", "--output-format", "json"})
+
+	var stderr bytes.Buffer
+
+	cmd.SetErr(&stderr)
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "[]", strings.TrimSpace(stdout()))
+	assert.Empty(t, stderr.String())
+}
+
+// captureStdout redirects the process's stdout until the returned function
+// is called, which hands back what was written.
+func captureStdout(t *testing.T) func() string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	prev := os.Stdout
+	os.Stdout = w
+
+	t.Cleanup(func() { os.Stdout = prev })
+
+	return func() string {
+		os.Stdout = prev
+
+		require.NoError(t, w.Close())
+
+		out, err := io.ReadAll(r)
+		require.NoError(t, err)
+
+		return string(out)
+	}
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {

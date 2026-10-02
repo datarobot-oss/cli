@@ -141,12 +141,20 @@ type bufferedLogLine struct {
 // unseen line in chronological order; onWarn (nil-safe) receives the one
 // notice given when the tail gives up.
 func NewBuildLogTail(artifactID, buildID string, onLine func(WorkloadLogEntry), onWarn func(string)) *BuildLogTail {
+	return NewBuildLogTailFetching(func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
+		return fetchArtifactBuildLogs(artifactID, buildID, maxEntries, level, since, reqInfo)
+	}, onLine, onWarn)
+}
+
+// NewBuildLogTailFetching is NewBuildLogTail over any source of lines, which
+// is what lets a test drive the stream without a server.
+func NewBuildLogTailFetching(
+	fetch func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error),
+	onLine func(WorkloadLogEntry),
+	onWarn func(string),
+) *BuildLogTail {
 	if onWarn == nil {
 		onWarn = func(string) {}
-	}
-
-	fetch := func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
-		return fetchArtifactBuildLogs(artifactID, buildID, maxEntries, level, since, reqInfo)
 	}
 
 	// The interval passed here only satisfies the follower's validation; the

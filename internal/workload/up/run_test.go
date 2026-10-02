@@ -1958,6 +1958,38 @@ func TestRun_FailedBuildStopsAndNamesTheLogs(t *testing.T) {
 	assert.Equal(t, "bld-1", result.BuildID, "a failed build is still the build to go and read")
 }
 
+// Lines the stream already printed are the evidence, so the probe is never
+// asked when the tail emitted something.
+func TestRun_FailedBuildWhoseStreamSpokeSkipsTheProbe(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, onTick func(*workload.Build)) (*workload.Build, error) {
+		onTick(&workload.Build{ID: id, Status: workload.BuildStatusInProgress})
+
+		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+	f.hasLogs = func(string, string) workload.LogEvidence {
+		t.Fatal("the stream printed lines, so nothing is left to ask")
+
+		return workload.LogsUnknown
+	}
+
+	install(t, f)
+
+	force(t, &newBuildLogTailFn, func(_, _ string, onLine func(workload.WorkloadLogEntry), onWarn func(string)) *workload.BuildLogTail {
+		return workload.NewBuildLogTailFetching(func(int, string, string, string) ([]workload.WorkloadLogEntry, error) {
+			return []workload.WorkloadLogEntry{{Timestamp: "2026-10-02T10:00:00Z", Level: "error", Message: "step 3 exited 1"}}, nil
+		}, onLine, onWarn)
+	})
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 bld-1'")
+	assert.Contains(t, stderr, "step 3 exited 1")
+}
+
 // A build that died before the builder wrote anything is not sent to a logs
 // command that prints nothing; the error says no lines exist yet, and where
 // to look if they arrive.
