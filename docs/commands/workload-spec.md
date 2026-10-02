@@ -189,7 +189,7 @@ runtime:
 | `replicaCount` | Fixed scale. Mutually exclusive with `autoscaling.enabled: true` on the same group. |
 | `autoscaling` | Dynamic scale. See below. |
 | `resourceAllocation.cpu` | CPU cores. Fractional values are allowed (`0.5`). |
-| `resourceAllocation.memory` | A byte count or a **1000-based** unit: `B`, `KB`, `MB`, `GB`, `TB`. Binary units such as `Gi` are read as their decimal namesakes rather than converted, so write the decimal unit you actually mean. |
+| `resourceAllocation.memory` | A byte count or a **1000-based** unit: `B`, `KB`, `MB`, `GB`, `TB`. Binary units such as `Gi` are read as their decimal namesakes rather than converted, so write the decimal unit you actually mean. The CLI reads memory back the same way: `2GB` for 2,000,000,000 bytes, and the exact byte count (`"2147483648"`) when no decimal unit divides it. Sizes elsewhere in the CLI, such as code uploads and checkouts, are binary and labelled `KiB`/`MiB`/`GiB`. |
 
 ### Fixed replicas or autoscaling, not both
 
