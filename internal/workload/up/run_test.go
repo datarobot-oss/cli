@@ -207,6 +207,7 @@ type fakes struct {
 	build     func(string) (*workload.BuildTriggerResponse, error)
 	waitBuild func(context.Context, string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
 	builds    func(string, int) ([]workload.Build, error)
+	hasLogs   func(string, string) workload.LogEvidence
 
 	// checkEndpoint is the one GET a deploy ends with.
 	checkEndpoint func(string) (int, error)
@@ -333,6 +334,10 @@ func install(t *testing.T, f fakes) {
 	swap(t, &triggerBuildFn, f.build)
 	swap(t, &waitBuildFn, f.waitBuild)
 	swap(t, &listBuildsFn, f.builds)
+
+	// No logs unless a test says so, and never a real fetch by accident.
+	force(t, &hasLogsFn, func(string, string) workload.LogEvidence { return workload.LogsAbsent })
+	swap(t, &hasLogsFn, f.hasLogs)
 
 	// Nothing stands in the way of a rollout unless a test says so, because
 	// the quiet answer is the one every other roll test wants.
@@ -1942,13 +1947,36 @@ func TestRun_FailedBuildStopsAndNamesTheLogs(t *testing.T) {
 			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 	}
 
+	f.hasLogs = func(string, string) workload.LogEvidence { return workload.LogsCaptured }
+
 	install(t, f)
 
 	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dr artifact build logs art-1 bld-1")
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 bld-1'")
 	assert.NotContains(t, tr.steps, "create-workload")
 	assert.Equal(t, "bld-1", result.BuildID, "a failed build is still the build to go and read")
+}
+
+// A build that died before the builder wrote anything is not sent to a logs
+// command that prints nothing; the error says no lines exist yet, and where
+// to look if they arrive.
+func TestRun_FailedBuildWithNoLogsSaysSo(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no log lines have been captured for it yet")
+	assert.Contains(t, err.Error(), "dr artifact build logs art-1 bld-1")
+	assert.NotContains(t, err.Error(), "see '")
 }
 
 // A wait that runs out returns the build it was still watching, and that id

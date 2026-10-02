@@ -143,26 +143,48 @@ func waitForAllBuilds(
 	for _, buildID := range buildIDs {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Waiting for build %s...\n", buildID)
 
-		build, werr := waitStreaming(cmd, artifactID, buildID, poll)
-		if werr != nil && firstWaitErr == nil {
-			firstWaitErr = werr
-		}
-
-		if build == nil {
-			summaries = append(summaries, workload.BuildSummary{BuildID: buildID, Status: workload.BuildStatusCLIUnknown})
-
-			continue
-		}
-
-		summary, serr := workload.BuildSummaryFor(build, workload.DefaultBuildLogTail)
-		if serr != nil && firstWaitErr == nil {
-			firstWaitErr = serr
+		summary, err := waitOne(cmd, artifactID, buildID, poll)
+		if err != nil && firstWaitErr == nil {
+			firstWaitErr = err
 		}
 
 		summaries = append(summaries, summary)
 	}
 
 	return summaries, firstWaitErr
+}
+
+// waitOne follows one build to its end and summarises it. A failed build's
+// error names the logs only when there are some: the stream or the summary's
+// tail already say so, and a silent build gets one cheap check.
+func waitOne(cmd *cobra.Command, artifactID, buildID string, poll pollflags.Set) (workload.BuildSummary, error) {
+	build, logged, err := waitStreaming(cmd, artifactID, buildID, poll)
+	if build == nil {
+		return workload.BuildSummary{BuildID: buildID, Status: workload.BuildStatusCLIUnknown}, err
+	}
+
+	summary, serr := workload.BuildSummaryFor(build, workload.DefaultBuildLogTail)
+
+	if workload.IsBuildErrorStatus(build.Status) {
+		err = workload.BuildFailureMessage(artifactID, build.ID, build.Status,
+			logEvidence(artifactID, build.ID, logged || len(summary.LogTail) > 0))
+	}
+
+	if serr != nil {
+		return summary, serr
+	}
+
+	return summary, err
+}
+
+// logEvidence is what the failure message may claim about the logs: captured
+// when something was already seen, otherwise one check against the stream.
+func logEvidence(artifactID, buildID string, seen bool) workload.LogEvidence {
+	if seen {
+		return workload.LogsCaptured
+	}
+
+	return workload.BuildLogsAvailable(artifactID, buildID)
 }
 
 // waitStreaming polls the build to its terminal status while printing its
@@ -173,7 +195,7 @@ func waitStreaming(
 	cmd *cobra.Command,
 	artifactID, buildID string,
 	poll pollflags.Set,
-) (*workload.Build, error) {
+) (build *workload.Build, logged bool, err error) {
 	out := cmd.ErrOrStderr()
 
 	tail := workload.NewBuildLogTail(artifactID, buildID,
@@ -185,7 +207,7 @@ func waitStreaming(
 	// Terminal statuses are left to the summary.
 	lastStatus := ""
 
-	build, err := workload.WaitForBuild(cmd.Context(), artifactID, buildID, poll.Interval, poll.Timeout,
+	build, err = workload.WaitForBuild(cmd.Context(), artifactID, buildID, poll.Interval, poll.Timeout,
 		func(b *workload.Build) {
 			if b != nil && !workload.IsTerminalBuildStatus(b.Status) && !strings.EqualFold(b.Status, lastStatus) {
 				lastStatus = b.Status
@@ -196,9 +218,9 @@ func waitStreaming(
 			tail.Poll()
 		})
 
-	// One more poll after the terminal status: ingestion lags the build, so
-	// the last lines routinely land after the wait has already ended.
-	tail.Poll()
+	// The final catch-up: ingestion lags the build, so the last lines
+	// routinely land after the wait has already ended.
+	tail.Finish()
 
-	return build, err
+	return build, tail.Emitted(), err
 }

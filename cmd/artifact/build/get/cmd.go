@@ -134,18 +134,17 @@ func runGet(
 		return err
 	}
 
-	if waitErr != nil {
-		return waitErr
-	}
-
-	// The build may have been already terminal-error on the first GET, in
-	// which case WaitForBuild was skipped and waitErr stays nil. Surface
-	// that explicitly so the process exits non-zero; hint at the logs
-	// command so the user has a one-step recovery to inspect what went
-	// wrong.
+	// Covers a build that was already failed on the first GET as well as one
+	// that failed during the wait. The logs are named only when the summary
+	// found some, or when one cheap check against the stream does.
 	if workload.IsBuildErrorStatus(build.Status) {
-		return fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", build.ID, build.Status, build.ID)
+		logs := workload.LogsCaptured
+		if len(summary.LogTail) == 0 {
+			logs = workload.BuildLogsAvailable(artifactID, build.ID)
+		}
+
+		return workload.BuildFailureMessage(artifactID, build.ID, build.Status, logs)
 	}
 
-	return nil
+	return waitErr
 }
