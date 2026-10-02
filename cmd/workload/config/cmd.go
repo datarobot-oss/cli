@@ -202,7 +202,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 			"without being compared, because the platform never returns a stored value.")
 
 	cmd.Flags().StringVar(&f.answers.WorkloadID, "workload-id", "", "Bind an existing workload by id. Exclusive with --name.")
-	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first `dr workload up`.")
+	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first 'dr workload up'.")
 	cmd.Flags().StringVar(&f.answers.Type, "type", "", "Workload kind: service or agent (default service).")
 	cmd.Flags().BoolVar(&f.answers.A2AEnabled, "a2a-enabled", false,
 		"Agent only: publish the app's A2A agent card to the tenant-wide agent registry.")

@@ -1115,7 +1115,7 @@ func TestFlow_GeneratedBuildAnswersSurviveBackAndForth(t *testing.T) {
 
 	selected := model.picker.selected()
 	require.NotNil(t, selected)
-	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3"}, selected.value)
+	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3", name: "third"}, selected.value)
 
 	// And going forward again keeps both rather than taking row 0.
 	model = press(t, model, "enter")
@@ -1899,18 +1899,18 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
 
 	t.Cleanup(func() { listExecEnvsFn = originalList })
 
-	originalResolve := resolveExecEnvFn
-	resolveExecEnvFn = func(name string) (string, string, error) {
+	originalResolve := findExecEnvFn
+	findExecEnvFn = func(name string) (workload.ExecutionEnvironment, error) {
 		for _, env := range envs {
 			if env.Name == name || env.ID == name {
-				return env.ID, env.LatestSuccessfulVersion.ID, nil
+				return env, nil
 			}
 		}
 
-		return "", "", fmt.Errorf("no such execution environment %q", name)
+		return workload.ExecutionEnvironment{}, fmt.Errorf("no such execution environment %q", name)
 	}
 
-	t.Cleanup(func() { resolveExecEnvFn = originalResolve })
+	t.Cleanup(func() { findExecEnvFn = originalResolve })
 
 	// The flag names a base image that is not the one the picker would offer
 	// first, which is the whole point: an overwrite has to be visible.
@@ -1927,7 +1927,7 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoad(t *testing.T) {
 	// The cursor is on what the flag asked for, not on row 0.
 	selected := model.picker.selected()
 	require.NotNil(t, selected)
-	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3"}, selected.value,
+	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3", name: "third"}, selected.value,
 		"the picker opened on row 0 and would overwrite the flag on the next Enter")
 
 	// And Enter keeps it, which is the consequence the user actually meets.
@@ -1964,18 +1964,18 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoadOnABoundWorkload(t *test
 
 	t.Cleanup(func() { listExecEnvsFn = originalList })
 
-	originalResolve := resolveExecEnvFn
-	resolveExecEnvFn = func(name string) (string, string, error) {
+	originalResolve := findExecEnvFn
+	findExecEnvFn = func(name string) (workload.ExecutionEnvironment, error) {
 		for _, env := range envs {
 			if env.Name == name || env.ID == name {
-				return env.ID, env.LatestSuccessfulVersion.ID, nil
+				return env, nil
 			}
 		}
 
-		return "", "", fmt.Errorf("no such execution environment %q", name)
+		return workload.ExecutionEnvironment{}, fmt.Errorf("no such execution environment %q", name)
 	}
 
-	t.Cleanup(func() { resolveExecEnvFn = originalResolve })
+	t.Cleanup(func() { findExecEnvFn = originalResolve })
 
 	model := newFlow(generatedProject(t), nil, Answers{
 		WorkloadID:           "68b0c1d2e3f4a5b6c7d8e9f0",
@@ -2000,7 +2000,7 @@ func TestFlow_FlaggedBaseImageSurvivesTheAsyncPickerLoadOnABoundWorkload(t *test
 	// The cursor is on what the flag asked for, not on the live row.
 	selected := model.picker.selected()
 	require.NotNil(t, selected)
-	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3"}, selected.value,
+	assert.Equal(t, pickedEnv{id: "68c1", versionID: "v3", name: "third"}, selected.value,
 		"the picker opened on the live row and would overwrite the flag on the next Enter")
 
 	model = press(t, model, "enter")

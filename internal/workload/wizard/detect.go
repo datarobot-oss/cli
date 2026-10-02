@@ -25,6 +25,7 @@ import (
 
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/joho/godotenv"
 )
@@ -146,6 +147,56 @@ func (d Detected) generatedBuild() generatedBuild {
 	default:
 		return generatedBuild{problem: fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json "+
 			"with package-lock.json, which is what a generated image is built from", d.Dir)}
+	}
+}
+
+// Language is what the project files say the runtime is: python for a
+// pyproject.toml, requirements.txt or setup.py, node for a package.json, ""
+// when they say nothing or disagree.
+func (d Detected) Language() string {
+	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
+
+	python := has("pyproject.toml") || has("requirements.txt") || has("setup.py")
+	node := has("package.json")
+
+	switch {
+	case python && !node:
+		return "python"
+	case node && !python:
+		return "node"
+	default:
+		return ""
+	}
+}
+
+// environmentMismatch is why a generated image on ee would not build for this
+// project, "" when it would or when nothing says. The platform writes the
+// Dockerfile from the project's files, so a Node project on a Python base
+// image fails at `npm ci` with the tool missing, after the sync and a build.
+// Only two stated languages that disagree count: an environment labelled
+// "other" says nothing about itself.
+func (d Detected) environmentMismatch(ee workload.ExecutionEnvironment) string {
+	project, env := d.Language(), environmentLanguage(ee.ProgrammingLanguage)
+	if project == "" || env == "" || project == env {
+		return ""
+	}
+
+	return fmt.Sprintf("%s is a %s environment, but %s is a %s project (%s), so the generated image would not build; "+
+		"pick a %s environment", ee.Name, env, d.Dir, project, strings.Join(d.RootMarkers, ", "), project)
+}
+
+// environmentLanguage normalises the platform's programmingLanguage to the
+// words Language uses, "" for a label that names none.
+func environmentLanguage(label string) string {
+	lower := strings.ToLower(strings.TrimSpace(label))
+
+	switch {
+	case lower == "" || lower == "other":
+		return ""
+	case strings.Contains(lower, "node") || strings.Contains(lower, "javascript"):
+		return "node"
+	default:
+		return lower
 	}
 }
 
