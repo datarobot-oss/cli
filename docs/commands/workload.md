@@ -328,6 +328,47 @@ Because `stop`, `start` and `delete` change something, they ask for confirmation
 
 `stop` and `start` also accept `DATAROBOT_CLI_NON_INTERACTIVE=1` in place of `--yes`. `delete` does not, when the id is specified in a manifest: that variable is usually set once across a whole CI pipeline, and deleting something nobody named is not what it was set for. Pass `--yes` explicitly there.
 
+## Deploying from a project: `config` and `up`
+
+> These two are still behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to see them in `--help`.
+
+`dr workload config` writes the `.datarobot.yaml` that describes your project, and `dr workload up` deploys the difference between that file and what is running. Together they are the deploy loop for a repository, where `create` deploys an artifact you already have.
+
+```bash
+dr workload config      # write .datarobot.yaml (a wizard, on a terminal)
+dr workload up          # plan, then apply
+dr workload up --dry-run  # plan and stop
+```
+
+### CI, scripts, and agents
+
+**`dr workload up --yes` asks nothing, including on a project that has never deployed.** With no manifest it answers the setup from the project, writes `.datarobot.yaml`, prints the path and the contents, and deploys. The file is written before anything is deployed, so what was inferred is on disk to read and to commit; nothing is deployed from a guess that leaves no trace.
+
+**Commit the file.** It records the id of the workload this run created, and every later deploy reads it to find that workload. A CI job that runs `up --yes` on a checkout with no manifest and never commits the one it wrote would create a new workload on every run.
+
+The answers come from the project, exactly as `dr workload config --yes` would take them:
+
+- the `Dockerfile` and its `EXPOSE` decide the image source and the port;
+- `.env`, when present, decides the variables. A value that looks secret is stored as a credential on the tenant and referenced from the file, a name that looks like a local convenience is left out, and the rest are written into the file in the clear, which the run warns about by name. Nothing is read from `.env` at deploy time; the file is the interface.
+
+```bash
+dr workload up --yes                    # a fresh project, in one command
+dr workload up --yes --dry-run          # the file it would write, and the plan, without writing
+```
+
+`--yes` is the supported way to run `up` unattended. It answers every prompt, including the confirmation for rolling a workload whose **live version is locked**. In a pipeline, `DATAROBOT_CLI_NON_INTERACTIVE=true` set once does the same for this command.
+
+Without a terminal on stdin, `up` asks nothing either. `--output-format json` skips the setup wizard but not the locked-roll confirmation.
+
+A project it cannot read is still refused rather than guessed at. With no `Dockerfile` there is no image source to infer, and the error names the flags that settle it — pass them to `dr workload config`, which is where they live:
+
+```bash
+dr workload config --yes --build-mode image --image registry.example.com/app:v1
+dr workload up --yes
+```
+
+`--dry-run` on a project with no manifest writes nothing. It prints the `.datarobot.yaml` a real run would write, then the plan that run would carry out, so looking before deploying is one command on a fresh project too. A project the setup cannot read is refused the same way with or without `--dry-run`.
+
 ## Shared flags
 
 ### `--output-format`

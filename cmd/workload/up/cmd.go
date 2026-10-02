@@ -191,9 +191,20 @@ survives every deploy, and deleting a line stops managing that field rather
 than reverting it. Change something in the UI that the file does name and the
 next run puts it back, and says so.
 
-With no manifest, a terminal opens the same setup wizard 'dr workload config'
-runs and continues straight into the deploy. Without a terminal it is an
-error: this command never deploys by guessing.
+With no manifest, this runs the same setup 'dr workload config' runs, writes
+.datarobot.yaml, says so, and deploys. Commit that file: later deploys read
+it to find the workload. A project with no Dockerfile is refused, naming the
+flags that settle it. --dry-run shows the file and the plan without writing.
+
+Non-interactive:
+
+  dr workload up --yes                      deploy, asking nothing
+  dr workload up --yes --dry-run            show the file and the plan first
+
+--yes answers every prompt, including the confirmation for rolling a locked
+version. DATAROBOT_CLI_NON_INTERACTIVE=true does the same in a pipeline.
+Without a terminal nothing is asked either; --output-format json skips the
+setup wizard only.
 
 A manifest that names a published image deploys in one call. One that asks the
 platform to build creates an artifact, pushes the working tree to it and waits
@@ -269,9 +280,7 @@ Examples:
 
 func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "Project directory; the manifest is searched upward from here.")
-	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
-		"Do not prompt. With no manifest this is an error rather than a wizard, "+
-			"and rolling a locked version is not confirmed.")
+	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false, `Assume "yes" as answer to all prompts.`)
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.lock, "lock", false,
@@ -461,13 +470,16 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 
 // rollConfirm is how a locked production roll gets its answer, and nil when
 // there is nobody to ask or the answer is already in. --yes is that answer,
-// and a run with no terminal has nobody to give one.
+// DATAROBOT_CLI_NON_INTERACTIVE is the same answer by another name, and a run
+// with no terminal has nobody to give one.
 //
-// Deliberately not keyed on --output json. That flag says how to format
-// stdout; it is not consent, and folding it in here would mean
-// `dr workload up --output json` on a terminal rolls production without a
-// word. The question and its answer never touch stdout, so a run that asks
-// still emits exactly one document.
+// yes rather than the run's wider non-interactive signal, deliberately.
+// `--output-format json` also suppresses the wizard, but it says how to format
+// stdout rather than that production may be rolled without a word, and on a
+// terminal somebody is still standing there; the question survives for them.
+// The question and its answer never touch stdout, so a run that asks still
+// emits exactly one document. This is the reason the help above names json as
+// a signal for the setup while saying the locked-roll question outlives it.
 func rollConfirm(cmd *cobra.Command, yes bool, stdin *bufio.Reader) func(question, want string) (bool, error) {
 	if yes || !isStdinTerminalFn() {
 		return nil
