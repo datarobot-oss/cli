@@ -127,6 +127,11 @@ type Live struct {
 	ImageURI string
 
 	CodeVersionID string
+
+	// SwapInFlight marks a preview taken while a rollout was in progress: the
+	// state above is what the swap will change, so a dry run reports it but
+	// does not refuse on it.
+	SwapInFlight bool
 }
 
 // liveArtifactType reads the discriminator off the artifact document, falling

@@ -1418,7 +1418,7 @@ func TestRun_RolloutThatEndsFailedIsNotedAndTheRunContinues(t *testing.T) {
 		waitReplace: func(_ context.Context, id string, _ *workload.Replacement, _, _ time.Duration,
 			_ func(*workload.Replacement),
 		) (*workload.Replacement, error) {
-			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusFailed},
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusFailed, Message: "candidate never became healthy"},
 				errors.New("replacement for workload " + id + " ended with status failed")
 		},
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
@@ -1438,7 +1438,7 @@ func TestRun_RolloutThatEndsFailedIsNotedAndTheRunContinues(t *testing.T) {
 
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", started, "the run went on to do what the file asked")
 	assert.Equal(t, ActionStarted, result.Action)
-	assert.Contains(t, stderr, "ended as failed")
+	assert.Contains(t, stderr, "ended as failed (candidate never became healthy)")
 	assert.Contains(t, stderr, "still on the version it was")
 }
 
@@ -1627,10 +1627,50 @@ func TestRun_DryRunDuringARolloutKeepsAnErroredVerdict(t *testing.T) {
 	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
 
 	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
-	require.Error(t, err, "an errored workload with nothing to roll onto it is still a refusal")
+	require.NoError(t, err, "the swap decides the verdict; a preview reports the state and refuses nothing")
+	assert.Contains(t, stderr, "is being replaced")
 	assert.Contains(t, stderr, "errored")
 	assert.NotContains(t, stderr, "Already up to date")
 	assert.NotEqual(t, "settling", result.Status)
+}
+
+// The usual way a broken workload gets fixed: a rollout is already carrying
+// the fix when up runs. The run waits it out, re-reads, and plans against the
+// workload the swap left running.
+func TestRun_ErroredWorkloadWithARolloutInFlightIsReadAgainAfterIt(t *testing.T) {
+	reads := 0
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			reads++
+
+			d := doc(t, liveWorkloadJSON)
+			if reads == 1 {
+				d["status"] = workload.WorkloadStatusErrored
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, reads, "re-read after the swap landed")
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+	assert.Contains(t, stderr, "Already up to date")
+	assert.Equal(t, "running", result.Status)
 }
 
 // The counterpart to the backstop above, and the reason the wait is placed

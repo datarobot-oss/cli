@@ -460,8 +460,8 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 		}
 
 		report.say("  %s\n", tui.WarnStyle.Render(fmt.Sprintf(
-			"⚠ That rollout ended as %s, so the workload is still on the version it was.",
-			settled.get().Status)))
+			"⚠ That rollout ended as %s%s, so the workload is still on the version it was.",
+			settled.get().Status, reasonClause(settled.get().Message))))
 	}
 
 	refreshed, err := Look(live.WorkloadID)
@@ -476,6 +476,8 @@ func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, er
 // says so for both. Errored keeps its verdict: a swap that fails leaves it
 // errored, and the plan exists to report that.
 func previewedMidSwap(live Live) Live {
+	live.SwapInFlight = true
+
 	if live.State == StateRunning || live.State == StateStopped {
 		live.State = StateSettling
 	}
@@ -519,8 +521,9 @@ func replacingNote(workloadID string, active *workload.Replacement) string {
 }
 
 // replacedFailed is the verdict on a wait that did not come back clean. A
-// rollout that ended failed never promoted, so the run carries on and deploys
-// onto what is still serving; anything else names where the rollout got to.
+// rollout that ended failed never promoted, so the workload is still on the
+// version it was and the run carries on; anything else names where the
+// rollout got to.
 func replacedFailed(live Live, settled *workload.Replacement, err error) error {
 	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return nil
@@ -1260,7 +1263,9 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // alongside errored. deployable keeps its settling branch as the backstop for
 // everything that reaches the apply by another route.
 func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bool) error {
-	if live.State == StateSettling && dryRun {
+	// A preview of a moving workload reports the state and refuses nothing:
+	// the deploy would wait and plan against where the swap lands.
+	if dryRun && (live.State == StateSettling || live.SwapInFlight) {
 		return nil
 	}
 
