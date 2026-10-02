@@ -46,7 +46,7 @@ runtime:
 
 No readiness probe is written unless you give a health path (`--health /ready`): a guessed path kills a healthy deploy whose framework answers 404 there.
 
-After the first write the file is yours. `config` leaves an existing manifest alone, except `--sync-env`, which edits only the environment variables after showing what it would change; `up` edits exactly one key, `workloadId`. Both keep your comments, your key order and any keys they do not know.
+After the first write the file is yours. `config` leaves an existing manifest alone, and `up` edits exactly one key, `workloadId`. The exception on both is `--sync-env`, which edits only the environment variables after showing what it would change. Both keep your comments, your key order and any keys they do not know.
 
 ## Where the image comes from
 
@@ -144,7 +144,7 @@ Everything else is the server's to check; a rejected deploy comes back as a `422
 
 ## When a deploy fails
 
-The failures people hit most. `up` prints the platform's reason beside the errored state, and `dr workload status` shows it afterwards.
+The failures people hit most. `up` prints the platform's reason beside the errored state; re-running `up` after the fact shows it again in the plan.
 
 | Failure | What it means | What to do |
 | --- | --- | --- |
