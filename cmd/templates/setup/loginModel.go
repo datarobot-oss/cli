@@ -16,6 +16,7 @@ package setup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -35,6 +36,10 @@ type LoginModel struct {
 }
 
 type errMsg struct{ error } //nolint: errname
+
+// Unwrap lets errors.Is reach the wrapped error, so callers can match sentinels
+// like auth.ErrLoginTimedOut through the tea.Msg envelope.
+func (e errMsg) Unwrap() error { return e.error }
 
 type startedMsg struct {
 	flow    *auth.BrowserFlow
@@ -117,7 +122,10 @@ func (lm LoginModel) Update(msg tea.Msg) (LoginModel, tea.Cmd) {
 func (lm LoginModel) View() string {
 	var sb strings.Builder
 
-	if lm.loginMessage != "" {
+	if errors.Is(lm.err, auth.ErrLoginTimedOut) {
+		sb.WriteString("Login timed out. Run 'dr auth login' to retry, or set ")
+		sb.WriteString("DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN to skip the browser.\n\n")
+	} else if lm.loginMessage != "" {
 		sb.WriteString(lm.loginMessage)
 	} else if lm.err != nil {
 		fmt.Fprintf(&sb, "something went wrong: %s", lm.err)
