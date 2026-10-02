@@ -464,5 +464,6 @@ curl -i -H "Authorization: Bearer $DATAROBOT_API_TOKEN" "$DATAROBOT_ENDPOINT/wor
 
 - [`dr artifact`](artifact.md): build and lock the artifact a workload runs.
 - [Spec reference](workload-spec.md): every field an artifact and workload spec accepts, and one end-to-end walkthrough.
+- [Manifest reference](workload-manifest.md): the `.datarobot.yaml` file `config` writes and `up` deploys from, what `up` manages, and what it does on each run.
 - [Authentication](auth.md): how `dr auth login` and `--skip-auth` interact.
 - [Configuration](../user-guide/configuration.md): config file and environment-variable precedence.
