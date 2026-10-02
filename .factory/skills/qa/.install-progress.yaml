@@ -1,0 +1,58 @@
+# Questionnaire answers only; never store credential values here.
+project: drcli
+platform: github
+# CI was approved in the questionnaire but is delivered in a separate change.
+generated_components: [local_skill]
+completed_categories:
+  - default_target
+  - personas
+  - critical_flows
+  - external_services
+  - cleanup
+  - imagemagick
+  - ci_integration
+  - failure_learning
+answers:
+  default_target: local
+  staging_url: https://staging.datarobot.com/api/v2
+  restrictions:
+    - Use isolated local configuration and the branch-built binary by default.
+    - Use staging only when necessary and explicitly approved.
+    - Remote mutations may affect only dedicated resources created by this QA run.
+    - Never use the user's normal CLI configuration or mutate existing resources.
+  personas:
+    - name: local_unauthenticated
+      can_do: [local help and discovery, local configuration, local error handling]
+      cannot_do: [authenticated API operations, remote mutations]
+      credentials_source: none
+  staging_accounts: pending
+  staging_credentials: dedicated QA secret names to be supplied later
+  missing_accounts: Run only unauthenticated local flows until accounts are configured.
+  critical_flows:
+    - help, discovery, aliases, completions, invalid arguments
+    - local auth/profile configuration and auth error handling
+    - template, dotenv, task, dependency, plugin flows with local or safe public access
+    - workload/artifact local validation; staging lifecycle after account setup and approval
+  success_criteria:
+    - expected output and exit status, plus diff-specific assertions
+    - responsive TUI and Ctrl-C
+    - preserved user-file content and comments
+    - JSON-only stdout where supported
+    - no secret leakage
+  public_services:
+    downloads: allowed
+    downloaded_code_execution: explicit approval required
+    dependency_installation: explicit approval required
+  cleanup:
+    local: Automatically remove only run-owned scratch data after preserving safe evidence.
+    staging: Delete only recorded resources created by this run after explicit staging approval.
+  imagemagick: false
+  ci:
+    enabled: true
+    required: false
+    sticky_pr_comment: true
+  video_evidence: false
+  droid_control:
+    compose: false
+  failure_learning: suggest_in_report
+  plugin_scope: Preserve the shared user-scope install; verify effective activation with project dependency declared.
