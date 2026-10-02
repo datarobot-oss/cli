@@ -105,16 +105,12 @@ type Plan struct {
 	// What the plan intends, not a promise; the envelope is corrected after.
 	InheritsImage bool
 
-	// InPlace reports that the workload is rolled onto the draft artifact it
-	// already runs, after the spec change, if there is one, is written to
-	// that artifact; no version is minted. A draft can be rewritten; a locked
-	// artifact cannot, and its successor is a new version as before.
+	// InPlace reports that the change is written to the draft artifact the
+	// workload already runs and rolled from there; no version is minted.
 	InPlace bool
 
-	// Reroll is why the version serving is rolled onto itself with nothing
-	// in the file changed: its last rollout did not land after the artifact
-	// had taken the change, so the file and the artifact agree and the
-	// generation serving does not. Empty when nothing of the kind happened.
+	// Reroll is why the running version is rolled onto itself with no change
+	// in the file: the artifact took a change its last rollout did not land.
 	Reroll string
 
 	// Locked reports that the version now serving is immutable. Its successor
@@ -475,13 +471,9 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	return plan, nil
 }
 
-// patchesInPlace reports whether the change can be written to the artifact
-// the workload runs instead of minting a version: the artifact is a draft,
-// the workload is not errored, and nothing changed that the image is built
-// from. Locked is what rules it out first: immutable is the point of locking,
-// so a locked artifact's successor is a copy, as before. A source-built
-// artifact has to be carrying an image already, which inheritsImage settles;
-// a published image is the spec's own, so only the change matters.
+// patchesInPlace reports whether the change can be written to the running
+// artifact instead of minting a version: it is a draft with an image, the
+// workload is not errored, and nothing the image is built from changed.
 func patchesInPlace(live Live, plan Plan) bool {
 	if live.Locked || live.State == StateErrored || live.ImageURI == "" {
 		return false

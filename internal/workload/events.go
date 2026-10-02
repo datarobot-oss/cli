@@ -104,17 +104,10 @@ func (e WorkloadEvent) CandidateProtonIDs() []string {
 	return details.CandidateProtonIDs
 }
 
-// RolloutRecord is the platform's record of started once it has finished,
-// nil when the trail has none for it yet. The trail is where finished
-// replacements end up, written before the workload's active slot is cleared,
-// so a record the active route no longer answers for is here.
-//
-// The finished record is written under a new id, so it is found by what the
-// replacement launched: a record naming one of its generations is it. A
-// replacement that never launched any is matched by its artifact among the
-// records written after it began; the record's id carries its creation time,
-// where the event's timestamp carries the record's last update, which a
-// cleanup pass bumps minutes later.
+// RolloutRecord finds the finished record of started in the workload's events,
+// nil when there is none yet. The record is written under a new id, so it is
+// matched by the generations it launched, or by artifact among the records
+// written after it began.
 func RolloutRecord(workloadID string, started *Replacement) (*WorkloadEvent, error) {
 	if started == nil {
 		return nil, nil

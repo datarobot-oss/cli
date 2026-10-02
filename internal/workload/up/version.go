@@ -203,14 +203,9 @@ func copiedVersion(loaded Loaded, live Live, report *reporter) (version, error) 
 	return made, err
 }
 
-// patchedVersion is the version a spec-only change rolls onto when the one
-// serving is a draft: that same artifact, with the file's spec written over
-// it. A draft can be rewritten, and the platform rolls a workload onto the
-// artifact it already runs, so nothing is minted, the project's link stays
-// where it is, and no leftover is made for the next run to find.
-//
-// A re-roll after a rollout that did not land writes nothing: the artifact
-// already says what the file says, and the swap is the whole of the deploy.
+// patchedVersion writes the file's spec over the draft artifact the workload
+// runs and returns that same artifact as the version to roll. A reroll with no
+// spec change writes nothing.
 func patchedVersion(loaded Loaded, live Live, plan Plan, report *reporter) (version, error) {
 	made := version{ID: live.ArtifactID, ImageURI: live.ImageURI, HasCode: live.CodeVersionID != ""}
 

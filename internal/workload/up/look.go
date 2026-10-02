@@ -135,9 +135,7 @@ type Live struct {
 	SwapInFlight bool
 
 	// ArtifactUpdatedAt is when the running artifact was last changed, zero
-	// when the platform did not say. A generation is launched from the
-	// artifact as it stands at that moment, so an artifact changed after the
-	// serving generation was created is ahead of what is running.
+	// when the platform did not say.
 	ArtifactUpdatedAt time.Time
 }
 

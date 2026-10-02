@@ -248,9 +248,7 @@ func anyServingPredecessor(protons []Proton, wantArtifactID string) bool {
 }
 
 // ActiveProton is the generation the platform marks as serving, nil when none
-// is marked. Its CreatedAt is when that generation was launched from the
-// artifact as it stood then, which is what a deploy compares the artifact's
-// own last change against.
+// is marked.
 func ActiveProton(workloadID string) (*Proton, error) {
 	protons, err := ListProtons(workloadID)
 	if err != nil {
