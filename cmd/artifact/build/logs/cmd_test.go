@@ -15,8 +15,10 @@
 package logs
 
 import (
+	"bytes"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,6 +49,27 @@ func TestCmd_InvalidLevel(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid --level")
+}
+
+// Lines that exist below --level are reported as such, not as "no logs".
+func TestCmd_SaysWhenTheLinesSitBelowTheLevel(t *testing.T) {
+	prev := getLogsFn
+	getLogsFn = func(string, string) ([]workload.BuildLogEntry, error) {
+		return []workload.BuildLogEntry{{Levelname: "DEBUG", Message: "pip install"}, {Levelname: "DEBUG", Message: "done"}}, nil
+	}
+
+	t.Cleanup(func() { getLogsFn = prev })
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"art-1", "b-1"})
+
+	var stderr bytes.Buffer
+
+	cmd.SetErr(&stderr)
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "No logs at level info or above; 2 below it. Use --level debug to see them.\n", stderr.String())
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {

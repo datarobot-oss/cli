@@ -118,6 +118,15 @@ type BuildLogTail struct {
 	pending []bufferedLogLine
 	seq     int
 	newest  time.Time
+
+	// emitted counts the lines handed to onLine, so a caller can tell a
+	// build that logged from one that did not without another fetch.
+	emitted int
+}
+
+// Emitted reports whether the tail has delivered at least one line.
+func (t *BuildLogTail) Emitted() bool {
+	return t.emitted > 0
 }
 
 // bufferedLogLine is one held-back line: its parsed event time and an
@@ -198,6 +207,7 @@ func (t *BuildLogTail) flush(all bool) {
 	for _, line := range t.pending {
 		if all || !line.at.After(watermark) {
 			t.onLine(line.entry)
+			t.emitted++
 		} else {
 			kept = append(kept, line)
 		}
