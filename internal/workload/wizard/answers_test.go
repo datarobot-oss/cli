@@ -16,6 +16,8 @@ package wizard
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -223,10 +225,22 @@ func TestAnswers_ImageMode(t *testing.T) {
 	assert.Contains(t, err.Error(), "--image is required")
 }
 
+// writeGeneratedProject gives dir the pair the platform builds a generated
+// image from.
+func writeGeneratedProject(t *testing.T, dir string) string {
+	t.Helper()
+
+	for _, name := range []string{"pyproject.toml", "uv.lock"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("# test\n"), 0o600))
+	}
+
+	return dir
+}
+
 func TestAnswers_GeneratedMode(t *testing.T) {
 	stubExecEnv(t, "68a1", "68a2", nil)
 
-	detected := Detect(t.TempDir())
+	detected := Detect(writeGeneratedProject(t, t.TempDir()))
 
 	draft, err := Answers{
 		BuildMode:            manifest.BuildModeGenerated,
@@ -241,10 +255,94 @@ func TestAnswers_GeneratedMode(t *testing.T) {
 }
 
 func TestAnswers_GeneratedModeMissingFlags(t *testing.T) {
-	_, err := Answers{BuildMode: manifest.BuildModeGenerated}.draft(Detect(t.TempDir()))
+	_, err := Answers{BuildMode: manifest.BuildModeGenerated}.draft(Detect(writeGeneratedProject(t, t.TempDir())))
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), "--execution-environment and --entrypoint are required")
+}
+
+// The platform builds a generated image from pyproject.toml with uv.lock or
+// package.json with package-lock.json, and refuses anything else only after
+// the artifact exists and the code is synced. The refusal happens here
+// instead, before the environment is even looked up.
+func TestAnswers_GeneratedModeNeedsAProjectThePlatformCanBuild(t *testing.T) {
+	stubExecEnv(t, "", "", errors.New("the environment must not be resolved for a project that cannot be built"))
+
+	for name, tc := range map[string]struct {
+		files []string
+		want  string
+	}{
+		"no project files":              {nil, "neither pyproject.toml with uv.lock nor package.json with package-lock.json"},
+		"requirements.txt only":         {[]string{"requirements.txt"}, "neither pyproject.toml with uv.lock"},
+		"package.json without the lock": {[]string{"package.json"}, "run 'npm install'"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tc.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o600))
+			}
+
+			_, err := Answers{
+				BuildMode:            manifest.BuildModeGenerated,
+				ExecutionEnvironment: "[DataRobot] Python 3.12 Applications Base",
+				Entrypoint:           "python app.py",
+			}.draft(Detect(dir))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--build-mode generated")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.NotContains(t, err.Error(), "must not be resolved")
+		})
+	}
+
+	// Either pair is enough.
+	stubExecEnv(t, "68a1", "68a2", nil)
+
+	dir := t.TempDir()
+	for _, f := range []string{"package.json", "package-lock.json"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("{}"), 0o600))
+	}
+
+	_, err := Answers{
+		BuildMode:            manifest.BuildModeGenerated,
+		ExecutionEnvironment: "[DataRobot] NodeJS 24 Applications Base",
+		Entrypoint:           "node server.js",
+	}.draft(Detect(dir))
+	require.NoError(t, err)
+}
+
+// A pyproject.toml with no uv.lock is not refused: the deploy's sync generates
+// the lock itself before the upload, so refusing here would turn away a
+// project that deploys. The gap is a note for the user, not a problem.
+func TestAnswers_GeneratedModeAcceptsAProjectTheSyncCanLock(t *testing.T) {
+	stubExecEnv(t, "68a1", "68a2", nil)
+
+	for name, files := range map[string][]string{
+		"pyproject without the lock": {"pyproject.toml"},
+		"both manifests, no lock":    {"pyproject.toml", "package.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o600))
+			}
+
+			detected := Detect(dir)
+
+			draft, err := Answers{
+				BuildMode:            manifest.BuildModeGenerated,
+				ExecutionEnvironment: "[DataRobot] Python 3.12 Applications Base",
+				Entrypoint:           "python app.py",
+			}.draft(detected)
+			require.NoError(t, err)
+			assert.Equal(t, manifest.BuildModeGenerated, draft.Build.Mode)
+
+			check := detected.generatedBuild()
+			assert.Empty(t, check.problem)
+			assert.Contains(t, check.note, "uv.lock")
+			assert.Contains(t, check.note, "commit")
+		})
+	}
 }
 
 // A base image that does not resolve fails at setup, where the user is
@@ -256,7 +354,7 @@ func TestAnswers_GeneratedModeUnknownEnvironment(t *testing.T) {
 		BuildMode:            manifest.BuildModeGenerated,
 		ExecutionEnvironment: "nope",
 		Entrypoint:           "python main.py",
-	}.draft(Detect(t.TempDir()))
+	}.draft(Detect(writeGeneratedProject(t, t.TempDir())))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")

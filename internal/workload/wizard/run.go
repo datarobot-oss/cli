@@ -1271,6 +1271,9 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 		o.warnSuspectDir(detected)
 
 		content, draft, err := o.resolveHeadless(detected)
+		if err == nil {
+			o.warnGeneratedLock(detected, draft)
+		}
 
 		return content, draft, detected.Dir, err
 	}
@@ -1296,6 +1299,20 @@ func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, err
 	}
 
 	return content, draft, nil
+}
+
+// warnGeneratedLock says, for a generated build the deploy can only make
+// after filling a gap itself, what that gap is: a pyproject.toml with no
+// uv.lock gets one generated during the sync, and the user should commit
+// it. Headless only; the wizard's source screen carries the same note.
+func (o Options) warnGeneratedLock(detected Detected, draft manifest.Draft) {
+	if o.Stderr == nil || draft.Build.Mode != manifest.BuildModeGenerated {
+		return
+	}
+
+	if note := detected.generatedBuild().note; note != "" {
+		fmt.Fprintf(o.Stderr, "Warning: %s.\n", note)
+	}
 }
 
 // warnSuspectDir says when the directory looks like the wrong place to run
@@ -1375,6 +1392,16 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	draft, err := o.Answers.applyTo(live.Defaults(), detected)
 	if err != nil {
 		return nil, manifest.Draft{}, err
+	}
+
+	// Only an empty directory is seeded from the artifact; one with files of
+	// its own is uploaded as it is, so it has to be buildable.
+	if draft.Build.Mode == manifest.BuildModeGenerated && !detected.SuspectDir() {
+		if problem := detected.generatedBuild().problem; problem != "" {
+			return nil, manifest.Draft{}, fmt.Errorf(
+				"the workload's generated build cannot be kept from here: %s (pass --build-mode to pick another source)",
+				problem)
+		}
 	}
 
 	// A name the workload already declares keeps its running value, so it is

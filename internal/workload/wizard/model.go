@@ -771,11 +771,33 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 		return nil, fmt.Errorf("no %s in %s: pick another source or add one", DockerfileName, f.detected.Dir)
 	}
 
+	if mode == manifest.BuildModeGenerated && !f.keepsLiveCode() {
+		if problem := f.detected.generatedBuild().problem; problem != "" {
+			return nil, fmt.Errorf("%s (or pick another source)", problem)
+		}
+	}
+
 	if mode != f.draft.Build.Mode {
 		f.draft.Build = manifest.Build{Mode: mode}
 	}
 
 	return nil, nil
+}
+
+// liveBuildMode is how the bound workload is built today, "" when the run is
+// not bound to one.
+func (f flow) liveBuildMode() string {
+	if f.live == nil {
+		return ""
+	}
+
+	return f.live.Defaults().Build.Mode
+}
+
+// keepsLiveCode is the one shape that needs no project files: bound to a
+// generated build, in an empty directory `up` seeds from the artifact.
+func (f flow) keepsLiveCode() bool {
+	return f.liveBuildMode() == manifest.BuildModeGenerated && f.detected.SuspectDir()
 }
 
 func (f *flow) acceptBinding() (tea.Cmd, error) {
