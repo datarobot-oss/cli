@@ -336,7 +336,7 @@ func replace(
 
 	if inPlace {
 		label = "Rolling out the change"
-		consequence = "the version serving keeps serving, and the change written to it rolls out on the next run"
+		consequence = "the version serving keeps serving, and the change written to it rolls out with the next deploy or settings change"
 	}
 
 	// The guard that actually holds. The live state can have changed since

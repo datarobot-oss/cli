@@ -470,7 +470,7 @@ func TestWaitForReplacement_FailedReturnsError(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, replacement, "a failure returns the final replacement alongside the error")
 	assert.Equal(t, ReplacementStatusFailed, replacement.Status)
-	assert.Contains(t, err.Error(), "reverted")
+	assert.Contains(t, err.Error(), "still on the generation it was running")
 }
 
 // A failed rollout's message is the platform's own account of why, and the
@@ -531,7 +531,8 @@ func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
 			mux := http.NewServeMux()
 			mux.HandleFunc(replacementPath, func(w http.ResponseWriter, _ *http.Request) {
 				if atomic.AddInt32(&hits, 1) == 1 {
-					fmt.Fprint(w, `{"id":"rep-9","candidateArtifactId":"art-2","status":"switching"}`)
+					fmt.Fprint(w, `{"id":"rep-9","candidateArtifactId":"art-2","status":"switching",`+
+						`"candidateProtonIds":["gen-9"],"createdAt":"2026-10-02T13:05:43Z"}`)
 
 					return
 				}
@@ -547,12 +548,14 @@ func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
 		}
 	}
 
-	errored := `{"data":[{"id":"rep-9","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
-		"details":{"replacementId":"rep-9","artifactId":"art-2","message":"candidate rep-9 is stuck in launching"}}],"next":""}`
-	completed := `{"data":[{"id":"rep-9","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
-		"details":{"replacementId":"rep-9","artifactId":"art-2"}}],"next":""}`
-	another := `{"data":[{"id":"rep-8","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
-		"details":{"replacementId":"rep-8","artifactId":"art-1"}}],"next":""}`
+	// The trail writes the finished record under a new id, so none of these
+	// carry rep-9; the generation it launched is what names it.
+	errored := `{"data":[{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"art-2","candidateProtonIds":["gen-9"],"message":"candidate gen-9 is stuck in launching"}}],"next":""}`
+	completed := `{"data":[{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
+		"details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"art-2","candidateProtonIds":["gen-9"]}}],"next":""}`
+	another := `{"data":[{"id":"6abfac1a06bc8e5874e02dea","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"6abfac1a06bc8e5874e02dea","artifactId":"art-2","candidateProtonIds":["gen-8"]}}],"next":""}`
 
 	for _, c := range []struct {
 		name       string
@@ -585,7 +588,7 @@ func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), c.wantErr)
-			assert.Contains(t, err.Error(), "reverted to its previous artifact")
+			assert.Contains(t, err.Error(), "still on the generation it was running")
 		})
 	}
 }

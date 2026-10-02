@@ -90,28 +90,95 @@ func (e WorkloadEvent) ReplacementStatus() string {
 	return status
 }
 
-// RolloutRecord is the platform's record of one replacement once it has
-// finished, nil when the trail has none for it yet. The trail is where
-// finished replacements end up, written before the workload's active slot is
-// cleared, so a record the active route no longer answers for is here.
+// CandidateProtonIDs are the generations a replacement event says were
+// launched, nil for an event that names none.
+func (e WorkloadEvent) CandidateProtonIDs() []string {
+	var details struct {
+		CandidateProtonIDs []string `json:"candidateProtonIds"`
+	}
+
+	if err := json.Unmarshal(e.Details, &details); err != nil {
+		return nil
+	}
+
+	return details.CandidateProtonIDs
+}
+
+// RolloutRecord is the platform's record of started once it has finished,
+// nil when the trail has none for it yet. The trail is where finished
+// replacements end up, written before the workload's active slot is cleared,
+// so a record the active route no longer answers for is here.
 //
-// Found by id rather than by time: the trail stamps an event with the
-// record's last update, and a cleanup pass touches finished records minutes
-// later, so timestamps say when a record was last touched, not when the
-// rollout ended.
-func RolloutRecord(workloadID, replacementID string) (*WorkloadEvent, error) {
+// The finished record is written under a new id, so it is found by what the
+// replacement launched: a record naming one of its generations is it. A
+// replacement that never launched any is matched by its artifact among the
+// records written after it began; the record's id carries its creation time,
+// where the event's timestamp carries the record's last update, which a
+// cleanup pass bumps minutes later.
+func RolloutRecord(workloadID string, started *Replacement) (*WorkloadEvent, error) {
+	if started == nil {
+		return nil, nil
+	}
+
 	events, err := ListWorkloadEvents(workloadID, maxPageSize, EventFilter{Types: []string{"replacement"}})
 	if err != nil {
 		return nil, err
 	}
 
+	var (
+		found *WorkloadEvent
+		at    time.Time
+	)
+
 	for i := range events {
-		if events[i].ReplacementID() == replacementID {
-			return &events[i], nil
+		e := &events[i]
+		if !recordsRollout(e, started) {
+			continue
+		}
+
+		if when := recordedAt(*e); found == nil || when.After(at) {
+			found, at = e, when
 		}
 	}
 
-	return nil, nil
+	return found, nil
+}
+
+// recordsRollout reports whether e is started's finished record: it names
+// one of the generations started launched, or, when started launched none,
+// it is a record of the same artifact written after started began.
+func recordsRollout(e *WorkloadEvent, started *Replacement) bool {
+	if len(started.CandidateProtonIDs) > 0 {
+		launched := e.CandidateProtonIDs()
+
+		return slices.ContainsFunc(started.CandidateProtonIDs, func(id string) bool {
+			return slices.Contains(launched, id)
+		})
+	}
+
+	if started.ArtifactID == "" || e.ArtifactID() != started.ArtifactID {
+		return false
+	}
+
+	// A minute of slack: the two clocks are the same server's, but a record
+	// can be written in the second the replacement was.
+	return started.CreatedAt.IsZero() || !recordedAt(*e).Before(started.CreatedAt.Add(-time.Minute))
+}
+
+// recordedAt is when a replacement event's record was written, from its
+// ObjectId, with the event's timestamp standing in for an id of another shape.
+func recordedAt(e WorkloadEvent) time.Time {
+	id := e.ReplacementID()
+	if len(id) != 24 {
+		return e.Timestamp
+	}
+
+	seconds, err := strconv.ParseInt(id[:8], 16, 64)
+	if err != nil {
+		return e.Timestamp
+	}
+
+	return time.Unix(seconds, 0)
 }
 
 type workloadEventList struct {

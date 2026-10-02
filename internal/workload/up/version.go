@@ -218,6 +218,11 @@ func patchedVersion(loaded Loaded, live Live, plan Plan, report *reporter) (vers
 		return made, nil
 	}
 
+	// Whether the write landed decides what the error may claim: before it,
+	// nothing was touched; after it, the artifact carries the change and the
+	// next run will see the file and the artifact agree.
+	written := false
+
 	err := report.run(labelPatchedVersion, func() error {
 		spec, specErr := loaded.Compiled.ArtifactSpecPayload()
 		if specErr != nil {
@@ -241,21 +246,27 @@ func patchedVersion(loaded Loaded, live Live, plan Plan, report *reporter) (vers
 			return err
 		}
 
+		written = true
+
 		hasCode, imageURI, matches := carried(loaded, live.ArtifactID)
 		if !matches {
-			return errors.New("it took the write and still does not say what " + manifest.FileName + " asks for")
+			return errors.New("it does not say what " + manifest.FileName + " asks for")
 		}
 
 		made.HasCode, made.ImageURI = hasCode, imageURI
 
 		return nil
 	})
-	if err != nil {
-		return made, fmt.Errorf("cannot write the change to artifact %s, which the workload is running: %w",
+
+	switch {
+	case err == nil:
+		return made, nil
+	case written:
+		return made, fmt.Errorf("artifact %s took the change but %w; nothing was rolled", live.ArtifactID, err)
+	default:
+		return made, fmt.Errorf("cannot write the change to artifact %s, which the workload is running; nothing was changed: %w",
 			live.ArtifactID, err)
 	}
-
-	return made, nil
 }
 
 // sameLineage refuses a copy the platform put somewhere other than where the

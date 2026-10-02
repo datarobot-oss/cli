@@ -239,7 +239,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// tests can stay there too.
 	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
 
-	plan = noteStaleGeneration(live, plan)
+	plan = noteStaleGeneration(live, keepInPlace(loaded, live, plan))
 
 	result := Result{
 		Plan:       plan,
@@ -286,6 +286,37 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	return apply(ctx, loaded, live, plan, result, opts)
 }
 
+// keepInPlace drops the in-place path when the project pushes to another
+// artifact: a leftover from an earlier attempt may hold code that was synced
+// and never built, which the build path finds and the in-place path would
+// write past.
+func keepInPlace(loaded Loaded, live Live, plan Plan) Plan {
+	if !plan.InPlace || !plan.Code.Applies {
+		return plan
+	}
+
+	if linked := linkedArtifact(loaded.ProjectDir); linked != "" && linked != live.ArtifactID {
+		plan.InPlace = false
+	}
+
+	return plan
+}
+
+// linkedArtifact is the artifact this project pushes to, "" when it is not
+// linked or the link cannot be read.
+func linkedArtifact(projectDir string) string {
+	if !projectLinkedFn(projectDir) {
+		return ""
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil {
+		return ""
+	}
+
+	return cfg.ArtifactID
+}
+
 // noteStaleGeneration catches the one drift the two documents cannot show. A
 // change written to a draft in place lands on the artifact before the rollout
 // that carries it, so a rollout that is refused, fails or is interrupted
@@ -298,17 +329,22 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 // follow the change. That reads off two timestamps the platform already
 // keeps, and needs no record of the rollout that went missing.
 //
-// Asked only of an otherwise empty plan on a running draft: a plan with
-// anything in it rolls or restarts the workload anyway, and a locked artifact
-// cannot have been written to. A read that fails is logged and the plan left
-// as it was, rather than failing a run that was about to change nothing.
+// Asked of a plan that would otherwise leave the artifact alone, empty or
+// sizing only, on a running draft: a plan that rolls a version restarts the
+// workload anyway, and a locked artifact cannot have been written to. A
+// sizing-only plan is asked because its resize launches the new generation
+// from the artifact as it stands, so the change that did not land rides
+// along, and the plan should say so rather than blame the sizing when it
+// fails. A plan that rebuilds is left alone: a code reference moved by a
+// sync bumps the artifact too, and that wants the build, not a restart. A
+// read that fails is logged and the plan left as it was.
 //
 // A start after a stop reuses the generation, so a change written while the
 // workload was stopped reads as ahead of it once, and the run after that
 // rolls once more than it needed to. The workload is up throughout, so that
 // is the cheaper mistake.
 func noteStaleGeneration(live Live, plan Plan) Plan {
-	if !plan.Empty() || live.State != StateRunning || live.Locked || live.ArtifactUpdatedAt.IsZero() {
+	if !staleCheckApplies(live, plan) {
 		return plan
 	}
 
@@ -320,12 +356,26 @@ func noteStaleGeneration(live Live, plan Plan) Plan {
 		return plan
 	}
 
-	if active == nil || active.ArtifactID != live.ArtifactID || active.CreatedAt.IsZero() ||
-		!active.CreatedAt.Before(live.ArtifactUpdatedAt) {
+	if !generationPredates(active, live) {
 		return plan
 	}
 
 	return plan.rerolling("the artifact was changed after the generation serving it started")
+}
+
+// staleCheckApplies is the plan and state noteStaleGeneration asks about.
+func staleCheckApplies(live Live, plan Plan) bool {
+	leavesArtifact := plan.Empty() || plan.Retunes()
+
+	return leavesArtifact && !plan.RebuildsImage() &&
+		live.State == StateRunning && !live.Locked && !live.ArtifactUpdatedAt.IsZero()
+}
+
+// generationPredates reports that the serving generation was launched before
+// the artifact it runs was last changed.
+func generationPredates(active *workload.Proton, live Live) bool {
+	return active != nil && active.ArtifactID == live.ArtifactID &&
+		!active.CreatedAt.IsZero() && active.CreatedAt.Before(live.ArtifactUpdatedAt)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
