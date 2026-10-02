@@ -95,11 +95,8 @@ func TestListWorkloadEvents_LimitKeepsTheMostRecent(t *testing.T) {
 	assert.Equal(t, "2026-09-30T18:10:08.607Z", events[0].Timestamp.UTC().Format(time.RFC3339Nano))
 }
 
-// The trail writes a finished replacement under a new id, so its record is
-// found by the generations it launched, or, for one that launched none, by
-// its artifact among the records written after it began. Two records here
-// share a timestamp, as they do on staging once the cleanup pass has touched
-// them; the record's id carries when it was written.
+// Two records share a timestamp, as they do on staging after the cleanup pass;
+// the record's id carries when it was written.
 func TestRolloutRecord_FindsTheReplacementByWhatItLaunched(t *testing.T) {
 	// 6abfac1a… was written at 13:08:10Z, 6abfacc8… at 13:08:24Z, 6abfa9c6… at 13:05:26Z.
 	serveEvents(t, `{"data":[

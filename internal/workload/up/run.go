@@ -285,10 +285,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	return apply(ctx, loaded, live, plan, result, opts)
 }
 
-// keepInPlace drops the in-place path when the project pushes to another
-// artifact: a leftover from an earlier attempt may hold code that was synced
-// and never built, which the build path finds and the in-place path would
-// write past.
+// keepInPlace drops the in-place path when the project pushes code to another
+// artifact; the build path knows how to pick that leftover up.
 func keepInPlace(loaded Loaded, live Live, plan Plan) Plan {
 	if !plan.InPlace || !plan.Code.Applies {
 		return plan
@@ -316,32 +314,10 @@ func linkedArtifact(projectDir string) string {
 	return cfg.ArtifactID
 }
 
-// noteStaleGeneration catches the one drift the two documents cannot show. A
-// change written to a draft in place lands on the artifact before the rollout
-// that carries it, so a rollout that is refused, fails or is interrupted
-// leaves the file and the artifact agreeing while the generation serving runs
-// the spec before it. Comparing the two says up to date.
-//
-// What settles it is when things happened. A generation is launched from the
-// artifact as it stands at that moment, so an artifact changed after the
-// serving generation was created is ahead of it, whatever did or did not
-// follow the change. That reads off two timestamps the platform already
-// keeps, and needs no record of the rollout that went missing.
-//
-// Asked of a plan that would otherwise leave the artifact alone, empty or
-// sizing only, on a running draft: a plan that rolls a version restarts the
-// workload anyway, and a locked artifact cannot have been written to. A
-// sizing-only plan is asked because its resize launches the new generation
-// from the artifact as it stands, so the change that did not land rides
-// along, and the plan should say so rather than blame the sizing when it
-// fails. A plan that rebuilds is left alone: a code reference moved by a
-// sync bumps the artifact too, and that wants the build, not a restart. A
-// read that fails is logged and the plan left as it was.
-//
-// A start after a stop reuses the generation, so a change written while the
-// workload was stopped reads as ahead of it once, and the run after that
-// rolls once more than it needed to. The workload is up throughout, so that
-// is the cheaper mistake.
+// noteStaleGeneration rerolls a running draft whose artifact changed after the
+// serving generation was launched: an in-place write that never rolled out
+// leaves the file and the artifact agreeing while the workload runs the old
+// spec. A read that fails is logged and the plan left as it was.
 func noteStaleGeneration(live Live, plan Plan) Plan {
 	if !staleCheckApplies(live, plan) {
 		return plan

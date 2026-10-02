@@ -49,9 +49,7 @@ import (
 // change to confirm, and is covered instead by that same wait refusing to
 // settle while a generation is still draining.
 //
-// "cancelled" is the fourth terminal status, read off the platform's own
-// replacement history: a rollout somebody stopped leaves the workload where it
-// was, exactly as a failed one does, so it is classed with them.
+// "cancelled" leaves the workload where it was, like a failed rollout.
 const (
 	ReplacementStatusCompleted = "completed"
 	ReplacementStatusFailed    = "failed"
@@ -479,14 +477,9 @@ func absenceMeans(workloadID string, lastSeen *Replacement, watched bool, absenc
 	}
 }
 
-// recordedOutcome reads how a replacement ended once its record has left the
-// active route. Gone is not the same as landed: a rollout that errors is
-// finalized and cleared in the same breath, and a poll interval is long
-// enough for both to happen between two reads, which left the wait reporting
-// success over a failure it never saw. The platform writes the finished
-// record to the workload's trail before clearing it, so the trail has the
-// answer. A trail that cannot be read, or has no record yet, leaves the last
-// status seen, which is what the wait used to settle on.
+// recordedOutcome reads how a replacement ended from the workload's events once
+// its record is gone: a failed rollout is cleared as fast as a successful one.
+// Falls back to the last status seen.
 func recordedOutcome(workloadID string, lastSeen *Replacement) *Replacement {
 	record, err := RolloutRecord(workloadID, lastSeen)
 	if err != nil || record == nil {

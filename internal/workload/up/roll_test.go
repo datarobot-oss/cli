@@ -1920,12 +1920,8 @@ func buildDrift() string {
 				"                entrypoint: [\"python\", \"app.py\"]\n", 1)
 }
 
-// The deploy this whole path exists for. A draft takes the change itself and
-// is rolled onto again, so no version is minted and the project's link stays
-// put. Production is copied instead, since a locked version cannot be written
-// to, and the copy is locked to match: the platform checks image provenance
-// across the tenant precisely so a copy can still be locked. Either way the
-// code reference has to survive the write, since the manifest states none.
+// A draft takes the change itself; a locked version is copied and the copy
+// locked. Either way the code reference survives the write.
 func TestRun_RuntimeOnlyRollKeepsTheRunningImage(t *testing.T) {
 	const live = "68a0000000000000000000a1"
 
@@ -2080,11 +2076,8 @@ func TestRun_InPlaceWriteThatFailsRollsNothing(t *testing.T) {
 	assert.Equal(t, ActionUnchanged, result.Action)
 }
 
-// A change written to the draft lands on the artifact before the rollout that
-// carries it, so a rollout that is refused, fails or is interrupted leaves
-// the file and the artifact agreeing while the generation serving does not.
-// The plan reads as up to date; the artifact's own last change, set against
-// when the serving generation was launched, says otherwise.
+// An in-place write whose rollout never landed leaves the file and the artifact
+// agreeing while the workload runs the old spec.
 func TestRun_ADraftChangedAfterItsGenerationStartedIsRolledAgain(t *testing.T) {
 	const live = "68a0000000000000000000a1"
 

@@ -327,10 +327,6 @@ func replace(
 	opts Options,
 	report *reporter,
 ) (Result, error) {
-	// What is being rolled, and what a refusal at the last guard leaves
-	// behind, differ: a minted version sits unpromoted, while a change
-	// written to the serving draft is already on it and rolls out with the
-	// next run.
 	label := "Rolling out the new version"
 	consequence := "the version serving keeps serving and the one just minted is left unpromoted"
 

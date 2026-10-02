@@ -513,12 +513,8 @@ func TestWaitForReplacement_ErroredClearedViaNotFound(t *testing.T) {
 	assert.Equal(t, ReplacementStatusErrored, replacement.Status)
 }
 
-// A record that vanishes after being watched used to read as success whatever
-// had happened to it. Seen on staging: a rollout errored at 13:08:22 and was
-// finalized and cleared two seconds later, between two polls, and the CLI
-// printed the rollout as done. The trail has the finished record by the time
-// the active route answers 404, so the wait reads the outcome from there; a
-// trail that cannot be read, or has no record for it, settles as before.
+// A record that vanished between two polls used to read as success. Seen on
+// staging: a rollout errored and was cleared two seconds later.
 func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
 	const eventsPath = "/api/v2/workloads/wl-1/events/"
 
