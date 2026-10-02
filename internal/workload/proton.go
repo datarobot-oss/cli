@@ -247,6 +247,22 @@ func anyServingPredecessor(protons []Proton, wantArtifactID string) bool {
 	return false
 }
 
+// ActiveProton is the generation the platform marks as serving, nil when none
+// is marked.
+func ActiveProton(workloadID string) (*Proton, error) {
+	protons, err := ListProtons(workloadID)
+	if err != nil {
+		return nil, err
+	}
+
+	at := activeProtonIndex(protons)
+	if at < 0 {
+		return nil, nil
+	}
+
+	return &protons[at], nil
+}
+
 // activeProtonIndex is where the generation marked as serving sits, or -1 when
 // none is marked.
 func activeProtonIndex(protons []Proton) int {

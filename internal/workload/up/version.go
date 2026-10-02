@@ -203,6 +203,67 @@ func copiedVersion(loaded Loaded, live Live, report *reporter) (version, error) 
 	return made, err
 }
 
+// patchedVersion writes the file's spec over the draft artifact the workload
+// runs and returns that same artifact as the version to roll. A reroll with no
+// spec change writes nothing.
+func patchedVersion(loaded Loaded, live Live, plan Plan, report *reporter) (version, error) {
+	made := version{ID: live.ArtifactID, ImageURI: live.ImageURI, HasCode: live.CodeVersionID != ""}
+
+	if len(plan.Artifact) == 0 {
+		return made, nil
+	}
+
+	// Whether the write landed decides what the error may claim: before it,
+	// nothing was touched; after it, the artifact carries the change and the
+	// next run will see the file and the artifact agree.
+	written := false
+
+	err := report.run(labelPatchedVersion, func() error {
+		spec, specErr := loaded.Compiled.ArtifactSpecPayload()
+		if specErr != nil {
+			return specErr
+		}
+
+		// Read for its code reference, which the file does not state and the
+		// write would otherwise take away. The document the plan was built
+		// from carries it, but not in a form keepCodeRef can read.
+		current, readErr := getArtifactFn(live.ArtifactID)
+		if readErr != nil {
+			return readErr
+		}
+
+		spec, specErr = keepCodeRef(spec, current)
+		if specErr != nil {
+			return specErr
+		}
+
+		if err := updateArtifactSpecFn(live.ArtifactID, spec); err != nil {
+			return err
+		}
+
+		written = true
+
+		hasCode, imageURI, matches := carried(loaded, live.ArtifactID)
+		if !matches {
+			return errors.New("it does not say what " + manifest.FileName + " asks for")
+		}
+
+		made.HasCode, made.ImageURI = hasCode, imageURI
+
+		return nil
+	})
+
+	switch {
+	case err == nil:
+		return made, nil
+	case written:
+		return made, fmt.Errorf("artifact %s took the change but %w; nothing was rolled", live.ArtifactID, err)
+	default:
+		return made, fmt.Errorf("cannot write the change to artifact %s, which the workload is running; nothing was changed: %w",
+			live.ArtifactID, err)
+	}
+}
+
 // sameLineage refuses a copy the platform put somewhere other than where the
 // running version lives: an artifact cannot be moved once it exists, so
 // promoting one from elsewhere forks the version history permanently. A copy
@@ -288,7 +349,8 @@ const (
 	labelFirstArtifact = "Creating the artifact"
 	labelNewVersion    = "Creating the new version"
 
-	labelCopiedVersion = "Copying the running version"
+	labelCopiedVersion  = "Copying the running version"
+	labelPatchedVersion = "Writing the change to the running version"
 )
 
 // createVersion mints an artifact from the file's artifact block, into

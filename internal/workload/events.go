@@ -52,6 +52,128 @@ func (e WorkloadEvent) Message() string {
 	return details.Message
 }
 
+// ArtifactID is the artifact a replacement event rolled onto, "" for an
+// event that names none.
+func (e WorkloadEvent) ArtifactID() string {
+	var details struct {
+		ArtifactID string `json:"artifactId"`
+	}
+
+	if err := json.Unmarshal(e.Details, &details); err != nil {
+		return ""
+	}
+
+	return details.ArtifactID
+}
+
+// ReplacementID is the replacement a replacement event records, read from
+// the details and falling back to the event's own id, which the platform
+// sets to the same value.
+func (e WorkloadEvent) ReplacementID() string {
+	var details struct {
+		ReplacementID string `json:"replacementId"`
+	}
+
+	if err := json.Unmarshal(e.Details, &details); err == nil && details.ReplacementID != "" {
+		return details.ReplacementID
+	}
+
+	return e.ID
+}
+
+// ReplacementStatus is how the replacement ended, in the platform's lower
+// case word: "completed", "errored", "failed", "cancelled". The event type
+// is "Replacement <Status>", so it is the type with the noun taken off.
+func (e WorkloadEvent) ReplacementStatus() string {
+	status := strings.TrimSpace(strings.TrimPrefix(strings.ToLower(e.EventType), "replacement"))
+
+	return status
+}
+
+// CandidateProtonIDs are the generations a replacement event says were
+// launched, nil for an event that names none.
+func (e WorkloadEvent) CandidateProtonIDs() []string {
+	var details struct {
+		CandidateProtonIDs []string `json:"candidateProtonIds"`
+	}
+
+	if err := json.Unmarshal(e.Details, &details); err != nil {
+		return nil
+	}
+
+	return details.CandidateProtonIDs
+}
+
+// RolloutRecord finds the finished record of started in the workload's events,
+// nil when there is none yet. The record is written under a new id, so it is
+// matched by the generations it launched, or by artifact among the records
+// written after it began.
+func RolloutRecord(workloadID string, started *Replacement) (*WorkloadEvent, error) {
+	if started == nil {
+		return nil, nil
+	}
+
+	events, err := ListWorkloadEvents(workloadID, maxPageSize, EventFilter{Types: []string{"replacement"}})
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		found *WorkloadEvent
+		at    time.Time
+	)
+
+	for i := range events {
+		e := &events[i]
+		if !recordsRollout(e, started) {
+			continue
+		}
+
+		if when := recordedAt(*e); found == nil || when.After(at) {
+			found, at = e, when
+		}
+	}
+
+	return found, nil
+}
+
+// recordsRollout reports whether e is started's finished record: it names
+// one of the generations started launched, or, when started launched none,
+// it is a record of the same artifact written after started began.
+func recordsRollout(e *WorkloadEvent, started *Replacement) bool {
+	if len(started.CandidateProtonIDs) > 0 {
+		launched := e.CandidateProtonIDs()
+
+		return slices.ContainsFunc(started.CandidateProtonIDs, func(id string) bool {
+			return slices.Contains(launched, id)
+		})
+	}
+
+	if started.ArtifactID == "" || e.ArtifactID() != started.ArtifactID {
+		return false
+	}
+
+	// A minute of slack: the two clocks are the same server's, but a record
+	// can be written in the second the replacement was.
+	return started.CreatedAt.IsZero() || !recordedAt(*e).Before(started.CreatedAt.Add(-time.Minute))
+}
+
+// recordedAt is when a replacement event's record was written, from its
+// ObjectId, with the event's timestamp standing in for an id of another shape.
+func recordedAt(e WorkloadEvent) time.Time {
+	id := e.ReplacementID()
+	if len(id) != 24 {
+		return e.Timestamp
+	}
+
+	seconds, err := strconv.ParseInt(id[:8], 16, 64)
+	if err != nil {
+		return e.Timestamp
+	}
+
+	return time.Unix(seconds, 0)
+}
+
 type workloadEventList struct {
 	Data []WorkloadEvent `json:"data"`
 	Next string          `json:"next"`

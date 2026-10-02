@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -56,6 +57,7 @@ var (
 	getCredentialFn      = workload.GetCredential
 	findCredentialFn     = workload.FindCredentialNamed
 	guardReplacementFn   = workload.RefuseActiveReplacement
+	activeProtonFn       = workload.ActiveProton
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
@@ -236,6 +238,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// tests can stay there too.
 	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
 
+	plan = noteStaleGeneration(live, keepInPlace(loaded, live, plan))
+
 	result := Result{
 		Plan:       plan,
 		WorkloadID: boundID(live),
@@ -279,6 +283,74 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	return apply(ctx, loaded, live, plan, result, opts)
+}
+
+// keepInPlace drops the in-place path when the project pushes code to another
+// artifact; the build path knows how to pick that leftover up.
+func keepInPlace(loaded Loaded, live Live, plan Plan) Plan {
+	if !plan.InPlace || !plan.Code.Applies {
+		return plan
+	}
+
+	if linked := linkedArtifact(loaded.ProjectDir); linked != "" && linked != live.ArtifactID {
+		plan.InPlace = false
+	}
+
+	return plan
+}
+
+// linkedArtifact is the artifact this project pushes to, "" when it is not
+// linked or the link cannot be read.
+func linkedArtifact(projectDir string) string {
+	if !projectLinkedFn(projectDir) {
+		return ""
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil {
+		return ""
+	}
+
+	return cfg.ArtifactID
+}
+
+// noteStaleGeneration rerolls a running draft whose artifact changed after the
+// serving generation was launched: an in-place write that never rolled out
+// leaves the file and the artifact agreeing while the workload runs the old
+// spec. A read that fails is logged and the plan left as it was.
+func noteStaleGeneration(live Live, plan Plan) Plan {
+	if !staleCheckApplies(live, plan) {
+		return plan
+	}
+
+	active, err := activeProtonFn(live.WorkloadID)
+	if err != nil {
+		log.Debug("cannot read the serving generation; planning on the documents alone",
+			"workload_id", live.WorkloadID, "err", err)
+
+		return plan
+	}
+
+	if !generationPredates(active, live) {
+		return plan
+	}
+
+	return plan.rerolling("the artifact was changed after the generation serving it started")
+}
+
+// staleCheckApplies is the plan and state noteStaleGeneration asks about.
+func staleCheckApplies(live Live, plan Plan) bool {
+	leavesArtifact := plan.Empty() || plan.Retunes()
+
+	return leavesArtifact && !plan.RebuildsImage() &&
+		live.State == StateRunning && !live.Locked && !live.ArtifactUpdatedAt.IsZero()
+}
+
+// generationPredates reports that the serving generation was launched before
+// the artifact it runs was last changed.
+func generationPredates(active *workload.Proton, live Live) bool {
+	return active != nil && active.ArtifactID == live.ArtifactID &&
+		!active.CreatedAt.IsZero() && active.CreatedAt.Before(live.ArtifactUpdatedAt)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -1331,6 +1403,7 @@ func afterStart(plan Plan, result Result, report *reporter) Plan {
 	}
 
 	plan.InheritsImage = false
+	plan.InPlace = false
 
 	report.say("  The image it failed to come up on cannot be trusted, " +
 		"so the new version is built rather than copied.\n")

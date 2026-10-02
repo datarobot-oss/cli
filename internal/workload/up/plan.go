@@ -105,6 +105,14 @@ type Plan struct {
 	// What the plan intends, not a promise; the envelope is corrected after.
 	InheritsImage bool
 
+	// InPlace reports that the change is written to the draft artifact the
+	// workload already runs and rolled from there; no version is minted.
+	InPlace bool
+
+	// Reroll is why the running version is rolled onto itself with no change
+	// in the file: the artifact took a change its last rollout did not land.
+	Reroll string
+
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
 	// locked production locks something whether or not --lock was passed, and
@@ -135,6 +143,7 @@ func (p Plan) Empty() bool {
 		len(p.Artifact) == 0 &&
 		len(p.Runtime) == 0 &&
 		!p.forcesBuild() &&
+		p.Reroll == "" &&
 		!p.actsOnState()
 }
 
@@ -232,7 +241,7 @@ func priorBinding(live Live) string {
 // answer: both produce a new immutable version, and a run that has to rebuild
 // also has to replace. A forced build is the third way to the same answer.
 func (p Plan) RollsArtifact() bool {
-	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0 || p.forcesBuild())
+	return !p.Creates && (p.Code.Changed() || len(p.Artifact) > 0 || p.forcesBuild() || p.Reroll != "")
 }
 
 // RebuildsImage reports whether anything this run changes is an input to the
@@ -301,7 +310,18 @@ func runtimeOnly(keys []string) bool {
 // place, and a stopped workload is simply started, both leaving the locked
 // artifact exactly as it is.
 func (p Plan) MintsVersion() bool {
-	return p.Creates || p.RollsArtifact()
+	return p.Creates || (p.RollsArtifact() && !p.InPlace)
+}
+
+// rerolling is the plan for a draft whose last rollout did not land: the
+// version serving is rolled onto itself, keeping its image, and nothing is
+// written to it first.
+func (p Plan) rerolling(reason string) Plan {
+	p.Reroll = reason
+	p.InPlace = true
+	p.InheritsImage = true
+
+	return p
 }
 
 // OnlyStarts reports that starting the workload is the whole of what this run
@@ -446,5 +466,22 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	// Last: every drift has to be in hand before RebuildsImage can answer.
 	plan.InheritsImage = inheritsImage(live, plan, kind, loaded.Compiled.ArtifactName)
 
+	plan.InPlace = patchesInPlace(live, plan)
+
 	return plan, nil
+}
+
+// patchesInPlace reports whether the change can be written to the running
+// artifact instead of minting a version: it is a draft with an image, the
+// workload is not errored, and nothing the image is built from changed.
+func patchesInPlace(live Live, plan Plan) bool {
+	if live.Locked || live.State == StateErrored || live.ImageURI == "" {
+		return false
+	}
+
+	if plan.Code.Applies {
+		return plan.InheritsImage
+	}
+
+	return plan.RollsArtifact() && !plan.RebuildsImage()
 }

@@ -211,6 +211,10 @@ type fakes struct {
 	// checkEndpoint is the one GET a deploy ends with.
 	checkEndpoint func(string) (int, error)
 
+	// activeProton is the generation marked as serving, which an otherwise
+	// empty plan on a draft sets the artifact's last change against.
+	activeProton func(string) (*workload.Proton, error)
+
 	// The roll track: refuse to queue a second swap, start one, follow it.
 	guard       func(string) error
 	replace     func(string, string, json.RawMessage) (*workload.Replacement, error)
@@ -338,6 +342,11 @@ func install(t *testing.T, f fakes) {
 	// the quiet answer is the one every other roll test wants.
 	force(t, &guardReplacementFn, func(string) error { return nil })
 	swap(t, &guardReplacementFn, f.guard)
+
+	// No generation marked as serving unless a test says so: the real read
+	// would ask whatever tenant the developer is logged into.
+	force(t, &activeProtonFn, func(string) (*workload.Proton, error) { return nil, nil })
+	swap(t, &activeProtonFn, f.activeProton)
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)
@@ -1573,6 +1582,10 @@ type track struct {
 
 	copiedAs    string
 	updatedSpec json.RawMessage
+
+	// updatedTo is the artifact the spec write went to: the copy on the copy
+	// path, the version serving when it is written to in place.
+	updatedTo string
 }
 
 // wiredBuild is a build path where every step works, over the track that
