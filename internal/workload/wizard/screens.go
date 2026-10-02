@@ -1170,6 +1170,8 @@ type pickedWorkload struct {
 type pickedEnv struct {
 	id        string
 	versionID string
+	name      string
+	language  string
 }
 
 // createNewLabel is the pinned row. It says what choosing it does, because
@@ -1217,7 +1219,7 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, liveID strin
 
 		row := tableRow{
 			cells: []string{ee.Name, languageLabel(ee.ProgrammingLanguage), ee.ID},
-			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID},
+			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID, name: ee.Name, language: ee.ProgrammingLanguage},
 		}
 
 		// The one a bound workload is already built on is tagged and lifted to

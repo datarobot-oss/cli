@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -228,6 +229,47 @@ func TestParseProblem_UnrecognizablePayloadYieldsNoLine(t *testing.T) {
 // is its marker-bearing subdirectories: hidden ones are never the project,
 // empty ones say nothing, and one already holding a manifest is entered with
 // --dir rather than set up afresh.
+// The platform writes the Dockerfile from the project's files, so a base
+// image of another language fails at build time. Both halves are known here.
+func TestDetect_LanguageAndEnvironmentMismatch(t *testing.T) {
+	python := workload.ExecutionEnvironment{Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python"}
+	node := workload.ExecutionEnvironment{Name: "[DataRobot] NodeJS 24", ProgrammingLanguage: "other"}
+
+	for _, c := range []struct {
+		name     string
+		files    []string
+		language string
+		refuses  []workload.ExecutionEnvironment
+		accepts  []workload.ExecutionEnvironment
+	}{
+		{"node project", []string{"package.json", "package-lock.json"}, "node", []workload.ExecutionEnvironment{python}, []workload.ExecutionEnvironment{node}},
+		{"python project", []string{"pyproject.toml"}, "python", nil, []workload.ExecutionEnvironment{python, node}},
+		{"requirements only", []string{"requirements.txt"}, "python", nil, []workload.ExecutionEnvironment{python}},
+		{"both languages", []string{"pyproject.toml", "package.json"}, "", nil, []workload.ExecutionEnvironment{python, node}},
+		{"no project files", nil, "", nil, []workload.ExecutionEnvironment{python, node}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range c.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("x\n"), 0o644))
+			}
+
+			detected := Detect(dir)
+			assert.Equal(t, c.language, detected.Language())
+
+			for _, ee := range c.refuses {
+				problem := detected.environmentMismatch(ee)
+				assert.Contains(t, problem, ee.Name)
+				assert.Contains(t, problem, "would not build")
+			}
+
+			for _, ee := range c.accepts {
+				assert.Empty(t, detected.environmentMismatch(ee))
+			}
+		})
+	}
+}
+
 func TestDetect_SuspectDirOffersItsProjectLookingSubdirectories(t *testing.T) {
 	dir := t.TempDir()
 

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,10 +30,16 @@ import (
 func stubExecEnv(t *testing.T, id, versionID string, err error) {
 	t.Helper()
 
-	original := resolveExecEnvFn
-	resolveExecEnvFn = func(string) (string, string, error) { return id, versionID, err }
+	original := findExecEnvFn
+	findExecEnvFn = func(string) (workload.ExecutionEnvironment, error) {
+		if err != nil {
+			return workload.ExecutionEnvironment{}, err
+		}
 
-	t.Cleanup(func() { resolveExecEnvFn = original })
+		return workload.ExecutionEnvironment{ID: id, LatestSuccessfulVersion: &workload.EEVersion{ID: versionID}}, nil
+	}
+
+	t.Cleanup(func() { findExecEnvFn = original })
 }
 
 func TestSplitCommand(t *testing.T) {
@@ -252,6 +259,36 @@ func TestAnswers_GeneratedMode(t *testing.T) {
 	assert.Equal(t, "68a1", draft.Build.ExecutionEnvironmentID)
 	assert.Equal(t, "68a2", draft.Build.ExecutionEnvironmentVersionID)
 	assert.Equal(t, []string{"uvicorn", "app:app", "--host", "0.0.0.0"}, draft.Build.Entrypoint)
+}
+
+// A base image of another language than the project's files is refused at
+// setup, naming both, rather than after the sync and a build.
+func TestAnswers_GeneratedModeRefusesAMismatchedEnvironment(t *testing.T) {
+	original := findExecEnvFn
+	findExecEnvFn = func(string) (workload.ExecutionEnvironment, error) {
+		return workload.ExecutionEnvironment{
+			ID: "68a1", Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python",
+			LatestSuccessfulVersion: &workload.EEVersion{ID: "68a2"},
+		}, nil
+	}
+
+	t.Cleanup(func() { findExecEnvFn = original })
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte("{}\n"), 0o600))
+
+	_, err := Answers{
+		BuildMode:            manifest.BuildModeGenerated,
+		ExecutionEnvironment: "[DataRobot] Python 3.12",
+		Entrypoint:           "node app.js",
+	}.draft(Detect(dir))
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--execution-environment [DataRobot] Python 3.12")
+	assert.Contains(t, err.Error(), "python environment")
+	assert.Contains(t, err.Error(), "node project (package.json, package-lock.json)")
+	assert.Contains(t, err.Error(), "pick a node environment")
 }
 
 func TestAnswers_GeneratedModeMissingFlags(t *testing.T) {
