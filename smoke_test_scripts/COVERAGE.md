@@ -75,7 +75,7 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | B: account sweep — dry-run bind every workload on the account | ✅ | ❌ | Mirrors Woj's 4/4 binding-failure repro |
 | C: re-bind preserves live tuning; FileExists guard; delete-rebind restore | ✅ | ❌ | Known bug RAPTOR-19697: memory renders as 512MB (asserted) |
 | D: built-workload rebuild round trip (ErrImagePull regression) | ✅ (opt-in) | ❌ | ~20-30 min, two image builds; `task smoke-test-workload-full` or `d` arg |
-| E: `up --dry-run` idempotency; `stop` → `up --yes` reconcile; `delete --yes` clears binding | ✅ | ❌ | ~15-20 min, dominated by an observed ~11 min stop→stopped wait; RAPTOR-19749 |
+| E: `up --dry-run` idempotency; `stop` → `up --yes` reconcile; `delete --yes` clears binding | ✅ | ❌ | ~15-20 min, dominated by an observed ~11 min stop→stopped wait |
 | Artifact: create → get → list → code init/sync/versions → del | ✅ | ❌ | CLI-side focus (manifest, .drignore, exit codes); complements `workload-api/tests/acceptance`. `dr artifact lock` not automated: a build-config draft needs a completed build to lock, and a locked artifact can't be deleted/unlocked via the CLI (would leak state) — covered manually / via Scenario D |
 
 ---
@@ -87,7 +87,7 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 - `datarobot` alias is not verified.
 - Plugin auto-update and self-update flows are not covered.
 - Shell detection only covers PowerShell (not cmd.exe in the main suite; covered by a standalone `.bat` script).
-- `dr workload` / `dr artifact` are entirely untested on Windows — the whole suite is Unix-only (RAPTOR-19749).
+- `dr workload` / `dr artifact` are entirely untested on Windows — the whole suite is Unix-only.
 
 ### Unix
 - `dr help run` is not checked (only `dr help`).

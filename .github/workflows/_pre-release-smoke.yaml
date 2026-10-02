@@ -70,13 +70,9 @@ jobs:
         run: |
           task smoke-test-pre-release DR_API_TOKEN="$DR_API_TOKEN"
 
-  # A separate job, not more steps above: that job already runs the `dr
-  # start` Agentic Starter flow inside its own 30-minute cap, and a
-  # stop->stopped wait independently observed to take ~11 minutes
-  # (RAPTOR-19749) risks blowing that budget for an unrelated reason.
-  # Ubuntu only -- this surface's behavior isn't OS-sensitive the way
-  # `dr start`'s template tooling is, so there's no need to double the cost
-  # by also running it on macOS.
+  # Its own job: the one above runs `dr start` under a 30-minute cap, and a
+  # stop->stopped wait of ~11 minutes would eat into that. Ubuntu only: this
+  # surface is not OS-sensitive.
   workload-smoke-test:
     runs-on: ubuntu-latest
     name: Run Workload/Artifact Smoke Tests

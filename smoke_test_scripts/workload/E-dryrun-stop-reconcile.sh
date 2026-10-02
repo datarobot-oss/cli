@@ -1,22 +1,13 @@
 #!/usr/bin/env bash
-# Ticket: RAPTOR-19749
 # Scenario E — dry-run idempotency, stop/up reconcile, delete clears binding.
 #
-# The whole `dr workload` surface had no smoke coverage before this and
-# Scenario A/D. This scenario closes the three items Scenario A/D leave open:
-# `up --dry-run` reports "Already up to date" on a stable tree, a stopped
-# workload is started and reconciled by a plain `up` in one command (not
-# recreated), and `delete --yes` both removes the workload and clears the
-# `workloadId:` binding it left in .datarobot.yaml.
+# `up --dry-run` on a stable tree says "Already up to date"; `stop` then `up`
+# reconciles the same workload instead of recreating it; `delete --yes` removes
+# the workload and clears the `workloadId:` binding in .datarobot.yaml.
 #
-# Uses an image-based whoami workload (like Scenario A), not a Dockerfile
-# build (like Scenario D): items under test here are up/stop/delete
-# mechanics, orthogonal to image vs. build origin, and stacking a second
-# server-side build on top of this scenario's own stop-wait would burn
-# 20-30 extra minutes for no added coverage.
-#
-# ~15-20 min, dominated by the stop-wait (see E.3): stop->stopped has been
-# observed to take up to ~11 minutes on staging. Source: RAPTOR-19749.
+# Uses an image-based whoami workload (like Scenario A): a build would add
+# 20-30 min without covering anything new here. ~15-20 min, mostly the
+# stop-wait in E.3.
 
 # shellcheck shell=bash
 set -euo pipefail
@@ -89,10 +80,8 @@ wl::dr_capture workload stop "$WID"
 wl::assert_cmd_ok "$WL_RC" "$WL_OUT" "$WL_ERR" "workload stop"
 wl::pass "stop accepted"
 
-# 900s (15 min) floor, not the 300s helper default: a stop->stopped
-# transition has been observed to take ~11 minutes on staging with the
-# container already gone and updatedAt never advancing past createdAt
-# (RAPTOR-19749). Do not tighten this without re-measuring.
+# 900s, not the 300s helper default: stop->stopped has taken ~11 minutes on
+# staging. Do not tighten this without re-measuring.
 wl::wait_for_status "$WID" stopped 900 >/dev/null
 wl::pass "workload reached stopped"
 

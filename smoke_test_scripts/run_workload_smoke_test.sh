@@ -46,7 +46,7 @@ scenario_script() {
         b|B)        printf '%s/RAPTOR-19533-B-sweep.sh'      "$WL_DIR" ;;
         c|C)        printf '%s/RAPTOR-19533-C-rebind.sh'     "$WL_DIR" ;;
         d|D)        printf '%s/RAPTOR-19533-D-built.sh'      "$WL_DIR" ;;
-        e|E)        printf '%s/RAPTOR-19749-E-dryrun-stop-reconcile.sh' "$WL_DIR" ;;
+        e|E)        printf '%s/E-dryrun-stop-reconcile.sh' "$WL_DIR" ;;
         artifact)   printf '%s/artifact-lifecycle.sh'       "$WL_DIR" ;;
         *) echo "❌ unknown scenario: $1" >&2; return 1 ;;
     esac
