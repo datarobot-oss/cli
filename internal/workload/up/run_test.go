@@ -211,10 +211,12 @@ type fakes struct {
 	// checkEndpoint is the one GET a deploy ends with.
 	checkEndpoint func(string) (int, error)
 
-	// The roll track: refuse to queue a second swap, start one, follow it.
-	guard       func(string) error
-	replace     func(string, string, json.RawMessage) (*workload.Replacement, error)
-	waitReplace func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+	// The roll track: read what is already in flight, refuse to queue a second
+	// swap, start one, follow it.
+	activeReplacement func(string) (*workload.Replacement, error)
+	guard             func(string) error
+	replace           func(string, string, json.RawMessage) (*workload.Replacement, error)
+	waitReplace       func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
 		func(*workload.Replacement)) (*workload.Replacement, error)
 
 	// settings is the in-place path: a change that moved only the sizing.
@@ -335,7 +337,12 @@ func install(t *testing.T, f fakes) {
 	swap(t, &listBuildsFn, f.builds)
 
 	// Nothing stands in the way of a rollout unless a test says so, because
-	// the quiet answer is the one every other roll test wants.
+	// the quiet answer is the one every other roll test wants. That covers the
+	// pre-plan read as well as the guards: a test wiring neither is saying its
+	// workload has no swap in flight.
+	force(t, &activeReplacementFn, func(string) (*workload.Replacement, error) { return nil, nil })
+	swap(t, &activeReplacementFn, f.activeReplacement)
+
 	force(t, &guardReplacementFn, func(string) error { return nil })
 	swap(t, &guardReplacementFn, f.guard)
 	swap(t, &startReplacementFn, f.replace)
@@ -682,7 +689,10 @@ func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
 // that artifact. Locking cannot be undone, so a lost race would leave the
 // outgoing version permanent and the rollout unable to complete. deployable
 // cannot catch it: the workload reports itself running for the whole of a swap.
-func TestRun_LockWithNothingToDoWaitsForARolloutInFlight(t *testing.T) {
+//
+// A swap that starts after the pre-plan read is a concurrent deploy; waiting
+// would take a one-way lock on a stale plan, so it is refused.
+func TestRun_LockWithNothingToDoRefusesARolloutThatStartedLate(t *testing.T) {
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
 		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
@@ -1318,6 +1328,535 @@ func TestRun_SettlingIntoErroredIsNotReportedAsUpToDate(t *testing.T) {
 			assert.Contains(t, stderr, status, "the plan says what it found before the error explains it")
 		})
 	}
+}
+
+// The fixture carries drift on the first read and none on the second: the swap
+// in flight is what closed the gap, so the deploy has nothing left to do.
+func TestRun_RolloutInFlightIsWaitedOutAndThenDeployed(t *testing.T) {
+	var (
+		artifacts int
+		waitedFor string
+		seeded    *workload.Replacement
+	)
+
+	active := &workload.Replacement{
+		ID: "rep-1", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		ArtifactID: "68a0000000000000000000a2", Status: "switching",
+	}
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) {
+			artifacts++
+
+			d := doc(t, liveArtifactJSON)
+			if artifacts == 1 {
+				// Drift only the first read sees: a port the file does not name.
+				group := d["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)
+				group["containers"].([]any)[0].(map[string]any)["port"] = float64(8001)
+			}
+
+			return d, nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) { return active, nil },
+		waitReplace: func(_ context.Context, id string, started *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			waitedFor, seeded = id, started
+
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+		replace: func(string, string, json.RawMessage) (*workload.Replacement, error) {
+			t.Fatal("the swap already in flight is what closed the gap; nothing was left to roll")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", waitedFor)
+	assert.Same(t, active, seeded,
+		"the record just read is the seed, so the wait can tell a rollout that finished early "+
+			"from one that was never there")
+	assert.Equal(t, 2, artifacts, "the workload is re-read, because a swap lands somewhere new")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"the plan is built against where the swap landed, and the swap is what closed the gap")
+
+	assert.Contains(t, stderr, "is being replaced")
+	assert.Contains(t, stderr, "68a0000000000000000000a2", "the note names what is being rolled on")
+	assert.Contains(t, stderr, "switching")
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+}
+
+// A failed rollout never promotes, so the workload is still deployable; the run
+// says what it saw and carries on.
+func TestRun_RolloutThatEndsFailedIsNotedAndTheRunContinues(t *testing.T) {
+	var started string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(_ context.Context, id string, _ *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusFailed, Message: "candidate never became healthy"},
+				errors.New("replacement for workload " + id + " ended with status failed")
+		},
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			started = id
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err, "a rollout somebody else lost is not this deploy's failure")
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", started, "the run went on to do what the file asked")
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.Contains(t, stderr, "ended as failed (candidate never became healthy)")
+	assert.Contains(t, stderr, "still on the version it was")
+}
+
+// A rollout still going when the wait gave up has not been deployed onto. The
+// message names where it got to, because "still switching after 30m" is what
+// decides whether to wait longer or go and look at the platform.
+func TestRun_RolloutThatNeverLandsStopsBeforeMutating(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(_ context.Context, id string, _ *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"},
+				errors.New("timeout waiting for replacement on workload " + id + " after 30m0s")
+		},
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("a run that never got a settled state must not have changed anything")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was still switching")
+	assert.Contains(t, err.Error(), "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+
+	// The binding survives the failure, for the same reason it does when a
+	// workload never settles: losing the id is how a deploy becomes unfindable.
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// A read that cannot answer is not a rollout. The two want different words: one
+// is a state to wait out, the other is a question that did not get asked.
+func TestRun_UnreadableRolloutStateStopsTheRun(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return nil, errors.New("500 Internal Server Error")
+		},
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("a run that could not read the rollout state must not have changed anything")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot tell whether")
+}
+
+// A preview must not block for the poll timeout. It changes nothing, so the
+// honest answer is the plan as things stand plus a note that a deploy would
+// wait: the same bargain a settling workload gets.
+func TestRun_DryRunWithARolloutInFlightDoesNotWait(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			t.Fatal("a preview must not block for the poll timeout")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "is being replaced")
+	assert.Contains(t, stderr, "A deploy would wait for this rollout to finish")
+
+	// One wait pending, one sentence about it. The settling state this preview
+	// leaves behind is synthetic — awaitReplaced put it there so an empty plan
+	// is not called up to date — so awaitSteady must not read it as a second
+	// transition and print its own near-identical hint underneath.
+	assert.Equal(t, 1, strings.Count(stderr, "plan against where it lands"))
+}
+
+// --detach is about not waiting for the deploy to serve, and this wait comes
+// before the deploy: what to apply cannot be known until the swap lands.
+// Blocking is right, blocking in silence is not.
+func TestRun_DetachedRunSaysWhyItIsWaitingForTheRollout(t *testing.T) {
+	waited := 0
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			waited++
+
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "--detach applies to the deploy")
+	assert.Equal(t, 1, waited, "the hint is about a wait that actually happens")
+}
+
+// The two waits before the plan share one --poll-timeout: what the rollout
+// wait spent is taken off the budget the settling wait gets.
+func TestRun_RolloutAndSettleWaitsShareTheTimeout(t *testing.T) {
+	var (
+		looks   int
+		steadyT time.Duration
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := doc(t, liveWorkloadJSON)
+			if looks > 1 {
+				d["status"] = workload.WorkloadStatusProvisioning // the swap left it coming up
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			time.Sleep(2 * time.Millisecond)
+
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+		waitSteady: func(_ context.Context, id string, _, timeout time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			steadyT = timeout
+
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true, PollTimeout: 10 * time.Minute})
+	require.NoError(t, err)
+	assert.Positive(t, steadyT)
+	assert.Less(t, steadyT, 10*time.Minute-time.Millisecond, "the second wait gets what the first left")
+}
+
+// A preview during a rollout keeps the verdict the plan exists to report: an
+// errored workload is still reported as errored, not as settling.
+func TestRun_DryRunDuringARolloutKeepsAnErroredVerdict(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusErrored
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err, "the swap decides the verdict; a preview reports the state and refuses nothing")
+	assert.Contains(t, stderr, "is being replaced")
+	assert.Contains(t, stderr, "errored")
+	assert.NotContains(t, stderr, "Already up to date")
+	assert.NotEqual(t, "settling", result.Status)
+}
+
+// The usual way a broken workload gets fixed: a rollout is already carrying
+// the fix when up runs. The run waits it out, re-reads, and plans against the
+// workload the swap left running.
+func TestRun_ErroredWorkloadWithARolloutInFlightIsReadAgainAfterIt(t *testing.T) {
+	reads := 0
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			reads++
+
+			d := doc(t, liveWorkloadJSON)
+			if reads == 1 {
+				d["status"] = workload.WorkloadStatusErrored
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, reads, "re-read after the swap landed")
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+	assert.Contains(t, stderr, "Already up to date")
+	assert.Equal(t, "running", result.Status)
+}
+
+// A --lock run that arrives mid-swap waits it out and locks whatever the swap
+// left serving. Locking is one-way, so the pre-swap read must not be locked.
+func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
+	var (
+		locked    string
+		artifacts int
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) {
+			artifacts++
+
+			return draftArtifact(t), nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+		lock: func(artifactID string) (*workload.Artifact, error) {
+			assert.Equal(t, 2, artifacts,
+				"the lock is one-way, so it lands on what the swap left serving, not on the pre-swap read")
+
+			locked = artifactID
+
+			return &workload.Artifact{ID: artifactID, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, locked)
+	assert.True(t, result.Locked)
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+}
+
+// The swap lands between the workload read and the replacement read, so there
+// is nothing to wait for, but the snapshot in hand names the outgoing artifact.
+// Without the re-read, --lock would make that version permanent.
+func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
+	const (
+		outgoing = "68a0000000000000000000a1"
+		incoming = "68a0000000000000000000b2"
+	)
+
+	var (
+		looks  int
+		locked string
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := doc(t, liveWorkloadJSON)
+			if looks > 1 {
+				// The swap has landed by the time anything re-reads.
+				d["artifactId"] = incoming
+			}
+
+			return d, nil
+		},
+		artifactD: func(id string) (workload.Document, error) {
+			d := draftArtifact(t)
+			d["id"] = id
+
+			return d, nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{
+				ID: "rep-1", ArtifactID: incoming, Status: workload.ReplacementStatusCompleted,
+			}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			t.Fatal("a settled record is nothing to wait for")
+
+			return nil, nil
+		},
+		lock: func(artifactID string) (*workload.Artifact, error) {
+			locked = artifactID
+
+			return &workload.Artifact{ID: artifactID, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, looks, "a terminal record means a swap landed, so the snapshot is re-read")
+	assert.Equal(t, incoming, locked,
+		"locking is one-way, so it must land on what the swap installed, never on the version rolled off")
+	assert.Equal(t, incoming, result.ArtifactID)
+}
+
+// A record that says nothing is in flight is no evidence a swap just happened,
+// so the quiet path stays one workload read. Without this the fix above would
+// double the read on every deploy to close a window it cannot see anyway.
+func TestRun_NoRolloutRecordCostsNoSecondRead(t *testing.T) {
+	var looks int
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			return doc(t, liveWorkloadJSON), nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, 1, looks, "nothing in flight is nothing to re-read")
+}
+
+// The fixture matches the live state field for field, so the plan is empty;
+// "Already up to date" beneath "a deploy would wait" would contradict itself.
+func TestRun_DryRunDuringARolloutDoesNotClaimUpToDate(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", ArtifactID: "68a0…b2", Status: "promoting"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.NotContains(t, stderr, "Already up to date",
+		"the swap decides what differs, and it has not landed")
+	assert.Contains(t, stderr, "still settling")
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Equal(t, "settling", result.Status,
+		"the envelope reports the state, and a workload mid-swap is not settled")
+}
+
+// A replacement onto a stopped workload is what starts it, so a preview taken
+// mid-swap must not promise a start the deploy will find already done.
+func TestRun_DryRunDuringARolloutOnAStoppedWorkloadDoesNotPlanAStart(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusStopped
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "initializing"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "settling", result.Status)
+	assert.NotEqual(t, ActionStarted, result.Action, "the swap starts it; the deploy will not")
+	assert.NotContains(t, stderr, "having been stopped")
+	assert.Contains(t, stderr, "plan against where it lands")
+}
+
+// With no workload to ask about, the replacement route's 404 could mean
+// anything, so it is not asked.
+func TestRun_ARunWithNoLiveWorkloadNeverAsksAboutARollout(t *testing.T) {
+	install(t, fakes{
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			t.Fatal("there is no workload to be replaced")
+
+			return nil, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, ActionCreated, result.Action)
 }
 
 // TestRun_MissingWorkloadIsRecreated is the reported bug: a workload deleted
