@@ -170,11 +170,7 @@ func (d Detected) Language() string {
 }
 
 // environmentMismatch is why a generated image on ee would not build for this
-// project, "" when it would or when nothing says. The platform writes the
-// Dockerfile from the project's files, so a Node project on a Python base
-// image fails at `npm ci` with the tool missing, after the sync and a build.
-// Only two stated languages that disagree count: an environment labelled
-// "other" says nothing about itself.
+// project, "" when it would or when either language is unknown.
 func (d Detected) environmentMismatch(ee workload.ExecutionEnvironment) string {
 	project, env := d.Language(), environmentLanguage(ee.ProgrammingLanguage)
 	if project == "" || env == "" || project == env {

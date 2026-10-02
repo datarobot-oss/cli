@@ -485,11 +485,8 @@ func (a Answers) generatedBuild(detected Detected) (manifest.Build, error) {
 	}, nil
 }
 
-// executionEnvironment resolves --execution-environment at setup, not at
-// deploy: the file records both ids so the same manifest builds the same
-// image after the environment moves on, and a name that does not exist, or
-// an environment the project's files cannot be built on, fails now rather
-// than after a sync and a build.
+// executionEnvironment resolves --execution-environment at setup, so a missing
+// name or a wrong-language environment fails now rather than after a build.
 func (a Answers) executionEnvironment(detected Detected) (workload.ExecutionEnvironment, error) {
 	ee, err := findExecEnvFn(a.ExecutionEnvironment)
 	if err != nil {
