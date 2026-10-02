@@ -319,8 +319,7 @@ func noteFailedRollout(live Live, plan Plan) Plan {
 		return plan
 	}
 
-	reason := "the last rollout of this version ended " +
-		strings.ToLower(strings.TrimPrefix(last.EventType, "Replacement "))
+	reason := "the last rollout of this version ended " + last.ReplacementStatus()
 	if message := last.Message(); message != "" {
 		reason += " (" + message + ")"
 	}

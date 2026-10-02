@@ -25,6 +25,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // Replacement statuses observed to be terminal. The platform's own docs name
@@ -457,11 +458,44 @@ func absenceMeans(workloadID string, lastSeen *Replacement, watched bool, absenc
 		return nil, true, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
 
 	case watched, absences >= uncorroboratedAbsences:
-		return lastSeen, true, nil
+		settled := recordedOutcome(workloadID, lastSeen)
+
+		return settled, true, terminalReplacementErr(workloadID, settled)
 
 	default:
 		return lastSeen, false, nil
 	}
+}
+
+// recordedOutcome reads how a replacement ended once its record has left the
+// active route. Gone is not the same as landed: a rollout that errors is
+// finalized and cleared in the same breath, and a poll interval is long
+// enough for both to happen between two reads, which left the wait reporting
+// success over a failure it never saw. The platform writes the finished
+// record to the workload's trail before clearing it, so the trail has the
+// answer. A trail that cannot be read, or has no record yet, leaves the last
+// status seen, which is what the wait used to settle on.
+func recordedOutcome(workloadID string, lastSeen *Replacement) *Replacement {
+	if lastSeen.ID == "" {
+		return lastSeen
+	}
+
+	record, err := RolloutRecord(workloadID, lastSeen.ID)
+	if err != nil || record == nil {
+		log.Debug("replacement record gone and not yet in the trail; settling on the last status seen",
+			"workload_id", workloadID, "replacement_id", lastSeen.ID, "err", err)
+
+		return lastSeen
+	}
+
+	settled := *lastSeen
+	settled.Status = record.ReplacementStatus()
+
+	if message := record.Message(); message != "" {
+		settled.Message = message
+	}
+
+	return &settled
 }
 
 // uncorroboratedAbsences is how many consecutive 404s it takes to believe a
