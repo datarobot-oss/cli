@@ -182,15 +182,13 @@ func languageSortKey(language string) string {
 }
 
 // EnvironmentLanguage folds the platform's programmingLanguage label to one
-// lower-case word: "" for a label that names no language ("" or "other"),
-// "node" for the JavaScript family, otherwise the label itself.
+// lower-case word: "" for a label that names no language ("", "other" and
+// "legacy"), "node" for the JavaScript family, otherwise the label itself.
 func EnvironmentLanguage(label string) string {
-	lower := strings.ToLower(strings.TrimSpace(label))
-
-	switch {
-	case lower == "" || lower == "other":
+	switch lower := strings.ToLower(strings.TrimSpace(label)); lower {
+	case "", "other", "legacy":
 		return ""
-	case strings.Contains(lower, "node") || strings.Contains(lower, "javascript"):
+	case "node", "nodejs", "javascript":
 		return "node"
 	default:
 		return lower

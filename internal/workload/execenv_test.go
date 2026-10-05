@@ -357,6 +357,18 @@ func TestListExecutionEnvironments_ClustersLanguagesWithOtherLast(t *testing.T) 
 	assert.Equal(t, []string{"ee-java", "ee-py", "ee-r", "ee-other", "ee-none"}, got)
 }
 
+// The labels staging carries: python, other, java, julia, legacy and r. Only
+// the ones that name a runtime take part in the sort and the mismatch check.
+func TestEnvironmentLanguage(t *testing.T) {
+	for label, want := range map[string]string{
+		"python": "python", " Python ": "python", "java": "java", "julia": "julia", "r": "r", "R": "r",
+		"node": "node", "NodeJS": "node", "javascript": "node",
+		"": "", "other": "", "Other": "", "legacy": "",
+	} {
+		assert.Equal(t, want, EnvironmentLanguage(label), "label %q", label)
+	}
+}
+
 func TestListExecutionEnvironments_ServerError(t *testing.T) {
 	installSkipAuth(t)
 

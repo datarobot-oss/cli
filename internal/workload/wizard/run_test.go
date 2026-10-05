@@ -356,6 +356,39 @@ func TestRun_HeadlessBindJudgesAGeneratedBuildOnADirectoryWithFiles(t *testing.T
 	})
 }
 
+// Changing a bound generated build's environment with the flag goes through
+// the same language check as a fresh one.
+func TestRun_HeadlessBindRefusesAMismatchedEnvironmentOnTheLiveBuild(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000,
+				 "imageBuildConfig": {"dockerfile": {"source": "generated", "entrypoint": ["node", "app.js"],
+				   "executionEnvironmentId": "68b1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+	original := findExecEnvFn
+	findExecEnvFn = func(string) (workload.ExecutionEnvironment, error) {
+		return workload.ExecutionEnvironment{
+			ID: "68a1", Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python",
+			LatestSuccessfulVersion: &workload.EEVersion{ID: "68a2"},
+		}, nil
+	}
+
+	t.Cleanup(func() { findExecEnvFn = original })
+
+	dir := t.TempDir()
+	for _, f := range []string{"package.json", "package-lock.json"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("{}\n"), 0o600))
+	}
+
+	_, err := Run(headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", ExecutionEnvironment: "[DataRobot] Python 3.12"}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "python environment")
+	assert.Contains(t, err.Error(), "node project")
+}
+
 // A workload id that does not resolve fails at setup, which is the whole
 // point of resolving it here instead of at deploy time.
 func TestRun_UnknownWorkloadID(t *testing.T) {

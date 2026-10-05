@@ -154,31 +154,58 @@ func (d Detected) generatedBuild() generatedBuild {
 // pyproject.toml, requirements.txt or setup.py, node for a package.json, ""
 // when they say nothing or disagree.
 func (d Detected) Language() string {
+	language, _ := d.language()
+
+	return language
+}
+
+// languageMarkers are the files that speak for each language, locks included.
+var languageMarkers = map[string][]string{
+	"python": {"pyproject.toml", "uv.lock", "requirements.txt", "setup.py"},
+	"node":   {"package.json", "package-lock.json"},
+}
+
+// language is Language with the files that said so.
+func (d Detected) language() (string, []string) {
 	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
 
 	python := has("pyproject.toml") || has("requirements.txt") || has("setup.py")
 	node := has("package.json")
 
+	var language string
+
 	switch {
 	case python && !node:
-		return "python"
+		language = "python"
 	case node && !python:
-		return "node"
+		language = "node"
 	default:
-		return ""
+		return "", nil
 	}
+
+	var evidence []string
+
+	for _, marker := range d.RootMarkers {
+		if slices.Contains(languageMarkers[language], marker) {
+			evidence = append(evidence, marker)
+		}
+	}
+
+	return language, evidence
 }
 
 // environmentMismatch is why a generated image on ee would not build for this
 // project, "" when it would or when either language is unknown.
 func (d Detected) environmentMismatch(ee workload.ExecutionEnvironment) string {
-	project, env := d.Language(), workload.EnvironmentLanguage(ee.ProgrammingLanguage)
+	project, evidence := d.language()
+
+	env := workload.EnvironmentLanguage(ee.ProgrammingLanguage)
 	if project == "" || env == "" || project == env {
 		return ""
 	}
 
 	return fmt.Sprintf("%s is a %s environment, but %s is a %s project (%s), so the generated image would not build; "+
-		"pick a %s environment", ee.Name, env, d.Dir, project, strings.Join(d.RootMarkers, ", "), project)
+		"pick a %s environment", ee.Name, env, d.Dir, project, strings.Join(evidence, ", "), project)
 }
 
 // maxDirCandidates caps the offer. Past a handful the list stops being an
