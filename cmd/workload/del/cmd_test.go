@@ -690,6 +690,67 @@ func TestExecute_DeletesWorkloadCleansUpAndRepairsManifest(t *testing.T) {
 	assert.Contains(t, errOut.String(), "Reset 1 credential reference")
 }
 
+// When the workload cannot be read before the delete, its name — the credential
+// prefix — is unknown, so the cleanup cannot run. The delete still succeeds, and
+// the user is told what is left to finish by hand rather than left to wonder why
+// the credentials the prompt promised to remove are still there.
+func TestExecute_NotesCleanupSkippedWhenTheReadFails(t *testing.T) {
+	listCalled := false
+
+	stubDelete(t,
+		func(string) (*workload.Workload, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusForbidden}
+		},
+		func(string) error { return nil },
+		func(string, int) ([]workload.Credential, error) {
+			listCalled = true
+
+			return nil, nil
+		},
+		func(string) error { return nil },
+	)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{boundID, "--yes"})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.False(t, listCalled, "a read that failed leaves nothing to scope a cleanup to")
+	assert.Contains(t, errOut.String(), "Could not read workload")
+	assert.Contains(t, errOut.String(), "by hand")
+}
+
+// A 404 on the read is the exception: there was no workload, so there are no
+// credentials it owned and nothing to say about a cleanup that was never owed.
+func TestExecute_SilentCleanupNoteWhenTheReadIs404(t *testing.T) {
+	stubDelete(t,
+		func(string) (*workload.Workload, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		func(string) error { return nil },
+		func(string, int) ([]workload.Credential, error) { return nil, nil },
+		func(string) error { return nil },
+	)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{boundID, "--yes"})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.NotContains(t, errOut.String(), "Could not read workload",
+		"a 404 is not the partial failure the note is for")
+}
+
 // projectCredentialIDs is what scopes the cleanup: it reads the credential ids
 // this project's manifest references, and reports that a manifest was found.
 func TestProjectCredentialIDs_ReadsTheManifestRefs(t *testing.T) {

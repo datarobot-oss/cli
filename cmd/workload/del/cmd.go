@@ -104,36 +104,7 @@ Example:
 				return err
 			}
 
-			// Read the workload before deleting it: its name is the prefix of
-			// the credentials to clean up afterwards, and a workload that is
-			// gone cannot be read back for it. A lookup that fails is not
-			// fatal — the delete still runs — it only means the credential
-			// cleanup is skipped, which is exactly the old behaviour.
-			wl, getErr := getWorkloadFn(ref.ID)
-
-			// Read the manifest's credential ids before the delete, so cleanup
-			// removes only the credentials this project points at and not every
-			// credential that merely shares the workload's name prefix — one of
-			// those can belong to a different workload that reused it. A delete by
-			// typed id from outside any project finds no manifest and falls back
-			// to the prefix alone.
-			scopeIDs, haveManifest := projectCredentialIDs(ref.Dir)
-
-			if err := deleteWorkloadFn(ref.ID); err != nil {
-				return handleDeleteError(err, ref)
-			}
-
-			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
-
-			var deleted []string
-
-			if getErr == nil && wl.Name != "" {
-				deleted = cleanupCredentials(cmd.ErrOrStderr(), wl.Name, scopeIDs, haveManifest)
-			}
-
-			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID, deleted)
-
-			return nil
+			return runDelete(cmd, ref)
 		},
 	}
 
@@ -175,6 +146,58 @@ func confirmDelete(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
 	}
 
 	return idargs.Confirm(cmd, deleteQuestion(ref), env)
+}
+
+// runDelete carries out a confirmed deletion: read the workload for its name and
+// the manifest for the credentials to scope against, delete the workload, clean
+// up its credentials, and repair the manifest that pointed at both.
+func runDelete(cmd *cobra.Command, ref idargs.Ref) error {
+	// Read the workload before deleting it: its name is the prefix of the
+	// credentials to clean up afterwards, and a workload that is gone cannot be
+	// read back for it. A lookup that fails is not fatal — the delete still runs.
+	wl, getErr := getWorkloadFn(ref.ID)
+
+	// Read the manifest's credential ids before the delete too, so cleanup
+	// removes only the credentials this project points at and not every
+	// credential that merely shares the workload's name prefix — one of those can
+	// belong to a different workload that reused it. A delete by typed id from
+	// outside any project finds no manifest and falls back to the prefix alone.
+	scopeIDs, haveManifest := projectCredentialIDs(ref.Dir)
+
+	if err := deleteWorkloadFn(ref.ID); err != nil {
+		return handleDeleteError(err, ref)
+	}
+
+	fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
+
+	deleted := cleanupAfterDelete(cmd.ErrOrStderr(), ref, wl, getErr, scopeIDs, haveManifest)
+
+	clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID, deleted)
+
+	return nil
+}
+
+// cleanupAfterDelete removes the deleted workload's credentials and returns the
+// ids it removed, so the manifest entries that pointed at them can be reset.
+//
+// A read that failed before the delete leaves the workload's name — the
+// credential prefix — unknown, so the cleanup the prompt promised cannot run.
+// The delete still succeeded, so this says what is left to finish by hand rather
+// than failing, matching the list-failure branch in cleanupCredentials. A 404 is
+// the exception: there was no workload, so none of its credentials either.
+func cleanupAfterDelete(
+	w io.Writer, ref idargs.Ref, wl *workload.Workload, getErr error, scopeIDs map[string]bool, haveManifest bool,
+) []string {
+	switch {
+	case getErr == nil && wl.Name != "":
+		return cleanupCredentials(w, wl.Name, scopeIDs, haveManifest)
+	case getErr != nil && !isHTTPStatus(getErr, http.StatusNotFound):
+		fmt.Fprintln(w, tui.DimStyle.Render(
+			"Could not read workload "+ref.ID+" before deleting it, so its credentials were not cleaned up: "+
+				getErr.Error()+". Remove any <workload-name>/* credentials by hand before reusing the name."))
+	}
+
+	return nil
 }
 
 // deleteConsequence is what agreeing to this question costs, and the one part
