@@ -125,7 +125,7 @@ func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -150,7 +150,7 @@ func TestClearStaleBinding_LeavesAnotherWorkloadsManifestAlone(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff")
+	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff", nil)
 
 	out := buf.String()
 
@@ -167,7 +167,7 @@ func TestClearStaleBinding_SilentWithNoManifest(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -184,7 +184,7 @@ func TestClearStaleBinding_SilentWhenTheManifestCannotBeRead(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -205,7 +205,7 @@ func TestClearStaleBinding_NamesTheStillLinkedArtifact(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -223,7 +223,7 @@ func TestClearStaleBinding_NoArtifactNoteWithoutAStateDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -245,7 +245,7 @@ func TestClearStaleBinding_FindsAManifestUnderDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -274,7 +274,7 @@ func TestClearStaleBinding_WarnsWhenTheManifestCannotBeWritten(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -297,7 +297,7 @@ func TestClearStaleBinding_NamesADirThatIsNotADirectory(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	assert.Contains(t, buf.String(), "No manifest was checked")
 	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
@@ -319,7 +319,7 @@ func TestClearStaleBinding_SilentOnAnUnwalkableManifest(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	assert.Empty(t, buf.String())
 }
@@ -333,7 +333,7 @@ func TestClearStaleBinding_RejectsAFileAsDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
 
@@ -570,11 +570,11 @@ func stubDelete(
 	})
 }
 
-// The whole RunE wiring, end to end: the workload is read, deleted, and its
-// credentials cleaned up, and the binding is cleared. Breaking the cleanup gate
-// (the getErr == nil check) or the delete call makes this fail, which the unit
-// tests around the helpers do not.
-func TestExecute_DeletesWorkloadAndCleansUp(t *testing.T) {
+// The whole RunE wiring, end to end: the workload is read, deleted, its
+// credential cleaned up, and the manifest both unbound and reset to a
+// placeholder. Breaking the cleanup gate (the getErr == nil check) or the delete
+// call makes this fail, which the unit tests around the helpers do not.
+func TestExecute_DeletesWorkloadCleansUpAndRepairsManifest(t *testing.T) {
 	dir := t.TempDir()
 	path := writeManifest(t, dir, boundManifestWithSecret)
 
@@ -620,4 +620,30 @@ func TestExecute_DeletesWorkloadAndCleansUp(t *testing.T) {
 	parsed, err := manifest.Load(path)
 	require.NoError(t, err)
 	assert.Empty(t, parsed.WorkloadID(), "the binding is cleared")
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "dr-credential:PLACEHOLDER/apiToken",
+		"the reference to the deleted credential is reset so the next deploy does not fail on a missing id")
+	assert.Contains(t, errOut.String(), "Reset 1 credential reference")
+}
+
+// clearStaleBinding resets the references to the credentials just deleted in the
+// same pass that clears the binding, so a delete-then-up recovers cleanly.
+func TestClearStaleBinding_ResetsDeletedCredentialRefs(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifestWithSecret)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", []string{"66f000000000000000000001"})
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(got), "dr-credential:PLACEHOLDER/apiToken")
+	assert.NotContains(t, string(got), "66f000000000000000000001")
+	assert.Contains(t, buf.String(), "Reset 1 credential reference")
+	assert.Contains(t, buf.String(), "Removed workloadId")
 }

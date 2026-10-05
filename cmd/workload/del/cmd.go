@@ -117,11 +117,13 @@ Example:
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
 
+			var deleted []string
+
 			if getErr == nil && wl.Name != "" {
-				cleanupCredentials(cmd.ErrOrStderr(), wl.Name)
+				deleted = cleanupCredentials(cmd.ErrOrStderr(), wl.Name)
 			}
 
-			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID)
+			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID, deleted)
 
 			return nil
 		},
@@ -230,7 +232,7 @@ func handleDeleteError(err error, ref idargs.Ref) error {
 // this runs, so a manifest that cannot be found, read or written is stepped
 // over rather than turned into a failure for an operation that succeeded. The
 // unwritable case still says so, because the user has to finish it by hand.
-func clearStaleBinding(w io.Writer, dir, workloadID string) {
+func clearStaleBinding(w io.Writer, dir, workloadID string, deletedCredIDs []string) {
 	if dir == "" {
 		dir = "."
 	}
@@ -248,6 +250,14 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 
 		return
 	}
+
+	// Reset the references to the credentials just deleted before clearing the
+	// binding. Leaving them pointing at ids that no longer exist is the other
+	// half of the reported bug: the next deploy reads them in verifyCredentials
+	// and fails on an id the user never typed, where a placeholder fails as an
+	// entry the re-import knows how to finish. This is a separate edit to the
+	// same file, so it runs whether or not the binding itself needs clearing.
+	resetDeletedCredentials(w, path, deletedCredIDs)
 
 	cleared, err := manifest.ClearWorkloadID(path, workloadID)
 
@@ -281,9 +291,56 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 	noteLinkedArtifact(w, filepath.Dir(path))
 }
 
+// resetDeletedCredentials turns the manifest references to the credentials just
+// deleted back into placeholders. Like the rest of clearStaleBinding it cannot
+// fail the command: the workload is already gone, so a file that cannot be read
+// is stepped over, and one that cannot be written is reported with the remedy
+// the user has to finish by hand.
+func resetDeletedCredentials(w io.Writer, path string, deletedCredIDs []string) {
+	if len(deletedCredIDs) == 0 {
+		return
+	}
+
+	reset, err := manifest.ResetCredentialIDs(path, deletedCredIDs)
+
+	// An unreadable file is stepped over in silence, the same as the binding
+	// clear does: it may not be this project's manifest, and `up` reports such a
+	// file in its own words.
+	if errors.Is(err, manifest.ErrUnreadable) {
+		return
+	}
+
+	if err != nil {
+		fmt.Fprintln(w, tui.DimStyle.Render(
+			"Could not reset the deleted credential references in "+idargs.DisplayPath(path)+": "+err.Error()+
+				". Set them back to "+manifest.CredentialPlaceholder+" by hand before the next deploy."))
+
+		return
+	}
+
+	if reset == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, tui.DimStyle.Render(
+		"Reset "+credentialNoun(reset)+" in "+idargs.DisplayPath(path)+" to "+
+			manifest.CredentialPlaceholder+"; store the values again before the next deploy."))
+}
+
+// credentialNoun agrees the count with its noun, so the reset message does not
+// say "1 credential references".
+func credentialNoun(n int) string {
+	if n == 1 {
+		return "1 credential reference"
+	}
+
+	return fmt.Sprintf("%d credential references", n)
+}
+
 // cleanupCredentials removes the credentials the CLI minted for the workload,
-// which all carry the "<workloadName>/" prefix (see wizard.CredentialName).
-// Deleting them is what lets the name be reused: a credential the platform
+// which all carry the "<workloadName>/" prefix (see wizard.CredentialName), and
+// returns the ids it removed so the manifest entries that pointed at them can be
+// reset. Deleting them is what lets the name be reused: a credential the platform
 // still holds under "<workloadName>/OPENAI_API_KEY" makes the next deploy of a
 // workload by that name collide on it, which is the bug this fixes.
 //
@@ -293,7 +350,7 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 // failure for a delete that succeeded. A credential the platform refuses to
 // remove (a 409, still used by a data connection or batch prediction job) is
 // named for the same reason: the remedy is the user's, not ours to force.
-func cleanupCredentials(w io.Writer, workloadName string) {
+func cleanupCredentials(w io.Writer, workloadName string) []string {
 	prefix := workloadName + "/"
 
 	creds, err := credentialsWithPrefixFn(prefix, credentialCleanupNoLimit)
@@ -302,14 +359,17 @@ func cleanupCredentials(w io.Writer, workloadName string) {
 			"Could not list credentials to clean up for workload "+workloadName+": "+err.Error()+
 				". Remove any "+prefix+"* credentials by hand before reusing this name."))
 
-		return
+		return nil
 	}
 
 	if len(creds) == 0 {
-		return
+		return nil
 	}
 
-	var failed []string
+	var (
+		deleted []string
+		failed  []string
+	)
 
 	for _, c := range creds {
 		if err := deleteCredentialFn(c.CredentialID); err != nil {
@@ -317,6 +377,8 @@ func cleanupCredentials(w io.Writer, workloadName string) {
 
 			continue
 		}
+
+		deleted = append(deleted, c.CredentialID)
 
 		fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
 	}
@@ -326,6 +388,8 @@ func cleanupCredentials(w io.Writer, workloadName string) {
 			"Could not delete credential "+name+"; it may still be in use. "+
 				"Remove it by hand before reusing this workload name."))
 	}
+
+	return deleted
 }
 
 // noteLinkedArtifact names the artifact this project is linked to, and how to
