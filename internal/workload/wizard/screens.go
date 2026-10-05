@@ -1261,16 +1261,15 @@ func (f flow) liveExecEnvID() string {
 }
 
 // languageLabel renders the language column: the platform's value as it came
-// (only the sort folds case; a server that says "R" is shown saying "R"), and
-// a dash where it says "other" or nothing — a word that means "unlabeled"
-// reads better as absence than as a category.
+// (a server that says "R" is shown saying "R"), and a dash where it names no
+// language — a word that means "unlabeled" reads better as absence than as a
+// category.
 func languageLabel(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if lower := strings.ToLower(trimmed); lower == "" || lower == "other" {
+	if workload.EnvironmentLanguage(language) == "" {
 		return "—"
 	}
 
-	return trimmed
+	return strings.TrimSpace(language)
 }
 
 // replicaValue leaves the field empty rather than showing a zero, which is

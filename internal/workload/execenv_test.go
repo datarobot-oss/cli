@@ -44,7 +44,7 @@ func eeDoc(id, name, versionID string) string {
 	)
 }
 
-func TestResolveExecutionEnvironment_MatchesByName(t *testing.T) {
+func TestFindExecutionEnvironment_MatchesByName(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -58,13 +58,13 @@ func TestResolveExecutionEnvironment_MatchesByName(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("Python 3.12")
+	ee, err := FindExecutionEnvironment("Python 3.12")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-2", id)
-	assert.Equal(t, "ver-2", versionID)
+	assert.Equal(t, "ee-2", ee.ID)
+	assert.Equal(t, "ver-2", ee.LatestSuccessfulVersion.ID)
 }
 
-func TestResolveExecutionEnvironment_MatchesByID(t *testing.T) {
+func TestFindExecutionEnvironment_MatchesByID(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -75,15 +75,15 @@ func TestResolveExecutionEnvironment_MatchesByID(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("ee-1")
+	ee, err := FindExecutionEnvironment("ee-1")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-1", id)
-	assert.Equal(t, "ver-1", versionID)
+	assert.Equal(t, "ee-1", ee.ID)
+	assert.Equal(t, "ver-1", ee.LatestSuccessfulVersion.ID)
 }
 
 // The match may live past the first page, so a miss on page one must follow
 // next rather than reporting not-found.
-func TestResolveExecutionEnvironment_FollowsNextPage(t *testing.T) {
+func TestFindExecutionEnvironment_FollowsNextPage(t *testing.T) {
 	installSkipAuth(t)
 
 	var srv *httptest.Server
@@ -105,16 +105,16 @@ func TestResolveExecutionEnvironment_FollowsNextPage(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("Wanted")
+	ee, err := FindExecutionEnvironment("Wanted")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-9", id)
-	assert.Equal(t, "ver-9", versionID)
+	assert.Equal(t, "ee-9", ee.ID)
+	assert.Equal(t, "ver-9", ee.LatestSuccessfulVersion.ID)
 }
 
 // An environment whose builds have all failed cannot be built from, and the
 // error must say that rather than "not found", which would send the user
 // looking for a typo.
-func TestResolveExecutionEnvironment_NoSuccessfulVersion(t *testing.T) {
+func TestFindExecutionEnvironment_NoSuccessfulVersion(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -125,12 +125,12 @@ func TestResolveExecutionEnvironment_NoSuccessfulVersion(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Broken")
+	_, err := FindExecutionEnvironment("Broken")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no successful version")
 }
 
-func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
+func TestFindExecutionEnvironment_NotFound(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -141,7 +141,7 @@ func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("nope")
+	_, err := FindExecutionEnvironment("nope")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"nope" not found`)
 }
@@ -150,7 +150,7 @@ func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
 // copies can share one. Picking the server's first hit would build against the
 // wrong base image and surface as a puzzling runtime failure, so an ambiguous
 // name is an error naming the candidates.
-func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
+func TestFindExecutionEnvironment_AmbiguousName(t *testing.T) {
 	installSkipAuth(t)
 
 	var srv *httptest.Server
@@ -172,7 +172,7 @@ func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Python 3.11")
+	_, err := FindExecutionEnvironment("Python 3.11")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ambiguous")
 	assert.Contains(t, err.Error(), "ee-1")
@@ -181,7 +181,7 @@ func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
 
 // Ids are unique, so an id match is answered from the page it appears on
 // without scanning the rest for name collisions.
-func TestResolveExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
+func TestFindExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -195,16 +195,16 @@ func TestResolveExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("ee-2")
+	ee, err := FindExecutionEnvironment("ee-2")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-2", id)
-	assert.Equal(t, "ver-2", versionID)
+	assert.Equal(t, "ee-2", ee.ID)
+	assert.Equal(t, "ver-2", ee.LatestSuccessfulVersion.ID)
 }
 
 // Unlike the limit-bounded listings this one scans for a match, so a server
 // that keeps handing back a next cursor has no natural stopping point. The cap
 // turns a hung command into an error.
-func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
+func TestFindExecutionEnvironment_StopsAtPageCap(t *testing.T) {
 	installSkipAuth(t)
 
 	var (
@@ -225,7 +225,7 @@ func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Wanted")
+	_, err := FindExecutionEnvironment("Wanted")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pages")
 	assert.Equal(t, maxExecEnvPages, pages, "the walk stops at the cap rather than running forever")
@@ -233,7 +233,7 @@ func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
 
 // A next link pointing at another host is an SSRF vector, so pagination must
 // refuse to follow it.
-func TestResolveExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
+func TestFindExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -246,7 +246,7 @@ func TestResolveExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Wanted")
+	_, err := FindExecutionEnvironment("Wanted")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "not found", "a cross-host next must fail loudly, not fall through to not-found")
 }

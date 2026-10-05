@@ -225,10 +225,6 @@ func TestParseProblem_UnrecognizablePayloadYieldsNoLine(t *testing.T) {
 	assert.Equal(t, `unexpected character "-" in variable name`, parseProblem(err, "A=1\n"))
 }
 
-// A directory with none of the usual project files is suspect, and the offer
-// is its marker-bearing subdirectories: hidden ones are never the project,
-// empty ones say nothing, and one already holding a manifest is entered with
-// --dir rather than set up afresh.
 // The platform writes the Dockerfile from the project's files, so a base
 // image of another language fails at build time. Both halves are known here.
 func TestDetect_LanguageAndEnvironmentMismatch(t *testing.T) {
@@ -270,6 +266,10 @@ func TestDetect_LanguageAndEnvironmentMismatch(t *testing.T) {
 	}
 }
 
+// A directory with none of the usual project files is suspect, and the offer
+// is its marker-bearing subdirectories: hidden ones are never the project,
+// empty ones say nothing, and one already holding a manifest is entered with
+// --dir rather than set up afresh.
 func TestDetect_SuspectDirOffersItsProjectLookingSubdirectories(t *testing.T) {
 	dir := t.TempDir()
 

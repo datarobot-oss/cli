@@ -50,10 +50,10 @@ type executionEnvironmentList struct {
 // large tenant: 100 pages of 100 is well past any real environment count.
 const maxExecEnvPages = 100
 
-// ResolveExecutionEnvironment finds an execution environment by exact id or
-// name and returns its id and latest successful version id. `dr workload up`
-// uses it to fill the executionEnvironmentId/versionId of a generated-Dockerfile
-// artifact so the user names an EE without pasting ids.
+// FindExecutionEnvironment finds an execution environment by exact id or
+// name. The setup wizard uses it to fill the executionEnvironmentId/versionId
+// of a generated-Dockerfile build, so the user names an environment without
+// pasting ids. The record always carries a successful version.
 //
 // An id match wins immediately, since ids are unique. Names are not: the
 // platform catalog and a tenant's own environments can carry the same one, so
@@ -61,18 +61,6 @@ const maxExecEnvPages = 100
 // error rather than whichever copy the server happened to list first. Picking
 // silently would build against the wrong base image and only show up as a
 // puzzling runtime failure.
-func ResolveExecutionEnvironment(nameOrID string) (id, versionID string, err error) {
-	ee, err := FindExecutionEnvironment(nameOrID)
-	if err != nil {
-		return "", "", err
-	}
-
-	return ee.ID, ee.LatestSuccessfulVersion.ID, nil
-}
-
-// FindExecutionEnvironment is ResolveExecutionEnvironment returning the whole
-// record, for a caller that also wants its name or language. The record
-// always carries a successful version.
 func FindExecutionEnvironment(nameOrID string) (ExecutionEnvironment, error) {
 	byID, byName, err := scanExecutionEnvironments(nameOrID)
 	if err != nil {
@@ -181,16 +169,32 @@ func sortExecutionEnvironments(environments []ExecutionEnvironment) {
 	})
 }
 
-// languageSortKey folds a language for grouping and banishes the catch-all to
-// the end: "other" is where the platform files everything it cannot name, so
-// it says the least and belongs after the languages that say something.
+// languageSortKey groups by language and banishes the unlabeled to the end:
+// "other" is where the platform files everything it cannot name, so it says
+// the least and belongs after the languages that say something.
 func languageSortKey(language string) string {
-	lower := strings.ToLower(strings.TrimSpace(language))
-	if lower == "" || lower == "other" {
+	folded := EnvironmentLanguage(language)
+	if folded == "" {
 		return "\x7f" // sorts after any letter
 	}
 
-	return lower
+	return folded
+}
+
+// EnvironmentLanguage folds the platform's programmingLanguage label to one
+// lower-case word: "" for a label that names no language ("" or "other"),
+// "node" for the JavaScript family, otherwise the label itself.
+func EnvironmentLanguage(label string) string {
+	lower := strings.ToLower(strings.TrimSpace(label))
+
+	switch {
+	case lower == "" || lower == "other":
+		return ""
+	case strings.Contains(lower, "node") || strings.Contains(lower, "javascript"):
+		return "node"
+	default:
+		return lower
+	}
 }
 
 // nextPage validates a paging cursor, returning "" at the end of the listing.
@@ -251,9 +255,9 @@ func scanExecutionEnvironments(nameOrID string) (byID *ExecutionEnvironment, byN
 	return nil, byName, nil
 }
 
-// resolveVersion unwraps the version a build can actually target. nameOrID is
-// carried through so the error names what the user typed rather than whichever
-// of the id or name matched.
+// withVersion refuses an environment with no version a build can target.
+// nameOrID is carried through so the error names what the user typed rather
+// than whichever of the id or name matched.
 func withVersion(ee ExecutionEnvironment, nameOrID string) (ExecutionEnvironment, error) {
 	if ee.LatestSuccessfulVersion == nil {
 		return ExecutionEnvironment{}, fmt.Errorf("execution environment %q has no successful version to build from", nameOrID)

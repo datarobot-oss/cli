@@ -172,28 +172,13 @@ func (d Detected) Language() string {
 // environmentMismatch is why a generated image on ee would not build for this
 // project, "" when it would or when either language is unknown.
 func (d Detected) environmentMismatch(ee workload.ExecutionEnvironment) string {
-	project, env := d.Language(), environmentLanguage(ee.ProgrammingLanguage)
+	project, env := d.Language(), workload.EnvironmentLanguage(ee.ProgrammingLanguage)
 	if project == "" || env == "" || project == env {
 		return ""
 	}
 
 	return fmt.Sprintf("%s is a %s environment, but %s is a %s project (%s), so the generated image would not build; "+
 		"pick a %s environment", ee.Name, env, d.Dir, project, strings.Join(d.RootMarkers, ", "), project)
-}
-
-// environmentLanguage normalises the platform's programmingLanguage to the
-// words Language uses, "" for a label that names none.
-func environmentLanguage(label string) string {
-	lower := strings.ToLower(strings.TrimSpace(label))
-
-	switch {
-	case lower == "" || lower == "other":
-		return ""
-	case strings.Contains(lower, "node") || strings.Contains(lower, "javascript"):
-		return "node"
-	default:
-		return lower
-	}
 }
 
 // maxDirCandidates caps the offer. Past a handful the list stops being an
