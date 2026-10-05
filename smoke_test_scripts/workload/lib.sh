@@ -48,6 +48,17 @@ wl::resolve_token() {
 # Initialise the run environment. Idempotent: safe to source from many scripts.
 # Relies on the CLI's existing drconfig.yaml for auth/endpoint; env vars only
 # override when explicitly set.
+# wl::need_tools fails fast when a command the caller relies on is not on PATH.
+wl::need_tools() {
+    local tool
+    for tool in "$@"; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            echo "❌ $tool is required by this scenario and is not on PATH" >&2
+            return 1
+        fi
+    done
+}
+
 wl::init_env() {
     # Binary under test: the locally built one unless overridden.
     : "${DR_BIN:=$WL_REPO_ROOT/dist/dr}"
@@ -55,6 +66,11 @@ wl::init_env() {
         echo "❌ dr binary not found at $DR_BIN (run 'task build' or set DR_BIN)" >&2
         return 1
     fi
+
+    # Every scenario reads JSON with jq; a scenario that needs more calls
+    # wl::need_tools itself. A missing tool otherwise surfaces mid-scenario
+    # as a failed assertion.
+    wl::need_tools jq || return 1
 
     # Run identity so every created resource is uniquely named and re-runs
     # never collide. Exported so scenario scripts share it.

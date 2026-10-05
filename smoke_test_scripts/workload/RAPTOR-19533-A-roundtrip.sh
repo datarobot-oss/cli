@@ -15,6 +15,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 wl::init_env
+wl::need_tools yq
 wl::register_cleanup
 
 wl::start_timer "A: whoami create/bind/up round trip"
