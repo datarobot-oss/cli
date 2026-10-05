@@ -305,12 +305,9 @@ func TestFinishSettle_AnInterruptedEndpointCheckWithholdsTheLock(t *testing.T) {
 	assert.Equal(t, 1, locked)
 }
 
-// The three waits besides awaitRunning that a keystroke or a signal can end.
-// Each hands its poll the phase's context and returns the interrupt rather
-// than swallowing it; awaitSteady matters most, because a nil there lets the
-// deploy carry on into planning after Ctrl-C. A stub that ignored the context
-// it was given would pass with context.Background() wired in, so each one
-// derives its error from the context it actually received.
+// Each wait hands its poll the phase's context and returns the interrupt rather
+// than swallowing it. The stubs derive their error from the context received,
+// so a wait wired to context.Background() fails here.
 func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 	fixedClock(t, time.Second)
 
@@ -348,6 +345,23 @@ func TestOtherWaits_AnInterruptedWaitIsNotASuccess(t *testing.T) {
 				live.WorkloadID = "wl-1"
 
 				_, err := awaitSteady(ctx, live, opts)
+
+				return err
+			},
+		},
+		{
+			name: "awaitReplaced",
+			stub: func(t *testing.T) {
+				t.Helper()
+
+				stubReplacement(t)
+				swap(t, &activeReplacementFn, func(string) (*workload.Replacement, error) { return promoting, nil })
+			},
+			wait: func(ctx context.Context, opts Options, _ *reporter) error {
+				live := Live{State: StateRunning, Status: workload.WorkloadStatusRunning}
+				live.WorkloadID = "wl-1"
+
+				_, _, err := awaitReplaced(ctx, live, opts)
 
 				return err
 			},
