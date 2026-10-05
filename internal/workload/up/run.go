@@ -53,6 +53,8 @@ var (
 	lockArtifactFn       = workload.LockArtifact
 	triggerBuildFn       = workload.TriggerArtifactBuild
 	waitBuildFn          = workload.WaitForBuild
+	hasLogsFn            = workload.BuildLogsAvailable
+	newBuildLogTailFn    = workload.NewBuildLogTail
 	listBuildsFn         = workload.ListArtifactBuilds
 	getCredentialFn      = workload.GetCredential
 	findCredentialFn     = workload.FindCredentialNamed

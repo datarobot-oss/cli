@@ -698,6 +698,46 @@ func TestGetArtifactBuildLogs_ReadsTheOTELStream(t *testing.T) {
 	assert.NotEmpty(t, entries[0].Raw, "OTEL record preserved for JSON passthrough")
 }
 
+// One line is all the hint needs, so the check asks for one page of one and
+// tells a stream with nothing from a stream it could not read.
+func TestBuildLogsAvailable(t *testing.T) {
+	serve := func(t *testing.T, handler http.HandlerFunc) {
+		t.Helper()
+		installSkipAuth(t)
+
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+		installEndpoint(t, srv.URL)
+	}
+
+	t.Run("captured, asking for one line", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "1", r.URL.Query().Get("limit"), "a boolean must not drain every page")
+			fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "hi")))
+		})
+		assert.Equal(t, LogsCaptured, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("absent on an empty page", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, logsPage("")) })
+		assert.Equal(t, LogsAbsent, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("unknown on a fetch error", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
+		assert.Equal(t, LogsUnknown, BuildLogsAvailable("art-1", "b-1"))
+	})
+}
+
+func TestBuildFailureMessage(t *testing.T) {
+	require.EqualError(t, BuildFailureMessage("art-1", "b-1", BuildStatusFailed, LogsCaptured),
+		"build b-1 ended with status FAILED; see 'dr artifact build logs art-1 b-1'")
+	require.EqualError(t, BuildFailureMessage("art-1", "b-1", BuildStatusCancelled, LogsAbsent),
+		"build b-1 ended with status CANCELLED; no log lines have been captured for it yet, 'dr artifact build logs art-1 b-1' shows any that arrive")
+	require.EqualError(t, BuildFailureMessage("art-1", "b-1", BuildStatusFailed, LogsUnknown),
+		"build b-1 ended with status FAILED; its logs could not be read just now, try 'dr artifact build logs art-1 b-1'")
+}
+
 func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 	installSkipAuth(t)
 

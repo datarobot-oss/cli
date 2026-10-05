@@ -262,9 +262,21 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 	return nil
 }
 
+// RenderBuildLogs prints a build's log lines, or [] under JSON and "No logs
+// found." on stderr in text when there are none, so stdout stays log lines.
 func RenderBuildLogs(format outputformat.OutputFormat, entries []BuildLogEntry) error {
 	if format == outputformat.OutputFormatJSON {
+		if len(entries) == 0 {
+			entries = []BuildLogEntry{}
+		}
+
 		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No logs found.")
+
+		return nil
 	}
 
 	for _, entry := range entries {

@@ -242,6 +242,22 @@ type BuildSummary struct {
 	// stable shape so consumers can jq it either way, while a reason that
 	// was never given is better absent than present and blank.
 	FailureReason string `json:"failureReason,omitempty"`
+
+	// LogTailErr is why LogTail is empty when the fetch failed, so an empty
+	// tail is not read as "no logs". Not rendered.
+	LogTailErr error `json:"-"`
+}
+
+// LogEvidence is what the summary can say about the build's logs.
+func (s BuildSummary) LogEvidence() LogEvidence {
+	switch {
+	case len(s.LogTail) > 0:
+		return LogsCaptured
+	case s.LogTailErr != nil:
+		return LogsUnknown
+	default:
+		return LogsAbsent
+	}
 }
 
 // IsTerminalBuildStatus reports whether s is a state from which the build
@@ -505,7 +521,9 @@ func WaitForBuild(
 		}
 
 		if IsBuildErrorStatus(build.Status) {
-			return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
+			// No logs hint here: only callers know whether any exist. They
+			// word the final error with BuildFailureMessage.
+			return build, fmt.Errorf("build %s ended with status %s", buildID, build.Status)
 		}
 
 		// COMPLETED is not the end of the wait. It means the image exists;
@@ -540,6 +558,52 @@ func abandonedBuild(buildID string, err error) error {
 	return fmt.Errorf("stopped waiting for build %s: %w", buildID, err)
 }
 
+// LogEvidence is what a failed build's error can say about its logs.
+type LogEvidence int
+
+const (
+	// LogsUnknown means the logs could not be read.
+	LogsUnknown LogEvidence = iota
+	// LogsCaptured means at least one line exists.
+	LogsCaptured
+	// LogsAbsent means the stream has nothing for the build so far.
+	LogsAbsent
+)
+
+// BuildLogsAvailable asks for one log line of the build, which is all a hint
+// needs. A fetch error is reported as unknown rather than read as "none".
+func BuildLogsAvailable(artifactID, buildID string) LogEvidence {
+	entries, err := fetchArtifactBuildLogs(artifactID, buildID, 1, "", "", "build logs")
+
+	switch {
+	case err != nil:
+		return LogsUnknown
+	case len(entries) == 0:
+		return LogsAbsent
+	default:
+		return LogsCaptured
+	}
+}
+
+// BuildFailureMessage words the error for a build that ended badly. The logs
+// command is named as the place to read when lines exist, and as the place
+// to check later when none have arrived yet, since ingestion lags the build.
+func BuildFailureMessage(artifactID, buildID, status string, logs LogEvidence) error {
+	head := fmt.Sprintf("build %s ended with status %s", buildID, status)
+	command := fmt.Sprintf("dr artifact build logs %s %s", artifactID, buildID)
+
+	switch logs {
+	case LogsCaptured:
+		return fmt.Errorf("%s; see '%s'", head, command)
+	case LogsAbsent:
+		return fmt.Errorf("%s; no log lines have been captured for it yet, '%s' shows any that arrive", head, command)
+	case LogsUnknown:
+		return fmt.Errorf("%s; its logs could not be read just now, try '%s'", head, command)
+	}
+
+	return errors.New(head)
+}
+
 // BuildSummaryFor composes the terminal-state summary RenderBuildSummary
 // renders. Duration comes from the Build timestamps; ImageURI is fetched
 // from the parent artifact's primary container only on COMPLETED (the
@@ -566,12 +630,10 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {
-				// Surface the fetch error via debug logging rather than
-				// failing the whole summary -- the user still benefits
-				// from seeing the build's terminal state even when the
-				// build-service logs endpoint is unavailable (which is
-				// common right after a CANCELLED build, when the logs
-				// have been garbage-collected).
+				// Kept on the summary rather than failing it: the terminal
+				// state is still worth showing when the logs are gone.
+				summary.LogTailErr = lerr
+
 				log.Debug("BuildSummaryFor: log tail fetch failed", "build_id", build.ID, "err", lerr)
 			} else {
 				summary.LogTail = lastN(logs, tailLen)
