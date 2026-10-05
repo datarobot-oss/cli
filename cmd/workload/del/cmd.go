@@ -192,9 +192,7 @@ func deleteQuestion(ref idargs.Ref) string {
 // on the weaker evidence. A binding that really is dead is cleared by the
 // deploy that recreates it.
 func handleDeleteError(err error, ref idargs.Ref) error {
-	var httpErr *drapi.HTTPError
-
-	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+	if isHTTPStatus(err, http.StatusNotFound) {
 		// The manifest is named when it, rather than the user, chose the id:
 		// otherwise this reports an id the reader has never seen and gives
 		// them nowhere to look.
@@ -211,6 +209,17 @@ func handleDeleteError(err error, ref idargs.Ref) error {
 	// Anything else keeps the provenance too, which is what turns a bare 403
 	// against an ambient id into something actionable.
 	return ref.Wrap(err)
+}
+
+// isHTTPStatus reports whether err is a *drapi.HTTPError carrying code. It is
+// how this command tells a 404 (the thing is already gone) from a 403 or a 5xx
+// (the call did not get far enough to say), both here and in the credential
+// cleanup, where the difference decides whether a reference was removed or only
+// left unverified.
+func isHTTPStatus(err error, code int) bool {
+	var httpErr *drapi.HTTPError
+
+	return errors.As(err, &httpErr) && httpErr.StatusCode == code
 }
 
 // clearStaleBinding takes back the workloadId the CLI wrote into a manifest,
@@ -345,11 +354,13 @@ func credentialNoun(n int) string {
 // workload by that name collide on it, which is the bug this fixes.
 //
 // Like clearStaleBinding, nothing here can fail the command. The workload is
-// already gone, so a lookup or delete that fails is reported — with what the
-// user has to finish by hand — and stepped over rather than turned into a
-// failure for a delete that succeeded. A credential the platform refuses to
-// remove (a 409, still used by a data connection or batch prediction job) is
-// named for the same reason: the remedy is the user's, not ours to force.
+// already gone, so a lookup or delete that fails is reported — with the error
+// text and what the user has to finish by hand — and stepped over rather than
+// turned into a failure for a delete that succeeded. A credential the platform
+// already lost (a 404) counts as removed, so its stale manifest reference is
+// reset with the rest. One the platform refuses to remove (a 409, still used by
+// a data connection or batch prediction job, or any other error) is named: the
+// remedy is the user's, not ours to force.
 func cleanupCredentials(w io.Writer, workloadName string) []string {
 	prefix := workloadName + "/"
 
@@ -372,21 +383,27 @@ func cleanupCredentials(w io.Writer, workloadName string) []string {
 	)
 
 	for _, c := range creds {
-		if err := deleteCredentialFn(c.CredentialID); err != nil {
-			failed = append(failed, c.Name)
+		err := deleteCredentialFn(c.CredentialID)
 
-			continue
+		switch {
+		case err == nil:
+			deleted = append(deleted, c.CredentialID)
+
+			fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
+		case isHTTPStatus(err, http.StatusNotFound):
+			// Already gone on the platform's side. There is nothing left to
+			// remove, but the manifest may still point at it, so it is treated
+			// as deleted for the reset that follows.
+			deleted = append(deleted, c.CredentialID)
+		default:
+			failed = append(failed, c.Name+": "+err.Error())
 		}
-
-		deleted = append(deleted, c.CredentialID)
-
-		fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
 	}
 
-	for _, name := range failed {
+	for _, msg := range failed {
 		fmt.Fprintln(w, tui.DimStyle.Render(
-			"Could not delete credential "+name+"; it may still be in use. "+
-				"Remove it by hand before reusing this workload name."))
+			"Could not delete credential "+msg+". It may still be in use; "+
+				"remove it by hand before reusing this workload name."))
 	}
 
 	return deleted

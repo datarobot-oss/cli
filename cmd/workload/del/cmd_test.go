@@ -17,11 +17,13 @@ package del
 import (
 	"bytes"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload"
@@ -530,6 +532,37 @@ func TestCleanupCredentials_SilentWhenNoneOwned(t *testing.T) {
 
 	assert.False(t, deleteCalled)
 	assert.Empty(t, out.String())
+}
+
+// A credential the platform has already lost (a 404) is counted as removed, not
+// as a failure, so its stale manifest reference is reset with the rest. Every
+// other failure keeps its error text, where before a 404, a 403 and a 5xx all
+// read as the same "may still be in use".
+func TestCleanupCredentials_CountsA404AsDeletedAndKeepsErrorText(t *testing.T) {
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "gone", Name: "my-app/A"},
+				{CredentialID: "stuck", Name: "my-app/B"},
+			}, nil
+		},
+		func(id string) error {
+			if id == "gone" {
+				return &drapi.HTTPError{StatusCode: http.StatusNotFound}
+			}
+
+			return errors.New("409 still used by a batch job")
+		},
+	)
+
+	var out bytes.Buffer
+
+	deleted := cleanupCredentials(&out, "my-app")
+
+	assert.Equal(t, []string{"gone"}, deleted, "a 404 counts as deleted so its reference is reset")
+	assert.NotContains(t, out.String(), "my-app/A", "nothing is said about a credential already gone")
+	assert.Contains(t, out.String(), "Could not delete credential my-app/B: 409 still used by a batch job",
+		"the error text is what tells a 409 from a 403")
 }
 
 // boundManifestWithSecret binds the workload and references one credential by id,
