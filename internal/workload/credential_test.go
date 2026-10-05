@@ -237,6 +237,39 @@ func TestFindCredentialNamed_AnswersNilWhenThereIsNone(t *testing.T) {
 	assert.Nil(t, found)
 }
 
+// The scan stops at the first match: names are unique tenant-wide, so there is
+// no second, and a next link past the hit must not be followed. The second page
+// answers 500 if it is ever fetched, so a refactor that read past the match
+// would turn this green test red rather than pass by returning the same id.
+func TestFindCredentialNamed_StopsAtTheFirstMatch(t *testing.T) {
+	var (
+		pages int
+		base  string
+	)
+
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pages++
+
+		if pages > 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"message":"the scan should have stopped at the first match"}`)
+
+			return
+		}
+
+		fmt.Fprintf(w, `{"data":[{"credentialId":"c1","name":"wanted"}],"next":%q}`, base+"?page=2")
+	}))
+
+	base, err := drapi.EndpointURL("/credentials/", url.Values{})
+	require.NoError(t, err)
+
+	found, err := FindCredentialNamed("wanted", 200)
+	require.NoError(t, err)
+	require.NotNil(t, found)
+	assert.Equal(t, "c1", found.CredentialID)
+	assert.Equal(t, 1, pages, "a match on page one must not fetch page two")
+}
+
 // Teardown collects every "<workloadName>/" credential, and it has to follow
 // next to do it: the orphans it exists to remove could sit on any page.
 func TestCredentialsWithPrefix_CollectsMatchesAcrossPages(t *testing.T) {
