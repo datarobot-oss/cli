@@ -547,7 +547,9 @@ func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
 		return
 	}
 
-	for i, group := range seqItems(mapValue(runtime, keyContainerGroups)) {
+	groups := seqItems(mapValue(runtime, keyContainerGroups))
+
+	for i, group := range groups {
 		path := fmt.Sprintf("%s.%s[%d]", keyRuntime, keyContainerGroups, i)
 
 		v.checkScaling(group, path)
@@ -555,7 +557,21 @@ func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
 		name, _ := scalarString(mapValue(group, keyName))
 		shape, matched := findShape(shapes, name)
 
-		if shapes != nil && !matched {
+		switch {
+		case name == "" && len(groups) == 1 && len(shapes) <= 1:
+			// The platform names the one group itself, so the file may leave
+			// it out; the compiler fills it in.
+			if len(shapes) == 1 {
+				shape, matched = shapes[0], true
+			}
+
+		case name == "":
+			v.add(nil, group, joinPath(path, keyName),
+				"is required when the runtime lists more than one container group")
+
+			continue
+
+		case shapes != nil && !matched:
 			v.add(mapValue(group, keyName), group, joinPath(path, keyName),
 				"%q matches no artifact container group (have %s)", name, quotedNames(shapeNames(shapes)))
 		}

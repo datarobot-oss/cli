@@ -17,6 +17,7 @@ package manifest
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -778,7 +779,7 @@ func (l Live) Render() ([]byte, error) {
 		artifact = append(artifact, field{key: keySpec, value: spec})
 	}
 
-	runtime, err := documentNode(l.Runtime)
+	runtime, err := documentNode(withoutRuntimeGroupName(l.Runtime))
 	if err != nil {
 		return nil, err
 	}
@@ -818,6 +819,24 @@ func (l Live) Render() ([]byte, error) {
 	}
 
 	return spaceTopLevelBlocks(buf.Bytes()), nil
+}
+
+// withoutRuntimeGroupName is the runtime with its single group's name left
+// out, as the writer leaves it: the platform assigns it. Shallow copies, so
+// the live document is not touched.
+func withoutRuntimeGroupName(runtime map[string]any) map[string]any {
+	groups := slicesAt(runtime, keyContainerGroups)
+	if len(groups) != 1 {
+		return runtime
+	}
+
+	group := maps.Clone(groups[0])
+	delete(group, keyName)
+
+	copied := maps.Clone(runtime)
+	copied[keyContainerGroups] = []any{group}
+
+	return copied
 }
 
 // primaryContainer finds the container traffic reaches: the one flagged
