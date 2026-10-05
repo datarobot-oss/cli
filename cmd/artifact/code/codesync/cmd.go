@@ -85,6 +85,9 @@ type runFlags struct {
 	// overwrite or delete local files. Without it, such a run is refused
 	// rather than silently destroying local work.
 	AcceptRemote bool
+	// PushOnly uploads and leaves every remote-side change alone; a
+	// conflict is refused, since neither side may win silently.
+	PushOnly bool
 }
 
 // Preview reports whether this run only shows a plan and writes nothing, on
@@ -141,6 +144,12 @@ so an automated sync never silently overwrites your local changes. A
 plain pull of a remote change you had not touched applies without
 prompting (still backed up to *.LOCAL).
 
+Use --push-only to upload your changes and leave every file the remote
+changed as it is, on both sides: nothing is downloaded or removed
+locally, those files are listed as left alone, and the next plain sync
+still sees them. A conflict is refused in this mode, since neither side
+may win silently; resolve it with a plain sync.
+
 Use --dry-run to preview the plan; --diff to also print per-file unified
 diffs. Both modes exit before any remote write and never prompt, so they
 are safe to run unattended. The one local write they can still make is
@@ -160,6 +169,7 @@ Example:
   dr artifact code sync --diff
   dr artifact code sync --yes
   dr artifact code sync --yes --accept-remote
+  dr artifact code sync --push-only --yes
   dr artifact code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -178,7 +188,11 @@ Example:
 	c.Flags().Bool("accept-remote", false,
 		"Allow the remote to overwrite or delete local files in a non-interactive run "+
 			"(your versions are still saved as *.LOCAL copies).")
+	c.Flags().Bool("push-only", false,
+		"Upload local changes and leave remote changes alone: nothing is downloaded or removed locally, "+
+			"and a conflict is refused.")
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
+	c.MarkFlagsMutuallyExclusive("push-only", "accept-remote")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		flags := parseRunFlags(cmd)
@@ -188,6 +202,7 @@ Example:
 			"diff":          flags.Diff,
 			"yes":           flags.Yes,
 			"accept_remote": flags.AcceptRemote,
+			"push_only":     flags.PushOnly,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -216,7 +231,9 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
 	}
 
-	engine, err := deps.NewEngine(dir, sync.Options{DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes})
+	engine, err := deps.NewEngine(dir, sync.Options{
+		DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes, PushOnly: flags.PushOnly,
+	})
 	if err != nil {
 		return err
 	}
@@ -253,12 +270,14 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 	diff, _ := cmd.Flags().GetBool("diff")
 
 	acceptRemote, _ := cmd.Flags().GetBool("accept-remote")
+	pushOnly, _ := cmd.Flags().GetBool("push-only")
 
 	return runFlags{
 		DryRun:       dryRun,
 		Diff:         diff,
 		Yes:          cli.IsNonInteractive(cmd),
 		AcceptRemote: acceptRemote,
+		PushOnly:     pushOnly,
 	}
 }
 
@@ -316,6 +335,10 @@ func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.Sync
 		return true, nil
 	}
 
+	if flags.PushOnly {
+		return false, pushOnlyConflictError(plan)
+	}
+
 	if flags.Yes {
 		if flags.AcceptRemote {
 			return true, nil
@@ -358,6 +381,18 @@ func conflictRefusedError(plan *sync.SyncPlan) error {
 			"and no confirmation is possible non-interactively:\n%s\n"+
 			"Re-run with --accept-remote to let the remote win (your versions are saved as *.LOCAL copies), "+
 			"or --dry-run to inspect the plan first",
+		len(paths), formatPathList(paths))
+}
+
+// pushOnlyConflictError is the refusal a push-only run gives a conflict: it
+// may not let either side win, so the files are named and a plain sync is
+// the way to settle them.
+func pushOnlyConflictError(plan *sync.SyncPlan) error {
+	paths := plan.ConflictPaths()
+
+	return fmt.Errorf(
+		"--push-only cannot settle %d file(s) changed both locally and on the remote:\n%s\n"+
+			"Run a plain 'dr artifact code sync' to resolve them (--dry-run to inspect the plan first)",
 		len(paths), formatPathList(paths))
 }
 
@@ -405,6 +440,10 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 	}
 
 	if plan.HasConflicts() {
+		if flags.PushOnly {
+			return pushOnlyConflictError(plan)
+		}
+
 		// Without --yes there is no confirmation channel in JSON mode, so the
 		// plan is emitted and nothing runs. The document carries "refused": true
 		// so a consumer sees the run applied nothing — including its uploads —

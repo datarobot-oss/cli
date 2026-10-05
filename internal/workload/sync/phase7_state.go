@@ -53,11 +53,13 @@ func phase7State(e *Engine) error {
 		cfg.CatalogID = &cid
 	}
 
-	versionForState := e.newVersionID
-	if versionForState == "" {
+	created := e.newVersionID
+	if created == "" {
 		// Pull-only sync; persist the remote version observed in Phase 1.
-		versionForState = e.remoteVer
+		created = e.remoteVer
 	}
+
+	versionForState := syncedVersionFor(e, created)
 
 	if versionForState != "" {
 		cfg.LastSyncedVersionID = &versionForState
@@ -103,7 +105,7 @@ func phase7State(e *Engine) error {
 	}
 
 	e.config = cfg
-	e.populateResult(versionForState)
+	e.populateResult(created)
 
 	return nil
 }
@@ -115,6 +117,19 @@ func phase7State(e *Engine) error {
 // downloads, not false uploads. Past the first write, the stranded dir
 // instead resurrects pre-sync bytes as phantom local edits the next sync
 // silently re-uploads over the remote.
+// syncedVersionFor is the version the state records after a run that made
+// created. A run that set remote changes aside leaves it where it was: the
+// base no longer mirrors the remote, and the fast path copies the remote
+// from the base whenever the two versions agree, which would hide those
+// changes on the next run.
+func syncedVersionFor(e *Engine, created string) string {
+	if len(e.plan.Skipped) > 0 {
+		return ptrOrEmpty(e.config.LastSyncedVersionID)
+	}
+
+	return created
+}
+
 func discardRollback(e *Engine) error {
 	if e.rollback == nil {
 		return nil
@@ -169,6 +184,19 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 		}
 
 		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize}
+	}
+
+	// A skipped file keeps its old base entry, so the next plain sync sees
+	// the remote change again instead of reading the untouched local copy
+	// as an edit to upload over it.
+	for _, fa := range e.plan.Skipped {
+		if entry, ok := e.base[fa.Path]; ok {
+			files[fa.Path] = wapi.FileMeta{Hash: entry.Hash, Size: entry.Size}
+
+			continue
+		}
+
+		delete(files, fa.Path)
 	}
 
 	syncedAtCopy := syncedAt

@@ -671,6 +671,63 @@ func TestRunE_Yes_RefusesConflictWithoutAcceptRemote(t *testing.T) {
 	assert.False(t, fe.executed)
 }
 
+// --push-only never lets either side of a conflict win, so a conflict is
+// refused outright, with or without --yes, on the human and the JSON path.
+func TestRunE_PushOnly_RefusesConflicts(t *testing.T) {
+	for name, extra := range map[string]map[string]string{
+		"interactive": {},
+		"yes":         {"yes": "true"},
+		"json":        {"yes": "true", "output-format": "json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			linkProject(t, dir)
+
+			fe := &fakeEngine{plan: &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "both.py"}}}}
+
+			flags := map[string]string{"dir": dir, "push-only": "true"}
+			for k, v := range extra {
+				flags[k] = v
+			}
+
+			_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--push-only cannot settle")
+			assert.Contains(t, err.Error(), "both.py")
+			assert.False(t, fe.executed)
+			assert.NotContains(t, stdout.String(), `"result"`)
+		})
+	}
+}
+
+// --push-only runs the uploads and shows what it left alone, in both formats.
+func TestRunE_PushOnly_UploadsAndListsWhatItLeftAlone(t *testing.T) {
+	plan := &sync.SyncPlan{
+		Uploads: []sync.FileAction{{Path: "mine.py", Classification: sync.ClsLocalModified, Action: sync.ActUploadModify}},
+		Skipped: []sync.FileAction{{Path: "theirs.py", Classification: sync.ClsRemoteModified, Action: sync.ActDownloadModify}},
+	}
+
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: plan, result: &sync.Result{NewVersion: "v2", UploadedCount: 1}}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "push-only": "true", "yes": "true"})
+	require.NoError(t, err)
+	assert.True(t, fe.executed)
+	assert.Contains(t, stdout.String(), "LEFT ALONE (push-only)")
+	assert.Contains(t, stdout.String(), "theirs.py")
+
+	fe = &fakeEngine{plan: plan}
+
+	_, stdout, _, err = runWithDeps(t, fakeEngineDeps(fe),
+		map[string]string{"dir": dir, "push-only": "true", "dry-run": "true", "output-format": "json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"skipped"`)
+	assert.Contains(t, stdout.String(), `"skippedCount": 1`)
+	assert.False(t, fe.executed)
+}
+
 // TestRunE_Yes_AcceptRemoteExecutes: --yes --accept-remote proceeds.
 func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
 	dir := t.TempDir()
