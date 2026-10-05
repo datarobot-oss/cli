@@ -1153,6 +1153,36 @@ func TestLive_RenderLeavesOutTheRuntimeGroupName(t *testing.T) {
 	require.NoError(t, parsed.Validate())
 }
 
+// With two artifact groups the runtime group keeps its name: the file has to
+// say which group the sizing belongs to, and the validator would refuse it
+// otherwise.
+func TestLive_RenderKeepsTheRuntimeGroupNameWhenTheArtifactHasSeveralGroups(t *testing.T) {
+	live := Live{
+		Name: "my-app", ArtifactName: "my-app-artifact",
+		Spec: map[string]any{keyContainerGroups: []any{
+			map[string]any{keyName: "default", keyContainers: []any{
+				map[string]any{keyName: "primary", keyPrimary: true, keyPort: 8080, keyImageURI: "nginx:latest"},
+			}},
+			map[string]any{keyName: "worker", keyContainers: []any{
+				map[string]any{keyName: "main", keyImageURI: "nginx:latest"},
+			}},
+		}},
+		Runtime: map[string]any{keyContainerGroups: []any{
+			map[string]any{keyName: "worker", keyReplicaCount: 2},
+		}},
+	}
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	runtime := string(rendered[strings.Index(string(rendered), "\nruntime:"):])
+	assert.Contains(t, runtime, "name: worker")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
 // NewLive must not mutate the caller's documents, even though it strips server
 // outputs and null-valued keys from its own copies.
 func TestLive_DoesNotMutateInputDocs(t *testing.T) {

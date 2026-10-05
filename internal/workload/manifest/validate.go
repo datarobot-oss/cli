@@ -567,7 +567,7 @@ func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
 
 		case name == "":
 			v.add(nil, group, joinPath(path, keyName),
-				"is required when the runtime lists more than one container group")
+				"is required when the artifact or the runtime lists more than one container group")
 
 			continue
 

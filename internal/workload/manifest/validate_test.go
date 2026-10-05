@@ -778,7 +778,22 @@ runtime:
 `)
 
 	requireFindings(t, err, []FieldError{
-		{Line: 19, Path: "runtime.containerGroups[0].name", Msg: "is required when the runtime lists more than one container group"},
+		{Line: 19, Path: "runtime.containerGroups[0].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+	})
+
+	// Bound by id there is no artifact group to copy a name from, and two
+	// unnamed groups would both compile to the platform's default.
+	err = validateString(t, "", `name: my-app
+artifactId: 68b0bbbb0000000000000002
+runtime:
+  containerGroups:
+    - replicaCount: 1
+    - replicaCount: 2
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 5, Path: "runtime.containerGroups[0].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+		{Line: 6, Path: "runtime.containerGroups[1].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
 	})
 }
 

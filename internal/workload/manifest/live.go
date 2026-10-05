@@ -779,7 +779,7 @@ func (l Live) Render() ([]byte, error) {
 		artifact = append(artifact, field{key: keySpec, value: spec})
 	}
 
-	runtime, err := documentNode(withoutRuntimeGroupName(l.Runtime))
+	runtime, err := documentNode(withoutRuntimeGroupName(l.Runtime, len(slicesAt(l.Spec, keyContainerGroups))))
 	if err != nil {
 		return nil, err
 	}
@@ -822,11 +822,13 @@ func (l Live) Render() ([]byte, error) {
 }
 
 // withoutRuntimeGroupName is the runtime with its single group's name left
-// out, as the writer leaves it: the platform assigns it. Shallow copies, so
-// the live document is not touched.
-func withoutRuntimeGroupName(runtime map[string]any) map[string]any {
+// out, as the writer leaves it: the platform assigns it. Only when the
+// artifact has one group too, so the file still says which group a sizing
+// belongs to whenever there is a choice. Shallow copies, so the live document
+// is not touched.
+func withoutRuntimeGroupName(runtime map[string]any, artifactGroups int) map[string]any {
 	groups := slicesAt(runtime, keyContainerGroups)
-	if len(groups) != 1 {
+	if len(groups) != 1 || artifactGroups > 1 {
 		return runtime
 	}
 
