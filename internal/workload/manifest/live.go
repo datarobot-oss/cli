@@ -185,6 +185,20 @@ func (m *Manifest) BuildMode() string {
 	return ""
 }
 
+// ExecutionEnvironmentID is the environment a generated build is made from,
+// "" for any other build.
+func (m *Manifest) ExecutionEnvironmentID() string {
+	container := primaryContainerNode(mapValue(mapValue(m.root, keyArtifact), keySpec))
+	if container == nil {
+		return ""
+	}
+
+	dockerfile := mapValue(mapValue(container, keyImageBuildConfig), keyDockerfile)
+	id, _ := scalarString(mapValue(dockerfile, keyExecEnvID))
+
+	return id
+}
+
 // findPrimary walks container groups looking for the primary container,
 // falling back to the first container the way both the node and map walks do.
 // The traversal is parameterised by the container representation so the logic

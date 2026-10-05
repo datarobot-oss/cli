@@ -216,6 +216,10 @@ type fakes struct {
 	// empty plan on a draft sets the artifact's last change against.
 	activeProton func(string) (*workload.Proton, error)
 
+	// execEnv is the environment a generated build is made from, read to
+	// hold its language against the project's files.
+	execEnv func(string) (workload.ExecutionEnvironment, error)
+
 	// The roll track: read what is already in flight, refuse to queue a second
 	// swap, start one, follow it.
 	activeReplacement func(string) (*workload.Replacement, error)
@@ -359,6 +363,13 @@ func install(t *testing.T, f fakes) {
 	// would ask whatever tenant the developer is logged into.
 	force(t, &activeProtonFn, func(string) (*workload.Proton, error) { return nil, nil })
 	swap(t, &activeProtonFn, f.activeProton)
+
+	// An environment with no language label, so a generated build in a test
+	// that said nothing about it is judged on its files alone.
+	force(t, &getExecEnvFn, func(string) (workload.ExecutionEnvironment, error) {
+		return workload.ExecutionEnvironment{ProgrammingLanguage: "other"}, nil
+	})
+	swap(t, &getExecEnvFn, f.execEnv)
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)
@@ -401,7 +412,7 @@ func force[F any](t *testing.T, target *F, value F) {
 }
 
 // runIn deploys the manifest written into a fresh directory.
-func runIn(t *testing.T, content string, opts Options) (Result, string, error) {
+func runIn(t *testing.T, content string, opts Options, files ...string) (Result, string, error) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -412,6 +423,12 @@ func runIn(t *testing.T, content string, opts Options) (Result, string, error) {
 	// a real one. Writing it unconditionally is harmless for the others.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"),
 		[]byte("FROM scratch\nEXPOSE 8080\n"), 0o600))
+
+	// A generated build needs a project the platform builds from, which the
+	// fixtures that ask for one name here.
+	for _, name := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o600))
+	}
 
 	var stderr bytes.Buffer
 

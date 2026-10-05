@@ -86,6 +86,24 @@ func FindExecutionEnvironment(nameOrID string) (ExecutionEnvironment, error) {
 		"execution environment %q not found; check the name in the DataRobot UI under Registry > Environments", nameOrID)
 }
 
+// GetExecutionEnvironment reads one environment by id, for a caller that
+// already holds the id and wants its name and language without scanning the
+// listing.
+func GetExecutionEnvironment(id string) (ExecutionEnvironment, error) {
+	url, err := config.GetEndpointURL("/api/v2/executionEnvironments/" + escapeID(id) + "/")
+	if err != nil {
+		return ExecutionEnvironment{}, err
+	}
+
+	var ee ExecutionEnvironment
+
+	if err := drapi.GetJSON(url, "execution environment", &ee); err != nil {
+		return ExecutionEnvironment{}, err
+	}
+
+	return ee, nil
+}
+
 // ListExecutionEnvironments returns up to limit environments that have a
 // version to build from, for the setup wizard's base-image picker, sorted so
 // the list reads as one: languages clustered (the catch-all "other" last, as

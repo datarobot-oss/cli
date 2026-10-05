@@ -150,6 +150,12 @@ func (d Detected) generatedBuild() generatedBuild {
 	}
 }
 
+// GeneratedBuildProblem is why the platform cannot build a generated image
+// from this directory, "" when it can.
+func (d Detected) GeneratedBuildProblem() string {
+	return d.generatedBuild().problem
+}
+
 // Language is what the project files say the runtime is: python for a
 // pyproject.toml, requirements.txt or setup.py, node for a package.json, ""
 // when they say nothing or disagree.
@@ -194,9 +200,9 @@ func (d Detected) language() (string, []string) {
 	return language, evidence
 }
 
-// environmentMismatch is why a generated image on ee would not build for this
+// EnvironmentMismatch is why a generated image on ee would not build for this
 // project, "" when it would or when either language is unknown.
-func (d Detected) environmentMismatch(ee workload.ExecutionEnvironment) string {
+func (d Detected) EnvironmentMismatch(ee workload.ExecutionEnvironment) string {
 	project, evidence := d.language()
 
 	env := workload.EnvironmentLanguage(ee.ProgrammingLanguage)

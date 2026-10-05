@@ -113,6 +113,10 @@ type Plan struct {
 	// in the file: the artifact took a change its last rollout did not land.
 	Reroll string
 
+	// Unbuildable is why the platform could not build the generated image
+	// this plan asks for, "" when it could or when the plan builds none.
+	Unbuildable string
+
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
 	// locked production locks something whether or not --lock was passed, and

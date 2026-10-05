@@ -255,14 +255,14 @@ func TestDetect_LanguageAndEnvironmentMismatch(t *testing.T) {
 			assert.Equal(t, c.language, detected.Language())
 
 			for _, ee := range c.refuses {
-				problem := detected.environmentMismatch(ee)
+				problem := detected.EnvironmentMismatch(ee)
 				assert.Contains(t, problem, ee.Name)
 				assert.Contains(t, problem, "would not build")
 				assert.Contains(t, problem, "(package.json, package-lock.json)", "only the files that decided the language")
 			}
 
 			for _, ee := range c.accepts {
-				assert.Empty(t, detected.environmentMismatch(ee))
+				assert.Empty(t, detected.EnvironmentMismatch(ee))
 			}
 		})
 	}
