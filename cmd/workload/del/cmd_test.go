@@ -444,7 +444,7 @@ func TestCleanupCredentials_DeletesEachOwnedCredential(t *testing.T) {
 
 	var out bytes.Buffer
 
-	cleanupCredentials(&out, "my-app")
+	cleanupCredentials(&out, "my-app", nil, false)
 
 	assert.Equal(t, "my-app/", gotPrefix, "the workload name is the credential prefix")
 	assert.Equal(t, 0, gotLimit, "cleanup walks the whole store, not a bounded slice")
@@ -478,7 +478,7 @@ func TestCleanupCredentials_ReportsAFailedDeleteButKeepsGoing(t *testing.T) {
 
 	var out bytes.Buffer
 
-	cleanupCredentials(&out, "my-app")
+	cleanupCredentials(&out, "my-app", nil, false)
 
 	assert.Equal(t, []string{"c1", "c2"}, deleted, "a failure on one does not stop the next")
 	assert.Contains(t, out.String(), "Could not delete credential my-app/A")
@@ -503,7 +503,7 @@ func TestCleanupCredentials_ReportsAListError(t *testing.T) {
 
 	var out bytes.Buffer
 
-	cleanupCredentials(&out, "my-app")
+	cleanupCredentials(&out, "my-app", nil, false)
 
 	assert.False(t, deleteCalled, "no credential is deleted when the list itself failed")
 	assert.Contains(t, out.String(), "Could not list credentials to clean up for workload my-app")
@@ -528,7 +528,7 @@ func TestCleanupCredentials_SilentWhenNoneOwned(t *testing.T) {
 
 	var out bytes.Buffer
 
-	cleanupCredentials(&out, "my-app")
+	cleanupCredentials(&out, "my-app", nil, false)
 
 	assert.False(t, deleteCalled)
 	assert.Empty(t, out.String())
@@ -557,12 +557,41 @@ func TestCleanupCredentials_CountsA404AsDeletedAndKeepsErrorText(t *testing.T) {
 
 	var out bytes.Buffer
 
-	deleted := cleanupCredentials(&out, "my-app")
+	deleted := cleanupCredentials(&out, "my-app", nil, false)
 
 	assert.Equal(t, []string{"gone"}, deleted, "a 404 counts as deleted so its reference is reset")
 	assert.NotContains(t, out.String(), "my-app/A", "nothing is said about a credential already gone")
 	assert.Contains(t, out.String(), "Could not delete credential my-app/B: 409 still used by a batch job",
 		"the error text is what tells a 409 from a 403")
+}
+
+// Scoped to the manifest, a prefix match this project does not reference is left
+// in place: it can belong to a different workload that reused the name.
+func TestCleanupCredentials_ScopedSkipsCredentialsNotInManifest(t *testing.T) {
+	var deleted []string
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "ours", Name: "my-app/A"},
+				{CredentialID: "theirs", Name: "my-app/B"},
+			}, nil
+		},
+		func(id string) error {
+			deleted = append(deleted, id)
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	returned := cleanupCredentials(&out, "my-app", map[string]bool{"ours": true}, true)
+
+	assert.Equal(t, []string{"ours"}, deleted, "only the credential this manifest references is deleted")
+	assert.Equal(t, []string{"ours"}, returned)
+	assert.Contains(t, out.String(), "Deleted credential my-app/A")
+	assert.NotContains(t, out.String(), "my-app/B", "a credential another workload may reuse is left alone")
 }
 
 // boundManifestWithSecret binds the workload and references one credential by id,
@@ -659,6 +688,30 @@ func TestExecute_DeletesWorkloadCleansUpAndRepairsManifest(t *testing.T) {
 	assert.Contains(t, string(got), "dr-credential:PLACEHOLDER/apiToken",
 		"the reference to the deleted credential is reset so the next deploy does not fail on a missing id")
 	assert.Contains(t, errOut.String(), "Reset 1 credential reference")
+}
+
+// projectCredentialIDs is what scopes the cleanup: it reads the credential ids
+// this project's manifest references, and reports that a manifest was found.
+func TestProjectCredentialIDs_ReadsTheManifestRefs(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifestWithSecret)
+	t.Chdir(dir)
+
+	ids, haveManifest := projectCredentialIDs(".")
+
+	assert.True(t, haveManifest)
+	assert.Equal(t, map[string]bool{"66f000000000000000000001": true}, ids)
+}
+
+// No manifest means no scope, which is the signal the cleanup falls back to the
+// name prefix on rather than scoping to an empty set and deleting nothing.
+func TestProjectCredentialIDs_ReportsNoManifest(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	ids, haveManifest := projectCredentialIDs(".")
+
+	assert.False(t, haveManifest)
+	assert.Nil(t, ids)
 }
 
 // clearStaleBinding resets the references to the credentials just deleted in the

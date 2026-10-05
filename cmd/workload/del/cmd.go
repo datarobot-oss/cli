@@ -111,6 +111,14 @@ Example:
 			// cleanup is skipped, which is exactly the old behaviour.
 			wl, getErr := getWorkloadFn(ref.ID)
 
+			// Read the manifest's credential ids before the delete, so cleanup
+			// removes only the credentials this project points at and not every
+			// credential that merely shares the workload's name prefix — one of
+			// those can belong to a different workload that reused it. A delete by
+			// typed id from outside any project finds no manifest and falls back
+			// to the prefix alone.
+			scopeIDs, haveManifest := projectCredentialIDs(ref.Dir)
+
 			if err := deleteWorkloadFn(ref.ID); err != nil {
 				return handleDeleteError(err, ref)
 			}
@@ -120,7 +128,7 @@ Example:
 			var deleted []string
 
 			if getErr == nil && wl.Name != "" {
-				deleted = cleanupCredentials(cmd.ErrOrStderr(), wl.Name)
+				deleted = cleanupCredentials(cmd.ErrOrStderr(), wl.Name, scopeIDs, haveManifest)
 			}
 
 			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID, deleted)
@@ -300,6 +308,48 @@ func clearStaleBinding(w io.Writer, dir, workloadID string, deletedCredIDs []str
 	noteLinkedArtifact(w, filepath.Dir(path))
 }
 
+// projectCredentialIDs returns the set of credential ids the manifest under dir
+// references, and whether a manifest was found and read at all. The delete uses
+// the set to scope its credential cleanup to this project's own credentials, and
+// the bool to decide what to do when there is no manifest: fall back to the name
+// prefix rather than scope to an empty set and delete nothing.
+//
+// It is read-only and best-effort. A manifest that cannot be located, read or
+// compiled answers (nil, false), which is the same "no scope to apply" the
+// prefix fallback already handles — the realistic case this scopes, a workload
+// deployed from a manifest that therefore compiled, is the one that reads
+// cleanly. Placeholder ids are dropped: they name no credential to delete.
+func projectCredentialIDs(dir string) (map[string]bool, bool) {
+	if dir == "" {
+		dir = "."
+	}
+
+	path, err := manifest.Locate(dir)
+	if err != nil {
+		return nil, false
+	}
+
+	m, err := manifest.Load(path)
+	if err != nil {
+		return nil, false
+	}
+
+	compiled, err := m.Compile()
+	if err != nil {
+		return nil, false
+	}
+
+	ids := make(map[string]bool, len(compiled.CredentialRefs))
+
+	for _, ref := range compiled.CredentialRefs {
+		if ref.CredentialID != "" && ref.CredentialID != manifest.CredentialPlaceholder {
+			ids[ref.CredentialID] = true
+		}
+	}
+
+	return ids, true
+}
+
 // resetDeletedCredentials turns the manifest references to the credentials just
 // deleted back into placeholders. Like the rest of clearStaleBinding it cannot
 // fail the command: the workload is already gone, so a file that cannot be read
@@ -353,6 +403,13 @@ func credentialNoun(n int) string {
 // still holds under "<workloadName>/OPENAI_API_KEY" makes the next deploy of a
 // workload by that name collide on it, which is the bug this fixes.
 //
+// scopeIDs and scoped narrow what is removed. When scoped is true a credential
+// is deleted only if this project's manifest references it, so a credential that
+// merely shares the name prefix but belongs to a different workload (one that
+// reused it on a name collision) is left in place. When scoped is false — a
+// delete by typed id with no manifest to consult — the prefix stands alone, so
+// the cleanup the prompt promised still happens.
+//
 // Like clearStaleBinding, nothing here can fail the command. The workload is
 // already gone, so a lookup or delete that fails is reported — with the error
 // text and what the user has to finish by hand — and stepped over rather than
@@ -361,7 +418,7 @@ func credentialNoun(n int) string {
 // reset with the rest. One the platform refuses to remove (a 409, still used by
 // a data connection or batch prediction job, or any other error) is named: the
 // remedy is the user's, not ours to force.
-func cleanupCredentials(w io.Writer, workloadName string) []string {
+func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bool, scoped bool) []string {
 	prefix := workloadName + "/"
 
 	creds, err := credentialsWithPrefixFn(prefix, credentialCleanupNoLimit)
@@ -383,6 +440,12 @@ func cleanupCredentials(w io.Writer, workloadName string) []string {
 	)
 
 	for _, c := range creds {
+		// Scoped to the manifest: a prefix match this project does not reference
+		// is some other workload's to delete, not ours.
+		if scoped && !scopeIDs[c.CredentialID] {
+			continue
+		}
+
 		err := deleteCredentialFn(c.CredentialID)
 
 		switch {
