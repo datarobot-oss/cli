@@ -531,3 +531,93 @@ func TestCleanupCredentials_SilentWhenNoneOwned(t *testing.T) {
 	assert.False(t, deleteCalled)
 	assert.Empty(t, out.String())
 }
+
+// boundManifestWithSecret binds the workload and references one credential by id,
+// so the whole delete path has something to clean up and, later, something to
+// reset once the credential is gone.
+const boundManifestWithSecret = `workloadId: 68b0c1d2e3f4a5b6c7d8e9f0
+name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: LLM_API_KEY
+                value: dr-credential:66f000000000000000000001/apiToken
+`
+
+// stubDelete replaces all four platform seams the RunE wiring reaches, so an
+// Execute()-level test drives the read, the delete, the cleanup and the repair
+// without a server behind any of them.
+func stubDelete(
+	t *testing.T,
+	get func(id string) (*workload.Workload, error),
+	del func(id string) error,
+	list func(prefix string, limit int) ([]workload.Credential, error),
+	delCred func(id string) error,
+) {
+	t.Helper()
+
+	og, od, ol, odc := getWorkloadFn, deleteWorkloadFn, credentialsWithPrefixFn, deleteCredentialFn
+	getWorkloadFn, deleteWorkloadFn, credentialsWithPrefixFn, deleteCredentialFn = get, del, list, delCred
+
+	t.Cleanup(func() {
+		getWorkloadFn, deleteWorkloadFn, credentialsWithPrefixFn, deleteCredentialFn = og, od, ol, odc
+	})
+}
+
+// The whole RunE wiring, end to end: the workload is read, deleted, and its
+// credentials cleaned up, and the binding is cleared. Breaking the cleanup gate
+// (the getErr == nil check) or the delete call makes this fail, which the unit
+// tests around the helpers do not.
+func TestExecute_DeletesWorkloadAndCleansUp(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifestWithSecret)
+
+	var (
+		deletedWorkload string
+		deletedCred     string
+	)
+
+	stubDelete(t,
+		func(id string) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Name: "my-app"}, nil
+		},
+		func(id string) error {
+			deletedWorkload = id
+
+			return nil
+		},
+		func(prefix string, _ int) ([]workload.Credential, error) {
+			assert.Equal(t, "my-app/", prefix)
+
+			return []workload.Credential{{CredentialID: "66f000000000000000000001", Name: "my-app/LLM_API_KEY"}}, nil
+		},
+		func(id string) error {
+			deletedCred = id
+
+			return nil
+		},
+	)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{boundID, "--yes", "--dir", dir})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.Equal(t, boundID, deletedWorkload, "the workload is deleted")
+	assert.Equal(t, "66f000000000000000000001", deletedCred, "its credential is cleaned up")
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, parsed.WorkloadID(), "the binding is cleared")
+}

@@ -36,12 +36,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// The platform calls the credential cleanup makes, as seams the tests replace:
-// a real teardown must never reach a tenant from a unit test. DeleteWorkload
-// stays a direct call because the existing tests exercise the delete path
-// through confirmDelete and clearStaleBinding, not against a server.
+// The platform calls this command makes, as seams the tests replace: a real
+// teardown must never reach a tenant from a unit test. deleteWorkloadFn is a
+// seam too so an Execute()-level test can drive the whole RunE wiring — the
+// read before the delete, the cleanup gate, the binding clear — without a
+// server behind it.
 var (
 	getWorkloadFn           = workload.GetWorkload
+	deleteWorkloadFn        = workload.DeleteWorkload
 	credentialsWithPrefixFn = workload.CredentialsWithPrefix
 	deleteCredentialFn      = workload.DeleteCredential
 )
@@ -109,7 +111,7 @@ Example:
 			// cleanup is skipped, which is exactly the old behaviour.
 			wl, getErr := getWorkloadFn(ref.ID)
 
-			if err := workload.DeleteWorkload(ref.ID); err != nil {
+			if err := deleteWorkloadFn(ref.ID); err != nil {
 				return handleDeleteError(err, ref)
 			}
 
