@@ -37,12 +37,13 @@ artifact:
 
 runtime:
   containerGroups:
-    - name: default # matches the artifact group
-      replicaCount: 1
+    - replicaCount: 1
       containers:
         - name: primary
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 ```
+
+The runtime group carries no `name`: the platform assigns `default` to the one group, and the Terraform and Pulumi providers refuse the field as read-only, so leaving it out is what lets this file port to them unchanged. A file that names the group keeps working, and a runtime with more than one group has to name them.
 
 No readiness probe is written unless you give a health path (`--health /ready`): a guessed path kills a healthy deploy whose framework answers 404 there.
 

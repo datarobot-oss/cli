@@ -841,8 +841,9 @@ func (d Draft) runtime() *yaml.Node {
 	)
 	allocation.Style = yaml.FlowStyle
 
+	// No group name: the platform assigns it, and the Terraform and Pulumi
+	// providers refuse the field, so a file without it ports unchanged.
 	return mapping(field{key: keyContainerGroups, value: sequence(mapping(
-		field{key: keyName, value: scalar(GroupName), comment: "matches the artifact group"},
 		field{key: keyReplicaCount, value: number(d.Runtime.Replicas)},
 		field{key: keyContainers, value: sequence(mapping(
 			field{key: keyName, value: scalar(PrimaryContainerName)},

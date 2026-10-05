@@ -16,6 +16,8 @@ package manifest
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1133,6 +1135,54 @@ func TestLive_RenderStripsResolvedBundle(t *testing.T) {
 	assert.NotContains(t, string(rendered), "resolvedBundle")
 }
 
+// A bound manifest ports the same way a fresh one does: the server's runtime
+// group name is left out of the file, and the live document keeps it.
+func TestLive_RenderLeavesOutTheRuntimeGroupName(t *testing.T) {
+	live := reporterShapedLive(t)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	runtime := string(rendered[strings.Index(string(rendered), "\nruntime:"):])
+	assert.NotContains(t, runtime, "name: default")
+	assert.Contains(t, runtime, "replicaCount")
+	assert.Equal(t, "default", stringAt(slicesAt(live.Runtime, keyContainerGroups)[0], keyName))
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
+// With two artifact groups the runtime group keeps its name: the file has to
+// say which group the sizing belongs to, and the validator would refuse it
+// otherwise.
+func TestLive_RenderKeepsTheRuntimeGroupNameWhenTheArtifactHasSeveralGroups(t *testing.T) {
+	live := Live{
+		Name: "my-app", ArtifactName: "my-app-artifact",
+		Spec: map[string]any{keyContainerGroups: []any{
+			map[string]any{keyName: "default", keyContainers: []any{
+				map[string]any{keyName: "primary", keyPrimary: true, keyPort: 8080, keyImageURI: "nginx:latest"},
+			}},
+			map[string]any{keyName: "worker", keyContainers: []any{
+				map[string]any{keyName: "main", keyImageURI: "nginx:latest"},
+			}},
+		}},
+		Runtime: map[string]any{keyContainerGroups: []any{
+			map[string]any{keyName: "worker", keyReplicaCount: 2},
+		}},
+	}
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	runtime := string(rendered[strings.Index(string(rendered), "\nruntime:"):])
+	assert.Contains(t, runtime, "name: worker")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
 // NewLive must not mutate the caller's documents, even though it strips server
 // outputs and null-valued keys from its own copies.
 func TestLive_DoesNotMutateInputDocs(t *testing.T) {
@@ -1212,8 +1262,13 @@ func assertNameLeadsInIdentifierMappings(t *testing.T, node *yaml.Node, parentKe
 			keys := mappingKeys(node)
 
 			require.NotEmpty(t, keys)
-			assert.Equal(t, keyName, keys[0],
-				"identifier mapping under %s should lead with name", parentKey)
+
+			// The runtime group is written without a name; there is
+			// nothing to hoist in it.
+			if slices.Contains(keys, keyName) {
+				assert.Equal(t, keyName, keys[0],
+					"identifier mapping under %s should lead with name", parentKey)
+			}
 		}
 
 		for i := 0; i+1 < len(node.Content); i += 2 {
@@ -1271,8 +1326,11 @@ func TestLive_RenderLeadsWithNameInContainerGroups(t *testing.T) {
 	spec := mapValue(mapValue(root, keyArtifact), keySpec)
 	checkGroups(mapValue(spec, keyContainerGroups))
 
+	// The runtime group is the one mapping written without a name.
 	runtime := mapValue(root, keyRuntime)
-	checkGroups(mapValue(runtime, keyContainerGroups))
+	for _, group := range seqItems(mapValue(runtime, keyContainerGroups)) {
+		assert.NotContains(t, mappingKeys(group), keyName, "the runtime group carries no name")
+	}
 }
 
 // The rendered manifest's top-level mapping lists keys in the agreed order.

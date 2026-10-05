@@ -173,7 +173,7 @@ name: my-app
 artifactId: 68b0c1d2e3f4a5b6c7d8e9f0
 runtime:
   containerGroups:
-    - name: default            # must match a group in the artifact
+    - name: default            # must match a group in the artifact; the platform assumes default when omitted
       replicaCount: 1
       containers:
         - name: primary        # must match a container in that group

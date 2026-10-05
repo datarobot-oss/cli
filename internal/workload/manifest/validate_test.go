@@ -726,6 +726,77 @@ artifact: {}
 	})
 }
 
+// One runtime group may go unnamed, since the platform names it; its
+// containers are still checked against the artifact's one group. Two groups
+// have to say which is which.
+func TestValidate_RuntimeGroupNameIsOptionalForOneGroup(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: nginx:latest
+runtime:
+  containerGroups:
+    - replicaCount: 1
+      containers:
+        - name: primry
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 17, Path: "runtime.containerGroups[0].containers[0].name", Msg: `"primry" matches no container in artifact group "default"`},
+	})
+
+	err = validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: nginx:latest
+      - name: worker
+        containers:
+          - name: main
+            imageUri: nginx:latest
+runtime:
+  containerGroups:
+    - replicaCount: 1
+    - name: worker
+      replicaCount: 1
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 19, Path: "runtime.containerGroups[0].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+	})
+
+	// Bound by id there is no artifact group to copy a name from, and two
+	// unnamed groups would both compile to the platform's default.
+	err = validateString(t, "", `name: my-app
+artifactId: 68b0bbbb0000000000000002
+runtime:
+  containerGroups:
+    - replicaCount: 1
+    - replicaCount: 2
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 5, Path: "runtime.containerGroups[0].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+		{Line: 6, Path: "runtime.containerGroups[1].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+	})
+}
+
 func TestValidate_RuntimeNamesMustMatchTheArtifact(t *testing.T) {
 	err := validateString(t, "", `name: my-app
 artifact:
