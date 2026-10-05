@@ -64,6 +64,7 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 	// copy, a platform with no copy endpoint and a tree that moved between the
 	// plan and the sync all reach this line having built anyway.
 	result.Plan.InheritsImage = plan.InheritsImage && err == nil && made.BuildID == ""
+	result.Plan.InPlace = plan.InPlace
 
 	if err != nil {
 		return result, err
@@ -82,7 +83,7 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 		return result, err
 	}
 
-	return replace(ctx, live.WorkloadID, made, lock, sizing, result, opts, report)
+	return replace(ctx, live.WorkloadID, made, lock, sizing, plan.InPlace, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -106,6 +107,21 @@ func candidateArtifact(
 ) (version, error) {
 	if id := loaded.Compiled.ArtifactID; id != "" {
 		return version{ID: id}, nil
+	}
+
+	if plan.InPlace {
+		made, err := patchedVersion(loaded, live, plan, report)
+		if err != nil || made.ImageURI != "" || !plan.Code.Applies {
+			return made, err
+		}
+
+		// The platform keeps the image on a write that omits it; a readback
+		// without one is not promoted on trust.
+		report.say("  The write left artifact %s without an image, so one is built.\n", made.ID)
+
+		made.BuildID, err = buildAndRecord(ctx, loaded.ProjectDir, made.ID, "", opts, report)
+
+		return made, err
 	}
 
 	repository := sameRepository(loaded, live)
@@ -306,15 +322,23 @@ func replace(
 	made version,
 	lock bool,
 	sizing json.RawMessage,
+	inPlace bool,
 	result Result,
 	opts Options,
 	report *reporter,
 ) (Result, error) {
+	label := "Rolling out the new version"
+	consequence := "the version serving keeps serving and the one just minted is left unpromoted"
+
+	if inPlace {
+		label = "Rolling out the change"
+		consequence = "the version serving keeps serving, and the change written to it rolls out with the next deploy or settings change"
+	}
+
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
-	if err := guardRollout(workloadID,
-		"the version serving keeps serving and the one just minted is left unpromoted"); err != nil {
+	if err := guardRollout(workloadID, consequence); err != nil {
 		return result, err
 	}
 
@@ -329,7 +353,7 @@ func replace(
 
 	var started *workload.Replacement
 
-	err := report.run("Rolling out the new version", func() error {
+	err := report.run(label, func() error {
 		replacement, startErr := startReplacementFn(workloadID, made.ID, sizing)
 		started = replacement
 
@@ -363,8 +387,15 @@ func replace(
 
 	result.Action = ActionRolled
 
-	return settle(ctx, workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
-		result, budgetLeft(opts, waitFrom), report)
+	// Both generations of an in-place roll run the same artifact, so naming
+	// it would read the outgoing one as the new one; the drain is what tells
+	// them apart, as for a resize.
+	want := workload.Serving{ArtifactID: made.ID, AwaitDrain: true}
+	if inPlace {
+		want = workload.Serving{AwaitDrain: true}
+	}
+
+	return settle(ctx, workloadID, want, result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.

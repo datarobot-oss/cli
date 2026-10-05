@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -469,7 +470,7 @@ func TestWaitForReplacement_FailedReturnsError(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, replacement, "a failure returns the final replacement alongside the error")
 	assert.Equal(t, ReplacementStatusFailed, replacement.Status)
-	assert.Contains(t, err.Error(), "reverted")
+	assert.Contains(t, err.Error(), "still on the generation it was running")
 }
 
 // A failed rollout's message is the platform's own account of why, and the
@@ -510,6 +511,82 @@ func TestWaitForReplacement_ErroredClearedViaNotFound(t *testing.T) {
 	require.Error(t, err, "an errored candidate must not read as success just because it was later cleared")
 	require.NotNil(t, replacement)
 	assert.Equal(t, ReplacementStatusErrored, replacement.Status)
+}
+
+// A record that vanished between two polls used to read as success. Seen on
+// staging: a rollout errored and was cleared two seconds later.
+func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
+	const eventsPath = "/api/v2/workloads/wl-1/events/"
+
+	trail := func(body string, status int) func(*testing.T) {
+		return func(t *testing.T) {
+			t.Helper()
+
+			var hits int32
+
+			mux := http.NewServeMux()
+			mux.HandleFunc(replacementPath, func(w http.ResponseWriter, _ *http.Request) {
+				if atomic.AddInt32(&hits, 1) == 1 {
+					fmt.Fprint(w, `{"id":"rep-9","candidateArtifactId":"art-2","status":"switching",`+
+						`"candidateProtonIds":["gen-9"],"createdAt":"2026-10-02T13:05:43Z"}`)
+
+					return
+				}
+
+				notFound(w)
+			})
+			mux.HandleFunc(eventsPath, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				fmt.Fprint(w, body)
+			})
+
+			serveAPI(t, mux)
+		}
+	}
+
+	// The trail writes the finished record under a new id, so none of these
+	// carry rep-9; the generation it launched is what names it.
+	errored := `{"data":[{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"art-2","candidateProtonIds":["gen-9"],"message":"candidate gen-9 is stuck in launching"}}],"next":""}`
+	completed := `{"data":[{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
+		"details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"art-2","candidateProtonIds":["gen-9"]}}],"next":""}`
+	another := `{"data":[{"id":"6abfac1a06bc8e5874e02dea","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"6abfac1a06bc8e5874e02dea","artifactId":"art-2","candidateProtonIds":["gen-8"]}}],"next":""}`
+
+	for _, c := range []struct {
+		name       string
+		serve      func(*testing.T)
+		wantErr    string
+		wantStatus string
+	}{
+		{"the trail says it errored", trail(errored, http.StatusOK), "is stuck in launching", ReplacementStatusErrored},
+		{
+			"the trail says it was cancelled",
+			trail(strings.Replace(completed, "Replacement Completed", "Replacement Cancelled", 1), http.StatusOK),
+			"ended with status cancelled", ReplacementStatusCancelled,
+		},
+		{"the trail says it completed", trail(completed, http.StatusOK), "", ReplacementStatusCompleted},
+		{"the trail has no record for it yet", trail(another, http.StatusOK), "", "switching"},
+		{"the trail cannot be read", trail(`{"detail":"boom"}`, http.StatusBadGateway), "", "switching"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.serve(t)
+
+			replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
+			require.NotNil(t, replacement)
+			assert.Equal(t, c.wantStatus, replacement.Status)
+
+			if c.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantErr)
+			assert.Contains(t, err.Error(), "still on the generation it was running")
+		})
+	}
 }
 
 // TestWaitForReplacement_NotFoundOnFirstPollIsError still holds when the
