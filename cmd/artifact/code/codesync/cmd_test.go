@@ -47,6 +47,10 @@ type fakeEngine struct {
 
 	executed bool
 	closed   bool
+
+	// opts is what the command asked the engine for, so a test can tell a
+	// flag that reached the engine from one that only shaped the fake plan.
+	opts sync.Options
 }
 
 func (f *fakeEngine) Plan() (*sync.SyncPlan, error) { return f.plan, f.planErr }
@@ -78,7 +82,9 @@ func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 // override ReadLine via stubReader.
 func fakeEngineDeps(fe *fakeEngine) Deps {
 	return Deps{
-		NewEngine: func(_ string, _ sync.Options) (engineRunner, error) {
+		NewEngine: func(_ string, opts sync.Options) (engineRunner, error) {
+			fe.opts = opts
+
 			return fe, nil
 		},
 	}
@@ -675,9 +681,10 @@ func TestRunE_Yes_RefusesConflictWithoutAcceptRemote(t *testing.T) {
 // refused outright, with or without --yes, on the human and the JSON path.
 func TestRunE_PushOnly_RefusesConflicts(t *testing.T) {
 	for name, extra := range map[string]map[string]string{
-		"interactive": {},
-		"yes":         {"yes": "true"},
-		"json":        {"yes": "true", "output-format": "json"},
+		"interactive":      {},
+		"yes":              {"yes": "true"},
+		"json":             {"yes": "true", "output-format": "json"},
+		"json without yes": {"output-format": "json"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -695,6 +702,7 @@ func TestRunE_PushOnly_RefusesConflicts(t *testing.T) {
 			assert.Contains(t, err.Error(), "--push-only cannot settle")
 			assert.Contains(t, err.Error(), "both.py")
 			assert.False(t, fe.executed)
+			assert.True(t, fe.opts.PushOnly, "the flag reaches the engine")
 			assert.NotContains(t, stdout.String(), `"result"`)
 		})
 	}
@@ -715,6 +723,7 @@ func TestRunE_PushOnly_UploadsAndListsWhatItLeftAlone(t *testing.T) {
 	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "push-only": "true", "yes": "true"})
 	require.NoError(t, err)
 	assert.True(t, fe.executed)
+	assert.True(t, fe.opts.PushOnly, "the flag reaches the engine; the fake's plan shape alone would not prove it")
 	assert.Contains(t, stdout.String(), "LEFT ALONE (push-only)")
 	assert.Contains(t, stdout.String(), "theirs.py")
 

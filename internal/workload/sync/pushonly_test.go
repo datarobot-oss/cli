@@ -89,17 +89,20 @@ func TestBuildNewBaseManifest_SkippedKeepsTheOldBaseEntry(t *testing.T) {
 // Staging showed why the base alone is not enough: when the synced version
 // equals the artifact's, the engine copies the remote from the base instead
 // of listing it, so a kept entry would still hide the remote change and the
-// next push-only run would upload the untouched local copy over it. A run
-// that skipped anything leaves the synced version where it was, so the next
-// run lists the remote. The result still names the version this run made.
-func TestPhase7State_SkippedLeavesTheSyncedVersionBehind(t *testing.T) {
+// next push-only run would upload the untouched local copy over it. The
+// synced version advances as usual, since a deploy inherits the code from it,
+// and the state marks that remote changes were set aside; the mark forces the
+// listing and a run that applied everything clears it.
+func TestPhase7State_SkippedMarksTheRemoteChangesAndKeepsTheVersionCurrent(t *testing.T) {
+	// A first sync: no version yet, which used to write a time with no
+	// version and corrupt the state.
 	dir := initProject(t, nil)
 
 	cfg, err := wapi.LoadConfig(dir)
 	require.NoError(t, err)
 
-	old, catalog := "6ac38bf84f3f11ca0434ce01", "6ac38bf84f3f11ca0434ce00"
-	cfg.LastSyncedVersionID, cfg.CatalogID = &old, &catalog
+	catalog := "6ac38bf84f3f11ca0434ce00"
+	cfg.CatalogID = &catalog
 	require.NoError(t, wapi.SaveConfig(dir, cfg))
 
 	e := &Engine{
@@ -107,18 +110,21 @@ func TestPhase7State_SkippedLeavesTheSyncedVersionBehind(t *testing.T) {
 		config:       cfg,
 		nowFn:        time.Now,
 		startedAt:    time.Now(),
-		base:         BaseManifest{"theirs.py": {Hash: strings.Repeat("a", 64), Size: 1}},
 		remote:       RemoteManifest{"theirs.py": {Hash: strings.Repeat("b", 64), Size: 2}},
 		newVersionID: "6ac38c074f3f11ca0434ce02",
-		plan:         &SyncPlan{Skipped: []FileAction{{Path: "theirs.py", Action: ActDownloadModify}}},
+		plan:         &SyncPlan{Skipped: []FileAction{{Path: "theirs.py", Action: ActDownloadAdd}}},
 	}
 
 	require.NoError(t, phase7State(e))
 
 	saved, err := wapi.LoadConfig(dir)
 	require.NoError(t, err)
-	assert.Equal(t, old, *saved.LastSyncedVersionID, "the synced version stays behind the artifact's")
-	assert.Equal(t, "6ac38c074f3f11ca0434ce02", e.result.NewVersion, "the result names what this run made")
+	assert.Equal(t, "6ac38c074f3f11ca0434ce02", *saved.LastSyncedVersionID, "the synced version is current")
+	assert.True(t, saved.RemoteChangesSkipped, "and the state says the base is not the remote")
+	assert.True(t, drifted("6ac38c074f3f11ca0434ce02", saved), "so the next sync lists the remote")
+
+	_, err = wapi.LoadManifest(dir)
+	require.NoError(t, err, "the base state loads")
 
 	e.config = saved
 	e.plan = &SyncPlan{}
@@ -127,7 +133,19 @@ func TestPhase7State_SkippedLeavesTheSyncedVersionBehind(t *testing.T) {
 
 	saved, err = wapi.LoadConfig(dir)
 	require.NoError(t, err)
-	assert.Equal(t, "6ac38c074f3f11ca0434ce02", *saved.LastSyncedVersionID, "nothing skipped, so the version advances")
+	assert.False(t, saved.RemoteChangesSkipped, "a run that applied everything clears the mark")
+	assert.False(t, drifted("6ac38c074f3f11ca0434ce02", saved))
+}
+
+// A run that produced no version records neither sync field: a time with no
+// version is a state the loader refuses.
+func TestBuildNewBaseManifest_NoVersionRecordsNoSyncTime(t *testing.T) {
+	e := &Engine{remote: RemoteManifest{}, plan: &SyncPlan{}}
+
+	manifest, err := buildNewBaseManifest(e, "", time.Now())
+	require.NoError(t, err)
+	assert.Nil(t, manifest.SyncedAt)
+	assert.Nil(t, manifest.SyncedVersionID)
 }
 
 func paths(actions []FileAction) []string {

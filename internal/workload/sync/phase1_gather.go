@@ -79,9 +79,20 @@ func phase1Gather(e *Engine) error {
 		e.remoteVer = codeRef.CatalogVersionID
 	}
 
-	e.drifted = e.remoteVer != "" && e.remoteVer != ptrOrEmpty(cfg.LastSyncedVersionID)
+	e.drifted = drifted(e.remoteVer, cfg)
 
 	return nil
+}
+
+// drifted reports whether the remote has to be listed rather than copied from
+// the base: the artifact moved past the last synced version, or the last
+// sync was push-only and left remote changes the base does not reflect.
+func drifted(remoteVer string, cfg wapi.Config) bool {
+	if remoteVer == "" {
+		return false
+	}
+
+	return remoteVer != ptrOrEmpty(cfg.LastSyncedVersionID) || cfg.RemoteChangesSkipped
 }
 
 func baseFromManifest(m wapi.Manifest) BaseManifest {

@@ -53,17 +53,20 @@ func phase7State(e *Engine) error {
 		cfg.CatalogID = &cid
 	}
 
-	created := e.newVersionID
-	if created == "" {
+	versionForState := e.newVersionID
+	if versionForState == "" {
 		// Pull-only sync; persist the remote version observed in Phase 1.
-		created = e.remoteVer
+		versionForState = e.remoteVer
 	}
-
-	versionForState := syncedVersionFor(e, created)
 
 	if versionForState != "" {
 		cfg.LastSyncedVersionID = &versionForState
 	}
+
+	// Set aside remote changes leave the base behind the remote at this very
+	// version, so the next sync has to list the remote rather than trust the
+	// base; a run that applied everything clears the mark.
+	cfg.RemoteChangesSkipped = len(e.plan.Skipped) > 0
 
 	// Build and write the manifest BEFORE writing config. Both orders leave
 	// a one-file failure window, but only one direction self-heals:
@@ -105,7 +108,7 @@ func phase7State(e *Engine) error {
 	}
 
 	e.config = cfg
-	e.populateResult(created)
+	e.populateResult(versionForState)
 
 	return nil
 }
@@ -117,17 +120,19 @@ func phase7State(e *Engine) error {
 // downloads, not false uploads. Past the first write, the stranded dir
 // instead resurrects pre-sync bytes as phantom local edits the next sync
 // silently re-uploads over the remote.
-// syncedVersionFor is the version the state records after a run that made
-// created. A run that set remote changes aside leaves it where it was: the
-// base no longer mirrors the remote, and the fast path copies the remote
-// from the base whenever the two versions agree, which would hide those
-// changes on the next run.
-func syncedVersionFor(e *Engine, created string) string {
-	if len(e.plan.Skipped) > 0 {
-		return ptrOrEmpty(e.config.LastSyncedVersionID)
-	}
+// keepSkippedBaseEntries gives a skipped file its old base entry back, so the
+// next plain sync sees the remote change again instead of reading the
+// untouched local copy as an edit to upload over it.
+func keepSkippedBaseEntries(e *Engine, files map[string]wapi.FileMeta) {
+	for _, fa := range e.plan.Skipped {
+		if entry, ok := e.base[fa.Path]; ok {
+			files[fa.Path] = wapi.FileMeta{Hash: entry.Hash, Size: entry.Size}
 
-	return created
+			continue
+		}
+
+		delete(files, fa.Path)
+	}
 }
 
 func discardRollback(e *Engine) error {
@@ -186,28 +191,19 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize}
 	}
 
-	// A skipped file keeps its old base entry, so the next plain sync sees
-	// the remote change again instead of reading the untouched local copy
-	// as an edit to upload over it.
-	for _, fa := range e.plan.Skipped {
-		if entry, ok := e.base[fa.Path]; ok {
-			files[fa.Path] = wapi.FileMeta{Hash: entry.Hash, Size: entry.Size}
+	keepSkippedBaseEntries(e, files)
 
-			continue
-		}
+	manifest := wapi.Manifest{Version: wapi.ManifestVersion, Files: files}
 
-		delete(files, fa.Path)
+	// The two sync fields go together: a time with no version is a state the
+	// loader refuses, so a run that produced no version records neither.
+	if syncedVersionID != "" {
+		syncedAtCopy := syncedAt
+		versionCopy := syncedVersionID
+		manifest.SyncedAt, manifest.SyncedVersionID = &syncedAtCopy, &versionCopy
 	}
 
-	syncedAtCopy := syncedAt
-	versionCopy := syncedVersionID
-
-	return wapi.Manifest{
-		Version:         wapi.ManifestVersion,
-		SyncedAt:        &syncedAtCopy,
-		SyncedVersionID: &versionCopy,
-		Files:           files,
-	}, nil
+	return manifest, nil
 }
 
 // syncHistoryEntry assembles the JSONL line written to history.log.

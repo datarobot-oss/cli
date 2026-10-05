@@ -431,7 +431,9 @@ func formatPathList(paths []string) string {
 // An Execute runs only when neither preview mode is set, the plan is non-empty,
 // and it does not require explicit confirmation. Conflicts without --yes are
 // treated like the human-path quit branch: the plan is emitted and no Execute
-// is run, so callers can inspect it and re-invoke with --yes to proceed.
+// is run, so callers can inspect it and re-invoke with --yes to proceed. Under
+// --push-only a conflict is an error with or without --yes, since no
+// re-invocation of that mode can let it through; a plain sync settles it.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
 	locked := engine.LockedNotice() != ""
 
