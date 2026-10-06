@@ -382,6 +382,7 @@ func TestPlanJSON_Shape(t *testing.T) {
 	assert.Equal(t, "rolled", decoded["action"])
 	assert.Equal(t, "running", decoded["state"])
 	assert.Equal(t, false, decoded["creates"])
+	assert.Empty(t, decoded["unbuildable"], "emitted even when empty, like reroll and stateReason")
 
 	code, _ := decoded["code"].(map[string]any)
 	assert.Equal(t, true, code["changed"])
@@ -389,6 +390,18 @@ func TestPlanJSON_Shape(t *testing.T) {
 
 	artifact, _ := decoded["artifact"].([]any)
 	assert.Len(t, artifact, 1)
+}
+
+func TestPlanJSON_CarriesTheUnbuildableReason(t *testing.T) {
+	plan := Plan{State: StateUnbound, Creates: true, Unbuildable: "the project has neither pyproject.toml with uv.lock nor package.json with package-lock.json"}
+
+	encoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, plan.Unbuildable, decoded["unbuildable"])
 }
 
 // TestPlanJSON_EmptyListsAreNotNull keeps a consumer from having to special

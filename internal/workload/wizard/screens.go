@@ -1170,6 +1170,8 @@ type pickedWorkload struct {
 type pickedEnv struct {
 	id        string
 	versionID string
+	name      string
+	language  string
 }
 
 // createNewLabel is the pinned row. It says what choosing it does, because
@@ -1217,7 +1219,7 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, liveID strin
 
 		row := tableRow{
 			cells: []string{ee.Name, languageLabel(ee.ProgrammingLanguage), ee.ID},
-			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID},
+			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID, name: ee.Name, language: ee.ProgrammingLanguage},
 		}
 
 		// The one a bound workload is already built on is tagged and lifted to
@@ -1259,16 +1261,15 @@ func (f flow) liveExecEnvID() string {
 }
 
 // languageLabel renders the language column: the platform's value as it came
-// (only the sort folds case; a server that says "R" is shown saying "R"), and
-// a dash where it says "other" or nothing — a word that means "unlabeled"
-// reads better as absence than as a category.
+// (a server that says "R" is shown saying "R"), and a dash where it names no
+// language — a word that means "unlabeled" reads better as absence than as a
+// category.
 func languageLabel(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if lower := strings.ToLower(trimmed); lower == "" || lower == "other" {
+	if workload.EnvironmentLanguage(language) == "" {
 		return "—"
 	}
 
-	return trimmed
+	return strings.TrimSpace(language)
 }
 
 // replicaValue leaves the field empty rather than showing a zero, which is

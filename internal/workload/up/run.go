@@ -61,6 +61,7 @@ var (
 	activeReplacementFn  = workload.GetActiveReplacement
 	guardReplacementFn   = workload.RefuseActiveReplacement
 	activeProtonFn       = workload.ActiveProton
+	getExecEnvFn         = workload.GetExecutionEnvironment
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
@@ -232,16 +233,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	noteIgnoreFile(code, opts)
 
-	plan, err := Build(loaded, live, code, opts)
+	plan, err := planFor(loaded, live, code, opts)
 	if err != nil {
 		return early, err
 	}
-
-	// Read here rather than in Build, which is kept off the filesystem so its
-	// tests can stay there too.
-	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
-
-	plan = noteStaleGeneration(live, keepInPlace(loaded, live, plan))
 
 	result := Result{
 		Plan:       plan,
@@ -354,6 +349,63 @@ func staleCheckApplies(live Live, plan Plan) bool {
 func generationPredates(active *workload.Proton, live Live) bool {
 	return active != nil && active.ArtifactID == live.ArtifactID &&
 		!active.CreatedAt.IsZero() && active.CreatedAt.Before(live.ArtifactUpdatedAt)
+}
+
+// planFor is Build plus the reads Build is kept away from, so its tests can
+// stay off the filesystem and the network: the project link, the serving
+// generation, and whether the platform can build what the plan asks for.
+func planFor(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error) {
+	plan, err := Build(loaded, live, code, opts)
+	if err != nil {
+		return Plan{}, err
+	}
+
+	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
+	plan = noteStaleGeneration(live, keepInPlace(loaded, live, plan))
+	plan.Unbuildable, err = unbuildableGenerated(loaded, live, plan)
+
+	return plan, err
+}
+
+// unbuildableGenerated is why the platform could not build the generated
+// image this plan asks for, "" when it could or when the plan builds none.
+// Asked before anything is created: the build used to fail only after the
+// artifact existed and the code was synced. A bound workload pulling its code
+// into a directory with no project files is not judged: the pulled code is
+// what the workload last built from.
+func unbuildableGenerated(loaded Loaded, live Live, plan Plan) (string, error) {
+	if loaded.Manifest.BuildMode() != manifest.BuildModeGenerated || !buildsImage(plan) {
+		return "", nil
+	}
+
+	detected := wizard.Detect(loaded.ProjectDir)
+	if seedApplies(loaded, live) && detected.SuspectDir() {
+		return "", nil
+	}
+
+	if problem := detected.GeneratedBuildProblem(); problem != "" {
+		return problem, nil
+	}
+
+	id := loaded.Manifest.ExecutionEnvironmentID()
+	if id == "" {
+		return "", nil
+	}
+
+	ee, err := getExecEnvFn(id)
+	if err != nil {
+		return "", fmt.Errorf("cannot read execution environment %s, so nothing was deployed: %w", id, err)
+	}
+
+	return detected.EnvironmentMismatch(ee), nil
+}
+
+// buildsImage reports whether the plan has the platform build an image: a
+// create, or a roll that mints a version rather than carrying the running
+// image over. A resize, a start or a reroll builds nothing, and neither does
+// a stale image on its own, which every unlinked project reports.
+func buildsImage(plan Plan) bool {
+	return plan.Creates || (plan.RollsArtifact() && !plan.InheritsImage)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -1319,6 +1371,14 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // alongside errored. deployable keeps its settling branch as the backstop for
 // everything that reaches the apply by another route.
 func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bool) error {
+	// A project the platform cannot build from is refused whatever the
+	// workload is doing: where a swap lands does not change the files.
+	if plan.Unbuildable != "" {
+		return fmt.Errorf(
+			"nothing was deployed: %s. Fix the project, or run 'dr workload config%s' to pick another build, then deploy again",
+			plan.Unbuildable, dirFlagFor(loaded))
+	}
+
 	// A preview of a moving workload reports the state and refuses nothing:
 	// the deploy would wait and plan against where the swap lands.
 	if dryRun && (live.State == StateSettling || live.SwapInFlight) {

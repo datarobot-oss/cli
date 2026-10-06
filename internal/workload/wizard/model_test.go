@@ -612,6 +612,41 @@ func TestFlow_BoundGeneratedBuildIsJudgedOnADirectoryWithFiles(t *testing.T) {
 	}
 }
 
+// A base image of another language than the project is refused on the
+// picker, where the choice is made, not after the sync and a build.
+func TestFlow_GeneratedBuildRefusesABaseImageOfAnotherLanguage(t *testing.T) {
+	original := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+		return []workload.ExecutionEnvironment{
+			{ID: "68a1", Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python", LatestSuccessfulVersion: &workload.EEVersion{ID: "68a2"}},
+			{ID: "68b1", Name: "[DataRobot] NodeJS 24", ProgrammingLanguage: "other", LatestSuccessfulVersion: &workload.EEVersion{ID: "68b2"}},
+		}, nil
+	}
+
+	t.Cleanup(func() { listExecEnvsFn = original })
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte("{}\n"), 0o600))
+
+	model := newFlow(Detect(dir), nil, Answers{})
+	model = press(t, pastName(t, model), "enter") // name, kind
+	model = press(t, model, "2", "enter")         // build from a base image
+	require.Equal(t, screenExecEnv, model.at)
+
+	model = press(t, model, "enter") // the Python image, listed first
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "Python 3.12 is a python environment")
+	assert.Contains(t, model.failed.Error(), "node project")
+	assert.Equal(t, screenExecEnv, model.at, "a refused pick stays on the screen")
+	assert.Empty(t, model.draft.Build.ExecutionEnvironmentID)
+
+	model = press(t, model, "down", "enter") // the Node image
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenEntrypoint, model.at)
+	assert.Equal(t, "68b1", model.draft.Build.ExecutionEnvironmentID)
+}
+
 // Confirming is the only thing that ends the flow with something to write.
 func TestFlow_ConfirmProducesTheManifest(t *testing.T) {
 	model := newFlow(dockerfileProject(t), nil, Answers{})

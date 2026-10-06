@@ -2251,10 +2251,11 @@ func TestRun_RollsThatStillBuild(t *testing.T) {
 	cases := []struct {
 		name     string
 		manifest string
+		files    []string
 		force    bool
 		tweak    func(*fakes)
 	}{
-		{name: "the dockerfile changed", manifest: buildDrift()},
+		{name: "the dockerfile changed", manifest: buildDrift(), files: []string{"pyproject.toml", "uv.lock"}},
 		{name: "--force-build asked for one", manifest: envDrift(), force: true},
 		{name: "the running version has no image", manifest: envDrift(), tweak: noImage},
 		{name: "the code has moved past the running image", manifest: envDrift(), tweak: stale},
@@ -2271,7 +2272,7 @@ func TestRun_RollsThatStillBuild(t *testing.T) {
 
 			install(t, f)
 
-			result, _, err := runIn(t, c.manifest, Options{NonInteractive: true, ForceBuild: c.force})
+			result, _, err := runIn(t, c.manifest, Options{NonInteractive: true, ForceBuild: c.force}, c.files...)
 			require.NoError(t, err)
 
 			assert.NotContains(t, tr.steps, "copy:68a0000000000000000000a1")

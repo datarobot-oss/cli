@@ -25,6 +25,7 @@ import (
 
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/joho/godotenv"
 )
@@ -147,6 +148,70 @@ func (d Detected) generatedBuild() generatedBuild {
 		return generatedBuild{problem: fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json "+
 			"with package-lock.json, which is what a generated image is built from", d.Dir)}
 	}
+}
+
+// GeneratedBuildProblem is why the platform cannot build a generated image
+// from this directory, "" when it can.
+func (d Detected) GeneratedBuildProblem() string {
+	return d.generatedBuild().problem
+}
+
+// Language is what the project files say the runtime is: python for a
+// pyproject.toml, requirements.txt or setup.py, node for a package.json, ""
+// when they say nothing or disagree.
+func (d Detected) Language() string {
+	language, _ := d.language()
+
+	return language
+}
+
+// languageMarkers are the files that speak for each language, locks included.
+var languageMarkers = map[string][]string{
+	"python": {"pyproject.toml", "uv.lock", "requirements.txt", "setup.py"},
+	"node":   {"package.json", "package-lock.json"},
+}
+
+// language is Language with the files that said so.
+func (d Detected) language() (string, []string) {
+	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
+
+	python := has("pyproject.toml") || has("requirements.txt") || has("setup.py")
+	node := has("package.json")
+
+	var language string
+
+	switch {
+	case python && !node:
+		language = "python"
+	case node && !python:
+		language = "node"
+	default:
+		return "", nil
+	}
+
+	var evidence []string
+
+	for _, marker := range d.RootMarkers {
+		if slices.Contains(languageMarkers[language], marker) {
+			evidence = append(evidence, marker)
+		}
+	}
+
+	return language, evidence
+}
+
+// EnvironmentMismatch is why a generated image on ee would not build for this
+// project, "" when it would or when either language is unknown.
+func (d Detected) EnvironmentMismatch(ee workload.ExecutionEnvironment) string {
+	project, evidence := d.language()
+
+	env := workload.EnvironmentLanguage(ee.ProgrammingLanguage)
+	if project == "" || env == "" || project == env {
+		return ""
+	}
+
+	return fmt.Sprintf("%s is a %s environment, but %s is a %s project (%s), so the generated image would not build; "+
+		"pick a %s environment", ee.Name, env, d.Dir, project, strings.Join(evidence, ", "), project)
 }
 
 // maxDirCandidates caps the offer. Past a handful the list stops being an

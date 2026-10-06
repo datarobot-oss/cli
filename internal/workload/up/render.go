@@ -591,6 +591,10 @@ type PlanJSON struct {
 	// the file changed: its last rollout did not land. "" otherwise.
 	Reroll string `json:"reroll"`
 
+	// Unbuildable is why the platform could not build the generated image
+	// the plan asks for, and the reason the run was refused. "" otherwise.
+	Unbuildable string `json:"unbuildable"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -628,9 +632,10 @@ func (p Plan) JSON() PlanJSON {
 		PriorWorkloadID: p.PriorWorkloadID,
 
 		// Already gated on there being a version to mint.
-		KeepsImage: p.InheritsImage,
-		InPlace:    p.InPlace,
-		Reroll:     p.Reroll,
+		KeepsImage:  p.InheritsImage,
+		InPlace:     p.InPlace,
+		Reroll:      p.Reroll,
+		Unbuildable: p.Unbuildable,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),

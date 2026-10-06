@@ -865,6 +865,13 @@ func (f *flow) acceptExecEnv() (tea.Cmd, error) {
 		return nil, errors.New("nothing selected")
 	}
 
+	// Refused on the screen where the pick is made, like a source the files
+	// cannot support, rather than after the sync and a build.
+	if problem := f.detected.EnvironmentMismatch(
+		workload.ExecutionEnvironment{Name: item.name, ProgrammingLanguage: item.language}); problem != "" {
+		return nil, errors.New(problem)
+	}
+
 	f.draft.Build.ExecutionEnvironmentID = item.id
 	f.draft.Build.ExecutionEnvironmentVersionID = item.versionID
 
