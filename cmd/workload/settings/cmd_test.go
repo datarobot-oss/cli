@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -307,7 +308,24 @@ func TestCmd_ReplicasSendsTheWholeRuntime(t *testing.T) {
 	assert.Contains(t, stdout, "Settings update requested for workload "+id)
 	assert.Contains(t, stdout, "rep-1")
 	assert.Contains(t, stderr, "rolls the workload's containers", "the restart is announced even under --yes")
-	assert.Contains(t, stderr, "dr workload settings "+id, "status stays running throughout; settings prints the replacement")
+	assert.Contains(t, ansi.Strip(stderr), "Next:\n  dr workload settings "+id+"  Check the rollout's progress\n",
+		"status stays running throughout; settings prints the replacement")
+}
+
+// Under JSON the change is the document on stdout and nothing else, so the
+// follow-up a reader would get stays off stderr too.
+func TestCmd_ChangeUnderJSONPrintsNoNextStep(t *testing.T) {
+	install(t, seams{
+		get: func(string) (*workload.WorkloadSettings, error) { return settingsDoc(t, stopped), nil },
+		update: func(string, json.RawMessage) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", WorkloadID: id, Status: "unknown"}, nil
+		},
+	})
+
+	stdout, stderr, err := run(t, id, "--replicas", "3", "--yes", "--output-format", "json")
+	require.NoError(t, err)
+	assert.True(t, json.Valid([]byte(stdout)), "stdout is the document and nothing else")
+	assert.NotContains(t, stderr, "Next:")
 }
 
 func TestCmd_ReplicasRefusesAnAutoscaledGroup(t *testing.T) {

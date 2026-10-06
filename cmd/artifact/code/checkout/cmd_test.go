@@ -29,6 +29,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -173,11 +174,15 @@ const (
 )
 
 func TestCheckout_NotLinked(t *testing.T) {
-	cmd, _ := newTestCmd(t, t.TempDir(), Deps{}, []string{"abcdef12"})
+	dir := t.TempDir()
+
+	cmd, _ := newTestCmd(t, dir, Deps{}, []string{"abcdef12"})
 	err := cmd.Execute()
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not linked")
+	assert.Contains(t, err.Error(), "Run 'dr artifact code init <id>"+manifest.DirFlag(dir)+"' first",
+		"the remedy links the project being checked out, not the shell's directory")
 }
 
 // The state directory moving out from under a project is the sort of thing a
@@ -200,11 +205,33 @@ func TestCheckout_ReportsStateMigration(t *testing.T) {
 }
 
 func TestCheckout_NoCatalog(t *testing.T) {
-	cmd, _ := newTestCmd(t, initLinkedDir(t, ""), Deps{}, []string{"abcdef12"})
+	dir := initLinkedDir(t, "")
+
+	cmd, _ := newTestCmd(t, dir, Deps{}, []string{"abcdef12"})
 	err := cmd.Execute()
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no code has been synced yet")
+	assert.Contains(t, err.Error(), "Run 'dr artifact code sync"+manifest.DirFlag(dir)+"' first")
+}
+
+// A project with nothing synced has no version to name, so it is refused
+// before the question rather than after an answer that could never work.
+func TestCheckout_NoCatalogIsRefusedBeforeThePrompt(t *testing.T) {
+	deps := Deps{
+		PromptVersion: func(string) (string, error) {
+			t.Fatal("nothing has been synced, so there is no version to ask for")
+
+			return "", nil
+		},
+	}
+
+	cmd, buf := newTestCmd(t, initLinkedDir(t, ""), deps, nil)
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no code has been synced yet")
+	assert.NotContains(t, buf.String(), "dr artifact code versions", "nor a hint at a command that would fail the same way")
 }
 
 func TestCheckout_HappyPath_FullID(t *testing.T) {
@@ -514,10 +541,21 @@ func TestCheckout_PromptsForVersionWhenMissing(t *testing.T) {
 		return verA, nil
 	}
 
-	cmd, buf := newTestCmd(t, dir, deps, nil)
+	cmd, stdout := newTestCmd(t, dir, deps, nil)
+
+	var stderr bytes.Buffer
+
+	cmd.SetErr(&stderr)
 
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, "Code version ID", promptedLabel)
-	assert.Contains(t, buf.String(), "dr artifact code versions")
+
+	// Help with the question rather than a Next: block, since the command is
+	// not done, and on stderr, since stdout is the result document.
+	hint := "Run 'dr artifact code versions" + manifest.DirFlag(dir) + "' to list available versions."
+	assert.Contains(t, stderr.String(), hint,
+		"the hint lists the versions of the project being checked out, not of the shell's directory")
+	assert.NotContains(t, stdout.String(), hint)
+	assert.NotContains(t, stderr.String(), "Next:")
 	assert.DirExists(t, wapi.CheckoutDir(dir, verA))
 }

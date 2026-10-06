@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -423,8 +424,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 	cmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n\nTo update: dr self update\n")
 
 	// Only the prefix is styled; the message itself is often multi-line and is
-	// the part a user copies into a bug report.
-	cmd.SetErrPrefix(tui.ErrorStyle.Render("Error:"))
+	// the part a user copies into a bug report. It is styled for stderr, where
+	// cobra prints it, so a 2> file stays plain even when stdout is a terminal.
+	cmd.SetErrPrefix(tui.StylesFor(os.Stderr).Error.Render("Error:"))
 
 	return cmd
 }

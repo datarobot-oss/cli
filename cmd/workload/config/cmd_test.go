@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/stretchr/testify/assert"
@@ -67,6 +68,11 @@ func TestCmd_WritesTheManifest(t *testing.T) {
 	assert.Equal(t, path+"\n", stdout.String())
 	assert.Contains(t, stderr.String(), "Wrote")
 	assert.FileExists(t, path)
+
+	// The follow-up carries the --dir, since the shell is not standing in the
+	// project and a bare `up` would deploy some other tree.
+	assert.Contains(t, ansi.Strip(stderr.String()),
+		"Next:\n  dr workload up"+manifest.DirFlag(dir)+"  Deploy the workload\n")
 }
 
 // JSON mode means stdout is JSON and only JSON: every human-facing word goes
@@ -74,8 +80,9 @@ func TestCmd_WritesTheManifest(t *testing.T) {
 func TestCmd_JSONEnvelope(t *testing.T) {
 	dir := project(t)
 
-	stdout, _, err := runCmd(t, "--dir", dir, "--name", "my-app", "--output-format", "json")
+	stdout, stderr, err := runCmd(t, "--dir", dir, "--name", "my-app", "--output-format", "json")
 	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "Next:")
 
 	var envelope struct {
 		Config struct {
@@ -283,6 +290,19 @@ func TestCmd_JSONEnvelopeCarriesTheEnvCounts(t *testing.T) {
 	assert.Equal(t, 2, envelope.Config.EnvKeysListed)
 	assert.Equal(t, 1, envelope.Config.EnvSecretsPending)
 	assert.Equal(t, []string{"LOG_LEVEL"}, envelope.Config.EnvLiterals)
+}
+
+// A secret left on the placeholder is refused by the deploy, so the follow-up
+// says what has to happen first instead of promising one. The value is empty
+// so that nothing is sent to a credential store to get there.
+func TestCmd_NextStepWaitsOnAPendingSecret(t *testing.T) {
+	dir := projectWithEnv(t, "API_TOKEN=\n")
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	assert.Contains(t, ansi.Strip(stderr.String()), "  dr workload up"+manifest.DirFlag(dir)+
+		"  Deploy the workload, once every "+manifest.CredentialPlaceholder+" holds a credential id\n")
 }
 
 // The classifier prefers to call a doubtful value secret, but it is a

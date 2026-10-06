@@ -34,6 +34,7 @@ import (
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wizard"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -445,13 +446,27 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		// The wizard may have written the manifest into a directory the shell
 		// is not standing in; a bare `up` there would configure and deploy
 		// the wrong tree.
-		fmt.Fprintf(stderr, "\nNext: dr workload up%s\n", manifest.DirFlag(filepath.Dir(result.Path)))
+		tui.PrintNextSteps(stderr, tui.NextStep{
+			Command:     "dr workload up" + manifest.DirFlag(filepath.Dir(result.Path)),
+			Description: deployStep(result.EnvSecretsPending),
+		})
 	}
 
 	// stdout carries the path and nothing else, so it can be piped.
 	fmt.Fprintln(cmd.OutOrStdout(), result.Path)
 
 	return nil
+}
+
+// deployStep is what the suggested `up` will do. A secret still on the
+// credential placeholder is refused by the deploy, as the lines above have
+// just said, so promising one outright would send the reader to a failure.
+func deployStep(secretsPending int) string {
+	if secretsPending == 0 {
+		return "Deploy the workload"
+	}
+
+	return fmt.Sprintf("Deploy the workload, once every %s holds a credential id", manifest.CredentialPlaceholder)
 }
 
 // writeVerb says what happened to the file. Updated rather than wrote, because
