@@ -1291,9 +1291,12 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 		// a refusal — a valid project cannot be reliably recognized, so a
 		// wrong guess has to cost nothing. Only the headless paths return
 		// detected.Dir unchanged, so the fourth value is settled right here.
-		o.warnSuspectDir(detected)
-
 		content, draft, err := o.resolveHeadless(detected)
+
+		// After the resolution, so a spec file's build mode is known: an
+		// image build syncs nothing, and the warning is about the upload.
+		o.warnSuspectDir(detected, draft.Build.Mode)
+
 		if err == nil {
 			o.warnGeneratedLock(detected, draft)
 		}
@@ -1349,8 +1352,8 @@ func (o Options) warnGeneratedLock(detected Detected, draft manifest.Draft) {
 //
 // An image-mode run is exempt: it never syncs local directory contents, so
 // "everything here would be uploaded" describes a risk that cannot happen.
-func (o Options) warnSuspectDir(detected Detected) {
-	if o.Stderr == nil || !detected.SuspectDir() || o.Answers.BuildMode == manifest.BuildModeImage {
+func (o Options) warnSuspectDir(detected Detected, buildMode string) {
+	if o.Stderr == nil || !detected.SuspectDir() || buildMode == manifest.BuildModeImage {
 		return
 	}
 

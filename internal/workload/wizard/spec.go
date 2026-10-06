@@ -106,6 +106,7 @@ func (o Options) checkSpecFile() error {
 	}
 
 	for _, flag := range []specFlag{
+		{"--sync-env", o.SyncEnv},
 		{"--type", a.Type != ""},
 		{"--a2a-enabled", a.A2AEnabled},
 		{"--build-mode", a.BuildMode != ""},
@@ -117,12 +118,22 @@ func (o Options) checkSpecFile() error {
 		{"--no-readiness-probe", a.NoProbe},
 	} {
 		if flag.set {
+			if flag.name == "--sync-env" {
+				return errors.New("--sync-env cannot be combined with --spec-file: there is no manifest to reconcile yet, " +
+					"and the .env is carried into the one being written")
+			}
+
 			return fmt.Errorf("%s cannot be combined with --spec-file: the file is that answer, so edit it instead", flag.name)
 		}
 	}
 
 	return nil
 }
+
+// ErrSpecFileUnnamed is the refusal for an artifact spec with no workload
+// name and no --name, so the deploy that runs the setup can pass it on as it
+// is: the remedy already names the command that takes the flag.
+var ErrSpecFileUnnamed = errors.New("the spec file names no workload")
 
 // resolveHeadlessSpec is the headless run on a prepared spec: the file's
 // defaults, the flags layered over them, and the bound path's render.
@@ -140,7 +151,8 @@ func (o Options) resolveHeadlessSpec(detected Detected) ([]byte, manifest.Draft,
 	}
 
 	if draft.Name == "" {
-		return nil, manifest.Draft{}, fmt.Errorf("%s names no workload; pass --name", o.SpecFile)
+		return nil, manifest.Draft{}, fmt.Errorf("%w: run 'dr workload config --spec-file %s --name <name>' to set it up, "+
+			"then deploy", ErrSpecFileUnnamed, o.SpecFile)
 	}
 
 	if problem := preparedBuildProblem(detected, draft); problem != "" {
@@ -148,10 +160,22 @@ func (o Options) resolveHeadlessSpec(detected Detected) ([]byte, manifest.Draft,
 	}
 
 	draft.EnvVars = live.NewEnvVars(draft.EnvVars)
-	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name, nil)
 
+	// Validated before any secret is stored: a hand-written spec fails the
+	// ledger easily, and a credential created for a file that is then refused
+	// would outlive the run with nothing pointing at it.
 	content, err := renderPrepared(live, draft)
 	if err != nil {
+		return nil, manifest.Draft{}, err
+	}
+
+	if err := checkRendered(content, detected.Dir, authorUser); err != nil {
+		return nil, manifest.Draft{}, err
+	}
+
+	draft.EnvVars = o.storeSecrets(draft.EnvVars, detected, draft.Name, nil)
+
+	if content, err = renderPrepared(live, draft); err != nil {
 		return nil, manifest.Draft{}, err
 	}
 

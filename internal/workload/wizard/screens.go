@@ -69,11 +69,17 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// Only these. A bad --port, a path missing its slash and an importance
 	// outside the enum are all values a screen shows and the user can correct,
 	// and refusing them here would turn a recoverable typo into a run that
-	// never starts. The kind joins them while its screen is not asked: nothing
-	// else could correct a bad --type.
+	// never starts. The kind joins them while its screen is not asked, since
+	// nothing else could correct a bad --type, and a spec file brings every
+	// check headless applies, since it skips the screens that would show a
+	// bad value.
 	checks := []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive}
 	if !askKind {
 		checks = append(checks, opts.Answers.checkKind)
+	}
+
+	if opts.SpecFile != "" {
+		checks = append(checks, opts.Answers.check)
 	}
 
 	for _, check := range checks {
@@ -984,7 +990,7 @@ func (f flow) readinessLine() string {
 	// A probe shape this release does not model is carried over untouched, so
 	// the answers do not describe it and neither should this line.
 	if present, readable := f.liveReadinessProbe(); present && !readable {
-		return "Readiness: " + f.live.Name + "'s own probe, kept as it is apart from the port it watches."
+		return "Readiness: " + f.probeOwner() + "'s own probe, kept as it is apart from the port it watches."
 	}
 
 	if !f.draft.WantsReadinessProbe() {
@@ -1002,6 +1008,16 @@ func (f flow) liveReadinessProbe() (present, readable bool) {
 	}
 
 	return f.live.ReadinessProbe()
+}
+
+// probeOwner names whose probe a line is about: the bound workload, or the
+// spec file, which has no name to print.
+func (f flow) probeOwner() string {
+	if f.bound() {
+		return f.live.Name
+	}
+
+	return "the spec file"
 }
 
 func (f flow) nextStep() string {

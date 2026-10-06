@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,22 +148,36 @@ func TestRun_SpecFileWithoutANameIsRefusedHeadless(t *testing.T) {
 
 // The file is the build answer, so the flags that would contradict it are
 // refused, and so is binding, since a prepared spec is a workload to create.
+// A fresh directory per case, so a refusal that went missing shows up as its
+// own failure rather than as "already has one" for the rest.
 func TestRun_SpecFileRefusesTheFlagsItAnswers(t *testing.T) {
-	dir := t.TempDir()
-	spec := writeSpec(t, dir, artifactSpec)
-
 	for name, answers := range map[string]Answers{
 		"--image":       {Name: "x", Image: "other:1"},
 		"--build-mode":  {Name: "x", BuildMode: manifest.BuildModeDockerfile},
 		"--port":        {Name: "x", Port: 8080},
+		"--type":        {Name: "x", Type: manifest.TypeAgent},
 		"--workload-id": {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := Run(withSpec(dir, spec, answers))
+			dir := t.TempDir()
+
+			_, err := Run(withSpec(dir, writeSpec(t, dir, artifactSpec), answers))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), name)
+			assert.Contains(t, err.Error(), "--spec-file")
+			assert.NoFileExists(t, manifest.Path(dir))
 		})
 	}
+
+	t.Run("--sync-env", func(t *testing.T) {
+		dir := t.TempDir()
+		opts := withSpec(dir, writeSpec(t, dir, artifactSpec), Answers{Name: "x"})
+		opts.SyncEnv = true
+
+		_, err := Run(opts)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "--sync-env cannot be combined with --spec-file")
+	})
 }
 
 // A file that is neither shape, or binds an artifact by id, has nothing to
@@ -393,4 +408,103 @@ func TestRun_SpecFileWarnsAboutItsOwnSecretLiterals(t *testing.T) {
 	assert.Contains(t, stderr, "the spec file "+path+" declares 1 variable")
 	assert.Contains(t, stderr, "the manifest copies it")
 	assert.NotContains(t, stderr, "binding copies it")
+}
+
+// From a deploy the bare "pass --name" was a dead end: up refuses --name.
+// The refusal names the command that takes it, with the file.
+func TestRun_SpecFileWithoutANameNamesTheConfigCommand(t *testing.T) {
+	dir := t.TempDir()
+	spec := writeSpec(t, dir, artifactSpec)
+
+	_, err := Run(withSpec(dir, spec, Answers{}))
+	require.ErrorIs(t, err, ErrSpecFileUnnamed)
+	assert.Contains(t, err.Error(), "dr workload config --spec-file "+spec+" --name <name>")
+}
+
+// The build check set on entry is cleared by the first keystroke, so it is
+// asked again on the way to confirm: typing a name and pressing Enter through
+// the screens must not write a manifest the platform cannot build.
+func TestFlow_PreparedSpecBuildCheckSurvivesTheKeystrokes(t *testing.T) {
+	dir := t.TempDir()
+	spec := strings.Replace(artifactSpec, "imageUri: registry/app:v7",
+		"imageBuildConfig: {dockerfile: {source: generated, executionEnvironmentId: a, executionEnvironmentVersionId: b, entrypoint: [python, app.py]}}", 1)
+
+	prepared, err := LoadSpec(writeSpec(t, dir, spec))
+	require.NoError(t, err)
+
+	model := newFlow(Detect(dir), nil, Answers{}).withPrepared(prepared)
+	require.Error(t, model.failed, "said on entry")
+
+	model = press(t, pastName(t, model), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	require.Error(t, model.failed, "and said again on confirm, where it counts")
+	assert.Contains(t, model.failed.Error(), "cannot be made from")
+
+	model = press(t, model, "enter")
+	assert.False(t, model.done, "a build the platform cannot make is not confirmed")
+}
+
+// On a terminal the flag checks headless applies are applied before the
+// wizard opens: the screens that would show a bad importance are the ones
+// the file skips.
+func TestRunInteractiveFlow_SpecFileRefusesTheFlagsHeadlessRefuses(t *testing.T) {
+	dir := t.TempDir()
+
+	_, _, _, err := runInteractiveFlow(
+		Options{Dir: dir, SpecFile: writeSpec(t, dir, workloadSpec), Answers: Answers{Importance: "bogus"}},
+		Detect(dir))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `--importance "bogus"`)
+}
+
+// A spec that fails the ledger is refused before any secret is stored: a
+// credential created for a file that is then refused would outlive the run
+// with nothing pointing at it.
+func TestRun_SpecFileIsValidatedBeforeSecretsAreStored(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, EnvFileName), []byte("OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345\n"), 0o600))
+
+	original := createCredentialFn
+	createCredentialFn = func(name, _ string) (*workload.Credential, error) {
+		t.Fatalf("credential %s was stored for a spec the run then refused", name)
+
+		return nil, nil
+	}
+
+	t.Cleanup(func() { createCredentialFn = original })
+
+	spec := writeSpec(t, dir, strings.Replace(artifactSpec, "port: 9090", "port: 80", 1))
+
+	_, err := Run(withSpec(dir, spec, Answers{Name: "my-app"}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "port")
+	assert.NoFileExists(t, manifest.Path(dir))
+}
+
+// The spec file has no name to print, so the probe lines say whose probe it
+// is in words rather than leading with an empty name.
+func TestFlow_PreparedSpecProbeLinesNameTheFile(t *testing.T) {
+	dir := t.TempDir()
+	spec := strings.Replace(artifactSpec, "            path: /healthz\n", "", 1)
+
+	prepared, err := LoadSpec(writeSpec(t, dir, spec))
+	require.NoError(t, err)
+
+	model := newFlow(Detect(dir), nil, Answers{}).withPrepared(prepared)
+	model = press(t, pastName(t, model), "enter")
+	require.Equal(t, screenConfirm, model.at)
+
+	assert.Contains(t, model.View(), "Readiness: the spec file's own probe")
+	assert.NotContains(t, model.View(), "Readiness: 's own probe")
+}
+
+// An image build syncs nothing, so the warning about everything in a suspect
+// directory being uploaded does not apply to an image spec.
+func TestRun_ImageSpecInAnEmptyDirectoryDoesNotWarnAboutTheUpload(t *testing.T) {
+	dir := t.TempDir()
+	opts := withSpec(dir, writeSpec(t, dir, artifactSpec), Answers{Name: "my-app"})
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+	assert.NotContains(t, opts.Stderr.(*bytes.Buffer).String(), "would be uploaded")
 }

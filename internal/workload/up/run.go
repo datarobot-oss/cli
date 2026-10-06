@@ -957,7 +957,9 @@ func reportSetup(setup wizard.Result, opts Options) {
 // way. An interactive run is left untouched: nobody there was given flags to
 // be confused about.
 func setupRefused(err error, nonInteractive bool, dir string) error {
-	if !nonInteractive {
+	// A spec file with no workload name already names the command that takes
+	// --name; the suffix would send the reader to one without the file.
+	if !nonInteractive || errors.Is(err, wizard.ErrSpecFileUnnamed) {
 		return err
 	}
 

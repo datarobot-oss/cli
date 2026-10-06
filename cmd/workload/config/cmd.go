@@ -195,7 +195,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 		"Take the answers from a prepared artifact spec or workload spec (JSON or YAML, what 'dr artifact create' "+
 			"and 'dr workload create' take) and ask only what it leaves open: a name if it has none, the .env "+
 			"import, the sizing if it has no runtime block. The file is left alone; .datarobot.yaml is written. "+
-			"The build-source flags and --workload-id cannot be combined with it.")
+			"The build-source flags, --type, --a2a-enabled, --sync-env and --workload-id cannot be combined with it.")
 	cmd.Flags().BoolVar(&f.answers.SkipEnv, "skip-env", false,
 		"Do not carry the project's .env into the manifest. By default its variables are written there: "+
 			"ordinary values as literals, secrets as credential references you complete later.")

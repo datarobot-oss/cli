@@ -246,6 +246,24 @@ func (f flow) withPrepared(p Prepared) flow {
 	return f
 }
 
+// checkPrepared is what confirm asks of a spec file before Enter can store a
+// secret for it: the build check again, since the failure set on entry is
+// cleared by the first keystroke and the screen that would refuse the build
+// is the one the file skips, and the ledger, which a hand-written spec fails
+// easily. A credential created for a file that is then refused would outlive
+// the run with nothing pointing at it.
+func (f flow) checkPrepared(content []byte) error {
+	if !f.prepared {
+		return nil
+	}
+
+	if err := f.preparedBuildFailure(); err != nil {
+		return err
+	}
+
+	return checkRendered(content, f.detected.Dir, authorUser)
+}
+
 // preparedBuildFailure is the build problem the spec file has in this
 // directory, nil when there is none.
 func (f flow) preparedBuildFailure() error {
@@ -854,10 +872,15 @@ func (f *flow) acceptDirectory() (tea.Cmd, error) {
 		if f.prepared {
 			f.draft = f.answers.partialApplyTo(f.live.Defaults(), f.detected)
 			f.nameGiven = f.draft.Name != ""
-			f.failed = f.preparedBuildFailure()
 		} else {
 			f.startFrom(f.answers.draftOrPartial(f.detected))
 		}
+	}
+
+	// Whether the directory changed or not, this is the first chance to say
+	// the file's build cannot be made here; confirm asks again.
+	if f.prepared {
+		f.failed = f.preparedBuildFailure()
 	}
 
 	// A flag-named workload's fetch was deferred to here (see Init): the
@@ -1143,7 +1166,7 @@ func (f flow) acceptHealthPath(path string) error {
 		return fmt.Errorf(
 			"%s runs a readiness probe with no path, which is kept as it is rather than rewritten, "+
 				"so a path here would not reach the file; clear the field to leave it alone",
-			f.live.Name)
+			f.probeOwner())
 	}
 
 	return nil
@@ -1262,6 +1285,10 @@ func (f *flow) render() error {
 
 	content, err := applied.Render()
 	if err != nil {
+		return err
+	}
+
+	if err := f.checkPrepared(content); err != nil {
 		return err
 	}
 
