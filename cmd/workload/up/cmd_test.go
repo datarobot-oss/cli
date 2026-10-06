@@ -454,11 +454,13 @@ const (
 	draftHeadlineCreate   = "This deploy would create a workload on a draft artifact."
 )
 
-// The two remedies. A clock already counting needs a command; one the previewed
-// deploy would start needs only the flag on that deploy.
+// The remedies. A clock already counting needs a command; one a detached deploy
+// is still setting up needs that command once the deploy finishes; one the
+// previewed deploy would start needs only the flag on that deploy.
 const (
-	draftRunLock = "Run 'dr workload up --lock'"
-	draftAddLock = "Add --lock to version the artifact"
+	draftRunLock      = "Run 'dr workload up --lock'"
+	draftLockWhenDone = "When this deploy finishes, run 'dr workload up --lock'"
+	draftAddLock      = "Add --lock to version the artifact"
 )
 
 // draftWarned reports whether any shape reached the stream, for the tests that
@@ -536,7 +538,25 @@ func TestCmd_DetachedDeployDoesNotClaimTheWorkloadIsRunning(t *testing.T) {
 
 	assert.Contains(t, stderr, draftHeadlineStarting)
 	assert.NotContains(t, stderr, draftHeadline)
-	assert.Contains(t, stderr, draftRunLock, "the deploy has already run, so the remedy is the command")
+	assert.Contains(t, stderr, draftLockWhenDone, "the deploy has run but not finished")
+}
+
+// A detached roll leaves the workload running the version it had while the
+// platform swaps the new one in, and a lock is refused until the swap lands.
+// The headline stays true, since the version still serving is a draft too, but
+// the command it names would be turned away if run now.
+func TestCmd_DetachedRollTellsTheReaderToLockOnceItLands(t *testing.T) {
+	result := deployed()
+	result.Action = up.ActionRolled
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t, "--detach")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, draftHeadline)
+	assert.Contains(t, stderr, draftLockWhenDone)
+	assert.NotContains(t, stderr, draftRunLock, "a lock is refused while the rollout is in flight")
 }
 
 // A locked artifact is permanent, so there is nothing to warn about and the
@@ -591,7 +611,6 @@ func TestCmd_DryRunOfAFirstDeployTalksAboutTheDeploy(t *testing.T) {
 func TestCmd_DryRunAgainstARunningDraftSaysItIsRunning(t *testing.T) {
 	result := deployed()
 	result.Action = up.ActionUnchanged
-	result.Plan.State = up.StateRunning
 
 	stubRun(t, result, nil)
 
@@ -610,7 +629,6 @@ func TestCmd_DryRunAgainstAStoppedDraftSaysItWouldRun(t *testing.T) {
 	result := deployed()
 	result.Status = up.StateStopped.String()
 	result.Action = up.ActionStarted
-	result.Plan.State = up.StateStopped
 
 	stubRun(t, result, nil)
 
@@ -704,6 +722,38 @@ func TestCmd_FailureAfterAStartThatErroredDoesNotWarn(t *testing.T) {
 	assert.False(t, draftWarned(stderr))
 	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+}
+
+// A start that went through but whose wait gave up has put a draft on the air
+// only if the platform says so. Still on its way up, it is starting; still
+// reading stopped, nothing was seen to start and there is no clock to warn
+// about.
+func TestCmd_FailureAfterAStartWarnsOnlyWhenThePlatformSaysItIsComingUp(t *testing.T) {
+	for _, tc := range []struct {
+		status string
+		warned bool
+	}{
+		{status: workload.WorkloadStatusProvisioning, warned: true},
+		{status: workload.WorkloadStatusStopped, warned: false},
+		{status: workload.WorkloadStatusUnknown, warned: false},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			result := deployed()
+			result.Action = up.ActionStarted
+			result.Status = tc.status
+
+			stubRun(t, result, errors.New("timed out waiting for workload 68b0c1d2e3f4a5b6c7d8e9f0"))
+
+			_, stderr, err := runCmd(t)
+			require.Error(t, err)
+
+			assert.Equal(t, tc.warned, draftWarned(stderr))
+
+			if tc.warned {
+				assert.Contains(t, stderr, draftHeadlineStarting)
+			}
+		})
+	}
 }
 
 // A run that changed nothing still leaves a draft serving on the same clock.

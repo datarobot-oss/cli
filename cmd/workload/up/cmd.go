@@ -595,17 +595,20 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 		// "started" only when the start went through. A run that failed before
 		// that changed nothing and has nothing to warn about.
 		//
-		// Terminated is excluded even so. A workload that started and then
-		// reached the end of its life is running nothing, so the clock this
-		// warns about is not ticking and the remedy it names would be a lock on
-		// the artifact of something that is never coming back. followUps drops
-		// its whole list for the same state, and the two must agree: a warning
-		// with no follow-ups reads as advice the command forgot to give.
+		// A start that went through has put a draft on the air only if the
+		// platform says the workload is running or on its way up, so those are
+		// the statuses asked for rather than the failures ruled out. Anything
+		// else is running nothing, and the clock this warns about is not
+		// ticking: errored came up and failed, and a wait that gave up on a
+		// workload still reading stopped never saw the start take.
 		//
-		// Errored is excluded for the first of those reasons only: a start that
-		// came up errored leaves nothing running, so there is no draft on the
-		// air to warn about. followUps keeps its list for it.
-		return result.Action == up.ActionStarted && !workload.IsWorkloadErrorStatus(result.Status)
+		// Terminated is the end of its life, where the remedy would be a lock
+		// on the artifact of something that is never coming back. followUps
+		// drops its whole list for that state, and the two must agree: a
+		// warning with no follow-ups reads as advice the command forgot to
+		// give.
+		return result.Action == up.ActionStarted &&
+			(workload.IsRunningWorkloadStatus(result.Status) || workload.IsStartingWorkloadStatus(result.Status))
 	}
 
 	return f.dryRun || result.WorkloadID != ""
@@ -655,7 +658,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		}
 
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
-		draftWarning(cmd.ErrOrStderr(), draft, result, true)
+		draftWarning(cmd.ErrOrStderr(), draft, result, f)
 
 		return nil
 	}
@@ -677,7 +680,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
-	draftWarning(cmd.ErrOrStderr(), draft, result, false)
+	draftWarning(cmd.ErrOrStderr(), draft, result, f)
 	nextSteps(cmd.ErrOrStderr(), result, f.dir, draft, failed)
 
 	return nil
@@ -701,12 +704,12 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 // The remedy is named inline rather than left to nextSteps, because a dry run
 // returns before nextSteps ever gets to speak and would otherwise state a
 // problem with no remedy attached.
-func draftWarning(w io.Writer, draft bool, result up.Result, planned bool) {
+func draftWarning(w io.Writer, draft bool, result up.Result, f flags) {
 	if !draft {
 		return
 	}
 
-	headline, remedy := draftWording(result, planned)
+	headline, remedy := draftWording(result, f)
 
 	fmt.Fprintf(w, "\n  %s %s\n", tui.WarnStyle.Render("⚠"), tui.WarnStyle.Render(headline))
 
@@ -731,8 +734,15 @@ func draftWarning(w io.Writer, draft bool, result up.Result, planned bool) {
 //
 // Only a running workload is told it is running a draft. Its eight hours are
 // counting, so the remedy is a command to run. A real run whose workload is not
-// up yet, because --detach returned first or the wait for it failed part way,
-// says it is starting, and gets the same command.
+// running has either just had its create or start requested by --detach, or
+// failed while the platform still had it on its way up, since draftIsServing
+// turns the rest away; it says it is starting, and gets the same command.
+//
+// --detach returns before the deploy finishes, and a lock is refused while the
+// platform is still replacing the workload, so a detached run that did
+// something is told to lock when the deploy finishes rather than now. After a
+// detached roll the headline still says running: what serves until the swap
+// lands is a draft too, or there would be no warning.
 //
 // Every other preview describes what its deploy would do, and the eight hours
 // would start with that deploy, so it offers the flag for it rather than a
@@ -743,14 +753,18 @@ func draftWarning(w io.Writer, draft bool, result up.Result, planned bool) {
 // says a workload on a draft artifact rather than a new draft artifact because
 // a create does not always make one: a linked project, or a manifest naming an
 // artifact by id, comes up on the one already there.
-func draftWording(result up.Result, planned bool) (headline, remedy string) {
+func draftWording(result up.Result, f flags) (headline, remedy string) {
 	command := "Run 'dr workload up --lock' to version the artifact and make it permanent."
+
+	if !f.dryRun && f.detach && result.Action != up.ActionUnchanged {
+		command = "When this deploy finishes, run 'dr workload up --lock' to version the artifact and make it permanent."
+	}
 
 	if workload.IsRunningWorkloadStatus(result.Status) {
 		return "This workload is running a draft artifact.", command
 	}
 
-	if !planned {
+	if !f.dryRun {
 		return "This workload is starting on a draft artifact.", command
 	}
 

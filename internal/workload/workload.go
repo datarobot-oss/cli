@@ -156,6 +156,16 @@ func IsRunningWorkloadStatus(s string) bool {
 	return strings.EqualFold(s, WorkloadStatusRunning)
 }
 
+// IsStartingWorkloadStatus reports whether the platform says the workload is on
+// its way up: accepted, being provisioned, or being launched. Narrower than
+// "not steady", which also covers stopping and unknown, neither of which says
+// the workload is coming up.
+func IsStartingWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusSubmitted) ||
+		strings.EqualFold(s, WorkloadStatusProvisioning) ||
+		strings.EqualFold(s, WorkloadStatusLaunching)
+}
+
 // IsStoppedWorkloadStatus reports whether s is one of the three ways a
 // workload can be switched off. They are grouped because a deploy treats them
 // alike, and named here because three files ask the same question: this one,
