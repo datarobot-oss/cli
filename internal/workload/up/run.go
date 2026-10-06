@@ -371,9 +371,10 @@ func planFor(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, err
 // image this plan asks for, "" when it could or when the plan builds none.
 // Asked before anything is created: the build used to fail only after the
 // artifact existed and the code was synced. A bound workload pulling its code
-// into a directory with no project files is judged after the pull instead.
+// into a directory with no project files is not judged: the pulled code is
+// what the workload last built from.
 func unbuildableGenerated(loaded Loaded, live Live, plan Plan) (string, error) {
-	if loaded.Manifest.BuildMode() != manifest.BuildModeGenerated || (!plan.Creates && !plan.RebuildsImage()) {
+	if loaded.Manifest.BuildMode() != manifest.BuildModeGenerated || !buildsImage(plan) {
 		return "", nil
 	}
 
@@ -397,6 +398,14 @@ func unbuildableGenerated(loaded Loaded, live Live, plan Plan) (string, error) {
 	}
 
 	return detected.EnvironmentMismatch(ee), nil
+}
+
+// buildsImage reports whether the plan has the platform build an image: a
+// create, or a roll that mints a version rather than carrying the running
+// image over. A resize, a start or a reroll builds nothing, and neither does
+// a stale image on its own, which every unlinked project reports.
+func buildsImage(plan Plan) bool {
+	return plan.Creates || (plan.RollsArtifact() && !plan.InheritsImage)
 }
 
 // lockOnly is the whole of a --lock run that found nothing else to do.
@@ -1362,16 +1371,18 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // alongside errored. deployable keeps its settling branch as the backstop for
 // everything that reaches the apply by another route.
 func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bool) error {
-	// A preview of a moving workload reports the state and refuses nothing:
-	// the deploy would wait and plan against where the swap lands.
-	if dryRun && (live.State == StateSettling || live.SwapInFlight) {
-		return nil
-	}
-
+	// A project the platform cannot build from is refused whatever the
+	// workload is doing: where a swap lands does not change the files.
 	if plan.Unbuildable != "" {
 		return fmt.Errorf(
 			"nothing was deployed: %s. Fix the project, or run 'dr workload config%s' to pick another build, then deploy again",
 			plan.Unbuildable, dirFlagFor(loaded))
+	}
+
+	// A preview of a moving workload reports the state and refuses nothing:
+	// the deploy would wait and plan against where the swap lands.
+	if dryRun && (live.State == StateSettling || live.SwapInFlight) {
+		return nil
 	}
 
 	return deployable(live, plan, workloadName, dirFlagFor(loaded))

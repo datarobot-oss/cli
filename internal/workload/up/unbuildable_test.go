@@ -39,6 +39,26 @@ var pythonEnvironment = workload.ExecutionEnvironment{
 	ID: "6890000000000000000000e1", Name: "[DataRobot] Python 3.12 Drop-In", ProgrammingLanguage: "python",
 }
 
+// servesPython answers the environment read with a Python environment, and
+// checks the read asks for the id the manifest names.
+func servesPython(t *testing.T) func(string) (workload.ExecutionEnvironment, error) {
+	return func(id string) (workload.ExecutionEnvironment, error) {
+		assert.Equal(t, pythonEnvironment.ID, id, "the manifest's environment id is what is read")
+
+		return pythonEnvironment, nil
+	}
+}
+
+// neverReads fails the test if the environment is read: a plan that builds
+// nothing has no reason to.
+func neverReads(t *testing.T) func(string) (workload.ExecutionEnvironment, error) {
+	return func(id string) (workload.ExecutionEnvironment, error) {
+		t.Fatalf("the run read execution environment %s for a plan that builds nothing", id)
+
+		return workload.ExecutionEnvironment{}, nil
+	}
+}
+
 // neverCreates fails the test if the run reaches the artifact create: the
 // refusal has to come first, which is the whole point of it.
 func neverCreates(t *testing.T) func(any) (*workload.Artifact, error) {
@@ -63,9 +83,7 @@ func writeFiles(t *testing.T, dir string, names ...string) {
 // only after the artifact existed and the code was synced.
 func TestRun_RefusesAGeneratedBuildThePlatformCannotMake(t *testing.T) {
 	t.Run("no file pair the platform builds from", func(t *testing.T) {
-		install(t, fakes{newArtifact: neverCreates(t), execEnv: func(string) (workload.ExecutionEnvironment, error) {
-			return pythonEnvironment, nil
-		}})
+		install(t, fakes{newArtifact: neverCreates(t), execEnv: servesPython(t)})
 
 		_, _, err := runIn(t, unboundGeneratedManifest, Options{NonInteractive: true})
 		require.Error(t, err)
@@ -74,11 +92,22 @@ func TestRun_RefusesAGeneratedBuildThePlatformCannotMake(t *testing.T) {
 		assert.Contains(t, err.Error(), "dr workload config")
 	})
 
+	t.Run("a directory with no project files at all", func(t *testing.T) {
+		install(t, fakes{newArtifact: neverCreates(t), execEnv: servesPython(t)})
+
+		// Nothing but the manifest: runIn would add a Dockerfile, which is a
+		// project file of its own.
+		dir := t.TempDir()
+		writeManifest(t, dir, unboundGeneratedManifest)
+
+		_, err := Run(t.Context(), Options{Dir: dir, NonInteractive: true, Stderr: &bytes.Buffer{}})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "neither pyproject.toml with uv.lock nor package.json with package-lock.json")
+	})
+
 	for name, dryRun := range map[string]bool{"a deploy": false, "a dry run": true} {
 		t.Run(name+" on a node project with a python environment", func(t *testing.T) {
-			install(t, fakes{newArtifact: neverCreates(t), execEnv: func(string) (workload.ExecutionEnvironment, error) {
-				return pythonEnvironment, nil
-			}})
+			install(t, fakes{newArtifact: neverCreates(t), execEnv: servesPython(t)})
 
 			dir := t.TempDir()
 			writeManifest(t, dir, unboundGeneratedManifest)
@@ -92,7 +121,7 @@ func TestRun_RefusesAGeneratedBuildThePlatformCannotMake(t *testing.T) {
 	}
 
 	t.Run("a python project with a python environment goes through", func(t *testing.T) {
-		install(t, fakes{execEnv: func(string) (workload.ExecutionEnvironment, error) { return pythonEnvironment, nil }})
+		install(t, fakes{execEnv: servesPython(t)})
 
 		dir := t.TempDir()
 		writeManifest(t, dir, unboundGeneratedManifest)
@@ -121,7 +150,7 @@ func TestRun_RefusesAGeneratedBuildThePlatformCannotMake(t *testing.T) {
 // A bound workload deploying from a directory with none of the usual project
 // files pulls its code first, so the directory is not judged before the pull.
 func TestUnbuildableGenerated_PullIntoAnEmptyDirectoryIsNotJudged(t *testing.T) {
-	install(t, fakes{execEnv: func(string) (workload.ExecutionEnvironment, error) { return pythonEnvironment, nil }})
+	install(t, fakes{execEnv: servesPython(t)})
 	force(t, &projectLinkedFn, func(string) bool { return false })
 
 	dir := t.TempDir()
@@ -137,6 +166,12 @@ func TestUnbuildableGenerated_PullIntoAnEmptyDirectoryIsNotJudged(t *testing.T) 
 	require.NoError(t, err)
 	assert.Empty(t, problem)
 
+	// The exemption is the pull, not the empty directory: with no workload
+	// to pull from, the same directory is judged and found wanting.
+	problem, err = unbuildableGenerated(loaded, Live{State: StateUnbound}, Plan{Creates: true})
+	require.NoError(t, err)
+	assert.Contains(t, problem, "neither pyproject.toml with uv.lock")
+
 	// With project files of its own, the directory is uploaded as it is, so
 	// it is judged.
 	writeFiles(t, dir, "package.json", "package-lock.json")
@@ -144,4 +179,59 @@ func TestUnbuildableGenerated_PullIntoAnEmptyDirectoryIsNotJudged(t *testing.T) 
 	problem, err = unbuildableGenerated(loaded, live, plan)
 	require.NoError(t, err)
 	assert.Contains(t, problem, "node project")
+}
+
+// Only a plan that has the platform build an image is judged. A stale image
+// on its own, which every unlinked project reports, a resize, and a roll that
+// keeps the running image build nothing, so they read no environment and
+// refuse nothing, even on a project the platform could not build from.
+func TestUnbuildableGenerated_OnlyAPlanThatBuildsIsJudged(t *testing.T) {
+	install(t, fakes{execEnv: neverReads(t)})
+	force(t, &projectLinkedFn, func(string) bool { return true })
+
+	dir := t.TempDir()
+	writeManifest(t, dir, unboundGeneratedManifest)
+	writeFiles(t, dir, "package.json", "package-lock.json")
+
+	loaded, err := load(dir, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	live := Live{WorkloadID: "wl-1", ArtifactID: "art-1", State: StateRunning}
+
+	for name, plan := range map[string]Plan{
+		"a stale image alone":         {Code: CodeChange{Applies: true, ImageStale: true}},
+		"a resize":                    {Runtime: []Change{{Path: "replicaCount"}}},
+		"a roll that keeps the image": {Code: CodeChange{Applies: true}, Artifact: []Change{{Path: "port"}}, InheritsImage: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			problem, err := unbuildableGenerated(loaded, live, plan)
+			require.NoError(t, err)
+			assert.Empty(t, problem)
+		})
+	}
+
+	// A roll that mints a version from changed code is judged.
+	install(t, fakes{execEnv: servesPython(t)})
+
+	problem, err := unbuildableGenerated(loaded, live, Plan{Code: CodeChange{Applies: true, Files: 1}})
+	require.NoError(t, err)
+	assert.Contains(t, problem, "node project")
+}
+
+// A preview of a moving workload refuses nothing about the move, but a
+// project the platform cannot build from is refused all the same: where the
+// swap lands does not change the files.
+func TestRefusal_UnbuildableOutranksTheSettlingPreview(t *testing.T) {
+	plan := Plan{Unbuildable: "the project is a node project"}
+
+	for name, live := range map[string]Live{
+		"settling":         {State: StateSettling},
+		"a swap in flight": {State: StateRunning, SwapInFlight: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := refusal(Loaded{}, live, plan, "my-app", true)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "the project is a node project")
+		})
+	}
 }

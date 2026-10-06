@@ -369,6 +369,20 @@ func TestEnvironmentLanguage(t *testing.T) {
 	}
 }
 
+// The one-environment read goes to the environment's own route, with the id
+// escaped, and decodes the fields the language check needs.
+func TestGetExecutionEnvironment_ReadsTheEnvironmentByID(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/executionEnvironments/a%2Fb/", r.URL.EscapedPath())
+		fmt.Fprint(w, `{"id": "a/b", "name": "[DataRobot] Python 3.12", "programmingLanguage": "python"}`)
+	}))
+
+	ee, err := GetExecutionEnvironment("a/b")
+	require.NoError(t, err)
+	assert.Equal(t, "[DataRobot] Python 3.12", ee.Name)
+	assert.Equal(t, "python", ee.ProgrammingLanguage)
+}
+
 func TestListExecutionEnvironments_ServerError(t *testing.T) {
 	installSkipAuth(t)
 

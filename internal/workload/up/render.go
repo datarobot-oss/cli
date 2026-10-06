@@ -593,7 +593,7 @@ type PlanJSON struct {
 
 	// Unbuildable is why the platform could not build the generated image
 	// the plan asks for, and the reason the run was refused. "" otherwise.
-	Unbuildable string `json:"unbuildable,omitempty"`
+	Unbuildable string `json:"unbuildable"`
 
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
