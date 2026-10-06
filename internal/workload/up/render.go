@@ -386,6 +386,12 @@ func lockLines(plan Plan) []string {
 	}
 
 	switch {
+	case plan.Locked && plan.BoundArtifactID != "":
+		// Nothing is minted on a named swap: the artifact the file names is
+		// locked to match before the swap, when it is not already.
+		return []string{entry("~", "lock",
+			"the running version is locked, so "+plan.BoundArtifactID+" is locked to match before the swap")}
+
 	case plan.Locked:
 		return []string{entry("~", "lock",
 			"the running version is locked, so a new one is created and permanently locked to match")}

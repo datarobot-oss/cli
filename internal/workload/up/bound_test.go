@@ -129,3 +129,27 @@ func TestRun_NamedArtifactThatCannotBeReadStopsTheRun(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot read artifact 68b0bbbb0000000000000002")
 }
+
+// A locked workload swapping onto a named artifact mints nothing, so the lock
+// line must not say a new version is created: it says the named artifact is
+// locked to match.
+func TestRun_LockedWorkloadNamedSwapLockLineNamesTheArtifact(t *testing.T) {
+	var tr track
+
+	f := namedRoll(&tr, "repo-1", false)
+	f.artifactD = func(string) (workload.Document, error) {
+		d := docOf(liveImageArtifactJSON)
+		d["artifactRepositoryId"] = "repo-1"
+		d["status"] = workload.ArtifactStatusLocked
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, namedManifest, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "68b0bbbb0000000000000002 is locked to match before the swap")
+	assert.NotContains(t, stderr, "a new one is created")
+	assert.NotContains(t, stderr, "new version")
+}
