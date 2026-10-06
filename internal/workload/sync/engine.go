@@ -30,6 +30,10 @@ type Options struct {
 	DryRun    bool
 	ShowDiffs bool
 	Yes       bool
+	// PushOnly uploads local changes and leaves every remote-side change
+	// as it is on both sides: nothing is downloaded or removed locally, and
+	// the base keeps the old entry so the next plain sync still sees it.
+	PushOnly bool
 }
 
 // Result is the outcome of a successful sync.

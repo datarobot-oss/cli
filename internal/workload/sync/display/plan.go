@@ -26,7 +26,14 @@ import (
 // "Up to date." and return.
 func PrintPlan(w io.Writer, plan *sync.SyncPlan) error {
 	if plan == nil || plan.IsEmpty() {
+		if plan != nil && len(plan.Skipped) > 0 {
+			_, _ = fmt.Fprintln(w, "Nothing to push.")
+
+			return printGroup(w, skippedHeader, plan.Skipped, markerForDownload)
+		}
+
 		_, err := fmt.Fprintln(w, "Up to date.")
+
 		return err
 	}
 
@@ -48,8 +55,11 @@ func PrintPlan(w io.Writer, plan *sync.SyncPlan) error {
 		return err
 	}
 
-	return nil
+	return printGroup(w, skippedHeader, plan.Skipped, markerForDownload)
 }
+
+// skippedHeader labels the remote-side changes a push-only run leaves alone.
+const skippedHeader = "↷ LEFT ALONE (push-only)"
 
 func printGroup(w io.Writer, header string, files []sync.FileAction, marker func(sync.FileAction) string) error {
 	if len(files) == 0 {
