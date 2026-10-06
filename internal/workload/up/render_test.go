@@ -383,6 +383,7 @@ func TestPlanJSON_Shape(t *testing.T) {
 	assert.Equal(t, "running", decoded["state"])
 	assert.Equal(t, false, decoded["creates"])
 	assert.Empty(t, decoded["unbuildable"], "emitted even when empty, like reroll and stateReason")
+	assert.Empty(t, decoded["incompatible"], "emitted even when empty, like unbuildable")
 
 	code, _ := decoded["code"].(map[string]any)
 	assert.Equal(t, true, code["changed"])
@@ -402,6 +403,18 @@ func TestPlanJSON_CarriesTheUnbuildableReason(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal(encoded, &decoded))
 	assert.Equal(t, plan.Unbuildable, decoded["unbuildable"])
+}
+
+func TestPlanJSON_CarriesTheIncompatibleReason(t *testing.T) {
+	plan := Plan{State: StateRunning, BoundArtifactID: "art-2", Incompatible: "artifact art-2 belongs to repository repo-2"}
+
+	encoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, plan.Incompatible, decoded["incompatible"])
 }
 
 // TestPlanJSON_EmptyListsAreNotNull keeps a consumer from having to special
