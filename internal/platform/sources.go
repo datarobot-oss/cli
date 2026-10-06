@@ -17,6 +17,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"sort"
@@ -184,43 +185,17 @@ func entitlementsSection(ctx context.Context) Section {
 	return entitlementsFor(ctx, entitlementNames)
 }
 
-// entitlementsFor evaluates names in batches. When a batch fails with an HTTP
-// error, it retries that batch name by name, so one flag the install does not
+// entitlementsFor evaluates names in batches. One flag the install does not
 // know costs only itself: the section is degraded and says which.
 func entitlementsFor(ctx context.Context, names []string) Section {
 	values := make(map[string]bool, len(names))
 	failed := map[string]string{}
 
 	for start := 0; start < len(names); start += entitlementBatchSize {
-		batch := names[start:min(start+entitlementBatchSize, len(names))]
+		got, missed := evaluateBatch(ctx, names[start:min(start+entitlementBatchSize, len(names))])
 
-		got, err := evaluate(ctx, batch)
-		if err == nil {
-			for name, value := range got {
-				values[name] = value
-			}
-
-			continue
-		}
-
-		if isTransport(err) || len(batch) == 1 {
-			for _, name := range batch {
-				failed[name] = reason(err)
-			}
-
-			continue
-		}
-
-		for _, name := range batch {
-			got, err = evaluate(ctx, []string{name})
-			if err != nil {
-				failed[name] = reason(err)
-
-				continue
-			}
-
-			values[name] = got[name]
-		}
+		maps.Copy(values, got)
+		maps.Copy(failed, missed)
 	}
 
 	switch {
@@ -231,6 +206,42 @@ func entitlementsFor(ctx context.Context, names []string) Section {
 	default:
 		return Section{Status: StatusDegraded, Message: failureMessage(failed), Data: values}
 	}
+}
+
+// evaluateBatch asks for a whole batch. When the route answers with an HTTP
+// error, it retries the batch name by name, because the route rejects every
+// name for one it does not know. The second map holds the names that could not
+// be read, with the reason.
+func evaluateBatch(ctx context.Context, batch []string) (map[string]bool, map[string]string) {
+	got, err := evaluate(ctx, batch)
+	if err == nil {
+		return got, nil
+	}
+
+	failed := map[string]string{}
+
+	if isTransport(err) || len(batch) == 1 {
+		for _, name := range batch {
+			failed[name] = reason(err)
+		}
+
+		return nil, failed
+	}
+
+	values := make(map[string]bool, len(batch))
+
+	for _, name := range batch {
+		one, oneErr := evaluate(ctx, []string{name})
+		if oneErr != nil {
+			failed[name] = reason(oneErr)
+
+			continue
+		}
+
+		values[name] = one[name]
+	}
+
+	return values, failed
 }
 
 // failureMessage lists the names that could not be read, in a stable order.

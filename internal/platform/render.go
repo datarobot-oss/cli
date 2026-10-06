@@ -83,21 +83,9 @@ func renderText(w io.Writer, report Report) error {
 func renderData(say func(string, ...any), data any) {
 	switch d := data.(type) {
 	case Install:
-		if d.IsEnterprise != nil {
-			say("  enterprise install: %s", yesNo(*d.IsEnterprise))
-		}
-
-		if d.DefaultAppResourceBundle != "" {
-			say("  default app resource bundle: %s", d.DefaultAppResourceBundle)
-		}
+		renderInstall(say, d)
 	case Seats:
-		if len(d.SeatLicenses) == 0 {
-			say("  no seat licenses enforced")
-		}
-
-		for _, name := range sortedKeys(d.SeatLicenses) {
-			say("  %s: %s", name, yesNo(d.SeatLicenses[name]))
-		}
+		renderSeats(say, d)
 	case map[string]bool:
 		for _, name := range sortedKeys(d) {
 			say("  %s: %s", name, onOff(d[name]))
@@ -106,6 +94,26 @@ func renderData(say func(string, ...any), data any) {
 		renderEnvironments(say, d)
 	case ResourceBundles:
 		renderBundles(say, d)
+	}
+}
+
+func renderInstall(say func(string, ...any), install Install) {
+	if install.IsEnterprise != nil {
+		say("  enterprise install: %s", yesNo(*install.IsEnterprise))
+	}
+
+	if install.DefaultAppResourceBundle != "" {
+		say("  default app resource bundle: %s", install.DefaultAppResourceBundle)
+	}
+}
+
+func renderSeats(say func(string, ...any), seats Seats) {
+	if len(seats.SeatLicenses) == 0 {
+		say("  no seat licenses enforced")
+	}
+
+	for _, name := range sortedKeys(seats.SeatLicenses) {
+		say("  %s: %s", name, yesNo(seats.SeatLicenses[name]))
 	}
 }
 

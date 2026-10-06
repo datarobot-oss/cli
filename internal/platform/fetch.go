@@ -76,7 +76,7 @@ func call(ctx context.Context, method, url string, authorize bool, in, out any) 
 	}
 
 	if authorize {
-		if err = drapi.AuthorizeRequest(req); err != nil {
+		if err = drapi.AuthorizeRequest(req); err != nil { //nolint:contextcheck // drapi takes no context
 			return err
 		}
 	} else {
