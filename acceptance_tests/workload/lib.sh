@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for the `dr workload` / `dr artifact` acceptance scenarios.
 #
-# Sourced by each scenario_* script and by run_workload_smoke_test.sh. It sets
+# Sourced by each scenario_* script and by run_workload_acceptance_test.sh. It sets
 # up an isolated, endpoint-agnostic environment, a run identity so repeated
 # runs never collide on names, a scratch directory under mktemp(1), timing
 # helpers, assertion helpers, a workload wait/poll helper, and a trap-based
@@ -16,7 +16,7 @@
 #     DATAROBOT_API_TOKEN / DR_API_TOKEN  — override the configured token.
 #     DATAROBOT_ENDPOINT                  — override the configured endpoint.
 #     DR_BIN                              — binary under test (default ./dist/dr).
-#     WORKLOAD_SMOKE_INCLUDE_D            — opts scenario D into the default set.
+#     WORKLOAD_ACCEPTANCE_INCLUDE_D            — opts scenario D into the default set.
 #     RUN                                  — run identity for name uniqueness.
 
 # shellcheck shell=bash
@@ -28,7 +28,7 @@ set -euo pipefail
 # Paths
 # ---------------------------------------------------------------------------
 
-# Directory containing this file (smoke_test_scripts/workload/).
+# Directory containing this file (acceptance_tests/workload/).
 WL_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The smoke_test_scripts/ directory one level up.
 WL_SCRIPT_DIR="$(cd "$WL_LIB_DIR/.." && pwd)"
@@ -94,7 +94,7 @@ wl::init_env() {
     export DATAROBOT_CLI_NON_INTERACTIVE=1
 
     # Per-run scratch directory; removed on exit (see wl::register_cleanup).
-    WL_SCRATCH="$(mktemp -d -t wl-smoke-${RUN}.XXXXXXXX)"
+    WL_SCRATCH="$(mktemp -d -t wl-accept-${RUN}.XXXXXXXX)"
     export WL_SCRATCH
 
     # Confirm the build under test reports a version, so a misconfigured

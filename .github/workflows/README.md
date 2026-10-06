@@ -47,6 +47,7 @@ One extension everywhere: **`.yaml`**.
 | `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. |
 | `_install-tests.yaml` | Installation-script tests across Linux/macOS/Windows. |
 | `_pre-release-smoke.yaml` | Heavier end-to-end smoke tests that gate release promotion. |
+| `_workload-acceptance.yaml` | Live workload/artifact acceptance scenarios. Nightly + manual only; never gates releases. |
 
 **Entrypoints:**
 
@@ -58,8 +59,8 @@ One extension everywhere: **`.yaml`**.
 | `smoke-on-demand.yaml` | `pull_request [labeled]` | Label-triggered smoke tests for **non-fork** PRs. |
 | `comment-commands.yaml` | `issue_comment` | Slash-commands (trigger/approve/skip smoke & install tests). |
 | `fork-smoke-tests.yaml` | `workflow_dispatch` | Maintainer-approved fork smoke tests with a security pre-scan. |
-| `manual-smoke.yaml` | `workflow_dispatch` | Manual deps / install-integration / installation smoke suites (`suite` input). |
-| `nightly-smoke.yaml` | `push → main`, `schedule`, `dispatch` | Full smoke matrix + install/self-update tests + Slack on failure. |
+| `manual-smoke.yaml` | `workflow_dispatch` | Manual deps / install-integration / installation smoke suites, plus the `acceptance` suite (live workload/artifact scenarios) on demand (`suite` input). |
+| `nightly-smoke.yaml` | `push → main`, `schedule`, `dispatch` | Full smoke matrix + workload/artifact acceptance suite + install/self-update tests + Slack on failure. |
 | `release.yaml` | `push tags v*` | GoReleaser release → verify-installation → pre-release smoke → promote. On release-job failure, diagnoses known infrastructure failures and posts the fix to Slack. |
 | `dev-image.yaml` | `push → main`, `dispatch` | Build and push a floating multi-arch `ghcr.io/datarobot-oss/cli:dev` Docker image. |
 | `pages.yaml` | `push → main`, `dispatch` | Build and deploy the MkDocs site to GitHub Pages. |
@@ -78,9 +79,7 @@ the caller's job, so the repo must be checked out **before** they are used.
 
 ## Flow diagrams
 
-How the entrypoints wire to the reusables, plus the fork-PR gate. Full per-flow
-diagrams (regular PR, on-demand / nightly / manual smoke, release, pages) live in
-[`docs/development/ci-workflow-flows.md`](../../docs/development/ci-workflow-flows.md).
+How the entrypoints wire to the reusables, plus the fork-PR gate.
 
 **Entrypoints → reusable building blocks:**
 
@@ -100,12 +99,14 @@ graph LR
     SW["_smoke-windows.yaml"]
     IT["_install-tests.yaml"]
     PRS["_pre-release-smoke.yaml"]
+    WA["_workload-acceptance.yaml"]
   end
   PRC --> SM
   NS --> B
   NS --> SM
   NS --> SW
   NS --> IT
+  NS --> WA
   SOD --> B
   SOD --> SM
   SOD --> SW
@@ -114,6 +115,7 @@ graph LR
   FST --> SW
   MS --> SM
   MS --> IT
+  MS --> WA
   REL --> IT
   REL --> PRS
 ```

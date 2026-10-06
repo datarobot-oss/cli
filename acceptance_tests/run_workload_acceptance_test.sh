@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# run_workload_smoke_test.sh — orchestrator for the `dr workload` / `dr artifact`
-# acceptance scenarios.
+# run_workload_acceptance_test.sh — orchestrator for the `dr workload` /
+# `dr artifact` acceptance scenarios.
 #
-# Each scenario is a standalone script under smoke_test_scripts/workload/ that
+# Each scenario is a standalone script under acceptance_tests/workload/ that
 # sources lib.sh, initialises its own isolated env, and cleans up on exit, so
 # any subset can also be run directly:
 #
-#   bash smoke_test_scripts/workload/RAPTOR-19533-A-roundtrip.sh
+#   bash acceptance_tests/workload/RAPTOR-19533-A-roundtrip.sh
 #
 # Usage:
-#   DR_API_TOKEN=... ./smoke_test_scripts/run_workload_smoke_test.sh [scenario ...]
+#   DR_API_TOKEN=... ./acceptance_tests/run_workload_acceptance_test.sh [scenario ...]
 #
 # Defaults to the fast set: a b c artifact. Scenario D (~20-30 min, two image
 # builds) is opt-in — pass `d` as a scenario, or set
-# WORKLOAD_SMOKE_INCLUDE_D=1 to add it to the default set. Scenario E
+# WORKLOAD_ACCEPTANCE_INCLUDE_D=1 to add it to the default set. Scenario E
 # (~15-20 min, dominated by a stop->stopped wait) is likewise opt-in — pass
-# `e` explicitly; the pre-release CI job does. Neither is silently added to
+# `e` explicitly; the nightly CI job does. Neither is silently added to
 # a bare local run, since both push well past the "fast" set's usual runtime.
 #
 # Exit code is non-zero if any scenario failed.
@@ -33,7 +33,7 @@ if [[ $# -gt 0 ]]; then
     scenarios=("$@")
 else
     scenarios=(a b c artifact)
-    if [[ "${WORKLOAD_SMOKE_INCLUDE_D:-0}" == "1" ]]; then
+    if [[ "${WORKLOAD_ACCEPTANCE_INCLUDE_D:-0}" == "1" ]]; then
         scenarios+=(d)
     fi
 fi
