@@ -110,3 +110,16 @@ func TestAnswers_TypeFlagStillWritesAnAgent(t *testing.T) {
 	assert.Equal(t, manifest.TypeAgent, draft.Type)
 	assert.True(t, draft.A2AEnabled)
 }
+
+// With the kind screen skipped nothing could correct a bad --type, so the
+// wizard refuses it before opening, the way it refuses the flag pairs no
+// screen can settle.
+func TestRunInteractiveFlow_RejectsABadTypeWhileTheKindScreenIsSkipped(t *testing.T) {
+	withoutKindQuestion(t)
+
+	_, _, _, err := runInteractiveFlow(
+		Options{Dir: t.TempDir(), Answers: Answers{Name: "my-app", Type: "nim"}},
+		dockerfileProject(t))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `--type "nim" is not supported`)
+}
