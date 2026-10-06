@@ -237,6 +237,7 @@ Memory is spelled the way a manifest spells it: the largest 1000-based unit that
 - `--spec-file <path>`: apply a whole settings body, JSON or YAML: the document `--output-format json` prints, `{"runtime": ...}`, or the runtime block itself, which is what a manifest carries under `runtime`. Save the JSON, edit it, send it back. The body replaces the whole runtime, so every group needs its name, its containers, and either `resourceBundles` or a `resourceAllocation` on each container. A body missing those is refused before it is sent: the platform accepts it and then fails the rollout, which without `--wait` nobody sees.
 - `--yes`, `-y`: skip the confirmation. The rolling restart is still announced on stderr. `DATAROBOT_CLI_NON_INTERACTIVE=1` also skips it.
 - `--wait`: follow the replacement to its end, wait for the workload to be running on the new settings, read them back and print them. A replica change is `applied` when the count read back is the one asked for, and an error otherwise. A settings body is `applied` when the replacement ended `completed`, and `unconfirmed` when the platform gave no final status for it, in which case the printed settings are what the workload runs on now and worth comparing with what was sent. A replacement that ends `failed` leaves the workload on the settings it had, and the command says so and exits non-zero. Without a change there is nothing to wait for, and the flag is refused.
+- `--poll-timeout <duration>`: how long `--wait` may take, 30 minutes by default. Giving up ends the wait, not the rollout.
 - `--output-format <text|json>`: output format. Defaults to `text`. JSON is one `{"settings": …}` document with the runtime in the platform's own field names, the replacement, and for a change the status `requested`, `applied` or `unconfirmed`.
 
 A change is a rolling replacement: the platform brings up containers with the new settings and retires the old ones, and the endpoint keeps answering throughout. A change is refused while another replacement is in flight. Applied to a stopped workload, the platform starts it. Without `--wait` the command returns once the change is accepted and names the replacement; follow it with `dr workload settings <id>`, which prints the replacement in flight. `dr workload status` stays `running` throughout.
@@ -392,6 +393,8 @@ dr workload up --yes --dry-run          # the file it would write, and the plan,
 `--yes` is the supported way to run `up` unattended. It answers every prompt, including the confirmation for rolling a workload whose **live version is locked**. In a pipeline, `DATAROBOT_CLI_NON_INTERACTIVE=true` set once does the same for this command.
 
 Without a terminal on stdin, `up` asks nothing either. `--output-format json` skips the setup wizard but not the locked-roll confirmation.
+
+`up` waits for the deploy to serve, which can take minutes. `--poll-timeout` bounds each wait the deploy does, including the build and the rollout (30 minutes by default), and `--detach` returns as soon as the deploy is requested. Neither stops the deploy itself: `dr workload status` says where it got to.
 
 A project it cannot read is still refused rather than guessed at. With no `Dockerfile` there is no image source to infer, and the error names the flags that settle it — pass them to `dr workload config`, which is where they live:
 

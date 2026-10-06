@@ -32,7 +32,7 @@ import (
 )
 
 // followPollInterval is the default cadence at which --follow polls for new
-// log lines. Hidden behind --poll-interval for tuning.
+// log lines; --poll-interval overrides it.
 const followPollInterval = 2 * time.Second
 
 // renderOnce prints a single fetch and, on stderr, what an empty one means.
@@ -172,7 +172,6 @@ Example:
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Stream new log lines as they arrive (Ctrl-C to stop).")
 	cmd.Flags().Var(pollflags.PositiveDuration(&interval, followPollInterval), "poll-interval",
 		"Interval between polls when --follow is set.")
-	_ = cmd.Flags().MarkHidden("poll-interval")
 
 	cmd.Flags().StringArrayVar(&f.grep, "grep", nil,
 		"Only lines containing this text, case-insensitive. Repeat to require every term.")

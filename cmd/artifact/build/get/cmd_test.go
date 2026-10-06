@@ -135,7 +135,7 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid output format")
 }
 
-func TestCmd_HidesPollFlags(t *testing.T) {
+func TestCmd_ListsPollFlags(t *testing.T) {
 	cmd := Cmd()
 
 	pollIntervalFlag := cmd.Flag("poll-interval")
@@ -143,6 +143,6 @@ func TestCmd_HidesPollFlags(t *testing.T) {
 
 	require.NotNil(t, pollIntervalFlag)
 	require.NotNil(t, pollTimeoutFlag)
-	assert.True(t, pollIntervalFlag.Hidden)
-	assert.True(t, pollTimeoutFlag.Hidden)
+	assert.False(t, pollIntervalFlag.Hidden)
+	assert.False(t, pollTimeoutFlag.Hidden)
 }

@@ -904,7 +904,21 @@ func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	assert.NotNil(t, cmd.Flags().Lookup("dry-run"))
 	assert.NotNil(t, cmd.Flags().Lookup("detach"))
 	assert.NotNil(t, cmd.Flags().Lookup("lock"))
-	assert.True(t, cmd.Flags().Lookup("poll-interval").Hidden)
+}
+
+// The poll flags are how a deploy's wait is bounded, so they are listed. The
+// binding flags exist only to be refused, so they are not.
+func TestCmd_HelpListsThePollFlagsButNotTheBindingFlags(t *testing.T) {
+	stdout, _, err := runCmd(t, "--help")
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout, "--poll-timeout")
+	assert.Contains(t, stdout, "--poll-interval")
+
+	cmd := Cmd()
+
+	assert.True(t, cmd.Flag("workload-id").Hidden)
+	assert.True(t, cmd.Flag("name").Hidden)
 }
 
 // The commands are runnable as printed from the project that was just

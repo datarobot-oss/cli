@@ -147,13 +147,13 @@ func TestCmd_ParsesPollFlags(t *testing.T) {
 	assert.Equal(t, "30s", timeout.String())
 }
 
-func TestCmd_HidesPollFlags(t *testing.T) {
+func TestCmd_ListsPollFlags(t *testing.T) {
 	cmd := Cmd()
 	pollIntervalFlag := cmd.Flag("poll-interval")
 	pollTimeoutFlag := cmd.Flag("poll-timeout")
 
 	require.NotNil(t, pollIntervalFlag)
 	require.NotNil(t, pollTimeoutFlag)
-	assert.True(t, pollIntervalFlag.Hidden)
-	assert.True(t, pollTimeoutFlag.Hidden)
+	assert.False(t, pollIntervalFlag.Hidden)
+	assert.False(t, pollTimeoutFlag.Hidden)
 }

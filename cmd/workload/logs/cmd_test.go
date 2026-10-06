@@ -106,8 +106,8 @@ func TestCmd_ParsesFollowFlag(t *testing.T) {
 	assert.Equal(t, "500ms", interval.String())
 }
 
-func TestCmd_HidesPollInterval(t *testing.T) {
-	assert.True(t, Cmd().Flag("poll-interval").Hidden)
+func TestCmd_ListsPollInterval(t *testing.T) {
+	assert.False(t, Cmd().Flag("poll-interval").Hidden)
 }
 
 func TestCmd_RejectsInvalidLevel(t *testing.T) {
