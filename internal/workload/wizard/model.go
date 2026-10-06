@@ -74,9 +74,15 @@ type flow struct {
 	execEnvs []workload.ExecutionEnvironment
 
 	// draft accumulates the answers. live is the workload being bound to,
-	// nil when a new one is being created.
+	// nil when a new one is being created; a prepared spec file sets it too,
+	// since the confirm screen and the write treat the file like a bound
+	// workload's documents.
 	draft manifest.Draft
 	live  *manifest.Live
+	// prepared marks a run on a spec file: the screens the file answers are
+	// skipped, and preparedRuntime says the sizing is among them.
+	prepared        bool
+	preparedRuntime bool
 
 	// answers is what the flags said, kept because some of it is needed after
 	// the run has started: binding downloads the live spec mid-flow, and the
@@ -207,6 +213,71 @@ func newFlow(detected Detected, workloads []workload.Workload, answers Answers) 
 	return f
 }
 
+// withPrepared turns the flow into a run on a spec file: the file is the
+// live document, the flags are layered over its defaults as they are over a
+// bound workload's, and the first screen is the name when the file has none.
+func (f flow) withPrepared(p Prepared) flow {
+	live := p.Live
+
+	f.live = &live
+	f.prepared = true
+	f.preparedRuntime = p.HasRuntime
+	f.draft = f.answers.partialApplyTo(live.Defaults(), f.detected)
+	f.nameGiven = f.draft.Name != ""
+	f.history = nil
+	f.at = f.first(f.answers)
+	f.enter(f.at)
+
+	// A file that answers everything opens on the confirm screen, which is
+	// rendered on arrival rather than on entry.
+	if f.at == screenConfirm {
+		if err := f.render(); err != nil {
+			f.failed = err
+		}
+	}
+
+	return f
+}
+
+// preparedSkips reports the screens a spec file already answers.
+func (f flow) preparedSkips(at screen) bool {
+	if !f.prepared {
+		return false
+	}
+
+	switch at {
+	case screenKind, screenA2A, screenSource, screenExecEnv, screenEntrypoint, screenImage:
+		return true
+	case screenSettings:
+		return f.preparedRuntime
+	case screenBinding, screenName, screenEnv, screenConfirm, screenDirectory:
+		return false
+	}
+
+	return false
+}
+
+// skipPrepared walks forward past the screens the spec file answers, taking
+// each skipped screen's own branch so the questions after it still come up.
+func (f flow) skipPrepared(next screen) screen {
+	for f.preparedSkips(next) {
+		at := f
+		at.at = next
+		next = at.after()
+	}
+
+	return next
+}
+
+// after is where the flow goes from its current screen, before any skip.
+func (f flow) after() screen {
+	if next, ok := f.branch(); ok {
+		return next
+	}
+
+	return nextScreen[f.at]
+}
+
 // startFrom installs a draft built from this run's flags, at the start and
 // again whenever the flow starts over. The name question starts over with it:
 // a name typed for the draft being replaced went with that draft, so only a
@@ -240,6 +311,16 @@ func (f flow) first(answers Answers) screen {
 // there is nothing to bind to, or when a flag already said which workload
 // this is.
 func (f flow) firstQuestion(answers Answers) screen {
+	// A prepared spec names the workload or does not; everything else it
+	// says is skipped on the way to what it leaves open.
+	if f.prepared {
+		if f.draft.Name == "" {
+			return screenName
+		}
+
+		return f.skipPrepared(afterName())
+	}
+
 	// A named workload is fetched by Init, and the questions resume after
 	// the name once it arrives.
 	if answers.WorkloadID != "" {
@@ -561,11 +642,7 @@ func (f flow) renderFailure() error {
 
 // next is the flow: the table above, plus the four answers that change it.
 func (f flow) next() screen {
-	if next, ok := f.branch(); ok {
-		return next
-	}
-
-	return nextScreen[f.at]
+	return f.skipPrepared(f.after())
 }
 
 // branch is the four answers that change where the flow goes next.
@@ -1124,6 +1201,12 @@ func (f *flow) render() error {
 		f.buildPreview()
 
 		return nil
+	}
+
+	// A prepared spec may leave the artifact unnamed; it takes the workload's
+	// name the way a fresh render does.
+	if f.prepared && f.live.ArtifactName == "" {
+		f.live.ArtifactName = manifest.ArtifactName(f.draft.Name)
 	}
 
 	before, err := f.live.Render()

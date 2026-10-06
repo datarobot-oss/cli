@@ -56,6 +56,35 @@ func project(t *testing.T) string {
 	return dir
 }
 
+// A prepared spec plus a name writes the manifest headless, the spec file is
+// left alone, and a build-source flag given alongside it is refused.
+func TestCmd_SpecFileWritesTheManifest(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "artifact.yaml")
+	require.NoError(t, os.WriteFile(spec, []byte(`name: prepared-artifact
+spec:
+  containerGroups:
+    - name: default
+      containers:
+        - name: primary
+          primary: true
+          port: 9090
+          imageUri: registry/app:v7
+`), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app", "--spec-file", spec)
+	require.NoError(t, err)
+
+	written, err := os.ReadFile(filepath.Join(dir, ".datarobot.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "name: my-app\n")
+	assert.Contains(t, string(written), "imageUri: registry/app:v7")
+
+	_, _, err = runCmd(t, "--dir", t.TempDir(), "--yes", "--name", "my-app", "--spec-file", spec, "--dockerfile", "./Dockerfile")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--dockerfile cannot be combined with --spec-file")
+}
+
 func TestCmd_WritesTheManifest(t *testing.T) {
 	dir := project(t)
 

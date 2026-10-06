@@ -82,15 +82,9 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 		}
 	}
 
-	var workloads []workload.Workload
-
-	if opts.Answers.WorkloadID == "" && opts.Answers.Name == "" {
-		fetched, err := listWorkloadsFn(workloadPickLimit, 0, nil, "")
-		if err != nil {
-			return nil, manifest.Draft{}, "", err
-		}
-
-		workloads = fetched
+	prepared, workloads, err := preparedAndWorkloads(opts)
+	if err != nil {
+		return nil, manifest.Draft{}, "", err
 	}
 
 	// The wizard draws on stderr, not stdout. stdout is this command's
@@ -99,6 +93,9 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// substitution would capture escape sequences ahead of the path.
 	//
 	started := newFlow(detected, workloads, opts.Answers)
+	if prepared != nil {
+		started = started.withPrepared(*prepared)
+	}
 	// Carried into the flow because the confirm screen is where secrets would
 	// be stored, and --dry-run has to mean the same thing on a terminal as it
 	// does headless: nothing created, here or on the platform.
@@ -126,6 +123,31 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// The directory screen may have moved the project; the caller writes the
 	// manifest where the flow ended up, not where setup was started.
 	return content, draft, finished.detected.Dir, err
+}
+
+// preparedAndWorkloads reads the spec file when one was given, and lists the
+// workloads to bind to when none was: a prepared spec is a workload to
+// create, so it gets no binding question and no list.
+func preparedAndWorkloads(opts Options) (*Prepared, []workload.Workload, error) {
+	if opts.SpecFile != "" {
+		loaded, err := LoadSpec(opts.SpecFile)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return &loaded, nil, nil
+	}
+
+	if opts.Answers.WorkloadID != "" || opts.Answers.Name != "" {
+		return nil, nil, nil
+	}
+
+	workloads, err := listWorkloadsFn(workloadPickLimit, 0, nil, "")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return nil, workloads, nil
 }
 
 // interactiveOutput is where the wizard draws. bubbletea needs the real

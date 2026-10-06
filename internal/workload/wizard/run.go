@@ -105,6 +105,12 @@ type Options struct {
 	// the preview is shown and agreed to rather than applied on the strength
 	// of a flag.
 	SyncEnv bool
+	// SpecFile is a prepared artifact or workload spec the answers come
+	// from, so only what it leaves open is asked: a name when it has none,
+	// the .env import, the sizing when it carries no runtime block. The
+	// build-source flags are refused with it, since the file is that answer,
+	// and so is --workload-id, since a prepared spec is a workload to create.
+	SpecFile string
 	// JSONOutput says the run's answer is a machine-readable envelope. Under
 	// it the command hands the wizard no Stderr at all, because stdout purity
 	// is only half the contract and `2>&1 | jq .` has to parse too; what a
@@ -220,7 +226,16 @@ func Run(opts Options) (Result, error) {
 
 	path := manifest.Path(dir)
 	if fsutil.FileExists(path) {
+		if opts.SpecFile != "" {
+			return Result{}, fmt.Errorf("--spec-file is for a project with no manifest, and %s already has one; "+
+				"edit that file, or delete it to start over", ShortPath(path))
+		}
+
 		return opts.configured(path, dir)
+	}
+
+	if err := opts.checkSpecFile(); err != nil {
+		return Result{}, err
 	}
 
 	if err := opts.checkNothingToImport(dir); err != nil {
@@ -262,14 +277,7 @@ func (o Options) create(dir string) (Result, error) {
 		}
 	}
 
-	// A file that came from a running workload is judged as the platform's
-	// news, not as a bug in the wizard.
-	author := authorWizard
-	if draft.WorkloadID != "" {
-		author = authorLive
-	}
-
-	if err := checkRendered(content, projectDir, author); err != nil {
+	if err := checkRendered(content, projectDir, o.author(draft)); err != nil {
 		return Result{}, err
 	}
 
@@ -296,6 +304,21 @@ func (o Options) create(dir string) (Result, error) {
 	}
 
 	return result, nil
+}
+
+// author says whose content a rendered manifest is, which decides how a
+// validation failure on it is worded: a file that came from a running
+// workload is the platform's news rather than a bug in the wizard, and one
+// from a prepared spec is the user's own.
+func (o Options) author(draft manifest.Draft) contentAuthor {
+	switch {
+	case o.SpecFile != "":
+		return authorUser
+	case draft.WorkloadID != "":
+		return authorLive
+	default:
+		return authorWizard
+	}
 }
 
 // editsEnv reports that this run acts on the .env of a manifest that already
@@ -1282,6 +1305,10 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 }
 
 func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, error) {
+	if o.SpecFile != "" {
+		return o.resolveHeadlessSpec(detected)
+	}
+
 	if o.Answers.WorkloadID != "" {
 		return o.resolveHeadlessBound(detected)
 	}
