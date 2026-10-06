@@ -192,19 +192,17 @@ func purgeArtifact(projectDir string, report *purgeReport) (shared bool) {
 // purgeState removes the local state directory, so the next deploy links a
 // fresh artifact.
 func purgeState(projectDir string, report *purgeReport) {
-	if !wapi.Exists(projectDir) {
-		return
+	// Both locations: a legacy tree left beside the current one would be
+	// found again by the next deploy once the current one is gone.
+	for _, dir := range wapi.StateDirs(projectDir) {
+		if err := os.RemoveAll(dir); err != nil {
+			report.kept = append(report.kept, fmt.Sprintf("%s: %v; remove it by hand", dir, err))
+
+			continue
+		}
+
+		report.removed = append(report.removed, dir)
 	}
-
-	dir := wapi.Dir(projectDir)
-
-	if err := os.RemoveAll(dir); err != nil {
-		report.kept = append(report.kept, fmt.Sprintf("%s: %v; remove it by hand", dir, err))
-
-		return
-	}
-
-	report.removed = append(report.removed, dir)
 }
 
 func statusIs(err error, code int) bool {

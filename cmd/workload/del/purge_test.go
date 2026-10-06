@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -289,4 +290,40 @@ func TestHandleDeleteError_NotFoundSaysNothingWasPurged(t *testing.T) {
 	buf.Reset()
 	require.NoError(t, handleDeleteError(&buf, &drapi.HTTPError{StatusCode: http.StatusNotFound}, ref, false))
 	assert.Empty(t, buf.String(), "a plain delete has nothing to say about leftovers")
+}
+
+// A binding that could not be cleared is not the same as a manifest naming
+// another workload: the leftovers are still this project's, and the line
+// says so rather than claiming nothing here names the workload.
+func TestPurge_ABindingThatCannotBeClearedSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, "workloadId: "+boundID+"\n")
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, boundID, true)
+
+	assert.Contains(t, buf.String(), "could not be cleared")
+	assert.NotContains(t, buf.String(), "no manifest here names")
+	assert.FileExists(t, path)
+}
+
+// A legacy state tree left beside the current one would be found again by
+// the next deploy, so a purge removes both.
+func TestPurge_RemovesTheLegacyStateTreeToo(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "68a0000000000000000000a1"}))
+
+	legacy := filepath.Join(dir, wapi.LegacyDirName)
+	require.NoError(t, os.MkdirAll(legacy, 0o755))
+	installPurge(t, &purgeFakes{artifact: &workload.Artifact{ID: "68a0000000000000000000a1", Status: workload.ArtifactStatusDraft}})
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, boundID, true)
+
+	assert.NoDirExists(t, legacy)
+	assert.False(t, wapi.Exists(dir))
+	assert.Contains(t, buf.String(), "Removed "+legacy)
 }

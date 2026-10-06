@@ -61,8 +61,10 @@ credentials this project minted (named <workload>/<VARIABLE> and referenced
 from the manifest), the draft artifact the project is linked to when no other
 workload references it, and the local state directory, so the next 'dr
 workload up' starts from scratch. A locked artifact and a credential this
-project did not mint are left and named. The manifest keeps its environment
-variables. Without a manifest here naming the workload, nothing is purged.
+project did not mint are left and named. A second project set up under the
+same workload name and pointed at the same credential shares that name, so a
+purge of either removes it. The manifest keeps its environment variables.
+Without a manifest here naming the workload, nothing is purged.
 
 Without --yes the command asks for confirmation, and the question names
 everything --purge would remove.
@@ -247,15 +249,7 @@ func clearStaleBinding(w io.Writer, dir, workloadID string, purge bool) {
 	cleared, err := manifest.ClearWorkloadID(path, workloadID)
 
 	// The leftovers are found through the manifest that named the workload.
-	defer func() {
-		if cleared && purge {
-			purgeLeftovers(w, filepath.Dir(path), path)
-
-			return
-		}
-
-		sayNothingPurged(w, purge, workloadID)
-	}()
+	defer func() { purgeAfterClear(w, path, workloadID, purge, cleared, err) }()
 
 	// A file that cannot be parsed cannot be checked, so there is nothing to
 	// say: it may not be this project's manifest at all, and `up` reports an
@@ -296,6 +290,23 @@ func sayNothingPurged(w io.Writer, purge bool, workloadID string) {
 
 	if line := purgeSummary(false, workloadID); line != "" {
 		fmt.Fprintln(w, tui.WarnStyle.Render(line))
+	}
+}
+
+// purgeAfterClear purges once the binding is cleared, and otherwise says why
+// nothing was: a manifest naming another workload has no leftovers to tie to
+// it, while one whose binding could not be cleared still has them.
+func purgeAfterClear(w io.Writer, path, workloadID string, purge, cleared bool, clearErr error) {
+	switch {
+	case !purge:
+	case cleared:
+		purgeLeftovers(w, filepath.Dir(path), path)
+	case clearErr != nil:
+		fmt.Fprintln(w, tui.WarnStyle.Render("Nothing purged: the binding in "+idargs.DisplayPath(path)+
+			" could not be cleared, so its leftovers were left as they are; fix the file and run "+
+			"'dr workload delete --purge' again with the workload id."))
+	default:
+		sayNothingPurged(w, purge, workloadID)
 	}
 }
 
