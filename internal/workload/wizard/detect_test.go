@@ -230,20 +230,25 @@ func TestParseProblem_UnrecognizablePayloadYieldsNoLine(t *testing.T) {
 func TestDetect_LanguageAndEnvironmentMismatch(t *testing.T) {
 	python := workload.ExecutionEnvironment{Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python"}
 	node := workload.ExecutionEnvironment{Name: "[DataRobot] NodeJS 24", ProgrammingLanguage: "other"}
+	nodeLabelled := workload.ExecutionEnvironment{Name: "NodeJS 24, labelled", ProgrammingLanguage: "nodejs"}
+	r := workload.ExecutionEnvironment{Name: "[DataRobot] R 4.3", ProgrammingLanguage: "r"}
 	legacy := workload.ExecutionEnvironment{Name: "[DataRobot] Legacy Code Environment", ProgrammingLanguage: "legacy"}
 
 	for _, c := range []struct {
 		name     string
 		files    []string
 		language string
+		evidence string
 		refuses  []workload.ExecutionEnvironment
 		accepts  []workload.ExecutionEnvironment
 	}{
-		{"node project", []string{"Dockerfile", "package.json", "package-lock.json"}, "node", []workload.ExecutionEnvironment{python}, []workload.ExecutionEnvironment{node, legacy}},
-		{"python project", []string{"pyproject.toml"}, "python", nil, []workload.ExecutionEnvironment{python, node, legacy}},
-		{"requirements only", []string{"requirements.txt"}, "python", nil, []workload.ExecutionEnvironment{python}},
-		{"both languages", []string{"pyproject.toml", "package.json"}, "", nil, []workload.ExecutionEnvironment{python, node}},
-		{"no project files", nil, "", nil, []workload.ExecutionEnvironment{python, node}},
+		{"node project", []string{"Dockerfile", "package.json", "package-lock.json"}, "node", "(package.json, package-lock.json)", []workload.ExecutionEnvironment{python, r}, []workload.ExecutionEnvironment{node, nodeLabelled, legacy}},
+		{"node project with a stray requirements.txt", []string{"package.json", "package-lock.json", "requirements.txt"}, "node", "(package.json, package-lock.json)", []workload.ExecutionEnvironment{python}, []workload.ExecutionEnvironment{node}},
+		{"python project", []string{"pyproject.toml", "uv.lock"}, "python", "(pyproject.toml, uv.lock)", []workload.ExecutionEnvironment{r, nodeLabelled}, []workload.ExecutionEnvironment{python, node, legacy}},
+		{"python project without its lock", []string{"pyproject.toml"}, "python", "(pyproject.toml)", []workload.ExecutionEnvironment{r}, []workload.ExecutionEnvironment{python, node, legacy}},
+		{"requirements only", []string{"requirements.txt"}, "", "", nil, []workload.ExecutionEnvironment{python, r}},
+		{"both languages", []string{"pyproject.toml", "package.json"}, "", "", nil, []workload.ExecutionEnvironment{python, node}},
+		{"no project files", nil, "", "", nil, []workload.ExecutionEnvironment{python, node}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -257,8 +262,9 @@ func TestDetect_LanguageAndEnvironmentMismatch(t *testing.T) {
 			for _, ee := range c.refuses {
 				problem := detected.EnvironmentMismatch(ee)
 				assert.Contains(t, problem, ee.Name)
+				assert.Contains(t, problem, "is labelled "+workload.EnvironmentLanguage(ee.ProgrammingLanguage))
 				assert.Contains(t, problem, "would not build")
-				assert.Contains(t, problem, "(package.json, package-lock.json)", "only the files that decided the language")
+				assert.Contains(t, problem, c.evidence, "only the files that decided the language")
 			}
 
 			for _, ee := range c.accepts {

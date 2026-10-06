@@ -285,8 +285,8 @@ func TestAnswers_GeneratedModeRefusesAMismatchedEnvironment(t *testing.T) {
 	}.draft(Detect(dir))
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "--execution-environment [DataRobot] Python 3.12")
-	assert.Contains(t, err.Error(), "python environment")
+	assert.Contains(t, err.Error(), `--execution-environment "[DataRobot] Python 3.12"`)
+	assert.Contains(t, err.Error(), "is labelled python")
 	assert.Contains(t, err.Error(), "node project (package.json, package-lock.json)")
 	assert.Contains(t, err.Error(), "pick a node environment")
 }
