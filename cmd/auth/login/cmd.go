@@ -78,7 +78,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
-	oidcCfg, useOIDC := resolveOIDCConfig(cmd)
+	oidcCfg, useOIDC := resolveOIDCConfig(cmd, datarobotHost)
 	if useOIDC {
 		return runOIDCLogin(cmd, oidcCfg, noBrowser)
 	}
@@ -113,12 +113,44 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 }
 
 // resolveOIDCConfig decides whether this login goes straight to an identity
-// provider. Flags win over DATAROBOT_CLI_OAUTH_* variables and the profile's
-// saved settings. A profile with a saved issuer keeps using it on a plain
-// `dr auth login`; --oauth=false forces the API-key hand-off.
-func resolveOIDCConfig(cmd *cobra.Command) (auth.OIDCConfig, bool) {
+// provider, in this order:
+//
+//  1. --oauth=false: the API-key hand-off, no probing.
+//  2. --issuer, or settings saved in the profile or set in DATAROBOT_CLI_OAUTH_*:
+//     the IdP login with those settings (flags win).
+//  3. The host advertises an IdP at /.well-known/oauth-protected-resource with a
+//     datarobot_cli block: the IdP login with the advertised settings.
+//  4. Otherwise: the API-key hand-off, exactly as before.
+func resolveOIDCConfig(cmd *cobra.Command, datarobotHost string) (auth.OIDCConfig, bool) {
 	cfg, saved := auth.OIDCConfigFromConfig()
+	cfg = applyOIDCFlags(cmd, cfg)
+	explicit := saved || cmd.Flags().Changed(issuerFlag)
 
+	if cmd.Flags().Changed(oauthFlag) {
+		useOAuth, _ := cmd.Flags().GetBool(oauthFlag)
+		if !useOAuth {
+			return cfg.WithDefaults(), false
+		}
+
+		explicit = explicit || cfg.Issuer != ""
+	}
+
+	if explicit {
+		return cfg.WithDefaults(), true
+	}
+
+	if advertised, ok := auth.DiscoverOIDCFromResource(cmd.Context(), datarobotHost); ok {
+		log.Infof("%s signs in at %s", datarobotHost, advertised.Issuer)
+
+		return advertised, true
+	}
+
+	// --oauth with nothing configured or advertised: let Validate explain.
+	return cfg.WithDefaults(), cmd.Flags().Changed(oauthFlag)
+}
+
+// applyOIDCFlags overlays the OIDC flags the user passed onto cfg.
+func applyOIDCFlags(cmd *cobra.Command, cfg auth.OIDCConfig) auth.OIDCConfig {
 	if issuer, _ := cmd.Flags().GetString(issuerFlag); issuer != "" {
 		cfg.Issuer = issuer
 	}
@@ -135,13 +167,7 @@ func resolveOIDCConfig(cmd *cobra.Command) (auth.OIDCConfig, bool) {
 		cfg.RedirectURI = redirectURI
 	}
 
-	if cmd.Flags().Changed(oauthFlag) {
-		useOAuth, _ := cmd.Flags().GetBool(oauthFlag)
-
-		return cfg.WithDefaults(), useOAuth
-	}
-
-	return cfg.WithDefaults(), saved || cmd.Flags().Changed(issuerFlag)
+	return cfg
 }
 
 // runOIDCLogin signs in at the identity provider and saves the access token as
@@ -212,6 +238,10 @@ are saved in the profile, so later logins need no flags:
 
   dr auth login --oauth --issuer https://example.okta.com/oauth2/default --client-id 0oa...
   dr auth login
+
+If the DataRobot URL advertises its IdP at /.well-known/oauth-protected-resource
+(with a datarobot_cli client id), a plain "dr auth login <url>" uses it with no
+flags. Hosts that advertise nothing keep the API-key flow.
 
 The redirect URI (default http://localhost:51164/) must be registered on the
 IdP's app. Settings can also come from DATAROBOT_CLI_OAUTH_ISSUER,

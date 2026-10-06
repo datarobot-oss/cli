@@ -130,6 +130,31 @@ profile (`oauth-issuer`, `oauth-client-id`, `oauth-scopes`, `oauth-redirect-uri`
 when a command finds the token expired. `--oauth=false` forces the API-key flow. `dr auth
 logout` clears the token and keeps the settings.
 
+**Server-advertised settings:** a deployment can publish its IdP at
+`<url>/.well-known/oauth-protected-resource` (RFC 9728 protected-resource metadata) with a
+`datarobot_cli` block naming the CLI's public client id. Then a plain
+`dr auth login <url>` signs in at that IdP with no flags, and saves the settings to the
+profile like an explicit `--issuer` login:
+
+```json
+{
+  "resource": "https://datarobot.example.com",
+  "authorization_servers": ["https://example.okta.com/oauth2/aus123"],
+  "datarobot_cli": { "client_id": "0oa456", "redirect_uri": "http://localhost:51164/", "scopes": ["openid", "profile"] }
+}
+```
+
+How a login picks its flow, in order:
+
+1. `--oauth=false`: the API-key flow, no probing.
+2. `--issuer`, or settings saved in the profile or set in `DATAROBOT_CLI_OAUTH_*`: the IdP login.
+3. The host serves the document above over https (or http on localhost), its `resource`
+   is exactly the URL you logged in to, and it has a `datarobot_cli` client id: the IdP login.
+4. Anything else (no document, an HTML page, a 404, a redirect, a document without the
+   `datarobot_cli` block, a mismatched `resource`): the API-key flow, unchanged.
+
+The probe has a 3 second timeout and never follows redirects.
+
 **Environment variables:** `DATAROBOT_CLI_OAUTH_ISSUER`, `DATAROBOT_CLI_OAUTH_CLIENT_ID`,
 `DATAROBOT_CLI_OAUTH_SCOPES` and `DATAROBOT_CLI_OAUTH_REDIRECT_URI` supply the same
 settings, below flags.

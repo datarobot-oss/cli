@@ -147,14 +147,34 @@ func PersistOIDCConfig() error {
 }
 
 // RunInteractiveLogin is the login EnsureAuthenticated falls back to: the
-// direct IdP flow when the profile has an issuer, the API-key hand-off otherwise.
-// Without this, an expired IdP token would send the user to the API-key page.
+// direct IdP flow when the profile has an issuer or the host advertises one,
+// the API-key hand-off otherwise. Without this, an expired IdP token would send
+// the user to the API-key page.
 func RunInteractiveLogin(ctx context.Context, datarobotHost string) (string, error) {
 	if cfg, ok := OIDCConfigFromConfig(); ok {
 		return RunOIDCLogin(ctx, cfg, LoginOptions{})
 	}
 
-	return RunBrowserLogin(ctx, datarobotHost)
+	cfg, ok := DiscoverOIDCFromResource(ctx, datarobotHost)
+	if !ok {
+		return RunBrowserLogin(ctx, datarobotHost)
+	}
+
+	log.Infof("%s signs in at %s", datarobotHost, cfg.Issuer)
+
+	token, err := RunOIDCLogin(ctx, cfg, LoginOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	// Pin the advertised IdP to the profile, like an explicit --issuer login.
+	StoreOIDCConfig(cfg)
+
+	if err := PersistOIDCConfig(); err != nil {
+		log.Debugf("Could not save the advertised OIDC settings: %v", err)
+	}
+
+	return token, nil
 }
 
 // RunOIDCLogin signs the user in at the IdP in their browser and returns the
