@@ -519,7 +519,6 @@ func (f flow) advance() (tea.Model, tea.Cmd) {
 	return f, cmd
 }
 
-// nextScreen is the flow when the answer does not change it.
 // askKind is whether the wizard asks service or agent. Agents are in private
 // preview, so the question is skipped and the manifest says service; the
 // screen, the A2A screen after it and the --type flag stay in place for when
@@ -536,6 +535,7 @@ func afterName() screen {
 	return screenSource
 }
 
+// nextScreen is the flow when the answer does not change it.
 var nextScreen = map[screen]screen{
 	screenBinding:    screenName,
 	screenName:       screenKind,
