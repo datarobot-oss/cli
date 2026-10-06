@@ -258,7 +258,7 @@ func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 
 	locking := stubRun(t, deployed(), nil)
 
-	_, _, err = runCmd(t, "--lock")
+	_, _, err = runCmd(t, "--promote")
 	require.NoError(t, err)
 	assert.True(t, locking.Lock)
 }
@@ -269,9 +269,9 @@ func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 func TestCmd_DetachAndLockCannotBeCombined(t *testing.T) {
 	stubRun(t, deployed(), nil)
 
-	_, _, err := runCmd(t, "--detach", "--lock")
+	_, _, err := runCmd(t, "--detach", "--promote")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--lock cannot be combined with --detach")
+	assert.Contains(t, err.Error(), "--promote cannot be combined with --detach")
 }
 
 // TestCmd_PollDefaultsApplyWithoutTheFlag guards the prototype's bug, where a
@@ -460,9 +460,9 @@ const (
 // is still setting up needs that command once the deploy finishes; one the
 // previewed deploy would start needs only the flag on that deploy.
 const (
-	draftRunLock      = "Run 'dr workload up --lock'"
-	draftLockWhenDone = "When this deploy finishes, run 'dr workload up --lock'"
-	draftAddLock      = "Add --lock to version the artifact"
+	draftRunLock      = "Run 'dr workload promote'"
+	draftLockWhenDone = "When this deploy finishes, run 'dr workload promote'"
+	draftAddLock      = "Add --promote to version the artifact"
 )
 
 // draftWarned reports whether any shape reached the stream, for the tests that
@@ -485,7 +485,7 @@ func TestCmd_DraftDeploySaysItIsTemporary(t *testing.T) {
 
 	assert.Contains(t, stderr, draftHeadline)
 	assert.Contains(t, stderr, "stopped after 8 hours")
-	assert.Contains(t, stderr, "dr workload up --lock")
+	assert.Contains(t, stderr, "dr workload promote")
 
 	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/\n", stdout,
 		"the warning is prose and belongs on stderr, so the endpoint stays pipeable")
@@ -520,7 +520,7 @@ func TestCmd_DraftDeployTradesStopForLock(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr, "dr workload up --lock")
+	assert.Contains(t, stderr, "dr workload promote")
 	assert.NotContains(t, stderr, "dr workload stop")
 	assert.Contains(t, stderr, "dr workload logs", "the other two lines stay")
 	assert.Contains(t, stderr, "dr workload status")
@@ -573,16 +573,16 @@ func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, draftWarned(stderr))
-	assert.NotContains(t, stderr, "dr workload up --lock")
+	assert.NotContains(t, stderr, "dr workload promote")
 	assert.Contains(t, stderr, "dr workload stop")
 }
 
-// A --lock run is the remedy, so telling it about drafts would be telling it
+// A --promote run is the remedy, so telling it about drafts would be telling it
 // what it just did.
 func TestCmd_LockFlagSaysNothingAboutDrafts(t *testing.T) {
 	stubRun(t, deployed(), nil)
 
-	_, stderr, err := runCmd(t, "--lock")
+	_, stderr, err := runCmd(t, "--promote")
 	require.NoError(t, err)
 	assert.False(t, draftWarned(stderr))
 }
@@ -646,7 +646,7 @@ func TestCmd_DryRunAgainstAStoppedDraftSaysItWouldRun(t *testing.T) {
 func TestCmd_DryRunWithLockDoesNotWarn(t *testing.T) {
 	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
 
-	_, stderr, err := runCmd(t, "--dry-run", "--lock")
+	_, stderr, err := runCmd(t, "--dry-run", "--promote")
 	require.NoError(t, err)
 	assert.False(t, draftWarned(stderr))
 }
@@ -841,13 +841,13 @@ func TestCmd_AnyFailureKeepsLogsAndStatusButNotStop(t *testing.T) {
 	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.NotContains(t, stderr, "dr workload stop")
-	assert.NotContains(t, stderr, "dr workload up --lock",
+	assert.NotContains(t, stderr, "dr workload promote",
 		"a failed run is not advised to lock what it did not deploy")
 }
 
 // A deploy onto a stopped workload starts it before it rolls, so a run that
 // fails after that has itself put a draft on the air: draftIsServing says so,
-// and the warning prints. The list still does not offer --lock, because locking
+// and the warning prints. The list still does not offer --promote, because locking
 // a version this run could not finish is not the remedy; the warning names the
 // command inline for anyone who decides otherwise.
 func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
@@ -909,7 +909,8 @@ func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	assert.Equal(t, "up", cmd.Name())
 	assert.NotNil(t, cmd.Flags().Lookup("dry-run"))
 	assert.NotNil(t, cmd.Flags().Lookup("detach"))
-	assert.NotNil(t, cmd.Flags().Lookup("lock"))
+	assert.NotNil(t, cmd.Flags().Lookup("promote"))
+	assert.Nil(t, cmd.Flags().Lookup("lock"), "lock is the artifact's word; the workload is promoted")
 }
 
 // The poll flags are how a deploy's wait is bounded, so they are listed. The
@@ -961,8 +962,8 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	require.NotEmpty(t, at, "the deploy ran elsewhere, so there is a --dir to carry")
 
 	assert.Contains(t, stderr, "dr workload logs"+at)
-	assert.Contains(t, stderr, "dr workload up --lock"+at,
-		"every line in the block has to run as printed, --lock included")
+	assert.Contains(t, stderr, "dr workload promote"+at,
+		"every line in the block has to run as printed, --promote included")
 }
 
 // The setup wizard can write the project into a directory below the one the
@@ -1036,7 +1037,7 @@ func TestCmd_FailedRunStillNamesTheWorkload(t *testing.T) {
 	assert.Contains(t, stderr, "68b0c1d2e3f4a5b6c7d8e9f0")
 }
 
-// --lock takes no id, so on a failed run it cannot be made to name the
+// --promote takes no id, so on a failed run it cannot be made to name the
 // workload, and that is the run whose manifest may hold no binding. Printed
 // bare it would create a second workload instead of locking this one.
 func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
@@ -1054,7 +1055,7 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	// Scoped to the block: the draft warning above it names the same command
 	// as prose, and says the same thing on the successful runs where it is
 	// sound. This is about the copy-and-run list.
-	assert.NotContains(t, next, "--lock")
+	assert.NotContains(t, next, "--promote")
 	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
 		"the lines that can name the workload still do")
 }

@@ -159,7 +159,7 @@ type flags struct {
 	yes     bool
 	dryRun  bool
 	detach  bool
-	lock    bool
+	promote bool
 	force   bool
 	syncEnv bool
 
@@ -228,7 +228,7 @@ serving is locked, an interactive run asks for the workload name to be typed
 back. A run with no terminal, or --yes, rolls without asking. Locking is
 one-way, so the next version of a locked artifact is a new artifact rather
 than a change to it, and it is locked to match. That is why a locked workload
-keeps deploying without --lock being passed again.
+keeps deploying without --promote being passed again.
 
 A change that moves only the sizing, such as a replica count or a resource
 allocation, is applied in place instead. Nothing is built and no version is
@@ -274,7 +274,7 @@ Examples:
 			"yes":           nonInteractive,
 			"dry_run":       f.dryRun,
 			"detach":        f.detach,
-			"lock":          f.lock,
+			"promote":       f.promote,
 			"force_build":   f.force,
 			"output_format": string(outputFormat),
 		}
@@ -288,9 +288,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false, `Assume "yes" as answer to all prompts.`)
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the plan and change nothing.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
-	cmd.Flags().BoolVar(&f.lock, "lock", false,
-		"Lock whichever artifact ends up live, making it permanent, even when this deploy minted no new "+
-			"version. Locking is one-way.")
+	cmd.Flags().BoolVar(&f.promote, "promote", false,
+		"Make the version that ends up live permanent by locking its artifact, even when this deploy "+
+			"minted no new version. Locking is one-way.")
 	cmd.Flags().BoolVar(&f.force, "force-build", false,
 		"Rebuild the image even when the working tree matches what was last synced, and roll the "+
 			"result out. This is how to recover a workload whose image is gone from the registry.")
@@ -355,7 +355,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		NonInteractive: nonInteractive,
 		DryRun:         f.dryRun,
 		Detach:         f.detach,
-		Lock:           f.lock,
+		Lock:           f.promote,
 		Confirm:        rollConfirm(cmd, yes, stdin),
 		ForceBuild:     f.force,
 		SyncEnv:        f.syncEnv,
@@ -451,10 +451,10 @@ func resolveDir(dir string) (string, error) {
 // a manifest to a workload is setup's job, and doing it here would mean two
 // places that decide what a project deploys to.
 //
-// --lock with --detach is the one contradictory pair: an artifact is locked
-// only once the workload it serves is running, and --detach returns before
-// that, so accepting both would drop the lock in silence and hand back an
-// artifact the caller believes is permanent.
+// --promote with --detach is the one contradictory pair: a version is
+// promoted only once the workload serving it is running, and --detach returns
+// before that, so accepting both would drop the promotion in silence and hand
+// back an artifact the caller believes is permanent.
 func checkFlags(cmd *cobra.Command, f flags) error {
 	for _, flag := range []string{"workload-id", "name"} {
 		if cmd.Flags().Changed(flag) {
@@ -464,9 +464,9 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 		}
 	}
 
-	if f.detach && f.lock {
+	if f.detach && f.promote {
 		return errors.New(
-			"--lock cannot be combined with --detach: an artifact is locked only after the workload it serves is running")
+			"--promote cannot be combined with --detach: a version is promoted only after the workload serving it is running")
 	}
 
 	return nil
@@ -568,8 +568,8 @@ func terminated(result up.Result) bool {
 //     itself put a draft on the air and started the eight hours. Saying
 //     nothing there leaves a workload running that the reader believes was
 //     never touched.
-//   - --lock says nothing, because the run is the remedy. This also covers a
-//     --lock whose lock failed, where the returned error names the artifact
+//   - --promote says nothing, because the run is the remedy. This also covers
+//     a --promote whose lock failed, where the returned error names the artifact
 //     and explains the state better than a generic warning would.
 //   - A locked artifact is permanent, which is the whole point of locking.
 //
@@ -586,7 +586,7 @@ func terminated(result up.Result) bool {
 // Whether to warn is all this decides. What the warning says depends on what
 // the plan found, which draftWording works out.
 func draftIsServing(f flags, result up.Result, failed bool) bool {
-	if f.lock || result.Locked {
+	if f.promote || result.Locked {
 		return false
 	}
 
@@ -757,11 +757,11 @@ func draftWarning(w io.Writer, draft bool, result up.Result, f flags) {
 // The command carries the --dir that reaches the project, the same one the
 // Next: block carries, so the two never name different workloads.
 func draftWording(result up.Result, f flags) (headline, remedy string) {
-	lock := "dr workload up --lock" + projectAt(f.dir, result.ProjectDir)
-	command := "Run '" + lock + "' to version the artifact and make it permanent."
+	promote := "dr workload promote" + projectAt(f.dir, result.ProjectDir)
+	command := "Run '" + promote + "' to version the artifact and make it permanent."
 
 	if !f.dryRun && f.detach && result.Action != up.ActionUnchanged {
-		command = "When this deploy finishes, run '" + lock + "' to version the artifact and make it permanent."
+		command = "When this deploy finishes, run '" + promote + "' to version the artifact and make it permanent."
 	}
 
 	if workload.IsRunningWorkloadStatus(result.Status) {
@@ -772,7 +772,7 @@ func draftWording(result up.Result, f flags) (headline, remedy string) {
 		return "This workload is starting on a draft artifact.", command
 	}
 
-	flag := "Add --lock to version the artifact and make it permanent."
+	flag := "Add --promote to version the artifact and make it permanent."
 
 	if result.Action == up.ActionCreated {
 		return "This deploy would create a workload on a draft artifact.", flag
@@ -828,11 +828,11 @@ func projectAt(dir, projectDir string) string {
 //
 // A failed run also loses two of the lines, for the reason the endpoint's tick
 // is dropped on the same run. 'stop' is not a next step for a deploy that did
-// not land, and neither is --lock: a deploy onto a stopped workload starts it
+// not land, and neither is --promote: a deploy onto a stopped workload starts it
 // before it rolls, so a run that fails after that really has put a draft on the
 // air, but locking a version this run could not finish is not the remedy for
 // it, and draftWarning names the command inline for anyone who decides
-// otherwise. --lock is in any case the one line that could not be made to name
+// otherwise. --promote is in any case the one line that could not be made to name
 // the workload, since it takes no id, and on a failed run the manifest may hold
 // no binding for it to resolve. What survives is logs and status, which are the
 // right pair for an errored workload, a wait that timed out and a rollout that
@@ -845,7 +845,7 @@ func projectAt(dir, projectDir string) string {
 // terminated rather than through IsWorkloadErrorStatus, which also covers
 // errored: errored is exactly where logs and status earn their place.
 //
-// A draft deploy trades the stop line for --lock, and puts it first so it sits
+// A draft deploy trades the stop line for --promote, and puts it first so it sits
 // directly under the warning that explains why it is there. Someone who wants
 // to switch a workload off goes looking for the command; someone whose workload
 // switches itself off does not know there is anything to look for, and this
@@ -879,7 +879,7 @@ func followUps(result up.Result, dir string, draft, failed bool) []tui.NextStep 
 
 	if draft {
 		return []tui.NextStep{
-			{Command: "dr workload up --lock" + at, Description: "Lock the artifact to make it permanent"},
+			{Command: "dr workload promote" + at, Description: "Version the artifact to make it permanent"},
 			logs, status,
 		}
 	}

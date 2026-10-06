@@ -209,6 +209,22 @@ dr workload stop  [<workload-id>] [--dir <path>] [--yes] [--output-format text|j
 
 A workload whose id is specified in the manifest rather than on the command line is confirmed first; `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) skips the question. A typed id is never questioned.
 
+### `promote`
+
+> Behind the same feature gate as `config` and `up`.
+
+Make the version a workload is running permanent. The draft artifact it is serving is locked in place and given a version number; the workload keeps running it, and nothing is rebuilt or rolled.
+
+```bash
+dr workload promote [<workload-id>] [--dir <path>] [--yes] [--output-format text|json]
+```
+
+Locking is one-way: a locked artifact cannot be changed, so the next `dr workload up` of this workload mints a new version rather than editing this one. A workload already running a locked version, one with no running generation, or one with a rollout in flight is refused with the platform's reason, and only the artifact's owner can promote it. `dr workload up --promote` does the same at the end of a deploy.
+
+A locked version can be shared. Any number of workloads can run the same locked artifact: create another with `dr workload create` and `artifactId` in its spec, or point a manifest at it with `artifactId:`. Workloads sharing a version share its environment variables, since those belong to the artifact, and differ only in runtime: replicas, resources and importance. A draft, by contrast, serves one running workload at a time.
+
+Text output names the workload, the artifact and its version; JSON is `{"workloadId", "artifactId", "version"}`.
+
 ### `settings`
 
 Show or change how much a workload runs with: replicas, autoscaling, resource bundles, and the CPU and memory of each container. This is the same runtime that `dr workload up` reconciles from `.datarobot.yaml`, so it is the place to look at, or resize, a workload that no manifest describes.
@@ -364,7 +380,7 @@ Because `stop`, `start` and `delete` change something, they ask for confirmation
 
 ## Deploying from a project: `config` and `up`
 
-> These two are still behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to see them in `--help`.
+> These two, and `promote`, are still behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to see them in `--help`.
 
 `dr workload config` writes the `.datarobot.yaml` that describes your project, and `dr workload up` deploys the difference between that file and what is running. Together they are the deploy loop for a repository, where `create` deploys an artifact you already have.
 

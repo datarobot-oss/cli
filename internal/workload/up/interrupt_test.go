@@ -273,17 +273,17 @@ func abandonedLikeThePollLoop(ctx context.Context) error {
 }
 
 // Ctrl-C during the endpoint check lands after the rollout finished, so the
-// deploy is not failed over it. But --lock is the one irreversible step left,
-// and taking it after the user asked the run to stop is the opposite of what
-// the keystroke meant: the lock is withheld, said out loud, and the summary
-// carries locked=false.
+// deploy is not failed over it. But --promote is the one irreversible step
+// left, and taking it after the user asked the run to stop is the opposite of
+// what the keystroke meant: the lock is withheld, said out loud, and the
+// summary carries locked=false.
 func TestFinishSettle_AnInterruptedEndpointCheckWithholdsTheLock(t *testing.T) {
 	var locked int
 
-	swap(t, &lockArtifactFn, func(string) (*workload.Artifact, error) {
+	swap(t, &promoteWorkloadFn, func(string) (*workload.Workload, error) {
 		locked++
 
-		return &workload.Artifact{ID: "art-1"}, nil
+		return &workload.Workload{ID: "wl-1"}, nil
 	})
 
 	var out bytes.Buffer
@@ -295,8 +295,8 @@ func TestFinishSettle_AnInterruptedEndpointCheckWithholdsTheLock(t *testing.T) {
 	require.NoError(t, err, "the rollout finished; the deploy is a success")
 	assert.False(t, result.Locked)
 	assert.Zero(t, locked, "the irreversible step was taken after the user asked to stop")
-	assert.Contains(t, out.String(), "--lock skipped: interrupted")
-	assert.Contains(t, out.String(), "dr workload up --lock")
+	assert.Contains(t, out.String(), "--promote skipped: interrupted")
+	assert.Contains(t, out.String(), "dr workload promote")
 
 	// The other half: an uninterrupted check locks as asked.
 	result, err = finishSettle(running, false, Options{Lock: true, Stderr: &out}, report)
