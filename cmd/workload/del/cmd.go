@@ -56,14 +56,24 @@ is gone. Only a manifest naming that exact id is touched. Pass the same
 --dir you deployed with: a manifest in a subdirectory is not visible from
 its parent.
 
-Without --yes the command asks for confirmation.
+--purge also removes what the deploy created beside the workload: the
+credentials this project minted (named <workload>/<VARIABLE> and referenced
+from the manifest), the draft artifact the project is linked to when no other
+workload references it, and the local state directory, so the next 'dr
+workload up' starts from scratch. A locked artifact and a credential this
+project did not mint are left and named. The manifest keeps its environment
+variables. Without a manifest here naming the workload, nothing is purged.
+
+Without --yes the command asks for confirmation, and the question names
+everything --purge would remove.
 
 ` + idargs.HelpText + `
 
 Example:
   dr workload delete
   dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0
-  dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes`,
+  dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes
+  dr workload delete --purge --yes`,
 		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -75,7 +85,9 @@ Example:
 				return err
 			}
 
-			confirmed, err := confirmDelete(cmd, ref)
+			purge, _ := cmd.Flags().GetBool("purge")
+
+			confirmed, err := confirmDelete(cmd, ref, purge)
 			if err != nil || !confirmed {
 				return err
 			}
@@ -86,11 +98,14 @@ Example:
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
 
-			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID)
+			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID, purge)
 
 			return nil
 		},
 	}
+
+	cmd.Flags().Bool("purge", false,
+		"Also remove the artifact the workload ran, the credentials this project minted, and the local state directory.")
 
 	idargs.AddDirFlag(cmd)
 	// Only here does --dir also decide which manifest gets its binding cleared,
@@ -101,10 +116,12 @@ Example:
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
 		yesFlag, _ := cmd.Flags().GetBool(cli.YesFlagName)
+		purge, _ := cmd.Flags().GetBool("purge")
 
 		return map[string]any{
 			"workload_id":        idargs.TelemetryID(ref, args),
 			"workload_id_source": ref.Source,
+			"purge":              purge,
 			// The environment variable is only consent for a workload the user
 			// named, so reporting it unconditionally would say yes about the
 			// runs this command refuses for want of it.
@@ -123,13 +140,13 @@ Example:
 // --yes only. Delete is the one irreversible verb here, and the environment
 // variable that suppresses wizards in CI should not also stand as consent to
 // remove something nobody typed.
-func confirmDelete(cmd *cobra.Command, ref idargs.Ref) (bool, error) {
+func confirmDelete(cmd *cobra.Command, ref idargs.Ref, purge bool) (bool, error) {
 	env := idargs.EnvMayConsent
 	if ref.FromManifest() {
 		env = idargs.EnvMayNotConsent
 	}
 
-	return idargs.Confirm(cmd, deleteQuestion(ref), env)
+	return idargs.Confirm(cmd, deleteQuestion(ref, purge), env)
 }
 
 // deleteConsequence is what agreeing to this question costs, and the one part
@@ -138,8 +155,13 @@ const deleteConsequence = "This stops and removes a running workload."
 
 // deleteQuestion is the question itself, split out because Confirm refuses
 // before printing anything when there is no terminal, which is every test.
-func deleteQuestion(ref idargs.Ref) string {
-	return idargs.Prompt("Delete", ref, deleteConsequence)
+func deleteQuestion(ref idargs.Ref, purge bool) string {
+	consequence := deleteConsequence
+	if purge {
+		consequence += " " + purgeConsequence
+	}
+
+	return idargs.Prompt("Delete", ref, consequence)
 }
 
 // handleDeleteError converts a 404 into a friendly informational message
@@ -195,7 +217,7 @@ func handleDeleteError(err error, ref idargs.Ref) error {
 // this runs, so a manifest that cannot be found, read or written is stepped
 // over rather than turned into a failure for an operation that succeeded. The
 // unwritable case still says so, because the user has to finish it by hand.
-func clearStaleBinding(w io.Writer, dir, workloadID string) {
+func clearStaleBinding(w io.Writer, dir, workloadID string, purge bool) {
 	if dir == "" {
 		dir = "."
 	}
@@ -211,10 +233,23 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 			fmt.Fprintln(w, tui.DimStyle.Render("No manifest was checked: "+err.Error()+"."))
 		}
 
+		sayNothingPurged(w, purge, workloadID)
+
 		return
 	}
 
 	cleared, err := manifest.ClearWorkloadID(path, workloadID)
+
+	// The leftovers are found through the manifest that named the workload.
+	defer func() {
+		if cleared && purge {
+			purgeLeftovers(w, filepath.Dir(path), path)
+
+			return
+		}
+
+		sayNothingPurged(w, purge, workloadID)
+	}()
 
 	// A file that cannot be parsed cannot be checked, so there is nothing to
 	// say: it may not be this project's manifest at all, and `up` reports an
@@ -243,7 +278,19 @@ func clearStaleBinding(w io.Writer, dir, workloadID string) {
 		"Removed workloadId from "+idargs.DisplayPath(path)+
 			"; this project no longer points at a workload."))
 
-	noteLinkedArtifact(w, filepath.Dir(path))
+	if !purge {
+		noteLinkedArtifact(w, filepath.Dir(path))
+	}
+}
+
+func sayNothingPurged(w io.Writer, purge bool, workloadID string) {
+	if !purge {
+		return
+	}
+
+	if line := purgeSummary(false, workloadID); line != "" {
+		fmt.Fprintln(w, tui.WarnStyle.Render(line))
+	}
 }
 
 // noteLinkedArtifact names the artifact this project is linked to, and how to

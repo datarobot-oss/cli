@@ -63,4 +63,4 @@ jobs:
         # runner images. Low risk today, but worth knowing if this job ever
         # starts failing at the very first `dr workload list` probe.
         run: |
-          task acceptance-test-workload -- a b c e artifact
+          task acceptance-test-workload -- a b c e f artifact
