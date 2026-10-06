@@ -579,7 +579,7 @@ func (f flow) branch() (screen, bool) {
 		// A bound workload is already named.
 		return afterName(), f.live != nil
 	case screenName:
-		return screenSource, !askKind
+		return afterName(), true
 	case screenKind:
 		return screenA2A, f.draft.Type == manifest.TypeAgent
 	case screenSource:

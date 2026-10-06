@@ -30,9 +30,20 @@ import (
 // default (see askKind), so the package runs with it on, which keeps that
 // code covered, and the tests in this file cover the default.
 func TestMain(m *testing.M) {
+	shippedAskKind = askKind
 	askKind = true
 
 	os.Exit(m.Run())
+}
+
+// shippedAskKind is the value model.go declares, saved before TestMain
+// flips it, so one test can pin what the wizard ships.
+var shippedAskKind bool
+
+// The question is off in the binary people run. Every other test in the
+// package runs with it on, so without this a flipped default stays green.
+func TestKindQuestionShipsSwitchedOff(t *testing.T) {
+	assert.False(t, shippedAskKind, "agents are in private preview; the kind screen ships skipped")
 }
 
 // withoutKindQuestion runs one test the way the wizard ships.
