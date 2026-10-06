@@ -311,13 +311,14 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	_ = cmd.Flags().MarkHidden("name")
 
 	// Deliberately not pollflags.Register: it would add a --wait that
-	// contradicts --detach.
+	// contradicts --detach, and it hides both flags. Here the wait is the
+	// default and runs for minutes, so bounding it is something a user
+	// reaches for, and --help is where they look.
 	cmd.Flags().Var(pollflags.PositiveDuration(&poll.Interval, defaultPollInterval),
 		"poll-interval", "How often to check on a deploy in progress.")
 	cmd.Flags().Var(pollflags.PositiveDuration(&poll.Timeout, defaultPollTimeout),
-		"poll-timeout", "How long to wait for a deploy before giving up.")
-	_ = cmd.Flags().MarkHidden("poll-interval")
-	_ = cmd.Flags().MarkHidden("poll-timeout")
+		"poll-timeout", "How long each wait, on the build and on the rollout, may take before giving up. "+
+			"Giving up ends the wait, not the deploy.")
 }
 
 func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat) error {

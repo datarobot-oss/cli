@@ -393,6 +393,8 @@ dr workload up --yes --dry-run          # the file it would write, and the plan,
 
 Without a terminal on stdin, `up` asks nothing either. `--output-format json` skips the setup wizard but not the locked-roll confirmation.
 
+`up` waits for the deploy to serve, which can take minutes. `--poll-timeout` bounds each wait, on the build and on the rollout (30 minutes by default), and `--detach` returns as soon as the deploy is requested. Neither stops the deploy itself: `dr workload status` says where it got to.
+
 A project it cannot read is still refused rather than guessed at. With no `Dockerfile` there is no image source to infer, and the error names the flags that settle it — pass them to `dr workload config`, which is where they live:
 
 ```bash
