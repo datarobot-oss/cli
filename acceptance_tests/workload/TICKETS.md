@@ -3,7 +3,7 @@
 Maps each acceptance scenario to its related JIRA ticket, for easier reference
 during the bug bash. This is a temporary aid and can be removed once the bash
 ends; the canonical per-file tag is the `# Ticket:` header at the top of each
-scenario script (grep with `rg '^# Ticket:' smoke_test_scripts/workload`).
+scenario script (grep with `rg '^# Ticket:' acceptance_tests/workload`).
 
 | Scenario | File | Ticket | What it guards |
 | --- | --- | --- | --- |
@@ -19,5 +19,5 @@ scenario script (grep with `rg '^# Ticket:' smoke_test_scripts/workload`).
 1. Create `<TICKET>-<LETTER>-<name>.sh` (e.g. `RAPTOR-19533-A-roundtrip.sh`)
    with `# Ticket: RAPTOR-XXXXX` as the first comment after the shebang.
    A scenario with no ticket drops the prefix (e.g. `artifact-lifecycle.sh`).
-2. Register it in `run_workload_smoke_test.sh`'s `scenario_script` map.
+2. Register it in `run_workload_acceptance_test.sh`'s `scenario_script` map.
 3. Add a row here.

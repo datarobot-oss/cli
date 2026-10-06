@@ -15,7 +15,7 @@
 # endpoint answers an authenticated curl.
 #
 # OPT-IN: ~20-30 min (two image builds). Run via the `d` arg or
-# WORKLOAD_SMOKE_INCLUDE_D=1. Source: tmp/workload-verify-runbook.md Scenario D.
+# WORKLOAD_ACCEPTANCE_INCLUDE_D=1. Source: tmp/workload-verify-runbook.md Scenario D.
 
 # shellcheck shell=bash
 set -euo pipefail
