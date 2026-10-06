@@ -150,7 +150,8 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 
 	// Before the version question: a project with nothing synced has no
 	// version to name, and asking for one would only fail after the answer.
-	if _, err := syncedCatalog(dir); err != nil {
+	cfg, err := syncedCatalog(dir)
+	if err != nil {
 		return err
 	}
 
@@ -159,7 +160,7 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 		return err
 	}
 
-	return runDownload(cmd.OutOrStdout(), outputFormat, dir, verArg, deps)
+	return runDownload(cmd.OutOrStdout(), outputFormat, dir, cfg, verArg, deps)
 }
 
 func resolveProjectDir(dirFlag string, yes bool, prompt dirprompt.PromptFunc) (string, error) {

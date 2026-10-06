@@ -53,10 +53,12 @@ type checkoutMeta struct {
 	TotalSize    int64     `json:"totalSize"`
 }
 
-func runDownload(out io.Writer, format outputformat.OutputFormat, dir, verArg string, deps Deps) error {
+// runDownload checks out verArg of the catalog cfg names. cfg is the state
+// syncedCatalog already read and vetted, so it is not read again here.
+func runDownload(out io.Writer, format outputformat.OutputFormat, dir string, cfg wapi.Config, verArg string, deps Deps) error {
 	startedAt := time.Now()
 
-	pre, err := preflight(dir, verArg, deps)
+	pre, err := preflight(dir, cfg, verArg, deps)
 	if err != nil {
 		return err
 	}
@@ -198,12 +200,7 @@ type preflightResult struct {
 	checkoutDir string
 }
 
-func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
-	cfg, err := syncedCatalog(dir)
-	if err != nil {
-		return preflightResult{}, err
-	}
-
+func preflight(dir string, cfg wapi.Config, verArg string, deps Deps) (preflightResult, error) {
 	if err := probeArtifact(deps.GetArtifact, cfg.ArtifactID); err != nil {
 		return preflightResult{}, err
 	}
