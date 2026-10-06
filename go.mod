@@ -24,6 +24,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2
 	github.com/muesli/termenv v0.16.0
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/sergi/go-diff v1.4.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

@@ -1,0 +1,7 @@
+{
+  "RELEASE_VERSION": "11.12.0",
+  "EXTERNAL_WEB_SERVER_URL": "https://dr.example.com",
+  "IS_ENTERPRISE": true,
+  "CUSTOM_APP_DEFAULT_RESOURCE_BUNDLE": "cpu.xlarge",
+  "UNRELATED_KEY": "readers ignore keys they do not know"
+}

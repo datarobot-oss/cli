@@ -60,6 +60,7 @@ These flags are available for all commands:
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API.                     |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
+| [`platform`](platform.md)         | Ask an install what it supports (`platform describe`).      |
 | [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
@@ -97,6 +98,8 @@ dr
 ├── llm-gateway        LLM model management (alias: llm, llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
+├── platform           Ask an install what it supports
+│   └── describe       Report what the install says about itself (environments, bundles, seats, flags)
 ├── pipeline           Pipelines API management (alias: pipelines)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines

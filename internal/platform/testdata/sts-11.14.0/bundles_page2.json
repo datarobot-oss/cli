@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "basic.8x",
+      "name": "Basic-8x",
+      "useCases": [
+        "sapAICore"
+      ],
+      "memoryBytes": 124554051584,
+      "cpuCount": 3,
+      "gpuCount": 0,
+      "hasGpu": false,
+      "description": "31 CPU | 116GB RAM"
+    }
+  ],
+  "count": 1,
+  "totalCount": 4,
+  "next": null,
+  "previous": "{{BASE}}/api/v2/mlops/compute/bundles/?offset=0&limit=2"
+}

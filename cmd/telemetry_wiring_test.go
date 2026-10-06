@@ -47,6 +47,7 @@ var expectedTrackedCommands = []string{
 	"dr plugin install",
 	"dr plugin uninstall",
 	"dr plugin update",
+	"dr platform describe",
 
 	// Pipelines, workloads and artifacts are GA, so no feature gate hides them
 	// from the live RootCmd and they need no separate standalone list. The two
@@ -133,6 +134,7 @@ var trackedSubtrees = []string{
 	"dr workload",
 	"dr artifact",
 	"dr pipeline",
+	"dr platform",
 }
 
 // TestTelemetryWiring_AllCoreCommandsTracked walks the static command tree

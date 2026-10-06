@@ -1,0 +1,199 @@
+{
+  "data": [
+    {
+      "id": "env-1",
+      "name": "[DataRobot] NodeJS 24 Applications Base",
+      "programmingLanguage": "other",
+      "useCases": [
+        "customApplication"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-1",
+        "environmentId": "env-1",
+        "buildStatus": "success",
+        "label": "v6"
+      },
+      "latestVersion": {
+        "id": "ver-1",
+        "environmentId": "env-1",
+        "buildStatus": "success",
+        "label": "v6"
+      }
+    },
+    {
+      "id": "env-2",
+      "name": "[DataRobot] NodeJS 24 Applications Base",
+      "programmingLanguage": "other",
+      "useCases": [
+        "customApplication"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-2",
+        "environmentId": "env-2",
+        "buildStatus": "success",
+        "label": "v1"
+      },
+      "latestVersion": {
+        "id": "ver-2",
+        "environmentId": "env-2",
+        "buildStatus": "success",
+        "label": "v1"
+      }
+    },
+    {
+      "id": "env-3",
+      "name": "[DataRobot] Python 3.12 Applications Base",
+      "programmingLanguage": "python",
+      "useCases": [
+        "customApplication"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-3",
+        "environmentId": "env-3",
+        "buildStatus": "success",
+        "label": "v37"
+      },
+      "latestVersion": {
+        "id": "ver-3",
+        "environmentId": "env-3",
+        "buildStatus": "success",
+        "label": "v37"
+      }
+    },
+    {
+      "id": "env-4",
+      "name": "[DataRobot] NodeJS 22.14.0 Applications Base",
+      "programmingLanguage": "other",
+      "useCases": [
+        "customApplication"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-4",
+        "environmentId": "env-4",
+        "buildStatus": "success",
+        "label": "v43"
+      },
+      "latestVersion": {
+        "id": "ver-4",
+        "environmentId": "env-4",
+        "buildStatus": "success",
+        "label": "v43"
+      }
+    },
+    {
+      "id": "env-5",
+      "name": "[DataRobot][Deprecated] NodeJS 22.14.0 Applications Base",
+      "programmingLanguage": "other",
+      "useCases": [
+        "customApplication"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-5",
+        "environmentId": "env-5",
+        "buildStatus": "success",
+        "label": "v1"
+      },
+      "latestVersion": {
+        "id": "ver-5",
+        "environmentId": "env-5",
+        "buildStatus": "success",
+        "label": "v1"
+      }
+    },
+    {
+      "id": "env-6",
+      "name": "[DataRobot][Deprecated] Python 3.12 Applications Base",
+      "programmingLanguage": "python",
+      "useCases": [
+        "customApplication"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-6",
+        "environmentId": "env-6",
+        "buildStatus": "success",
+        "label": "v1"
+      },
+      "latestVersion": {
+        "id": "ver-6",
+        "environmentId": "env-6",
+        "buildStatus": "success",
+        "label": "v1"
+      }
+    },
+    {
+      "id": "env-7",
+      "name": "[DataRobot] Python 3 GenAI Agents",
+      "programmingLanguage": "python",
+      "useCases": [
+        "notebook",
+        "customModel"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-7",
+        "environmentId": "env-7",
+        "buildStatus": "success",
+        "label": "v1"
+      },
+      "latestVersion": {
+        "id": "ver-7",
+        "environmentId": "env-7",
+        "buildStatus": "success",
+        "label": "v1"
+      }
+    },
+    {
+      "id": "env-8",
+      "name": "[DataRobot] Python 3 MCP",
+      "programmingLanguage": "python",
+      "useCases": [
+        "customModel"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-8",
+        "environmentId": "env-8",
+        "buildStatus": "success",
+        "label": "v2"
+      },
+      "latestVersion": {
+        "id": "ver-8",
+        "environmentId": "env-8",
+        "buildStatus": "success",
+        "label": "v2"
+      }
+    },
+    {
+      "id": "env-9",
+      "name": "[DataRobot] Python 3.14 Custom Metrics",
+      "programmingLanguage": "python",
+      "useCases": [
+        "customModel",
+        "notebook"
+      ],
+      "isPublic": true,
+      "latestSuccessfulVersion": {
+        "id": "ver-9",
+        "environmentId": "env-9",
+        "buildStatus": "success",
+        "label": "v14"
+      },
+      "latestVersion": {
+        "id": "ver-9",
+        "environmentId": "env-9",
+        "buildStatus": "success",
+        "label": "v14"
+      }
+    }
+  ],
+  "count": 9,
+  "totalCount": 9,
+  "next": null,
+  "previous": null
+}
