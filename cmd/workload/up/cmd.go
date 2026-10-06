@@ -534,6 +534,22 @@ func reportable(result up.Result) bool {
 	return result.WorkloadID != "" || result.BuildID != ""
 }
 
+// terminated reports that the workload this run is about is not coming back.
+//
+// Status rather than Plan.State, and deliberately: the plan's state is what was
+// found before the run acted, so a deploy that started a workload which then
+// died reads as "stopped" there and as "terminated" here. Status is the last
+// thing known about the workload, which is the question both callers are
+// actually asking.
+//
+// The predicate lives in internal/workload rather than as a comparison here,
+// because the value being matched arrives by two routes -- the platform's own
+// status on a live read, and State.String() on a refusal -- and a literal in
+// this package would be relying on those two agreeing by coincidence.
+func terminated(result up.Result) bool {
+	return workload.IsTerminatedWorkloadStatus(result.Status)
+}
+
 // draftIsServing reports whether this run left, or would leave, a draft
 // artifact serving. A workload on a draft is stopped eight hours after it
 // starts running, whatever it is serving, and the deploy output never said so.
@@ -566,22 +582,9 @@ func reportable(result up.Result) bool {
 // gets here: see bindLocked in internal/workload/up. Without it a promotion
 // of a locked artifact onto a fresh workload would be called temporary and
 // then advised to lock what is already locked.
-// terminated reports that the workload this run is about is not coming back.
 //
-// Status rather than Plan.State, and deliberately: the plan's state is what was
-// found before the run acted, so a deploy that started a workload which then
-// died reads as "stopped" there and as "terminated" here. Status is the last
-// thing known about the workload, which is the question both callers are
-// actually asking.
-//
-// The predicate lives in internal/workload rather than as a comparison here,
-// because the value being matched arrives by two routes -- the platform's own
-// status on a live read, and State.String() on a refusal -- and a literal in
-// this package would be relying on those two agreeing by coincidence.
-func terminated(result up.Result) bool {
-	return workload.IsTerminatedWorkloadStatus(result.Status)
-}
-
+// Whether to warn is all this decides. What the warning says depends on what
+// the plan found, which draftWording works out.
 func draftIsServing(f flags, result up.Result, failed bool) bool {
 	if f.lock || result.Locked {
 		return false
@@ -592,17 +595,20 @@ func draftIsServing(f flags, result up.Result, failed bool) bool {
 		// "started" only when the start went through. A run that failed before
 		// that changed nothing and has nothing to warn about.
 		//
-		// Terminated is excluded even so. A workload that started and then
-		// reached the end of its life is running nothing, so the clock this
-		// warns about is not ticking and the remedy it names would be a lock on
-		// the artifact of something that is never coming back. followUps drops
-		// its whole list for the same state, and the two must agree: a warning
-		// with no follow-ups reads as advice the command forgot to give.
+		// A start that went through has put a draft on the air only if the
+		// platform says the workload is running or on its way up, so those are
+		// the statuses asked for rather than the failures ruled out. Anything
+		// else is running nothing, and the clock this warns about is not
+		// ticking: errored came up and failed, and a wait that gave up on a
+		// workload still reading stopped never saw the start take.
 		//
-		// Errored is excluded for the first of those reasons only: a start that
-		// came up errored leaves nothing running, so there is no draft on the
-		// air to warn about. followUps keeps its list for it.
-		return result.Action == up.ActionStarted && !workload.IsWorkloadErrorStatus(result.Status)
+		// Terminated is the end of its life, where the remedy would be a lock
+		// on the artifact of something that is never coming back. followUps
+		// drops its whole list for that state, and the two must agree: a
+		// warning with no follow-ups reads as advice the command forgot to
+		// give.
+		return result.Action == up.ActionStarted &&
+			(workload.IsRunningWorkloadStatus(result.Status) || workload.IsStartingWorkloadStatus(result.Status))
 	}
 
 	return f.dryRun || result.WorkloadID != ""
@@ -652,7 +658,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		}
 
 		fmt.Fprintln(cmd.ErrOrStderr(), "\nDry run: nothing was changed.")
-		draftWarning(cmd.ErrOrStderr(), draft, true)
+		draftWarning(cmd.ErrOrStderr(), draft, result, f)
 
 		return nil
 	}
@@ -674,14 +680,14 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		fmt.Fprintln(cmd.OutOrStdout(), result.Endpoint)
 	}
 
-	draftWarning(cmd.ErrOrStderr(), draft, false)
+	draftWarning(cmd.ErrOrStderr(), draft, result, f)
 	nextSteps(cmd.ErrOrStderr(), result, f.dir, draft, failed)
 
 	return nil
 }
 
-// draftWarning says that the endpoint just printed has a clock on it, and what
-// to run to stop that being true.
+// draftWarning says that what this run deployed, or would deploy, has a clock
+// on it, and how to stop that being true.
 //
 // The eight hours is the platform's own published figure, carried in the
 // OpenAPI description of an artifact's status, and behind it a hardcoded
@@ -695,21 +701,15 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 // itself; only the running workload is stopped, which is why this warns about
 // the workload rather than the artifact.
 //
-// The command is named inline rather than left to nextSteps, because a dry run
+// The remedy is named inline rather than left to nextSteps, because a dry run
 // returns before nextSteps ever gets to speak and would otherwise state a
 // problem with no remedy attached.
-func draftWarning(w io.Writer, draft, planned bool) {
+func draftWarning(w io.Writer, draft bool, result up.Result, f flags) {
 	if !draft {
 		return
 	}
 
-	// A dry run has changed nothing and may be previewing a workload that does
-	// not exist, so the present tense would contradict the "nothing was
-	// changed" line printed immediately above it.
-	headline := "This workload is running a draft artifact."
-	if planned {
-		headline = "This workload would run a draft artifact."
-	}
+	headline, remedy := draftWording(result, f)
 
 	fmt.Fprintf(w, "\n  %s %s\n", tui.WarnStyle.Render("⚠"), tui.WarnStyle.Render(headline))
 
@@ -719,10 +719,62 @@ func draftWarning(w io.Writer, draft, planned bool) {
 	// leaving trailing spaces on every other one.
 	for _, line := range []string{
 		"Draft workloads are stopped after 8 hours, whether or not they are in use.",
-		"Run 'dr workload up --lock' to version the artifact and make it permanent.",
+		remedy,
 	} {
 		fmt.Fprintf(w, "    %s\n", tui.HintStyle.Render(line))
 	}
+}
+
+// draftWording picks the warning's subject and tense from whether the workload
+// is actually running, rather than from --dry-run or from what the run set out
+// to do. Result.Status is the platform's last word on the workload this project
+// is bound to, looked up by id: the live read a preview plans against, updated
+// by every wait a real run does and by the answer to a request --detach did not
+// wait on.
+//
+// Only a running workload is told it is running a draft. Its eight hours are
+// counting, so the remedy is a command to run. A real run whose workload is not
+// running has either just had its create or start requested by --detach, or
+// failed while the platform still had it on its way up, since draftIsServing
+// turns the rest away; it says it is starting, and gets the same command.
+//
+// --detach returns before the deploy finishes, and a lock is refused while the
+// platform is still replacing the workload, so a detached run that did
+// something is told to lock when the deploy finishes rather than now. After a
+// detached roll the headline still says running: what serves until the swap
+// lands is a draft too, or there would be no warning.
+//
+// Every other preview describes what its deploy would do, and the eight hours
+// would start with that deploy, so it offers the flag for it rather than a
+// command for afterwards. That includes a stopped workload, which exists but
+// is running nothing until the deploy starts it.
+//
+// A create has no workload yet to be the subject, so it names the deploy. It
+// says a workload on a draft artifact rather than a new draft artifact because
+// a create does not always make one: a linked project, or a manifest naming an
+// artifact by id, comes up on the one already there.
+func draftWording(result up.Result, f flags) (headline, remedy string) {
+	command := "Run 'dr workload up --lock' to version the artifact and make it permanent."
+
+	if !f.dryRun && f.detach && result.Action != up.ActionUnchanged {
+		command = "When this deploy finishes, run 'dr workload up --lock' to version the artifact and make it permanent."
+	}
+
+	if workload.IsRunningWorkloadStatus(result.Status) {
+		return "This workload is running a draft artifact.", command
+	}
+
+	if !f.dryRun {
+		return "This workload is starting on a draft artifact.", command
+	}
+
+	flag := "Add --lock to version the artifact and make it permanent."
+
+	if result.Action == up.ActionCreated {
+		return "This deploy would create a workload on a draft artifact.", flag
+	}
+
+	return "This workload would run a draft artifact.", flag
 }
 
 // nextSteps lists what to run against the workload this deploy just touched,
