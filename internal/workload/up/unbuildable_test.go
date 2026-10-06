@@ -115,7 +115,7 @@ func TestRun_RefusesAGeneratedBuildThePlatformCannotMake(t *testing.T) {
 
 			_, err := Run(t.Context(), Options{Dir: dir, NonInteractive: true, DryRun: dryRun, Stderr: &bytes.Buffer{}})
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "Python 3.12 Drop-In is a python environment")
+			assert.Contains(t, err.Error(), "Python 3.12 Drop-In is labelled python")
 			assert.Contains(t, err.Error(), "node project (package.json, package-lock.json)")
 		})
 	}

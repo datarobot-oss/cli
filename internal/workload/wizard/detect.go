@@ -128,22 +128,48 @@ var rootMarkers = []string{
 // refused with it. Note is a gap the deploy fills itself when uv is installed
 // where it runs: a pyproject.toml with no uv.lock gets one generated before
 // the upload, so the mode is accepted and the note says what to commit.
+//
+// Language and evidence are what the matched pair says the runtime is, since
+// the pair is what the platform builds from; a directory carrying both
+// languages' files says nothing.
 type generatedBuild struct {
-	problem string
-	note    string
+	language string
+	evidence []string
+	problem  string
+	note     string
 }
 
 func (d Detected) generatedBuild() generatedBuild {
+	build := d.matchPair()
+
+	// Both languages' files at once: the platform picks one by its own
+	// order, and guessing which would refuse the wrong environment.
+	if slices.Contains(d.RootMarkers, "pyproject.toml") && slices.Contains(d.RootMarkers, "package.json") {
+		build.language, build.evidence = "", nil
+	}
+
+	return build
+}
+
+func (d Detected) matchPair() generatedBuild {
 	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
 
 	switch {
-	case has("pyproject.toml") && has("uv.lock"), has("package.json") && has("package-lock.json"):
-		return generatedBuild{}
+	case has("pyproject.toml") && has("uv.lock"):
+		return generatedBuild{language: "python", evidence: []string{"pyproject.toml", "uv.lock"}}
+	case has("package.json") && has("package-lock.json"):
+		return generatedBuild{language: "node", evidence: []string{"package.json", "package-lock.json"}}
 	case has("pyproject.toml"):
-		return generatedBuild{note: "pyproject.toml has no uv.lock beside it; the deploy generates one before the " +
-			"upload if uv is installed where it runs, so commit it (or run 'uv lock' now)"}
+		return generatedBuild{
+			language: "python", evidence: []string{"pyproject.toml"},
+			note: "pyproject.toml has no uv.lock beside it; the deploy generates one before the " +
+				"upload if uv is installed where it runs, so commit it (or run 'uv lock' now)",
+		}
 	case has("package.json"):
-		return generatedBuild{problem: "package.json has no package-lock.json beside it; run 'npm install' and commit the result"}
+		return generatedBuild{
+			language: "node", evidence: []string{"package.json"},
+			problem: "package.json has no package-lock.json beside it; run 'npm install' and commit the result",
+		}
 	default:
 		return generatedBuild{problem: fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json "+
 			"with package-lock.json, which is what a generated image is built from", d.Dir)}
@@ -156,62 +182,26 @@ func (d Detected) GeneratedBuildProblem() string {
 	return d.generatedBuild().problem
 }
 
-// Language is what the project files say the runtime is: python for a
-// pyproject.toml, requirements.txt or setup.py, node for a package.json, ""
-// when they say nothing or disagree.
+// Language is the runtime the platform would build a generated image for:
+// python for a pyproject.toml, node for a package.json, "" when the files say
+// nothing or both. The same files decide the build, so a stray
+// requirements.txt beside a Node project does not change the answer.
 func (d Detected) Language() string {
-	language, _ := d.language()
-
-	return language
-}
-
-// languageMarkers are the files that speak for each language, locks included.
-var languageMarkers = map[string][]string{
-	"python": {"pyproject.toml", "uv.lock", "requirements.txt", "setup.py"},
-	"node":   {"package.json", "package-lock.json"},
-}
-
-// language is Language with the files that said so.
-func (d Detected) language() (string, []string) {
-	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
-
-	python := has("pyproject.toml") || has("requirements.txt") || has("setup.py")
-	node := has("package.json")
-
-	var language string
-
-	switch {
-	case python && !node:
-		language = "python"
-	case node && !python:
-		language = "node"
-	default:
-		return "", nil
-	}
-
-	var evidence []string
-
-	for _, marker := range d.RootMarkers {
-		if slices.Contains(languageMarkers[language], marker) {
-			evidence = append(evidence, marker)
-		}
-	}
-
-	return language, evidence
+	return d.generatedBuild().language
 }
 
 // EnvironmentMismatch is why a generated image on ee would not build for this
 // project, "" when it would or when either language is unknown.
 func (d Detected) EnvironmentMismatch(ee workload.ExecutionEnvironment) string {
-	project, evidence := d.language()
+	build := d.generatedBuild()
 
 	env := workload.EnvironmentLanguage(ee.ProgrammingLanguage)
-	if project == "" || env == "" || project == env {
+	if build.language == "" || env == "" || build.language == env {
 		return ""
 	}
 
-	return fmt.Sprintf("%s is a %s environment, but %s is a %s project (%s), so the generated image would not build; "+
-		"pick a %s environment", ee.Name, env, d.Dir, project, strings.Join(evidence, ", "), project)
+	return fmt.Sprintf("%s is a %s project (%s), but %s is labelled %s, so the generated image would not build; "+
+		"pick a %s environment", d.Dir, build.language, strings.Join(build.evidence, ", "), ee.Name, env, build.language)
 }
 
 // maxDirCandidates caps the offer. Past a handful the list stops being an

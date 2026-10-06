@@ -494,7 +494,7 @@ func (a Answers) executionEnvironment(detected Detected) (workload.ExecutionEnvi
 	}
 
 	if problem := detected.EnvironmentMismatch(ee); problem != "" {
-		return workload.ExecutionEnvironment{}, fmt.Errorf("--execution-environment %s: %s", a.ExecutionEnvironment, problem)
+		return workload.ExecutionEnvironment{}, fmt.Errorf("--execution-environment %q: %s", a.ExecutionEnvironment, problem)
 	}
 
 	return ee, nil

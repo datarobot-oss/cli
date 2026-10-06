@@ -385,7 +385,7 @@ func TestRun_HeadlessBindRefusesAMismatchedEnvironmentOnTheLiveBuild(t *testing.
 
 	_, err := Run(headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", ExecutionEnvironment: "[DataRobot] Python 3.12"}))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "python environment")
+	assert.Contains(t, err.Error(), "is labelled python")
 	assert.Contains(t, err.Error(), "node project")
 }
 

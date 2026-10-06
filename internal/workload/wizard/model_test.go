@@ -636,7 +636,7 @@ func TestFlow_GeneratedBuildRefusesABaseImageOfAnotherLanguage(t *testing.T) {
 
 	model = press(t, model, "enter") // the Python image, listed first
 	require.Error(t, model.failed)
-	assert.Contains(t, model.failed.Error(), "Python 3.12 is a python environment")
+	assert.Contains(t, model.failed.Error(), "Python 3.12 is labelled python")
 	assert.Contains(t, model.failed.Error(), "node project")
 	assert.Equal(t, screenExecEnv, model.at, "a refused pick stays on the screen")
 	assert.Empty(t, model.draft.Build.ExecutionEnvironmentID)
