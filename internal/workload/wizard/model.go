@@ -240,10 +240,10 @@ func (f flow) first(answers Answers) screen {
 // there is nothing to bind to, or when a flag already said which workload
 // this is.
 func (f flow) firstQuestion(answers Answers) screen {
-	// A named workload is fetched by Init, and the kind screen is where the
-	// questions resume once it arrives.
+	// A named workload is fetched by Init, and the questions resume after
+	// the name once it arrives.
 	if answers.WorkloadID != "" {
-		return screenKind
+		return afterName()
 	}
 
 	if len(f.workloads) == 0 || answers.Name != "" {
@@ -520,6 +520,22 @@ func (f flow) advance() (tea.Model, tea.Cmd) {
 }
 
 // nextScreen is the flow when the answer does not change it.
+// askKind is whether the wizard asks service or agent. Agents are in private
+// preview, so the question is skipped and the manifest says service; the
+// screen, the A2A screen after it and the --type flag stay in place for when
+// agents leave preview, and tests about those screens switch this back on.
+var askKind = false
+
+// afterName is where the questions go once the workload is named, or bound:
+// the kind screen when it is asked, the image source otherwise.
+func afterName() screen {
+	if askKind {
+		return screenKind
+	}
+
+	return screenSource
+}
+
 var nextScreen = map[screen]screen{
 	screenBinding:    screenName,
 	screenName:       screenKind,
@@ -561,7 +577,9 @@ func (f flow) branch() (screen, bool) {
 		return f.firstQuestion(f.answers), true
 	case screenBinding:
 		// A bound workload is already named.
-		return screenKind, f.live != nil
+		return afterName(), f.live != nil
+	case screenName:
+		return screenSource, !askKind
 	case screenKind:
 		return screenA2A, f.draft.Type == manifest.TypeAgent
 	case screenSource:
@@ -571,7 +589,7 @@ func (f flow) branch() (screen, bool) {
 		// screen anyway would ask a question the user already declined, and
 		// accepting it refills the EnvVars the flag deliberately emptied.
 		return screenEnv, f.detected.HasEnvFile() && !f.answers.SkipEnv
-	case screenName, screenA2A, screenExecEnv, screenEntrypoint, screenImage, screenEnv, screenConfirm:
+	case screenA2A, screenExecEnv, screenEntrypoint, screenImage, screenEnv, screenConfirm:
 		// These always go where the table says.
 		return 0, false
 	}
@@ -1174,7 +1192,7 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	//
 	// This is the one draft rebuild that does not go through startFrom, so
 	// nameGiven is left as it stands. A bound workload is already named and
-	// never gets asked: branch sends the binding screen to screenKind while
+	// never gets asked: branch sends the binding screen past the name while
 	// live is set, and firstQuestion sends a flag-named workload there too,
 	// so screenName is unreachable and the flag's only reader never runs.
 	// Give a bound workload a rename screen and that stops being true; this
@@ -1188,7 +1206,7 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 		f.history = append(f.history, screenBinding)
 	}
 
-	f.at = screenKind
+	f.at = afterName()
 	f.enter(f.at)
 
 	return f, f.takeFocusCmd()
