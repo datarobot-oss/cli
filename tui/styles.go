@@ -63,9 +63,10 @@ var (
 
 // WriterStyles is the shared text styles bound to one writer.
 type WriterStyles struct {
-	Base lipgloss.Style
-	Info lipgloss.Style
-	Hint lipgloss.Style
+	Base  lipgloss.Style
+	Info  lipgloss.Style
+	Hint  lipgloss.Style
+	Error lipgloss.Style
 }
 
 // StylesFor binds the shared text styles to w's renderer. The package styles
@@ -78,8 +79,9 @@ func StylesFor(w io.Writer) WriterStyles {
 	r := lipgloss.NewRenderer(w)
 
 	return WriterStyles{
-		Base: BaseTextStyle.Renderer(r),
-		Info: InfoStyle.Renderer(r),
-		Hint: HintStyle.Renderer(r),
+		Base:  BaseTextStyle.Renderer(r),
+		Info:  InfoStyle.Renderer(r),
+		Hint:  HintStyle.Renderer(r),
+		Error: ErrorStyle.Renderer(r),
 	}
 }

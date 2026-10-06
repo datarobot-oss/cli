@@ -21,11 +21,13 @@ import (
 	"testing"
 
 	"github.com/amplitude/analytics-go/amplitude"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -323,4 +325,22 @@ func TestProfileFlag_CreateAnnotationSurvivesUnknownProfile(t *testing.T) {
 
 	assert.Empty(t, sawEndpoint, "credentials must be cleared so a new profile doesn't inherit the default's endpoint")
 	assert.Empty(t, sawToken, "credentials must be cleared so a new profile doesn't inherit the default's token")
+}
+
+// cobra prints the error prefix to stderr, so its color has to be decided by
+// stderr. Here stdout claims to be a full-color terminal, which is what the
+// package styles answer to, and NO_COLOR speaks for stderr whether or not the
+// test's own stderr is a terminal: the prefix has to come out plain.
+func TestErrPrefix_FollowsStderrNotStdout(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("CLICOLOR_FORCE", "")
+
+	root := NewIsolatedRootFactory().Build()
+
+	assert.Equal(t, "Error:", root.ErrPrefix())
 }

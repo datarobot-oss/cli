@@ -39,9 +39,10 @@ func TestStylesFor_FollowsTheWriter(t *testing.T) {
 			styles := StylesFor(&bytes.Buffer{})
 
 			for name, style := range map[string]func(...string) string{
-				"base": styles.Base.Render,
-				"info": styles.Info.Render,
-				"hint": styles.Hint.Render,
+				"base":  styles.Base.Render,
+				"info":  styles.Info.Render,
+				"hint":  styles.Hint.Render,
+				"error": styles.Error.Render,
 			} {
 				out := style("text")
 
