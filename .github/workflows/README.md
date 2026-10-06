@@ -79,9 +79,7 @@ the caller's job, so the repo must be checked out **before** they are used.
 
 ## Flow diagrams
 
-How the entrypoints wire to the reusables, plus the fork-PR gate. Full per-flow
-diagrams (regular PR, on-demand / nightly / manual smoke, release, pages) live in
-[`docs/development/ci-workflow-flows.md`](../../docs/development/ci-workflow-flows.md).
+How the entrypoints wire to the reusables, plus the fork-PR gate.
 
 **Entrypoints → reusable building blocks:**
 
