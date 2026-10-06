@@ -2065,14 +2065,22 @@ func lock(result Result, report *reporter) (Result, error) {
 
 	// The workload's own promote route, not the artifact's lock: it locks what
 	// the workload is serving right now, which is the whole question.
+	var promoted *workload.Workload
+
 	err := report.run("Promoting the workload", func() error {
-		_, promoteErr := promoteWorkloadFn(result.WorkloadID)
+		w, promoteErr := promoteWorkloadFn(result.WorkloadID)
+		promoted = w
 
 		return promoteErr
 	})
 	if err != nil {
 		return result, fmt.Errorf("workload %s is running, but artifact %s could not be locked: %w",
 			result.WorkloadID, result.ArtifactID, err)
+	}
+
+	// The route answers with what it locked, which is the artifact to report.
+	if promoted != nil && promoted.ArtifactID != "" {
+		result.ArtifactID = promoted.ArtifactID
 	}
 
 	result.Locked = true

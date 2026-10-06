@@ -45,7 +45,7 @@ func TestCmd_NotFeatureGated(t *testing.T) {
 // applied at registration inside Cmd(), so building the subtree is enough.
 func TestCmd_GatesUpAndConfig(t *testing.T) {
 	always := []string{"create", "delete", "endpoint", "get", "list", "logs", "start", "status", "stop"}
-	gated := []string{"config", "up"}
+	gated := []string{"config", "promote", "up"}
 
 	tests := []struct {
 		name      string

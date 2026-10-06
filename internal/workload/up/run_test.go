@@ -3780,3 +3780,24 @@ func TestRun_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
 	assert.NotContains(t, stderr, "OPENAI_API_KEY", "the secret is the thing being protected")
 	assert.Equal(t, []string{"REGION"}, result.Env.Literals)
 }
+
+// The promote route answers with what it locked, and that is the artifact the
+// summary names: a swap that landed between the read and the promotion would
+// otherwise be reported under the version rolled off.
+func TestRun_PromoteReportsTheArtifactTheRouteLocked(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock:      neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, ArtifactID: "68a0000000000000000000c3"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+	assert.Equal(t, "68a0000000000000000000c3", result.ArtifactID)
+	assert.True(t, result.Locked)
+}

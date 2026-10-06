@@ -18,11 +18,14 @@ package promote
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -97,7 +100,7 @@ Example:
 
 			w, err := promoteWorkloadFn(ref.ID)
 			if err != nil {
-				return ref.Wrap(err)
+				return promoteError(err, ref)
 			}
 
 			return render(cmd, outputFormat, w)
@@ -117,6 +120,20 @@ Example:
 	})
 
 	return cmd
+}
+
+// promoteError keeps the provenance of the id, except that this route's 404
+// also covers an artifact the caller does not own, which the usual "not on
+// this instance" wording would send the reader to check their endpoint for.
+func promoteError(err error, ref idargs.Ref) error {
+	var httpErr *drapi.HTTPError
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("cannot promote workload %s%s: the platform has no such workload, or its artifact is not "+
+			"yours to lock (only the artifact's owner can promote it): %w", ref.ID, ref.SpecifiedIn(), err)
+	}
+
+	return ref.Wrap(err)
 }
 
 // render reports the promotion. The promote route answers with the workload,

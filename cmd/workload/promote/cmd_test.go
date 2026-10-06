@@ -106,7 +106,30 @@ func TestCmd_PromotesTheTypedWorkloadAndReportsTheVersion(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
-func TestCmd_JSONCarriesTheVersionAndAVersionReadFailureIsOnlyNoted(t *testing.T) {
+func TestCmd_JSONCarriesTheVersion(t *testing.T) {
+	version := 3
+
+	swap(t, &promoteWorkloadFn, func(id string) (*workload.Workload, error) {
+		return &workload.Workload{ID: id, ArtifactID: "art-1"}, nil
+	})
+	swap(t, &getArtifactFn, func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Version: &version}, nil
+	})
+
+	var stderr bytes.Buffer
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"68b0c1d2e3f4a5b6c7d8e9f0", "--output-format", "json"})
+
+	out := capture(t, func() { require.NoError(t, cmd.Execute()) })
+
+	assert.JSONEq(t, `{"workloadId": "68b0c1d2e3f4a5b6c7d8e9f0", "artifactId": "art-1", "version": 3}`, out)
+	assert.Empty(t, stderr.String(), "stdout is the document and nothing else is said")
+}
+
+func TestCmd_AVersionReadFailureIsOnlyNoted(t *testing.T) {
 	swap(t, &promoteWorkloadFn, func(id string) (*workload.Workload, error) {
 		return &workload.Workload{ID: id, ArtifactID: "art-1"}, nil
 	})
@@ -142,4 +165,22 @@ func TestCmd_AlreadyLockedIsThePlatformsRefusal(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already locked")
+}
+
+// This route's 404 also covers an artifact the caller does not own, so the
+// usual "not on this instance" wording would send the reader to check their
+// endpoint for a permission problem.
+func TestCmd_NotFoundNamesOwnershipAsWell(t *testing.T) {
+	swap(t, &promoteWorkloadFn, func(string) (*workload.Workload, error) {
+		return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+	})
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not yours to lock")
+	assert.NotContains(t, err.Error(), "not on this instance")
 }
