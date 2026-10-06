@@ -1,0 +1,56 @@
+{
+  "data": [
+    {
+      "id": "cpu.nano",
+      "name": "XXS",
+      "useCases": [
+        "customModel",
+        "customJob",
+        "customApplication",
+        "customTaskFit",
+        "workload"
+      ],
+      "memoryBytes": 134217728,
+      "cpuCount": 1,
+      "gpuCount": 0,
+      "hasGpu": false,
+      "description": "1 CPU | 128MB RAM"
+    },
+    {
+      "id": "cpu.micro",
+      "name": "XS",
+      "useCases": [
+        "customModel",
+        "customJob",
+        "customApplication",
+        "customTaskFit",
+        "workload"
+      ],
+      "memoryBytes": 268435456,
+      "cpuCount": 1,
+      "gpuCount": 0,
+      "hasGpu": false,
+      "description": "1 CPU | 256MB RAM"
+    },
+    {
+      "id": "cpu.small",
+      "name": "S",
+      "useCases": [
+        "customModel",
+        "customJob",
+        "customApplication",
+        "customTaskFit",
+        "workload"
+      ],
+      "memoryBytes": 536870912,
+      "cpuCount": 1,
+      "gpuCount": 0,
+      "hasGpu": false,
+      "description": "1 CPU | 512MB RAM"
+    }
+  ],
+  "count": 3,
+  "totalCount": 4,
+  "next": "{{BASE}}/api/v2/mlops/compute/bundles/?offset=2&limit=2",
+  "previous": null
+}

@@ -1,0 +1,6 @@
+{
+  "RELEASE_VERSION": "11.14.0",
+  "EXTERNAL_WEB_SERVER_URL": "https://staging.datarobot.com",
+  "IS_ENTERPRISE": false,
+  "CUSTOM_APP_DEFAULT_RESOURCE_BUNDLE": "cpu.xlarge"
+}

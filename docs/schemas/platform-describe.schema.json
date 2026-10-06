@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "dr platform describe report",
+  "description": "What a DataRobot install reports about itself, as written by `dr platform describe --output-format json`. Changes are additive: a breaking change bumps schemaVersion. Readers ignore unknown fields and unknown sections, so this schema does not forbid them.",
+  "type": "object",
+  "required": ["schemaVersion", "server", "sections"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"}
+      }
+    },
+    "server": {
+      "type": "object",
+      "properties": {
+        "release": {"type": "string"},
+        "apiVersion": {"type": "string"},
+        "canonicalUrl": {"type": "string"}
+      }
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/section"},
+      "properties": {
+        "install": {"$ref": "#/$defs/installSection"},
+        "seats": {"$ref": "#/$defs/seatsSection"},
+        "entitlements": {"$ref": "#/$defs/entitlementsSection"},
+        "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
+        "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"}
+      }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["ok", "degraded", "unavailable"]},
+        "message": {"type": "string"}
+      },
+      "if": {"properties": {"status": {"enum": ["degraded", "unavailable"]}}, "required": ["status"]},
+      "then": {"required": ["message"]}
+    },
+    "installSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "properties": {
+            "isEnterprise": {"type": "boolean"},
+            "defaultAppResourceBundle": {"type": "string"}
+          }
+        }}}
+      ]
+    },
+    "seatsSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "required": ["seatLicenses"],
+          "properties": {"seatLicenses": {"type": "object", "additionalProperties": {"type": "boolean"}}}
+        }}}
+      ]
+    },
+    "entitlementsSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {"type": "object", "additionalProperties": {"type": "boolean"}}}}
+      ]
+    },
+    "executionEnvironmentsSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "required": ["items"],
+          "properties": {"items": {"type": "array", "items": {
+            "type": "object",
+            "required": ["id", "name", "useCases", "hasSuccessfulVersion"],
+            "properties": {
+              "id": {"type": "string"},
+              "name": {"type": "string"},
+              "programmingLanguage": {"type": "string"},
+              "useCases": {"type": "array", "items": {"type": "string"}},
+              "hasSuccessfulVersion": {"type": "boolean"},
+              "buildStatus": {"type": "string"}
+            }
+          }}}
+        }}}
+      ]
+    },
+    "resourceBundlesSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "required": ["items"],
+          "properties": {"items": {"type": "array", "items": {
+            "type": "object",
+            "required": ["id", "name", "useCases", "memoryBytes"],
+            "properties": {
+              "id": {"type": "string"},
+              "name": {"type": "string"},
+              "useCases": {"type": "array", "items": {"type": "string"}},
+              "memoryBytes": {"type": "integer"},
+              "cpuCount": {"type": "number"}
+            }
+          }}}
+        }}}
+      ]
+    }
+  }
+}

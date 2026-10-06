@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "id": "env-python", "programmingLanguage": "python", "name": "[DataRobot] Python 3.12 Applications Base", "useCases": ["customApplication"],
+      "latestSuccessfulVersion": {"id": "ver-1"}, "latestVersion": {"id": "ver-1", "buildStatus": "success"}
+    },
+    {
+      "id": "env-node", "programmingLanguage": "other", "name": "[DataRobot] NodeJS 22.14.0 Applications Base", "useCases": ["customApplication"],
+      "latestSuccessfulVersion": {"id": "ver-2"}, "latestVersion": {"id": "ver-2", "buildStatus": "success"}
+    },
+    {
+      "id": "env-python-unbuilt", "programmingLanguage": "python", "name": "[DataRobot] Python 3.12 Applications Base", "useCases": ["customApplication"],
+      "latestSuccessfulVersion": null, "latestVersion": null
+    },
+    {
+      "id": "env-model", "programmingLanguage": "python", "name": "[DataRobot] Python 3.12 Scikit-Learn Drop-In", "useCases": ["customModel"],
+      "latestSuccessfulVersion": {"id": "ver-3"}, "latestVersion": {"id": "ver-3", "buildStatus": "success"}
+    }
+  ],
+  "count": 4, "totalCount": 4, "next": null, "previous": null
+}

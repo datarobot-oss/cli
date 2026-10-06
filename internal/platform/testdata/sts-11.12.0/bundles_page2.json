@@ -1,0 +1,6 @@
+{
+  "data": [
+    {"id": "gpu.small", "name": "GPU S", "useCases": ["customModel"], "memoryBytes": 8589934592}
+  ],
+  "count": 1, "totalCount": 3, "next": null, "previous": "{{BASE}}/api/v2/mlops/compute/bundles/?offset=0&limit=2"
+}

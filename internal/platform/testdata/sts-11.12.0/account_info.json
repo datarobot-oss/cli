@@ -1,0 +1,6 @@
+{
+  "uid": "user-1",
+  "seatLicenses": {},
+  "limits": {"maxConcurrentWorkloads": 50, "maxWorkloadReplicas": 3},
+  "permissions": {"ENABLE_EXAMPLE": true}
+}
