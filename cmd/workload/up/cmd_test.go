@@ -864,10 +864,10 @@ func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
 	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.NotContains(t, stderr, "dr workload stop")
 
-	// Scoped to the block, since the warning above it names --lock as prose.
+	// Scoped to the block, since the warning above it names the promotion as prose.
 	_, next, found := strings.Cut(stderr, "Next:")
 	require.True(t, found)
-	assert.NotContains(t, next, "--lock")
+	assert.NotContains(t, next, "dr workload promote")
 }
 
 // A run that started a workload which then reached the end of its life warns
@@ -968,7 +968,7 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 
 // The setup wizard can write the project into a directory below the one the
 // command ran in, and the deploy follows it there. A search from here walks
-// upward and cannot see it, so the follow-ups, and the warning's --lock with
+// upward and cannot see it, so the follow-ups, and the warning's promote with
 // them, name the project the run actually deployed.
 func TestCmd_NextStepsFollowAProjectTheWizardMoved(t *testing.T) {
 	root := t.TempDir()
@@ -987,7 +987,7 @@ func TestCmd_NextStepsFollowAProjectTheWizardMoved(t *testing.T) {
 	require.NotEmpty(t, at)
 
 	assert.Contains(t, stderr, "dr workload logs"+at+"  ")
-	assert.Contains(t, stderr, "Run 'dr workload up --lock"+at+"' to version the artifact")
+	assert.Contains(t, stderr, "Run 'dr workload promote"+at+"' to version the artifact")
 }
 
 // A project at or above the directory the command ran in is found by the
@@ -1021,7 +1021,7 @@ func TestCmd_DryRunDraftWarningCarriesDir(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir, "--dry-run")
 	require.NoError(t, err)
 
-	assert.Contains(t, ansi.Strip(stderr), "Run 'dr workload up --lock"+manifest.DirFlag(dir)+"' to version the artifact")
+	assert.Contains(t, ansi.Strip(stderr), "Run 'dr workload promote"+manifest.DirFlag(dir)+"' to version the artifact")
 }
 
 // The one shape where bare commands would not resolve: a workload was created
