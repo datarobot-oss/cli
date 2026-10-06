@@ -219,7 +219,7 @@ Make the version a workload is running permanent. The draft artifact it is servi
 dr workload promote [<workload-id>] [--dir <path>] [--yes] [--output-format text|json]
 ```
 
-Locking is one-way: a locked artifact cannot be changed, so the next `dr workload up` of this workload mints a new version rather than editing this one. A workload already running a locked version, one with no running generation, or one with a rollout in flight is refused with the platform's reason, and only the artifact's owner can promote it. `dr workload up --promote` does the same at the end of a deploy.
+A workload whose id comes from the manifest rather than the command line is confirmed first, and only `--yes` skips that: as with `delete`, `DATAROBOT_CLI_NON_INTERACTIVE` is not consent to lock something nobody named. Locking is one-way: a locked artifact cannot be changed, so the next `dr workload up` of this workload mints a new version rather than editing this one. A workload already running a locked version, one with no running generation, or one with a rollout in flight is refused with the platform's reason, and only the artifact's owner can promote it. `dr workload up --promote` does the same at the end of a deploy.
 
 A locked version can be shared. Any number of workloads can run the same locked artifact: create another with `dr workload create` and `artifactId` in its spec, or point a manifest at it with `artifactId:`. Workloads sharing a version share its environment variables, since those belong to the artifact, and differ only in runtime: replicas, resources and importance. A draft, by contrast, serves one running workload at a time.
 

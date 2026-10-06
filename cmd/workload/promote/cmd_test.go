@@ -19,10 +19,13 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -183,4 +186,32 @@ func TestCmd_NotFoundNamesOwnershipAsWell(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yours to lock")
 	assert.NotContains(t, err.Error(), "not on this instance")
+}
+
+// Locking cannot be undone, so an id the manifest supplied takes the explicit
+// --yes only: the environment variable that suppresses wizards across a
+// pipeline is not consent to lock something nobody named, the line delete
+// draws for the same reason.
+func TestCmd_AmbientIdNeedsTheFlagEvenWhenNonInteractive(t *testing.T) {
+	t.Setenv(reader.NonInteractiveEnv, "1")
+
+	swap(t, &promoteWorkloadFn, func(string) (*workload.Workload, error) {
+		t.Fatal("the environment variable may not stand in for --yes on a one-way change")
+
+		return nil, nil
+	})
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, manifest.FileName),
+		[]byte("workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\nname: my-app\nartifactId: 68b0bbbb0000000000000002\n"), 0o600))
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--dir", dir})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pass --yes")
+	assert.NotContains(t, err.Error(), reader.NonInteractiveEnv)
 }

@@ -70,7 +70,9 @@ reason. Only the artifact's owner can promote it.
 ` + idargs.HelpText + `
 
 A workload whose id is specified in the manifest rather than on the
-command line is confirmed first; pass --yes to skip that.
+command line is confirmed first; only --yes skips that. Locking cannot be
+undone, so the environment variable that suppresses wizards in CI is not
+taken as consent to lock something nobody named, as with delete.
 
 Example:
   dr workload promote
@@ -92,7 +94,7 @@ Example:
 			// Only an ambient target is confirmed: a typed id is the consent.
 			if ref.FromManifest() {
 				confirmed, err := idargs.Confirm(cmd,
-					idargs.Prompt("Promote", ref, "Locking is permanent."), idargs.EnvMayConsent)
+					idargs.Prompt("Promote", ref, "Locking is permanent."), idargs.EnvMayNotConsent)
 				if err != nil || !confirmed {
 					return err
 				}
