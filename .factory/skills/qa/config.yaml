@@ -1,0 +1,101 @@
+# Runtime source of truth. Store credential references, never credential values.
+project: drcli
+platform: github
+imagemagick: false
+video_evidence: false
+droid_control:
+  plugin: droid-control@factory-plugins
+  compose: false
+# Claude Code has no Droid Control plugin; it drives the same tuistory backend
+# directly. Each agent reads the whole file but acts only on its own driver block.
+claude_code:
+  tool: tuistory
+  cols: 110
+  rows: 36
+  compose: false # Compose is Droid-only.
+
+default_target: local
+environments:
+  local:
+    url: null
+    restrictions:
+      - Use the branch-built binary and fresh run-owned configuration.
+      - No DataRobot API requests or browser login.
+      - Public downloads are allowed; executing downloaded code needs separate approval.
+      - Dependency installation by the application needs separate approval.
+  staging:
+    url: https://staging.datarobot.com/api/v2
+    enabled: false # Enable only after dedicated QA account and credential setup.
+    restrictions:
+      - Explicitly approve this target and the exact remote actions for each run.
+      - Mutate only resources created by this run and recorded in its resource ledger.
+      - Never mutate existing resources, create accounts, or use production endpoints.
+      - Unattended PR QA is local-only.
+
+auth:
+  method: api-key
+  provider: DataRobot
+  interactive_method: browser-authorization
+  endpoint_env: DATAROBOT_ENDPOINT
+  token_env: DATAROBOT_API_TOKEN
+  staging_credentials_status: pending
+  staging_secret_names: [] # Supply dedicated QA secret references, not the existing smoke token.
+
+personas:
+  - name: local_unauthenticated
+    description: Fresh local CLI user with no stored or environment credentials.
+    credentials_source: none
+    test_focus:
+      - help, discovery, aliases, completions, invalid arguments
+      - local auth/profile configuration and error handling
+      - local dotenv editing, task execution, and file preservation
+      - local workload/artifact input validation
+    cannot_do:
+      - authenticated DataRobot operations
+      - remote mutations or account creation
+
+apps:
+  cli:
+    path_patterns: ["cmd/**", "internal/**", "tui/**", "main.go", "go.mod", "go.sum"]
+    skill: qa-cli
+    test_tool: tuistory
+    build_command: task build
+    binary: dist/dr
+
+feature_flags:
+  provider: custom-environment
+  how_to_override: >
+    Set DATAROBOT_CLI_FEATURE_<NAME>=true for the selected flow only.
+    Workload config/up use DATAROBOT_CLI_FEATURE_WORKLOAD; enclave uses
+    DATAROBOT_CLI_FEATURE_ENCLAVE. A CLI gate does not grant platform entitlements.
+
+integrations:
+  datarobot:
+    default_access: none
+    approved_target: staging
+  public_downloads:
+    providers: [GitHub, DataRobot template and plugin registries]
+    allowed: true
+    code_execution_requires_approval: true
+    dependency_installation_requires_approval: true
+  telemetry:
+    provider: Amplitude
+    disable_env: DATAROBOT_CLI_DISABLE_TELEMETRY
+
+cleanup:
+  auto_cleanup: true
+  strategy: run-owned-only
+  instructions: >
+    Close this run's terminal sessions. Preserve sanitized evidence in qa-results.
+    Remove only the scratch directory created by this run. For an explicitly
+    approved staging run, delete only IDs recorded as created by this run,
+    stopping its workloads first where needed. Report unsuccessful cleanup.
+    Never sweep by name prefix, reset a database, or touch personal configuration.
+
+ci:
+  enabled: false
+  required: false
+  target: local
+  trusted_same_repository_prs_only: true
+
+failure_learning: suggest_in_report
