@@ -52,6 +52,7 @@ func TestPrintNextSteps_ColorFollowsTheWriter(t *testing.T) {
 
 	t.Run("styled where color is forced, with the same layout", func(t *testing.T) {
 		t.Setenv("CLICOLOR_FORCE", "1")
+		t.Setenv("NO_COLOR", "")
 
 		var buf bytes.Buffer
 

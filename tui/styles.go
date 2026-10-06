@@ -14,7 +14,11 @@
 
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"io"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Common style definitions using DataRobot branding.
 var (
@@ -56,3 +60,26 @@ var (
 				Foreground(DrPurpleLight).
 				Padding(0, 1)
 )
+
+// WriterStyles is the shared text styles bound to one writer.
+type WriterStyles struct {
+	Base lipgloss.Style
+	Info lipgloss.Style
+	Hint lipgloss.Style
+}
+
+// StylesFor binds the shared text styles to w's renderer. The package styles
+// probe stdout for color support, so styled text sent to another stream
+// (stderr redirected to a file while stdout is a terminal, or a buffer in
+// tests) would otherwise carry escape codes the destination cannot display,
+// and a terminal stderr behind a piped stdout would lose its color. The styles
+// share one renderer, so the terminal is asked about its colors once.
+func StylesFor(w io.Writer) WriterStyles {
+	r := lipgloss.NewRenderer(w)
+
+	return WriterStyles{
+		Base: BaseTextStyle.Renderer(r),
+		Info: InfoStyle.Renderer(r),
+		Hint: HintStyle.Renderer(r),
+	}
+}

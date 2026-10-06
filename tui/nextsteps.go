@@ -45,14 +45,13 @@ func PrintNextSteps(w io.Writer, steps ...NextStep) {
 		return
 	}
 
-	// Bound to w's renderer, because the package styles probe stdout for
-	// color support and this block goes to stderr, which may be a file while
-	// stdout is a terminal. Tabs are left alone: a command is copied as
-	// printed, and lipgloss would otherwise turn a tab inside a quoted path
-	// into spaces, naming a directory that does not exist.
-	r := lipgloss.NewRenderer(w)
-	hint := HintStyle.Renderer(r)
-	command := InfoStyle.Renderer(r).TabWidth(lipgloss.NoTabConversion)
+	// Bound to w, which is stderr and may be a file while stdout is a
+	// terminal. Tabs are left alone: a command is copied as printed, and
+	// lipgloss would otherwise turn a tab inside a quoted path into spaces,
+	// naming a directory that does not exist.
+	styles := StylesFor(w)
+	hint := styles.Hint
+	command := styles.Info.TabWidth(lipgloss.NoTabConversion)
 
 	// The padding is measured on the bare command and written outside its
 	// style, so the descriptions line up in a column whether or not the

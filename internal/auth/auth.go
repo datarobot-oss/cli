@@ -58,14 +58,12 @@ func FprintUnsetTokenInstructions(w io.Writer) {
 	fmt.Fprintln(w, base.Render(" on Windows)"))
 }
 
-// writerStyles binds the shared text styles to w's renderer. The package
-// defaults probe stdout for color support, so styled text sent to a different
-// stream (stderr redirected to a file while stdout is a TTY, or a buffer in
-// tests) would otherwise carry ANSI codes the destination cannot display.
+// writerStyles is the two shared styles this package writes with, bound to w:
+// see tui.StylesFor for why they cannot be the package defaults.
 func writerStyles(w io.Writer) (base, info lipgloss.Style) {
-	r := lipgloss.NewRenderer(w)
+	styles := tui.StylesFor(w)
 
-	return tui.BaseTextStyle.Renderer(r), tui.InfoStyle.Renderer(r)
+	return styles.Base, styles.Info
 }
 
 // EnvCredentials holds environment variable authentication credentials.
