@@ -315,8 +315,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	cmd.Flags().Var(pollflags.PositiveDuration(&poll.Interval, defaultPollInterval),
 		"poll-interval", "How often to check on a deploy in progress.")
 	cmd.Flags().Var(pollflags.PositiveDuration(&poll.Timeout, defaultPollTimeout),
-		"poll-timeout", "How long each wait, on the build and on the rollout, may take before giving up. "+
-			"Giving up ends the wait, not the deploy.")
+		"poll-timeout", "How long each wait the deploy does, including the build and the rollout, may take "+
+			"before giving up. Giving up ends the wait, not the deploy.")
 }
 
 func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat) error {

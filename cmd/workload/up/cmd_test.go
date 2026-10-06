@@ -914,8 +914,11 @@ func TestCmd_HelpListsThePollFlagsButNotTheBindingFlags(t *testing.T) {
 
 	assert.Contains(t, stdout, "--poll-timeout")
 	assert.Contains(t, stdout, "--poll-interval")
-	assert.NotContains(t, stdout, "--workload-id")
-	assert.NotContains(t, stdout, "--name")
+
+	cmd := Cmd()
+
+	assert.True(t, cmd.Flag("workload-id").Hidden)
+	assert.True(t, cmd.Flag("name").Hidden)
 }
 
 // The commands are runnable as printed from the project that was just
