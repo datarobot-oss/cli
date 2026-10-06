@@ -828,13 +828,11 @@ func projectAt(dir, projectDir string) string {
 //
 // A failed run also loses two of the lines, for the reason the endpoint's tick
 // is dropped on the same run. 'stop' is not a next step for a deploy that did
-// not land, and neither is --promote: a deploy onto a stopped workload starts it
+// not land, and neither is promote: a deploy onto a stopped workload starts it
 // before it rolls, so a run that fails after that really has put a draft on the
 // air, but locking a version this run could not finish is not the remedy for
 // it, and draftWarning names the command inline for anyone who decides
-// otherwise. --promote is in any case the one line that could not be made to name
-// the workload, since it takes no id, and on a failed run the manifest may hold
-// no binding for it to resolve. What survives is logs and status, which are the
+// otherwise. What survives is logs and status, which are the
 // right pair for an errored workload, a wait that timed out and a rollout that
 // never completed, and which carry the id that the errors naming those same
 // commands do not.

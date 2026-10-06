@@ -822,7 +822,14 @@ func TestRun_StoppedRollLocksOnlyTheVersionItLeavesServing(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"promote:68b0c1d2e3f4a5b6c7d8e9f0"}, locks(tr.steps),
-		"one promotion, after the roll, so it lands on the version the run left running")
+		"one promotion, so the version rolled off is never made permanent")
+
+	// The order is the whole point: the promote route locks whatever the
+	// workload serves when it is called, so it must come after the swap.
+	promoted := slices.Index(tr.steps, "promote:68b0c1d2e3f4a5b6c7d8e9f0")
+	replaced := slices.Index(tr.steps, "replace:art-2")
+	require.NotEqual(t, -1, replaced)
+	assert.Greater(t, promoted, replaced, "promoted before the swap would lock the version being rolled off: %v", tr.steps)
 	assert.True(t, result.Locked)
 }
 

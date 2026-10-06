@@ -785,8 +785,8 @@ func noteIgnoreFile(code CodeChange, opts Options) {
 //
 // That is not a cosmetic slip. Deploying a locked, versioned artifact onto a
 // fresh workload is how a promotion works, and getting it wrong there tells
-// someone their permanent deploy is temporary and then advises 'up --promote',
-// which the platform answers with a 403 because the artifact is already
+// someone their permanent deploy is temporary and then advises promoting it,
+// which the platform answers with a 422 because the artifact is already
 // locked. The reader is left with a warning they cannot act on.
 //
 // Only creates ask. A roll onto a live workload cannot hit this, because the

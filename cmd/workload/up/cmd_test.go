@@ -1037,9 +1037,9 @@ func TestCmd_FailedRunStillNamesTheWorkload(t *testing.T) {
 	assert.Contains(t, stderr, "68b0c1d2e3f4a5b6c7d8e9f0")
 }
 
-// --promote takes no id, so on a failed run it cannot be made to name the
-// workload, and that is the run whose manifest may hold no binding. Printed
-// bare it would create a second workload instead of locking this one.
+// A deploy that did not land is not promoted: locking a version this run
+// could not finish is not the remedy for it, so the promote line is left out
+// of the follow-ups on a failed run.
 func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	result := deployed()
 	result.Action = up.ActionStarted
@@ -1055,7 +1055,7 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	// Scoped to the block: the draft warning above it names the same command
 	// as prose, and says the same thing on the successful runs where it is
 	// sound. This is about the copy-and-run list.
-	assert.NotContains(t, next, "--promote")
+	assert.NotContains(t, next, "dr workload promote")
 	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
 		"the lines that can name the workload still do")
 }
