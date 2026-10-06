@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
@@ -217,4 +218,75 @@ func TestDeleteQuestion_PurgeNamesWhatElseGoes(t *testing.T) {
 	assert.NotContains(t, deleteQuestion(ref, false), "--purge")
 	assert.Contains(t, deleteQuestion(ref, true), "the credentials this project minted")
 	assert.Contains(t, deleteQuestion(ref, true), "the local state directory")
+}
+
+// An artifact another workload still runs is the sign that workload may read
+// the same credentials, so they stay with it and the output says so.
+func TestPurge_AReferencedArtifactKeepsTheCredentialsToo(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, purgeManifest)
+	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "68a0000000000000000000a1"}))
+
+	f := &purgeFakes{
+		artifact:    &workload.Artifact{ID: "68a0000000000000000000a1", Status: workload.ArtifactStatusDraft},
+		deleteErr:   &drapi.HTTPError{StatusCode: http.StatusConflict},
+		credentials: map[string]string{"68f0cccc0000000000000001": "my-app/API_KEY"},
+	}
+	installPurge(t, f)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, boundID, true)
+
+	assert.Contains(t, buf.String(), "Kept the credentials: another workload still runs this artifact")
+	assert.Empty(t, f.deletedCredentials)
+}
+
+// A credential already gone is reported like an artifact already gone: the
+// reference is what is removed, not a leftover the user has to deal with.
+func TestPurge_ACredentialAlreadyGoneIsNotALeftover(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, purgeManifest)
+
+	f := &purgeFakes{credentials: map[string]string{"68f0cccc0000000000000002": "team-shared-key"}}
+	installPurge(t, f)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, boundID, true)
+
+	assert.Contains(t, buf.String(), "Removed the reference to credential 68f0cccc0000000000000001 for API_KEY, which was already gone")
+	assert.NotContains(t, buf.String(), "could not read it")
+}
+
+// Without a name the minted pattern is the bare variable name, which is the
+// shared credential a purge must never delete.
+func TestPurge_AManifestWithNoNameDeletesNoCredential(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, strings.Replace(purgeManifest, "name: my-app\n", "", 1))
+
+	f := &purgeFakes{credentials: map[string]string{"68f0cccc0000000000000001": "API_KEY"}}
+	installPurge(t, f)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, boundID, true)
+
+	assert.Empty(t, f.deletedCredentials)
+	assert.Contains(t, buf.String(), "Kept the credentials: the manifest has no name")
+}
+
+// A workload the platform does not have is not deleted, so nothing is purged,
+// and a --purge run is told rather than left to assume the leftovers went.
+func TestHandleDeleteError_NotFoundSaysNothingWasPurged(t *testing.T) {
+	var buf bytes.Buffer
+
+	ref := idargs.Ref{ID: boundID}
+	err := handleDeleteError(&buf, &drapi.HTTPError{StatusCode: http.StatusNotFound}, ref, true)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Nothing purged: the workload was not found here")
+
+	buf.Reset()
+	require.NoError(t, handleDeleteError(&buf, &drapi.HTTPError{StatusCode: http.StatusNotFound}, ref, false))
+	assert.Empty(t, buf.String(), "a plain delete has nothing to say about leftovers")
 }

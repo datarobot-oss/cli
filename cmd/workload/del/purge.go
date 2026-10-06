@@ -53,8 +53,14 @@ type purgeReport struct {
 func purgeLeftovers(w io.Writer, projectDir, manifestPath string) {
 	var report purgeReport
 
-	purgeCredentials(manifestPath, &report)
-	purgeArtifact(projectDir, &report)
+	// The artifact goes first: one another workload still runs is the sign
+	// that workload may read the same credentials, so they stay with it.
+	if purgeArtifact(projectDir, &report) {
+		report.kept = append(report.kept, "the credentials: another workload still runs this artifact and may read them")
+	} else {
+		purgeCredentials(manifestPath, &report)
+	}
+
 	purgeState(projectDir, &report)
 
 	for _, line := range report.removed {
@@ -79,6 +85,15 @@ func purgeCredentials(manifestPath string, report *purgeReport) {
 		return
 	}
 
+	// Without a name, the minted pattern collapses to the bare variable name,
+	// which is exactly the shared credential this must not delete.
+	if m.Name() == "" && len(compiled.CredentialRefs) > 0 {
+		report.kept = append(report.kept, "the credentials: the manifest has no name, so the ones this project minted "+
+			"cannot be told from shared ones")
+
+		return
+	}
+
 	seen := map[string]bool{}
 
 	for _, ref := range compiled.CredentialRefs {
@@ -88,39 +103,51 @@ func purgeCredentials(manifestPath string, report *purgeReport) {
 
 		seen[ref.CredentialID] = true
 
-		cred, err := getCredentialFn(ref.CredentialID)
-		if err != nil {
-			report.kept = append(report.kept, fmt.Sprintf("credential %s for %s: could not read it: %v",
-				ref.CredentialID, ref.EnvName, err))
-
-			continue
-		}
-
-		minted := wizard.CredentialName(m.Name(), ref.EnvName)
-		if cred.Name != minted {
-			report.kept = append(report.kept, fmt.Sprintf(
-				"credential %s (%s) for %s: not minted by this project, so it may be shared; "+
-					"delete it in the DataRobot UI if it is yours", cred.CredentialID, cred.Name, ref.EnvName))
-
-			continue
-		}
-
-		if err := deleteCredentialFn(cred.CredentialID); err != nil {
-			report.kept = append(report.kept, fmt.Sprintf("credential %s (%s): %v", cred.CredentialID, cred.Name, err))
-
-			continue
-		}
-
-		report.removed = append(report.removed, fmt.Sprintf("credential %s (%s)", cred.CredentialID, cred.Name))
+		purgeCredential(ref, wizard.CredentialName(m.Name(), ref.EnvName), report)
 	}
 }
 
+// purgeCredential deletes one referenced credential when it carries the
+// minted name.
+func purgeCredential(ref manifest.CredentialRef, minted string, report *purgeReport) {
+	cred, err := getCredentialFn(ref.CredentialID)
+	if err != nil {
+		if statusIs(err, http.StatusNotFound) {
+			report.removed = append(report.removed, fmt.Sprintf("the reference to credential %s for %s, which was already gone",
+				ref.CredentialID, ref.EnvName))
+
+			return
+		}
+
+		report.kept = append(report.kept, fmt.Sprintf("credential %s for %s: could not read it: %v",
+			ref.CredentialID, ref.EnvName, err))
+
+		return
+	}
+
+	if cred.Name != minted {
+		report.kept = append(report.kept, fmt.Sprintf(
+			"credential %s (%s) for %s: not minted by this project, so it may be shared; "+
+				"delete it in the DataRobot UI if it is yours", cred.CredentialID, cred.Name, ref.EnvName))
+
+		return
+	}
+
+	if err := deleteCredentialFn(cred.CredentialID); err != nil {
+		report.kept = append(report.kept, fmt.Sprintf("credential %s (%s): %v", cred.CredentialID, cred.Name, err))
+
+		return
+	}
+
+	report.removed = append(report.removed, fmt.Sprintf("credential %s (%s)", cred.CredentialID, cred.Name))
+}
+
 // purgeArtifact deletes the linked artifact unless it is locked or another
-// workload still references it.
-func purgeArtifact(projectDir string, report *purgeReport) {
+// workload still references it, and reports the latter.
+func purgeArtifact(projectDir string, report *purgeReport) (shared bool) {
 	cfg, err := wapi.LoadConfig(projectDir)
 	if err != nil || cfg.ArtifactID == "" {
-		return
+		return false
 	}
 
 	id := cfg.ArtifactID
@@ -130,18 +157,18 @@ func purgeArtifact(projectDir string, report *purgeReport) {
 		if statusIs(err, http.StatusNotFound) {
 			report.removed = append(report.removed, "the link to artifact "+id+", which was already gone")
 
-			return
+			return false
 		}
 
 		report.kept = append(report.kept, fmt.Sprintf("artifact %s: could not read it: %v", id, err))
 
-		return
+		return false
 	}
 
 	if artifact.IsLocked() {
 		report.kept = append(report.kept, "artifact "+id+": it is locked, and a locked artifact cannot be deleted")
 
-		return
+		return false
 	}
 
 	if err := deleteArtifactFn(id); err != nil {
@@ -149,15 +176,17 @@ func purgeArtifact(projectDir string, report *purgeReport) {
 			report.kept = append(report.kept, "artifact "+id+": another workload still references it; "+
 				"run 'dr artifact delete "+id+"' once nothing does")
 
-			return
+			return true
 		}
 
 		report.kept = append(report.kept, fmt.Sprintf("artifact %s: %v", id, err))
 
-		return
+		return false
 	}
 
 	report.removed = append(report.removed, "artifact "+id)
+
+	return false
 }
 
 // purgeState removes the local state directory, so the next deploy links a

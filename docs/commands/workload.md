@@ -181,7 +181,7 @@ dr workload list [--status <status>] [--enclave <name>] [--limit N] [--offset N]
 
 ### `delete`
 
-Delete a workload by id. A running workload is stopped first and then removed. The artifact it was created from is not deleted. You are asked to confirm unless `--yes` is set.
+Delete a workload by id. A running workload is stopped first and then removed. The artifact it was created from is not deleted unless you pass `--purge`. You are asked to confirm unless `--yes` is set.
 
 ```bash
 dr workload delete [<workload-id>] [--dir <path>] [--purge] [--yes]
@@ -193,7 +193,7 @@ dr workload delete [<workload-id>] [--dir <path>] [--purge] [--yes]
 - `--dir <path>`: project directory whose `.datarobot.yaml` names the workload, and holds the binding to clear, searched upward from there. Defaults to the current directory. Pass the same value you deployed with, since a manifest in a subdirectory is not visible from its parent.
 - `--purge`: also remove what the deploy created beside the workload, so the next `up` starts from scratch: the credentials this project minted (named `<workload>/<VARIABLE>` and referenced from the manifest), the draft artifact the project is linked to when no other workload references it, and the `.datarobot/workload/` state directory. A locked artifact cannot be deleted and is named; a credential referenced by id but not minted by this project may be shared, so it is left and named too. The manifest keeps its environment variables, which the next `--sync-env` recreates as needed. The confirmation names everything a purge removes; `--yes` alone never widens what a delete does. Without a manifest naming the workload, nothing is purged and the command says so.
 
-If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next deploy from this project creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
+If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next deploy from this project creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. Without `--purge`, the artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
 
 A manifest this edit cannot make sound again is refused rather than rewritten, with the reason and the remedy: a binding whose value something else aliases, repeated `workloadId` keys that disagree, a file whose only recognized key is the binding, and a file carrying more than one YAML document.
 

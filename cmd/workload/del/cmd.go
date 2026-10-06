@@ -93,7 +93,7 @@ Example:
 			}
 
 			if err := workload.DeleteWorkload(ref.ID); err != nil {
-				return handleDeleteError(err, ref)
+				return handleDeleteError(cmd.ErrOrStderr(), err, ref, purge)
 			}
 
 			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
@@ -176,7 +176,7 @@ func deleteQuestion(ref idargs.Ref, purge bool) string {
 // branch where nothing was actually deleted, would be the stronger claim made
 // on the weaker evidence. A binding that really is dead is cleared by the
 // deploy that recreates it.
-func handleDeleteError(err error, ref idargs.Ref) error {
+func handleDeleteError(w io.Writer, err error, ref idargs.Ref, purge bool) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
@@ -189,6 +189,12 @@ func handleDeleteError(err error, ref idargs.Ref) error {
 		}
 
 		fmt.Println(tui.DimStyle.Render(said))
+
+		// The same doubt that leaves the binding alone leaves the leftovers:
+		// nothing was deleted, so nothing is purged, and it has to be said.
+		if purge {
+			fmt.Fprintln(w, tui.WarnStyle.Render("Nothing purged: the workload was not found here, so its leftovers were not looked for."))
+		}
 
 		return nil
 	}
