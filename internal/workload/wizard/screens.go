@@ -437,7 +437,7 @@ func (f flow) liveChoice(at screen) string {
 // is not mistaken for a fresh one and the preselected row is not mistaken for
 // the wizard's own guess.
 func (f flow) liveDefaultsNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -448,7 +448,7 @@ func (f flow) liveDefaultsNote() string {
 // liveValuesNote is the same idea for the screens made of fields rather than
 // options, where there is no row to tag.
 func (f flow) liveValuesNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -780,7 +780,7 @@ func (f flow) settingsNote() string {
 // release cannot read, in which case the field is not about that probe at all
 // and nothing typed here will touch it.
 func (f flow) liveProbeNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -877,7 +877,7 @@ func (f flow) previewText() string {
 		return f.diff
 	}
 
-	if f.live != nil {
+	if f.bound() {
 		return string(f.content) + "\n" + tui.HintStyle.Render("no change to the running workload")
 	}
 
@@ -1005,7 +1005,7 @@ func (f flow) liveReadinessProbe() (present, readable bool) {
 }
 
 func (f flow) nextStep() string {
-	if f.live != nil {
+	if f.bound() {
 		return "On `up`: deploys this repo to " + f.live.Name + "."
 	}
 

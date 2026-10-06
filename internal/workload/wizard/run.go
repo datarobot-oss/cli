@@ -1452,7 +1452,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// Read off the workload as it arrived, not off applied: the point is what
 	// the platform was already serving in the clear, and a run that failed
 	// above has no file to warn about.
-	warnLiveSecretLiterals(o.Stderr, live)
+	warnSecretLiterals(o.Stderr, live, live.Name, "binding")
 
 	return content, draft, nil
 }
@@ -1803,8 +1803,8 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 		detected.EnvErr, manifest.FileName)
 }
 
-// warnLiveSecretLiterals names the variables a bound workload already declares
-// in the clear whose values say what they are.
+// warnSecretLiterals names the variables a bound workload or a spec file
+// already declares in the clear whose values say what they are.
 //
 // The .env import classifies what it carries and writes a secret as a
 // reference. The live spec gets no such treatment, by design: binding
@@ -1822,7 +1822,10 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 // manifest. That one lists everything ordinary and is bounded to stay
 // readable; this lists only values carrying an issuer's own signature, of
 // which any number is worth reading to the end.
-func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
+//
+// subject is what declared the values, the workload or the spec file, and
+// actor is what copies them across.
+func warnSecretLiterals(stderr io.Writer, live manifest.Live, subject, actor string) {
 	if stderr == nil {
 		return
 	}
@@ -1840,9 +1843,9 @@ func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
 	}
 
 	fmt.Fprintf(stderr,
-		"Warning: %s declares %d %s whose value looks like a secret, and binding copies it as it stands: %s.\n"+
+		"Warning: %s declares %d %s whose value looks like a secret, and %s copies it as it stands: %s.\n"+
 			"  Replace the value in %s with a %s<credential-id>/<key> reference before committing the file.\n",
-		live.Name, len(named), Plural(len(named), "variable", "variables"), strings.Join(named, ", "),
+		subject, len(named), Plural(len(named), "variable", "variables"), actor, strings.Join(named, ", "),
 		manifest.FileName, manifest.CredentialShorthandPrefix)
 }
 

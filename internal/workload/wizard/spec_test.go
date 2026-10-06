@@ -15,8 +15,10 @@
 package wizard
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -244,4 +246,151 @@ func TestFlow_PreparedSpecStillAsksAboutTheEnvFile(t *testing.T) {
 
 	model := newFlow(Detect(dir), nil, Answers{}).withPrepared(prepared)
 	assert.Equal(t, screenEnv, model.at)
+}
+
+// A spec whose spec block has no container passes the shape check but has
+// nowhere to write the answers, so it is refused up front with the message
+// the loader promises rather than by Apply, naming a file that does not
+// exist yet.
+func TestLoadSpec_RefusesASpecWithNoPrimaryContainer(t *testing.T) {
+	dir := t.TempDir()
+	_, err := LoadSpec(writeSpec(t, dir, "name: hollow\nspec:\n  containerGroups: []\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "primary container")
+}
+
+// The kind is the file's answer too.
+func TestRun_SpecFileRefusesTheKindFlags(t *testing.T) {
+	dir := t.TempDir()
+	spec := writeSpec(t, dir, artifactSpec)
+
+	for name, answers := range map[string]Answers{
+		"type": {Name: "my-app", Type: manifest.TypeAgent},
+		"a2a":  {Name: "my-app", A2AEnabled: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Run(withSpec(dir, spec, answers))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "cannot be combined with --spec-file")
+		})
+	}
+}
+
+// A build the directory cannot support is refused before anything is asked,
+// on a terminal as headless: the source screen that would have said so is
+// the one the file skips.
+func TestFlow_PreparedSpecRefusesABuildTheDirectoryCannotMake(t *testing.T) {
+	for name, c := range map[string]struct {
+		build string
+		want  string
+	}{
+		"dockerfile build with no Dockerfile": {
+			build: "imageBuildConfig: {dockerfile: {source: provided}}",
+			want:  "has none",
+		},
+		"generated build with nothing to build from": {
+			build: "imageBuildConfig: {dockerfile: {source: generated, executionEnvironmentId: a, executionEnvironmentVersionId: b, entrypoint: [python, app.py]}}",
+			want:  "cannot be made from",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			spec := strings.Replace(artifactSpec, "imageUri: registry/app:v7", c.build, 1)
+
+			prepared, err := LoadSpec(writeSpec(t, dir, spec))
+			require.NoError(t, err)
+
+			model := newFlow(Detect(dir), nil, Answers{}).withPrepared(prepared)
+			require.Error(t, model.failed)
+			assert.Contains(t, model.failed.Error(), c.want)
+
+			_, err = Run(withSpec(dir, writeSpec(t, dir, spec), Answers{Name: "my-app"}))
+			require.Error(t, err, "headless says the same")
+			assert.Contains(t, err.Error(), c.want)
+		})
+	}
+}
+
+// The confirm screen speaks of a new workload, not of one running: a spec
+// file is as new as a fresh setup, so there is no diff and no "(running)".
+func TestFlow_PreparedSpecConfirmReadsAsAFreshSetup(t *testing.T) {
+	dir := t.TempDir()
+	prepared, err := LoadSpec(writeSpec(t, dir, workloadSpec))
+	require.NoError(t, err)
+
+	model := newFlow(Detect(dir), nil, Answers{}).withPrepared(prepared)
+	require.Equal(t, screenConfirm, model.at)
+
+	view := model.View()
+	assert.Contains(t, view, "creates a new workload")
+	assert.NotContains(t, view, "(running)")
+	assert.NotContains(t, view, "no change to the running workload")
+	assert.Empty(t, model.diff)
+}
+
+// Renaming on the way back through the name screen renames the artifact too:
+// the first derivation must not stick to the shared spec.
+func TestFlow_PreparedArtifactSpecFollowsARename(t *testing.T) {
+	dir := t.TempDir()
+	prepared, err := LoadSpec(writeSpec(t, dir, strings.Replace(artifactSpec, "name: prepared-artifact\n", "", 1)))
+	require.NoError(t, err)
+
+	model := newFlow(Detect(dir), nil, Answers{}).withPrepared(prepared)
+	model = press(t, pastName(t, model), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	assert.Contains(t, string(model.content), "name: test-app"+manifest.ArtifactNameSuffix)
+
+	model = press(t, model, "esc", "esc")
+	require.Equal(t, screenName, model.at)
+
+	model = press(t, press(t, typeInto(t, model, "renamed-app"), "enter"), "enter")
+	require.Equal(t, screenConfirm, model.at)
+	assert.Contains(t, string(model.content), "name: renamed-app"+manifest.ArtifactNameSuffix)
+	assert.NotContains(t, string(model.content), "test-app")
+}
+
+// Setup run from the parent of the project still offers the directory first.
+// Choosing the project keeps the file's answers: the build, the port and the
+// name are the spec's, not the chosen directory's.
+func TestFlow_PreparedSpecSurvivesTheDirectoryScreen(t *testing.T) {
+	parent := t.TempDir()
+	app := filepath.Join(parent, "my-app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	writeDockerfile(t, app, "FROM scratch\nEXPOSE 3000\n")
+
+	prepared, err := LoadSpec(writeSpec(t, parent, workloadSpec))
+	require.NoError(t, err)
+
+	model := newFlow(Detect(parent), nil, Answers{}).withPrepared(prepared)
+	require.Equal(t, screenDirectory, model.at)
+
+	model = press(t, model, "enter")
+	require.NoError(t, model.failed)
+	assert.Equal(t, app, model.detected.Dir)
+	assert.Equal(t, "prepared-app", model.draft.Name, "the file's name, not the directory's")
+	assert.Equal(t, manifest.BuildModeImage, model.draft.Build.Mode, "the file's image, not the Dockerfile found")
+	assert.Equal(t, 9090, model.draft.Port, "the file's port, not the EXPOSE")
+	require.Equal(t, screenConfirm, model.at)
+	assert.Contains(t, string(model.content), "imageUri: registry/app:v7")
+	assert.NotContains(t, string(model.content), "source: provided")
+}
+
+// A secret-looking literal in the file is named as the file's, since no
+// workload declared it and nothing is being bound.
+func TestRun_SpecFileWarnsAboutItsOwnSecretLiterals(t *testing.T) {
+	dir := t.TempDir()
+	spec := strings.Replace(workloadSpec, "            imageUri: registry/app:v7\n",
+		"            imageUri: registry/app:v7\n            environmentVars:\n"+
+			"              - name: OPENAI_API_KEY\n                value: sk-abcdefghijklmnopqrstuvwxyz012345\n", 1)
+	path := writeSpec(t, dir, spec)
+
+	opts := withSpec(dir, path, Answers{})
+
+	_, err := Run(opts)
+	require.NoError(t, err)
+
+	stderr := opts.Stderr.(*bytes.Buffer).String()
+	assert.Contains(t, stderr, "the spec file "+path+" declares 1 variable")
+	assert.Contains(t, stderr, "the manifest copies it")
+	assert.NotContains(t, stderr, "binding copies it")
 }

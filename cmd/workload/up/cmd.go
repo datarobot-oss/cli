@@ -309,7 +309,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 
 	cmd.Flags().StringVar(&f.specFile, "spec-file", "",
 		"On a first deploy, take the setup's answers from a prepared artifact or workload spec (JSON or YAML) "+
-			"instead of the wizard; .datarobot.yaml is written from it. Refused once a manifest exists.")
+			"instead of the wizard; .datarobot.yaml is written from it. Refused once a manifest exists. An artifact "+
+			"spec names no workload, so without a terminal set it up with 'dr workload config --spec-file ... --name ...' first.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")

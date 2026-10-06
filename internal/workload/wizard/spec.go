@@ -57,7 +57,7 @@ func LoadSpec(path string) (Prepared, error) {
 	}
 
 	live, err := manifest.NewLive("", workloadDoc, artifactDoc)
-	if err != nil {
+	if err != nil || !live.HasPrimaryContainer() {
 		return Prepared{}, fmt.Errorf("spec file %s has no usable artifact spec: it needs spec.containerGroups "+
 			"with a primary container", path)
 	}
@@ -106,6 +106,8 @@ func (o Options) checkSpecFile() error {
 	}
 
 	for _, flag := range []specFlag{
+		{"--type", a.Type != ""},
+		{"--a2a-enabled", a.A2AEnabled},
 		{"--build-mode", a.BuildMode != ""},
 		{"--image", a.Image != ""},
 		{"--execution-environment", a.ExecutionEnvironment != ""},
@@ -153,7 +155,7 @@ func (o Options) resolveHeadlessSpec(detected Detected) ([]byte, manifest.Draft,
 		return nil, manifest.Draft{}, err
 	}
 
-	warnLiveSecretLiterals(o.Stderr, live)
+	warnSecretLiterals(o.Stderr, live, "the spec file "+o.SpecFile, "the manifest")
 
 	return content, draft, nil
 }
@@ -174,16 +176,19 @@ func renderPrepared(live manifest.Live, draft manifest.Draft) ([]byte, error) {
 }
 
 // preparedBuildProblem is why the directory cannot support the build the
-// file asks for, "" when it can. A Dockerfile build is judged by the
-// validation ledger, which looks for the file; a generated one is judged
-// here, the way the bound path judges it.
+// file asks for, "" when it can.
 func preparedBuildProblem(detected Detected, draft manifest.Draft) string {
-	if draft.Build.Mode != manifest.BuildModeGenerated {
-		return ""
-	}
-
-	if problem := detected.generatedBuild().problem; problem != "" {
-		return "the spec file's generated build cannot be made from " + detected.Dir + ": " + problem
+	switch draft.Build.Mode {
+	case manifest.BuildModeDockerfile:
+		if !detected.HasDockerfile {
+			return "the spec file builds from a " + DockerfileName + " and " + detected.Dir + " has none"
+		}
+	case manifest.BuildModeGenerated:
+		if problem := detected.generatedBuild().problem; problem != "" {
+			return "the spec file's generated build cannot be made from " + detected.Dir + ": " + problem
+		}
+	case manifest.BuildModeImage:
+		// A published image needs nothing from the directory.
 	}
 
 	return ""

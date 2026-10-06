@@ -597,6 +597,12 @@ func (l Live) primaryContainerName() string {
 	return stringAt(container, keyName)
 }
 
+// HasPrimaryContainer reports whether the spec carries a container to write
+// the answers into, which Apply needs.
+func (l Live) HasPrimaryContainer() bool {
+	return l.primaryContainer() != nil
+}
+
 // applyReadiness writes the port and points the readiness probe wherever the
 // answers say, which includes having no probe at all.
 //

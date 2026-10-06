@@ -228,15 +228,39 @@ func (f flow) withPrepared(p Prepared) flow {
 	f.at = f.first(f.answers)
 	f.enter(f.at)
 
+	// A build the directory cannot support is the headless refusal; on a
+	// terminal the source screen that would say so is skipped, so it is
+	// said here, before anything is asked.
+	if f.at != screenDirectory {
+		f.failed = f.preparedBuildFailure()
+	}
+
 	// A file that answers everything opens on the confirm screen, which is
 	// rendered on arrival rather than on entry.
-	if f.at == screenConfirm {
+	if f.at == screenConfirm && f.failed == nil {
 		if err := f.render(); err != nil {
 			f.failed = err
 		}
 	}
 
 	return f
+}
+
+// preparedBuildFailure is the build problem the spec file has in this
+// directory, nil when there is none.
+func (f flow) preparedBuildFailure() error {
+	if problem := preparedBuildProblem(f.detected, f.draft); problem != "" {
+		return errors.New(problem)
+	}
+
+	return nil
+}
+
+// bound reports a run on a workload that exists: the notes that say "in use"
+// and the diff against what is running are about one of those, not about a
+// spec file, which is as new as a fresh setup.
+func (f flow) bound() bool {
+	return f.live != nil && !f.prepared
 }
 
 // preparedSkips reports the screens a spec file already answers.
@@ -823,8 +847,17 @@ func (f *flow) acceptKind() (tea.Cmd, error) {
 func (f *flow) acceptDirectory() (tea.Cmd, error) {
 	if chosen := f.choice.value(); chosen != f.detected.Dir {
 		f.detected = Detect(chosen)
-		f.startFrom(f.answers.draftOrPartial(f.detected))
 		f.envTable = envTable{}
+
+		// A spec file's answers are the file's, not the old directory's, so
+		// they are layered again rather than rebuilt from detection.
+		if f.prepared {
+			f.draft = f.answers.partialApplyTo(f.live.Defaults(), f.detected)
+			f.nameGiven = f.draft.Name != ""
+			f.failed = f.preparedBuildFailure()
+		} else {
+			f.startFrom(f.answers.draftOrPartial(f.detected))
+		}
 	}
 
 	// A flag-named workload's fetch was deferred to here (see Init): the
@@ -1204,12 +1237,14 @@ func (f *flow) render() error {
 	}
 
 	// A prepared spec may leave the artifact unnamed; it takes the workload's
-	// name the way a fresh render does.
-	if f.prepared && f.live.ArtifactName == "" {
-		f.live.ArtifactName = manifest.ArtifactName(f.draft.Name)
+	// name the way a fresh render does. On a copy, so a rename on the way
+	// back through the name screen is not stuck with the first derivation.
+	live := *f.live
+	if f.prepared && live.ArtifactName == "" {
+		live.ArtifactName = manifest.ArtifactName(f.draft.Name)
 	}
 
-	before, err := f.live.Render()
+	before, err := live.Render()
 	if err != nil {
 		return err
 	}
@@ -1218,9 +1253,9 @@ func (f *flow) render() error {
 	// not one this run adds. Narrowing before Apply rather than leaving it to
 	// Apply's own skip is what keeps the summary the command prints equal to
 	// what reached the file.
-	f.draft.EnvVars = f.live.NewEnvVars(f.draft.EnvVars)
+	f.draft.EnvVars = live.NewEnvVars(f.draft.EnvVars)
 
-	applied, err := f.live.Apply(f.draft)
+	applied, err := live.Apply(f.draft)
 	if err != nil {
 		return err
 	}
@@ -1231,7 +1266,12 @@ func (f *flow) render() error {
 	}
 
 	f.content = content
-	f.diff = unifiedDiff(f.live.Name, string(before), string(content))
+	// A spec file is not running anywhere, so there is nothing to diff it
+	// against: the confirm screen shows the file itself.
+	if f.bound() {
+		f.diff = unifiedDiff(f.live.Name, string(before), string(content))
+	}
+
 	f.buildPreview()
 
 	return nil
@@ -1345,7 +1385,7 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 // rediff recomputes what the confirm screen shows against the current bytes,
 // which is only meaningful when a live workload is being changed.
 func (f *flow) rediff() error {
-	if f.live != nil {
+	if f.bound() {
 		before, err := f.live.Render()
 		if err != nil {
 			return err
