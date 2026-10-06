@@ -37,7 +37,7 @@ import (
 
 // APIKeyCallbackFunc is a variable that holds the function for retrieving API keys.
 // This can be overridden in tests to mock the browser-based authentication flow.
-var APIKeyCallbackFunc = RunBrowserLogin
+var APIKeyCallbackFunc = RunInteractiveLogin
 
 // AuthCallbackURL returns the DataRobot URL the user must visit to authorize the CLI.
 func AuthCallbackURL(datarobotHost string) string {

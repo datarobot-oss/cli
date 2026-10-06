@@ -78,6 +78,11 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
+	oidcCfg, useOIDC := resolveOIDCConfig(cmd)
+	if useOIDC {
+		return runOIDCLogin(cmd, oidcCfg, noBrowser)
+	}
+
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
 		NoBrowser: noBrowser,
 	})
@@ -107,6 +112,84 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	return nil
 }
 
+// resolveOIDCConfig decides whether this login goes straight to an identity
+// provider. Flags win over DATAROBOT_CLI_OAUTH_* variables and the profile's
+// saved settings. A profile with a saved issuer keeps using it on a plain
+// `dr auth login`; --oauth=false forces the API-key hand-off.
+func resolveOIDCConfig(cmd *cobra.Command) (auth.OIDCConfig, bool) {
+	cfg, saved := auth.OIDCConfigFromConfig()
+
+	if issuer, _ := cmd.Flags().GetString(issuerFlag); issuer != "" {
+		cfg.Issuer = issuer
+	}
+
+	if clientID, _ := cmd.Flags().GetString(clientIDFlag); clientID != "" {
+		cfg.ClientID = clientID
+	}
+
+	if scopes, _ := cmd.Flags().GetString(scopesFlag); scopes != "" {
+		cfg.Scopes = strings.Fields(scopes)
+	}
+
+	if redirectURI, _ := cmd.Flags().GetString(redirectURIFlag); redirectURI != "" {
+		cfg.RedirectURI = redirectURI
+	}
+
+	if cmd.Flags().Changed(oauthFlag) {
+		useOAuth, _ := cmd.Flags().GetBool(oauthFlag)
+
+		return cfg.WithDefaults(), useOAuth
+	}
+
+	return cfg.WithDefaults(), saved || cmd.Flags().Changed(issuerFlag)
+}
+
+// runOIDCLogin signs in at the identity provider and saves the access token as
+// the profile's token, plus the OIDC settings for the next login.
+func runOIDCLogin(cmd *cobra.Command, cfg auth.OIDCConfig, noBrowser bool) error {
+	cmd.SilenceUsage = true
+
+	if err := cfg.Validate(); err != nil {
+		log.Error(err)
+
+		return err
+	}
+
+	log.Infof("Signing in at %s", cfg.Issuer)
+
+	token, err := auth.RunOIDCLogin(cmd.Context(), cfg, auth.LoginOptions{NoBrowser: noBrowser})
+	if err != nil {
+		log.Error(err)
+
+		return err
+	}
+
+	viperx.Set(config.DataRobotAPIKey, token)
+	auth.StoreOIDCConfig(cfg)
+
+	if err := auth.PersistOIDCConfig(); err != nil {
+		log.Error(err)
+
+		return err
+	}
+
+	if err := auth.WriteConfigFile(); err != nil {
+		log.Error(err)
+
+		return err
+	}
+
+	return nil
+}
+
+const (
+	oauthFlag       = "oauth"
+	issuerFlag      = "issuer"
+	clientIDFlag    = "client-id"
+	scopesFlag      = "scopes"
+	redirectURIFlag = "redirect-uri"
+)
+
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login [url]",
@@ -119,7 +202,21 @@ This command will:
   3. Securely store your API key for future CLI operations.
 
 If the browser cannot be opened, the CLI prints a link to open yourself. Pass
---no-browser to skip the browser launch entirely, which is useful over SSH.`,
+--no-browser to skip the browser launch entirely, which is useful over SSH.
+
+With --oauth (or --issuer), the CLI signs you in at your identity provider
+directly (Okta, Entra ID, Keycloak, ...) with authorization code + PKCE, and
+stores the IdP's access token instead of an API key. For DataRobot deployments
+whose gateway trusts that IdP. The issuer, client id, scopes and redirect URI
+are saved in the profile, so later logins need no flags:
+
+  dr auth login --oauth --issuer https://example.okta.com/oauth2/default --client-id 0oa...
+  dr auth login
+
+The redirect URI (default http://localhost:51164/) must be registered on the
+IdP's app. Settings can also come from DATAROBOT_CLI_OAUTH_ISSUER,
+DATAROBOT_CLI_OAUTH_CLIENT_ID, DATAROBOT_CLI_OAUTH_SCOPES and
+DATAROBOT_CLI_OAUTH_REDIRECT_URI.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          RunE,
@@ -132,6 +229,14 @@ If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 	// Read directly from cobra rather than binding to viper: this is a transient
 	// per-invocation flag and must never be persisted to drconfig.yaml.
 	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
+
+	// OIDC flags are transient too: runOIDCLogin persists the resolved values
+	// itself, under the OAuth config keys, so nothing here binds to viper.
+	cmd.Flags().Bool(oauthFlag, false, "sign in at an identity provider directly (OIDC authorization code + PKCE)")
+	cmd.Flags().String(issuerFlag, "", "OIDC issuer URL of the identity provider (implies --oauth)")
+	cmd.Flags().String(clientIDFlag, "", "OIDC client id of the CLI's app registration at the identity provider")
+	cmd.Flags().String(scopesFlag, "", `space-separated scopes to request (default "openid profile")`)
+	cmd.Flags().String(redirectURIFlag, "", "loopback redirect URI registered at the identity provider (default http://localhost:51164/)")
 
 	return cmd
 }

@@ -44,6 +44,11 @@ dr auth login
 | Flag           | Description                                                |
 | -------------- | ---------------------------------------------------------- |
 | `--no-browser` | Print the login link instead of opening a browser (useful over SSH) |
+| `--oauth` | Sign in at an identity provider directly (OIDC authorization code + PKCE) instead of through DataRobot |
+| `--issuer` | OIDC issuer URL of the identity provider; implies `--oauth` |
+| `--client-id` | OIDC client id of the CLI's app registration at the identity provider |
+| `--scopes` | Space-separated scopes to request (default `openid profile`) |
+| `--redirect-uri` | Loopback redirect URI registered at the identity provider (default `http://localhost:51164/`) |
 
 **What happens:**
 
@@ -98,6 +103,42 @@ $ dr auth login
 
 If another `dr` process is already waiting on `localhost:51164`, the new one asks it to
 release the port and takes over. The wait times out after 5 minutes.
+
+#### Signing in at your identity provider (`--oauth`)
+
+For DataRobot deployments whose gateway validates tokens from your identity provider
+(Okta, Entra ID, Keycloak, ...), `--oauth` skips DataRobot's login page entirely. The CLI
+runs a standard OIDC authorization code flow with PKCE (RFC 7636) against the issuer you
+name, catches the redirect on a loopback listener (RFC 8252), and stores the IdP's access
+token as the profile's `token`. It is sent as `Authorization: Bearer` like an API key.
+
+```bash
+dr --profile myidp auth set-url https://datarobot.example.com
+dr --profile myidp auth login --oauth \
+  --issuer https://example.okta.com/oauth2/aus123 \
+  --client-id 0oa456
+```
+
+**Set up at the identity provider:** a public (native) OIDC app with the authorization
+code grant and PKCE, no client secret, and the redirect URI `http://localhost:51164/`
+registered (or pass `--redirect-uri` with one that is). The access token's audience and
+claims must be what the DataRobot gateway expects.
+
+**Saved settings:** the issuer, client id, scopes and redirect URI are written to the
+profile (`oauth-issuer`, `oauth-client-id`, `oauth-scopes`, `oauth-redirect-uri`). A later
+`dr auth login` with no flags signs in at the same IdP, and so does the automatic login
+when a command finds the token expired. `--oauth=false` forces the API-key flow. `dr auth
+logout` clears the token and keeps the settings.
+
+**Environment variables:** `DATAROBOT_CLI_OAUTH_ISSUER`, `DATAROBOT_CLI_OAUTH_CLIENT_ID`,
+`DATAROBOT_CLI_OAUTH_SCOPES` and `DATAROBOT_CLI_OAUTH_REDIRECT_URI` supply the same
+settings, below flags.
+
+**Checks:** the issuer must be https (loopback http is allowed for testing), the
+discovery document's `issuer` must match it exactly, and the redirect URI must be an
+http loopback address with a port. The callback's `state` must match the one the CLI
+sent. Refresh tokens are not requested; when the access token expires, the CLI signs
+in again.
 
 ### `logout`
 

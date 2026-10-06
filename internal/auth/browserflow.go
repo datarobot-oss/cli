@@ -26,7 +26,6 @@ import (
 
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/tui"
 )
@@ -120,7 +119,7 @@ func (f *BrowserFlow) localAddr() string {
 // user the link instead; it is never fatal to the login itself, because the user
 // can always follow the link by hand.
 func (f *BrowserFlow) OpenBrowser() error {
-	return open.Open(f.authURL)
+	return openBrowser(f.authURL)
 }
 
 // Wait serves the callback endpoint until the API key arrives, the user
@@ -252,12 +251,32 @@ func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOp
 // Split out from RunBrowserLoginWith so tests can drive a flow on an ephemeral port
 // instead of competing for the fixed production one.
 func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions) (string, error) {
+	var apiKey string
+
+	err := promptAndWait(flow.AuthURL(), opts, func() error {
+		var waitErr error
+
+		apiKey, waitErr = flow.Wait(ctx)
+
+		return waitErr
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return apiKey, nil
+}
+
+// promptAndWait opens authURL in the browser (unless opts.NoBrowser), shows the
+// link beneath a spinner, and runs wait until the callback arrives. Shared by the
+// API-key hand-off and the direct OIDC login so both look the same.
+func promptAndWait(authURL string, opts LoginOptions, wait func() error) error {
 	// The browser state drives the wording: when no browser opened, the link stops
 	// being a footnote and becomes the primary instruction.
 	state := BrowserSkipped
 
 	if !opts.NoBrowser {
-		openErr := flow.OpenBrowser()
+		openErr := openBrowser(authURL)
 		if openErr != nil {
 			log.Debugf("Could not open the browser automatically: %v", openErr)
 		}
@@ -267,19 +286,7 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	// RunWithSpinner renders "<spinner> <label>", and the label may span lines, so
 	// the prompt block rides along beneath the spinner without a second component.
-	label := SpinnerLabel(state) + RenderBrowserPrompt(flow.AuthURL(), state)
-
-	var apiKey string
-
-	wait := func() error {
-		var waitErr error
-
-		apiKey, waitErr = flow.Wait(ctx)
-
-		return waitErr
-	}
-
-	var err error
+	label := SpinnerLabel(state) + RenderBrowserPrompt(authURL, state)
 
 	// The link is what this command exists to produce, so it goes to stdout - where
 	// the animated spinner renders its own copy (tui.Run hands bubbletea os.Stdout)
@@ -294,16 +301,10 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	if !reader.IsStdinTerminal() || reader.IsNonInteractive() {
 		fmt.Fprintln(os.Stdout, label)
 
-		err = wait()
-	} else {
-		err = tui.RunWithSpinner(label, wait)
+		return wait()
 	}
 
-	if err != nil {
-		return "", err
-	}
-
-	return apiKey, nil
+	return tui.RunWithSpinner(label, wait)
 }
 
 // listenReclaimingPort binds addr, first asking any auth server left over from a
