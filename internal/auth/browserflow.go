@@ -312,10 +312,19 @@ func promptAndWait(authURL string, opts LoginOptions, wait func() error) error {
 //
 // A keyless GET to the callback endpoint is the interrupt sentinel: the stale
 // process sees an empty key, aborts its own wait, and closes its listener.
+//
+// "localhost" binds a single address (127.0.0.1), but browsers may reach the
+// port over ::1 instead. So a program serving the port on any loopback address
+// counts as holding it: binding beside it would leave the CLI waiting for a
+// redirect the browser delivers to that other program.
 func listenReclaimingPort(addr string) (net.Listener, error) {
-	listener, listenErr := net.Listen("tcp", addr)
-	if listenErr == nil {
-		return listener, nil
+	if !loopbackPortInUse(addr) {
+		listener, listenErr := net.Listen("tcp", addr)
+		if listenErr == nil {
+			return listener, nil
+		}
+
+		log.Debugf("Auth callback port %s is busy: %v", addr, listenErr)
 	}
 
 	log.Debugf("Auth callback port %s is busy, asking the previous process to release it", addr)
@@ -331,9 +340,11 @@ func listenReclaimingPort(addr string) (net.Listener, error) {
 
 	// The stale process needs a moment to unwind its wait and close the listener.
 	for attempt := range 10 {
-		listener, err := net.Listen("tcp", addr)
-		if err == nil {
-			return listener, nil
+		if !loopbackPortInUse(addr) {
+			listener, err := net.Listen("tcp", addr)
+			if err == nil {
+				return listener, nil
+			}
 		}
 
 		if attempt < 9 {
@@ -341,7 +352,26 @@ func listenReclaimingPort(addr string) (net.Listener, error) {
 		}
 	}
 
-	// Report the original failure, which describes why the port was unavailable in
-	// the first place, rather than the last retry's identical error.
-	return nil, fmt.Errorf("auth callback port %s is already in use: %w", addr, listenErr)
+	return nil, fmt.Errorf("auth callback port %s is already in use by another program; stop it and try again", addr)
+}
+
+// loopbackPortInUse reports whether anything accepts connections on addr's
+// port over IPv4 or IPv6 loopback. Only a completed connection counts, so a
+// slow refusal (Windows) reads as free.
+func loopbackPortInUse(addr string) bool {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+
+			return true
+		}
+	}
+
+	return false
 }

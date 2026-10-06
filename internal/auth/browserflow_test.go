@@ -16,7 +16,9 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -501,4 +503,30 @@ func TestRunLoginWithFlow_PrintsLinkToStdout(t *testing.T) {
 		"the whole link must reach stdout unbroken")
 	assert.NotContains(t, stderr, "cliRedirect=true",
 		"the link must not be diverted to stderr, where redirected callers miss it")
+}
+
+// A program serving the callback port on ::1 only must block the login: binding
+// 127.0.0.1 beside it would leave the CLI waiting while the browser's redirect
+// (which may use ::1) lands on the other program.
+func TestListenReclaimingPort_RefusesPortHeldOnIPv6Loopback(t *testing.T) {
+	foreign, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+
+	// An HTTP server that ignores the handover sentinel, like any other web app.
+	srv := &http.Server{Handler: http.NotFoundHandler(), ReadHeaderTimeout: time.Second}
+
+	go func() { _ = srv.Serve(foreign) }()
+
+	t.Cleanup(func() { _ = srv.Close() })
+
+	port := foreign.Addr().(*net.TCPAddr).Port
+
+	listener, err := listenReclaimingPort(fmt.Sprintf("localhost:%d", port))
+	if listener != nil {
+		_ = listener.Close()
+	}
+
+	require.ErrorContains(t, err, "already in use by another program")
 }
