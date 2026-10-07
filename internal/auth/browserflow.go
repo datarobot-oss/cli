@@ -281,22 +281,25 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	var err error
 
-	// The link is what this command exists to produce, so it goes to stdout - where
-	// the animated spinner renders its own copy (tui.Run hands bubbletea os.Stdout)
-	// and where callers that redirect the streams separately look for it. The Windows
+	// The link is what this command exists to produce, so it always reaches stdout,
+	// where callers that redirect the streams separately look for it. The Windows
 	// smoke test is one such caller; the expect-based Linux and macOS ones cannot tell
 	// the difference, because a PTY merges stdout and stderr.
 	//
-	// Printing it here rather than leaving it to tui.RunWithSpinner, which only shows
-	// the label while it animates: it drops the label outright without a terminal, and
-	// diverts it to stderr under DATAROBOT_CLI_NON_INTERACTIVE. Neither leaves the
-	// link on stdout, and the spinner is no use in either case anyway.
-	if !reader.IsStdinTerminal() || reader.IsNonInteractive() {
-		fmt.Fprintln(os.Stdout, label)
+	// The spinner draws on stderr, so it only carries the link to a reader who sees
+	// both streams on one terminal. Whenever stdout is not that terminal the label is
+	// printed there too, and with no keyboard to answer or no animation wanted the
+	// spinner is skipped altogether.
+	printLink, spin := loginOutput(reader.IsStdinTerminal(), reader.IsStdoutTerminal(), reader.IsNonInteractive())
 
-		err = wait()
-	} else {
+	if printLink {
+		fmt.Fprintln(os.Stdout, label)
+	}
+
+	if spin {
 		err = tui.RunWithSpinner(label, wait)
+	} else {
+		err = wait()
 	}
 
 	if err != nil {
@@ -304,6 +307,15 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	}
 
 	return apiKey, nil
+}
+
+// loginOutput decides where the login label goes: printed to stdout unless the
+// animated spinner will show it on the same terminal, and animated only with a
+// keyboard and when animation is wanted.
+func loginOutput(stdinTerm, stdoutTerm, nonInteractive bool) (printLink, spin bool) {
+	spin = stdinTerm && !nonInteractive
+
+	return !spin || !stdoutTerm, spin
 }
 
 // listenReclaimingPort binds addr, first asking any auth server left over from a

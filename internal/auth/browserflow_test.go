@@ -502,3 +502,28 @@ func TestRunLoginWithFlow_PrintsLinkToStdout(t *testing.T) {
 	assert.NotContains(t, stderr, "cliRedirect=true",
 		"the link must not be diverted to stderr, where redirected callers miss it")
 }
+
+// The link reaches stdout in every case but one: the spinner is animating on
+// the same terminal stdout is, and already shows it. A terminal session that
+// redirects stdout (the Windows smoke test, or `dr auth login > link.txt`)
+// still gets the link in the file, because the spinner draws on stderr.
+func TestLoginOutput(t *testing.T) {
+	tests := []struct {
+		name                               string
+		stdinTerm, stdoutTerm, nonInteract bool
+		wantPrint, wantSpin                bool
+	}{
+		{"no terminal", false, false, false, true, false},
+		{"terminal, stdout redirected", true, false, false, true, true},
+		{"one terminal for everything", true, true, false, false, true},
+		{"non-interactive at a terminal", true, true, true, true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			printLink, spin := loginOutput(tt.stdinTerm, tt.stdoutTerm, tt.nonInteract)
+			assert.Equal(t, tt.wantPrint, printLink, "link on stdout")
+			assert.Equal(t, tt.wantSpin, spin, "spinner")
+		})
+	}
+}

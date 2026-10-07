@@ -77,6 +77,13 @@ wl::init_env() {
     : "${RUN:=$(date +%Y%m%d-%H%M)}"
     export RUN
 
+    # When this scenario started, in the platform's timestamp format. Cleanup
+    # deletes only artifacts created since, so it never removes one a
+    # scenario merely pointed a workload at. Five minutes early, so a local
+    # clock ahead of the server's cannot hide what the run created.
+    local since=$(( $(date +%s) - 300 ))
+    WL_STARTED_AT="$(date -u -d "@$since" +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -r "$since" +%Y-%m-%dT%H:%M:%S)"
+
     # Optional token override. Only exported when set, so an unset var does
     # NOT shadow the configured drconfig.yaml token with an empty string.
     local token
@@ -282,11 +289,13 @@ wl::cleanup() {
         [[ -n "$aid" ]] && WL_ARTIFACT_IDS+=("$aid")
     done
     wl::linked_artifact
-    local seen=" "
+    local seen=" " created
     for id in "${WL_ARTIFACT_IDS[@]:-}"; do
         [[ -n "$id" && "$seen" != *" $id "* ]] || continue
         seen+="$id "
-        "$DR_BIN" artifact get "$id" --output-format json >/dev/null 2>&1 || continue
+        created="$("$DR_BIN" artifact get "$id" --output-format json 2>/dev/null | jq -r '.createdAt // empty' 2>/dev/null)" || continue
+        # ISO timestamps compare as strings. Older than the run: not ours.
+        [[ -n "$created" && ! "$created" < "${WL_STARTED_AT:-}" ]] || continue
         # A locked artifact cannot be deleted; that is expected, not a leak.
         "$DR_BIN" artifact delete "$id" --yes >/dev/null 2>&1 \
             && echo "  🧹 deleted artifact $id" || true
@@ -317,8 +326,11 @@ wl::delete_catalog() {
     local cid
     cid="$(jq -r '.catalogId // empty' "$cfg" 2>/dev/null || true)"
     [[ -n "$cid" ]] || return 0
-    curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $token" \
-        "${DATAROBOT_ENDPOINT%/}/files/$cid/" --max-time 30 \
+    # The header is read from stdin so the token never sits in curl's argv,
+    # where any process on the machine can read it.
+    printf 'Authorization: Bearer %s\n' "$token" \
+        | curl -s -o /dev/null -X DELETE -H @- \
+            "${DATAROBOT_ENDPOINT%/}/files/$cid/" --max-time 30 \
         && echo "  🧹 deleted code catalog $cid" || true
 }
 
