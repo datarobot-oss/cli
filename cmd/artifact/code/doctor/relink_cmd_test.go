@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/cli"
@@ -629,12 +630,14 @@ func TestRunE_RelinkWithoutTerminal_NeedsYes(t *testing.T) {
 
 	before := stateFileHashes(t, tmp)
 
-	c, _, _ := newTestCmd(t, "--dir", tmp, "--relink", "6a90da2ddeadbeefcafe5678")
+	c, _, errOut := newTestCmd(t, "--dir", tmp, "--relink", "6a90da2ddeadbeefcafe5678")
 
 	err := c.Execute()
 
 	require.ErrorIs(t, err, errRelinkNeedsYes)
 	assert.Equal(t, before, stateFileHashes(t, tmp))
+	assert.Equal(t, 1, strings.Count(errOut.String(), errRelinkNeedsYes.Error()),
+		"the refusal is said once, by cobra, not printed here as well")
 }
 
 func TestRunE_RelinkUnchanged_ReadOnlyRun(t *testing.T) {

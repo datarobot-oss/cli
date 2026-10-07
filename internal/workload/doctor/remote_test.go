@@ -287,9 +287,11 @@ func TestRemoteChecks_LockedArtifact_WARN_NeverFAIL(t *testing.T) {
 }
 
 // A pinned catalog with no codeRef on the artifact is an interrupted deploy,
-// which the next sync completes: a WARN pointing there, never a FAIL that
-// sends the user to --relink and throws the pin away.
-func TestRemoteChecks_NoCodeRefWithPin_WARNPointsAtSync(t *testing.T) {
+// which re-running the deploy completes: a WARN pointing there, never a FAIL
+// that sends the user to --relink and throws the pin away. A plain sync with
+// nothing to upload leaves the codeRef alone, so it is not the remedy, and
+// drift defers to this check rather than warning a second time.
+func TestRemoteChecks_NoCodeRefWithPin_WARNPointsAtDeploy(t *testing.T) {
 	dir := healthyProject(t)
 
 	store := &fakeArtifactStore{artifact: testArtifact("draft", nil)}
@@ -300,8 +302,15 @@ func TestRemoteChecks_NoCodeRefWithPin_WARNPointsAtSync(t *testing.T) {
 
 	assert.Equal(t, core.StatusWARN, mismatch.Status)
 	assert.Contains(t, mismatch.Summary, "no codeRef yet")
-	assert.Contains(t, mismatch.Remedy, "dr artifact code sync")
+	assert.Contains(t, mismatch.Remedy, "dr workload up")
+	assert.NotContains(t, mismatch.Remedy, "dr artifact code sync")
 	assert.NotContains(t, mismatch.Remedy, "--relink")
+
+	drift := res[CheckIDDrift]
+
+	assert.Equal(t, core.StatusSKIP, drift.Status)
+	assert.Contains(t, drift.Summary, CheckIDCatalogMismatch)
+	assert.NotContains(t, drift.Remedy, "--relink")
 }
 
 func TestRemoteChecks_CatalogMismatch_FAIL_OnlyOwnCheck(t *testing.T) {

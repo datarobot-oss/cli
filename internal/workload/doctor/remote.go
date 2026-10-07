@@ -366,7 +366,7 @@ func (c *catalogMismatchCheck) Run(_ context.Context) core.Result {
 		}
 	case remote == nil:
 		// An interrupted deploy links the project before the artifact's
-		// codeRef is patched; the next sync or deploy restores it from the
+		// codeRef is patched; re-running the deploy restores it from the
 		// local pin, so this is not a lost lineage.
 		return core.Result{
 			Status:  core.StatusWARN,
@@ -434,10 +434,16 @@ func (c *driftCheck) Run(_ context.Context) core.Result {
 	case local == nil:
 		return core.Result{
 			Status:  core.StatusOK,
-			Summary: "no synced version yet; nothing to drift",
+			Summary: "no synced baseline recorded; the next sync lists the remote",
 		}
 	case remote == nil:
-		return driftResult(local, remote)
+		// The artifact has no code yet, which the catalog check reports with
+		// the remedy that applies; a drift warning here would send the user
+		// to a relink for an interrupted deploy.
+		return core.Result{
+			Status:  core.StatusSKIP,
+			Summary: "artifact has no codeRef yet; see " + CheckIDCatalogMismatch,
+		}
 	case *local == *remote:
 		return core.Result{
 			Status:  core.StatusOK,

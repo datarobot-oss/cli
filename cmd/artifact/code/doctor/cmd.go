@@ -188,12 +188,14 @@ func pageDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) erro
 	// Print relink abort errors to stderr (for not-linked and API-unreachable
 	// cases the user needs a message; for other aborts the actions array
 	// already describes the reason). In JSON mode this keeps stdout pure.
-	if relinkErr != nil && !errors.Is(relinkErr, wldoctor.ErrRelinkAbort) {
-		fmt.Fprintln(cmd.ErrOrStderr(), relinkErr)
-	}
-
+	// The missing --yes is returned for cobra to print, so it is not printed
+	// here as well.
 	if errors.Is(relinkErr, errRelinkNeedsYes) {
 		return relinkErr
+	}
+
+	if relinkErr != nil && !errors.Is(relinkErr, wldoctor.ErrRelinkAbort) {
+		fmt.Fprintln(cmd.ErrOrStderr(), relinkErr)
 	}
 
 	if relinkErr != nil || report.ExitCode() == 1 {

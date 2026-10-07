@@ -755,18 +755,26 @@ func TestRunRelink_CorruptConfig_Replaces(t *testing.T) {
 		return true
 	}
 
-	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(target), confirm))
+	opts := relinkOpts(dir, newArtifactID, fakeStore(target), confirm)
+
+	// A clock outside UTC, so the stamp has to be converted to come out UTC.
+	opts.Now = func() time.Time { return fixedTime.In(time.FixedZone("CEST", 2*60*60)) }
+
+	actions, err := RunRelink(context.Background(), opts)
 
 	require.NoError(t, err)
 	require.Len(t, actions, 1)
 	assert.Equal(t, core.ActionPerformed, actions[0].Status)
 	assert.Contains(t, warned, "unreadable")
+	assert.Contains(t, actions[0].Reason, "replaced the unreadable config.json")
+	assert.NotContains(t, actions[0].Reason, "repointed from  to", "an unreadable config has no old id to name")
 
 	cfg, err := wapi.LoadConfig(dir)
 
 	require.NoError(t, err)
 	assert.Equal(t, newArtifactID, cfg.ArtifactID)
 	assert.False(t, cfg.CreatedAt.IsZero())
+	assert.Equal(t, time.UTC, cfg.CreatedAt.Location(), "createdAt is written in UTC like every other config")
 	assert.NotEmpty(t, cfg.CLIVersion)
 }
 

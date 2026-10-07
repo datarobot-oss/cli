@@ -303,7 +303,7 @@ func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact)
 	newCfg.RemoteChangesSkipped = false
 
 	if newCfg.CreatedAt.IsZero() {
-		newCfg.CreatedAt = opts.Now()
+		newCfg.CreatedAt = opts.Now().UTC()
 	}
 
 	if newCfg.CLIVersion == "" {
@@ -320,6 +320,9 @@ func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact)
 	}
 
 	repointed := fmt.Sprintf("repointed from %s to %s", oldCfg.ArtifactID, opts.NewArtifactID)
+	if oldCfg.ArtifactID == "" {
+		repointed = "replaced the unreadable config.json and linked " + opts.NewArtifactID
+	}
 
 	if err := wapi.SaveManifest(opts.ProjectDir, newManifest); err != nil {
 		return relinkPartial(repointed + "; write manifest: " + err.Error()), ErrRelinkPartial

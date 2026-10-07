@@ -211,6 +211,22 @@ func TestClearStaleBinding_NamesTheStillLinkedArtifact(t *testing.T) {
 	assert.Contains(t, out, "was not deleted with the workload")
 	assert.Contains(t, out, "dr artifact delete 68b0aaaa0000000000000001", "the remedy names what removes the artifact")
 	assert.Contains(t, out, "doctor --relink", "and what repoints it")
+	assert.NotContains(t, out, "--dir", "a project in the current directory needs no --dir")
+}
+
+// A delete given --dir for a project elsewhere names that directory in the
+// relink hint, so the command it suggests runs against the same project.
+func TestClearStaleBinding_RelinkHintCarriesDir(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "68b0aaaa0000000000000001"}))
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	assert.Contains(t, buf.String(), "doctor --relink <artifact-id> --dir "+dir)
 }
 
 // A project that never linked to an artifact has nothing to say about one.

@@ -62,9 +62,10 @@ const (
 	RemedyCatalogMismatch = "dr artifact code doctor --relink <artifact-id> (the intended artifact, or a new one)"
 
 	// RemedyCodeRefMissing is shown when the artifact carries no codeRef yet
-	// while the config pins a catalog: an interrupted deploy, which the next
-	// sync or deploy completes.
-	RemedyCodeRefMissing = "run 'dr artifact code sync' or 'dr workload up' to restore the artifact's codeRef from the local pin"
+	// while the config pins a catalog: an interrupted deploy. Re-running the
+	// deploy points the artifact at the code last pushed; a plain sync with
+	// nothing to upload does not touch the codeRef, so it is not offered.
+	RemedyCodeRefMissing = "run 'dr workload up' to finish the deploy, which points the artifact at the code this project last pushed"
 
 	// RemedyDrift is shown when the artifact's codeRef version no longer
 	// matches the last-synced version. Review what a sync would do first;
