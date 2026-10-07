@@ -444,3 +444,16 @@ func TestPurge_ResetsTheReferencesToTheCredentialsItRemoved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, parsed.PendingEnvNames(), "API_KEY", "the entry reads as unfinished, for --sync-env to finish")
 }
+
+// A manifest that cannot be read is told apart from one naming another
+// workload: the reason says the file could not be read, not what it names.
+func TestPlanPurge_AnUnreadableManifestSaysSo(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, "workloadId: [\n")
+	installPurge(t, &purgeFakes{})
+
+	set, err := planPurge(idargs.Ref{ID: boundID, Dir: dir})
+	require.NoError(t, err)
+	assert.Contains(t, set.reason, "could not be read")
+	assert.NotContains(t, set.reason, "names workload")
+}

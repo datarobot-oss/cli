@@ -87,7 +87,14 @@ func planPurge(ref idargs.Ref) (purgeSet, error) {
 	}
 
 	m, err := manifest.Load(path)
-	if err != nil || m.WorkloadID() != ref.ID {
+	if err != nil {
+		set.reason = fmt.Sprintf("the manifest at %s could not be read (%v), so nothing is tied to its leftovers",
+			idargs.DisplayPath(path), err)
+
+		return set, nil
+	}
+
+	if m.WorkloadID() != ref.ID {
 		set.reason = "no manifest here names workload " + ref.ID + ", so there is nothing to tie its leftovers to"
 
 		return set, nil
@@ -135,13 +142,21 @@ func runPurge(w io.Writer, set purgeSet) {
 // next --sync-env finishes it. Any other credential may be shared, so it is
 // kept.
 func purgeCredentials(manifestPath string, report *purgeReport) {
+	// Read moments ago for the plan, so a failure here is rare, and still
+	// said: what cannot be removed is named.
 	m, err := manifest.Load(manifestPath)
 	if err != nil {
+		report.kept = append(report.kept, fmt.Sprintf("the credentials: could not re-read %s: %v",
+			idargs.DisplayPath(manifestPath), err))
+
 		return
 	}
 
 	compiled, err := m.Compile()
 	if err != nil {
+		report.kept = append(report.kept, fmt.Sprintf("the credentials: %s could not be compiled: %v",
+			idargs.DisplayPath(manifestPath), err))
+
 		return
 	}
 
