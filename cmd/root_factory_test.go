@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/muesli/termenv"
@@ -167,6 +168,12 @@ func writeProfileConfig(t *testing.T) {
 
 	tempDir := t.TempDir()
 	testutil.SetTestHomeDir(t, tempDir)
+
+	// The pre-run opens the debug log in this home, and a run that fails
+	// there never reaches the hooks that close it. Cleanups run last-in
+	// first-out, so this closes it before the directory is removed, which
+	// Windows refuses for an open file.
+	t.Cleanup(log.Stop)
 
 	configDir := filepath.Join(tempDir, ".config", "datarobot")
 	require.NoError(t, os.MkdirAll(configDir, 0o755))
