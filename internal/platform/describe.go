@@ -77,20 +77,27 @@ func Describe(ctx context.Context) (*Report, error) {
 	wg.Wait()
 
 	return &Report{
-		SchemaVersion: SchemaVersion,
-		GeneratedAt:   now().UTC().Format(time.RFC3339),
-		Producer:      Producer{Name: version.CliName, Version: version.Version},
+		GeneratedAt: now().UTC().Format(time.RFC3339),
+		Producer:    Producer{Name: version.CliName, Version: version.Version},
 		Server: Server{
 			Release:      cfg.ReleaseVersion,
 			APIVersion:   apiVersion,
 			CanonicalURL: cfg.ExternalWebServerURL,
 		},
 		Sections: map[string]Section{
-			SectionInstall:               installSection(cfg, cfgErr),
-			SectionSeats:                 seats,
-			SectionEntitlements:          entitlements,
-			SectionExecutionEnvironments: envs,
-			SectionResourceBundles:       bundles,
+			SectionInstall:               scoped(ScopePlatform, installSection(cfg, cfgErr)),
+			SectionSeats:                 scoped(ScopeCaller, seats),
+			SectionEntitlements:          scoped(ScopeCaller, entitlements),
+			SectionExecutionEnvironments: scoped(ScopeCaller, envs),
+			SectionResourceBundles:       scoped(ScopeCaller, bundles),
 		},
 	}, nil
+}
+
+// scoped marks who the section's answer is true for, whether or not the read
+// succeeded.
+func scoped(scope Scope, section Section) Section {
+	section.Scope = scope
+
+	return section
 }

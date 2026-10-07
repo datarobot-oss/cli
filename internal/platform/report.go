@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package platform implements `dr platform describe`: what an install says
-// about itself that decides whether a Custom Application deploy will work,
-// read from public routes only. The report's shape is a contract, written down
-// in docs/schemas/platform-describe.schema.json.
+// Package platform implements `dr info`: what an install says about itself
+// that decides whether a Custom Application deploy will work, read from public
+// routes only. The report's shape is a contract, written down in
+// docs/schemas/platform-info.schema.json.
 package platform
 
-// SchemaVersion is the report's contract version. Changes are additive; a
+// SchemaVersion is the contract version, written beside the report in the JSON
+// output. Once the command is generally available, changes are additive and a
 // breaking change bumps it.
 const SchemaVersion = 1
 
@@ -36,6 +37,18 @@ const (
 	StatusUnavailable Status = "unavailable"
 )
 
+// Scope says who a section's answer is true for.
+type Scope string
+
+const (
+	// ScopePlatform means the answer is the same for any caller.
+	ScopePlatform Scope = "platform"
+
+	// ScopeCaller means the answer depends on who asks: their permissions,
+	// seats, or organization.
+	ScopeCaller Scope = "caller"
+)
+
 // Section names. Readers ignore names they do not know.
 const (
 	SectionInstall               = "install"
@@ -48,11 +61,10 @@ const (
 // Report is the whole answer. It states facts the install reports and leaves
 // the verdict ("you can create an app") to the reader.
 type Report struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	GeneratedAt   string             `json:"generatedAt,omitempty"`
-	Producer      Producer           `json:"producer"`
-	Server        Server             `json:"server"`
-	Sections      map[string]Section `json:"sections"`
+	GeneratedAt string             `json:"generatedAt,omitempty"`
+	Producer    Producer           `json:"producer"`
+	Server      Server             `json:"server"`
+	Sections    map[string]Section `json:"sections"`
 }
 
 // Producer names the tool that wrote the report.
@@ -71,6 +83,7 @@ type Server struct {
 // Section is one source's result. Data is absent when the source is
 // unavailable; Message is present then, and for a degraded section.
 type Section struct {
+	Scope   Scope  `json:"scope"`
 	Status  Status `json:"status"`
 	Message string `json:"message,omitempty"`
 	Data    any    `json:"data,omitempty"`

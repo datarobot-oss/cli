@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package describe implements `dr platform describe`: what the install says
-// about itself that decides whether a Custom Application deploy will work.
-package describe
+// Package info implements `dr info`: what the install says about itself that
+// decides whether a Custom Application deploy will work.
+package info
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/platform"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -28,12 +29,17 @@ import (
 // tested without an install to ask.
 var describeFn = platform.Describe
 
+// gate is the feature gate name. It is independent of the command name, so the
+// command can be renamed without silently hiding it.
+const gate = "platform-info"
+
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
 	cmd := &cobra.Command{
-		Use:   "describe",
-		Short: "Report what the install supports for deploying a Custom Application.",
+		Use:     "info",
+		GroupID: "core",
+		Short:   "🧭 Report what the DataRobot install supports",
 		Long: `Report what the install says about itself, from public routes only.
 
 Which execution environments and resource bundles a Custom Application can
@@ -49,11 +55,12 @@ It exits non-zero only when it cannot reach the install or authenticate.
 Seat licenses map each license to whether the caller has it. A license that is
 absent is not enforced on that install, so an empty map does not mean blocked.
 
-JSON output is the report itself, described by docs/schemas/platform-describe.schema.json.
+JSON output puts the report under "platform", beside "schemaVersion", and is
+described by docs/schemas/platform-info.schema.json.
 
 Example:
-  dr platform describe
-  dr platform describe --output-format json | jq '.sections.executionEnvironments.data.items'`,
+  dr info
+  dr info --output-format json | jq '.platform.sections.executionEnvironments.data.items'`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -68,6 +75,8 @@ Example:
 			return platform.RenderTo(cmd.OutOrStdout(), outputFormat, *report)
 		},
 	}
+
+	features.SetGate(cmd, gate)
 
 	outputformat.AddFlag(cmd, &outputFormat)
 

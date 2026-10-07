@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package describe
+package info
 
 import (
 	"bytes"
@@ -21,6 +21,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/platform"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,16 +58,15 @@ func run(t *testing.T, args ...string) (stdout, stderr string, err error) {
 
 func sampleReport() *platform.Report {
 	return &platform.Report{
-		SchemaVersion: platform.SchemaVersion,
-		Producer:      platform.Producer{Name: "dr", Version: "test"},
-		Server:        platform.Server{Release: "11.12.0", APIVersion: "2.48", CanonicalURL: "https://dr.example.com"},
+		Producer: platform.Producer{Name: "dr", Version: "test"},
+		Server:   platform.Server{Release: "11.12.0", APIVersion: "2.48", CanonicalURL: "https://dr.example.com"},
 		Sections: map[string]platform.Section{
 			platform.SectionSeats: {Status: platform.StatusOK, Data: platform.Seats{SeatLicenses: map[string]bool{}}},
 		},
 	}
 }
 
-func TestCmd_JSONPrintsTheReportAndNothingElse(t *testing.T) {
+func TestCmd_JSONPrintsTheReportUnderPlatformAndNothingElse(t *testing.T) {
 	stubDescribe(t, sampleReport(), nil)
 
 	stdout, _, err := run(t, "--output-format", "json")
@@ -76,6 +76,14 @@ func TestCmd_JSONPrintsTheReportAndNothingElse(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(stdout), &decoded), "stdout must be one JSON document")
 	assert.EqualValues(t, 1, decoded["schemaVersion"])
+	assert.Contains(t, decoded["platform"], "sections")
+}
+
+func TestCmd_IsBehindThePlatformInfoGate(t *testing.T) {
+	cmd := Cmd()
+
+	assert.Equal(t, "info", cmd.Name())
+	assert.Equal(t, "platform-info", cmd.Annotations[features.AnnotationKey])
 }
 
 func TestCmd_TextIsTheDefault(t *testing.T) {

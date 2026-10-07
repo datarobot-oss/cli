@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/enclave"
+	"github.com/datarobot/cli/cmd/info"
 	"github.com/datarobot/cli/cmd/workload"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -47,7 +48,6 @@ var expectedTrackedCommands = []string{
 	"dr plugin install",
 	"dr plugin uninstall",
 	"dr plugin update",
-	"dr platform describe",
 
 	// Pipelines, workloads and artifacts are GA, so no feature gate hides them
 	// from the live RootCmd and they need no separate standalone list. The two
@@ -134,7 +134,6 @@ var trackedSubtrees = []string{
 	"dr workload",
 	"dr artifact",
 	"dr pipeline",
-	"dr platform",
 }
 
 // TestTelemetryWiring_AllCoreCommandsTracked walks the static command tree
@@ -263,6 +262,14 @@ func TestTelemetryWiring_AllEnclaveCommandsTracked(t *testing.T) {
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
 		})
 	}
+}
+
+// TestTelemetryWiring_GatedInfoCommandTracked checks `dr info`, which
+// cli.CommandAdder leaves out of the live RootCmd while
+// DATAROBOT_CLI_FEATURE_PLATFORM_INFO is unset, so the test builds it directly.
+func TestTelemetryWiring_GatedInfoCommandTracked(t *testing.T) {
+	assert.Containsf(t, info.Cmd().Annotations, "telemetry",
+		"command %q must be wired to telemetry via telemetry.Track / TrackWith", "dr info")
 }
 
 // findCommandByPath locates a descendant command by its full CommandPath

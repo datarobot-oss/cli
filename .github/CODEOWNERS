@@ -8,7 +8,7 @@ docs/commands/pipeline*.md @datarobot-oss/compute-services
 cmd/enclave/ @datarobot-oss/compute-services
 internal/enclave/ @datarobot-oss/compute-services
 docs/commands/enclave.md @datarobot-oss/compute-services
-cmd/platform/ @datarobot-oss/labs
+cmd/info/ @datarobot-oss/labs
 internal/platform/ @datarobot-oss/labs
-docs/commands/platform.md @datarobot-oss/labs
-docs/schemas/ @datarobot-oss/labs
+docs/commands/info.md @datarobot-oss/labs
+docs/schemas/platform-info.schema.json @datarobot-oss/labs

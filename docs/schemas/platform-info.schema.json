@@ -1,45 +1,53 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "dr platform describe report",
-  "description": "What a DataRobot install reports about itself, as written by `dr platform describe --output-format json`. Changes are additive: a breaking change bumps schemaVersion. Readers ignore unknown fields and unknown sections, so this schema does not forbid them.",
+  "title": "dr info report",
+  "description": "What a DataRobot install reports about itself, as written by `dr info --output-format json`. The report sits under `platform`, beside `schemaVersion`. While the command is behind the platform-info feature gate the shape may change; once the gate comes off, changes are additive and a breaking change bumps schemaVersion. Readers ignore unknown fields and unknown sections, so this schema does not forbid them.",
   "type": "object",
-  "required": ["schemaVersion", "server", "sections"],
+  "required": ["schemaVersion", "platform"],
   "properties": {
     "schemaVersion": {"const": 1},
-    "generatedAt": {"type": "string", "format": "date-time"},
-    "producer": {
-      "type": "object",
-      "required": ["name", "version"],
-      "properties": {
-        "name": {"type": "string"},
-        "version": {"type": "string"}
-      }
-    },
-    "server": {
-      "type": "object",
-      "properties": {
-        "release": {"type": "string"},
-        "apiVersion": {"type": "string"},
-        "canonicalUrl": {"type": "string"}
-      }
-    },
-    "sections": {
-      "type": "object",
-      "additionalProperties": {"$ref": "#/$defs/section"},
-      "properties": {
-        "install": {"$ref": "#/$defs/installSection"},
-        "seats": {"$ref": "#/$defs/seatsSection"},
-        "entitlements": {"$ref": "#/$defs/entitlementsSection"},
-        "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
-        "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"}
-      }
-    }
+    "platform": {"$ref": "#/$defs/report"}
   },
   "$defs": {
+    "report": {
+      "type": "object",
+      "required": ["server", "sections"],
+      "properties": {
+        "generatedAt": {"type": "string", "format": "date-time"},
+        "producer": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": {"type": "string"},
+            "version": {"type": "string"}
+          }
+        },
+        "server": {
+          "type": "object",
+          "properties": {
+            "release": {"type": "string"},
+            "apiVersion": {"type": "string"},
+            "canonicalUrl": {"type": "string"}
+          }
+        },
+        "sections": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/section"},
+          "properties": {
+            "install": {"$ref": "#/$defs/installSection"},
+            "seats": {"$ref": "#/$defs/seatsSection"},
+            "entitlements": {"$ref": "#/$defs/entitlementsSection"},
+            "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
+            "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"}
+          }
+        }
+      }
+    },
     "section": {
       "type": "object",
-      "required": ["status"],
+      "required": ["scope", "status"],
       "properties": {
+        "scope": {"enum": ["platform", "caller"], "description": "Who the answer is true for: platform means any caller, caller means it depends on who asks."},
         "status": {"enum": ["ok", "degraded", "unavailable"]},
         "message": {"type": "string"}
       },

@@ -15,7 +15,6 @@
 package platform
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -37,14 +36,16 @@ var sectionOrder = []string{
 	SectionResourceBundles,
 }
 
-// RenderTo writes the report to w. JSON is the report itself, the contract in
-// docs/schemas; text is a summary for a person.
+// jsonEnvelopeKey is the top-level key the report sits under in JSON output.
+const jsonEnvelopeKey = "platform"
+
+// RenderTo writes the report to w. JSON is the contract in docs/schemas: the
+// report under "platform", beside the schema version. Text is a summary for a
+// person.
 func RenderTo(w io.Writer, format outputformat.OutputFormat, report Report) error {
 	if format == outputformat.OutputFormatJSON {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-
-		return enc.Encode(report)
+		return outputformat.PrintJSONEnvelopeWithMeta(w, jsonEnvelopeKey, report,
+			map[string]any{"schemaVersion": SchemaVersion})
 	}
 
 	return renderText(w, report)

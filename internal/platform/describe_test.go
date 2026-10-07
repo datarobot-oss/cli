@@ -53,7 +53,6 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, wantServer, report.Server)
 			assert.Equal(t, "2026-10-06T20:00:00Z", report.GeneratedAt)
-			assert.Equal(t, SchemaVersion, report.SchemaVersion)
 			assert.Equal(t, "dr", report.Producer.Name)
 
 			for name, section := range report.Sections {
@@ -61,9 +60,41 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 			}
 
 			assert.Len(t, report.Sections, 5)
-			require.NoError(t, validateJSON(t, compileSchema(t), marshal(t, report)))
+			require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
 		})
 	}
+}
+
+// The scope says who a section's answer is true for. The install's own config
+// is the same for every caller; every other section depends on who asks.
+func TestDescribe_EverySectionStatesWhoItsAnswerIsTrueFor(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	report, err := Describe(context.Background())
+	require.NoError(t, err)
+
+	want := map[string]Scope{
+		SectionInstall:               ScopePlatform,
+		SectionSeats:                 ScopeCaller,
+		SectionEntitlements:          ScopeCaller,
+		SectionExecutionEnvironments: ScopeCaller,
+		SectionResourceBundles:       ScopeCaller,
+	}
+
+	for name, scope := range want {
+		assert.Equal(t, scope, report.Sections[name].Scope, name)
+	}
+}
+
+func TestDescribe_AnUnavailableSectionStillStatesItsScope(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/mlops/compute/bundles/", route{status: http.StatusForbidden, body: `{}`})
+
+	report, err := Describe(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, StatusUnavailable, report.Sections[SectionResourceBundles].Status)
+	assert.Equal(t, ScopeCaller, report.Sections[SectionResourceBundles].Scope)
 }
 
 func TestDescribe_ASourceThatFailsDoesNotStopTheOthers(t *testing.T) {
@@ -77,7 +108,7 @@ func TestDescribe_ASourceThatFailsDoesNotStopTheOthers(t *testing.T) {
 	assert.Equal(t, `HTTP 403: {"message":"no bundles feature"}`, report.Sections[SectionResourceBundles].Message)
 	assert.Equal(t, StatusOK, report.Sections[SectionExecutionEnvironments].Status)
 	assert.Equal(t, StatusOK, report.Sections[SectionSeats].Status)
-	require.NoError(t, validateJSON(t, compileSchema(t), marshal(t, report)))
+	require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
 }
 
 func TestDescribe_ALostConfigLeavesTheReleaseOutAndKeepsTheRest(t *testing.T) {

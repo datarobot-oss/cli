@@ -40,13 +40,15 @@ func renderFixture(t *testing.T, dir string, format outputformat.OutputFormat) s
 	return out.String()
 }
 
-func TestRenderTo_JSONIsTheReportItselfAndMatchesTheSchema(t *testing.T) {
+func TestRenderTo_JSONWrapsTheReportUnderPlatformBesideTheSchemaVersion(t *testing.T) {
 	out := renderFixture(t, "sts-11.12.0", outputformat.OutputFormatJSON)
 
 	var decoded map[string]any
 
 	require.NoError(t, json.Unmarshal([]byte(out), &decoded))
-	assert.EqualValues(t, 1, decoded["schemaVersion"], "the version sits at the top level, not under a wrapper key")
+	assert.EqualValues(t, SchemaVersion, decoded["schemaVersion"])
+	assert.Contains(t, decoded["platform"], "sections")
+	assert.NotContains(t, decoded, "sections", "the report sits under the platform key, not beside the version")
 	require.NoError(t, validateJSON(t, compileSchema(t), []byte(out)))
 }
 
