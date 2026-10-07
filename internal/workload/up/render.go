@@ -21,9 +21,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/datarobot/cli/internal/uidiff"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/sync/display"
 	"github.com/datarobot/cli/tui"
 )
@@ -126,10 +126,10 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 //
 // Where Render summarises, this lays the plan out leaf by leaf: a changed
 // field states both sides of itself, `- old` then `+ new`; an agreeing field
-// is context that collapses once it runs past the window; and what the live
-// object carries that the file never names is counted once, because none of
-// it is a removal. The default plan caps its detail list because a plan is a
-// summary, and the file is a better place to read the rest; a diff is the
+// is context that collapses once it runs past the window; a live-only field
+// a roll or a resize drops is a `- old` line, and one the plan leaves alone
+// is counted once. The default plan caps its detail list because a plan is
+// a summary, and the file is a better place to read the rest; a diff is the
 // detail, so nothing here is capped.
 func RenderDiff(w io.Writer, s Summary, plan Plan) error {
 	var b strings.Builder
@@ -138,6 +138,8 @@ func RenderDiff(w io.Writer, s Summary, plan Plan) error {
 		b.WriteString(planTitleStyle.Render(head))
 		b.WriteString("\n")
 	}
+
+	writeRefusedNote(&b, s)
 
 	if plan.Empty() {
 		// The three-state rule is the point of --diff, so an empty plan does
@@ -169,7 +171,7 @@ func RenderDiff(w io.Writer, s Summary, plan Plan) error {
 		b.WriteString("\n")
 	}
 
-	if err := uidiff.Render(&b, diffRows(plan), uidiff.Options{Redact: redactedPath}); err != nil {
+	if err := renderUnified(&b, diffLines(plan), redactedPath); err != nil {
 		return err
 	}
 
@@ -235,9 +237,17 @@ func codeBlock(code CodeChange) ([]string, error) {
 		return []string{entry("~", "code", codeDetail(code))}, nil
 	}
 
+	// Only what the deploy pushes: it never pulls the remote side, so the
+	// downloads and conflicts the dry run measured are not its work.
+	pushed := &sync.SyncPlan{
+		Uploads:         code.SyncPlan.Uploads,
+		Deletes:         code.SyncPlan.Deletes,
+		OldVersionShort: code.SyncPlan.OldVersionShort,
+	}
+
 	var b strings.Builder
 
-	if err := display.PrintPlan(&b, code.SyncPlan); err != nil {
+	if err := display.PrintPlan(&b, pushed); err != nil {
 		return nil, fmt.Errorf("render the sync file list: %w", err)
 	}
 
@@ -267,48 +277,41 @@ func diffHeader(s Summary, plan Plan) string {
 	return name + ", first deploy"
 }
 
-// diffRows flattens the plan's two row halves into the order the diff draws
-// them, the artifact spec first and the runtime sizing second, one diff
-// either way: they are one deploy and the reader reviews them together.
-func diffRows(plan Plan) []uidiff.Row {
-	rows := make([]uidiff.Row, 0, len(plan.DiffArtifact)+len(plan.DiffRuntime))
+// diffLines flattens the plan's two row halves into the order the diff
+// draws them, the artifact spec first and the runtime sizing second, one
+// diff either way: they are one deploy and the reader reviews them together.
+func diffLines(plan Plan) []diffLine {
+	lines := make([]diffLine, 0, len(plan.DiffArtifact)+len(plan.DiffRuntime))
 
-	rows = appendLeafRows(rows, plan.DiffArtifact)
-	rows = appendLeafRows(rows, plan.DiffRuntime)
+	lines = appendLeafLines(lines, plan.DiffArtifact)
+	lines = appendLeafLines(lines, plan.DiffRuntime)
 
-	return rows
+	return lines
 }
 
-// appendLeafRows turns whole-leaf rows into diff lines. A changed leaf
-// becomes two lines, the value it replaces and the value it becomes, because
-// that is what a unified diff states; an addition is one line, and an
-// agreeing leaf is context. Redaction is left to the uidiff hook, which
-// rewrites the whole line for a path it refuses, so a value formatted into
-// the text here is never what prints.
-func appendLeafRows(rows []uidiff.Row, leaves []DiffRow) []uidiff.Row {
+// appendLeafLines turns rows into diff lines. A changed leaf becomes two
+// lines, the value it replaces and the value it becomes; an addition and a
+// removal are one line each, and an agreeing leaf is context. Redaction is
+// left to the renderer's hook, which rewrites the whole line for a path it
+// refuses, so a value formatted into the text here is never what prints.
+func appendLeafLines(lines []diffLine, leaves []DiffRow) []diffLine {
 	for _, leaf := range leaves {
 		switch {
 		case !leaf.Changed:
-			rows = append(rows, uidiff.Row{
-				Kind: uidiff.Context,
-				Path: leaf.Path,
-				Text: leafText(leaf.Path, leaf.Want),
-			})
+			lines = append(lines, diffLine{kind: lineContext, path: leaf.Path, text: leafText(leaf.Path, leaf.Want)})
+		case leaf.Removed:
+			lines = append(lines, diffLine{kind: lineDel, path: leaf.Path, text: leafText(leaf.Path, leaf.Have)})
 		case leaf.Absent:
-			rows = append(rows, uidiff.Row{
-				Kind: uidiff.Add,
-				Path: leaf.Path,
-				Text: leafText(leaf.Path, leaf.Want),
-			})
+			lines = append(lines, diffLine{kind: lineAdd, path: leaf.Path, text: leafText(leaf.Path, leaf.Want)})
 		default:
-			rows = append(rows,
-				uidiff.Row{Kind: uidiff.Del, Path: leaf.Path, Text: leafText(leaf.Path, leaf.Have)},
-				uidiff.Row{Kind: uidiff.Add, Path: leaf.Path, Text: leafText(leaf.Path, leaf.Want)},
+			lines = append(lines,
+				diffLine{kind: lineDel, path: leaf.Path, text: leafText(leaf.Path, leaf.Have)},
+				diffLine{kind: lineAdd, path: leaf.Path, text: leafText(leaf.Path, leaf.Want)},
 			)
 		}
 	}
 
-	return rows
+	return lines
 }
 
 // leafText renders one leaf the way the plan's detail lines spell a value,
@@ -317,11 +320,9 @@ func leafText(path string, v any) string {
 	return path + ": " + format(v)
 }
 
-// unmanagedNote is the diff's whole account of the live object's unmanaged
-// fields, one counted line rather than a marking per field. Each such field
-// is live state the file declines to manage, so none of them is a removal,
-// and interleaving them with the rows would put them next to edits they have
-// nothing to do with.
+// unmanagedNote is the diff's whole account of the live-only fields this
+// plan leaves alone, one counted line rather than a marking per field. The
+// ones a roll or a resize drops are not here: they are the `-` rows above.
 func unmanagedNote(paths []string) string {
 	if len(paths) == 0 {
 		return ""
@@ -855,8 +856,9 @@ type DiffJSON struct {
 	Changes []ChangeJSON `json:"changes"`
 
 	// Unmanaged holds the paths of what the live object carries that the
-	// file never names, so a caller can see what this deploy leaves alone
-	// without parsing the count out of the human summary.
+	// file never names and this deploy leaves alone. A roll or a resize
+	// drops those elements instead, and then they are entries in Changes
+	// marked removed, with the live value as have and no want.
 	Unmanaged []string `json:"unmanaged"`
 }
 
@@ -874,6 +876,10 @@ type ChangeJSON struct {
 	// marker off the entries that carried their values in plain, which is
 	// most of them.
 	Redacted bool `json:"redacted,omitempty"`
+
+	// Removed marks a live-only element this deploy drops: have is the
+	// element, want is null.
+	Removed bool `json:"removed,omitempty"`
 }
 
 // CodeJSON is the working tree's part of the answer.
@@ -1001,10 +1007,11 @@ func changesJSON(artifact, runtime []DiffRow) []ChangeJSON {
 // human diff after this.
 func changeJSON(leaf DiffRow) ChangeJSON {
 	out := ChangeJSON{
-		Path:   leaf.Path,
-		Have:   leaf.Have,
-		Want:   leaf.Want,
-		Absent: leaf.Absent,
+		Path:    leaf.Path,
+		Have:    leaf.Have,
+		Want:    leaf.Want,
+		Absent:  leaf.Absent,
+		Removed: leaf.Removed,
 	}
 
 	if redactedPath(leaf.Path) {

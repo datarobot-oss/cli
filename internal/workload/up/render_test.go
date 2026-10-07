@@ -789,14 +789,18 @@ func TestPlanJSON_DiffCarriesTheChangingLeaves(t *testing.T) {
 
 	// One entry per changing leaf of the manifest, in the same order the
 	// walk reports them to the default envelope: the two halves concatenated,
-	// unchanged-but-managed leaves nowhere among them.
-	want := make([]string, 0, len(plan.Artifact)+len(plan.Runtime))
+	// unchanged-but-managed leaves nowhere among them, and the sidecar the
+	// file never names last in each half, because this plan rolls and
+	// resizes and so drops it from both.
+	want := make([]string, 0, len(plan.Artifact)+len(plan.Runtime)+2)
 
 	want = append(want, paths(plan.Artifact)...)
+	want = append(want, "containerGroups[default].containers[metrics]")
 	want = append(want, paths(plan.Runtime)...)
+	want = append(want, "containerGroups[default].containers[metrics]")
 
 	assert.Equal(t, want, got)
-	assert.Len(t, got, 5, "the fixture drifts in five leaves across the two halves")
+	assert.Len(t, got, 7, "five drifting leaves across the two halves, plus the sidecar dropped from each")
 	assert.Contains(t, got, "containerGroups[default].containers[primary].startupProbe")
 	assert.NotContains(t, got, "containerGroups[default].containers[primary].port.expectation",
 		"the walk only answers for leaves the file names")
@@ -821,17 +825,30 @@ func TestPlanJSON_DiffCarriesTheChangingLeaves(t *testing.T) {
 	assert.Equal(t, true, added["absent"])
 	assert.NotNil(t, added["want"])
 
-	// The unmanaged side is its own list, the plan's deduped Extra paths:
-	// the sidecar the file never names, counted once however many halves
-	// carry it, and never mistaken for a change.
+	// The dropped sidecar is a removal: the live element as have, no want,
+	// and the marker that says so.
+	var removed []map[string]any
+
+	for _, c := range changes {
+		entry, _ := c.(map[string]any)
+
+		if entry["removed"] == true {
+			removed = append(removed, entry)
+		}
+	}
+
+	require.Len(t, removed, 2, "the sidecar is dropped from the spec and from the runtime")
+
+	for _, entry := range removed {
+		assert.Equal(t, "containerGroups[default].containers[metrics]", entry["path"])
+		assert.NotNil(t, entry["have"])
+		assert.Nil(t, entry["want"])
+	}
+
+	// Nothing is left alone by a plan that rewrites both halves.
 	unmanaged, ok := diff["unmanaged"].([]any)
 	require.True(t, ok, "unmanaged is an array even when it is empty")
-	require.Len(t, unmanaged, 1)
-	assert.Equal(t, "containerGroups[default].containers[metrics]", unmanaged[0])
-
-	for _, path := range unmanaged {
-		assert.NotContains(t, got, path, "unmanaged fields are not changes")
-	}
+	assert.Empty(t, unmanaged)
 
 	// The arrays a consumer already reads keep their exact content with and
 	// without the section.
@@ -919,7 +936,7 @@ func TestPlanJSON_DiffRedactsBeforeSerialising(t *testing.T) {
 
 	diff := decoded["diff"].(map[string]any)
 	changes := diff["changes"].([]any)
-	require.Len(t, changes, 3)
+	require.Len(t, changes, 3, "the file names no runtime, so the roll drops nothing from it")
 
 	for _, c := range changes {
 		entry := c.(map[string]any)

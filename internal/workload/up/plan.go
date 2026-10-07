@@ -126,9 +126,9 @@ type Plan struct {
 	DiffRuntime  []DiffRow
 
 	// Unmanaged lists the name-keyed elements the live object carries that
-	// the file never names, from Extra. The diff renders them as a count
-	// rather than as the removals they are not: the file leaving a field out
-	// is the file declining to manage it, not asking for it to be deleted.
+	// the file never names and this plan leaves alone. A plan that rolls or
+	// resizes sends the file's block whole and drops them instead; those are
+	// Removed rows in DiffArtifact and DiffRuntime, not entries here.
 	Unmanaged []string
 
 	// InPlace reports that the change is written to the draft artifact the
@@ -455,14 +455,6 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	plan.DiffArtifact = DiffRows(spec, live.Spec)
 	plan.DiffRuntime = DiffRows(runtime, live.Runtime)
 
-	// A diff that stayed silent about what the live object carries that the
-	// file never names would read as an exhaustive account of the workload,
-	// so the paths land on the plan for the renderer to count. The two
-	// documents can hold the same unmanaged element -- a sidecar exists in
-	// the artifact's spec and in the workload's runtime -- and one element is
-	// one field to a reader, so the list holds each path once.
-	plan.Unmanaged = dedupePaths(Extra(spec, live.Spec), Extra(runtime, live.Runtime))
-
 	// A file that names an artifact by id describes no spec to compare, so
 	// the walk above has nothing to say about it. Pointing at a different
 	// version than the one running is still the whole plan: it is a roll, and
@@ -536,7 +528,48 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 
 	plan.InPlace = patchesInPlace(live, plan)
 
+	// Last of all: which live-only elements this plan drops depends on every
+	// change above being in hand.
+	plan.settleLiveOnly(spec, runtime, live)
+
 	return plan, nil
+}
+
+// settleLiveOnly sorts what the live object carries that the file never
+// names. A roll writes the file's spec whole, and a sizing change sends its
+// runtime block whole, so on those plans the elements are dropped: they join
+// the diff rows as removals. A file with no block to send drops nothing. On
+// any other plan they survive untouched and are listed as unmanaged, each
+// path once however many halves carry it.
+func (p *Plan) settleLiveOnly(spec, runtime map[string]any, live Live) {
+	var kept []string
+
+	artifact := extraRows(spec, live.Spec)
+	if p.RollsArtifact() && len(spec) > 0 {
+		p.DiffArtifact = append(p.DiffArtifact, artifact...)
+	} else {
+		kept = append(kept, rowPaths(artifact)...)
+	}
+
+	sizing := extraRows(runtime, live.Runtime)
+	if len(p.Runtime) > 0 && len(runtime) > 0 {
+		p.DiffRuntime = append(p.DiffRuntime, sizing...)
+	} else {
+		kept = append(kept, rowPaths(sizing)...)
+	}
+
+	p.Unmanaged = dedupePaths(kept)
+}
+
+// rowPaths is the paths of rows, in order.
+func rowPaths(rows []DiffRow) []string {
+	out := make([]string, 0, len(rows))
+
+	for _, row := range rows {
+		out = append(out, row.Path)
+	}
+
+	return out
 }
 
 // patchesInPlace reports whether the change can be written to the running

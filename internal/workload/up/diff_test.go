@@ -482,24 +482,13 @@ func TestSubset_SiblingKeysDoNotShareStorage(t *testing.T) {
 		"each sibling keeps its own last segment")
 }
 
-// rowPaths is the set of walked paths, which is what most DiffRows cases
-// care about.
-func rowPaths(rows []DiffRow) []string {
-	out := make([]string, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.Path)
-	}
-
-	return out
-}
-
 // changedRows keeps the rows the two sides disagree about, which is exactly
 // the set Subset reports. DiffRows is Subset's walk with the agreeing leaves
 // kept, so the two must answer the same question with the same records.
 func changedRows(rows []DiffRow) []DiffRow {
 	out := make([]DiffRow, 0, len(rows))
 	for _, r := range rows {
-		if r.Changed {
+		if r.Changed && !r.Removed {
 			out = append(out, r)
 		}
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/up"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -319,12 +320,29 @@ func TestCmd_ConfirmSuppressed_PipedStdin(t *testing.T) {
 	assert.NotContains(t, stderr, "? Apply")
 }
 
-// TestCmd_ConfirmInstallKeysOnStdinNotStderr: the gate follows stdin, not
-// stderr. A run with a terminal stdin still asks when stderr is redirected,
-// and the question lands in whatever the stderr is.
-func TestCmd_ConfirmInstallKeysOnStdinNotStderr(t *testing.T) {
+// TestCmd_ConfirmSuppressed_RedirectedStderr: the question goes to stderr,
+// so a terminal stdin with stderr sent to a file is a prompt nobody sees.
+// The gate is suppressed the way the .env question decides it cannot ask,
+// rather than left waiting on an answer that never comes.
+func TestCmd_ConfirmSuppressed_RedirectedStderr(t *testing.T) {
 	onATerminal(t)
-	decliningRun(t)
+
+	canAskFn = func(*cobra.Command) bool { return false }
+
+	seen := stubRun(t, deployed(), nil)
+
+	_, stderr, err := runCmd(t, "--confirm")
+	require.NoError(t, err)
+
+	assert.Nil(t, seen.ConfirmApply, "stderr is not a terminal, so there is nobody to ask")
+	assert.NotContains(t, stderr, "? Apply")
+}
+
+// TestCmd_ConfirmQuestionGoesToStderr: with a terminal on both ends the
+// question lands on stderr, and stdout stays the endpoint channel.
+func TestCmd_ConfirmQuestionGoesToStderr(t *testing.T) {
+	onATerminal(t)
+	decliningRun(t, deployed())
 
 	stdout, stderr, err := runCmdWithInput(t, "y\n", "--confirm")
 	require.NoError(t, err)
@@ -337,22 +355,29 @@ func TestCmd_ConfirmInstallKeysOnStdinNotStderr(t *testing.T) {
 // decliningRun wires the deploy the way the real one answers the gate, so the
 // prompt, the parser and the command's decline mapping are exercised as one
 // flow rather than as three unit-tested pieces.
-func decliningRun(t *testing.T) {
+//
+// declined is what a declined run hands back: the real deploy returns the
+// live workload it looked at, endpoint included, which is exactly what the
+// shell must not print.
+func decliningRun(t *testing.T, declined up.Result) {
 	t.Helper()
 
 	prev := runFn
 
 	runFn = func(_ context.Context, opts up.Options) (up.Result, error) {
+		if opts.ConfirmApply == nil {
+			return deployed(), nil
+		}
+
 		ok, err := opts.ConfirmApply("Apply this deploy?")
 		if err != nil {
 			return up.Result{}, err
 		}
 
 		if !ok {
-			// WorkloadID is set on purpose: a declined run of an existing
-			// workload is exactly the case where falling through to the
-			// renderer would leak the endpoint onto stdout.
-			return up.Result{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}, up.ErrDeclined
+			declined.Action = up.ActionUnchanged
+
+			return declined, up.ErrDeclined
 		}
 
 		return deployed(), nil
@@ -361,11 +386,28 @@ func decliningRun(t *testing.T) {
 	t.Cleanup(func() { runFn = prev })
 }
 
+// A decline after --sync-env re-sent a secret deploys nothing, but the
+// rotation is in the store all the same, and the warning that the workload
+// still serves the old value has to reach stderr on that run too.
+func TestCmd_ConfirmDecline_StillWarnsAboutARotatedSecret(t *testing.T) {
+	onATerminal(t)
+
+	declined := deployed()
+	declined.Env = up.EnvEdit{SecretsRotated: 1}
+
+	decliningRun(t, declined)
+
+	stdout, stderr, err := runCmdWithInput(t, "n\n", "--confirm", "--sync-env")
+	require.ErrorIs(t, err, up.ErrDeclined)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "still serves the value it started with")
+}
+
 // TestCmd_ConfirmDecline_NonzeroExit: a decline is a refusal, and the command
 // says so with a nonzero exit and one short line on stderr.
 func TestCmd_ConfirmDecline_NonzeroExit(t *testing.T) {
 	onATerminal(t)
-	decliningRun(t)
+	decliningRun(t, deployed())
 
 	for _, input := range []string{"\n", "n\n", "nope\n", ""} {
 		stdout, stderr, err := runCmdWithInput(t, input, "--confirm")
@@ -385,7 +427,7 @@ func TestCmd_ConfirmDecline_NonzeroExit(t *testing.T) {
 // must be byte-for-byte empty.
 func TestCmd_ConfirmDecline_StdoutEmpty(t *testing.T) {
 	onATerminal(t)
-	decliningRun(t)
+	decliningRun(t, deployed())
 
 	stdout, _, err := runCmdWithInput(t, "n\n", "--confirm")
 	require.Error(t, err)
@@ -397,7 +439,7 @@ func TestCmd_ConfirmDecline_StdoutEmpty(t *testing.T) {
 // always does.
 func TestCmd_ConfirmAccept_ProceedsToEndOfRun(t *testing.T) {
 	onATerminal(t)
-	decliningRun(t)
+	decliningRun(t, deployed())
 
 	stdout, stderr, err := runCmdWithInput(t, "y\n", "--confirm")
 	require.NoError(t, err)

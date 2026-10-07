@@ -59,6 +59,10 @@ var runFn = up.Run
 // terminal replace it.
 var isStdinTerminalFn = reader.IsStdinTerminal
 
+// canAskFn is whether a y/N question has a terminal on both of its ends,
+// swapped by tests that have neither.
+var canAskFn = idargs.CanAsk
+
 // upResult is the stable JSON shape emitted by --output-format json. BuildID
 // is a pointer so it is null rather than empty when no build happened, which
 // is the difference between "skipped" and "produced nothing".
@@ -311,9 +315,9 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 	// would otherwise wait on a prompt that never comes, with no word of why.
 	cmd.Flags().BoolVar(&f.confirm, "confirm", false,
 		"Ask '? Apply this deploy? (y/N)' on stderr after printing the plan, and deploy only on yes; "+
-			"anything else, including an empty answer, declines and changes nothing. "+
+			"anything else, including an empty answer, declines and deploys nothing. "+
 			"Suppressed when the run is non-interactive: --yes, --output-format json, "+
-			"DATAROBOT_CLI_NON_INTERACTIVE, or a stdin that is not a terminal. "+
+			"DATAROBOT_CLI_NON_INTERACTIVE, or a stdin or stderr that is not a terminal. "+
 			"When suppressed it behaves as if the flag was not given.")
 	cmd.Flags().BoolVar(&f.detach, "detach", false, "Return once the deploy is requested; do not wait for it to serve.")
 	cmd.Flags().BoolVar(&f.promote, "promote", false,
@@ -391,7 +395,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Detach:         f.detach,
 		Lock:           f.promote,
 		Confirm:        rollConfirm(cmd, yes, stdin),
-		ConfirmApply:   applyConfirm(cmd, f.confirm, nonInteractive, stdin),
+		ConfirmApply:   applyConfirm(cmd, f.confirm, nonInteractive || !canAskFn(cmd), stdin),
 		ForceBuild:     f.force,
 		SyncEnv:        f.syncEnv,
 		SpecFile:       f.specFile,
@@ -426,11 +430,13 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 // worth showing.
 func report(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result up.Result, runErr error) error {
 	if errors.Is(runErr, up.ErrDeclined) {
-		// The gate said no. Nothing has been touched, so there is no endpoint
-		// to print and no envelope to emit: the refusal itself is the whole
-		// outcome, and it reaches stderr through the same path every error
-		// takes. Falling through to render here would print the endpoint of a
-		// workload this run deliberately left alone.
+		// The gate said no. Nothing was deployed, so there is no endpoint to
+		// print and no envelope to emit: falling through to render would
+		// print the endpoint of a workload this run deliberately left alone.
+		// A secret --sync-env re-sent before the plan was shown is in the
+		// store all the same, and the warning about it stands.
+		warnSecretStillServing(cmd.ErrOrStderr(), result, f)
+
 		return runErr
 	}
 
@@ -546,12 +552,15 @@ func rollConfirm(cmd *cobra.Command, yes bool, stdin *bufio.Reader) func(questio
 
 // applyConfirm is the opt-in y/N gate behind --confirm, and nil when there is
 // nobody to answer it. Suppressed, not refused: a run that cannot be asked
-// behaves as if the flag was not given, which is the convention every prompt
-// on this command follows. --yes is already the answer, -o json and a piped
-// stdin mean nobody is reading, and DATAROBOT_CLI_NON_INTERACTIVE says the
-// same; refusing the combination would break a scripted caller to protect a
-// default that suppression already keeps safe. There is deliberately no cobra
-// mutual exclusivity with --yes for the same reason.
+// behaves as if the flag was not given. --yes is already the answer, -o json
+// means nobody is reading, DATAROBOT_CLI_NON_INTERACTIVE says the same, and
+// a piped stdin or a redirected stderr leaves no terminal to ask on;
+// refusing the combination would break a scripted caller to protect a
+// default that suppression already keeps safe. The .env question in the same
+// run refuses instead, because it guards a write to the tenant that --yes
+// alone does not consent to; this one guards a deploy --yes does consent to.
+// There is deliberately no cobra mutual exclusivity with --yes for the same
+// reason.
 //
 // The question goes to stderr and the answer comes from stdin, like the typed
 // confirm below: stdout is the endpoint, or one JSON document, and a question

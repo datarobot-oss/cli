@@ -27,6 +27,7 @@ import (
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/sync"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -204,6 +205,24 @@ func countingFakes(calls *[]string) func(f fakes) fakes {
 		f.sync = func(string) (*sync.Result, error) { mark("sync"); return nil, nil }
 		f.settings = func(string, json.RawMessage) (*workload.Replacement, error) { mark("resize"); return nil, nil }
 		f.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) { mark("replace"); return nil, nil }
+		f.promote = func(id string) (*workload.Workload, error) {
+			mark("promote:" + id)
+
+			return &workload.Workload{ID: id}, nil
+		}
+		f.newArtifact = func(any) (*workload.Artifact, error) {
+			mark("newArtifact")
+
+			return &workload.Artifact{ID: "art-new"}, nil
+		}
+		f.copyArtifact = func(string, string) (*workload.Artifact, error) {
+			mark("copyArtifact")
+
+			return &workload.Artifact{ID: "art-copy"}, nil
+		}
+		f.updateSpec = func(string, json.RawMessage) error { mark("updateSpec"); return nil }
+		f.link = func(string, wapi.InitOptions) error { mark("link"); return nil }
+		f.save = func(string, wapi.Config) error { mark("save"); return nil }
 
 		return f
 	}
@@ -318,8 +337,7 @@ func TestRun_ConfirmDecline_NoLockOnlyMutation(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, ErrDeclined)
-	assert.NotContains(t, calls, "lock", "locking cannot be undone, so it waits for a yes like everything else")
-	assert.NotContains(t, calls, "guard")
+	assert.Empty(t, calls, "locking cannot be undone, so it waits for a yes like everything else")
 }
 
 // TestRun_Confirm_LockOnlyPrompts: --promote is about the end state, so an empty

@@ -462,16 +462,17 @@ func buildsImage(plan Plan) bool {
 // answering yes would change something. The gate fires whenever the run would
 // otherwise mutate: a plan carrying changes, or an empty one with a --promote
 // waiting to make the serving artifact permanent. A wholly empty plan asks
-// nothing and returns as it always has, and unmanaged fields never arm the
-// gate: they survive every deploy untouched, so there is nothing to consent
-// to. "Empty" is therefore measured by pending mutation, not by how quiet the
-// plan looks.
+// nothing and returns as it always has: the live-only fields it lists as
+// unmanaged are left alone, so there is nothing to consent to. "Empty" is
+// therefore measured by pending mutation, not by how quiet the plan looks.
 //
 // Everything that prints has printed by the time the question is asked, and
-// everything that mutates is still ahead of it. That placement is the whole
-// promise: a decline returns ErrDeclined from a run that has changed nothing,
-// and a dry run never gets here at all -- it returns above, because a preview
-// is not a mutation to consent to.
+// everything that mutates on the platform is still ahead of it. That
+// placement is the whole promise: a decline returns ErrDeclined from a run
+// that has deployed nothing, and a dry run never gets here at all -- it
+// returns above, because a preview is not a mutation to consent to. What
+// loading did before the plan, a manifest the wizard wrote or a secret
+// --sync-env re-sent, stands.
 func confirmGate(plan Plan, result Result, opts Options) error {
 	if opts.ConfirmApply == nil {
 		return nil

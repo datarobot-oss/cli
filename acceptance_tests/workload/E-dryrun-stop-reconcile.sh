@@ -84,8 +84,8 @@ printf '%s\n%s' "$WL_OUT" "$WL_ERR" | grep -q 'Already up to date' \
 
 wl::dr_capture workload up --dry-run --diff --output-format json
 wl::assert_cmd_ok "$WL_RC" "$WL_OUT" "$WL_ERR" "workload up --dry-run --diff --output-format json"
-changes="$(printf '%s' "$WL_OUT" | jq -r '.up.plan.diff.changes | length')"
-[[ "$changes" == "0" ]] || wl::fail "up --dry-run --diff JSON lists $changes changes on a stable tree"
+printf '%s' "$WL_OUT" | jq -e '.up.plan.diff.changes | type == "array" and length == 0' >/dev/null \
+    || wl::fail "up --dry-run --diff JSON must carry an empty diff.changes array on a stable tree"
 wl::pass "up --dry-run --diff agrees with the plain dry run, in text and JSON"
 
 # --- E.3 Item 4: stop, then a plain `up` reconciles in one run --------------
