@@ -204,8 +204,8 @@ func TestRunE_RelinkNotLinked_ErrorPointsToInit(t *testing.T) {
 		byID[check.ID] = check
 	}
 
-	assert.Equal(t, "FAIL", byID["wapi.presence"].Status)
-	assert.Contains(t, byID["wapi.presence"].Remedy, "init")
+	assert.Equal(t, "FAIL", byID["local.presence"].Status)
+	assert.Contains(t, byID["local.presence"].Remedy, "init")
 
 	// Stderr has the error message.
 	assert.Contains(t, errOut.String(), "not linked")

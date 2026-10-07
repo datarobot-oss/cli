@@ -40,7 +40,9 @@ func TestLockCheck_OK_AbsentFileNotCreated(t *testing.T) {
 
 	initStateDir(t, dir)
 
-	res := (&lockCheck{projectDir: dir, goos: runtime.GOOS}).Run(context.Background())
+	// The absent-file path never reaches flock, so the unix seam is exact on
+	// every host; runtime.GOOS would SKIP on Windows before the stat.
+	res := (&lockCheck{projectDir: dir, goos: "linux"}).Run(context.Background())
 
 	assert.Equal(t, core.StatusOK, res.Status)
 

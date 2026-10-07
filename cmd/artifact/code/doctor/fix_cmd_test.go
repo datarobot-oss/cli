@@ -101,17 +101,17 @@ func TestRunE_FixMissingManifest_PostFixOK_ExitZero(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(outStr), &report), "stdout must be a single pure-JSON object")
 
 	assert.Equal(t, "ok", report.Status, "post-fix state is healthy")
-	assert.Equal(t, 10, report.Summary.OK)
+	assert.Equal(t, healthySummary(0).OK, report.Summary.OK)
 
 	require.Len(t, report.Actions, 3)
 
-	assert.Equal(t, "wapi.manifest", report.Actions[0].ID)
+	assert.Equal(t, "local.manifest", report.Actions[0].ID)
 	assert.Equal(t, "performed", report.Actions[0].Status)
-	assert.Equal(t, "wapi.rollback", report.Actions[1].ID)
-	assert.Equal(t, "wapi.lock", report.Actions[2].ID)
+	assert.Equal(t, "local.rollback", report.Actions[1].ID)
+	assert.Equal(t, "local.lock", report.Actions[2].ID)
 
 	for _, check := range report.Checks {
-		assert.Equal(t, "OK", check.Status, "post-fix check %s", check.ID)
+		assert.Equal(t, healthyStatus(check.ID), check.Status, "post-fix check %s", check.ID)
 	}
 
 	// The rebuilt manifest parses and is an empty BASE (both-or-neither).
@@ -148,10 +148,10 @@ func TestRunE_FixCorruptConfig_ManifestSkipped_ExitOne(t *testing.T) {
 
 	rebuild := report.Actions[0]
 
-	assert.Equal(t, "wapi.manifest", rebuild.ID)
+	assert.Equal(t, "local.manifest", rebuild.ID)
 	assert.Equal(t, "skipped", rebuild.Status)
 	assert.Contains(t, rebuild.Reason, "config")
-	assert.Contains(t, rebuild.Reason, "init", "the skip reason must carry the re-init remedy")
+	assert.Contains(t, rebuild.Reason, "--relink", "the skip reason must carry the relink remedy")
 }
 
 // TestRunE_FixHeldLock_AllSkipped_ExitOne verifies at the command surface a
@@ -203,7 +203,7 @@ func TestRunE_FixHeldLock_AllSkipped_ExitOne(t *testing.T) {
 		locked[check.ID] = check
 	}
 
-	assert.Equal(t, "FAIL", locked["wapi.lock"].Status, "the post-fix suite still reports the held lock")
+	assert.Equal(t, "FAIL", locked["local.lock"].Status, "the post-fix suite still reports the held lock")
 }
 
 // TestRunE_FixRollbackRestoresFiles_TextActions verifies at the command
@@ -235,7 +235,7 @@ func TestRunE_FixRollbackRestoresFiles_TextActions(t *testing.T) {
 	outStr := mustRun(t, c, out)
 
 	assert.Empty(t, errOut.String())
-	assert.Contains(t, outStr, "wapi.rollback: performed")
+	assert.Contains(t, outStr, "local.rollback: performed")
 
 	restored, err := os.ReadFile(working)
 
@@ -379,7 +379,7 @@ func TestRunE_FixDeletedArtifactAndMissingManifest_LocalFixSucceedsRemoteStillFa
 
 	rebuild := report.Actions[0]
 
-	assert.Equal(t, "wapi.manifest", rebuild.ID)
+	assert.Equal(t, "local.manifest", rebuild.ID)
 	assert.Equal(t, "performed", rebuild.Status)
 
 	// The remote artifact-exists check is still FAIL with a relink remedy.
@@ -395,7 +395,7 @@ func TestRunE_FixDeletedArtifactAndMissingManifest_LocalFixSucceedsRemoteStillFa
 	assert.Contains(t, exists.Remedy, "--relink")
 
 	// The local manifest check is now OK.
-	manifest := byID["wapi.manifest"]
+	manifest := byID["local.manifest"]
 
 	assert.Equal(t, "OK", manifest.Status)
 }

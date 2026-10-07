@@ -45,7 +45,7 @@ const (
 // Runner from the Check's ID, so checks do not need to set it.
 type Result struct {
 	// CheckID is the stable namespaced identifier of the check (e.g.
-	// "wapi.config"); matches Check.ID.
+	// "local.config"); matches Check.ID.
 	CheckID string
 
 	// Status is the check outcome.
@@ -69,7 +69,7 @@ type Result struct {
 // MUST NOT mutate local state or perform server writes; repairs live behind
 // explicit repair operations in the owning command layer.
 type Check interface {
-	// ID returns the stable namespaced identifier (e.g. "wapi.presence").
+	// ID returns the stable namespaced identifier (e.g. "local.presence").
 	ID() string
 
 	// Name returns a human-readable name for display.

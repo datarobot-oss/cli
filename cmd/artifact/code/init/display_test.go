@@ -83,13 +83,13 @@ func TestPrintAlreadyLinkedHealthy_NoDeleteAdvice(t *testing.T) {
 func TestPrintCorruptConfig_NoDeleteAdvice(t *testing.T) {
 	var buf bytes.Buffer
 
-	printCorruptConfig(&buf, "/tmp/proj")
+	printCorruptConfig(&buf, "/tmp/proj", "")
 
 	out := buf.String()
 
 	assert.Contains(t, out, "unreadable")
 	assert.Contains(t, out, wapi.ConfigPath("/tmp/proj"))
-	assert.Contains(t, out, "dr artifact code doctor --fix")
+	assert.Contains(t, out, "dr artifact code doctor --relink <artifact-id>")
 	assert.NotContains(t, out, "Delete")
 	assert.NotContains(t, out, "rm -rf")
 	assert.NotContains(t, out, "re-init")
@@ -272,7 +272,7 @@ func TestNoDeleteAdviceAnywhere(t *testing.T) {
 		var buf bytes.Buffer
 
 		printAlreadyLinkedHealthy(&buf, "art-1", dir)
-		printCorruptConfig(&buf, dir)
+		printCorruptConfig(&buf, dir, "art-1")
 		printGoneGuidance(&buf, "art-1")
 		printMismatchGuidance(&buf, "art-1")
 		printRelinkSuccess(&buf, "art-new")

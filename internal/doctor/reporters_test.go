@@ -39,11 +39,11 @@ func sampleReport() Report {
 	remedy := "dr artifact code doctor --relink <new-artifact-id> & sync"
 
 	checks := []Result{
-		{CheckID: "wapi.presence", Status: StatusOK, Summary: "linked"},
-		{CheckID: "wapi.config", Status: StatusOK, Summary: "valid"},
-		{CheckID: "wapi.manifest", Status: StatusWARN, Summary: "rebuildable", Remedy: "dr artifact code doctor --fix", Fixable: true},
-		{CheckID: "wapi.divergence", Status: StatusFAIL, Summary: "diverged", Remedy: remedy, Details: map[string]string{"path": "/tmp/x/manifest.json"}, Fixable: true},
-		{CheckID: "wapi.lock", Status: StatusSKIP, Summary: "not enforced"},
+		{CheckID: "local.presence", Status: StatusOK, Summary: "linked"},
+		{CheckID: "local.config", Status: StatusOK, Summary: "valid"},
+		{CheckID: "local.manifest", Status: StatusWARN, Summary: "rebuildable", Remedy: "dr artifact code doctor --fix", Fixable: true},
+		{CheckID: "local.divergence", Status: StatusFAIL, Summary: "diverged", Remedy: remedy, Details: map[string]string{"path": "/tmp/x/manifest.json"}, Fixable: true},
+		{CheckID: "local.lock", Status: StatusSKIP, Summary: "not enforced"},
 	}
 
 	return NewReport("/tmp/x", &artifact, checks)
@@ -61,12 +61,12 @@ func TestTextReporter_HeaderTableRemediesSummary(t *testing.T) {
 	assert.Contains(t, out, "abc123")
 
 	// Table headers and one row per check (in runner order).
-	for _, want := range []string{"CHECK", "STATUS", "DETAIL", "wapi.presence", "wapi.config", "wapi.manifest", "wapi.divergence", "wapi.lock", "OK", "WARN", "FAIL", "SKIP"} {
+	for _, want := range []string{"CHECK", "STATUS", "DETAIL", "local.presence", "local.config", "local.manifest", "local.divergence", "local.lock", "OK", "WARN", "FAIL", "SKIP"} {
 		assert.Contains(t, out, want)
 	}
 
 	// Order check: presence row appears before divergence row.
-	assert.Less(t, strings.Index(out, "wapi.presence"), strings.Index(out, "wapi.divergence"))
+	assert.Less(t, strings.Index(out, "local.presence"), strings.Index(out, "local.divergence"))
 
 	// Remedies rendered for non-OK rows.
 	assert.Contains(t, out, "dr artifact code doctor --fix")
@@ -120,7 +120,7 @@ func TestJSONReporter_Schema(t *testing.T) {
 
 	report := sampleReport()
 
-	report.Actions = &[]Action{{ID: "wapi.manifest", Status: ActionSkipped, Reason: "sync in progress"}}
+	report.Actions = &[]Action{{ID: "local.manifest", Status: ActionSkipped, Reason: "sync in progress"}}
 
 	require.NoError(t, WriteJSON(&buf, report))
 
@@ -162,7 +162,7 @@ func TestJSONReporter_Schema(t *testing.T) {
 
 	require.Len(t, rawChecks, 5)
 
-	wantIDs := []string{"wapi.presence", "wapi.config", "wapi.manifest", "wapi.divergence", "wapi.lock"}
+	wantIDs := []string{"local.presence", "local.config", "local.manifest", "local.divergence", "local.lock"}
 
 	for i, raw := range rawChecks {
 		check, ok := raw.(map[string]any)
@@ -194,7 +194,7 @@ func TestJSONReporter_Schema(t *testing.T) {
 
 	action := actions[0].(map[string]any)
 
-	assert.Equal(t, "wapi.manifest", action["id"])
+	assert.Equal(t, "local.manifest", action["id"])
 	assert.Equal(t, "skipped", action["status"])
 	assert.Equal(t, "sync in progress", action["reason"])
 }

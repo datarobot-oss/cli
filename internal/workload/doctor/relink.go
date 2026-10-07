@@ -22,6 +22,7 @@ import (
 	"time"
 
 	core "github.com/datarobot/cli/internal/doctor"
+	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
@@ -44,7 +45,7 @@ const RelinkWarning = "Relink repoints the project at a new artifact and resets 
 var (
 	// ErrRelinkNotLinked is returned when the project has no linked state.
 	// The command layer prints this to stderr; the checks also show
-	// wapi.presence FAIL with the init remedy.
+	// local.presence FAIL with the init remedy.
 	ErrRelinkNotLinked = errors.New("project is not linked; run 'dr artifact code init <artifact-id>' first")
 
 	// ErrRelinkAPIUnreachable is returned when the API cannot be reached or
@@ -180,7 +181,9 @@ func relinkLockGate(ctx context.Context, opts RelinkOptions) ([]core.Action, err
 }
 
 // relinkLoadOldConfig loads the current config to get the old artifact id.
-// Returns ErrRelinkNotLinked when the project has no linked state.
+// Returns ErrRelinkNotLinked when the project has no state directory. A
+// missing or unreadable config.json inside one is relinked over: the relink
+// is the only repair for it, since nothing else can name the artifact.
 func relinkLoadOldConfig(projectDir string) (wapi.Config, error) {
 	if !wapi.Exists(projectDir) {
 		return wapi.Config{}, ErrRelinkNotLinked
@@ -188,12 +191,7 @@ func relinkLoadOldConfig(projectDir string) (wapi.Config, error) {
 
 	cfg, err := wapi.LoadConfig(projectDir)
 	if err != nil {
-		if errors.Is(err, wapi.ErrNotInitialized) {
-			return wapi.Config{}, ErrRelinkNotLinked
-		}
-
-		return wapi.Config{}, fmt.Errorf(
-			"cannot read linked state: %w (run 'dr artifact code doctor --fix' to repair config.json)", err)
+		return wapi.Config{}, nil
 	}
 
 	return cfg, nil
@@ -237,6 +235,10 @@ func relinkFetchAndValidate(opts RelinkOptions) (*workload.Artifact, []core.Acti
 func relinkWarning(oldID, newID string) string {
 	warning := RelinkWarning
 
+	if oldID == "" {
+		warning += "\nNote: the current config.json is unreadable and will be replaced."
+	}
+
 	if oldID == newID {
 		warning = fmt.Sprintf("%s\nNote: re-linking to the same artifact (%s); the sync baseline will be reset.", warning, newID)
 	}
@@ -258,12 +260,22 @@ func relinkWarning(oldID, newID string) string {
 // individual file is never left half-written, but the sequence as a whole is
 // not transactional.
 func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact) ([]core.Action, error) {
-	newCfg := wapi.Config{
-		ArtifactID:          opts.NewArtifactID,
-		CatalogID:           codeRefCatalog(art), // empty→nil normalization
-		LastSyncedVersionID: nil,                 // fresh BASE
-		CreatedAt:           oldCfg.CreatedAt,    // preserve original creation time
-		CLIVersion:          oldCfg.CLIVersion,   // preserve CLI version
+	// Everything the old config carried survives except what names the old
+	// artifact or its baseline. A config that could not be read is replaced
+	// from scratch.
+	newCfg := oldCfg
+	newCfg.ArtifactID = opts.NewArtifactID
+	newCfg.CatalogID = codeRefCatalog(art)
+	newCfg.LastSyncedVersionID = nil
+	newCfg.LastBuiltVersionID = nil
+	newCfg.RemoteChangesSkipped = false
+
+	if newCfg.CreatedAt.IsZero() {
+		newCfg.CreatedAt = opts.Now()
+	}
+
+	if newCfg.CLIVersion == "" {
+		newCfg.CLIVersion = version.Version
 	}
 
 	if err := wapi.SaveConfig(opts.ProjectDir, newCfg); err != nil {

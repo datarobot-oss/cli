@@ -35,10 +35,10 @@ func holdSyncLock(t *testing.T, path string) func() {
 
 	require.NoError(t, err)
 
-	require.NoError(t, unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)) //nolint:gosec // uintptr and int are same size on supported platforms
+	require.NoError(t, unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB))
 
 	return func() {
-		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN) //nolint:gosec // uintptr and int are same size on supported platforms
+		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 
 		_ = f.Close()
 	}

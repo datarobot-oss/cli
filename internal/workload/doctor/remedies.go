@@ -23,10 +23,10 @@ const (
 	RemedyPresence = "dr artifact code init <artifact-id>"
 
 	// RemedyConfig is shown when config.json is missing, corrupt, or fails
-	// semantic validation. The config is the source of truth and cannot be
-	// auto-rebuilt (a `--fix` manifest rebuild requires a valid config), so
-	// recovery is re-initialization.
-	RemedyConfig = "dr artifact code init <artifact-id>"
+	// semantic validation. Nothing on disk can name the artifact, so the
+	// repair is a relink, which replaces the file; init refuses a directory
+	// that already has state.
+	RemedyConfig = "dr artifact code doctor --relink <artifact-id>"
 
 	// RemedyManifest is shown when manifest.json is missing, corrupt, or
 	// fails semantic validation: `--fix` rebuilds an empty BASE from config.

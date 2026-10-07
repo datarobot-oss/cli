@@ -51,8 +51,7 @@ func init() {
 // Production wiring always leaves it pointing at workload.GetArtifact.
 var getArtifactFn = workload.GetArtifact
 
-// Cmd returns the cobra.Command for `dr artifact code doctor`. It inherits the
-// artifact tree's DATAROBOT_CLI_FEATURE_WORKLOAD gate from its parent.
+// Cmd returns the cobra.Command for `dr artifact code doctor`.
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
@@ -69,7 +68,8 @@ manifest health, config/manifest agreement, interrupted rollbacks, and the
 sync lock) and reports each check as OK, WARN, FAIL, or SKIP with a concrete
 remedy for anything that needs attention. It is a read-only diagnostic: no
 prompt is issued, no file is written, and no remote call is made unless
-remote checks apply.
+remote checks apply. It looks at this directory's sync state only; for why a
+running workload is in its current state, see 'dr workload diagnose'.
 
 Pass --fix to attempt the safe local repairs (rebuild the manifest from
 config, restore an interrupted rollback, clear a stale sync lock), then

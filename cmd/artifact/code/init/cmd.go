@@ -106,7 +106,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
 
 	if wapi.Exists(dir) {
-		return reportAlreadyLinked(cmd, dir, outputFormat)
+		return reportAlreadyLinked(cmd, dir, givenArtifactID(args), outputFormat)
 	}
 
 	artifactID, err := dirprompt.ResolveArtifactID(args, yes, dirprompt.Ask)
@@ -124,7 +124,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 
 	if err := wapi.Initialize(dir, opts); err != nil {
 		if errors.Is(err, wapi.ErrAlreadyLinked) {
-			return reportAlreadyLinked(cmd, dir, outputFormat)
+			return reportAlreadyLinked(cmd, dir, artifactID, outputFormat)
 		}
 
 		return err
@@ -151,6 +151,16 @@ func fetchArtifact(artifactID string) (*workload.Artifact, error) {
 	return art, nil
 }
 
+// givenArtifactID is the positional id, if init was called with one, so a
+// remedy can name it before anything resolves it.
+func givenArtifactID(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	return args[0]
+}
+
 // LastSyncedVersionID stays empty so the first sync detects drift and runs
 // a full three-way diff against the remote manifest.
 func buildInitOptions(artifactID string, codeRef *workload.DatarobotCodeRef) wapi.InitOptions {
@@ -167,7 +177,7 @@ func buildInitOptions(artifactID string, codeRef *workload.DatarobotCodeRef) wap
 // already linked and the user tried to init again. It fetches the linked
 // artifact to determine health and branches:
 //   - Corrupt config (unreadable linked state): report unreadable, remedy
-//     names doctor --fix, never deletion.
+//     names doctor --relink with the id init was given, never deletion.
 //   - Gone (404) or catalog mismatch: interactive → offer to relink in place;
 //     non-interactive → print guidance naming doctor --relink.
 //   - Healthy (or non-404 error — can't determine): keep abort behavior,
@@ -176,34 +186,32 @@ func buildInitOptions(artifactID string, codeRef *workload.DatarobotCodeRef) wap
 // JSON mode: the abort emits a single JSON object on stdout
 // {status:error, error:already-linked, artifactId:<id|null>, remedy:<guidance>}
 // with human text on stderr, exit 1.
-func reportAlreadyLinked(cmd *cobra.Command, dir string, outputFormat outputformat.OutputFormat) error {
+func reportAlreadyLinked(cmd *cobra.Command, dir, givenID string, outputFormat outputformat.OutputFormat) error {
 	stderr := cmd.ErrOrStderr()
 
 	cfg, err := wapi.LoadConfig(dir)
 	if err != nil {
 		// Corrupt config: cannot read the linked artifact id. Do NOT fetch;
-		// report unreadable, remedy names doctor --fix, never deletion.
+		// report unreadable, remedy names doctor --relink, never deletion.
 		// The underlying LoadConfig error is wrapped so the user sees the
 		// root cause (e.g. JSON parse error), and the config path is included
 		// in both text and JSON stderr so the user knows which file is bad.
-		const remedy = "dr artifact code doctor --fix"
-
 		configPath := wapi.ConfigPath(dir)
 
 		wrappedErr := fmt.Errorf("init aborted: project already linked (config unreadable at %s): %w", configPath, err)
 
 		if outputFormat == outputformat.OutputFormatJSON {
-			renderAlreadyLinkedJSON(cmd.OutOrStdout(), nil, remedy)
+			renderAlreadyLinkedJSON(cmd.OutOrStdout(), nil, relinkRemedy(givenID))
 
 			fmt.Fprintf(stderr, "Project is already linked but the config at %s is unreadable: %v\n", configPath, err)
-			fmt.Fprintln(stderr, "Run 'dr artifact code doctor --fix' to repair the config.")
+			fmt.Fprintln(stderr, corruptConfigRemedy(givenID))
 
 			cmd.SilenceErrors = true
 
 			return cli.ErrSilent
 		}
 
-		printCorruptConfig(cmd.OutOrStdout(), dir)
+		printCorruptConfig(cmd.OutOrStdout(), dir, givenID)
 
 		return wrappedErr
 	}

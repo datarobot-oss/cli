@@ -53,7 +53,7 @@ const (
 // clear, lock clear.
 //
 // Global safety gate: the sync lock is probed first (non-creating probe,
-// same logic as the wapi.lock check). When a live process holds the lock —
+// same logic as the local.lock check). When a live process holds the lock —
 // or it cannot be inspected — ALL repairs are skipped with a reason, because
 // a sync writes manifest.json in its final phase and must never be repaired
 // underneath. --fix never touches the server; every write here is local.
@@ -102,7 +102,7 @@ func skipAllRepairs(reason string) []core.Action {
 // Manifest{Version: 1, SyncedAt/SyncedVersionID nil-iff-config-nil,
 // SyncedVersionID: cfg.LastSyncedVersionID, Files: {}}. The working tree is
 // never touched. It requires a valid config: a corrupt config cannot name
-// what the manifest should say, so the repair is skipped with a re-init
+// what the manifest should say, so the repair is skipped with a relink
 // remedy.
 func fixManifest(projectDir string) core.Action {
 	cfg, err := wapi.LoadConfig(projectDir)
@@ -115,7 +115,7 @@ func fixManifest(projectDir string) core.Action {
 			ID:     CheckIDManifest,
 			Status: core.ActionSkipped,
 			Reason: fmt.Sprintf(
-				"config.json is corrupt or invalid (%s); the manifest cannot be rebuilt — re-initialize with 'dr artifact code init <artifact-id>'",
+				"config.json is corrupt or invalid (%s); the manifest cannot be rebuilt — run 'dr artifact code doctor --relink <artifact-id>'",
 				corruptReason(err),
 			),
 		}

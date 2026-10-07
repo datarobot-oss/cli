@@ -482,8 +482,8 @@ func TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive(t *testing.T) {
 }
 
 // TestRunE_AlreadyLinked_CorruptConfig verifies corrupt config (unreadable
-// linked state) reports unreadable, remedy names doctor --fix, never
-// deletion, no fetch, state byte-identical.
+// linked state) reports unreadable, remedy names doctor --relink with the
+// given id, never deletion, no fetch, state byte-identical.
 func TestRunE_AlreadyLinked_CorruptConfig(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -505,7 +505,7 @@ func TestRunE_AlreadyLinked_CorruptConfig(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, stdout, "unreadable")
-	assert.Contains(t, stdout, "dr artifact code doctor --fix")
+	assert.Contains(t, stdout, "dr artifact code doctor --relink art-some-id")
 	assert.NotContains(t, stdout, "Delete")
 	assert.NotContains(t, stdout, "rm -rf")
 	assert.NotContains(t, stdout, "re-init")
@@ -594,7 +594,7 @@ func TestRunE_AlreadyLinked_Gone_JSON(t *testing.T) {
 }
 
 // TestRunE_AlreadyLinked_CorruptConfig_JSON covers the corrupt-config branch
-// in JSON mode: pinned shape with null artifactId, remedy doctor --fix.
+// in JSON mode: pinned shape with null artifactId, remedy doctor --relink.
 func TestRunE_AlreadyLinked_CorruptConfig_JSON(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -620,7 +620,7 @@ func TestRunE_AlreadyLinked_CorruptConfig_JSON(t *testing.T) {
 	assert.Equal(t, "error", parsed["status"])
 	assert.Equal(t, "already-linked", parsed["error"])
 	assert.Nil(t, parsed["artifactId"])
-	assert.Contains(t, parsed["remedy"], "doctor --fix")
+	assert.Equal(t, "dr artifact code doctor --relink art-some-id", parsed["remedy"])
 
 	// JSON-mode stderr must include the config path (matching text mode).
 	assert.Contains(t, stderr, wapi.ConfigPath(tmp), "JSON stderr must include the config path")

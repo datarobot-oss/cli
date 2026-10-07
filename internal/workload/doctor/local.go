@@ -26,12 +26,12 @@ import (
 // Stable check identifiers. They surface in reports and JSON output, so they
 // must not change between releases.
 const (
-	CheckIDPresence   = "wapi.presence"
-	CheckIDConfig     = "wapi.config"
-	CheckIDManifest   = "wapi.manifest"
-	CheckIDDivergence = "wapi.config-manifest-divergence"
-	CheckIDRollback   = "wapi.rollback"
-	CheckIDLock       = "wapi.lock"
+	CheckIDPresence   = "local.presence"
+	CheckIDConfig     = "local.config"
+	CheckIDManifest   = "local.manifest"
+	CheckIDDivergence = "local.config-manifest-divergence"
+	CheckIDRollback   = "local.rollback"
+	CheckIDLock       = "local.lock"
 )
 
 // Checks returns the complete doctor check suite in pinned order: the six

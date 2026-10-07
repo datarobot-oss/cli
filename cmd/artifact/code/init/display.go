@@ -161,14 +161,30 @@ func printAlreadyLinkedHealthy(w io.Writer, artifactID, dir string) {
 }
 
 // printCorruptConfig prints the unreadable-config message, pointing to
-// doctor --fix. No delete advice.
-func printCorruptConfig(w io.Writer, dir string) {
+// doctor --relink, which replaces the file. No delete advice.
+func printCorruptConfig(w io.Writer, dir, artifactID string) {
 	configPath := wapi.ConfigPath(dir)
 
 	fmt.Fprintln(w, tui.ErrorStyle.Render(
 		fmt.Sprintf("Project is already linked but the config at %s is unreadable.", configPath),
 	))
-	fmt.Fprintln(w, tui.DimStyle.Render("Run 'dr artifact code doctor --fix' to repair the config."))
+	fmt.Fprintln(w, tui.DimStyle.Render(corruptConfigRemedy(artifactID)))
+}
+
+// corruptConfigRemedy names the relink that replaces an unreadable config,
+// with the artifact id init was given when there is one.
+func corruptConfigRemedy(artifactID string) string {
+	return "Run '" + relinkRemedy(artifactID) + "' to replace the config."
+}
+
+// relinkRemedy is the relink command for the JSON remedy field, with the
+// artifact id init was given or a placeholder.
+func relinkRemedy(artifactID string) string {
+	if artifactID == "" {
+		artifactID = "<artifact-id>"
+	}
+
+	return "dr artifact code doctor --relink " + artifactID
 }
 
 // printGoneGuidance prints the non-interactive guidance for a gone artifact,

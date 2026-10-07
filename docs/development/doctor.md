@@ -102,8 +102,8 @@ The four remote checks share exactly one `GetArtifact` per run through the
 injected `ArtifactGetter` seam (`remoteSnapshot` memoizes the fetch with
 `sync.Once`), so a mid-run disappearance collapses to a single read. SKIP
 cascades are honest per-run observations, not construction-time snapshots:
-each check re-reads local state at `Run` time, so `wapi.presence` failing
-makes every later check report `SKIP` ("no linked state"), and `wapi.config`
+each check re-reads local state at `Run` time, so `local.presence` failing
+makes every later check report `SKIP` ("no linked state"), and `local.config`
 failing makes the divergence and all remote checks `SKIP` (no artifact id).
 A `404` is owned solely by `remote.artifact-exists` (the only check allowed
 to `FAIL` on one); the dependent remote checks `SKIP` rather than piling on.

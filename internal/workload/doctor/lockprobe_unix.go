@@ -25,10 +25,10 @@ import (
 // tryLockSyncLockExclusive attempts a non-blocking exclusive advisory lock
 // on f. It fails with EWOULDBLOCK when another live process holds the lock.
 func tryLockSyncLockExclusive(f *os.File) error {
-	return unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // uintptr and int are same size on supported platforms
+	return unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 }
 
 // unlockSyncLock releases the advisory lock held on f.
 func unlockSyncLock(f *os.File) error {
-	return unix.Flock(int(f.Fd()), unix.LOCK_UN) //nolint:gosec // uintptr and int are same size on supported platforms
+	return unix.Flock(int(f.Fd()), unix.LOCK_UN)
 }

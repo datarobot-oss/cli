@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	core "github.com/datarobot/cli/internal/doctor"
@@ -63,13 +64,20 @@ func TestLocalChecks_FixedOrder(t *testing.T) {
 func TestLocalChecks_Healthy_AllOK(t *testing.T) {
 	results := runLocalChecks(t, healthyProject(t))
 
+	// flock is not enforced on Windows, so the lock check skips there.
+	lock := core.StatusOK
+
+	if runtime.GOOS == "windows" {
+		lock = core.StatusSKIP
+	}
+
 	want := []core.Status{
 		core.StatusOK,
 		core.StatusOK,
 		core.StatusOK,
 		core.StatusOK,
 		core.StatusOK,
-		core.StatusOK,
+		lock,
 	}
 
 	for i, res := range results {

@@ -77,12 +77,12 @@ type jsonReport struct {
 // pinnedCheckOrder is the fixed check order the command must preserve:
 // six local checks then the four remote checks (ten total).
 var pinnedCheckOrder = []string{
-	"wapi.presence",
-	"wapi.config",
-	"wapi.manifest",
-	"wapi.config-manifest-divergence",
-	"wapi.rollback",
-	"wapi.lock",
+	"local.presence",
+	"local.config",
+	"local.manifest",
+	"local.config-manifest-divergence",
+	"local.rollback",
+	"local.lock",
 	"remote.artifact-exists",
 	"remote.artifact-locked",
 	"remote.catalog-mismatch",
@@ -272,7 +272,7 @@ func TestRunE_HealthyProject_TextReport_ExitZero(t *testing.T) {
 		assert.Contains(t, outStr, id, "renders check row %s", id)
 	}
 
-	assert.Contains(t, outStr, "Summary: 10 ok, 0 warn, 0 fail, 0 skip — verdict: ok")
+	assert.Contains(t, outStr, healthySummaryLine())
 }
 
 func TestRunE_UnlinkedProject_RendersReport_ExitsOneSilently(t *testing.T) {
@@ -284,7 +284,7 @@ func TestRunE_UnlinkedProject_RendersReport_ExitsOneSilently(t *testing.T) {
 
 	require.ErrorIs(t, err, cli.ErrSilent, "any FAIL exits 1 via the silent sentinel")
 
-	assert.Contains(t, out.String(), "wapi.presence")
+	assert.Contains(t, out.String(), "local.presence")
 	assert.Contains(t, out.String(), "FAIL")
 	assert.Contains(t, out.String(), "dr artifact code init <artifact-id>")
 	assert.NotContains(t, errOut.String(), "Error:", "no cobra error echo after the rendered report")
@@ -317,11 +317,11 @@ func TestRunE_HealthyProject_JSONReport(t *testing.T) {
 
 	for _, check := range report.Checks {
 		gotOrder = append(gotOrder, check.ID)
-		assert.Equal(t, "OK", check.Status, "check %s", check.ID)
+		assert.Equal(t, healthyStatus(check.ID), check.Status, "check %s", check.ID)
 	}
 
 	assert.Equal(t, pinnedCheckOrder, gotOrder)
-	assert.Equal(t, jsonSummary{OK: 10}, report.Summary)
+	assert.Equal(t, healthySummary(0), report.Summary)
 }
 
 func TestRunE_JSONOutput_CorruptConfig_FailWithPath(t *testing.T) {
@@ -347,7 +347,7 @@ func TestRunE_JSONOutput_CorruptConfig_FailWithPath(t *testing.T) {
 		byID[check.ID] = check
 	}
 
-	cfg := byID["wapi.config"]
+	cfg := byID["local.config"]
 
 	assert.Equal(t, "FAIL", cfg.Status)
 
@@ -602,11 +602,11 @@ func TestRunE_RemoteNon404_AllSkipWithConnectivityRemedy_ExitZero(t *testing.T) 
 
 					assert.NotContains(t, check.Remedy, "--relink")
 				} else {
-					assert.Equal(t, "OK", check.Status, "local checks unaffected by remote failure: %s", check.ID)
+					assert.Equal(t, healthyStatus(check.ID), check.Status, "local checks unaffected by remote failure: %s", check.ID)
 				}
 			}
 
-			assert.Equal(t, jsonSummary{OK: 6, SKIP: 4}, report.Summary)
+			assert.Equal(t, healthySummary(4), report.Summary)
 
 			assert.Equal(t, "ok", report.Status, "SKIP-only remote outcome keeps verdict ok")
 

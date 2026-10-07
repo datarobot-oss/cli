@@ -155,10 +155,10 @@ func TestRunFix_DivergentManifest_ConfigWins(t *testing.T) {
 	require.NotNil(t, m.SyncedAt, "syncedAt must be non-nil iff syncedVersionId is non-nil")
 }
 
-// TestRunFix_CorruptConfig_ManifestSkippedWithReinitRemedy verifies that
+// TestRunFix_CorruptConfig_ManifestSkippedWithRelinkRemedy verifies that
 // without a valid config the manifest cannot be rebuilt and the skip reason
 // points at re-initialization.
-func TestRunFix_CorruptConfig_ManifestSkippedWithReinitRemedy(t *testing.T) {
+func TestRunFix_CorruptConfig_ManifestSkippedWithRelinkRemedy(t *testing.T) {
 	dir := t.TempDir()
 
 	initStateDir(t, dir)
@@ -175,7 +175,7 @@ func TestRunFix_CorruptConfig_ManifestSkippedWithReinitRemedy(t *testing.T) {
 
 	assert.Equal(t, core.ActionSkipped, rebuild.Status)
 	assert.Contains(t, rebuild.Reason, "config")
-	assert.Contains(t, rebuild.Reason, "init", "skip reason must carry the re-init remedy")
+	assert.Contains(t, rebuild.Reason, "--relink", "skip reason must carry the relink remedy")
 
 	// The other repairs still attempt independently of the config state.
 	assert.Equal(t, core.ActionNotNeeded, byID[CheckIDRollback].Status)

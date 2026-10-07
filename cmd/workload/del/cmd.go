@@ -329,5 +329,5 @@ func noteLinkedArtifact(w io.Writer, projectDir string) {
 
 	fmt.Fprintln(w, tui.DimStyle.Render(
 		"This project is still linked to artifact "+cfg.ArtifactID+", which was not deleted with the workload. "+
-			"To unlink it, delete "+wapi.Dir(projectDir)+"."))
+			"'dr workload delete --purge' removes both; 'dr artifact code doctor --relink <artifact-id>' points the project elsewhere."))
 }

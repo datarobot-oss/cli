@@ -646,9 +646,10 @@ func TestRunRelink_PreservesCreatedAtAndCLIVersion(t *testing.T) {
 	assert.Equal(t, oldCfg.CLIVersion, newCfg.CLIVersion, "cliVersion must be preserved")
 }
 
-// TestRunRelink_CorruptConfig_Aborts covers the case where the config is
-// corrupt: the relink cannot read the old artifact id and aborts with an error.
-func TestRunRelink_CorruptConfig_Aborts(t *testing.T) {
+// TestRunRelink_CorruptConfig_Replaces covers a corrupt config: the relink
+// is the only repair for it, so the file is replaced rather than refused,
+// with a fresh creation time and CLI version since nothing survives.
+func TestRunRelink_CorruptConfig_Replaces(t *testing.T) {
 	dir := t.TempDir()
 
 	initStateDir(t, dir)
@@ -657,13 +658,27 @@ func TestRunRelink_CorruptConfig_Aborts(t *testing.T) {
 
 	target := fakeDraftArtifact(newArtifactID, nil)
 
-	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(target), alwaysConfirm))
+	var warned string
 
-	require.Error(t, err)
+	confirm := func(warning string) bool {
+		warned = warning
 
-	assert.Nil(t, actions)
+		return true
+	}
 
-	assert.Contains(t, err.Error(), "doctor --fix")
+	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(target), confirm))
+
+	require.NoError(t, err)
+	require.Len(t, actions, 1)
+	assert.Equal(t, core.ActionPerformed, actions[0].Status)
+	assert.Contains(t, warned, "unreadable")
+
+	cfg, err := wapi.LoadConfig(dir)
+
+	require.NoError(t, err)
+	assert.Equal(t, newArtifactID, cfg.ArtifactID)
+	assert.False(t, cfg.CreatedAt.IsZero())
+	assert.NotEmpty(t, cfg.CLIVersion)
 }
 
 // splitLines splits a string on newlines, dropping trailing empty lines.
