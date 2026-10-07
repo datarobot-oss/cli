@@ -106,15 +106,6 @@ func executePlan(e *Engine, rb *Rollback) error {
 	e.newCatalogID = newCatalogID
 	e.newVersionID = newVersionID
 
-	// --verify's post-apply check runs before this function returns so a
-	// mismatch propagates to phase5Execute, which restores the working tree
-	// and stops the pipeline before phase6State can persist anything. The
-	// check itself is a no-op unless the plan uploaded files and Options.Verify
-	// opted in.
-	if err := verifyPostApplyUploads(e, e.uploadOutcome); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -309,6 +300,13 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 		newVersionID = outcome.VersionID
 	}
 
+	// Before the codeRef PATCH: a version the check rejects is never the one
+	// the artifact serves, and the failure trips the rollback while the
+	// state phase has written nothing.
+	if err := verifyPostApplyUploads(e, e.uploadOutcome); err != nil {
+		return "", "", err
+	}
+
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {
 		if err := e.artifacts.PatchCodeRef(e.config.ArtifactID, newCatalogID, newVersionID); err != nil {
 			return "", "", fmt.Errorf("update artifact codeRef: %w", err)
@@ -352,14 +350,11 @@ func applyDeletes(e *Engine, catalogID string) (string, error) {
 // SHA-256 hex of the content, the same digest the uploader computed while
 // streaming.
 //
-// It must run here in Phase 5, not in Phase 6: a mismatch has to fail the
-// phase and trip the rollback while Phase 6 has written nothing — a Phase-6
-// check would run after SaveManifest/SaveConfig, and failing there cannot
-// un-write either file. The check is placed after the codeRef PATCH: the
-// remote version cannot be un-published, so the recoverable posture after a
-// failed verification is the drifted one — config still names the old
-// version, the next sync sees the difference, fetches the real remote, and
-// reconciles.
+// It runs in Phase 5, before the codeRef PATCH: a mismatch fails the phase
+// and trips the rollback while the state phase has written nothing, and the
+// artifact goes on serving the version it served before. The rejected
+// version stays in the catalog unreferenced; the config still names the old
+// one, so the next sync re-uploads the changed files.
 //
 // Only uploaded paths are compared. Stage REPLACE merges staged paths into
 // the version in place, so the listing legitimately contains files this sync
@@ -397,11 +392,15 @@ func verifyPostApplyUploads(e *Engine, outcome *UploadOutcome) error {
 
 		held, ok := listing[path]
 		if !ok {
-			return fmt.Errorf("post-apply verification: uploaded file %s is absent from server version %s", path, outcome.VersionID)
+			return fmt.Errorf("post-apply verification: uploaded file %s is absent from server version %s; "+
+				"the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID)
 		}
 
 		if held.Hash != sent.Hash {
-			return fmt.Errorf("post-apply verification: server checksum for %s in version %s does not match the uploaded bytes (sent %s, server holds %s)", path, outcome.VersionID, sent.Hash, held.Hash)
+			return fmt.Errorf("post-apply verification: server checksum for %s in version %s does not match the uploaded bytes "+
+				"(sent %s, server holds %s); the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID, sent.Hash, held.Hash)
 		}
 	}
 

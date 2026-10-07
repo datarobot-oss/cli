@@ -44,6 +44,7 @@ type fakeEngine struct {
 	lockedNote      string
 	divergences     []sync.Divergence
 	skippedSymlinks []sync.SkippedSymlink
+	verified        bool
 	fetcher         display.ContentFetcher
 	closeErr        error
 
@@ -78,6 +79,8 @@ func (f *fakeEngine) IgnoreFileNotice() string { return f.ignoreNotice }
 func (f *fakeEngine) LockedNotice() string { return f.lockedNote }
 
 func (f *fakeEngine) Divergences() []sync.Divergence { return f.divergences }
+
+func (f *fakeEngine) Verified() bool { return f.verified }
 
 func (f *fakeEngine) SkippedSymlinks() []sync.SkippedSymlink { return f.skippedSymlinks }
 

@@ -106,15 +106,10 @@ func maybeDetectDivergence(e *Engine) {
 
 	e.divergences = detectDivergence(e.base, e.remote)
 
-	// A path BASE records that the server never held was lost on the way up:
-	// a torn upload, or a version the platform dropped. Left in BASE it reads
-	// as "remote deleted it" to the classifier, and the one copy left, the
-	// local file, is removed to match. Dropping the entry makes the file a
-	// local addition again, so the plan uploads it instead.
-	for _, d := range e.divergences {
-		if d.Kind == DivergenceBaseOnly {
-			delete(e.base, d.Path)
-		}
+	trustLocalOverServer(e)
+
+	if e.opts.Quiet {
+		return
 	}
 
 	for i, d := range e.divergences {
@@ -129,6 +124,26 @@ func maybeDetectDivergence(e *Engine) {
 		log.Warn(fmt.Sprintf(
 			"divergence: and %d more divergence(s) were found (see the plan JSON for the full list)",
 			len(e.divergences)-DivergenceNoticeBound))
+	}
+}
+
+// trustLocalOverServer corrects BASE for the divergences found. BASE records
+// what this client streamed, and the artifact has not moved, so where the
+// server disagrees the server copy is the suspect one. A path the server
+// never held is dropped from BASE, which makes the local file a local
+// addition; a path whose bytes differ takes the server's entry as its BASE,
+// which makes the local file a local change. Either way the plan uploads
+// the local copy instead of deleting or overwriting it, and a local deletion
+// is carried to the server as one.
+func trustLocalOverServer(e *Engine) {
+	for _, d := range e.divergences {
+		switch d.Kind {
+		case DivergenceBaseOnly:
+			delete(e.base, d.Path)
+		case DivergenceHashMismatch:
+			e.base[d.Path] = e.remote[d.Path]
+		case DivergenceRemoteOnly:
+		}
 	}
 }
 

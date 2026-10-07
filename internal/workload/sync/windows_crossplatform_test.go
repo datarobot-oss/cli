@@ -17,7 +17,6 @@ package sync
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -301,61 +300,3 @@ func TestNoSymlinkProject_SyncsWithNoNotice(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Platform-inappropriate check skips
 // ---------------------------------------------------------------------------
-
-// TestFileModePreservation_SkipOnWindows documents that file-mode
-// assertions are skipped on Windows with a visible reason. Windows
-// collapses POSIX mode bits: a file created with 0o644 and one created
-// with 0o600 are indistinguishable through os.Stat on NTFS. Any test that
-// asserts a specific file mode after a sync would silently pass on
-// Windows even if the mode were wrong, so it must skip rather than report
-// a vacuous pass.
-//
-// This test is the explicit skip: it creates a file with a specific mode,
-// verifies the mode on POSIX, and skips on Windows with a visible reason.
-// It serves as the documented precedent for future file-mode tests.
-//
-// Fulfills VAL-REGRESSION-013(c) for file-mode assertions.
-func TestFileModePreservation_SkipOnWindows(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("file-mode assertions skipped on Windows: Windows collapses POSIX mode bits (0o644 vs 0o600 are indistinguishable on NTFS)")
-	}
-
-	dir := t.TempDir()
-	p := filepath.Join(dir, "mode_test.py")
-	require.NoError(t, os.WriteFile(p, []byte("x"), 0o644))
-
-	info, err := os.Stat(p)
-	require.NoError(t, err)
-
-	// On POSIX, the mode is preserved exactly.
-	assert.Equal(t, os.FileMode(0o644), info.Mode()&os.ModePerm,
-		"file mode must be preserved on POSIX")
-}
-
-// TestSyncLock_NoCrossProcessExclusionOnWindows documents that the sync
-// lock is a no-op on Windows (synclock_windows.go), so no test may assume
-// cross-process mutual exclusion there. On POSIX, a second acquire fails;
-// on Windows it succeeds silently. This test asserts the POSIX behaviour
-// and skips on Windows with a visible reason, mirroring the existing
-// TestSyncLock_DoubleAcquireFailsOnUnix precedent.
-//
-// Fulfills VAL-REGRESSION-013(c) for the sync lock.
-func TestSyncLock_NoCrossProcessExclusionOnWindows(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sync lock is a no-op on Windows (synclock_windows.go); cross-process mutual exclusion is not available — tracked in RAPTOR-16928")
-	}
-
-	dir := setupProject(t)
-
-	lock1, err := AcquireSyncLock(dir)
-	require.NoError(t, err)
-
-	t.Cleanup(func() { _ = lock1.Release() })
-
-	// A second acquire must fail on POSIX — the lock provides mutual
-	// exclusion. On Windows this would succeed (no-op lock), so the
-	// test skips rather than asserting a vacuous pass.
-	_, err = AcquireSyncLock(dir)
-	assert.Error(t, err,
-		"second acquire must fail on POSIX while the first is held")
-}

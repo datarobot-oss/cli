@@ -56,8 +56,18 @@ func TestRenderSyncJSON_FindingsAlwaysPresent(t *testing.T) {
 			}
 
 			assert.Contains(t, doc, "locked")
+			assert.Equal(t, false, doc["verified"], "no check ran, so empty findings say nothing")
 		})
 	}
+}
+
+// verified is what tells an empty divergence list apart from a run that
+// never looked.
+func TestRenderSyncJSON_VerifiedFlag(t *testing.T) {
+	doc := planDoc(t, &sync.SyncPlan{}, Findings{Verified: true})
+
+	assert.Equal(t, true, doc["verified"])
+	assert.Empty(t, doc["divergence"])
 }
 
 func TestRenderSyncJSON_DivergenceEntries(t *testing.T) {
