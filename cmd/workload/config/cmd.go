@@ -375,10 +375,6 @@ func checkSyncEnvFlags(cmd *cobra.Command, f flags) error {
 	return nil
 }
 
-// checkDockerfileFlag holds --dockerfile to the one path a build can use.
-// The flag exists so the answer is explicit rather than mysteriously
-// ineffective, and so pointing it elsewhere fails here instead of at build
-// time.
 // checkSourceFlags refuses the image-source flags this command cannot honour:
 // a Dockerfile elsewhere than the project root, and --dockerfile beside a
 // spec file that already says how the image is built.
@@ -394,6 +390,10 @@ func checkSourceFlags(cmd *cobra.Command, f flags) error {
 	return nil
 }
 
+// checkDockerfileFlag holds --dockerfile to the one path a build can use.
+// The flag exists so the answer is explicit rather than mysteriously
+// ineffective, and so pointing it elsewhere fails here instead of at build
+// time.
 func checkDockerfileFlag(cmd *cobra.Command, path string) error {
 	if !cmd.Flags().Changed("dockerfile") || path == wizard.DefaultDockerfilePath {
 		return nil
