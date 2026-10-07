@@ -335,7 +335,7 @@ func TestRunE_DivergenceSummary_PreviewSaysNothingWritten(t *testing.T) {
 			assert.Contains(t, errText, fmt.Sprintf("Run without %s to reconcile.", tc.runWithout),
 				"the summary must say how to actually reconcile")
 
-			assert.NotContains(t, errText, "The plan reconciles them.",
+			assert.NotContains(t, errText, "Applying the plan reconciles them.",
 				"nothing is reconciled in a preview; the applying wording must not appear")
 		})
 	}
@@ -344,7 +344,7 @@ func TestRunE_DivergenceSummary_PreviewSaysNothingWritten(t *testing.T) {
 // The empty-plan repair run reconciles nothing through plan rows — the plan
 // has none. The reconciliation is the Phase 6 manifest rewrite, so the
 // summary must say the manifest is being rewritten from the server's state
-// rather than repeating "The plan reconciles them.".
+// rather than repeating "Applying the plan reconciles them.".
 func TestRunE_DivergenceSummary_EmptyPlanRepair_SaysManifestRewritten(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -366,7 +366,7 @@ func TestRunE_DivergenceSummary_EmptyPlanRepair_SaysManifestRewritten(t *testing
 	assert.Contains(t, errText,
 		"The plan is empty, but manifest.json is being rewritten from the server's state",
 		"the summary must name the manifest rewrite, not plan rows")
-	assert.NotContains(t, errText, "The plan reconciles them.",
+	assert.NotContains(t, errText, "Applying the plan reconciles them.",
 		"an empty plan reconciles no rows; the applying wording would mislead")
 }
 
@@ -388,7 +388,7 @@ func TestRunE_DivergenceSummary_ApplyingKeepsReconcilesWording(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, fe.executed)
-	assert.Contains(t, stderr.String(), "The plan reconciles them.",
+	assert.Contains(t, stderr.String(), "Applying the plan reconciles them.",
 		"the non-empty applying wording must stay as it is")
 }
 
@@ -489,6 +489,6 @@ func TestDivergenceSummaryNotice_BoundsPathListAtFive(t *testing.T) {
 	assert.NotContains(t, notice, "g.py", "the seventh path must not be named")
 	assert.Contains(t, notice, ", and 2 more",
 		"the remainder must be summarized as a count")
-	assert.Contains(t, notice, "The plan reconciles them.",
+	assert.Contains(t, notice, "Applying the plan reconciles them.",
 		"the applying sentence must stay intact")
 }

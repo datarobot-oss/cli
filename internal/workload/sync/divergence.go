@@ -106,6 +106,17 @@ func maybeDetectDivergence(e *Engine) {
 
 	e.divergences = detectDivergence(e.base, e.remote)
 
+	// A path BASE records that the server never held was lost on the way up:
+	// a torn upload, or a version the platform dropped. Left in BASE it reads
+	// as "remote deleted it" to the classifier, and the one copy left, the
+	// local file, is removed to match. Dropping the entry makes the file a
+	// local addition again, so the plan uploads it instead.
+	for _, d := range e.divergences {
+		if d.Kind == DivergenceBaseOnly {
+			delete(e.base, d.Path)
+		}
+	}
+
 	for i, d := range e.divergences {
 		if i >= DivergenceNoticeBound {
 			break
