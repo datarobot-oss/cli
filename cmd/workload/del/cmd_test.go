@@ -16,13 +16,17 @@ package del
 
 import (
 	"bytes"
+	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
@@ -123,7 +127,7 @@ func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -148,7 +152,7 @@ func TestClearStaleBinding_LeavesAnotherWorkloadsManifestAlone(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff")
+	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff", nil)
 
 	out := buf.String()
 
@@ -165,7 +169,7 @@ func TestClearStaleBinding_SilentWithNoManifest(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -182,7 +186,7 @@ func TestClearStaleBinding_SilentWhenTheManifestCannotBeRead(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -203,7 +207,7 @@ func TestClearStaleBinding_NamesTheStillLinkedArtifact(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -221,7 +225,7 @@ func TestClearStaleBinding_NoArtifactNoteWithoutAStateDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -243,7 +247,7 @@ func TestClearStaleBinding_FindsAManifestUnderDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -272,7 +276,7 @@ func TestClearStaleBinding_WarnsWhenTheManifestCannotBeWritten(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	out := buf.String()
 
@@ -295,7 +299,7 @@ func TestClearStaleBinding_NamesADirThatIsNotADirectory(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	assert.Contains(t, buf.String(), "No manifest was checked")
 	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
@@ -317,7 +321,7 @@ func TestClearStaleBinding_SilentOnAnUnwalkableManifest(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	assert.Empty(t, buf.String())
 }
@@ -331,7 +335,7 @@ func TestClearStaleBinding_RejectsAFileAsDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0", nil)
 
 	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
 
@@ -381,13 +385,465 @@ func TestDeleteQuestion_AsksInTheSharedShapeWithItsOwnConsequence(t *testing.T) 
 
 	assert.Equal(t,
 		"Delete workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
-			"rather than on the command line. This stops and removes a running workload. [y/N] ",
+			"rather than on the command line. This stops and removes a running workload "+
+			"and deletes the credentials created for it. [y/N] ",
 		deleteQuestion(ambient))
 
 	typed := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceExplicit}
 
 	assert.Equal(t,
-		"Delete workload "+boundID+"? This stops and removes a running workload. [y/N] ",
+		"Delete workload "+boundID+"? This stops and removes a running workload "+
+			"and deletes the credentials created for it. [y/N] ",
 		deleteQuestion(typed),
 		"a typed id has no manifest to attribute it to")
+}
+
+// stubCredCleanup swaps the two platform seams the credential cleanup uses and
+// restores them when the test ends, so nothing here can reach a real tenant.
+func stubCredCleanup(
+	t *testing.T,
+	list func(prefix string, limit int) ([]workload.Credential, error),
+	del func(id string) error,
+) {
+	t.Helper()
+
+	origList, origDel := credentialsWithPrefixFn, deleteCredentialFn
+	credentialsWithPrefixFn = list
+	deleteCredentialFn = del
+
+	t.Cleanup(func() {
+		credentialsWithPrefixFn = origList
+		deleteCredentialFn = origDel
+	})
+}
+
+// Every credential the workload owns is deleted when scoped to a manifest that
+// references it, found by the "<workloadName>/" prefix and walked without a bound
+// so none is left behind.
+func TestCleanupCredentials_DeletesEachOwnedCredential(t *testing.T) {
+	var (
+		gotPrefix string
+		gotLimit  int
+		deleted   []string
+	)
+
+	stubCredCleanup(t,
+		func(prefix string, limit int) ([]workload.Credential, error) {
+			gotPrefix, gotLimit = prefix, limit
+
+			return []workload.Credential{
+				{CredentialID: "c1", Name: "my-app/LLM_API_KEY"},
+				{CredentialID: "c2", Name: "my-app/DATAROBOT_API_TOKEN"},
+			}, nil
+		},
+		func(id string) error {
+			deleted = append(deleted, id)
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app", map[string]bool{"c1": true, "c2": true}, true)
+
+	assert.Equal(t, "my-app/", gotPrefix, "the workload name is the credential prefix")
+	assert.Equal(t, 0, gotLimit, "cleanup walks the whole store, not a bounded slice")
+	assert.Equal(t, []string{"c1", "c2"}, deleted)
+	assert.Contains(t, out.String(), "Deleted credential my-app/LLM_API_KEY")
+	assert.Contains(t, out.String(), "Deleted credential my-app/DATAROBOT_API_TOKEN")
+}
+
+// A delete that fails is named, and the next one still runs: the command must
+// not abandon the rest of the cleanup on the first refusal.
+func TestCleanupCredentials_ReportsAFailedDeleteButKeepsGoing(t *testing.T) {
+	var deleted []string
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "c1", Name: "my-app/A"},
+				{CredentialID: "c2", Name: "my-app/B"},
+			}, nil
+		},
+		func(id string) error {
+			deleted = append(deleted, id)
+
+			if id == "c1" {
+				return errors.New("still in use")
+			}
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app", map[string]bool{"c1": true, "c2": true}, true)
+
+	assert.Equal(t, []string{"c1", "c2"}, deleted, "a failure on one does not stop the next")
+	assert.Contains(t, out.String(), "Could not delete credential my-app/A")
+	assert.Contains(t, out.String(), "Deleted credential my-app/B")
+}
+
+// A lookup that fails leaves the command succeeding: the workload is already
+// gone, and the user is told to remove the credentials by hand.
+func TestCleanupCredentials_ReportsAListError(t *testing.T) {
+	deleteCalled := false
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return nil, errors.New("network down")
+		},
+		func(string) error {
+			deleteCalled = true
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app", nil, false)
+
+	assert.False(t, deleteCalled, "no credential is deleted when the list itself failed")
+	assert.Contains(t, out.String(), "Could not list credentials to clean up for workload my-app")
+	assert.Contains(t, out.String(), "my-app/* credentials by hand")
+}
+
+// A workload with no secrets owns no credentials: the cleanup finds nothing,
+// deletes nothing, and says nothing.
+func TestCleanupCredentials_SilentWhenNoneOwned(t *testing.T) {
+	deleteCalled := false
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return nil, nil
+		},
+		func(string) error {
+			deleteCalled = true
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	cleanupCredentials(&out, "my-app", nil, false)
+
+	assert.False(t, deleteCalled)
+	assert.Empty(t, out.String())
+}
+
+// A credential the platform has already lost (a 404) is counted as removed, not
+// as a failure, so its stale manifest reference is reset with the rest. Every
+// other failure keeps its error text, where before a 404, a 403 and a 5xx all
+// read as the same "may still be in use".
+func TestCleanupCredentials_CountsA404AsDeletedAndKeepsErrorText(t *testing.T) {
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "gone", Name: "my-app/A"},
+				{CredentialID: "stuck", Name: "my-app/B"},
+			}, nil
+		},
+		func(id string) error {
+			if id == "gone" {
+				return &drapi.HTTPError{StatusCode: http.StatusNotFound}
+			}
+
+			return errors.New("409 still used by a batch job")
+		},
+	)
+
+	var out bytes.Buffer
+
+	deleted := cleanupCredentials(&out, "my-app", map[string]bool{"gone": true, "stuck": true}, true)
+
+	assert.Equal(t, []string{"gone"}, deleted, "a 404 counts as deleted so its reference is reset")
+	assert.NotContains(t, out.String(), "my-app/A", "nothing is said about a credential already gone")
+	assert.Contains(t, out.String(), "Could not delete credential my-app/B: 409 still used by a batch job",
+		"the error text is what tells a 409 from a 403")
+}
+
+// Scoped to the manifest, a prefix match this project does not reference is left
+// in place: it can belong to a different workload that reused the name.
+func TestCleanupCredentials_ScopedSkipsCredentialsNotInManifest(t *testing.T) {
+	var deleted []string
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "ours", Name: "my-app/A"},
+				{CredentialID: "theirs", Name: "my-app/B"},
+			}, nil
+		},
+		func(id string) error {
+			deleted = append(deleted, id)
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	returned := cleanupCredentials(&out, "my-app", map[string]bool{"ours": true}, true)
+
+	assert.Equal(t, []string{"ours"}, deleted, "only the credential this manifest references is deleted")
+	assert.Equal(t, []string{"ours"}, returned)
+	assert.Contains(t, out.String(), "Deleted credential my-app/A")
+	assert.NotContains(t, out.String(), "Deleted credential my-app/B",
+		"a credential another workload may reuse is left alone")
+	assert.Contains(t, out.String(), "Left 1 credential(s) in place",
+		"what was left alone is reported, not skipped silently")
+	assert.Contains(t, out.String(), "my-app/B", "the left-alone credential is named")
+}
+
+// Unscoped (no manifest about this workload), the prefix is not ownership and the
+// platform does not refuse to delete a credential another workload references, so
+// deleting on a name match would be a destructive guess. The matches are listed
+// for the user to remove by hand, and nothing is deleted.
+func TestCleanupCredentials_UnscopedListsInsteadOfDeleting(t *testing.T) {
+	deleteCalled := false
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "c1", Name: "my-app/A"},
+				{CredentialID: "c2", Name: "my-app/B"},
+			}, nil
+		},
+		func(string) error {
+			deleteCalled = true
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	deleted := cleanupCredentials(&out, "my-app", nil, false)
+
+	assert.False(t, deleteCalled, "a prefix match alone is not safe to delete")
+	assert.Nil(t, deleted, "nothing was deleted, so there is nothing to reset")
+	assert.Contains(t, out.String(), "no manifest for this workload")
+	assert.Contains(t, out.String(), "my-app/A")
+	assert.Contains(t, out.String(), "my-app/B")
+	assert.Contains(t, out.String(), "remove them by hand")
+}
+
+// boundManifestWithSecret binds the workload and references one credential by id,
+// so the whole delete path has something to clean up and, later, something to
+// reset once the credential is gone.
+const boundManifestWithSecret = `workloadId: 68b0c1d2e3f4a5b6c7d8e9f0
+name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: LLM_API_KEY
+                value: dr-credential:66f000000000000000000001/apiToken
+`
+
+// stubDelete replaces all four platform seams the RunE wiring reaches, so an
+// Execute()-level test drives the read, the delete, the cleanup and the repair
+// without a server behind any of them.
+func stubDelete(
+	t *testing.T,
+	get func(id string) (*workload.Workload, error),
+	del func(id string) error,
+	list func(prefix string, limit int) ([]workload.Credential, error),
+	delCred func(id string) error,
+) {
+	t.Helper()
+
+	og, od, ol, odc := getWorkloadFn, deleteWorkloadFn, credentialsWithPrefixFn, deleteCredentialFn
+	getWorkloadFn, deleteWorkloadFn, credentialsWithPrefixFn, deleteCredentialFn = get, del, list, delCred
+
+	t.Cleanup(func() {
+		getWorkloadFn, deleteWorkloadFn, credentialsWithPrefixFn, deleteCredentialFn = og, od, ol, odc
+	})
+}
+
+// The whole RunE wiring, end to end: the workload is read, deleted, its
+// credential cleaned up, and the manifest both unbound and reset to a
+// placeholder. Breaking the cleanup gate (the getErr == nil check) or the delete
+// call makes this fail, which the unit tests around the helpers do not.
+func TestExecute_DeletesWorkloadCleansUpAndRepairsManifest(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifestWithSecret)
+
+	var (
+		deletedWorkload string
+		deletedCred     string
+	)
+
+	stubDelete(t,
+		func(id string) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Name: "my-app"}, nil
+		},
+		func(id string) error {
+			deletedWorkload = id
+
+			return nil
+		},
+		func(prefix string, _ int) ([]workload.Credential, error) {
+			assert.Equal(t, "my-app/", prefix)
+
+			return []workload.Credential{{CredentialID: "66f000000000000000000001", Name: "my-app/LLM_API_KEY"}}, nil
+		},
+		func(id string) error {
+			deletedCred = id
+
+			return nil
+		},
+	)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{boundID, "--yes", "--dir", dir})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.Equal(t, boundID, deletedWorkload, "the workload is deleted")
+	assert.Equal(t, "66f000000000000000000001", deletedCred, "its credential is cleaned up")
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, parsed.WorkloadID(), "the binding is cleared")
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "dr-credential:PLACEHOLDER/apiToken",
+		"the reference to the deleted credential is reset so the next deploy does not fail on a missing id")
+	assert.Contains(t, errOut.String(), "Reset 1 credential reference")
+}
+
+// When the workload cannot be read before the delete, its name — the credential
+// prefix — is unknown, so the cleanup cannot run. The delete still succeeds, and
+// the user is told what is left to finish by hand rather than left to wonder why
+// the credentials the prompt promised to remove are still there.
+func TestExecute_NotesCleanupSkippedWhenTheReadFails(t *testing.T) {
+	listCalled := false
+
+	stubDelete(t,
+		func(string) (*workload.Workload, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusForbidden}
+		},
+		func(string) error { return nil },
+		func(string, int) ([]workload.Credential, error) {
+			listCalled = true
+
+			return nil, nil
+		},
+		func(string) error { return nil },
+	)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{boundID, "--yes"})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.False(t, listCalled, "a read that failed leaves nothing to scope a cleanup to")
+	assert.Contains(t, errOut.String(), "Could not read workload")
+	assert.Contains(t, errOut.String(), "by hand")
+}
+
+// A 404 on the read is the exception: there was no workload, so there are no
+// credentials it owned and nothing to say about a cleanup that was never owed.
+func TestExecute_SilentCleanupNoteWhenTheReadIs404(t *testing.T) {
+	stubDelete(t,
+		func(string) (*workload.Workload, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		func(string) error { return nil },
+		func(string, int) ([]workload.Credential, error) { return nil, nil },
+		func(string) error { return nil },
+	)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+
+	var errOut bytes.Buffer
+
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{boundID, "--yes"})
+
+	require.NoError(t, cmd.Execute())
+
+	assert.NotContains(t, errOut.String(), "Could not read workload",
+		"a 404 is not the partial failure the note is for")
+}
+
+// projectCredentialIDs is what scopes the cleanup: it reads the credential ids
+// this project's manifest references, and reports that a manifest was found —
+// but only when the manifest is about the workload being deleted.
+func TestProjectCredentialIDs_ReadsTheManifestRefs(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifestWithSecret)
+	t.Chdir(dir)
+
+	ids, haveManifest := projectCredentialIDs(".", boundID)
+
+	assert.True(t, haveManifest)
+	assert.Equal(t, map[string]bool{"66f000000000000000000001": true}, ids)
+}
+
+// A manifest about a different workload is no basis to scope by: deleting workload
+// B from inside project A must not scope B's cleanup to A's credential ids. It is
+// treated as "no manifest", so the cleanup does not silently skip B's own.
+func TestProjectCredentialIDs_IgnoresAnotherWorkloadsManifest(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifestWithSecret)
+	t.Chdir(dir)
+
+	ids, haveManifest := projectCredentialIDs(".", "68b0ffffffffffffffffffff")
+
+	assert.False(t, haveManifest, "the manifest binds a different workload")
+	assert.Nil(t, ids)
+}
+
+// No manifest means no scope, which is the signal the cleanup falls back on
+// rather than scoping to an empty set and deleting nothing.
+func TestProjectCredentialIDs_ReportsNoManifest(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	ids, haveManifest := projectCredentialIDs(".", boundID)
+
+	assert.False(t, haveManifest)
+	assert.Nil(t, ids)
+}
+
+// clearStaleBinding resets the references to the credentials just deleted in the
+// same pass that clears the binding, so a delete-then-up recovers cleanly.
+func TestClearStaleBinding_ResetsDeletedCredentialRefs(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifestWithSecret)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", []string{"66f000000000000000000001"})
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(got), "dr-credential:PLACEHOLDER/apiToken")
+	assert.NotContains(t, string(got), "66f000000000000000000001")
+	assert.Contains(t, buf.String(), "Reset 1 credential reference")
+	assert.Contains(t, buf.String(), "Removed workloadId")
 }

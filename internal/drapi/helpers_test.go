@@ -118,6 +118,25 @@ func TestAssertNextOnSameHost(t *testing.T) {
 	assert.Contains(t, err.Error(), `Next URL host "other.example.test" does not match API base "https://example.test"`)
 }
 
+func TestNextPage(t *testing.T) {
+	seedBaseURL(t, "https://example.test/api/v2")
+
+	// No Next ends the walk, with no host check to make.
+	next, err := NextPage("")
+	require.NoError(t, err)
+	assert.Empty(t, next)
+
+	// A same-host Next is returned verbatim for the caller to fetch.
+	next, err = NextPage("https://example.test/api/v2/credentials/?offset=100")
+	require.NoError(t, err)
+	assert.Equal(t, "https://example.test/api/v2/credentials/?offset=100", next)
+
+	// A Next on another host is refused rather than followed with the token.
+	next, err = NextPage("https://other.example.test/api/v2/credentials/?offset=100")
+	require.Error(t, err)
+	assert.Empty(t, next, "a refused cursor must not be handed back")
+}
+
 // ErrFromResp interprets nothing: drapi serves APIs that disagree on their
 // error envelope, so even a well-formed FastAPI detail document stays a raw
 // body= dump here. Reading meaning into it is a caller's job (see

@@ -1176,3 +1176,152 @@ func fillPlaceholders(vars *yaml.Node, ids map[string]string) {
 		value.LineComment = ""
 	}
 }
+
+// ResetCredentialIDs rewrites every credential reference whose id is in ids back
+// to CredentialPlaceholder, and reports how many entries it changed.
+//
+// It is what `dr workload delete` calls once it has removed the credentials a
+// workload owned. A reference left pointing at a deleted id makes the next
+// deploy fail in verifyCredentials with "references credential X, which does not
+// exist" — a confusing error about an id the user never typed — and
+// `dr workload config` will not repair it, because importSecrets skips an entry
+// that already carries an id. Resetting the entry to the placeholder turns it
+// back into the one state both the deploy and the re-import understand: visibly
+// unfinished, re-minted the moment the value is stored again.
+//
+// Matching is by id, not by name as the forward fill matches: each reference
+// carries the distinct id its credential had, so the entry can be named exactly.
+// A manifest naming none of these ids is left byte-for-byte and reported as
+// zero. Comments, unknown keys and their order are preserved, because the file
+// is re-emitted from the tree it was parsed into rather than regenerated.
+//
+// A file this cannot read or parse is ErrUnreadable, the same as the other
+// edits: the caller found the file rather than being handed it, so it stays
+// quiet about one it cannot judge.
+func ResetCredentialIDs(path string, ids []string) (int, error) {
+	want := make(map[string]bool, len(ids))
+
+	for _, id := range ids {
+		if id != "" && id != CredentialPlaceholder {
+			want[id] = true
+		}
+	}
+
+	if len(want) == 0 {
+		return 0, nil
+	}
+
+	var reset int
+
+	_, err := editRoot(path, "reset the deleted credential ids", true, func(root *yaml.Node) (bool, error) {
+		reset = resetCredentialIDs(root, want)
+
+		return reset > 0, nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return reset, nil
+}
+
+// resetCredentialIDs walks every environmentVars sequence in the tree, wherever
+// the spec puts it, and resets the references whose id want holds. It mirrors
+// setCredentialIDs: reset the sequence, then recurse, which cannot double-count
+// because an entry's value is a scalar leaf.
+func resetCredentialIDs(node *yaml.Node, want map[string]bool) int {
+	node = resolveAlias(node)
+	if node == nil {
+		return 0
+	}
+
+	var reset int
+
+	switch node.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == keyEnvironmentVars {
+				reset += resetPlaceholders(node.Content[i+1], want)
+			}
+
+			reset += resetCredentialIDs(node.Content[i+1], want)
+		}
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			reset += resetCredentialIDs(item, want)
+		}
+	case yaml.DocumentNode, yaml.ScalarNode, yaml.AliasNode:
+		// Leaves. AliasNode is unreachable: resolveAlias replaced it above.
+	}
+
+	return reset
+}
+
+// resetPlaceholderComment is restored onto a reset shorthand entry so it reads
+// exactly as the renderer's own unfinished entry does (see envVarNode).
+const resetPlaceholderComment = "replace " + CredentialPlaceholder + " with the credential id"
+
+// resetPlaceholders rewrites one environmentVars sequence, handling both forms a
+// reference can take: the shorthand the CLI writes (dr-credential:<id>/<key> in
+// value) and the object form a user may write by hand (source: dr-credential
+// with drCredentialId). An entry is one form or the other, so resetting either
+// counts it once.
+func resetPlaceholders(vars *yaml.Node, want map[string]bool) int {
+	var reset int
+
+	for _, entry := range seqItems(vars) {
+		if resetShorthandRef(entry, want) || resetObjectFormRef(entry, want) {
+			reset++
+		}
+	}
+
+	return reset
+}
+
+// resetShorthandRef resets a dr-credential:<id>/<key> value whose id want holds,
+// restoring the comment so the entry is indistinguishable from one the wizard
+// never finished. It reports whether it changed the entry.
+func resetShorthandRef(entry *yaml.Node, want map[string]bool) bool {
+	value := mapValue(entry, keyValue)
+	if value == nil {
+		return false
+	}
+
+	current, ok := scalarString(value)
+	if !ok || !strings.HasPrefix(current, CredentialShorthandPrefix) {
+		return false
+	}
+
+	id, key, ok := parseCredentialShorthand(current)
+	if !ok || !want[id] {
+		return false
+	}
+
+	value.SetString(CredentialShorthandPrefix + CredentialPlaceholder + "/" + key)
+	value.LineComment = resetPlaceholderComment
+
+	return true
+}
+
+// resetObjectFormRef resets the drCredentialId of a source: dr-credential entry
+// whose id want holds, and reports whether it changed the entry.
+func resetObjectFormRef(entry *yaml.Node, want map[string]bool) bool {
+	if source, _ := scalarString(mapValue(entry, keySource)); source != credentialSource {
+		return false
+	}
+
+	idNode := mapValue(entry, keyDRCredentialID)
+	if idNode == nil {
+		return false
+	}
+
+	id, ok := scalarString(idNode)
+	if !ok || !want[id] {
+		return false
+	}
+
+	idNode.SetString(CredentialPlaceholder)
+	idNode.LineComment = resetPlaceholderComment
+
+	return true
+}

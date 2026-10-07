@@ -43,3 +43,22 @@ func AssertNextOnSameHost(rawNextURL string) error {
 
 	return nil
 }
+
+// NextPage returns the cursor for the page after the current one, or "" when
+// there is none. It is the shared "no Next, else same-host check, then advance"
+// step every paged listing repeats: drapi attaches the bearer token to whatever
+// URL it is given, so a Next pointing at another host is refused here rather than
+// followed (see AssertNextOnSameHost). Callers still decide when an otherwise
+// valid Next should not be followed — an empty page, a bound reached — because
+// that is about the scan, not the cursor.
+func NextPage(next string) (string, error) {
+	if next == "" {
+		return "", nil
+	}
+
+	if err := AssertNextOnSameHost(next); err != nil {
+		return "", err
+	}
+
+	return next, nil
+}

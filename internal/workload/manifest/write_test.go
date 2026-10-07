@@ -714,6 +714,155 @@ func TestResolveCredentials_RefusesWhatItCannotParse(t *testing.T) {
 	require.Error(t, err)
 }
 
+// The mirror of ResolveCredentials: once the credential behind a reference has
+// been deleted, the reference is reset to the placeholder it started as, comment
+// and all, so a reader cannot tell it from an entry the wizard never finished.
+// Only the id named is reset; a second reference and a literal are left alone.
+func TestResetCredentialIDs_ResetsAMatchingShorthand(t *testing.T) {
+	path := writeManifest(t, t.TempDir(), `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:66f000000000000000000001/apiToken
+              - name: DATABASE_URL
+                value: dr-credential:66f000000000000000000002/apiToken
+              - name: LOG_LEVEL
+                value: debug
+`)
+
+	reset, err := ResetCredentialIDs(path, []string{"66f000000000000000000001"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, reset)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(got),
+		"value: dr-credential:PLACEHOLDER/apiToken # replace PLACEHOLDER with the credential id",
+		"the reset entry is indistinguishable from an unfinished one")
+	assert.Contains(t, string(got), "dr-credential:66f000000000000000000002/apiToken",
+		"a reference to a credential that was not deleted is left alone")
+	assert.Contains(t, string(got), "value: debug", "a literal is not a credential reference")
+}
+
+// The object form a user may write by hand is reset the same way: the id becomes
+// the placeholder, so the next deploy reports an unfinished entry rather than a
+// reference to a credential that no longer exists.
+func TestResetCredentialIDs_ResetsTheObjectForm(t *testing.T) {
+	path := writeManifest(t, t.TempDir(), `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: OPENAI_API_KEY
+                source: dr-credential
+                drCredentialId: 66f000000000000000000001
+                key: apiToken
+`)
+
+	reset, err := ResetCredentialIDs(path, []string{"66f000000000000000000001"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, reset)
+
+	parsed, err := Load(path)
+	require.NoError(t, err)
+
+	compiled, err := parsed.Compile()
+	require.NoError(t, err)
+	require.Len(t, compiled.CredentialRefs, 1)
+	assert.Equal(t, CredentialPlaceholder, compiled.CredentialRefs[0].CredentialID,
+		"the object form resolves to a placeholder, which is what verifyCredentials reports as unfinished")
+}
+
+// A manifest naming none of the deleted ids is left byte-for-byte: re-emitting a
+// file nothing changed would reformat one nobody asked it to.
+func TestResetCredentialIDs_NoMatchLeavesFileByteForByte(t *testing.T) {
+	original := `name:    my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:66f000000000000000000002/apiToken
+`
+	path := writeManifest(t, t.TempDir(), original)
+
+	reset, err := ResetCredentialIDs(path, []string{"66f000000000000000000001"})
+	require.NoError(t, err)
+	assert.Equal(t, 0, reset)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(got))
+}
+
+// No ids is a no-op that never touches the file: the caller deleted nothing, so
+// there is nothing to reset.
+func TestResetCredentialIDs_EmptyIDsIsANoOp(t *testing.T) {
+	original := "name: my-app\n"
+	path := writeManifest(t, t.TempDir(), original)
+
+	reset, err := ResetCredentialIDs(path, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, reset)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(got))
+}
+
+// The placeholder is not an id to delete, so it can never be one to reset: a list
+// that is all placeholders leaves the file alone rather than rewriting entries
+// that already say what they are.
+func TestResetCredentialIDs_IgnoresThePlaceholderItself(t *testing.T) {
+	original := `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            environmentVars:
+              - name: OPENAI_API_KEY
+                value: dr-credential:PLACEHOLDER/apiToken
+`
+	path := writeManifest(t, t.TempDir(), original)
+
+	reset, err := ResetCredentialIDs(path, []string{CredentialPlaceholder})
+	require.NoError(t, err)
+	assert.Equal(t, 0, reset)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(got))
+}
+
+// An unreadable file is ErrUnreadable, the same as the binding edits: the caller
+// found this file rather than being handed it, so it stays quiet about one it
+// cannot judge.
+func TestResetCredentialIDs_UnreadableIsItsOwnError(t *testing.T) {
+	path := writeManifest(t, t.TempDir(), "name: [unclosed\n")
+
+	_, err := ResetCredentialIDs(path, []string{"66f000000000000000000001"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrUnreadable)
+}
+
 // The platform pops spec.type on the way in and re-derives the discriminator
 // from the artifact's own type, defaulting to service. A type written one
 // level down is therefore discarded without a word: an agent silently becomes

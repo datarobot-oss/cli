@@ -17,6 +17,7 @@ package drapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -58,6 +59,21 @@ func (e *HTTPError) Error() string {
 	}
 
 	return fmt.Sprintf("HTTP error: %d %s (url: %s)", e.StatusCode, http.StatusText(e.StatusCode), e.URL)
+}
+
+// HasStatus reports whether err is, or wraps, an *HTTPError carrying code. It is
+// the one place the errors.As + StatusCode check lives, so a caller telling a 404
+// from a 403 or a 5xx does not hand-roll the type assertion each time.
+func HasStatus(err error, code int) bool {
+	var httpErr *HTTPError
+
+	return errors.As(err, &httpErr) && httpErr.StatusCode == code
+}
+
+// IsNotFound is HasStatus for 404, the status callers test most often: the thing
+// is already gone, which is usually a no-op rather than a failure.
+func IsNotFound(err error) bool {
+	return HasStatus(err, http.StatusNotFound)
 }
 
 // token is the cached API token. Every read and write takes tokenMu (declared
