@@ -18,11 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"runtime"
-	"time"
 
 	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/fsutil"
@@ -50,13 +46,15 @@ const (
 
 // RunFix executes the `doctor --fix` repair suite for projectDir and returns
 // one action per repair in the pinned order: manifest rebuild, rollback
-// clear, lock clear.
+// clear.
 //
 // Global safety gate: the sync lock is probed first (non-creating probe,
 // same logic as the local.lock check). When a live process holds the lock —
 // or it cannot be inspected — ALL repairs are skipped with a reason, because
 // a sync writes manifest.json in its final phase and must never be repaired
-// underneath. --fix never touches the server; every write here is local.
+// underneath. The lock is then held for the repairs themselves, so a sync
+// cannot start under them. --fix never touches the server; every write here
+// is local.
 func RunFix(ctx context.Context, projectDir string) []core.Action {
 	return runFixWithGoos(ctx, projectDir, runtime.GOOS)
 }
@@ -77,17 +75,29 @@ func runFixWithGoos(ctx context.Context, projectDir, goos string) []core.Action 
 		// Nothing held (or no lock file at all): the gate is open.
 	}
 
+	// No state directory means nothing to lock and nothing to repair; the
+	// repairs report that themselves.
+	if !wapi.Exists(projectDir) {
+		return []core.Action{fixManifest(projectDir), fixRollback(projectDir)}
+	}
+
+	lock, err := acquireRepairLock(projectDir, goos)
+	if err != nil {
+		return skipAllRepairs(ReasonSyncInProgress)
+	}
+
+	defer func() { _ = lock.Release() }()
+
 	return []core.Action{
 		fixManifest(projectDir),
 		fixRollback(projectDir),
-		fixLock(projectDir),
 	}
 }
 
 // skipAllRepairs reports every repair as skipped with the given reason while
 // the global safety gate blocks the run.
 func skipAllRepairs(reason string) []core.Action {
-	ids := []string{CheckIDManifest, CheckIDRollback, CheckIDLock}
+	ids := []string{CheckIDManifest, CheckIDRollback}
 
 	actions := make([]core.Action, 0, len(ids))
 
@@ -98,12 +108,13 @@ func skipAllRepairs(reason string) []core.Action {
 	return actions
 }
 
-// fixManifest rebuilds manifest.json as an empty BASE derived from config:
-// Manifest{Version: 1, SyncedAt/SyncedVersionID nil-iff-config-nil,
-// SyncedVersionID: cfg.LastSyncedVersionID, Files: {}}. The working tree is
-// never touched. It requires a valid config: a corrupt config cannot name
-// what the manifest should say, so the repair is skipped with a relink
-// remedy.
+// fixManifest rebuilds manifest.json as an empty BASE and clears the config's
+// last-synced version with it: an empty BASE that still claims a synced
+// version makes the next sync skip the remote and upload every local file as
+// new. With both cleared the next sync lists the remote and reconciles. The
+// working tree is never touched. It requires a valid config: a corrupt
+// config cannot name what the manifest should say, so the repair is skipped
+// with a relink remedy.
 func fixManifest(projectDir string) core.Action {
 	cfg, err := wapi.LoadConfig(projectDir)
 	if err != nil {
@@ -134,16 +145,6 @@ func fixManifest(projectDir string) core.Action {
 		Files:   map[string]wapi.FileMeta{},
 	}
 
-	// Both-or-neither: the synced pointers are only written as a pair, so a
-	// config with a last-synced version yields a manifest with both set.
-	if versionID := normalizeStringPtr(cfg.LastSyncedVersionID); versionID != nil {
-		now := time.Now().UTC()
-
-		rebuilt.SyncedAt = &now
-
-		rebuilt.SyncedVersionID = versionID
-	}
-
 	if err := wapi.SaveManifest(projectDir, rebuilt); err != nil {
 		return core.Action{
 			ID:     CheckIDManifest,
@@ -152,10 +153,22 @@ func fixManifest(projectDir string) core.Action {
 		}
 	}
 
+	if normalizeStringPtr(cfg.LastSyncedVersionID) != nil {
+		cfg.LastSyncedVersionID = nil
+
+		if err := wapi.SaveConfig(projectDir, cfg); err != nil {
+			return core.Action{
+				ID:     CheckIDManifest,
+				Status: core.ActionPerformed,
+				Reason: fmt.Sprintf("rebuilt manifest.json as an empty BASE, but could not clear lastSyncedVersionId in config.json: %v", err),
+			}
+		}
+	}
+
 	return core.Action{
 		ID:     CheckIDManifest,
 		Status: core.ActionPerformed,
-		Reason: "rebuilt manifest.json as an empty BASE from config.json; the next sync re-establishes the baseline",
+		Reason: "rebuilt manifest.json as an empty BASE and cleared lastSyncedVersionId; the next sync lists the remote and re-establishes the baseline",
 	}
 }
 
@@ -206,62 +219,5 @@ func fixRollback(projectDir string) core.Action {
 		ID:     CheckIDRollback,
 		Status: core.ActionPerformed,
 		Reason: "restored backed-up files to the working tree and removed .rollback/",
-	}
-}
-
-// fixLock verifies the sync lock is clearable and leaves it untouched. An
-// absent lock file is not-needed (and is never created); a present lock that
-// AcquireSyncLock acquires is immediately released again and reported
-// not-needed with a "verified acquirable" reason — the OS already released an
-// unheld flock, so the file is the healthy steady state and nothing needed
-// clearing (it is also never unlinked, because another process may hold the
-// open descriptor). A lock that cannot be acquired (a holder appeared after
-// the safety gate, or the file is uninspectable) is left exactly as found and
-// reported skipped.
-//
-// Benign TOCTOU: the stat-then-acquire sequence has a race window — a sync
-// could start between the stat and the AcquireSyncLock call. This is harmless:
-// if a sync acquires the lock in that window, AcquireSyncLock fails and the
-// repair reports skipped (the lock is held); if the lock file is created by a
-// starting sync after the stat found it absent, AcquireSyncLock succeeds and
-// is released, which is fine because the sync's own flock is on a different
-// file descriptor (flock is per-open-file-description, not per-path). In both
-// cases the post-fix check suite reports the honest state.
-func fixLock(projectDir string) core.Action {
-	path := filepath.Join(wapi.Dir(projectDir), sync.LockFileName)
-
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return core.Action{ID: CheckIDLock, Status: core.ActionNotNeeded}
-		}
-
-		return core.Action{
-			ID:     CheckIDLock,
-			Status: core.ActionSkipped,
-			Reason: fmt.Sprintf("stat sync lock %s: %v", path, err),
-		}
-	}
-
-	lock, err := sync.AcquireSyncLock(projectDir)
-	if err != nil {
-		return core.Action{
-			ID:     CheckIDLock,
-			Status: core.ActionSkipped,
-			Reason: fmt.Sprintf("sync lock could not be acquired: %v", err),
-		}
-	}
-
-	if err := lock.Release(); err != nil {
-		return core.Action{
-			ID:     CheckIDLock,
-			Status: core.ActionSkipped,
-			Reason: fmt.Sprintf("release sync lock: %v", err),
-		}
-	}
-
-	return core.Action{
-		ID:     CheckIDLock,
-		Status: core.ActionNotNeeded,
-		Reason: "verified acquirable (acquired and released); no holder detected",
 	}
 }

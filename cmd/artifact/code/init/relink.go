@@ -31,10 +31,10 @@ import (
 )
 
 // offerRelinkFn is the interactive relink offer. It prints the notice to w,
-// asks whether the user wants to relink (default No), and if yes, prompts for
-// the new artifact ID. Returns the new ID and nil if accepted; "" and nil if
-// declined; "" and an error on read failure (Ctrl-C, EOF). Tests override this
-// to simulate user input without a real terminal.
+// asks whether the user wants to relink (default No), and if yes, takes the
+// id init was given or prompts for one. Returns the new ID and nil if
+// accepted; "" and nil if declined; "" and an error on read failure (Ctrl-C,
+// EOF). Tests override this to simulate user input without a real terminal.
 var offerRelinkFn = defaultOfferRelink
 
 // makeRelinkConfirmFn builds the confirm function for RunRelink from the init
@@ -61,20 +61,35 @@ func defaultIsInteractive(cmd *cobra.Command) bool {
 	return !cli.IsNonInteractive(cmd) && reader.IsStdinTerminal()
 }
 
+// goneOrMismatch is one already-linked abort: which artifact is linked, the
+// id init was given (the relink target, when there is one), and why.
+type goneOrMismatch struct {
+	dir     string
+	linked  string
+	givenID string
+	gone    bool
+}
+
 // handleGoneOrMismatch handles the gone-artifact (404) or catalog-mismatch
 // branch of the already-linked check: interactive → offer to relink in place
-// (prompt for new artifact id, then run the doctor --relink path incl.
-// warn/confirm and safety gates); non-interactive → print guidance naming
-// dr artifact code doctor --relink <new-id>. No message advises deleting
-// state.
-func handleGoneOrMismatch(cmd *cobra.Command, dir string, cfg wapi.Config, outputFormat outputformat.OutputFormat, gone bool) error {
+// (the id init was given is the target, else prompt for one, then run the
+// doctor --relink path incl. warn/confirm and safety gates); non-interactive →
+// print guidance naming dr artifact code doctor --relink. No message advises
+// deleting state.
+func handleGoneOrMismatch(cmd *cobra.Command, dir string, cfg wapi.Config, givenID string, outputFormat outputformat.OutputFormat, gone bool) error {
 	stderr := cmd.ErrOrStderr()
 
-	remedy := wldoctor.RemedyRelink
+	// The id init was given is the relink target, unless it is the one that
+	// is gone or mismatched.
+	if givenID == cfg.ArtifactID {
+		givenID = ""
+	}
+
+	abort := goneOrMismatch{dir: dir, linked: cfg.ArtifactID, givenID: givenID, gone: gone}
 
 	// Non-interactive (--yes or non-TTY): print guidance, abort.
 	if !isInteractiveFn(cmd) {
-		return reportGoneOrMismatchAbort(cmd, cfg.ArtifactID, outputFormat, gone, remedy)
+		return reportGoneOrMismatchAbort(cmd, abort, outputFormat)
 	}
 
 	// Interactive: offer to relink in place.
@@ -86,10 +101,10 @@ func handleGoneOrMismatch(cmd *cobra.Command, dir string, cfg wapi.Config, outpu
 		notice = fmt.Sprintf("Linked artifact %s has a catalog id mismatch.", cfg.ArtifactID)
 	}
 
-	newID, offerErr := offerRelinkFn(stderr, notice)
+	newID, offerErr := offerRelinkFn(stderr, notice, givenID)
 	if offerErr != nil || newID == "" {
 		// Declined or read error → abort with guidance.
-		return reportGoneOrMismatchAbort(cmd, cfg.ArtifactID, outputFormat, gone, remedy)
+		return reportGoneOrMismatchAbort(cmd, abort, outputFormat)
 	}
 
 	// Accepted: run the relink.
@@ -98,32 +113,34 @@ func handleGoneOrMismatch(cmd *cobra.Command, dir string, cfg wapi.Config, outpu
 
 // reportGoneOrMismatchAbort prints the non-interactive guidance (or the JSON
 // abort shape) and returns an error to drive exit 1.
-func reportGoneOrMismatchAbort(cmd *cobra.Command, artifactID string, outputFormat outputformat.OutputFormat, gone bool, remedy string) error {
+func reportGoneOrMismatchAbort(cmd *cobra.Command, a goneOrMismatch, outputFormat outputformat.OutputFormat) error {
 	stderr := cmd.ErrOrStderr()
 
 	if outputFormat == outputformat.OutputFormatJSON {
-		id := artifactID
+		id := a.linked
 
-		renderAlreadyLinkedJSON(cmd.OutOrStdout(), &id, remedy)
+		renderAlreadyLinkedJSON(cmd.OutOrStdout(), &id, relinkRemedy(a.dir, a.givenID))
 
-		if gone {
-			printGoneGuidance(stderr, artifactID)
-		} else {
-			printMismatchGuidance(stderr, artifactID)
-		}
+		printGoneOrMismatchGuidance(stderr, a)
 
 		cmd.SilenceErrors = true
 
 		return cli.ErrSilent
 	}
 
-	if gone {
-		printGoneGuidance(cmd.OutOrStdout(), artifactID)
-	} else {
-		printMismatchGuidance(cmd.OutOrStdout(), artifactID)
-	}
+	printGoneOrMismatchGuidance(cmd.OutOrStdout(), a)
 
 	return errors.New("init aborted: project already linked")
+}
+
+func printGoneOrMismatchGuidance(w io.Writer, a goneOrMismatch) {
+	if a.gone {
+		printGoneGuidance(w, a.dir, a.linked, a.givenID)
+
+		return
+	}
+
+	printMismatchGuidance(w, a.dir, a.linked, a.givenID)
 }
 
 // runRelinkFromInit executes the relink operation from the init offer and
@@ -166,7 +183,7 @@ func runRelinkFromInit(cmd *cobra.Command, dir, oldID, newID string, outputForma
 		return nil
 	}
 
-	printRelinkSuccess(cmd.OutOrStdout(), newID)
+	printRelinkSuccess(cmd.OutOrStdout(), dir, newID)
 
 	return nil
 }
@@ -197,10 +214,14 @@ func printRelinkAbortReason(stderr io.Writer, err error, actions []core.Action) 
 // consistent with the bespoke [y/N] confirm prompt where empty Enter also
 // declines. Re-prompting would surprise users who pressed Enter expecting to
 // cancel.
-func defaultOfferRelink(w io.Writer, notice string) (string, error) {
+func defaultOfferRelink(w io.Writer, notice, givenID string) (string, error) {
 	fmt.Fprintln(w, notice)
 
-	fmt.Fprint(w, "Relink to a new artifact? [y/N] ")
+	if givenID != "" {
+		fmt.Fprintf(w, "Relink to artifact %s? [y/N] ", givenID)
+	} else {
+		fmt.Fprint(w, "Relink to a new artifact? [y/N] ")
+	}
 
 	line, err := reader.ReadString()
 	if err != nil {
@@ -210,6 +231,10 @@ func defaultOfferRelink(w io.Writer, notice string) (string, error) {
 	answer := strings.TrimSpace(strings.ToLower(line))
 	if answer != "y" && answer != "yes" {
 		return "", nil // declined
+	}
+
+	if givenID != "" {
+		return givenID, nil
 	}
 
 	return dirprompt.Ask("New artifact ID")

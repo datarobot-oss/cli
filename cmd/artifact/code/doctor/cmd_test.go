@@ -683,6 +683,11 @@ func TestSoftAuthProbe(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "https://env.example.com/api/v2", creds.Endpoint)
 		assert.Equal(t, "env-token", creds.Token)
+
+		// Bound where the API client reads them, not only reported: with no
+		// drconfig the remote checks used to fetch an empty URL.
+		assert.Equal(t, "https://env.example.com", config.GetBaseURL())
+		assert.Equal(t, "env-token", viperx.GetString(config.DataRobotAPIKey))
 	})
 
 	t.Run("partial env pair is ignored", func(t *testing.T) {

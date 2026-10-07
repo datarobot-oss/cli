@@ -314,9 +314,8 @@ func clearStaleBinding(w io.Writer, dir, workloadID string, purge bool) {
 // The remedy is the state directory, not `dr artifact delete`. Deleting the
 // artifact is refused outright while it is locked, and for an unlocked one it
 // leaves the link pointing at something gone, which the next deploy reports as
-// a bare 404 naming no fix. Removing the directory is what `up` itself already
-// tells the user to do when a locked artifact blocks a deploy, so this says
-// the same thing rather than inventing a second answer.
+// a bare 404 naming no fix. The link is repointed with the doctor, and the
+// artifact itself removed with `dr artifact delete` once nothing runs it.
 func noteLinkedArtifact(w io.Writer, projectDir string) {
 	if !wapi.Exists(projectDir) {
 		return
@@ -329,5 +328,6 @@ func noteLinkedArtifact(w io.Writer, projectDir string) {
 
 	fmt.Fprintln(w, tui.DimStyle.Render(
 		"This project is still linked to artifact "+cfg.ArtifactID+", which was not deleted with the workload. "+
-			"'dr workload delete --purge' removes both; 'dr artifact code doctor --relink <artifact-id>' points the project elsewhere."))
+			"'dr artifact code doctor --relink <artifact-id>' points the project at another artifact; "+
+			"'dr artifact delete "+cfg.ArtifactID+"' removes this one once nothing references it."))
 }

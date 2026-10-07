@@ -157,7 +157,8 @@ func printAlreadyLinkedHealthy(w io.Writer, artifactID, dir string) {
 	fmt.Fprintln(w, tui.ErrorStyle.Render(
 		fmt.Sprintf("Already linked to artifact %s; state exists at %s.", artifactID, stateDir),
 	))
-	fmt.Fprintln(w, tui.DimStyle.Render("Run 'dr artifact code doctor' to diagnose the sync state."))
+	fmt.Fprintln(w, tui.DimStyle.Render(
+		"Run 'dr artifact code doctor"+manifest.DirFlag(dir)+"' to diagnose the sync state."))
 }
 
 // printCorruptConfig prints the unreadable-config message, pointing to
@@ -168,54 +169,55 @@ func printCorruptConfig(w io.Writer, dir, artifactID string) {
 	fmt.Fprintln(w, tui.ErrorStyle.Render(
 		fmt.Sprintf("Project is already linked but the config at %s is unreadable.", configPath),
 	))
-	fmt.Fprintln(w, tui.DimStyle.Render(corruptConfigRemedy(artifactID)))
+	fmt.Fprintln(w, tui.DimStyle.Render(corruptConfigRemedy(dir, artifactID)))
 }
 
 // corruptConfigRemedy names the relink that replaces an unreadable config,
 // with the artifact id init was given when there is one.
-func corruptConfigRemedy(artifactID string) string {
-	return "Run '" + relinkRemedy(artifactID) + "' to replace the config."
+func corruptConfigRemedy(dir, artifactID string) string {
+	return "Run '" + relinkRemedy(dir, artifactID) + "' to replace the config."
 }
 
 // relinkRemedy is the relink command for the JSON remedy field, with the
-// artifact id init was given or a placeholder.
-func relinkRemedy(artifactID string) string {
+// artifact id init was given or a placeholder, and the --dir init ran with.
+func relinkRemedy(dir, artifactID string) string {
 	if artifactID == "" {
-		artifactID = "<artifact-id>"
+		artifactID = "<new-artifact-id>"
 	}
 
-	return "dr artifact code doctor --relink " + artifactID
+	return "dr artifact code doctor --relink " + artifactID + manifest.DirFlag(dir)
 }
 
 // printGoneGuidance prints the non-interactive guidance for a gone artifact,
 // pointing to doctor --relink. No delete advice.
-func printGoneGuidance(w io.Writer, artifactID string) {
+func printGoneGuidance(w io.Writer, dir, artifactID, givenID string) {
 	fmt.Fprintln(w, tui.ErrorStyle.Render(
 		fmt.Sprintf("Already linked to artifact %s, but the artifact was not found (deleted?).", artifactID),
 	))
 	fmt.Fprintln(w, tui.DimStyle.Render(
-		"Run 'dr artifact code doctor --relink <new-artifact-id>' to relink to a new artifact.",
+		"Run '"+relinkRemedy(dir, givenID)+"' to relink to a new artifact.",
 	))
 }
 
 // printMismatchGuidance prints the non-interactive guidance for a catalog
 // mismatch, pointing to doctor --relink. No delete advice.
-func printMismatchGuidance(w io.Writer, artifactID string) {
+func printMismatchGuidance(w io.Writer, dir, artifactID, givenID string) {
 	fmt.Fprintln(w, tui.ErrorStyle.Render(
 		fmt.Sprintf("Already linked to artifact %s, but the catalog id no longer matches.", artifactID),
 	))
 	fmt.Fprintln(w, tui.DimStyle.Render(
-		"Run 'dr artifact code doctor --relink <new-artifact-id>' to relink to a new artifact.",
+		"Run '"+relinkRemedy(dir, givenID)+"' to relink to a new artifact.",
 	))
 }
 
 // printRelinkSuccess prints the text-mode success message after a relink
 // from the init offer completes.
-func printRelinkSuccess(w io.Writer, artifactID string) {
+func printRelinkSuccess(w io.Writer, dir, artifactID string) {
 	fmt.Fprintln(w, tui.SuccessStyle.Render(
 		fmt.Sprintf("Relinked to artifact %s; sync baseline reset.", artifactID),
 	))
-	fmt.Fprintln(w, tui.DimStyle.Render("Run 'dr artifact code sync' to reconcile against the new artifact."))
+	fmt.Fprintln(w, tui.DimStyle.Render(
+		"Run 'dr artifact code sync"+manifest.DirFlag(dir)+"' to reconcile against the new artifact."))
 }
 
 func shortVer(s string) string {

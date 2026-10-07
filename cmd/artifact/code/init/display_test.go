@@ -89,7 +89,7 @@ func TestPrintCorruptConfig_NoDeleteAdvice(t *testing.T) {
 
 	assert.Contains(t, out, "unreadable")
 	assert.Contains(t, out, wapi.ConfigPath("/tmp/proj"))
-	assert.Contains(t, out, "dr artifact code doctor --relink <artifact-id>")
+	assert.Contains(t, out, "dr artifact code doctor --relink <new-artifact-id>")
 	assert.NotContains(t, out, "Delete")
 	assert.NotContains(t, out, "rm -rf")
 	assert.NotContains(t, out, "re-init")
@@ -98,7 +98,7 @@ func TestPrintCorruptConfig_NoDeleteAdvice(t *testing.T) {
 func TestPrintGoneGuidance_NoDeleteAdvice(t *testing.T) {
 	var buf bytes.Buffer
 
-	printGoneGuidance(&buf, "art-gone-001")
+	printGoneGuidance(&buf, "", "art-gone-001", "")
 
 	out := buf.String()
 
@@ -113,7 +113,7 @@ func TestPrintGoneGuidance_NoDeleteAdvice(t *testing.T) {
 func TestPrintMismatchGuidance_NoDeleteAdvice(t *testing.T) {
 	var buf bytes.Buffer
 
-	printMismatchGuidance(&buf, "art-mismatch-001")
+	printMismatchGuidance(&buf, "", "art-mismatch-001", "")
 
 	out := buf.String()
 
@@ -128,7 +128,7 @@ func TestPrintMismatchGuidance_NoDeleteAdvice(t *testing.T) {
 func TestPrintRelinkSuccess_NoDeleteAdvice(t *testing.T) {
 	var buf bytes.Buffer
 
-	printRelinkSuccess(&buf, "art-new-001")
+	printRelinkSuccess(&buf, "", "art-new-001")
 
 	out := buf.String()
 
@@ -273,9 +273,9 @@ func TestNoDeleteAdviceAnywhere(t *testing.T) {
 
 		printAlreadyLinkedHealthy(&buf, "art-1", dir)
 		printCorruptConfig(&buf, dir, "art-1")
-		printGoneGuidance(&buf, "art-1")
-		printMismatchGuidance(&buf, "art-1")
-		printRelinkSuccess(&buf, "art-new")
+		printGoneGuidance(&buf, dir, "art-1", "")
+		printMismatchGuidance(&buf, dir, "art-1", "")
+		printRelinkSuccess(&buf, dir, "art-new")
 
 		out := buf.String()
 

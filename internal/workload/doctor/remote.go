@@ -204,7 +204,9 @@ func IsCatalogMismatch(localCatalogID *string, art *workload.Artifact) bool {
 
 	codeRef := workload.ExtractCodeRef(*art)
 	if codeRef == nil || codeRef.CatalogID == "" {
-		return true // local pin set, remote absent/empty
+		// Not yet patched, as after an interrupted deploy: the next sync
+		// restores it from the local pin, so nothing has diverged.
+		return false
 	}
 
 	return *localCatalogID != codeRef.CatalogID
@@ -363,7 +365,14 @@ func (c *catalogMismatchCheck) Run(_ context.Context) core.Result {
 			Summary: "catalog not pinned (never synced)",
 		}
 	case remote == nil:
-		return catalogMismatchResult(local, remote)
+		// An interrupted deploy links the project before the artifact's
+		// codeRef is patched; the next sync or deploy restores it from the
+		// local pin, so this is not a lost lineage.
+		return core.Result{
+			Status:  core.StatusWARN,
+			Summary: fmt.Sprintf("config pins catalog %s but the artifact has no codeRef yet", *local),
+			Remedy:  RemedyCodeRefMissing,
+		}
 	case *local == *remote:
 		return core.Result{
 			Status:  core.StatusOK,

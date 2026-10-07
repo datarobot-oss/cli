@@ -431,7 +431,12 @@ func TestRunE_RelinkWrongType_AbortsStateUntouched(t *testing.T) {
 
 	newID := "6a90da2ddeadbeefcafe5678"
 
+	// The linked artifact is a service; the target is an agent.
 	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		if id != newID {
+			return fakeArtifact(id, "old-fixture", "DRAFT", nil), nil
+		}
+
 		return &workload.Artifact{
 			ID:     id,
 			Name:   "agent-fixture",
@@ -610,6 +615,28 @@ func TestRunE_RelinkEmptyValue_UsageError(t *testing.T) {
 
 // TestRunE_RelinkUnchanged_ReadOnlyRun verifies that a plain read-only run
 // (no --relink flag at all) is unaffected by the empty-value gate.
+// Without a terminal nobody can answer the confirmation, so --relink is
+// refused unless --yes is given, as `dr artifact delete` is. The test's
+// stdin is never a terminal.
+func TestRunE_RelinkWithoutTerminal_NeedsYes(t *testing.T) {
+	tmp := t.TempDir()
+
+	linkHealthyProject(t, tmp)
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		return fakeArtifact(id, "fixture", "DRAFT", nil), nil
+	})
+
+	before := stateFileHashes(t, tmp)
+
+	c, _, _ := newTestCmd(t, "--dir", tmp, "--relink", "6a90da2ddeadbeefcafe5678")
+
+	err := c.Execute()
+
+	require.ErrorIs(t, err, errRelinkNeedsYes)
+	assert.Equal(t, before, stateFileHashes(t, tmp))
+}
+
 func TestRunE_RelinkUnchanged_ReadOnlyRun(t *testing.T) {
 	tmp := t.TempDir()
 

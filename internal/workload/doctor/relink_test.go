@@ -26,6 +26,7 @@ import (
 	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -448,15 +449,24 @@ func TestRunRelink_WrongType_AbortsStateUntouched(t *testing.T) {
 		Type:   "agent",
 	}
 
-	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(target), alwaysConfirm))
+	// The linked artifact is a service, so an agent target is refused.
+	store := ArtifactGetterFunc(func(id string) (*workload.Artifact, error) {
+		if id == newArtifactID {
+			return target, nil
+		}
+
+		return fakeDraftArtifact(id, nil), nil
+	})
+
+	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, store, alwaysConfirm))
 
 	require.ErrorIs(t, err, ErrRelinkAbort)
 
 	require.Len(t, actions, 1)
 
 	assert.Equal(t, core.ActionSkipped, actions[0].Status)
-	assert.Contains(t, actions[0].Reason, "agent")
-	assert.Contains(t, actions[0].Reason, "service")
+	assert.Contains(t, actions[0].Reason, `"agent"`)
+	assert.Contains(t, actions[0].Reason, `"service"`)
 
 	assert.Equal(t, before, stateFileHashes(t, dir))
 }
@@ -547,7 +557,86 @@ func TestRunRelink_Declined_AbortsStateUntouched(t *testing.T) {
 	assert.Equal(t, core.ActionSkipped, actions[0].Status)
 	assert.Contains(t, actions[0].Reason, "declined")
 
-	assert.Equal(t, before, stateFileHashes(t, dir))
+	// The lock file is held across the prompt, so it is the one file a
+	// decline leaves behind.
+	assert.Equal(t, before, withoutLock(stateFileHashes(t, dir)))
+}
+
+// The sync lock is held from before the question until the writes are done,
+// so a sync started in another terminal while the prompt waits cannot undo
+// a relink reported as performed.
+func TestRunRelink_HoldsLockAcrossConfirm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("flock semantics are unix-only")
+	}
+
+	dir := linkedProject(t)
+
+	target := fakeDraftArtifact(newArtifactID, nil)
+
+	var raced error
+
+	confirm := func(string) bool {
+		lock, err := sync.AcquireSyncLock(dir)
+		if err == nil {
+			_ = lock.Release()
+		}
+
+		raced = err
+
+		return true
+	}
+
+	_, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(target), confirm))
+
+	require.NoError(t, err)
+	require.Error(t, raced, "a sync cannot take the lock while the relink waits on its prompt")
+}
+
+// A failure after config.json is repointed is reported as what it is: the
+// relink was performed, the rest was not, and --fix finishes it.
+func TestRunRelink_PartialWrite_ReportsPerformed(t *testing.T) {
+	dir := linkedProject(t)
+
+	// A directory where manifest.json goes makes the manifest write fail
+	// after the config write succeeded.
+	manifestPath := filepath.Join(wapi.Dir(dir), "manifest.json")
+
+	require.NoError(t, os.Remove(manifestPath))
+	require.NoError(t, os.Mkdir(manifestPath, 0o755))
+
+	target := fakeDraftArtifact(newArtifactID, nil)
+
+	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(target), alwaysConfirm))
+
+	require.ErrorIs(t, err, ErrRelinkPartial)
+	require.Len(t, actions, 1)
+	assert.Equal(t, core.ActionPerformed, actions[0].Status)
+	assert.Contains(t, actions[0].Reason, "write manifest")
+
+	cfg, loadErr := wapi.LoadConfig(dir)
+
+	require.NoError(t, loadErr)
+	assert.Equal(t, newArtifactID, cfg.ArtifactID, "the config was repointed before the failure")
+}
+
+// The type gate matches the linked artifact's kind, not a fixed service: a
+// project linked to an agent relinks to another agent.
+func TestRunRelink_AgentToAgent_Allowed(t *testing.T) {
+	dir := linkedProject(t)
+
+	agent := func(id string) *workload.Artifact {
+		return &workload.Artifact{ID: id, Name: "agent-fixture", Status: "DRAFT", Type: "agent"}
+	}
+
+	store := ArtifactGetterFunc(func(id string) (*workload.Artifact, error) {
+		return agent(id), nil
+	})
+
+	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, store, alwaysConfirm))
+
+	require.NoError(t, err)
+	assert.Equal(t, core.ActionPerformed, actions[0].Status)
 }
 
 // TestRunRelink_WindowsGate_Proceeds pins the windows gate behavior: the lock

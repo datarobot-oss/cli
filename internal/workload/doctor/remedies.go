@@ -59,7 +59,12 @@ const (
 
 	// RemedyCatalogMismatch is shown when the locally pinned catalog id no
 	// longer matches the artifact's codeRef: the pin is stale server-side.
-	RemedyCatalogMismatch = "dr artifact code doctor --relink <new-artifact-id> (or re-init against the intended artifact)"
+	RemedyCatalogMismatch = "dr artifact code doctor --relink <artifact-id> (the intended artifact, or a new one)"
+
+	// RemedyCodeRefMissing is shown when the artifact carries no codeRef yet
+	// while the config pins a catalog: an interrupted deploy, which the next
+	// sync or deploy completes.
+	RemedyCodeRefMissing = "run 'dr artifact code sync' or 'dr workload up' to restore the artifact's codeRef from the local pin"
 
 	// RemedyDrift is shown when the artifact's codeRef version no longer
 	// matches the last-synced version. Review what a sync would do first;

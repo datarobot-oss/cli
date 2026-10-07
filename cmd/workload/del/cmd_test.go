@@ -209,9 +209,8 @@ func TestClearStaleBinding_NamesTheStillLinkedArtifact(t *testing.T) {
 
 	assert.Contains(t, out, "68b0aaaa0000000000000001")
 	assert.Contains(t, out, "was not deleted with the workload")
-	assert.Contains(t, out, "delete --purge", "the remedy names what removes the link")
+	assert.Contains(t, out, "dr artifact delete 68b0aaaa0000000000000001", "the remedy names what removes the artifact")
 	assert.Contains(t, out, "doctor --relink", "and what repoints it")
-	assert.NotContains(t, out, "dr artifact delete", "advice that dead-ends is what this ticket is fixing")
 }
 
 // A project that never linked to an artifact has nothing to say about one.

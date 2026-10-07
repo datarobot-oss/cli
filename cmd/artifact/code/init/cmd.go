@@ -201,10 +201,10 @@ func reportAlreadyLinked(cmd *cobra.Command, dir, givenID string, outputFormat o
 		wrappedErr := fmt.Errorf("init aborted: project already linked (config unreadable at %s): %w", configPath, err)
 
 		if outputFormat == outputformat.OutputFormatJSON {
-			renderAlreadyLinkedJSON(cmd.OutOrStdout(), nil, relinkRemedy(givenID))
+			renderAlreadyLinkedJSON(cmd.OutOrStdout(), nil, relinkRemedy(dir, givenID))
 
 			fmt.Fprintf(stderr, "Project is already linked but the config at %s is unreadable: %v\n", configPath, err)
-			fmt.Fprintln(stderr, corruptConfigRemedy(givenID))
+			fmt.Fprintln(stderr, corruptConfigRemedy(dir, givenID))
 
 			cmd.SilenceErrors = true
 
@@ -227,7 +227,7 @@ func reportAlreadyLinked(cmd *cobra.Command, dir, givenID string, outputFormat o
 	}
 
 	if gone || mismatch {
-		return handleGoneOrMismatch(cmd, dir, cfg, outputFormat, gone)
+		return handleGoneOrMismatch(cmd, dir, cfg, givenID, outputFormat, gone)
 	}
 
 	// Healthy (or non-404 error — can't determine, treat as healthy).

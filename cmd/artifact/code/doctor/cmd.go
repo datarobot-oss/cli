@@ -71,17 +71,18 @@ prompt is issued, no file is written, and no remote call is made unless
 remote checks apply. It looks at this directory's sync state only; for why a
 running workload is in its current state, see 'dr workload diagnose'.
 
-Pass --fix to attempt the safe local repairs (rebuild the manifest from
-config, restore an interrupted rollback, clear a stale sync lock), then
-re-run every check and report the post-fix state. Nothing is ever written to
-the server, and a live sync holding the lock gates all repairs. --fix and
---relink are mutually exclusive.
+Pass --fix to attempt the safe local repairs (rebuild the manifest and clear
+the synced version so the next sync lists the remote, restore an interrupted
+rollback), then re-run every check and report the post-fix state. Nothing is
+ever written to the server, and the sync lock is held for the repairs, so a
+live sync blocks them. --fix and --relink are mutually exclusive.
 
 Pass --relink <new-artifact-id> to repoint the project at a different
 artifact with a fresh sync baseline. The target must exist, be a draft
-(not locked), and be a service-type artifact. An interactive confirm prompt
-defaults to No (use --yes to skip it); the working tree is never touched and
-no server writes are made. The relink is logged to history.log.
+(not locked), and be the same kind as the linked artifact. A confirm prompt
+defaults to No; without a terminal the relink is refused unless --yes is
+given. The working tree is never touched and no server writes are made. The
+relink is logged to history.log.
 
 Exit code is 0 when no check FAILs (warnings are allowed) and 1 when at
 least one check FAILs. Pass --output-format json for a machine-parseable
@@ -107,18 +108,16 @@ Example:
 
 	c.Flags().String("dir", ".", "Project directory to diagnose (default: current directory).")
 
-	// Read-only diagnosis never prompts, so --yes changes nothing today; it
-	// exists so scripts can pass it uniformly and so repair modes added later
-	// share the same non-interactive switch.
-	c.Flags().BoolP(cli.YesFlagName, "y", false, "Never prompt (read-only diagnosis never prompts anyway).")
+	c.Flags().BoolP(cli.YesFlagName, "y", false,
+		"Skip the --relink confirmation; required for --relink without a terminal. A read-only run never prompts.")
 
 	c.Flags().Bool("fix", false,
 		"Attempt safe local repairs (rebuild the manifest from config, restore an "+
-			"interrupted rollback, clear a stale sync lock), then re-run the checks.")
+			"interrupted rollback), then re-run the checks.")
 
 	c.Flags().String("relink", "",
 		"Repoint the project at <new-artifact-id> with a fresh sync baseline. "+
-			"The target must exist, be a draft, and be a service-type artifact. "+
+			"The target must exist, be a draft, and be the same kind as the linked artifact. "+
 			"Mutually exclusive with --fix.")
 
 	c.MarkFlagsMutuallyExclusive("fix", "relink")
@@ -158,12 +157,7 @@ func pageDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) erro
 		return err
 	}
 
-	actions, relinkErr := runRepairPhase(cmd, projectDir, fix, relinkID)
-
-	// Soft auth probe: resolve remote credentials without prompting and
-	// without writing any config file. Local checks never need auth; the
-	// remote checks (wired by their own feature) will SKIP with a
-	// connectivity remedy when no usable credentials are found.
+	// Before the repairs: --relink fetches the target with these.
 	creds, authed := softAuthProbe()
 
 	if authed {
@@ -171,6 +165,8 @@ func pageDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) erro
 	} else {
 		log.Debug("doctor found no remote credentials; remote checks will report SKIP")
 	}
+
+	actions, relinkErr := runRepairPhase(cmd, projectDir, fix, relinkID)
 
 	// The complete check suite in the pinned fixed order: six local checks
 	// then the four remote checks. The remote checks share one artifact
@@ -194,6 +190,10 @@ func pageDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) erro
 	// already describes the reason). In JSON mode this keeps stdout pure.
 	if relinkErr != nil && !errors.Is(relinkErr, wldoctor.ErrRelinkAbort) {
 		fmt.Fprintln(cmd.ErrOrStderr(), relinkErr)
+	}
+
+	if errors.Is(relinkErr, errRelinkNeedsYes) {
+		return relinkErr
 	}
 
 	if relinkErr != nil || report.ExitCode() == 1 {
@@ -318,16 +318,19 @@ type remoteCreds struct {
 // auth.EnsureAuthenticated would and must never touch drconfig.yaml.
 //
 // Resolution mirrors the CLI's auth precedence: a complete
-// DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN environment pair wins; otherwise the
-// stored drconfig.yaml profile is used. A partial env pair is ignored (an
-// incomplete pair is an explicit but unusable request). The probe performs no
-// network I/O: reachability is judged by the remote checks themselves, which
-// report SKIP with a `dr auth login` remedy when these credentials do not
-// work.
+// DATAROBOT_ENDPOINT/DATAROBOT_API_TOKEN environment pair wins and is bound
+// into the config the API client reads, as EnsureAuthenticated does for
+// every other command; otherwise the stored drconfig.yaml profile is used. A
+// partial env pair is ignored. The probe performs no network I/O:
+// reachability is judged by the remote checks themselves, which report SKIP
+// with a `dr auth login` remedy when these credentials do not work.
 func softAuthProbe() (remoteCreds, bool) {
 	env := auth.GetEnvCredentials()
 
 	if env.Endpoint != "" && env.Token != "" {
+		_ = viperx.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+		_ = viperx.BindEnv("token", "DATAROBOT_API_TOKEN")
+
 		return remoteCreds{Endpoint: env.Endpoint, Token: env.Token}, true
 	}
 
@@ -341,9 +344,17 @@ func softAuthProbe() (remoteCreds, bool) {
 	return remoteCreds{Endpoint: endpoint, Token: token}, true
 }
 
+// errRelinkNeedsYes refuses a relink nobody can confirm: like
+// `dr artifact delete`, a run without a terminal needs --yes.
+var errRelinkNeedsYes = errors.New("--relink replaces config.json and needs a confirmation; pass --yes to run it without a terminal")
+
 // runRelinkPhase executes the relink operation and returns the actions and
 // error. Extracted from pageDoctor to keep cyclomatic complexity manageable.
 func runRelinkPhase(cmd *cobra.Command, projectDir, relinkID string) ([]core.Action, error) {
+	if !cli.IsNonInteractive(cmd) && !reader.IsStdinTerminal() {
+		return nil, errRelinkNeedsYes
+	}
+
 	return wldoctor.RunRelink(cmd.Context(), wldoctor.RelinkOptions{
 		ProjectDir:    projectDir,
 		NewArtifactID: relinkID,
@@ -359,16 +370,16 @@ func runRelinkPhase(cmd *cobra.Command, projectDir, relinkID string) ([]core.Act
 // is the bespoke default-No prompt, NOT reader.AskYesNo which treats empty
 // Enter as Yes). Ctrl-C/EOF at the prompt also declines.
 //
-// Non-interactive (--yes or non-TTY): the warning is printed to stderr and the
-// relink proceeds. In JSON mode this keeps stdout pure (all human text to
-// stderr).
+// With --yes the warning is printed to stderr and the relink proceeds; a
+// non-TTY run without --yes is refused before this is called. In JSON mode
+// this keeps stdout pure (all human text to stderr).
 func makeRelinkConfirm(cmd *cobra.Command) wldoctor.RelinkConfirmFunc {
 	nonInteractive := cli.IsNonInteractive(cmd)
 
 	stderr := cmd.ErrOrStderr()
 
 	return func(warning string) bool {
-		if nonInteractive || !reader.IsStdinTerminal() {
+		if nonInteractive {
 			fmt.Fprintln(stderr, warning)
 
 			return true

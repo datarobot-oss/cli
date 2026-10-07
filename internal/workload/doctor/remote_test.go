@@ -286,6 +286,24 @@ func TestRemoteChecks_LockedArtifact_WARN_NeverFAIL(t *testing.T) {
 	assert.Equal(t, core.StatusOK, res[CheckIDDrift].Status)
 }
 
+// A pinned catalog with no codeRef on the artifact is an interrupted deploy,
+// which the next sync completes: a WARN pointing there, never a FAIL that
+// sends the user to --relink and throws the pin away.
+func TestRemoteChecks_NoCodeRefWithPin_WARNPointsAtSync(t *testing.T) {
+	dir := healthyProject(t)
+
+	store := &fakeArtifactStore{artifact: testArtifact("draft", nil)}
+
+	res := byID(runRemoteChecks(t, dir, store))
+
+	mismatch := res[CheckIDCatalogMismatch]
+
+	assert.Equal(t, core.StatusWARN, mismatch.Status)
+	assert.Contains(t, mismatch.Summary, "no codeRef yet")
+	assert.Contains(t, mismatch.Remedy, "dr artifact code sync")
+	assert.NotContains(t, mismatch.Remedy, "--relink")
+}
+
 func TestRemoteChecks_CatalogMismatch_FAIL_OnlyOwnCheck(t *testing.T) {
 	dir := healthyProject(t) // config pins testCatalogID/testVersionID
 
@@ -493,16 +511,16 @@ func TestIsCatalogMismatch(t *testing.T) {
 			want:  true,
 		},
 		{
-			name:  "local pin set, remote codeRef absent FAIL",
+			name:  "local pin set, remote codeRef absent is not a mismatch (interrupted deploy)",
 			local: strPtr("cat-123"),
 			art:   makeArtifact("id", "DRAFT", nil),
-			want:  true,
+			want:  false,
 		},
 		{
-			name:  "local pin set, remote codeRef empty FAIL",
+			name:  "local pin set, remote codeRef empty is not a mismatch",
 			local: strPtr("cat-123"),
 			art:   makeArtifact("id", "DRAFT", emptyCodeRef),
-			want:  true,
+			want:  false,
 		},
 	}
 

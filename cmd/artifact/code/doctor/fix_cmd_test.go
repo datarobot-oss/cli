@@ -103,12 +103,11 @@ func TestRunE_FixMissingManifest_PostFixOK_ExitZero(t *testing.T) {
 	assert.Equal(t, "ok", report.Status, "post-fix state is healthy")
 	assert.Equal(t, healthySummary(0).OK, report.Summary.OK)
 
-	require.Len(t, report.Actions, 3)
+	require.Len(t, report.Actions, 2)
 
 	assert.Equal(t, "local.manifest", report.Actions[0].ID)
 	assert.Equal(t, "performed", report.Actions[0].Status)
 	assert.Equal(t, "local.rollback", report.Actions[1].ID)
-	assert.Equal(t, "local.lock", report.Actions[2].ID)
 
 	for _, check := range report.Checks {
 		assert.Equal(t, healthyStatus(check.ID), check.Status, "post-fix check %s", check.ID)
@@ -186,7 +185,7 @@ func TestRunE_FixHeldLock_AllSkipped_ExitOne(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
 
-	require.Len(t, report.Actions, 3)
+	require.Len(t, report.Actions, 2)
 
 	for _, action := range report.Actions {
 		assert.Equal(t, "skipped", action.Status, "action %s", action.ID)

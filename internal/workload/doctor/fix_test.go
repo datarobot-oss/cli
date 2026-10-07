@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	core "github.com/datarobot/cli/internal/doctor"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,15 +42,14 @@ func actionByID(t *testing.T, actions []core.Action) map[string]core.Action {
 }
 
 // requireActionsInOrder asserts the pinned action order: manifest rebuild,
-// rollback clear, lock clear.
+// rollback clear.
 func requireActionsInOrder(t *testing.T, actions []core.Action) {
 	t.Helper()
 
-	require.Len(t, actions, 3)
+	require.Len(t, actions, 2)
 
 	require.Equal(t, CheckIDManifest, actions[0].ID)
 	require.Equal(t, CheckIDRollback, actions[1].ID)
-	require.Equal(t, CheckIDLock, actions[2].ID)
 }
 
 // TestRunFix_HealthyProject_AllNotNeeded verifies that on a healthy project
@@ -74,11 +74,23 @@ func TestRunFix_HealthyProject_AllNotNeeded(t *testing.T) {
 		assert.Empty(t, a.Reason, "action %s", a.ID)
 	}
 
-	assert.Equal(t, before, stateFileHashes(t, dir), "a no-op fix must not write anything")
+	// The lock file is the one thing a run leaves behind: the repairs hold
+	// the sync lock, which lives in that file, and a sync does the same.
+	assert.Equal(t, before, withoutLock(stateFileHashes(t, dir)), "a no-op fix must not write anything")
+}
 
-	_, err := os.Stat(lockPath(t, dir))
+// withoutLock drops sync.lock from a state snapshot: holding the lock
+// creates the file, and it is never removed, as the sync engine's is not.
+func withoutLock(hashes map[string]string) map[string]string {
+	out := make(map[string]string, len(hashes))
 
-	assert.ErrorIs(t, err, os.ErrNotExist, "fix must not create sync.lock")
+	for path, hash := range hashes {
+		if filepath.Base(path) != sync.LockFileName {
+			out[path] = hash
+		}
+	}
+
+	return out
 }
 
 // TestRunFix_MissingManifest_RebuiltEmptyBase verifies the rebuilt manifest is
@@ -129,8 +141,9 @@ func TestRunFix_CorruptManifest_Rebuilt(t *testing.T) {
 }
 
 // TestRunFix_DivergentManifest_ConfigWins verifies a valid but divergent
-// manifest is reset from config, with both-or-neither honored on the rebuilt
-// synced pointers.
+// manifest is reset to an empty BASE and the config's synced version cleared
+// with it, so the next sync lists the remote instead of trusting a BASE that
+// names no files.
 func TestRunFix_DivergentManifest_ConfigWins(t *testing.T) {
 	dir := t.TempDir()
 
@@ -149,10 +162,14 @@ func TestRunFix_DivergentManifest_ConfigWins(t *testing.T) {
 
 	require.NoError(t, err)
 
-	require.NotNil(t, m.SyncedVersionID)
+	assert.Nil(t, m.SyncedVersionID, "a rebuilt BASE names no version")
+	assert.Nil(t, m.SyncedAt)
 
-	assert.Equal(t, testVersionID, *m.SyncedVersionID, "config wins the divergence")
-	require.NotNil(t, m.SyncedAt, "syncedAt must be non-nil iff syncedVersionId is non-nil")
+	cfg, err := wapi.LoadConfig(dir)
+
+	require.NoError(t, err)
+	assert.Nil(t, cfg.LastSyncedVersionID, "the config forgets the synced version so the next sync lists the remote")
+	require.NotNil(t, cfg.CatalogID, "the catalog pin survives")
 }
 
 // TestRunFix_CorruptConfig_ManifestSkippedWithRelinkRemedy verifies that
@@ -179,7 +196,6 @@ func TestRunFix_CorruptConfig_ManifestSkippedWithRelinkRemedy(t *testing.T) {
 
 	// The other repairs still attempt independently of the config state.
 	assert.Equal(t, core.ActionNotNeeded, byID[CheckIDRollback].Status)
-	assert.Equal(t, core.ActionNotNeeded, byID[CheckIDLock].Status)
 
 	_, statErr := os.Stat(filepath.Join(wapi.Dir(dir), "manifest.json"))
 
@@ -203,7 +219,6 @@ func TestRunFix_UnlinkedProject_SkipsManifestRestNotNeeded(t *testing.T) {
 	assert.Contains(t, rebuild.Reason, "no linked state")
 
 	assert.Equal(t, core.ActionNotNeeded, byID[CheckIDRollback].Status)
-	assert.Equal(t, core.ActionNotNeeded, byID[CheckIDLock].Status)
 }
 
 // seedRollback writes a rollback tree with one backed-up file.
@@ -306,59 +321,6 @@ func TestRunFix_RollbackAbsent_NotNeeded(t *testing.T) {
 	actions := RunFix(context.Background(), dir)
 
 	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDRollback].Status)
-}
-
-// TestRunFix_LockAbsent_NotNeededAndNotCreated verifies that with no sync.lock
-// file the repair reports not-needed and must NOT create the file.
-func TestRunFix_LockAbsent_NotNeededAndNotCreated(t *testing.T) {
-	dir := t.TempDir()
-
-	initStateDir(t, dir)
-
-	require.NoError(t, wapi.SaveConfig(dir, validConfig("", "")))
-
-	actions := RunFix(context.Background(), dir)
-
-	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDLock].Status)
-
-	_, err := os.Stat(lockPath(t, dir))
-
-	assert.ErrorIs(t, err, os.ErrNotExist, "the lock repair must not create sync.lock")
-}
-
-// TestRunFix_LockAcquirable_VerifiedNotNeeded verifies a stale but unheld lock
-// file is verified acquirable (acquired and released) and reported
-// not-needed — the file itself is never removed and the lock stays acquirable
-// afterwards.
-func TestRunFix_LockAcquirable_VerifiedNotNeeded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flock semantics are unix-only; the windows path is covered by the seam tests")
-	}
-
-	dir := t.TempDir()
-
-	initStateDir(t, dir)
-
-	require.NoError(t, wapi.SaveConfig(dir, validConfig("", "")))
-
-	require.NoError(t, os.WriteFile(lockPath(t, dir), nil, 0o600))
-
-	actions := RunFix(context.Background(), dir)
-
-	lockAction := actionByID(t, actions)[CheckIDLock]
-
-	assert.Equal(t, core.ActionNotNeeded, lockAction.Status)
-
-	// Pin the probe-path reason string: the lock was verified acquirable
-	// (acquired and released) with no holder detected.
-	assert.Contains(t, lockAction.Reason, "verified acquirable",
-		"the acquirable-lock probe path must carry the 'verified acquirable' reason")
-
-	// After the verify, the lock check must report OK (acquirable), and the
-	// probe must still be able to acquire and release within this process.
-	res := (&lockCheck{projectDir: dir, goos: runtime.GOOS}).Run(context.Background())
-
-	assert.Equal(t, core.StatusOK, res.Status)
 }
 
 // holdLockForTest holds sync.lock from a second open file description in the
@@ -517,10 +479,10 @@ func TestRunFix_ManifestRebuild_WorkingTreeUntouched(t *testing.T) {
 
 	after := stateFileHashes(t, dir)
 
-	// Only manifest.json itself may change; every other path — the whole
-	// working tree — must be byte-identical.
+	// Only the state files may change; every other path, the whole working
+	// tree, must be byte-identical.
 	for path, want := range before {
-		if filepath.Base(path) == "manifest.json" {
+		if base := filepath.Base(path); base == "manifest.json" || base == "config.json" {
 			continue
 		}
 
@@ -529,31 +491,6 @@ func TestRunFix_ManifestRebuild_WorkingTreeUntouched(t *testing.T) {
 		require.True(t, ok, "file disappeared: %s", path)
 		assert.Equal(t, want, got, "file must be untouched by the rebuild: %s", path)
 	}
-}
-
-// TestRunFix_LockFileNeverRemoved pins Release semantics at the repair level:
-// verifying an acquirable lock never unlinks the file (a waiter could hold
-// the open descriptor).
-func TestRunFix_LockFileNeverRemoved(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("flock semantics are unix-only; the windows path is covered by the seam tests")
-	}
-
-	dir := t.TempDir()
-
-	initStateDir(t, dir)
-
-	require.NoError(t, wapi.SaveConfig(dir, validConfig("", "")))
-
-	require.NoError(t, os.WriteFile(lockPath(t, dir), nil, 0o600))
-
-	actions := RunFix(context.Background(), dir)
-
-	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDLock].Status)
-
-	_, err := os.Stat(lockPath(t, dir))
-
-	assert.NoError(t, err, "the lock file itself must never be removed")
 }
 
 // TestRunFix_WindowsGate_Proceeds pins the windows gate behavior: the lock
@@ -574,8 +511,6 @@ func TestRunFix_WindowsGate_Proceeds(t *testing.T) {
 	actions := runFixWithGoos(context.Background(), dir, "windows")
 
 	requireActionsInOrder(t, actions)
-
-	assert.Equal(t, core.ActionNotNeeded, actionByID(t, actions)[CheckIDLock].Status)
 }
 
 // TestRunFix_MultipleProblems_AllRepairedInOneRun verifies that with
@@ -606,9 +541,6 @@ func TestRunFix_MultipleProblems_AllRepairedInOneRun(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(working, []byte("drifted contents"), 0o600))
 
-	// Problem 3: a dead (unheld) sync.lock file.
-	require.NoError(t, os.WriteFile(lockPath(t, dir), nil, 0o600))
-
 	// A non-state working-tree file that must survive untouched.
 	extra := filepath.Join(dir, "lib", "util.go")
 
@@ -629,7 +561,6 @@ func TestRunFix_MultipleProblems_AllRepairedInOneRun(t *testing.T) {
 	// Each repair gets its own action entry with a distinct status.
 	assert.Equal(t, core.ActionPerformed, byID[CheckIDManifest].Status, "manifest rebuild performed")
 	assert.Equal(t, core.ActionPerformed, byID[CheckIDRollback].Status, "rollback restore performed")
-	assert.Equal(t, core.ActionNotNeeded, byID[CheckIDLock].Status, "lock clear not-needed (acquirable)")
 
 	// Post-fix: manifest parses and is an empty BASE.
 	m, loadErr := wapi.LoadManifest(dir)

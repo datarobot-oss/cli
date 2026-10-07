@@ -47,7 +47,7 @@ func withFakeArtifact(t *testing.T, fn func(string) (*workload.Artifact, error))
 }
 
 // withOfferRelink overrides the interactive relink offer seam.
-func withOfferRelink(t *testing.T, fn func(io.Writer, string) (string, error)) {
+func withOfferRelink(t *testing.T, fn func(io.Writer, string, string) (string, error)) {
 	t.Helper()
 
 	orig := offerRelinkFn
@@ -620,7 +620,7 @@ func TestRunE_AlreadyLinked_CorruptConfig_JSON(t *testing.T) {
 	assert.Equal(t, "error", parsed["status"])
 	assert.Equal(t, "already-linked", parsed["error"])
 	assert.Nil(t, parsed["artifactId"])
-	assert.Equal(t, "dr artifact code doctor --relink art-some-id", parsed["remedy"])
+	assert.Contains(t, parsed["remedy"], "dr artifact code doctor --relink art-some-id")
 
 	// JSON-mode stderr must include the config path (matching text mode).
 	assert.Contains(t, stderr, wapi.ConfigPath(tmp), "JSON stderr must include the config path")
@@ -651,7 +651,7 @@ func TestRunE_AlreadyLinked_GoneArtifact_RelinkAccept(t *testing.T) {
 	withInteractive(t, true)
 
 	// Simulate the user accepting the offer and entering a new artifact ID.
-	withOfferRelink(t, func(_ io.Writer, notice string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, notice, _ string) (string, error) {
 		assert.Contains(t, notice, "not found")
 
 		return "art-new-003", nil
@@ -705,7 +705,7 @@ func TestRunE_AlreadyLinked_GoneArtifact_RelinkDecline(t *testing.T) {
 	withInteractive(t, true)
 
 	// Simulate the user declining the offer.
-	withOfferRelink(t, func(_ io.Writer, _ string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, _, _ string) (string, error) {
 		return "", nil // declined
 	})
 
@@ -742,7 +742,7 @@ func TestRunE_AlreadyLinked_GoneArtifact_Relink404Target(t *testing.T) {
 
 	withInteractive(t, true)
 
-	withOfferRelink(t, func(_ io.Writer, _ string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, _, _ string) (string, error) {
 		return "art-also-gone-001", nil
 	})
 
@@ -788,7 +788,7 @@ func TestRunE_AlreadyLinked_GoneArtifact_RelinkLockedTarget(t *testing.T) {
 
 	withInteractive(t, true)
 
-	withOfferRelink(t, func(_ io.Writer, _ string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, _, _ string) (string, error) {
 		return "art-locked-target-001", nil
 	})
 
@@ -844,7 +844,7 @@ func TestRunE_AlreadyLinked_CatalogMismatch_RelinkAccept(t *testing.T) {
 
 	withInteractive(t, true)
 
-	withOfferRelink(t, func(_ io.Writer, notice string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, notice, _ string) (string, error) {
 		assert.Contains(t, notice, "mismatch")
 
 		return "art-new-mismatch-001", nil
@@ -886,7 +886,7 @@ func TestRunE_AlreadyLinked_RelinkJSON(t *testing.T) {
 
 	withInteractive(t, true)
 
-	withOfferRelink(t, func(_ io.Writer, _ string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, _, _ string) (string, error) {
 		return "art-new-007", nil
 	})
 
@@ -1042,7 +1042,7 @@ func TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext(t *testing.T) {
 
 	withInteractive(t, true)
 
-	withOfferRelink(t, func(_ io.Writer, _ string) (string, error) {
+	withOfferRelink(t, func(_ io.Writer, _, _ string) (string, error) {
 		return "art-ctx-002", nil
 	})
 

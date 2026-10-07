@@ -29,8 +29,9 @@ Key invariants:
   when the API is out of reach.
 
 `--fix` runs safe local auto-repairs (rebuild the manifest from config,
-restore an interrupted rollback, clear a stale lock) behind a global safety
-gate that skips every repair while a live process holds the sync lock, then
+restore an interrupted rollback) behind a global safety gate that skips every
+repair while a live process holds the sync lock and holds the lock itself for
+the repairs, then
 re-runs the full check suite so the report and exit code reflect the post-fix
 state. `--relink <new-artifact-id>` repoints the project at a different
 artifact with a fresh sync baseline (empty BASE reset). `--fix` and `--relink`
@@ -87,7 +88,7 @@ flowchart TD
 
     subgraph REPAIR["repair phase (side branch)"]
         G["global held-lock safety gate"]
-        FIX["--fix: manifest, rollback, lock"]
+        FIX["--fix: manifest, rollback"]
         REL["--relink: repoint + fresh BASE"]
     end
 
@@ -144,11 +145,12 @@ Notes for check authors:
   command layer renders remedy strings as-is, never rewording them.
 - **Check order is pinned and user-visible.** The six local checks run
   before the four remote checks, in the table order. New checks append at a
-  deliberate position (the M4 extras append after the ticket-scope ten). Do
-  not reorder existing checks without intent: IDs and order are part of the
-  output contract.
+  deliberate position. Do not reorder existing checks without intent: IDs and
+  order are part of the output contract.
 - **Pure diagnostics.** A check `Run` must not mutate local state or make
-  server writes. Repairs live behind `--fix`/`--relink` in the command layer.
+  server writes. Repairs live behind `--fix`/`--relink` in
+  `internal/workload/doctor` (`fix.go`, `relink.go`); the command layer only
+  wires the flags.
 - **Reuse the SKIP cascades.** Call `skipIfUnlinked` (and the
   `linkedConfig`/`fetchedArtifact` helpers for remote checks) so a missing
   precondition reports an honest `SKIP` instead of a misleading `FAIL`.

@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/internal/version"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
@@ -58,6 +59,11 @@ var (
 	// declined). The command layer forces exit 1 without printing a
 	// separate error message.
 	ErrRelinkAbort = errors.New("relink aborted")
+
+	// ErrRelinkPartial means config.json was repointed but a later write
+	// failed, so the project is relinked with a stale manifest or history.
+	// The action carries what was written; `doctor --fix` finishes it.
+	ErrRelinkPartial = errors.New("relink incomplete: config.json was repointed but a later write failed; run 'dr artifact code doctor --fix'")
 )
 
 // RelinkConfirmFunc is called with the warning text after all safety gates
@@ -101,8 +107,10 @@ type RelinkOptions struct {
 //  3. Fetch new artifact — unreachable/unauthenticated → error abort.
 //  4. Target 404 → abort.
 //  5. Target locked → abort (cannot sync to a locked artifact).
-//  6. Target Artifact.Type != "service" → abort (cross-type lineage refused).
+//  6. Target type differs from the linked artifact's → abort.
 //
+// The sync lock is then held across the confirm and the writes, so a sync
+// started in another terminal cannot undo the relink under the prompt.
 // After all gates pass, the confirm function is called. On confirmation:
 //   - Config rewritten (artifactId=new, catalogId=new codeRef.CatalogID
 //     normalized empty→nil, lastSyncedVersionId=nil).
@@ -136,7 +144,7 @@ func RunRelink(ctx context.Context, opts RelinkOptions) ([]core.Action, error) {
 	}
 
 	// Gate 3-5: fetch the target artifact and validate it (404, locked, type).
-	art, fetchActions, err := relinkFetchAndValidate(opts)
+	art, fetchActions, err := relinkFetchAndValidate(opts, oldCfg)
 	if err != nil {
 		return fetchActions, err
 	}
@@ -153,12 +161,31 @@ func RunRelink(ctx context.Context, opts RelinkOptions) ([]core.Action, error) {
 		return relinkSkipped("no confirm function provided; relink declined as a safety default"), ErrRelinkAbort
 	}
 
+	// Held from here until the writes are done, so nothing can sync between
+	// the question and the answer.
+	lock, err := acquireRepairLock(opts.ProjectDir, opts.Goos)
+	if err != nil {
+		return relinkSkipped(ReasonSyncInProgress), ErrRelinkAbort
+	}
+
+	defer func() { _ = lock.Release() }()
+
 	if !confirm(warning) {
 		return relinkSkipped("declined by user"), ErrRelinkAbort
 	}
 
 	// All gates passed and the user confirmed. Perform the writes.
 	return relinkWrite(opts, oldCfg, art)
+}
+
+// acquireRepairLock takes the sync lock for a repair. On Windows the lock is
+// not enforced, so a nil lock stands in and Release is a no-op.
+func acquireRepairLock(projectDir, goos string) (*sync.SyncLock, error) {
+	if goos == "windows" {
+		return nil, nil
+	}
+
+	return sync.AcquireSyncLock(projectDir)
 }
 
 // relinkLockGate probes the sync lock (non-creating). Returns (nil, nil) when
@@ -198,10 +225,12 @@ func relinkLoadOldConfig(projectDir string) (wapi.Config, error) {
 }
 
 // relinkFetchAndValidate fetches the target artifact and runs the 404, locked,
-// and type gates. Returns (artifact, nil, nil) on success;
+// and type gates. The type has to match the linked artifact's, since a
+// project's lineage never changes kind; an unreadable config has no kind to
+// match, so the gate is skipped. Returns (artifact, nil, nil) on success;
 // (nil, skippedActions, ErrRelinkAbort) for 404/locked/wrong-type;
 // (nil, nil, ErrRelinkAPIUnreachable) for any other fetch failure.
-func relinkFetchAndValidate(opts RelinkOptions) (*workload.Artifact, []core.Action, error) {
+func relinkFetchAndValidate(opts RelinkOptions, oldCfg wapi.Config) (*workload.Artifact, []core.Action, error) {
 	art, err := opts.Store.Get(opts.NewArtifactID)
 	if err != nil {
 		if isNotFound(err) {
@@ -220,10 +249,22 @@ func relinkFetchAndValidate(opts RelinkOptions) (*workload.Artifact, []core.Acti
 		)), ErrRelinkAbort
 	}
 
-	if !manifest.SameArtifactType(manifest.ArtifactTypeOrDefault(art.Type), manifest.TypeService) {
+	if oldCfg.ArtifactID == "" {
+		return art, nil, nil
+	}
+
+	old, err := opts.Store.Get(oldCfg.ArtifactID)
+	if err != nil {
+		// The old artifact is gone or unreadable: nothing to match against.
+		return art, nil, nil
+	}
+
+	want := manifest.ArtifactTypeOrDefault(old.Type)
+
+	if !manifest.SameArtifactType(manifest.ArtifactTypeOrDefault(art.Type), want) {
 		return nil, relinkSkipped(fmt.Sprintf(
 			"target artifact %s has type %q, not %q; cross-type lineage is refused",
-			opts.NewArtifactID, art.Type, manifest.TypeService,
+			opts.NewArtifactID, manifest.ArtifactTypeOrDefault(art.Type), want,
 		)), ErrRelinkAbort
 	}
 
@@ -247,18 +288,9 @@ func relinkWarning(oldID, newID string) string {
 }
 
 // relinkWrite performs the config/manifest/history writes after all gates pass
-// and the user confirms. Returns a performed action on success; a skipped
-// action with ErrRelinkAbort on any write failure.
-//
-// Mid-write non-atomicity: the three writes (SaveConfig, SaveManifest,
-// AppendHistory) are not atomic across each other. State is untouched until
-// the first write (SaveConfig); if SaveConfig succeeds but a later write
-// fails, the project is left in a partially-relinked state (config repointed
-// but manifest/history stale). Recovery is 'dr artifact code doctor --fix',
-// which rebuilds the manifest from the now-correct config and re-runs the
-// checks. Each write uses wapi's atomic-write (write-temp-then-rename) so an
-// individual file is never left half-written, but the sequence as a whole is
-// not transactional.
+// and the user confirms. A failed SaveConfig is a skipped action with state
+// untouched. A failure after it is a performed action with ErrRelinkPartial:
+// the config is already repointed, and `--fix` rebuilds the rest from it.
 func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact) ([]core.Action, error) {
 	// Everything the old config carried survives except what names the old
 	// artifact or its baseline. A config that could not be read is replaced
@@ -287,8 +319,10 @@ func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact)
 		Files:   map[string]wapi.FileMeta{},
 	}
 
+	repointed := fmt.Sprintf("repointed from %s to %s", oldCfg.ArtifactID, opts.NewArtifactID)
+
 	if err := wapi.SaveManifest(opts.ProjectDir, newManifest); err != nil {
-		return relinkSkipped(fmt.Sprintf("write manifest: %v", err)), ErrRelinkAbort
+		return relinkPartial(repointed + "; write manifest: " + err.Error()), ErrRelinkPartial
 	}
 
 	historyEntry := wapi.HistoryEntry{
@@ -299,14 +333,24 @@ func relinkWrite(opts RelinkOptions, oldCfg wapi.Config, art *workload.Artifact)
 	}
 
 	if err := wapi.AppendHistory(opts.ProjectDir, historyEntry); err != nil {
-		return relinkSkipped(fmt.Sprintf("append history: %v", err)), ErrRelinkAbort
+		return relinkPartial(repointed + "; sync baseline reset; append history: " + err.Error()), ErrRelinkPartial
 	}
 
 	return []core.Action{{
 		ID:     RelinkActionID,
 		Status: core.ActionPerformed,
-		Reason: fmt.Sprintf("repointed from %s to %s; sync baseline reset", oldCfg.ArtifactID, opts.NewArtifactID),
+		Reason: repointed + "; sync baseline reset",
 	}}, nil
+}
+
+// relinkPartial is the action for a relink that repointed the config and
+// then failed: performed, because it was, with the failure in the reason.
+func relinkPartial(reason string) []core.Action {
+	return []core.Action{{
+		ID:     RelinkActionID,
+		Status: core.ActionPerformed,
+		Reason: reason,
+	}}
 }
 
 // relinkSkipped builds a single skipped action for an abort case.
