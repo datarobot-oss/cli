@@ -133,14 +133,14 @@ func RunWithSpinnerPrefix(prefix, label string, fn func() error) error {
 // terminal, or a non-interactive run) fn runs inline, the Noter does
 // nothing, and interrupts are whatever fn's own context makes of them.
 func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
-	if !reader.IsStdinTerminal() {
+	switch spinnerModeFor(reader.IsStdinTerminal(), reader.IsStderrTerminal(), reader.IsNonInteractive()) {
+	case spinnerSilent:
 		return fn(func(string) {})
-	}
-
-	if reader.IsNonInteractive() {
+	case spinnerLine:
 		fmt.Fprintln(os.Stderr, prefix+InfoStyle.Render("• ")+label)
 
 		return fn(func(string) {})
+	case spinnerDrawn:
 	}
 
 	note := &atomic.Pointer[string]{}
@@ -155,7 +155,35 @@ func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
 		},
 	}
 
-	return spinnerVerdict(Run(m))
+	// On stderr, never stdout: stdout is the command's data, and a frame drawn
+	// there ends up in front of it whenever stdout is redirected.
+	return spinnerVerdict(Run(m, tea.WithOutput(os.Stderr)))
+}
+
+type spinnerMode int
+
+const (
+	// spinnerSilent runs fn with nothing shown: no terminal to answer
+	// keystrokes, so nothing is drawn.
+	spinnerSilent spinnerMode = iota
+	// spinnerLine prints the label once, for a run that must not animate or
+	// whose stderr is not a terminal.
+	spinnerLine
+	// spinnerDrawn animates the spinner on stderr.
+	spinnerDrawn
+)
+
+// spinnerModeFor decides how a spinner shows: animated only when both the
+// keyboard and the screen it draws on are a terminal.
+func spinnerModeFor(stdinTerm, stderrTerm, nonInteractive bool) spinnerMode {
+	switch {
+	case !stdinTerm:
+		return spinnerSilent
+	case nonInteractive || !stderrTerm:
+		return spinnerLine
+	default:
+		return spinnerDrawn
+	}
 }
 
 // spinnerVerdict turns what Run handed back (the final model and its error)

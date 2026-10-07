@@ -64,15 +64,20 @@ done
 wl::pass "created ${#fixture_ids[@]} draft fixtures"
 
 # --- B.2 Sweep: dry-run bind to every workload on the account ---------------
-# A built workload's manifest points at ./Dockerfile; seed one so the
-# validator's file-existence rule doesn't refuse an otherwise-clean bind.
+# Each bind starts in an empty directory, which a generated-build workload
+# needs: a directory with files of its own must be one the platform can build
+# from. A workload built from a Dockerfile is refused there for want of one,
+# so it is retried with a Dockerfile seeded.
 fail_count=0
 ok_count=0
 while read -r id; do
     [[ -n "$id" ]] || continue
     d="$(mktemp -d)"
-    printf 'FROM containous/whoami:latest\nEXPOSE 8080\nCMD ["--port", "8080"]\n' > "$d/Dockerfile"
     wl::dr_capture workload config --dir "$d" --yes --workload-id "$id" --dry-run
+    if [[ "$WL_RC" -ne 0 ]] && printf '%s' "$WL_ERR" | grep -q 'no Dockerfile exists'; then
+        printf 'FROM containous/whoami:latest\nEXPOSE 8080\nCMD ["--port", "8080"]\n' > "$d/Dockerfile"
+        wl::dr_capture workload config --dir "$d" --yes --workload-id "$id" --dry-run
+    fi
     if [[ "$WL_RC" -eq 0 ]]; then
         # --dry-run prints the manifest to stdout and writes NO file; grep the
         # captured output, not $d/.datarobot.yaml (missing file → grep exit 2
@@ -85,7 +90,7 @@ while read -r id; do
             ok_count=$((ok_count + 1))
         fi
     elif printf '%s' "$WL_ERR" | grep -q 'no Dockerfile exists'; then
-        # Built workload, Dockerfile guard — expected when the seed was missed.
+        # Still refused with a Dockerfile seeded: its build is not this one.
         echo "  OK*    $id (built workload, Dockerfile guard — expected)"
         ok_count=$((ok_count + 1))
     else

@@ -5,8 +5,8 @@
 # up an isolated, endpoint-agnostic environment, a run identity so repeated
 # runs never collide on names, a scratch directory under mktemp(1), timing
 # helpers, assertion helpers, a workload wait/poll helper, and a trap-based
-# cleanup registry that stops any workloads a scenario created even when it
-# fails midway.
+# cleanup registry that deletes any workloads and artifacts a scenario created
+# even when it fails midway.
 #
 # Environment contract:
 #   The CLI is expected to be already authenticated via its drconfig.yaml
@@ -250,30 +250,76 @@ WL_ARTIFACT_IDS=()
 
 wl::register_workload() {
     WL_CREATED_WORKLOADS+=("$1")
+    # Its artifact is recorded now as well: a scenario that deletes the
+    # workload itself leaves cleanup nothing to look the artifact up from.
+    local aid
+    aid="$("$DR_BIN" workload get "$1" --output-format json 2>/dev/null | jq -r '.artifactId // empty' 2>/dev/null || true)"
+    [[ -n "$aid" ]] && WL_ARTIFACT_IDS+=("$aid")
+    return 0
 }
 
 wl::register_artifact() {
     WL_ARTIFACT_IDS+=("$1")
 }
 
-# Best-effort cleanup: delete registered artifacts, stop registered
-# workloads, then remove the scratch dir. Draft workloads have an 8h TTL,
-# but we don't rely on it: a wedged errored workload can block re-runs.
+# Best-effort cleanup: delete registered workloads and the artifacts they
+# ran, then registered artifacts, then whatever the scratch project is still
+# linked to (an artifact `up` created before a failed build is never
+# registered), then the scratch dir. Workloads go first because an artifact a
+# workload references cannot be deleted. Deleting rather than stopping keeps
+# repeated runs from filling the account's workload limit.
 wl::cleanup() {
     local rc=$?
-    local id
-    for id in "${WL_ARTIFACT_IDS[@]:-}"; do
-        [[ -n "$id" ]] || continue
-        "$DR_BIN" artifact delete "$id" --yes >/dev/null 2>&1 || true
-        echo "  🧹 deleted artifact $id"
-    done
+    local id aid doc
+    # Only what still exists is deleted and reported: a scenario may have
+    # deleted it already, and delete answers a missing id with success.
     for id in "${WL_CREATED_WORKLOADS[@]:-}"; do
         [[ -n "$id" ]] || continue
-        "$DR_BIN" workload stop "$id" >/dev/null 2>&1 || true
-        echo "  🧹 stopped workload $id"
+        doc="$("$DR_BIN" workload get "$id" --output-format json 2>/dev/null)" || continue
+        aid="$(printf '%s' "$doc" | jq -r '.artifactId // empty' 2>/dev/null || true)"
+        "$DR_BIN" workload delete "$id" --yes >/dev/null 2>&1 \
+            && echo "  🧹 deleted workload $id" || true
+        [[ -n "$aid" ]] && WL_ARTIFACT_IDS+=("$aid")
     done
+    wl::linked_artifact
+    local seen=" "
+    for id in "${WL_ARTIFACT_IDS[@]:-}"; do
+        [[ -n "$id" && "$seen" != *" $id "* ]] || continue
+        seen+="$id "
+        "$DR_BIN" artifact get "$id" --output-format json >/dev/null 2>&1 || continue
+        # A locked artifact cannot be deleted; that is expected, not a leak.
+        "$DR_BIN" artifact delete "$id" --yes >/dev/null 2>&1 \
+            && echo "  🧹 deleted artifact $id" || true
+    done
+    wl::delete_catalog
     [[ -n "${WL_SCRATCH:-}" ]] && rm -rf "$WL_SCRATCH" 2>/dev/null || true
     return "$rc"
+}
+
+# wl::linked_artifact queues the artifact the scratch project is linked to.
+wl::linked_artifact() {
+    local cfg="${WL_SCRATCH:-}/project/.datarobot/workload/config.json"
+    [[ -f "$cfg" ]] || return 0
+    local aid
+    aid="$(jq -r '.artifactId // empty' "$cfg" 2>/dev/null || true)"
+    [[ -n "$aid" ]] && WL_ARTIFACT_IDS+=("$aid")
+    return 0
+}
+
+# wl::delete_catalog removes the code catalog the scratch project synced to.
+# The CLI has no command for it, so it is the one API call made directly,
+# and only when the endpoint and token are in the environment.
+wl::delete_catalog() {
+    local cfg="${WL_SCRATCH:-}/project/.datarobot/workload/config.json"
+    local token
+    token="$(wl::resolve_token)"
+    [[ -f "$cfg" && -n "${DATAROBOT_ENDPOINT:-}" && -n "$token" ]] || return 0
+    local cid
+    cid="$(jq -r '.catalogId // empty' "$cfg" 2>/dev/null || true)"
+    [[ -n "$cid" ]] || return 0
+    curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $token" \
+        "${DATAROBOT_ENDPOINT%/}/files/$cid/" --max-time 30 \
+        && echo "  🧹 deleted code catalog $cid" || true
 }
 
 # Register cleanup on EXIT for the current shell. Scenarios call this once.
