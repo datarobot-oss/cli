@@ -119,7 +119,7 @@ type Plan struct {
 
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
-	// locked production locks something whether or not --lock was passed, and
+	// locked production locks something whether or not --promote was passed, and
 	// that cannot be undone. The plan is where it belongs: --dry-run is how a
 	// locked deploy is reviewed before it happens.
 	Locked bool

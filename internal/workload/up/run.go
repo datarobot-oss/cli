@@ -51,6 +51,7 @@ var (
 	updateArtifactSpecFn = workload.UpdateArtifactSpec
 	getArtifactFn        = workload.GetArtifact
 	lockArtifactFn       = workload.LockArtifact
+	promoteWorkloadFn    = workload.PromoteWorkload
 	triggerBuildFn       = workload.TriggerArtifactBuild
 	waitBuildFn          = workload.WaitForBuild
 	hasLogsFn            = workload.BuildLogsAvailable
@@ -416,15 +417,15 @@ func buildsImage(plan Plan) bool {
 	return plan.Creates || (plan.RollsArtifact() && !plan.InheritsImage)
 }
 
-// lockOnly is the whole of a --lock run that found nothing else to do.
+// lockOnly is the whole of a --promote run that found nothing else to do.
 //
-// --lock is about the end state rather than about what this run happened to
+// --promote is about the end state rather than about what this run happened to
 // change: the flag says the artifact that ends up live should be permanent,
 // and an empty plan means the one already serving is that artifact. Returning
 // early on Empty, as this used to, printed "Already up to date" and exited 0
 // having locked nothing, which is the wrong answer twice over. It contradicts
 // the flag's own help, and it breaks the sequence the draft warning tells
-// people to follow: deploy, read the warning, run 'up --lock'. By then there
+// people to follow: deploy, read the warning, run 'up --promote'. By then there
 // is nothing left to change, so the remedy silently did nothing at all.
 //
 // The live state is checked first because an empty plan is not the same as a
@@ -784,8 +785,8 @@ func noteIgnoreFile(code CodeChange, opts Options) {
 //
 // That is not a cosmetic slip. Deploying a locked, versioned artifact onto a
 // fresh workload is how a promotion works, and getting it wrong there tells
-// someone their permanent deploy is temporary and then advises 'up --lock',
-// which the platform answers with a 403 because the artifact is already
+// someone their permanent deploy is temporary and then advises promoting it,
+// which the platform answers with a 422 because the artifact is already
 // locked. The reader is left with a warning they cannot act on.
 //
 // Only creates ask. A roll onto a live workload cannot hit this, because the
@@ -1325,7 +1326,7 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 // Only a plan with something in it is judged. An empty plan says what it found
 // rather than listing work, so there is no announcement to correct, and
 // refusing here would turn today's exit 0 into a failure for a run that was
-// never going to change anything. --lock is the one empty plan that still
+// never going to change anything. --promote is the one empty plan that still
 // mutates, and lockOnly asks the same question for itself.
 func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) error {
 	var refused error
@@ -1630,7 +1631,7 @@ func startFirst(ctx context.Context, live Live, plan Plan, result Result, opts O
 // and a start that came up errored is the thing that says otherwise. It is the
 // same evidence on which an already-errored workload never inherits. Left
 // standing, the copy would carry the image that just failed onto the version
-// this run promotes, and under --lock lock it there for good, leaving a
+// this run promotes, and under --promote lock it there for good, leaving a
 // permanently locked artifact pointing at an image that does not work.
 func afterStart(plan Plan, result Result, report *reporter) Plan {
 	if !plan.InheritsImage || !workload.IsErroredWorkloadStatus(result.Status) {
@@ -1691,7 +1692,7 @@ func startingStatus(was string) string {
 // "an unrelated workload that happens to share a name", and the two want
 // opposite things. Adopting the first is how a room full of people deploying
 // the same template all bind to whoever ran it first, are told their own
-// deploy succeeded, and under --lock permanently lock a stranger's artifact.
+// deploy succeeded, and under --promote permanently lock a stranger's artifact.
 // The plan they were shown said a workload would be created; nothing about the
 // file would have reached the one they were given.
 //
@@ -1844,9 +1845,9 @@ func finishSettle(result Result, interrupted bool, opts Options, report *reporte
 	}
 
 	if interrupted {
-		report.say("  %s\n", tui.WarnStyle.Render("⚠ --lock skipped: interrupted."))
+		report.say("  %s\n", tui.WarnStyle.Render("⚠ --promote skipped: interrupted."))
 		report.say("    %s\n", tui.HintStyle.Render(
-			"The artifact is running and unlocked. Run 'dr workload up --lock' to lock it."))
+			"The artifact is running and unlocked. Run 'dr workload promote' to make it permanent."))
 
 		return result, nil
 	}
@@ -2059,17 +2060,27 @@ func lock(result Result, report *reporter) (Result, error) {
 	}
 
 	if result.ArtifactID == "" {
-		return result, errors.New("cannot lock: the platform did not report which artifact is running")
+		return result, errors.New("cannot promote: the platform did not report which artifact is running")
 	}
 
-	err := report.run("Locking the artifact", func() error {
-		_, lockErr := lockArtifactFn(result.ArtifactID)
+	// The workload's own promote route, not the artifact's lock: it locks what
+	// the workload is serving right now, which is the whole question.
+	var promoted *workload.Workload
 
-		return lockErr
+	err := report.run("Promoting the workload", func() error {
+		w, promoteErr := promoteWorkloadFn(result.WorkloadID)
+		promoted = w
+
+		return promoteErr
 	})
 	if err != nil {
 		return result, fmt.Errorf("workload %s is running, but artifact %s could not be locked: %w",
 			result.WorkloadID, result.ArtifactID, err)
+	}
+
+	// The route answers with what it locked, which is the artifact to report.
+	if promoted != nil && promoted.ArtifactID != "" {
+		result.ArtifactID = promoted.ArtifactID
 	}
 
 	result.Locked = true

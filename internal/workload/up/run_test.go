@@ -175,6 +175,7 @@ type fakes struct {
 	list           func(int, int, []string, string) ([]workload.Workload, error)
 	start          func(string) (*workload.WorkloadOperationResponse, error)
 	lock           func(string) (*workload.Artifact, error)
+	promote        func(string) (*workload.Workload, error)
 	cred           func(string) (*workload.Credential, error)
 	findCredential func(string, int) (*workload.Credential, error)
 	writeID        func(string, string) error
@@ -286,6 +287,7 @@ func install(t *testing.T, f fakes) {
 	swap(t, &listWorkloadsFn, f.list)
 	swap(t, &startWorkloadFn, f.start)
 	swap(t, &lockArtifactFn, f.lock)
+	swap(t, &promoteWorkloadFn, f.promote)
 	swap(t, &getCredentialFn, f.cred)
 	swap(t, &writeWorkloadIDFn, f.writeID)
 	swap(t, &codeChangeFn, f.code)
@@ -687,22 +689,24 @@ func TestRun_AlreadyUpToDate(t *testing.T) {
 	assert.Contains(t, stderr, "Already up to date")
 }
 
-// --lock is about the end state, not about what this run changed, so a run
+// --promote is about the end state, not about what this run changed, so a run
 // that finds nothing to do still has to make the serving artifact permanent.
 // Returning early on an empty plan printed "Already up to date" and exited 0
 // having locked nothing, which silently broke the sequence the draft warning
-// asks for: deploy, read the warning, run 'up --lock'. By then the plan is
-// always empty.
-func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
-	locked := ""
+// asks for: deploy, read the warning, promote. By then the plan is always
+// empty. The workload's promote route is what locks in place: it locks what
+// the workload serves, so there is no artifact id to get wrong.
+func TestRun_PromoteWithNothingToDoStillPromotes(t *testing.T) {
+	promoted := ""
 
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
 		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
-		lock: func(id string) (*workload.Artifact, error) {
-			locked = id
+		lock:      neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			promoted = id
 
-			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+			return &workload.Workload{ID: id}, nil
 		},
 	})
 
@@ -711,12 +715,21 @@ func TestRun_LockWithNothingToDoStillLocks(t *testing.T) {
 	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, locked, "the artifact that is serving is the one --lock is about")
-	assert.Equal(t, result.ArtifactID, locked)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", promoted, "the workload that is serving is the one promoted")
 	assert.True(t, result.Locked)
 }
 
-// The lock a `--lock` run takes on an empty plan lands on whatever Look read as
+// neverLocks fails the test if the artifact lock route is used: an in-place
+// promotion goes through the workload, and only a roll locks a candidate.
+func neverLocks(t *testing.T) func(string) (*workload.Artifact, error) {
+	return func(id string) (*workload.Artifact, error) {
+		t.Fatalf("artifact %s was locked through the artifact route; an in-place promotion uses the workload's", id)
+
+		return nil, nil
+	}
+}
+
+// The lock a `--promote` run takes on an empty plan lands on whatever Look read as
 // serving, and a rollout in flight is about to move the workload off exactly
 // that artifact. Locking cannot be undone, so a lost race would leave the
 // outgoing version permanent and the rollout unable to complete. deployable
@@ -732,7 +745,8 @@ func TestRun_LockWithNothingToDoRefusesARolloutThatStartedLate(t *testing.T) {
 			return fmt.Errorf("workload %s: %w (status switching)",
 				workloadID, workload.ErrReplacementInFlight)
 		},
-		lock: func(string) (*workload.Artifact, error) {
+		lock: neverLocks(t),
+		promote: func(string) (*workload.Workload, error) {
 			t.Fatal("locking is one-way, so it may not land on a version being rolled off")
 
 			return nil, nil
@@ -752,8 +766,9 @@ func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
 		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
-		lock: func(string) (*workload.Artifact, error) {
-			t.Fatal("nothing asked for a lock")
+		lock:      neverLocks(t),
+		promote: func(string) (*workload.Workload, error) {
+			t.Fatal("nothing asked for a promotion")
 
 			return nil, nil
 		},
@@ -1002,16 +1017,17 @@ func TestRun_LockHappensAfterTheWorkloadServes(t *testing.T) {
 
 			return running("wl-new"), nil
 		},
-		lock: func(id string) (*workload.Artifact, error) {
-			order = append(order, "lock:"+id)
+		lock: neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			order = append(order, "promote:"+id)
 
-			return &workload.Artifact{ID: id}, nil
+			return &workload.Workload{ID: id}, nil
 		},
 	})
 
 	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"wait", "lock:art-1"}, order)
+	assert.Equal(t, []string{"wait", "promote:wl-new"}, order)
 	assert.True(t, result.Locked)
 }
 
@@ -1693,7 +1709,7 @@ func TestRun_ErroredWorkloadWithARolloutInFlightIsReadAgainAfterIt(t *testing.T)
 	assert.Equal(t, "running", result.Status)
 }
 
-// A --lock run that arrives mid-swap waits it out and locks whatever the swap
+// A --promote run that arrives mid-swap waits it out and locks whatever the swap
 // left serving. Locking is one-way, so the pre-swap read must not be locked.
 func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
 	var (
@@ -1716,13 +1732,14 @@ func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
 		) (*workload.Replacement, error) {
 			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
 		},
-		lock: func(artifactID string) (*workload.Artifact, error) {
+		lock: neverLocks(t),
+		promote: func(workloadID string) (*workload.Workload, error) {
 			assert.Equal(t, 2, artifacts,
 				"the lock is one-way, so it lands on what the swap left serving, not on the pre-swap read")
 
-			locked = artifactID
+			locked = workloadID
 
-			return &workload.Artifact{ID: artifactID, Status: workload.ArtifactStatusLocked}, nil
+			return &workload.Workload{ID: workloadID}, nil
 		},
 	})
 
@@ -1731,14 +1748,14 @@ func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
 	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, locked)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", locked)
 	assert.True(t, result.Locked)
 	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
 }
 
 // The swap lands between the workload read and the replacement read, so there
 // is nothing to wait for, but the snapshot in hand names the outgoing artifact.
-// Without the re-read, --lock would make that version permanent.
+// Without the re-read, --promote would make that version permanent.
 func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
 	const (
 		outgoing = "68a0000000000000000000a1"
@@ -1780,10 +1797,11 @@ func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
 
 			return nil, nil
 		},
-		lock: func(artifactID string) (*workload.Artifact, error) {
-			locked = artifactID
+		lock: neverLocks(t),
+		promote: func(workloadID string) (*workload.Workload, error) {
+			locked = workloadID
 
-			return &workload.Artifact{ID: artifactID, Status: workload.ArtifactStatusLocked}, nil
+			return &workload.Workload{ID: workloadID}, nil
 		},
 	})
 
@@ -1793,9 +1811,9 @@ func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, looks, "a terminal record means a swap landed, so the snapshot is re-read")
-	assert.Equal(t, incoming, locked,
-		"locking is one-way, so it must land on what the swap installed, never on the version rolled off")
-	assert.Equal(t, incoming, result.ArtifactID)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", locked)
+	assert.Equal(t, incoming, result.ArtifactID,
+		"the re-read is what names the version the promotion made permanent")
 }
 
 // A record that says nothing is in flight is no evidence a swap just happened,
@@ -2894,7 +2912,7 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 
 // draftArtifact is the live fixture before anyone locked it. The shared one is
 // locked, which is right for the roll tests and wrong for anything asking what
-// --lock does, since a locked artifact is exactly the case that short-circuits.
+// --promote does, since a locked artifact is exactly the case that short-circuits.
 func draftArtifact(t *testing.T) workload.Document {
 	t.Helper()
 
@@ -3116,7 +3134,7 @@ func TestRun_StartAcknowledgementIsPrinted(t *testing.T) {
 	assert.Contains(t, stderr, "already running")
 }
 
-// --lock on a workload already running a locked artifact has nothing to do,
+// --promote on a workload already running a locked artifact has nothing to do,
 // and locking twice is not a no-op at the platform.
 func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 	install(t, fakes{
@@ -3144,7 +3162,7 @@ func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 
 // unlockedArtifact is the live artifact as a draft. liveArtifactJSON is
 // locked, which is the right shape for most of these tests and the wrong one
-// for asking whether --lock still does anything.
+// for asking whether --promote still does anything.
 func unlockedArtifact(t *testing.T) workload.Document {
 	t.Helper()
 
@@ -3154,7 +3172,7 @@ func unlockedArtifact(t *testing.T) workload.Document {
 	return d
 }
 
-// The other half of --lock on the start path. The test above starts from an
+// The other half of --promote on the start path. The test above starts from an
 // artifact that is already locked, so it only reaches the skip branch; this
 // one has to actually lock, and not until the workload is serving.
 func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
@@ -3173,10 +3191,11 @@ func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
 
 			return running(id), nil
 		},
-		lock: func(id string) (*workload.Artifact, error) {
-			order = append(order, "lock:"+id)
+		lock: neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			order = append(order, "promote:"+id)
 
-			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+			return &workload.Workload{ID: id}, nil
 		},
 	})
 
@@ -3185,8 +3204,8 @@ func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
 	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionStarted, result.Action, "a start, not a create: --lock has to work on this path too")
-	assert.Equal(t, []string{"start", "wait", "lock:art-1"}, order,
+	assert.Equal(t, ActionStarted, result.Action, "a start, not a create: --promote has to work on this path too")
+	assert.Equal(t, []string{"start", "wait", "promote:68b0c1d2e3f4a5b6c7d8e9f0"}, order,
 		"locking is one-way, so it waits until the workload is actually serving")
 	assert.True(t, result.Locked)
 }
@@ -3760,4 +3779,25 @@ func TestRun_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
 	assert.Contains(t, stderr, "Values written in the clear: REGION.")
 	assert.NotContains(t, stderr, "OPENAI_API_KEY", "the secret is the thing being protected")
 	assert.Equal(t, []string{"REGION"}, result.Env.Literals)
+}
+
+// The promote route answers with what it locked, and that is the artifact the
+// summary names: a swap that landed between the read and the promotion would
+// otherwise be reported under the version rolled off.
+func TestRun_PromoteReportsTheArtifactTheRouteLocked(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock:      neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, ArtifactID: "68a0000000000000000000c3"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+	assert.Equal(t, "68a0000000000000000000c3", result.ArtifactID)
+	assert.True(t, result.Locked)
 }

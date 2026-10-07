@@ -154,6 +154,11 @@ func wiredRoll(tr *track) fakes {
 
 			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
 		},
+		promote: func(id string) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, "promote:"+id)
+
+			return &workload.Workload{ID: id}, nil
+		},
 		replace: func(workloadID, artifactID string, runtime json.RawMessage) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "replace:"+artifactID)
 			tr.rolledRuntime = runtime
@@ -492,7 +497,7 @@ func TestRun_JSONOutputStillAsksBeforeRollingProduction(t *testing.T) {
 	assert.NotContains(t, tr.steps, "replace:art-2")
 }
 
-// --lock and a locked predecessor both lock, and locking twice is not a
+// --promote and a locked predecessor both lock, and locking twice is not a
 // no-op at the platform.
 func TestRun_LockFlagDoesNotLockTheVersionTwice(t *testing.T) {
 	var tr track
@@ -560,11 +565,11 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 		"the second wait may not start a fresh copy of the budget the first one was already spending")
 }
 
-// The sharpest consequence of a wait that could settle early. On a draft
-// workload --lock is applied after the swap, to result.ArtifactID, which is
-// whatever the wait last saw. A wait that returned on the version being rolled
-// off locked the wrong artifact, and locking is one-way.
-func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
+// On a draft workload --promote is applied after the swap, through the
+// workload's promote route, which locks whatever the workload is serving by
+// then. The wait has to finish first: promoting before the swap lands would
+// lock the version being rolled off, and locking is one-way.
+func TestRun_DraftRollPromotesAfterTheSwap(t *testing.T) {
 	var tr track
 
 	install(t, wiredRoll(&tr))
@@ -575,9 +580,9 @@ func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"guard", "create-artifact", "guard", "replace:art-2",
-			"await-rollout", "settle:art-2+drain", "lock:art-2",
+			"await-rollout", "settle:art-2+drain", "promote:68b0c1d2e3f4a5b6c7d8e9f0",
 		}, tr.steps,
-		"the lock follows the wait, so the wait is what decides which artifact becomes permanent")
+		"the promotion follows the wait, so the wait is what decides which artifact becomes permanent")
 	assert.NotContains(t, tr.steps, "lock:68a0000000000000000000a1",
 		"locking the version being rolled off cannot be undone")
 	assert.Equal(t, "art-2", result.ArtifactID)
@@ -816,8 +821,15 @@ func TestRun_StoppedRollLocksOnlyTheVersionItLeavesServing(t *testing.T) {
 	result, _, err := runIn(t, newImage(), Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"lock:art-2"}, locks(tr.steps),
-		"one lock, on the version the run left running")
+	assert.Equal(t, []string{"promote:68b0c1d2e3f4a5b6c7d8e9f0"}, locks(tr.steps),
+		"one promotion, so the version rolled off is never made permanent")
+
+	// The order is the whole point: the promote route locks whatever the
+	// workload serves when it is called, so it must come after the swap.
+	promoted := slices.Index(tr.steps, "promote:68b0c1d2e3f4a5b6c7d8e9f0")
+	replaced := slices.Index(tr.steps, "replace:art-2")
+	require.NotEqual(t, -1, replaced)
+	assert.Greater(t, promoted, replaced, "promoted before the swap would lock the version being rolled off: %v", tr.steps)
 	assert.True(t, result.Locked)
 }
 
@@ -1118,7 +1130,7 @@ func TestRun_StoppedWorkloadThatStartsErroredIsStillRolled(t *testing.T) {
 // errored is that attempt, and it disqualifies the copy for the same reason an
 // already-errored workload never inherits: the image the copy carries forward
 // is the one that just failed, and the roll would promote it, permanently under
-// --lock.
+// --promote.
 func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	var tr track
 
@@ -1212,7 +1224,7 @@ func locks(steps []string) []string {
 	var out []string
 
 	for _, step := range steps {
-		if strings.HasPrefix(step, "lock:") {
+		if strings.HasPrefix(step, "lock:") || strings.HasPrefix(step, "promote:") {
 			out = append(out, step)
 		}
 	}

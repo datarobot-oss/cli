@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/cmd/workload/get"
 	"github.com/datarobot/cli/cmd/workload/list"
 	"github.com/datarobot/cli/cmd/workload/logs"
+	"github.com/datarobot/cli/cmd/workload/promote"
 	"github.com/datarobot/cli/cmd/workload/settings"
 	"github.com/datarobot/cli/cmd/workload/start"
 	"github.com/datarobot/cli/cmd/workload/status"
@@ -45,9 +46,9 @@ func Cmd() *cobra.Command {
 Manage and monitor workloads in your deployment infrastructure.`,
 	}
 
-	// The gate that used to hide this whole tree now hides only the two
+	// The gate that used to hide this whole tree now hides only the three
 	// commands that are not finished. Everything else is generally available;
-	// `config` and `up` stay behind DATAROBOT_CLI_FEATURE_WORKLOAD=true, and
+	// `config`, `up` and `promote` stay behind DATAROBOT_CLI_FEATURE_WORKLOAD=true, and
 	// the adder leaves them out at registration while it is unset, so they are
 	// absent from help, completion and dispatch rather than merely hidden.
 	gated := func(c *cobra.Command) *cobra.Command {
@@ -73,6 +74,7 @@ Manage and monitor workloads in your deployment infrastructure.`,
 		get.Cmd(),
 		list.Cmd(),
 		logs.Cmd(),
+		gated(promote.Cmd()),
 		settings.Cmd(),
 		start.Cmd(),
 		status.Cmd(),
