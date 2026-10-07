@@ -400,10 +400,10 @@ func TestParseLeadingGlobalFlags_StopsAtDoubleDash(t *testing.T) {
 // default command tree. The command carries no feature-gate annotation any
 // more, so cli.CommandAdder must not filter it out. The env var is neutralized
 // so the test proves the command is there on its own merits, not because
-// DATAROBOT_CLI_FEATURE_WORKLOAD happens to be set in the ambient environment
+// DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA happens to be set in the ambient environment
 // (the repo's gitignored .env sets it, and `task test` loads that file).
 func TestWorkloadCommandPresentByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
@@ -415,7 +415,7 @@ func TestWorkloadCommandPresentByDefault(t *testing.T) {
 // default command tree. It used to share the "workload" feature gate; both
 // roots are registered unconditionally now.
 func TestArtifactCommandPresentByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
@@ -424,12 +424,12 @@ func TestArtifactCommandPresentByDefault(t *testing.T) {
 }
 
 // TestWorkloadUpAndConfigAbsentByDefault verifies that the two workload
-// subcommands still behind DATAROBOT_CLI_FEATURE_WORKLOAD are missing from the
+// subcommands still behind DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA are missing from the
 // tree while it is unset: not hidden, absent, so they are out of help,
 // completion and dispatch alike. The env var is neutralized for the same
 // reason as above.
 func TestWorkloadUpAndConfigAbsentByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
@@ -437,7 +437,7 @@ func TestWorkloadUpAndConfigAbsentByDefault(t *testing.T) {
 
 	for _, path := range []string{"dr workload up", "dr workload config"} {
 		assert.Nil(t, findCommandByPath(root.Command, path),
-			"%s should be absent when DATAROBOT_CLI_FEATURE_WORKLOAD is unset", path)
+			"%s should be absent when DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA is unset", path)
 	}
 }
 

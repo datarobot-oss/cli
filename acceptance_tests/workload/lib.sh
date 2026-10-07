@@ -90,7 +90,7 @@ wl::init_env() {
 
     # The workload feature gate is CLI-side and never in drconfig.yaml, so the
     # suite always sets it. Non-interactive keeps prompts out of CI/local runs.
-    export DATAROBOT_CLI_FEATURE_WORKLOAD=true
+    export DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true
     export DATAROBOT_CLI_NON_INTERACTIVE=1
 
     # Per-run scratch directory; removed on exit (see wl::register_cleanup).

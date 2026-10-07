@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 # [Unreleased]
 
+## Changed
+
+- The feature gate for `dr workload config`, `up` and `promote` is now `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true`; the three commands are alpha and stay gated. `DATAROBOT_CLI_FEATURE_WORKLOAD` is no longer read, so a script that set it must set the new variable to keep seeing them.
+
 ## Added
 
 - `dr workload promote [<workload-id>]` makes the version a workload is running permanent: the draft artifact it serves is locked in place and given a version number, with nothing rebuilt or rolled. A locked version can then be shared by any number of workloads through `artifactId`. `dr workload up --promote` replaces `up --lock`, with the same behaviour: `lock` is the artifact's word, and on the workload command the verb is `promote`. Every promotion of the version a workload ends up serving, after a create, a start, a resize or a roll as well as when nothing changed, now goes through the workload's own promote route; only the lock a locked workload needs on its candidate before the swap stays on the artifact route.

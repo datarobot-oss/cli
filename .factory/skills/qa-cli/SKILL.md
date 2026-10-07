@@ -181,7 +181,7 @@ Relevant paths: templates/start, run/task, dependencies/tools, plugin/self.
 
 Relevant paths: workload/artifact commands, manifest/wapi/wizard/sync packages.
 
-- Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` for config/up help or local wizard
+- Set `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true` for config/up help or local wizard
   tests that need it. Check help and required flag/ID/spec validation.
 - Use scratch Dockerfiles, `.datarobot.yaml`, `.env`, and project state built from
   current documented formats. Verify local schema rejection, file preservation,

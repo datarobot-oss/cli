@@ -46,13 +46,12 @@ func Cmd() *cobra.Command {
 Manage and monitor workloads in your deployment infrastructure.`,
 	}
 
-	// The gate that used to hide this whole tree now hides only the three
-	// commands that are not finished. Everything else is generally available;
-	// `config`, `up` and `promote` stay behind DATAROBOT_CLI_FEATURE_WORKLOAD=true, and
-	// the adder leaves them out at registration while it is unset, so they are
-	// absent from help, completion and dispatch rather than merely hidden.
+	// `config`, `up` and `promote` are alpha and stay behind
+	// DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true; the adder leaves them out at
+	// registration while it is unset, so they are absent from help, completion
+	// and dispatch rather than merely hidden.
 	gated := func(c *cobra.Command) *cobra.Command {
-		features.SetGate(c, "workload")
+		features.SetGate(c, "workload-alpha")
 
 		return c
 	}

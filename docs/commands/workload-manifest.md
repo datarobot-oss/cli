@@ -3,7 +3,7 @@
 The file `dr workload config` writes and `dr workload up` deploys from. This page is the reference for the file itself and for what `up` does with it. The commands and their flags are documented in [`dr workload`](workload.md).
 
 > [!NOTE]
-> `config` and `up` are behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to use them.
+> `config` and `up` are alpha and behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true` to use them.
 
 ## What the file is
 

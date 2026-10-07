@@ -70,7 +70,7 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | brew install → `dr self update` uses brew path | ✅ (macOS) | ❌ | Skipped on Linux |
 | Template min-version satisfied → update is no-op | ✅ | ❌ | Stretch test |
 | Template min-version satisfied → `dr self update -f` upgrades | ✅ | ❌ | Stretch test |
-| **Workload / Artifact** (`acceptance_tests/run_workload_acceptance_test.sh`) — `task acceptance-test-workload` | | | Nightly CI + manual dispatch run A/B/C/E/artifact (see Test Scripts table); D stays local/opt-in. Uses the CLI's existing `drconfig.yaml` auth; set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override. Sets `DATAROBOT_CLI_FEATURE_WORKLOAD=true`. |
+| **Workload / Artifact** (`acceptance_tests/run_workload_acceptance_test.sh`) — `task acceptance-test-workload` | | | Nightly CI + manual dispatch run A/B/C/E/artifact (see Test Scripts table); D stays local/opt-in. Uses the CLI's existing `drconfig.yaml` auth; set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override. Sets `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true`. |
 | A: whoami create → bind → up round trip + validation probes | ✅ | ❌ | Guards `up` validates at load time before server mutation |
 | B: account sweep — dry-run bind every workload on the account | ✅ | ❌ | Mirrors Woj's 4/4 binding-failure repro |
 | C: re-bind preserves live tuning; FileExists guard; delete-rebind restore | ✅ | ❌ | Known bug RAPTOR-19697: memory renders as 512MB (asserted) |
