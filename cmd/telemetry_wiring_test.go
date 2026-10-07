@@ -191,7 +191,7 @@ func leafCommands(root *cobra.Command) []*cobra.Command {
 }
 
 // expectedGatedWorkloadTrackedCommands enumerates the `dr workload` leaves
-// still behind DATAROBOT_CLI_FEATURE_WORKLOAD. cli.CommandAdder leaves them
+// still behind DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA. cli.CommandAdder leaves them
 // out of the tree while the variable is unset (the default in CI), so the
 // test below sets it and walks a freshly-built subtree from workload.Cmd()
 // rather than the global RootCmd.
@@ -208,7 +208,7 @@ var expectedGatedWorkloadTrackedCommands = []string{
 // builds the subtree and asserts each gated leaf has the "telemetry"
 // annotation set by telemetry.Track / TrackWith.
 func TestTelemetryWiring_GatedWorkloadCommandsTracked(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "true")
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "true")
 
 	workloadRoot := workload.Cmd()
 

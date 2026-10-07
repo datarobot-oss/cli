@@ -381,7 +381,7 @@ Because `stop`, `start` and `delete` change something, they ask for confirmation
 
 ## Deploying from a project: `config` and `up`
 
-> These two, and `promote`, are still behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to see them in `--help`.
+> These two, and `promote`, are alpha and behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true` to see them in `--help`.
 
 `dr workload config` writes the `.datarobot.yaml` that describes your project, and `dr workload up` deploys the difference between that file and what is running. Together they are the deploy loop for a repository, where `create` deploys an artifact you already have.
 
@@ -480,7 +480,7 @@ dr workload delete <workload-id>
 
 ### Every command answers `403`
 
-A `403` on the very first request, including a plain `dr workload list`, is usually about access rather than about the workload you asked for. The Workload API sits behind a platform entitlement, and the CLI's own feature gate is unrelated to it: `DATAROBOT_CLI_FEATURE_WORKLOAD` only decides which commands the binary registers, never what your account may call.
+A `403` on the very first request, including a plain `dr workload list`, is usually about access rather than about the workload you asked for. The Workload API sits behind a platform entitlement, and the CLI's own feature gate is unrelated to it: `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA` only decides which commands the binary registers, never what your account may call.
 
 The response body names the check that refused you. The two common ones are a feature flag (a message naming `WORKLOAD_API_CONTAINERS`, or saying the Workload API is disabled in feature flags) and a seat license (a message saying the Agentic, Predictive and Governance seat has not been granted to this user). Both are grants your DataRobot administrator makes; neither can be worked around from the CLI. Entitlements are cached per user on the platform for a few minutes, so a newly granted one can keep failing briefly after it is switched on.
 
