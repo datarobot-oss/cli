@@ -88,6 +88,7 @@ type configResult struct {
 type flags struct {
 	dir        string
 	dockerfile string
+	specFile   string
 	dryRun     bool
 	yes        bool
 	syncEnv    bool
@@ -169,6 +170,7 @@ Examples:
 			"type":          f.answers.Type,
 			"build_mode":    f.answers.BuildMode,
 			"bound":         f.answers.WorkloadID != "",
+			"spec_file":     f.specFile != "",
 			"sync_env":      f.syncEnv,
 			"dry_run":       f.dryRun,
 			"output_format": string(outputFormat),
@@ -189,6 +191,11 @@ func addFlags(cmd *cobra.Command, f *flags) {
 		"Do not prompt; answer every question from flags and what the project directory shows. "+
 			"A question neither of those answers is an error naming the flag that would settle it.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the manifest and write nothing.")
+	cmd.Flags().StringVar(&f.specFile, "spec-file", "",
+		"Take the answers from a prepared artifact spec or workload spec (JSON or YAML, what 'dr artifact create' "+
+			"and 'dr workload create' take) and ask only what it leaves open: a name if it has none, the .env "+
+			"import, the sizing if it has no runtime block. The file is left alone; .datarobot.yaml is written. "+
+			"The build-source flags, --type, --a2a-enabled, --sync-env and --workload-id cannot be combined with it.")
 	cmd.Flags().BoolVar(&f.answers.SkipEnv, "skip-env", false,
 		"Do not carry the project's .env into the manifest. By default its variables are written there: "+
 			"ordinary values as literals, secrets as credential references you complete later.")
@@ -246,7 +253,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 }
 
 func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
-	if err := checkDockerfileFlag(cmd, f.dockerfile); err != nil {
+	if err := checkSourceFlags(cmd, f); err != nil {
 		return err
 	}
 
@@ -284,6 +291,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		NonInteractive: yes || asJSON,
 		DryRun:         f.dryRun,
 		SyncEnv:        f.syncEnv,
+		SpecFile:       f.specFile,
 		// f.yes rather than the merged signal: the environment variable that
 		// suppresses wizards in CI is not consent to overwrite a value on the
 		// tenant, which is the line `dr workload delete` already draws.
@@ -362,6 +370,21 @@ func checkSyncEnvFlags(cmd *cobra.Command, f flags) error {
 		return fmt.Errorf("--sync-env acts on the .env variables of a manifest that already "+
 			"exists, so they cannot also apply %s. Edit %s directly for those, and run the env flags on their own",
 			strings.Join(ignored, ", "), manifest.FileName)
+	}
+
+	return nil
+}
+
+// checkSourceFlags refuses the image-source flags this command cannot honour:
+// a Dockerfile elsewhere than the project root, and --dockerfile beside a
+// spec file that already says how the image is built.
+func checkSourceFlags(cmd *cobra.Command, f flags) error {
+	if err := checkDockerfileFlag(cmd, f.dockerfile); err != nil {
+		return err
+	}
+
+	if f.specFile != "" && cmd.Flags().Changed("dockerfile") {
+		return errors.New("--dockerfile cannot be combined with --spec-file: the file says how the image is built")
 	}
 
 	return nil

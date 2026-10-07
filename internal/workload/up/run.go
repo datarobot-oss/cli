@@ -106,6 +106,10 @@ type Options struct {
 	// caller's job because only it knows where the user's input comes from.
 	Confirm func(question, want string) (bool, error)
 
+	// SpecFile is a prepared spec the first deploy's setup takes its answers
+	// from. Refused once a manifest exists: the file is the manifest then.
+	SpecFile string
+
 	// Lock makes the artifact that ends up live immutable and permanent.
 	// Locking is one-way, so it happens last, only after the workload is
 	// actually serving: locking something that never came up would leave an
@@ -853,6 +857,11 @@ func noteUnusedForce(plan Plan, opts Options) {
 func load(dir string, opts Options) (Loaded, error) {
 	loaded, err := Load(dir)
 	if err == nil {
+		if opts.SpecFile != "" {
+			return loaded, fmt.Errorf("--spec-file is for a first deploy, and this project already has %s; "+
+				"edit that file, or delete it to start over", manifest.FileName)
+		}
+
 		return opts.editEnv(loaded)
 	}
 
@@ -881,6 +890,7 @@ func load(dir string, opts Options) (Loaded, error) {
 		DryRun:         opts.DryRun,
 		Remedy:         "dr workload up" + manifest.DirFlag(dir),
 		Stderr:         opts.Stderr,
+		SpecFile:       opts.SpecFile,
 	})
 	if err != nil {
 		return Loaded{}, setupRefused(err, opts.NonInteractive, dir)
@@ -947,7 +957,9 @@ func reportSetup(setup wizard.Result, opts Options) {
 // way. An interactive run is left untouched: nobody there was given flags to
 // be confused about.
 func setupRefused(err error, nonInteractive bool, dir string) error {
-	if !nonInteractive {
+	// A spec file with no workload name already names the command that takes
+	// --name; the suffix would send the reader to one without the file.
+	if !nonInteractive || errors.Is(err, wizard.ErrSpecFileUnnamed) {
 		return err
 	}
 

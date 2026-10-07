@@ -105,6 +105,12 @@ type Options struct {
 	// the preview is shown and agreed to rather than applied on the strength
 	// of a flag.
 	SyncEnv bool
+	// SpecFile is a prepared artifact or workload spec the answers come
+	// from, so only what it leaves open is asked: a name when it has none,
+	// the .env import, the sizing when it carries no runtime block. The
+	// build-source flags are refused with it, since the file is that answer,
+	// and so is --workload-id, since a prepared spec is a workload to create.
+	SpecFile string
 	// JSONOutput says the run's answer is a machine-readable envelope. Under
 	// it the command hands the wizard no Stderr at all, because stdout purity
 	// is only half the contract and `2>&1 | jq .` has to parse too; what a
@@ -220,7 +226,16 @@ func Run(opts Options) (Result, error) {
 
 	path := manifest.Path(dir)
 	if fsutil.FileExists(path) {
+		if opts.SpecFile != "" {
+			return Result{}, fmt.Errorf("--spec-file is for a project with no manifest, and %s already has one; "+
+				"edit that file, or delete it to start over", ShortPath(path))
+		}
+
 		return opts.configured(path, dir)
+	}
+
+	if err := opts.checkSpecFile(); err != nil {
+		return Result{}, err
 	}
 
 	if err := opts.checkNothingToImport(dir); err != nil {
@@ -262,14 +277,7 @@ func (o Options) create(dir string) (Result, error) {
 		}
 	}
 
-	// A file that came from a running workload is judged as the platform's
-	// news, not as a bug in the wizard.
-	author := authorWizard
-	if draft.WorkloadID != "" {
-		author = authorLive
-	}
-
-	if err := checkRendered(content, projectDir, author); err != nil {
+	if err := checkRendered(content, projectDir, o.author(draft)); err != nil {
 		return Result{}, err
 	}
 
@@ -296,6 +304,21 @@ func (o Options) create(dir string) (Result, error) {
 	}
 
 	return result, nil
+}
+
+// author says whose content a rendered manifest is, which decides how a
+// validation failure on it is worded: a file that came from a running
+// workload is the platform's news rather than a bug in the wizard, and one
+// from a prepared spec is the user's own.
+func (o Options) author(draft manifest.Draft) contentAuthor {
+	switch {
+	case o.SpecFile != "":
+		return authorUser
+	case draft.WorkloadID != "":
+		return authorLive
+	default:
+		return authorWizard
+	}
 }
 
 // editsEnv reports that this run acts on the .env of a manifest that already
@@ -1268,9 +1291,12 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 		// a refusal — a valid project cannot be reliably recognized, so a
 		// wrong guess has to cost nothing. Only the headless paths return
 		// detected.Dir unchanged, so the fourth value is settled right here.
-		o.warnSuspectDir(detected)
-
 		content, draft, err := o.resolveHeadless(detected)
+
+		// After the resolution, so a spec file's build mode is known: an
+		// image build syncs nothing, and the warning is about the upload.
+		o.warnSuspectDir(detected, draft.Build.Mode)
+
 		if err == nil {
 			o.warnGeneratedLock(detected, draft)
 		}
@@ -1282,6 +1308,10 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 }
 
 func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, error) {
+	if o.SpecFile != "" {
+		return o.resolveHeadlessSpec(detected)
+	}
+
 	if o.Answers.WorkloadID != "" {
 		return o.resolveHeadlessBound(detected)
 	}
@@ -1322,8 +1352,8 @@ func (o Options) warnGeneratedLock(detected Detected, draft manifest.Draft) {
 //
 // An image-mode run is exempt: it never syncs local directory contents, so
 // "everything here would be uploaded" describes a risk that cannot happen.
-func (o Options) warnSuspectDir(detected Detected) {
-	if o.Stderr == nil || !detected.SuspectDir() || o.Answers.BuildMode == manifest.BuildModeImage {
+func (o Options) warnSuspectDir(detected Detected, buildMode string) {
+	if o.Stderr == nil || !detected.SuspectDir() || buildMode == manifest.BuildModeImage {
 		return
 	}
 
@@ -1425,7 +1455,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// Read off the workload as it arrived, not off applied: the point is what
 	// the platform was already serving in the clear, and a run that failed
 	// above has no file to warn about.
-	warnLiveSecretLiterals(o.Stderr, live)
+	warnSecretLiterals(o.Stderr, live, live.Name, "binding")
 
 	return content, draft, nil
 }
@@ -1776,8 +1806,8 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 		detected.EnvErr, manifest.FileName)
 }
 
-// warnLiveSecretLiterals names the variables a bound workload already declares
-// in the clear whose values say what they are.
+// warnSecretLiterals names the variables a bound workload or a spec file
+// already declares in the clear whose values say what they are.
 //
 // The .env import classifies what it carries and writes a secret as a
 // reference. The live spec gets no such treatment, by design: binding
@@ -1795,7 +1825,10 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 // manifest. That one lists everything ordinary and is bounded to stay
 // readable; this lists only values carrying an issuer's own signature, of
 // which any number is worth reading to the end.
-func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
+//
+// subject is what declared the values, the workload or the spec file, and
+// actor is what copies them across.
+func warnSecretLiterals(stderr io.Writer, live manifest.Live, subject, actor string) {
 	if stderr == nil {
 		return
 	}
@@ -1813,9 +1846,9 @@ func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
 	}
 
 	fmt.Fprintf(stderr,
-		"Warning: %s declares %d %s whose value looks like a secret, and binding copies it as it stands: %s.\n"+
+		"Warning: %s declares %d %s whose value looks like a secret, and %s copies it as it stands: %s.\n"+
 			"  Replace the value in %s with a %s<credential-id>/<key> reference before committing the file.\n",
-		live.Name, len(named), Plural(len(named), "variable", "variables"), strings.Join(named, ", "),
+		subject, len(named), Plural(len(named), "variable", "variables"), actor, strings.Join(named, ", "),
 		manifest.FileName, manifest.CredentialShorthandPrefix)
 }
 

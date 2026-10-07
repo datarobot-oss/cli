@@ -597,6 +597,12 @@ func (l Live) primaryContainerName() string {
 	return stringAt(container, keyName)
 }
 
+// HasPrimaryContainer reports whether the spec carries a container to write
+// the answers into, which Apply needs.
+func (l Live) HasPrimaryContainer() bool {
+	return l.primaryContainer() != nil
+}
+
 // applyReadiness writes the port and points the readiness probe wherever the
 // answers say, which includes having no probe at all.
 //
@@ -804,10 +810,15 @@ func (l Live) Render() ([]byte, error) {
 	// (schema.go) and shared with Draft.Render so both renderers emit the
 	// same key sequence.
 	values := map[string]*yaml.Node{
-		keyWorkloadID: scalar(l.WorkloadID),
 		keyName:       scalar(l.Name),
 		keyImportance: scalar(orDefaultString(l.Importance, DefaultImportance)),
 		keyArtifact:   mapping(artifact...),
+	}
+
+	// A document prepared from a spec file binds nothing yet; writing an
+	// empty binding would read as one.
+	if l.WorkloadID != "" {
+		values[keyWorkloadID] = scalar(l.WorkloadID)
 	}
 
 	if runtime != nil {

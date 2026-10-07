@@ -422,6 +422,18 @@ dr workload up --yes
 
 `--dry-run` on a project with no manifest writes nothing. It prints the `.datarobot.yaml` a real run would write, then the plan that run would carry out, so looking before deploying is one command on a fresh project too. A project the setup cannot read is refused the same way with or without `--dry-run`.
 
+### Starting from a spec you already have
+
+If you already hold an artifact spec, the document `dr artifact create --spec-file` takes, or a workload spec, the one `dr workload create --spec-file` takes, hand it to the setup and it asks only what the file leaves open:
+
+```bash
+dr workload config --spec-file my-artifact.yaml --name my-app   # headless: writes .datarobot.yaml at once
+dr workload config --spec-file my-artifact.yaml                 # on a terminal: a name if the file has none, the .env import, confirm
+dr workload up --spec-file my-workload.yaml --yes               # the same, then deploy
+```
+
+The spec file is input and is left alone; `.datarobot.yaml` is written beside your code and is the source of truth from then on, so `--spec-file` is refused once a manifest exists. An artifact spec becomes the `artifact` block with the default runtime; a workload spec is taken as it is, and the sizing question is skipped when it carries a `runtime` block. On `config`, the build-source flags (`--build-mode`, `--image`, `--execution-environment`, `--entrypoint`, `--dockerfile`, `--port`, `--health`, `--no-readiness-probe`), the kind flags (`--type`, `--a2a-enabled`) and `--workload-id` cannot be combined with it: the file is that answer. Neither can `--sync-env`: there is no manifest to reconcile yet, and the `.env` is carried into the one being written. `--name`, the sizing flags, `--importance` and `--skip-env` compose with it, and an explicit sizing flag wins over the file. `up` takes none of the setup flags, so with `--spec-file` it composes only with `--dry-run` and `--yes`. The same checks apply as to any other setup, headless and on a terminal: the file has to validate, a `provided` build needs `./Dockerfile`, and a `generated` build needs a project the platform can build from. `dr workload up` takes no `--name`, so an artifact spec, which names no workload, is set up with `dr workload config --spec-file <path> --name <name>` first when there is no terminal to ask on. Top-level keys the manifest does not model, such as `useCaseId`, are not carried over; add them to `.datarobot.yaml` afterwards.
+
 ## Shared flags
 
 ### `--output-format`

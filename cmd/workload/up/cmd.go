@@ -155,13 +155,14 @@ func buildID(id string) *string {
 }
 
 type flags struct {
-	dir     string
-	yes     bool
-	dryRun  bool
-	detach  bool
-	promote bool
-	force   bool
-	syncEnv bool
+	dir      string
+	yes      bool
+	dryRun   bool
+	detach   bool
+	promote  bool
+	force    bool
+	syncEnv  bool
+	specFile string
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -306,6 +307,11 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"re-sent secret reaches the containers this deploy replaces; a deploy with nothing else to do "+
 			"replaces none, and says how to restart.")
 
+	cmd.Flags().StringVar(&f.specFile, "spec-file", "",
+		"On a first deploy, take the setup's answers from a prepared artifact or workload spec (JSON or YAML) "+
+			"instead of the wizard; .datarobot.yaml is written from it. Refused once a manifest exists. An artifact "+
+			"spec names no workload, so without a terminal set it up with 'dr workload config --spec-file ... --name ...' first.")
+
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
 	_ = cmd.Flags().MarkHidden("workload-id")
@@ -359,6 +365,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Confirm:        rollConfirm(cmd, yes, stdin),
 		ForceBuild:     f.force,
 		SyncEnv:        f.syncEnv,
+		SpecFile:       f.specFile,
 		// The flag alone, not cli.IsNonInteractive: the environment variable
 		// that suppresses wizards in CI is not consent to overwrite a value on
 		// the tenant, which is the line `dr workload delete` already draws.
