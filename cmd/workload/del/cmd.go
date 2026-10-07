@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
@@ -161,7 +162,7 @@ func runDelete(cmd *cobra.Command, ref idargs.Ref) error {
 	// credential that merely shares the workload's name prefix — one of those can
 	// belong to a different workload that reused it. A delete by typed id from
 	// outside any project finds no manifest and falls back to the prefix alone.
-	scopeIDs, haveManifest := projectCredentialIDs(ref.Dir)
+	scopeIDs, haveManifest := projectCredentialIDs(ref.Dir, ref.ID)
 
 	if err := deleteWorkloadFn(ref.ID); err != nil {
 		return handleDeleteError(err, ref)
@@ -320,17 +321,23 @@ func clearStaleBinding(w io.Writer, dir, workloadID string, deletedCredIDs []str
 }
 
 // projectCredentialIDs returns the set of credential ids the manifest under dir
-// references, and whether a manifest was found and read at all. The delete uses
-// the set to scope its credential cleanup to this project's own credentials, and
-// the bool to decide what to do when there is no manifest: fall back to the name
-// prefix rather than scope to an empty set and delete nothing.
+// references, and whether that manifest is one to scope the cleanup by. The
+// delete uses the set to scope its credential cleanup to this project's own
+// credentials, and the bool to decide what to do otherwise: fall back rather than
+// scope to an empty set and delete nothing.
+//
+// wantID is the id of the workload being deleted, and the manifest is only
+// trusted when its workloadId is that same id — the guard clearStaleBinding
+// already applies before it edits the file. Deleting workload B by typed id from
+// inside project A would otherwise scope B's cleanup to A's credential ids and
+// skip B's own; a manifest about a different workload is treated as no manifest.
 //
 // It is read-only and best-effort. A manifest that cannot be located, read or
-// compiled answers (nil, false), which is the same "no scope to apply" the
-// prefix fallback already handles — the realistic case this scopes, a workload
-// deployed from a manifest that therefore compiled, is the one that reads
+// compiled, or that names a different workload, answers (nil, false), which is
+// the same "no scope to apply" the fallback already handles — the realistic case
+// this scopes, deleting a workload from the project it was deployed from, reads
 // cleanly. Placeholder ids are dropped: they name no credential to delete.
-func projectCredentialIDs(dir string) (map[string]bool, bool) {
+func projectCredentialIDs(dir, wantID string) (map[string]bool, bool) {
 	if dir == "" {
 		dir = "."
 	}
@@ -342,6 +349,12 @@ func projectCredentialIDs(dir string) (map[string]bool, bool) {
 
 	m, err := manifest.Load(path)
 	if err != nil {
+		return nil, false
+	}
+
+	// A manifest about some other workload says nothing about which credentials
+	// this one owns, so it is no basis to scope by.
+	if m.WorkloadID() != wantID {
 		return nil, false
 	}
 
@@ -448,12 +461,16 @@ func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bo
 	var (
 		deleted []string
 		failed  []string
+		skipped []string
 	)
 
 	for _, c := range creds {
 		// Scoped to the manifest: a prefix match this project does not reference
-		// is some other workload's to delete, not ours.
+		// is some other workload's to delete, not ours. It is named rather than
+		// deleted silently, so the user knows what the prompt's promise left out.
 		if scoped && !scopeIDs[c.CredentialID] {
+			skipped = append(skipped, c.Name)
+
 			continue
 		}
 
@@ -478,6 +495,13 @@ func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bo
 		fmt.Fprintln(w, tui.DimStyle.Render(
 			"Could not delete credential "+msg+". It may still be in use; "+
 				"remove it by hand before reusing this workload name."))
+	}
+
+	if len(skipped) > 0 {
+		fmt.Fprintln(w, tui.DimStyle.Render(fmt.Sprintf(
+			"Left %d credential(s) in place that this project does not reference (%s); "+
+				"another workload may use them — remove by hand if not.",
+			len(skipped), strings.Join(skipped, ", "))))
 	}
 
 	return deleted

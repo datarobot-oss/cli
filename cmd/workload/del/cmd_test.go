@@ -591,7 +591,11 @@ func TestCleanupCredentials_ScopedSkipsCredentialsNotInManifest(t *testing.T) {
 	assert.Equal(t, []string{"ours"}, deleted, "only the credential this manifest references is deleted")
 	assert.Equal(t, []string{"ours"}, returned)
 	assert.Contains(t, out.String(), "Deleted credential my-app/A")
-	assert.NotContains(t, out.String(), "my-app/B", "a credential another workload may reuse is left alone")
+	assert.NotContains(t, out.String(), "Deleted credential my-app/B",
+		"a credential another workload may reuse is left alone")
+	assert.Contains(t, out.String(), "Left 1 credential(s) in place",
+		"what was left alone is reported, not skipped silently")
+	assert.Contains(t, out.String(), "my-app/B", "the left-alone credential is named")
 }
 
 // boundManifestWithSecret binds the workload and references one credential by id,
@@ -752,24 +756,39 @@ func TestExecute_SilentCleanupNoteWhenTheReadIs404(t *testing.T) {
 }
 
 // projectCredentialIDs is what scopes the cleanup: it reads the credential ids
-// this project's manifest references, and reports that a manifest was found.
+// this project's manifest references, and reports that a manifest was found —
+// but only when the manifest is about the workload being deleted.
 func TestProjectCredentialIDs_ReadsTheManifestRefs(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, boundManifestWithSecret)
 	t.Chdir(dir)
 
-	ids, haveManifest := projectCredentialIDs(".")
+	ids, haveManifest := projectCredentialIDs(".", boundID)
 
 	assert.True(t, haveManifest)
 	assert.Equal(t, map[string]bool{"66f000000000000000000001": true}, ids)
 }
 
-// No manifest means no scope, which is the signal the cleanup falls back to the
-// name prefix on rather than scoping to an empty set and deleting nothing.
+// A manifest about a different workload is no basis to scope by: deleting workload
+// B from inside project A must not scope B's cleanup to A's credential ids. It is
+// treated as "no manifest", so the cleanup does not silently skip B's own.
+func TestProjectCredentialIDs_IgnoresAnotherWorkloadsManifest(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifestWithSecret)
+	t.Chdir(dir)
+
+	ids, haveManifest := projectCredentialIDs(".", "68b0ffffffffffffffffffff")
+
+	assert.False(t, haveManifest, "the manifest binds a different workload")
+	assert.Nil(t, ids)
+}
+
+// No manifest means no scope, which is the signal the cleanup falls back on
+// rather than scoping to an empty set and deleting nothing.
 func TestProjectCredentialIDs_ReportsNoManifest(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	ids, haveManifest := projectCredentialIDs(".")
+	ids, haveManifest := projectCredentialIDs(".", boundID)
 
 	assert.False(t, haveManifest)
 	assert.Nil(t, ids)
