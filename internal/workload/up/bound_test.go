@@ -53,8 +53,10 @@ func TestRun_NamedArtifactFromAnotherRepositoryIsRefused(t *testing.T) {
 	var tr track
 
 	f := namedRoll(&tr, "repo-2", false)
+	// Recorded rather than failed on the spot: replace is called inside the
+	// subtests, where a Fatal on this test would only report a misuse.
 	f.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
-		t.Fatal("a swap the platform refuses is not sent")
+		tr.steps = append(tr.steps, "replace")
 
 		return nil, nil
 	}
@@ -63,13 +65,38 @@ func TestRun_NamedArtifactFromAnotherRepositoryIsRefused(t *testing.T) {
 
 	for name, dryRun := range map[string]bool{"a deploy": false, "a dry run": true} {
 		t.Run(name, func(t *testing.T) {
+			tr.steps = nil
+
 			result, _, err := runIn(t, namedManifest, Options{NonInteractive: true, DryRun: dryRun})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "repository repo-2")
 			assert.Contains(t, err.Error(), "repository repo-1")
 			assert.Contains(t, result.Plan.Incompatible, "repository")
+			assert.NotContains(t, tr.steps, "replace", "a swap the platform refuses is not sent")
 		})
 	}
+}
+
+// A terminated workload has to be deleted whatever the file names, and the
+// run after that is a create the swap check does not apply to, so that is
+// what the refusal says.
+func TestRun_TerminatedWorkloadIsRefusedBeforeTheSwapCheck(t *testing.T) {
+	var tr track
+
+	f := namedRoll(&tr, "repo-2", false)
+	f.workloadD = func(string) (workload.Document, error) {
+		d := docOf(liveWorkloadJSON)
+		d["status"] = workload.WorkloadStatusTerminated
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, namedManifest, Options{NonInteractive: true, DryRun: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is terminated")
+	assert.NotContains(t, err.Error(), "repository repo-2")
 }
 
 // A draft workload cannot take a locked version. The other direction is a
@@ -83,6 +110,46 @@ func TestRun_LockedArtifactNamedByADraftWorkloadIsRefused(t *testing.T) {
 	_, _, err := runIn(t, namedManifest, Options{NonInteractive: true, DryRun: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "a draft workload cannot take a locked version")
+	assert.Contains(t, err.Error(), "dr workload promote 68b0c1d2e3f4a5b6c7d8e9f0",
+		"the refusal names the command that makes the running version permanent")
+}
+
+// A named artifact that is already locked is swapped in as it is: the lock
+// line says nothing is locked, and the roll does not read it a second time.
+func TestRun_LockedWorkloadNamedLockedArtifactIsSwappedInAsItIs(t *testing.T) {
+	var tr track
+
+	f := lockedLive(namedRoll(&tr, "", true))
+	f.lock = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "lock:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	}
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "read:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, namedManifest, Options{
+		Confirm: func(string, string) (bool, error) { return true, nil },
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "and so is 68b0bbbb0000000000000002, so it is swapped in as it is")
+	assert.NotContains(t, stderr, "is locked to match")
+	assert.NotContains(t, tr.steps, "lock:68b0bbbb0000000000000002", "a locked artifact is not locked again")
+
+	reads := 0
+
+	for _, s := range tr.steps {
+		if s == "read:68b0bbbb0000000000000002" {
+			reads++
+		}
+	}
+
+	assert.Equal(t, 1, reads, "the plan's read is the only one")
 }
 
 // A swap onto an artifact that exists reads as one: nothing is minted and

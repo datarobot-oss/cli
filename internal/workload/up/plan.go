@@ -122,6 +122,12 @@ type Plan struct {
 	// a roll swaps onto it; neither builds anything.
 	BoundArtifactID string
 
+	// BoundRead and BoundLocked carry the status of the named artifact when
+	// the plan read it to judge a swap, so the roll and the lock line need
+	// not read it again.
+	BoundRead   bool
+	BoundLocked bool
+
 	// Incompatible is why the platform would refuse to swap the workload
 	// onto the artifact the file names, "" when it would not or when the
 	// file names none: a version from another repository, or a draft and a

@@ -106,7 +106,7 @@ func candidateArtifact(
 	report *reporter,
 ) (version, error) {
 	if id := loaded.Compiled.ArtifactID; id != "" {
-		return version{ID: id}, nil
+		return version{ID: id, StatusRead: plan.BoundRead, Locked: plan.BoundLocked}, nil
 	}
 
 	if plan.InPlace {
@@ -221,16 +221,21 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 func matchLock(made version, report *reporter) (bool, error) {
 	// A candidate the file named, or one left by an earlier attempt, may
 	// already be locked, and locking twice answers 403. A create and a copy are
-	// both drafts, so only a leftover has to be asked about.
-	if !made.Fresh {
-		already, lockedErr := lockedAlready(made.ID)
+	// both drafts, and a named artifact the plan read is known, so only a
+	// leftover has to be asked about.
+	already := made.Locked
+
+	if !made.Fresh && !made.StatusRead {
+		var lockedErr error
+
+		already, lockedErr = lockedAlready(made.ID)
 		if lockedErr != nil {
 			return false, lockedErr
 		}
+	}
 
-		if already {
-			return true, nil
-		}
+	if already {
+		return true, nil
 	}
 
 	err := report.run("Locking the new version", func() error {

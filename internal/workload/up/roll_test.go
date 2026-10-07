@@ -333,9 +333,9 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 }
 
 // A file naming an artifact by id is the one way to reach matchLock with a
-// candidate this run did not create, so it is the only path that asks the
-// platform whether the successor is locked already. Locking twice is not a
-// no-op there, which is what the question is for.
+// candidate this run did not create. The plan has already read it to judge
+// the swap, so the roll takes the answer from there: locking twice is not a
+// no-op, and reading twice is one call too many.
 func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 	var tr track
 
@@ -361,9 +361,9 @@ func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"read:68b0bbbb0000000000000002", "guard", "guard", "read:68b0bbbb0000000000000002",
+		"read:68b0bbbb0000000000000002", "guard", "guard",
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
-	}, tr.steps, "an artifact already locked is read, not locked again")
+	}, tr.steps, "an artifact already locked is read once by the plan, not locked again")
 	assert.True(t, result.Locked)
 }
 
@@ -390,7 +390,7 @@ func TestRun_LockedRollLocksANamedDraft(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"read:68b0bbbb0000000000000002", "guard", "guard", "read:68b0bbbb0000000000000002", "lock:68b0bbbb0000000000000002",
+		"read:68b0bbbb0000000000000002", "guard", "guard", "lock:68b0bbbb0000000000000002",
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
 	}, tr.steps)
 	assert.True(t, result.Locked)

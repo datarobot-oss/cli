@@ -131,7 +131,7 @@ A deploy that fails after the workload exists still reports the workload, so the
 
 - `name` is present and not empty.
 - exactly one of `artifact` (inline definition) or `artifactId` (an existing artifact).
-- an `artifactId` a bound workload is to be swapped onto is a version of the artifact's own repository, and not a locked version while the workload runs a draft. `up` reads the artifact and refuses before anything is sent; the platform used to refuse at apply time, after a dry run had said the swap would work. A draft named by a workload running a locked version is locked to match first, which is how production takes its next version. The plan reads as a swap: nothing is minted and nothing is built.
+- an `artifactId` a bound workload is to be swapped onto belongs to the same repository as the version the workload runs now, and is not a locked version while the workload runs a draft. The platform refuses both at apply time; `up` reads the artifact and refuses before anything is sent, so a dry run says so too. A draft workload that should take a locked version is promoted first with `dr workload promote`. A draft named by a workload running a locked version is locked to match first, which is how production takes its next version. The plan reads as a swap: nothing is minted and nothing is built.
 - an inline artifact has `spec.containerGroups` with at least one group, and each group has at least one named container.
 - each container sets either `imageUri` or `imageBuildConfig`, and `imageBuildConfig.dockerfile.source` is `provided` or `generated`.
 - `generated` carries `executionEnvironmentId`, `executionEnvironmentVersionId` and a non-empty `entrypoint`; `provided` needs `./Dockerfile` beside the manifest.
