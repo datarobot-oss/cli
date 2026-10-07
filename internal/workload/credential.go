@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -43,6 +44,15 @@ type CredentialList struct {
 	Next string       `json:"next"`
 }
 
+// maxCredentialPages bounds the walk when limit is unset (teardown walks to the
+// end, passing a limit of 0). The listing has no natural stop beyond its next
+// cursor, so a server that keeps returning a non-empty page with a same-host Next
+// would loop for ever and hang `dr workload delete` after the workload is already
+// gone. A hundred pages is well past any real credential count; past it, failing
+// beats hanging. It mirrors maxExecEnvPages in execenv.go; a shared cursor helper
+// is tracked in ALIFE-142.
+const maxCredentialPages = 100
+
 // scanCredentials walks the credentials route page by page and returns every
 // credential keep accepts. keep answers (take, stop): take collects the
 // credential, stop ends the scan because the caller already has what it needs
@@ -56,6 +66,11 @@ type CredentialList struct {
 // it refuses a next link that points at another host (drapi attaches the
 // user's token to whatever URL it is given) and breaks on an empty page so a
 // paginator that never advances cannot loop for ever.
+//
+// An empty page is not the only way a cursor can fail to terminate: a server that
+// keeps returning a non-empty page with a same-host Next cycles for ever past the
+// empty-page and same-host guards. maxCredentialPages caps the walk so that case
+// fails instead of hanging the command.
 func scanCredentials(limit int, keep func(Credential) (take, stop bool)) ([]Credential, error) {
 	query := url.Values{}
 	if limit > 0 {
@@ -69,7 +84,16 @@ func scanCredentials(limit int, keep func(Credential) (take, stop bool)) ([]Cred
 
 	var found []Credential
 
+	pages := 0
+
 	for scanned := 0; pageURL != "" && (limit <= 0 || scanned < limit); {
+		if pages >= maxCredentialPages {
+			return nil, fmt.Errorf(
+				"credentials did not finish listing after %d pages; the next cursor may be looping", maxCredentialPages)
+		}
+
+		pages++
+
 		var list CredentialList
 
 		if err := drapi.GetJSON(pageURL, "credentials", &list); err != nil {

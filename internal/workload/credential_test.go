@@ -326,6 +326,33 @@ func TestCredentialsWithPrefix_EmptyWhenNoneMatch(t *testing.T) {
 	assert.Empty(t, creds)
 }
 
+// With no limit the walk ends only when a page is empty or its Next clears. A
+// server whose Next cycles on the same host with non-empty pages would otherwise
+// loop for ever and hang the delete; maxCredentialPages turns that into an error
+// instead of a hang.
+func TestCredentialsWithPrefix_StopsAfterThePageCap(t *testing.T) {
+	var (
+		pages int
+		base  string
+	)
+
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		pages++
+
+		// Always another non-empty page on the same host: a cursor that never ends.
+		fmt.Fprintf(w, `{"data":[{"credentialId":"c%d","name":"my-app/A"}],"next":%q}`,
+			pages, base+"?page="+strconv.Itoa(pages+1))
+	}))
+
+	base, err := drapi.EndpointURL("/credentials/", url.Values{})
+	require.NoError(t, err)
+
+	_, err = CredentialsWithPrefix("my-app/", 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "did not finish listing")
+	assert.Equal(t, maxCredentialPages, pages, "the walk stops at the cap, not one page past it")
+}
+
 func TestDeleteCredential_DeletesByID(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
