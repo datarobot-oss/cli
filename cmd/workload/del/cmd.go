@@ -69,9 +69,13 @@ is not deleted with it; remove that separately with
 'dr artifact delete <artifact-id>' once no workload references it.
 
 The credentials the CLI created for the workload (named
-'<workload-name>/<env-var>') are deleted with it, so the name is free to be
-reused. A credential the platform will not remove because something else still
-uses it is named rather than forced.
+'<workload-name>/<env-var>') are deleted with it when the .datarobot.yaml for
+that workload is found from --dir: only the credentials that manifest references
+are removed, so the name is free to be reused. Run by id with no such manifest,
+the matching credentials are listed for you to remove by hand rather than deleted
+on a name match, which could belong to another workload that reused it. A
+credential the platform will not remove because something else still uses it is
+named rather than forced.
 
 If the .datarobot.yaml found from --dir (the current directory by default,
 searched upward from there) is bound to the workload being deleted, its
@@ -427,12 +431,14 @@ func credentialNoun(n int) string {
 // still holds under "<workloadName>/OPENAI_API_KEY" makes the next deploy of a
 // workload by that name collide on it, which is the bug this fixes.
 //
-// scopeIDs and scoped narrow what is removed. When scoped is true a credential
-// is deleted only if this project's manifest references it, so a credential that
+// scopeIDs and scoped decide what happens. When scoped is true a credential is
+// deleted only if this project's manifest references it, so a credential that
 // merely shares the name prefix but belongs to a different workload (one that
-// reused it on a name collision) is left in place. When scoped is false — a
-// delete by typed id with no manifest to consult — the prefix stands alone, so
-// the cleanup the prompt promised still happens.
+// reused it on a name collision) is left in place and named. When scoped is
+// false — a delete by typed id with no manifest about this workload to consult —
+// nothing is deleted: the prefix is not ownership, and the platform does not
+// refuse to remove a credential a workload still references, so the matches are
+// listed for the user to remove by hand rather than deleted on a guess.
 //
 // Like clearStaleBinding, nothing here can fail the command. The workload is
 // already gone, so a lookup or delete that fails is reported — with the error
@@ -458,6 +464,26 @@ func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bo
 		return nil
 	}
 
+	// Without a manifest about this workload, the name prefix is the only signal,
+	// and it is not ownership: a credential sharing it can belong to a different
+	// workload that reused it, and the platform does not refuse to delete one a
+	// workload still references. Deleting on a prefix match alone would be a
+	// destructive guess, so the matches are listed for the user to remove by hand.
+	if !scoped {
+		reportUnscopedMatches(w, prefix, creds)
+
+		return nil
+	}
+
+	return deleteScopedCredentials(w, scopeIDs, creds)
+}
+
+// deleteScopedCredentials deletes the credentials scopeIDs names, returns their
+// ids so the manifest references can be reset, and reports the rest: a delete
+// that failed (with the error text), and a prefix match this project does not
+// reference (named, not deleted). A 404 counts as deleted — the platform already
+// lost it, but the manifest may still point at it.
+func deleteScopedCredentials(w io.Writer, scopeIDs map[string]bool, creds []workload.Credential) []string {
 	var (
 		deleted []string
 		failed  []string
@@ -465,29 +491,11 @@ func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bo
 	)
 
 	for _, c := range creds {
-		// Scoped to the manifest: a prefix match this project does not reference
-		// is some other workload's to delete, not ours. It is named rather than
-		// deleted silently, so the user knows what the prompt's promise left out.
-		if scoped && !scopeIDs[c.CredentialID] {
-			skipped = append(skipped, c.Name)
-
-			continue
-		}
-
-		err := deleteCredentialFn(c.CredentialID)
-
 		switch {
-		case err == nil:
+		case !scopeIDs[c.CredentialID]:
+			skipped = append(skipped, c.Name)
+		case deleteOneCredential(w, c, &failed):
 			deleted = append(deleted, c.CredentialID)
-
-			fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
-		case drapi.IsNotFound(err):
-			// Already gone on the platform's side. There is nothing left to
-			// remove, but the manifest may still point at it, so it is treated
-			// as deleted for the reset that follows.
-			deleted = append(deleted, c.CredentialID)
-		default:
-			failed = append(failed, c.Name+": "+err.Error())
 		}
 	}
 
@@ -505,6 +513,47 @@ func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bo
 	}
 
 	return deleted
+}
+
+// deleteOneCredential removes one credential and reports whether its id should be
+// counted as removed (deleted, or a 404 the platform already lost). A refusal is
+// appended to failed with its error text rather than printed here, so all the
+// failures read together at the end.
+func deleteOneCredential(w io.Writer, c workload.Credential, failed *[]string) bool {
+	err := deleteCredentialFn(c.CredentialID)
+
+	switch {
+	case err == nil:
+		fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
+
+		return true
+	case drapi.IsNotFound(err):
+		// Already gone on the platform's side. There is nothing left to remove,
+		// but the manifest may still point at it, so it counts as deleted for the
+		// reset that follows.
+		return true
+	default:
+		*failed = append(*failed, c.Name+": "+err.Error())
+
+		return false
+	}
+}
+
+// reportUnscopedMatches names the prefix matches found when there is no manifest
+// to confirm the workload owns them, and tells the user to remove them by hand.
+// It deletes nothing: see cleanupCredentials on why a prefix match alone is not
+// safe to delete.
+func reportUnscopedMatches(w io.Writer, prefix string, creds []workload.Credential) {
+	names := make([]string, len(creds))
+	for i, c := range creds {
+		names[i] = c.Name
+	}
+
+	fmt.Fprintln(w, tui.DimStyle.Render(fmt.Sprintf(
+		"Found %d credential(s) named %s* but no manifest for this workload to confirm it owns them (%s). "+
+			"They are left in place because the name can be shared with another workload; "+
+			"remove them by hand once you have checked nothing else uses them.",
+		len(creds), prefix, strings.Join(names, ", "))))
 }
 
 // noteLinkedArtifact names the artifact this project is linked to, and how to

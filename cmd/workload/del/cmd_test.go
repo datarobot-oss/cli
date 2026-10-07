@@ -417,8 +417,9 @@ func stubCredCleanup(
 	})
 }
 
-// The fix: every credential the workload owns is deleted, matched by the
-// "<workloadName>/" prefix and walked without a bound so none is left behind.
+// Every credential the workload owns is deleted when scoped to a manifest that
+// references it, found by the "<workloadName>/" prefix and walked without a bound
+// so none is left behind.
 func TestCleanupCredentials_DeletesEachOwnedCredential(t *testing.T) {
 	var (
 		gotPrefix string
@@ -444,7 +445,7 @@ func TestCleanupCredentials_DeletesEachOwnedCredential(t *testing.T) {
 
 	var out bytes.Buffer
 
-	cleanupCredentials(&out, "my-app", nil, false)
+	cleanupCredentials(&out, "my-app", map[string]bool{"c1": true, "c2": true}, true)
 
 	assert.Equal(t, "my-app/", gotPrefix, "the workload name is the credential prefix")
 	assert.Equal(t, 0, gotLimit, "cleanup walks the whole store, not a bounded slice")
@@ -478,7 +479,7 @@ func TestCleanupCredentials_ReportsAFailedDeleteButKeepsGoing(t *testing.T) {
 
 	var out bytes.Buffer
 
-	cleanupCredentials(&out, "my-app", nil, false)
+	cleanupCredentials(&out, "my-app", map[string]bool{"c1": true, "c2": true}, true)
 
 	assert.Equal(t, []string{"c1", "c2"}, deleted, "a failure on one does not stop the next")
 	assert.Contains(t, out.String(), "Could not delete credential my-app/A")
@@ -557,7 +558,7 @@ func TestCleanupCredentials_CountsA404AsDeletedAndKeepsErrorText(t *testing.T) {
 
 	var out bytes.Buffer
 
-	deleted := cleanupCredentials(&out, "my-app", nil, false)
+	deleted := cleanupCredentials(&out, "my-app", map[string]bool{"gone": true, "stuck": true}, true)
 
 	assert.Equal(t, []string{"gone"}, deleted, "a 404 counts as deleted so its reference is reset")
 	assert.NotContains(t, out.String(), "my-app/A", "nothing is said about a credential already gone")
@@ -596,6 +597,39 @@ func TestCleanupCredentials_ScopedSkipsCredentialsNotInManifest(t *testing.T) {
 	assert.Contains(t, out.String(), "Left 1 credential(s) in place",
 		"what was left alone is reported, not skipped silently")
 	assert.Contains(t, out.String(), "my-app/B", "the left-alone credential is named")
+}
+
+// Unscoped (no manifest about this workload), the prefix is not ownership and the
+// platform does not refuse to delete a credential another workload references, so
+// deleting on a name match would be a destructive guess. The matches are listed
+// for the user to remove by hand, and nothing is deleted.
+func TestCleanupCredentials_UnscopedListsInsteadOfDeleting(t *testing.T) {
+	deleteCalled := false
+
+	stubCredCleanup(t,
+		func(string, int) ([]workload.Credential, error) {
+			return []workload.Credential{
+				{CredentialID: "c1", Name: "my-app/A"},
+				{CredentialID: "c2", Name: "my-app/B"},
+			}, nil
+		},
+		func(string) error {
+			deleteCalled = true
+
+			return nil
+		},
+	)
+
+	var out bytes.Buffer
+
+	deleted := cleanupCredentials(&out, "my-app", nil, false)
+
+	assert.False(t, deleteCalled, "a prefix match alone is not safe to delete")
+	assert.Nil(t, deleted, "nothing was deleted, so there is nothing to reset")
+	assert.Contains(t, out.String(), "no manifest for this workload")
+	assert.Contains(t, out.String(), "my-app/A")
+	assert.Contains(t, out.String(), "my-app/B")
+	assert.Contains(t, out.String(), "remove them by hand")
 }
 
 // boundManifestWithSecret binds the workload and references one credential by id,
