@@ -389,7 +389,13 @@ Because `stop`, `start` and `delete` change something, they ask for confirmation
 dr workload config      # write .datarobot.yaml (a wizard, on a terminal)
 dr workload up          # plan, then apply
 dr workload up --dry-run  # plan and stop
+dr workload up --dry-run --diff  # the plan as a unified diff, then stop
+dr workload up --confirm         # plan, ask, then apply
 ```
+
+`--diff` renders the plan as a unified diff instead of the changed-fields list: every field the file names appears, a changed one as `-` old and `+` new, an unchanged one as context that collapses when it runs long, and nothing is truncated. A field the running workload carries that the file never names is counted on its own line, never shown as a removal, because the file does not manage it. Environment-variable values are redacted in the diff as everywhere else. Under `--output-format json` the plan carries a `diff` section with one entry per changing leaf and the list of unmanaged paths.
+
+`--confirm` asks `? Apply this deploy? (y/N)` on stderr after the plan and deploys only on `y`; anything else, an empty answer included, declines, exits nonzero and changes nothing. It is suppressed, not refused, when the run is non-interactive (`--yes`, `--output-format json`, `DATAROBOT_CLI_NON_INTERACTIVE`, or a stdin that is not a terminal), so a scripted run with the flag behaves as if it was not given. The typed confirmation for rolling a locked version is still asked on top of it.
 
 ### CI, scripts, and agents
 
