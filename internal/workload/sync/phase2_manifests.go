@@ -30,9 +30,6 @@ import (
 // exercised on every host by injecting the manifest rather than walking one.
 var hashEntriesFn = hashEntries
 
-// phase2Manifests builds the LOCAL manifest by walking + hashing the
-// project, and either fetches REMOTE from FilesAPI (when drifted) or
-// copies it from BASE (the solo-developer fast path).
 // warnSkippedSymlinks sorts the skipped symlinks by path, so notices and the
 // structured field are deterministic, and logs them from the phase like the
 // shadow warning: the user hears it even when a later phase fails before
@@ -42,6 +39,10 @@ func warnSkippedSymlinks(e *Engine) {
 	sort.Slice(e.skippedSymlinks, func(i, j int) bool {
 		return e.skippedSymlinks[i].Path < e.skippedSymlinks[j].Path
 	})
+
+	if e.opts.Quiet {
+		return
+	}
 
 	for i, s := range e.skippedSymlinks {
 		if i >= SymlinkNoticeBound {
@@ -58,6 +59,9 @@ func warnSkippedSymlinks(e *Engine) {
 	}
 }
 
+// phase2Manifests builds the LOCAL manifest by walking + hashing the
+// project, and either fetches REMOTE from FilesAPI (when drifted) or
+// copies it from BASE (the solo-developer fast path).
 func phase2Manifests(e *Engine) error {
 	matcher, err := ignore.New(e.projectDir)
 	if err != nil {

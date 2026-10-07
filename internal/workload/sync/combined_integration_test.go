@@ -557,8 +557,11 @@ func TestCombined_MaximalMixedPlan_Verify(t *testing.T) {
 	addFileSymlink(t, dir, "realfile.py", "link_to_file.py")
 	addDirSymlink(t, dir, "realdir", "inner.py", "link_to_dir")
 
-	// Seed the server with the original content (the real REMOTE).
+	// Seed the server with the original content (the real REMOTE), plus a
+	// path only the server holds → REMOTE_ADDED → download. Divergence:
+	// present in REMOTE, absent from BASE.
 	seed := seededServerContents(t, dir, files, nil)
+	seed["remote_only.py"] = []byte("only on the server\n")
 
 	fake := (&fakeFilesClient{
 		catalogID: catalogID,
@@ -572,9 +575,10 @@ func TestCombined_MaximalMixedPlan_Verify(t *testing.T) {
 	// for this path), LOCAL differs → LOCAL_MODIFIED → upload.
 	modifyFile(t, dir, "upload_me.py", "upload modified\n")
 
-	// Download: rewrite download_me.py to content A, poison BASE to A's
-	// hash. Now BASE = A, LOCAL = A, REMOTE = original → REMOTE_MODIFIED →
-	// download. Divergence: BASE = A != REMOTE = original.
+	// Mismatch: rewrite download_me.py to content A, poison BASE to A's hash.
+	// BASE = A, LOCAL = A, REMOTE = original. The artifact has not moved, so
+	// the server copy is the suspect one: BASE takes the server's entry and
+	// the local file is re-uploaded. Divergence: BASE = A != REMOTE.
 	downloadA := "download rewritten A\n"
 	modifyFile(t, dir, "download_me.py", downloadA)
 	poisonManifestHash(t, dir, "download_me.py", sha256HexOf(downloadA))
@@ -583,9 +587,10 @@ func TestCombined_MaximalMixedPlan_Verify(t *testing.T) {
 	// LOCAL absent → LOCAL_DELETED → delete.
 	require.NoError(t, os.Remove(filepath.Join(dir, "delete_me.py")))
 
-	// Conflict: rewrite conflict_me.py to content C locally, poison BASE to
-	// hash A (different from both original and C). Now BASE = A, LOCAL = C,
-	// REMOTE = original → CONFLICT. Divergence: BASE = A != REMOTE = original.
+	// Mismatch with a local edit: rewrite conflict_me.py to content C
+	// locally, poison BASE to hash A. BASE takes the server's entry, so LOCAL
+	// = C against BASE = REMOTE = original → LOCAL_MODIFIED → upload, not a
+	// conflict. Divergence: BASE = A != REMOTE = original.
 	conflictC := "conflict rewritten C\n"
 	modifyFile(t, dir, "conflict_me.py", conflictC)
 
@@ -616,18 +621,20 @@ func TestCombined_MaximalMixedPlan_Verify(t *testing.T) {
 	assert.NotEmpty(t, plan.Uploads, "upload field must be populated")
 	assert.NotEmpty(t, plan.Downloads, "download field must be populated")
 	assert.NotEmpty(t, plan.Deletes, "delete field must be populated")
-	assert.NotEmpty(t, plan.Conflicts, "conflict field must be populated")
+	assert.Empty(t, plan.Conflicts, "an unmoved artifact cannot conflict: the local copy is the truth")
 
 	// Verify each action type is present.
 	uploadPaths := uploadPathsOf(plan)
 	assert.Contains(t, uploadPaths, "upload_me.py", "upload_me.py must be in uploads")
+	assert.Contains(t, uploadPaths, "download_me.py", "a mismatch re-uploads the local copy")
+	assert.Contains(t, uploadPaths, "conflict_me.py", "a mismatch with a local edit re-uploads the local copy")
 
 	downloadPaths := make([]string, 0, len(plan.Downloads))
 	for _, fa := range plan.Downloads {
 		downloadPaths = append(downloadPaths, fa.Path)
 	}
 
-	assert.Contains(t, downloadPaths, "download_me.py", "download_me.py must be in downloads")
+	assert.Contains(t, downloadPaths, "remote_only.py", "remote_only.py must be in downloads")
 
 	deletePaths := make([]string, 0, len(plan.Deletes))
 	for _, fa := range plan.Deletes {
@@ -635,9 +642,6 @@ func TestCombined_MaximalMixedPlan_Verify(t *testing.T) {
 	}
 
 	assert.Contains(t, deletePaths, "delete_me.py", "delete_me.py must be in deletes")
-
-	conflictPaths := plan.ConflictPaths()
-	assert.Contains(t, conflictPaths, "conflict_me.py", "conflict_me.py must be in conflicts")
 
 	// --- Every notice reaches stderr (warn log) ---
 
@@ -1067,7 +1071,9 @@ func TestCombined_ExitCodeCoherence(t *testing.T) {
 		seed := seededServerContents(t, dir, map[string]string{"app.py": "print('A')\n"},
 			map[string][]byte{"app.py": []byte("print('B')\n")})
 
-		fake := (&fakeFilesClient{}).withVersionContent(catalogID, versionID, seed)
+		// The repair re-uploads the local copy, so the fake needs a stage.
+		fake := (&fakeFilesClient{catalogID: catalogID, stageID: "stage-ec2", versionID: "ver-ec2-new"}).
+			withVersionContent(catalogID, versionID, seed)
 
 		e := engineFor(t, dir, Options{Verify: true, Yes: true}, fake, catalogID, versionID)
 

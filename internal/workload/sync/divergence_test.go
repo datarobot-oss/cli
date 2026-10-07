@@ -185,7 +185,8 @@ func engineFor(t *testing.T, dir string, opts Options, fake *fakeFilesClient, ca
 // The flagship poisoned-manifest scenario at the engine level: local == base,
 // the server holds different bytes for the same version, and only --verify
 // looks. Expect exactly one AllFiles call, the divergence recorded on the
-// engine, and a reconciling download row in the plan instead of "Up to date.".
+// engine, and a reconciling upload of the local copy instead of "Up to date.":
+// the artifact has not moved, so the server's bytes are the suspect ones.
 func TestPhase2_VerifyForcesAllFilesAndDetectsDivergence(t *testing.T) {
 	const (
 		catalogID = "cid-1"
@@ -217,9 +218,10 @@ func TestPhase2_VerifyForcesAllFilesAndDetectsDivergence(t *testing.T) {
 	assert.Equal(t, sha256Hex(serverAppPy), divs[0].RemoteHash)
 
 	// The real remote is now known, so Diff produces the reconciling row.
-	require.Len(t, plan.Downloads, 1, "the plan must reconcile BASE with the real REMOTE instead of skipping")
-	assert.Equal(t, "app.py", plan.Downloads[0].Path)
-	assert.Equal(t, ClsRemoteModified, plan.Downloads[0].Classification)
+	require.Len(t, plan.Uploads, 1, "the plan must reconcile the real REMOTE with the local copy instead of skipping")
+	assert.Equal(t, "app.py", plan.Uploads[0].Path)
+	assert.Equal(t, ClsLocalModified, plan.Uploads[0].Classification)
+	assert.Empty(t, plan.Downloads, "the server's bytes are never pulled over the local copy")
 }
 
 // Hard rule 9: the default sync must stay exactly as it was — no AllFiles
@@ -397,9 +399,9 @@ func TestPhase2_Verify_OneSidedDivergence_RepairMatchesServer(t *testing.T) {
 	assert.Equal(t, DivergenceBaseOnly, kinds["util.py"], "a path in BASE but not on the server is base-only")
 	assert.Equal(t, DivergenceRemoteOnly, kinds["stray.py"], "a path on the server but not in BASE is remote-only")
 
-	// The reconciling plan: download the REMOTE-only and modified paths, and
-	// upload the BASE-only path again, since the server never held it and the
-	// local file is the only copy.
+	// The reconciling plan: download the REMOTE-only path, and upload the
+	// BASE-only and mismatched paths again, since the artifact has not moved
+	// and the local copies are the truth.
 	downloaded := make([]string, 0, len(plan.Downloads))
 
 	for _, fa := range plan.Downloads {
@@ -412,8 +414,8 @@ func TestPhase2_Verify_OneSidedDivergence_RepairMatchesServer(t *testing.T) {
 		uploaded = append(uploaded, fa.Path)
 	}
 
-	assert.ElementsMatch(t, []string{"app.py", "stray.py"}, downloaded)
-	assert.ElementsMatch(t, []string{"util.py"}, uploaded)
+	assert.ElementsMatch(t, []string{"stray.py"}, downloaded)
+	assert.ElementsMatch(t, []string{"app.py", "util.py"}, uploaded)
 	assert.Empty(t, plan.Deletes, "a path the server never held is not a remote deletion")
 
 	result, err := e.Execute(plan)
@@ -424,7 +426,7 @@ func TestPhase2_Verify_OneSidedDivergence_RepairMatchesServer(t *testing.T) {
 	require.NoError(t, err)
 
 	want := map[string]string{
-		"app.py":        sha256Hex(remoteAppPy),
+		"app.py":        sha256Hex([]byte(files["app.py"])),
 		ignore.FileName: sha256Hex(diskBytes(t, dir, ignore.FileName)),
 		"stray.py":      sha256Hex(stray),
 		"util.py":       sha256Hex([]byte(files["util.py"])),

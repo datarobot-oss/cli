@@ -236,10 +236,11 @@ func TestEngine_Run_VerifyRepairsWhenDivergentPathIsAlsoDeleted(t *testing.T) {
 }
 
 // TestEngine_Run_VerifyRepairsWhenServerEditedDeletedPath: the divergent
-// path is one the user deleted locally while the server edited it (BASE
-// records the old hash, so the divergence is visible under --verify). The
-// plan carries the download-over-delete row, remote wins, and after the run
-// the restored file, the manifest, and the server all agree.
+// path is one the user deleted locally while the server holds other bytes
+// than the record (BASE records what was uploaded, so the divergence is
+// visible under --verify). The artifact has not moved, so the server copy
+// is the suspect one and the local deletion stands: the plan carries a
+// remote delete, and after the run the manifest and the server agree.
 func TestEngine_Run_VerifyRepairsWhenServerEditedDeletedPath(t *testing.T) {
 	const (
 		catalogID = "cid-1"
@@ -260,41 +261,49 @@ func TestEngine_Run_VerifyRepairsWhenServerEditedDeletedPath(t *testing.T) {
 	// The user deleted the file locally; the server moved on to B.
 	require.NoError(t, os.Remove(filepath.Join(dir, "app.py")))
 
-	fake := (&fakeFilesClient{}).withVersionContent(catalogID, versionID, seed)
+	fake := (&fakeFilesClient{catalogID: catalogID, stageID: "stage-2", versionID: "ver-2"}).
+		withVersionContent(catalogID, versionID, seed)
 
 	var (
 		out    string
+		result *Result
 		runErr error
 	)
 
 	out = captureWarnLog(t, func() {
 		e := engineFor(t, dir, Options{Verify: true}, fake, catalogID, versionID)
 
-		_, runErr = e.Run()
+		result, runErr = e.Run()
 	})
 
 	require.NoError(t, runErr)
+	require.NotNil(t, result)
 
 	assert.Contains(t, out, "divergence", "the stale BASE hash must be reported even though the path is locally deleted")
 	assert.Contains(t, out, "app.py")
 
-	b, err := os.ReadFile(filepath.Join(dir, "app.py"))
-	require.NoError(t, err, "remote wins over the local deletion, so the file is restored from the server")
-	assert.Equal(t, contentB, string(b))
+	_, err := os.Stat(filepath.Join(dir, "app.py"))
+	require.ErrorIs(t, err, os.ErrNotExist, "the local deletion stands; nothing is restored from the server")
 
 	manifest, err := wapi.LoadManifest(dir)
 	require.NoError(t, err)
-	assert.Equal(t, sha256Hex([]byte(contentB)), manifest.Files["app.py"].Hash,
-		"the manifest must record the server's bytes after the repair")
 
-	assert.Zero(t, fake.UploadToStageCalls(), "the repair makes no upload-side calls")
+	_, ok := manifest.Files["app.py"]
+	assert.False(t, ok, "the manifest no longer records the deleted path")
+
+	server, err := fake.AllFiles(catalogID, result.NewVersion)
+	require.NoError(t, err)
+
+	_, ok = server["app.py"]
+	assert.False(t, ok, "the deletion is carried to the server")
+	assert.Zero(t, fake.DownloadFileCalls(), "the server's bytes are never pulled over a local decision")
 }
 
-// TestEngine_Run_VerifyRepairsFlagshipDivergence is the VAL-VERIFY-004 shape
-// at the engine level: disk and manifest both hold A, the server holds B, so
-// the plan carries a download row. After the run the disk and the manifest
-// both describe the server, a second --verify finds nothing, and a plain
-// sync reports Up to date.
+// TestEngine_Run_VerifyRepairsFlagshipDivergence: disk and manifest both
+// hold A, the server holds B although the artifact has not moved, so the
+// server copy is the suspect one and the plan carries an upload row. After
+// the run the server and the manifest both describe the local file, a
+// second --verify finds nothing, and a plain sync reports Up to date.
 func TestEngine_Run_VerifyRepairsFlagshipDivergence(t *testing.T) {
 	const (
 		catalogID = "cid-1"
@@ -306,9 +315,10 @@ func TestEngine_Run_VerifyRepairsFlagshipDivergence(t *testing.T) {
 
 	dir := syncedProject(t, map[string]string{"app.py": contentA}, catalogID, versionID)
 
-	fake := (&fakeFilesClient{}).withVersionContent(catalogID, versionID, seededServerContents(t, dir, map[string]string{
-		"app.py": contentA,
-	}, map[string][]byte{"app.py": []byte(contentB)}))
+	fake := (&fakeFilesClient{catalogID: catalogID, stageID: "stage-2", versionID: "ver-2"}).
+		withVersionContent(catalogID, versionID, seededServerContents(t, dir, map[string]string{
+			"app.py": contentA,
+		}, map[string][]byte{"app.py": []byte(contentB)}))
 
 	manifestPath, _ := statePaths(dir)
 
@@ -318,20 +328,25 @@ func TestEngine_Run_VerifyRepairsFlagshipDivergence(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	assert.Equal(t, 1, fake.DownloadFileCalls(), "the reconciling row is a download")
+	assert.Zero(t, fake.DownloadFileCalls(), "the server's bytes are the suspect copy and are never pulled")
+	assert.Equal(t, 1, fake.UploadToStageCalls(), "the reconciling row is an upload of the local copy")
 
 	b, err := os.ReadFile(filepath.Join(dir, "app.py"))
 	require.NoError(t, err)
-	assert.Equal(t, contentB, string(b), "the download must land the server's bytes")
+	assert.Equal(t, contentA, string(b), "the local file is untouched")
 
 	manifest, err := wapi.LoadManifest(dir)
 	require.NoError(t, err)
-	assert.Equal(t, sha256Hex([]byte(contentB)), manifest.Files["app.py"].Hash,
-		"the manifest must record the server's checksum after the repair")
+	assert.Equal(t, sha256Hex([]byte(contentA)), manifest.Files["app.py"].Hash,
+		"the manifest records the local bytes, which the server now holds")
+
+	server, err := fake.AllFiles(catalogID, result.NewVersion)
+	require.NoError(t, err)
+	assert.Equal(t, sha256Hex([]byte(contentA)), server["app.py"].Hash, "the server holds the local bytes again")
 
 	afterRepair := readStateFile(t, manifestPath)
 
-	e2 := engineFor(t, dir, Options{Verify: true}, fake, catalogID, versionID)
+	e2 := engineFor(t, dir, Options{Verify: true}, fake, catalogID, result.NewVersion)
 
 	_, err = e2.Run()
 	require.NoError(t, err)
@@ -339,17 +354,17 @@ func TestEngine_Run_VerifyRepairsFlagshipDivergence(t *testing.T) {
 	assert.Equal(t, afterRepair, readStateFile(t, manifestPath),
 		"the second verify run must not rewrite the manifest")
 
-	e3 := engineFor(t, dir, Options{}, fake, catalogID, versionID)
+	e3 := engineFor(t, dir, Options{}, fake, catalogID, result.NewVersion)
 
 	plan, err := e3.Plan()
 	require.NoError(t, err)
 	assert.True(t, plan.IsEmpty(), "a plain sync must report Up to date. after the repair")
 }
 
-// TestEngine_Plan_VerifyConflictDivergencePreviewsWithoutWriting: a
-// both-sides conflict on a path whose BASE is also stale. The preview must
-// surface the divergence and the conflict row while writing nothing — no
-// manifest rewrite, no .LOCAL copy, disk untouched.
+// TestEngine_Plan_VerifyConflictDivergencePreviewsWithoutWriting: a local
+// edit on a path whose BASE is also stale. The artifact has not moved, so
+// this is no conflict: the preview surfaces the divergence and an upload row
+// while writing nothing — no manifest rewrite, no .LOCAL copy, disk untouched.
 func TestEngine_Plan_VerifyConflictDivergencePreviewsWithoutWriting(t *testing.T) {
 	const (
 		catalogID = "cid-1"
@@ -386,8 +401,9 @@ func TestEngine_Plan_VerifyConflictDivergencePreviewsWithoutWriting(t *testing.T
 		plan, planErr = e.Plan()
 		require.NoError(t, planErr)
 
-		require.Len(t, plan.Conflicts, 1, "the conflict row must be in the plan")
-		assert.Equal(t, "app.py", plan.Conflicts[0].Path)
+		require.Len(t, plan.Uploads, 1, "the local edit is an upload, not a conflict")
+		assert.Equal(t, "app.py", plan.Uploads[0].Path)
+		assert.Empty(t, plan.Conflicts)
 	})
 
 	require.NoError(t, planErr)

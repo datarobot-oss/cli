@@ -52,6 +52,7 @@ type engineRunner interface {
 	StateMigrationNotice() string
 	IgnoreFileNotice() string
 	LockedNotice() string
+	Verified() bool
 	Divergences() []sync.Divergence
 	SkippedSymlinks() []sync.SkippedSymlink
 	Fetcher() display.ContentFetcher
@@ -252,8 +253,10 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
 	}
 
+	// Quiet: the symlink and divergence findings are summarised below, once
+	// the plan is in hand, rather than logged from the phases as well.
 	engine, err := deps.NewEngine(dir, sync.Options{
-		DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes, PushOnly: flags.PushOnly, Verify: flags.Verify,
+		DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes, PushOnly: flags.PushOnly, Verify: flags.Verify, Quiet: true,
 	})
 	if err != nil {
 		return err
@@ -329,6 +332,9 @@ func divergenceSummaryNotice(flags runFlags, plan *sync.SyncPlan, divergences []
 		return head + " This was a preview; nothing was written. Run without --dry-run to reconcile."
 	case flags.Diff:
 		return head + " This was a preview; nothing was written. Run without --diff to reconcile."
+	case plan.IsEmpty() && len(plan.Skipped) > 0:
+		return head + " The plan is empty, but manifest.json is being rewritten from the server's state to repair them, " +
+			"except for the paths left alone, which keep their old record."
 	case plan.IsEmpty():
 		return head + " The plan is empty, but manifest.json is being rewritten from the server's state to repair them."
 	default:
@@ -467,8 +473,15 @@ func renderHumanPlan(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPla
 	out := cmd.OutOrStdout()
 
 	// An empty plan prints "Up to date.", which is false on an applying run
-	// whose --verify findings are about to rewrite manifest.json.
+	// whose --verify findings are about to rewrite manifest.json. A push-only
+	// run still lists what it left alone first.
 	if plan.IsEmpty() && len(engine.Divergences()) > 0 && !flags.Preview() {
+		if len(plan.Skipped) > 0 {
+			if err := display.PrintPlan(out, plan); err != nil {
+				return err
+			}
+		}
+
 		return display.PrintEmptyPlanRepair(out)
 	}
 
@@ -549,7 +562,11 @@ func formatPathList(paths []string) string {
 // re-invocation of that mode can let it through; a plain sync settles it.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out, errOut io.Writer, flags runFlags) error {
 	locked := engine.LockedNotice() != ""
-	findings := display.Findings{Divergence: engine.Divergences(), SkippedSymlinks: engine.SkippedSymlinks()}
+	findings := display.Findings{
+		Verified:        engine.Verified(),
+		Divergence:      engine.Divergences(),
+		SkippedSymlinks: engine.SkippedSymlinks(),
+	}
 
 	if skipsExecute(flags, plan, findings.Divergence) {
 		return display.RenderSyncJSON(out, plan, nil, locked, findings)

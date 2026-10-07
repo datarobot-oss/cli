@@ -35,6 +35,11 @@ type Options struct {
 	// the base keeps the old entry so the next plain sync still sees it.
 	PushOnly bool
 
+	// Quiet keeps the phases from logging the symlink and divergence notices.
+	// For a caller that already ran another engine over the same tree and
+	// reported them, so they are not said twice in one run.
+	Quiet bool
+
 	// Verify opts into the network-cost integrity checks: a remote
 	// round-trip even when the artifact is not drifted, and post-apply
 	// verification that the server holds what was uploaded. It changes how
@@ -242,9 +247,9 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 
 // Run is Plan + Execute. With DryRun or ShowDiffs it stops after Plan.
 // An empty plan normally short-circuits before Execute too, but a --verify
-// run that recorded BASE-vs-REMOTE divergences must still run Phase 6: the
-// plan has nothing to apply, yet the manifest on disk is a lie about the
-// server, and Phase 6 is what rewrites it from the real remote now in hand.
+// run that recorded BASE-vs-REMOTE divergences must still run the state
+// phase: the plan has nothing to apply, yet the manifest on disk is a lie
+// about the server, and that phase is what rewrites it from the real remote.
 // The sharpest shape — BASE poisoned to A while disk and server both hold B
 // — classifies as CONVERGED and plans nothing, so without this the poison
 // survives the very run that detected it.
@@ -308,6 +313,11 @@ func (e *Engine) LockedNotice() string { return e.lockedNote }
 // The findings are diagnostics, not errors: the plan already reconciles them
 // because the real remote is in hand, and the exit status must not change.
 func (e *Engine) Divergences() []Divergence { return e.divergences }
+
+// Verified reports whether the BASE-vs-REMOTE check ran: --verify was given
+// and the artifact had not moved, so an empty Divergences means clean rather
+// than unchecked.
+func (e *Engine) Verified() bool { return e.opts.Verify && !e.drifted && e.remote != nil }
 
 // SkippedSymlinks reports the symlinks the walk did not follow, filtered
 // through the ignore matcher so deliberately-ignored or system-excluded

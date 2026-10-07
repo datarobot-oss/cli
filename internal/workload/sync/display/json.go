@@ -40,13 +40,16 @@ type PlanJSON struct {
 	// the human warning goes to stderr and the exit status is 0.
 	Locked bool `json:"locked"`
 
+	// Verified reports that the BASE-vs-REMOTE check ran: --verify was given
+	// and the artifact had not moved. Without it an empty Divergence list
+	// says nothing about the server.
+	Verified bool `json:"verified"`
+
 	// Divergence lists the paths where manifest.json (BASE) disagrees with
-	// the server (REMOTE), as detected by a --verify run. Like Locked it is
-	// always emitted and explicitly empty when there is nothing to report, so
-	// a script never has to guess whether a missing key meant "checked and
-	// clean" or "never checked". Only a --verify run can populate it; every
-	// other run leaves it empty. The findings are diagnostics: the plan
-	// already reconciles them and the exit status is unchanged.
+	// the server (REMOTE), as detected by a --verify run. Always emitted,
+	// empty when there is nothing to report; read it with Verified. The
+	// findings are diagnostics: the plan already reconciles them and the
+	// exit status is unchanged.
 	Divergence []DivergenceJSON `json:"divergence"`
 
 	// SkippedSymlinks lists every symlink the walk did not follow, filtered
@@ -130,6 +133,9 @@ type SyncJSON struct {
 // the divergences a --verify run found and the symlinks the walk skipped.
 // Both are rendered whatever the plan went on to do, empty lists included.
 type Findings struct {
+	// Verified says the divergence check ran, so an empty Divergence list
+	// means clean rather than unchecked.
+	Verified        bool
 	Divergence      []sync.Divergence
 	SkippedSymlinks []sync.SkippedSymlink
 }
@@ -140,6 +146,7 @@ func planJSON(plan *sync.SyncPlan, locked bool, f Findings) PlanJSON {
 	if plan == nil {
 		return PlanJSON{
 			Locked:          locked,
+			Verified:        f.Verified,
 			Divergence:      divergencesJSON(f.Divergence),
 			SkippedSymlinks: skippedSymlinksJSON(f.SkippedSymlinks),
 		}
@@ -147,6 +154,7 @@ func planJSON(plan *sync.SyncPlan, locked bool, f Findings) PlanJSON {
 
 	return PlanJSON{
 		Locked:          locked,
+		Verified:        f.Verified,
 		Divergence:      divergencesJSON(f.Divergence),
 		SkippedSymlinks: skippedSymlinksJSON(f.SkippedSymlinks),
 		Uploads:         actionsJSON(plan.Uploads),
