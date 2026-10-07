@@ -61,15 +61,18 @@ func TestLocalChecks_FixedOrder(t *testing.T) {
 	}, ids)
 }
 
+// hostLockStatus is what the lock check reports when it runs on this host:
+// flock is not enforced on Windows, so it skips there.
+func hostLockStatus() core.Status {
+	if runtime.GOOS == "windows" {
+		return core.StatusSKIP
+	}
+
+	return core.StatusOK
+}
+
 func TestLocalChecks_Healthy_AllOK(t *testing.T) {
 	results := runLocalChecks(t, healthyProject(t))
-
-	// flock is not enforced on Windows, so the lock check skips there.
-	lock := core.StatusOK
-
-	if runtime.GOOS == "windows" {
-		lock = core.StatusSKIP
-	}
 
 	want := []core.Status{
 		core.StatusOK,
@@ -77,7 +80,7 @@ func TestLocalChecks_Healthy_AllOK(t *testing.T) {
 		core.StatusOK,
 		core.StatusOK,
 		core.StatusOK,
-		lock,
+		hostLockStatus(),
 	}
 
 	for i, res := range results {
@@ -95,6 +98,12 @@ func TestLocalChecks_Cascade_PresenceFailSkipsEverything(t *testing.T) {
 
 	for _, res := range results[1:] {
 		assert.Equal(t, core.StatusSKIP, res.Status, "check %s should SKIP", res.CheckID)
+
+		// On Windows the lock check skips for its own reason before the
+		// cascade reaches it.
+		if res.CheckID == CheckIDLock && runtime.GOOS == "windows" {
+			continue
+		}
 
 		assert.Contains(t, res.Summary, "no linked state")
 	}
@@ -114,12 +123,12 @@ func TestLocalChecks_Cascade_ConfigFailSkipsDivergenceOnly(t *testing.T) {
 	require.Len(t, results, 6)
 
 	want := []core.Status{
-		core.StatusOK,   // presence
-		core.StatusFAIL, // config missing
-		core.StatusOK,   // manifest still runs
-		core.StatusSKIP, // divergence depends on config
-		core.StatusOK,   // rollback still runs
-		core.StatusOK,   // lock still runs
+		core.StatusOK,    // presence
+		core.StatusFAIL,  // config missing
+		core.StatusOK,    // manifest still runs
+		core.StatusSKIP,  // divergence depends on config
+		core.StatusOK,    // rollback still runs
+		hostLockStatus(), // lock still runs
 	}
 
 	for i, res := range results {
@@ -143,12 +152,12 @@ func TestLocalChecks_Cascade_ManifestFailSkipsDivergenceOnly(t *testing.T) {
 	require.Len(t, results, 6)
 
 	want := []core.Status{
-		core.StatusOK,   // presence
-		core.StatusOK,   // config
-		core.StatusFAIL, // manifest corrupt
-		core.StatusSKIP, // divergence depends on manifest
-		core.StatusOK,   // rollback still runs
-		core.StatusOK,   // lock still runs
+		core.StatusOK,    // presence
+		core.StatusOK,    // config
+		core.StatusFAIL,  // manifest corrupt
+		core.StatusSKIP,  // divergence depends on manifest
+		core.StatusOK,    // rollback still runs
+		hostLockStatus(), // lock still runs
 	}
 
 	for i, res := range results {
