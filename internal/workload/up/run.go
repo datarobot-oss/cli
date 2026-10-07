@@ -375,9 +375,56 @@ func planFor(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, err
 
 	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
 	plan = noteStaleGeneration(live, keepInPlace(loaded, live, plan))
+
 	plan.Unbuildable, err = unbuildableGenerated(loaded, live, plan)
+	if err != nil {
+		return Plan{}, err
+	}
+
+	err = incompatibleBound(live, &plan)
 
 	return plan, err
+}
+
+// incompatibleBound is why the platform would refuse to swap the workload
+// onto the artifact the file names, "" when it would not. The replacement
+// route takes only a version of the running artifact's own repository, and
+// a draft and a locked version cannot replace each other; both used to be
+// found out at apply time, after a dry run had said the roll would work.
+func incompatibleBound(live Live, plan *Plan) error {
+	bound := plan.BoundArtifactID
+	if bound == "" || live.ArtifactID == "" || bound == live.ArtifactID {
+		return nil
+	}
+
+	artifact, err := getArtifactFn(bound)
+	if err != nil {
+		return fmt.Errorf("cannot read artifact %s, which %s names, so nothing was deployed: %w",
+			bound, manifest.FileName, err)
+	}
+
+	plan.BoundRead, plan.BoundLocked = true, artifact.IsLocked()
+
+	if live.ArtifactRepositoryID != "" && artifact.ArtifactRepositoryID != "" &&
+		artifact.ArtifactRepositoryID != live.ArtifactRepositoryID {
+		plan.Incompatible = fmt.Sprintf("artifact %s belongs to repository %s, and workload %s runs %s from repository %s; "+
+			"a workload only takes a version of its own repository. Point artifactId in %s at one",
+			bound, artifact.ArtifactRepositoryID, live.WorkloadID, live.ArtifactID, live.ArtifactRepositoryID, manifest.FileName)
+
+		return nil
+	}
+
+	// The other direction is fine: a draft named by a locked workload is
+	// locked to match before the swap, which is how production takes its
+	// next version.
+	if plan.BoundLocked && !live.Locked {
+		plan.Incompatible = fmt.Sprintf("artifact %s is locked and workload %s runs a draft, %s; a draft workload cannot take "+
+			"a locked version. Run 'dr workload promote %s' to make the version it runs permanent, "+
+			"or point artifactId in %s at a draft",
+			bound, live.WorkloadID, live.ArtifactID, live.WorkloadID, manifest.FileName)
+	}
+
+	return nil
 }
 
 // unbuildableGenerated is why the platform could not build the generated
@@ -1398,6 +1445,17 @@ func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bo
 		return fmt.Errorf(
 			"nothing was deployed: %s. Fix the project, or run 'dr workload config%s' to pick another build, then deploy again",
 			plan.Unbuildable, dirFlagFor(loaded))
+	}
+
+	// A terminated workload has to be deleted whatever the file names, and
+	// after that the run is a create, which this swap check does not apply
+	// to. Saying so first saves a round trip through repointing artifactId.
+	if live.State == StateTerminated {
+		return deployable(live, plan, workloadName, dirFlagFor(loaded))
+	}
+
+	if plan.Incompatible != "" {
+		return fmt.Errorf("nothing was deployed: %s, then deploy again", plan.Incompatible)
 	}
 
 	// A preview of a moving workload reports the state and refuses nothing:

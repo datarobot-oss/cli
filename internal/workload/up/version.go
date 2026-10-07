@@ -42,6 +42,11 @@ type version struct {
 
 	Fresh bool
 
+	// StatusRead says Locked is known, because the plan read the artifact
+	// the file names; a version it did not read is asked before locking.
+	StatusRead bool
+	Locked     bool
+
 	// BuildID names the image build this run ran, "" when it ran none. A
 	// failed build sets it: it is the way to the logs.
 	BuildID string

@@ -117,6 +117,23 @@ type Plan struct {
 	// this plan asks for, "" when it could or when the plan builds none.
 	Unbuildable string
 
+	// BoundArtifactID is the artifact the file names by id instead of
+	// describing one, "" when it describes one. A create comes up on it and
+	// a roll swaps onto it; neither builds anything.
+	BoundArtifactID string
+
+	// BoundRead and BoundLocked carry the status of the named artifact when
+	// the plan read it to judge a swap, so the roll and the lock line need
+	// not read it again.
+	BoundRead   bool
+	BoundLocked bool
+
+	// Incompatible is why the platform would refuse to swap the workload
+	// onto the artifact the file names, "" when it would not or when the
+	// file names none: a version from another repository, or a draft and a
+	// locked version, which cannot replace each other.
+	Incompatible string
+
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
 	// locked production locks something whether or not --promote was passed, and
@@ -392,6 +409,7 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 		Code:            code,
 		Locked:          live.Locked,
 		ForceBuild:      opts.ForceBuild,
+		BoundArtifactID: loaded.Compiled.ArtifactID,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an

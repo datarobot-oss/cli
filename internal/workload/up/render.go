@@ -316,6 +316,10 @@ func createDetail(s Summary, plan Plan) string {
 	line := fmt.Sprintf("%s will be created: %s is bound to %s, which no longer exists",
 		s.Name, manifest.FileName, plan.PriorWorkloadID)
 
+	if plan.BoundArtifactID != "" {
+		return line + "; it comes up on artifact " + plan.BoundArtifactID
+	}
+
 	if !reusesLink(plan) {
 		return line
 	}
@@ -330,6 +334,11 @@ func fromArtifact(plan Plan) string {
 	// this says nothing rather than contradicting it two lines above.
 	if plan.Code.LinkLocked {
 		return ""
+	}
+
+	// The file names the artifact, so it is neither first nor the link's.
+	if plan.BoundArtifactID != "" {
+		return ", on artifact " + plan.BoundArtifactID + ", which exists already"
 	}
 
 	// Saying "its first artifact" of a project that already pushes to one is
@@ -377,6 +386,18 @@ func lockLines(plan Plan) []string {
 	}
 
 	switch {
+	case plan.Locked && plan.BoundArtifactID != "" && plan.BoundLocked:
+		// Nothing is minted on a named swap, and nothing is locked either
+		// when the named artifact already is.
+		return []string{entry("~", "lock",
+			"the running version is locked, and so is "+plan.BoundArtifactID+", so it is swapped in as it is")}
+
+	case plan.Locked && plan.BoundArtifactID != "":
+		// Nothing is minted on a named swap: the artifact the file names is
+		// locked to match before the swap.
+		return []string{entry("~", "lock",
+			"the running version is locked, so "+plan.BoundArtifactID+" is locked to match before the swap")}
+
 	case plan.Locked:
 		return []string{entry("~", "lock",
 			"the running version is locked, so a new one is created and permanently locked to match")}
@@ -406,6 +427,12 @@ func artifactLines(plan Plan) []string {
 	}
 
 	marker, reason := "+", "rebuilt from the synced code"
+
+	// A file naming an artifact by id mints nothing: the workload is swapped
+	// onto a version that already exists.
+	if plan.BoundArtifactID != "" {
+		return []string{entry("~", "artifact", "swaps to "+plan.BoundArtifactID+", which exists already, so nothing is built")}
+	}
 
 	if len(plan.Artifact) > 0 {
 		changes := fmt.Sprintf("%d spec %s", len(plan.Artifact), plural(len(plan.Artifact), "change", "changes"))
@@ -595,6 +622,10 @@ type PlanJSON struct {
 	// the plan asks for, and the reason the run was refused. "" otherwise.
 	Unbuildable string `json:"unbuildable"`
 
+	// Incompatible is why the workload cannot be swapped onto the artifact
+	// the file names, and the reason the run was refused. "" otherwise.
+	Incompatible string `json:"incompatible"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -632,10 +663,11 @@ func (p Plan) JSON() PlanJSON {
 		PriorWorkloadID: p.PriorWorkloadID,
 
 		// Already gated on there being a version to mint.
-		KeepsImage:  p.InheritsImage,
-		InPlace:     p.InPlace,
-		Reroll:      p.Reroll,
-		Unbuildable: p.Unbuildable,
+		KeepsImage:   p.InheritsImage,
+		InPlace:      p.InPlace,
+		Reroll:       p.Reroll,
+		Unbuildable:  p.Unbuildable,
+		Incompatible: p.Incompatible,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),
