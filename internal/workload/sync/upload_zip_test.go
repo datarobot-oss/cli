@@ -31,8 +31,8 @@ import (
 // returns a map of archive-path → uncompressed content bytes. This is the
 // genuine read-back assertion: we open the archive that buildZip produced
 // and hash the extracted entries, rather than re-hashing the source files.
-// The assertion is "the archive contains what we claimed," not "we hashed
-// something.".
+// The assertion is "the archive contains what we claimed," rather than a
+// bare claim that something was hashed.
 func readZipEntries(t *testing.T, zipPath string) map[string][]byte {
 	t.Helper()
 

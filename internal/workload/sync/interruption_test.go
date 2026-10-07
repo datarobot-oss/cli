@@ -215,6 +215,14 @@ func TestInterruption_MidUpload_NonZeroAndConverges(t *testing.T) {
 	all, err := fake2.AllFiles(catalogID, "ver-new")
 	require.NoError(t, err)
 
+	// Set-size equality closes the reverse direction: the loop below proves
+	// every manifest path exists on the server, but without this check a
+	// path the server holds and the manifest forgot would fall out of the
+	// record silently. Map keys are unique, so equal sizes plus the
+	// per-path matches below mean the two sets are exactly equal.
+	assert.Len(t, all, len(manifest.Files),
+		"manifest and server must hold exactly the same path set after convergence")
+
 	// Every file in the manifest must have a hash matching the server.
 	for path, fm := range manifest.Files {
 		serverFM, ok := all[path]

@@ -96,8 +96,8 @@ func TestEngine_RemoteEditKeepsLocalChmod(t *testing.T) {
 	edited := []byte("#!/bin/sh\necho theirs\n")
 
 	fake := (&fakeFilesClient{catalogID: "cid", stageID: "st", versionID: "v3"}).
-		withVersion("cid", "v2", remoteFromBase(t, dir, edited, false)).
-		withDownloadable("v2", map[string][]byte{"run.sh": edited})
+		withVersion("cid", "v2", remoteFromBase(t, dir, edited, false))
+	fake.versionContents = map[string]map[string][]byte{"v2": {"run.sh": edited}}
 
 	result, err := execEngine(t, dir, fake, "v2").Run()
 	require.NoError(t, err)
