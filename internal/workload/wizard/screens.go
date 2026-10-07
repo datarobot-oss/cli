@@ -66,11 +66,17 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// the fetch ran, and arriving at the first screen would clear it and drop
 	// the flag without saying so.
 	//
-	// Only those two. A bad --port, a path missing its slash and an importance
+	// Only these. A bad --port, a path missing its slash and an importance
 	// outside the enum are all values a screen shows and the user can correct,
 	// and refusing them here would turn a recoverable typo into a run that
-	// never starts.
-	for _, check := range []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive} {
+	// never starts. The kind joins them while its screen is not asked: nothing
+	// else could correct a bad --type.
+	checks := []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive}
+	if !askKind {
+		checks = append(checks, opts.Answers.checkKind)
+	}
+
+	for _, check := range checks {
 		if err := check(); err != nil {
 			return nil, manifest.Draft{}, "", err
 		}
