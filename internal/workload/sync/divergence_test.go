@@ -397,22 +397,24 @@ func TestPhase2_Verify_OneSidedDivergence_RepairMatchesServer(t *testing.T) {
 	assert.Equal(t, DivergenceBaseOnly, kinds["util.py"], "a path in BASE but not on the server is base-only")
 	assert.Equal(t, DivergenceRemoteOnly, kinds["stray.py"], "a path on the server but not in BASE is remote-only")
 
-	// The reconciling plan: download the REMOTE-only and modified paths,
-	// remove the BASE-only path locally (remote wins).
+	// The reconciling plan: download the REMOTE-only and modified paths, and
+	// upload the BASE-only path again, since the server never held it and the
+	// local file is the only copy.
 	downloaded := make([]string, 0, len(plan.Downloads))
 
 	for _, fa := range plan.Downloads {
 		downloaded = append(downloaded, fa.Path)
 	}
 
-	deleted := make([]string, 0, len(plan.Deletes))
+	uploaded := make([]string, 0, len(plan.Uploads))
 
-	for _, fa := range plan.Deletes {
-		deleted = append(deleted, fa.Path)
+	for _, fa := range plan.Uploads {
+		uploaded = append(uploaded, fa.Path)
 	}
 
 	assert.ElementsMatch(t, []string{"app.py", "stray.py"}, downloaded)
-	assert.ElementsMatch(t, []string{"util.py"}, deleted)
+	assert.ElementsMatch(t, []string{"util.py"}, uploaded)
+	assert.Empty(t, plan.Deletes, "a path the server never held is not a remote deletion")
 
 	result, err := e.Execute(plan)
 	require.NoError(t, err)
@@ -425,6 +427,7 @@ func TestPhase2_Verify_OneSidedDivergence_RepairMatchesServer(t *testing.T) {
 		"app.py":        sha256Hex(remoteAppPy),
 		ignore.FileName: sha256Hex(diskBytes(t, dir, ignore.FileName)),
 		"stray.py":      sha256Hex(stray),
+		"util.py":       sha256Hex([]byte(files["util.py"])),
 	}
 
 	got := make(map[string]string, len(manifest.Files))
@@ -432,7 +435,7 @@ func TestPhase2_Verify_OneSidedDivergence_RepairMatchesServer(t *testing.T) {
 		got[p] = meta.Hash
 	}
 
-	assert.Equal(t, want, got, "the repaired manifest must match the server (util.py gone, stray.py present)")
+	assert.Equal(t, want, got, "the repaired manifest must match the server (util.py re-uploaded, stray.py present)")
 
 	server, err := fake.AllFiles(catalogID, result.NewVersion)
 	require.NoError(t, err)

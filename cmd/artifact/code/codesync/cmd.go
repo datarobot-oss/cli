@@ -332,7 +332,9 @@ func divergenceSummaryNotice(flags runFlags, plan *sync.SyncPlan, divergences []
 	case plan.IsEmpty():
 		return head + " The plan is empty, but manifest.json is being rewritten from the server's state to repair them."
 	default:
-		return head + " The plan reconciles them."
+		// "Applying" rather than "the plan reconciles": the plan is shown
+		// before any prompt, and a run that quits there reconciles nothing.
+		return head + " Applying the plan reconciles them."
 	}
 }
 
