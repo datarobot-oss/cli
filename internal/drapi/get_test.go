@@ -13,3 +13,33 @@
 // limitations under the License.
 
 package drapi
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestHasStatus(t *testing.T) {
+	notFound := &HTTPError{StatusCode: http.StatusNotFound}
+
+	assert.True(t, HasStatus(notFound, http.StatusNotFound))
+	assert.False(t, HasStatus(notFound, http.StatusConflict), "a different code does not match")
+
+	// It unwraps, so a caller that wrapped the error with context still matches.
+	wrapped := fmt.Errorf("deleting credential: %w", notFound)
+	assert.True(t, HasStatus(wrapped, http.StatusNotFound))
+
+	// A plain error, and nil, carry no status.
+	assert.False(t, HasStatus(errors.New("boom"), http.StatusNotFound))
+	assert.False(t, HasStatus(nil, http.StatusNotFound))
+}
+
+func TestIsNotFound(t *testing.T) {
+	assert.True(t, IsNotFound(&HTTPError{StatusCode: http.StatusNotFound}))
+	assert.False(t, IsNotFound(&HTTPError{StatusCode: http.StatusForbidden}))
+	assert.False(t, IsNotFound(errors.New("boom")))
+}

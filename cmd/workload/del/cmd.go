@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"path/filepath"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
@@ -191,7 +190,7 @@ func cleanupAfterDelete(
 	switch {
 	case getErr == nil && wl.Name != "":
 		return cleanupCredentials(w, wl.Name, scopeIDs, haveManifest)
-	case getErr != nil && !isHTTPStatus(getErr, http.StatusNotFound):
+	case getErr != nil && !drapi.IsNotFound(getErr):
 		fmt.Fprintln(w, tui.DimStyle.Render(
 			"Could not read workload "+ref.ID+" before deleting it, so its credentials were not cleaned up: "+
 				getErr.Error()+". Remove any <workload-name>/* credentials by hand before reusing the name."))
@@ -223,7 +222,7 @@ func deleteQuestion(ref idargs.Ref) string {
 // on the weaker evidence. A binding that really is dead is cleared by the
 // deploy that recreates it.
 func handleDeleteError(err error, ref idargs.Ref) error {
-	if isHTTPStatus(err, http.StatusNotFound) {
+	if drapi.IsNotFound(err) {
 		// The manifest is named when it, rather than the user, chose the id:
 		// otherwise this reports an id the reader has never seen and gives
 		// them nowhere to look.
@@ -240,17 +239,6 @@ func handleDeleteError(err error, ref idargs.Ref) error {
 	// Anything else keeps the provenance too, which is what turns a bare 403
 	// against an ambient id into something actionable.
 	return ref.Wrap(err)
-}
-
-// isHTTPStatus reports whether err is a *drapi.HTTPError carrying code. It is
-// how this command tells a 404 (the thing is already gone) from a 403 or a 5xx
-// (the call did not get far enough to say), both here and in the credential
-// cleanup, where the difference decides whether a reference was removed or only
-// left unverified.
-func isHTTPStatus(err error, code int) bool {
-	var httpErr *drapi.HTTPError
-
-	return errors.As(err, &httpErr) && httpErr.StatusCode == code
 }
 
 // clearStaleBinding takes back the workloadId the CLI wrote into a manifest,
@@ -476,7 +464,7 @@ func cleanupCredentials(w io.Writer, workloadName string, scopeIDs map[string]bo
 			deleted = append(deleted, c.CredentialID)
 
 			fmt.Fprintln(w, tui.DimStyle.Render("Deleted credential "+c.Name+"."))
-		case isHTTPStatus(err, http.StatusNotFound):
+		case drapi.IsNotFound(err):
 			// Already gone on the platform's side. There is nothing left to
 			// remove, but the manifest may still point at it, so it is treated
 			// as deleted for the reset that follows.
