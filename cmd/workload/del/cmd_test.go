@@ -226,7 +226,12 @@ func TestClearStaleBinding_RelinkHintCarriesDir(t *testing.T) {
 
 	clearStaleBinding(&buf, dir, "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
-	assert.Contains(t, buf.String(), "doctor --relink <artifact-id> --dir "+dir)
+	// The flag is spelled the way every other hint spells it, which quotes
+	// and slashes a Windows path, so the expectation is built the same way.
+	flag := manifest.DirFlag(dir)
+
+	require.NotEmpty(t, flag, "the project is not the current directory, so the hint must carry --dir")
+	assert.Contains(t, buf.String(), "doctor --relink <artifact-id>"+flag)
 }
 
 // A project that never linked to an artifact has nothing to say about one.
