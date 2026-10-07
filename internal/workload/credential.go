@@ -110,20 +110,17 @@ func collectMatches(page []Credential, keep func(Credential) (take, stop bool), 
 }
 
 // nextCredentialPage returns the URL of the page after list, or "" when the
-// scan should stop: an empty next link, or a page that came back empty (which
-// would otherwise let a paginator that never advances loop for ever). It
-// refuses a next link on another host, because drapi attaches the user's token
-// to whatever URL it is given.
+// scan should stop. The one stopping rule that is this scan's own is the empty
+// page: a page that came back with no data ends the walk even when the server
+// keeps handing back a Next, so a paginator that never advances cannot loop for
+// ever. The rest — an empty Next, and refusing a Next on another host because
+// drapi attaches the user's token to whatever URL it is given — is drapi.NextPage.
 func nextCredentialPage(list CredentialList) (string, error) {
-	if list.Next == "" || len(list.Data) == 0 {
+	if len(list.Data) == 0 {
 		return "", nil
 	}
 
-	if err := drapi.AssertNextOnSameHost(list.Next); err != nil {
-		return "", err
-	}
-
-	return list.Next, nil
+	return drapi.NextPage(list.Next)
 }
 
 // FindCredentialNamed returns the credential called name, or nil when the
