@@ -46,6 +46,10 @@ type diffLine struct {
 	kind lineKind
 	path string
 	text string
+
+	// removed marks a deletion of a live-only element, which a redacted line
+	// must not call a change.
+	removed bool
 }
 
 // contextWindow is the context window git taught everyone to read: enough
@@ -60,6 +64,7 @@ const contextWindow = 3
 const (
 	setPlaceholder     = "set"
 	changedPlaceholder = "changed"
+	removedPlaceholder = "removed"
 	hiddenPlaceholder  = "(redacted)"
 )
 
@@ -150,6 +155,10 @@ func redactedText(line diffLine) string {
 	case lineAdd:
 		return line.path + ": " + setPlaceholder
 	case lineDel:
+		if line.removed {
+			return line.path + ": " + removedPlaceholder
+		}
+
 		return line.path + ": " + changedPlaceholder
 	case lineContext:
 		return line.path + ": " + hiddenPlaceholder

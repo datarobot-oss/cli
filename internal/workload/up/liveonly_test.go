@@ -202,7 +202,8 @@ func TestRenderDiff_RollShowsDroppedElementsAsRemovals(t *testing.T) {
 	out := renderDiff(t, appSummary, plan)
 
 	assert.Contains(t, out, "- containerGroups[default].containers[metrics]: {imageUri, name}")
-	assert.Contains(t, out, "- containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]: changed")
+	assert.Contains(t, out, "- containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]: removed",
+		"a dropped variable reads as removed, not changed")
 	assert.NotContains(t, out, "s3cr3t-value", "the variable's value is redacted")
 	assert.Contains(t, out, "1 field not managed by this file", "the sidecar's sizing is left alone")
 }

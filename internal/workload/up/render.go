@@ -300,7 +300,7 @@ func appendLeafLines(lines []diffLine, leaves []DiffRow) []diffLine {
 		case !leaf.Changed:
 			lines = append(lines, diffLine{kind: lineContext, path: leaf.Path, text: leafText(leaf.Path, leaf.Want)})
 		case leaf.Removed:
-			lines = append(lines, diffLine{kind: lineDel, path: leaf.Path, text: leafText(leaf.Path, leaf.Have)})
+			lines = append(lines, diffLine{kind: lineDel, path: leaf.Path, text: leafText(leaf.Path, leaf.Have), removed: true})
 		case leaf.Absent:
 			lines = append(lines, diffLine{kind: lineAdd, path: leaf.Path, text: leafText(leaf.Path, leaf.Want)})
 		default:

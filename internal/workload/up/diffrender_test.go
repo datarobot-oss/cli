@@ -130,6 +130,7 @@ func TestRenderUnified_RedactionAppliesToEveryKind(t *testing.T) {
 	}{
 		{"add", diffLine{kind: lineAdd, path: "env[KEY]", text: "env[KEY]: " + secret}, setPlaceholder},
 		{"del", diffLine{kind: lineDel, path: "env[KEY]", text: "env[KEY]: " + secret}, changedPlaceholder},
+		{"removed", diffLine{kind: lineDel, path: "env[KEY]", text: "env[KEY]: " + secret, removed: true}, removedPlaceholder},
 		{"context", diffLine{kind: lineContext, path: "env[KEY]", text: "env[KEY]: " + secret}, hiddenPlaceholder},
 	}
 
