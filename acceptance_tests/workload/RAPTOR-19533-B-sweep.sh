@@ -93,8 +93,15 @@ while read -r id; do
         # Still refused with a Dockerfile seeded: its build is not this one.
         echo "  OK*    $id (built workload, Dockerfile guard — expected)"
         ok_count=$((ok_count + 1))
+    elif printf '%s' "$WL_ERR" | grep -q 'cannot read the artifact of workload.*404 Not Found'; then
+        # The workload's artifact was deleted: there is no spec to render, and
+        # refusing is right. Account data, not something this suite can fix.
+        echo "  OK*    $id (orphaned workload, artifact gone — expected)"
+        ok_count=$((ok_count + 1))
     else
-        echo "  FAIL   $id — $(printf '%s' "$WL_ERR" | head -1)"
+        # The error, not a warning printed ahead of it.
+        reason="$(printf '%s\n' "$WL_ERR" | grep -m1 '^Error:' || true)"
+        echo "  FAIL   $id — ${reason:-$(printf '%s' "$WL_ERR" | head -1)}"
         fail_count=$((fail_count + 1))
     fi
     rm -rf "$d"
