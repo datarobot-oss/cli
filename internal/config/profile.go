@@ -46,9 +46,13 @@ const DefaultProfileLabel = "default"
 // passthrough value the config writer preserves rather than a profile knob
 // that would imply it gates this CLI's TLS behaviour.
 var ProfileScopedKeys = map[string]struct{}{
-	DataRobotURL:    {},
-	DataRobotAPIKey: {},
-	"ca-cert":       {},
+	DataRobotURL:     {},
+	DataRobotAPIKey:  {},
+	"ca-cert":        {},
+	OAuthIssuer:      {},
+	OAuthClientID:    {},
+	OAuthScopes:      {},
+	OAuthRedirectURI: {},
 }
 
 // profileNamePattern is what viper can address as a dotted-path key segment:

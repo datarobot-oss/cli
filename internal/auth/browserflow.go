@@ -26,7 +26,6 @@ import (
 
 	"github.com/datarobot/cli/internal/assets"
 	"github.com/datarobot/cli/internal/log"
-	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/tui"
 )
@@ -120,7 +119,7 @@ func (f *BrowserFlow) localAddr() string {
 // user the link instead; it is never fatal to the login itself, because the user
 // can always follow the link by hand.
 func (f *BrowserFlow) OpenBrowser() error {
-	return open.Open(f.authURL)
+	return openBrowser(f.authURL)
 }
 
 // Wait serves the callback endpoint until the API key arrives, the user
@@ -252,12 +251,32 @@ func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOp
 // Split out from RunBrowserLoginWith so tests can drive a flow on an ephemeral port
 // instead of competing for the fixed production one.
 func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions) (string, error) {
+	var apiKey string
+
+	err := promptAndWait(flow.AuthURL(), opts, func() error {
+		var waitErr error
+
+		apiKey, waitErr = flow.Wait(ctx)
+
+		return waitErr
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return apiKey, nil
+}
+
+// promptAndWait opens authURL in the browser (unless opts.NoBrowser), shows the
+// link beneath a spinner, and runs wait until the callback arrives. Shared by the
+// API-key hand-off and the direct OIDC login so both look the same.
+func promptAndWait(authURL string, opts LoginOptions, wait func() error) error {
 	// The browser state drives the wording: when no browser opened, the link stops
 	// being a footnote and becomes the primary instruction.
 	state := BrowserSkipped
 
 	if !opts.NoBrowser {
-		openErr := flow.OpenBrowser()
+		openErr := openBrowser(authURL)
 		if openErr != nil {
 			log.Debugf("Could not open the browser automatically: %v", openErr)
 		}
@@ -267,19 +286,7 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	// RunWithSpinner renders "<spinner> <label>", and the label may span lines, so
 	// the prompt block rides along beneath the spinner without a second component.
-	label := SpinnerLabel(state) + RenderBrowserPrompt(flow.AuthURL(), state)
-
-	var apiKey string
-
-	wait := func() error {
-		var waitErr error
-
-		apiKey, waitErr = flow.Wait(ctx)
-
-		return waitErr
-	}
-
-	var err error
+	label := SpinnerLabel(state) + RenderBrowserPrompt(authURL, state)
 
 	// The link is what this command exists to produce, so it goes to stdout - where
 	// the animated spinner renders its own copy (tui.Run hands bubbletea os.Stdout)
@@ -294,16 +301,10 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	if !reader.IsStdinTerminal() || reader.IsNonInteractive() {
 		fmt.Fprintln(os.Stdout, label)
 
-		err = wait()
-	} else {
-		err = tui.RunWithSpinner(label, wait)
+		return wait()
 	}
 
-	if err != nil {
-		return "", err
-	}
-
-	return apiKey, nil
+	return tui.RunWithSpinner(label, wait)
 }
 
 // listenReclaimingPort binds addr, first asking any auth server left over from a
@@ -311,10 +312,19 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 //
 // A keyless GET to the callback endpoint is the interrupt sentinel: the stale
 // process sees an empty key, aborts its own wait, and closes its listener.
+//
+// "localhost" binds a single address (127.0.0.1), but browsers may reach the
+// port over ::1 instead. So a program serving the port on any loopback address
+// counts as holding it: binding beside it would leave the CLI waiting for a
+// redirect the browser delivers to that other program.
 func listenReclaimingPort(addr string) (net.Listener, error) {
-	listener, listenErr := net.Listen("tcp", addr)
-	if listenErr == nil {
-		return listener, nil
+	if !loopbackPortInUse(addr) {
+		listener, listenErr := net.Listen("tcp", addr)
+		if listenErr == nil {
+			return listener, nil
+		}
+
+		log.Debugf("Auth callback port %s is busy: %v", addr, listenErr)
 	}
 
 	log.Debugf("Auth callback port %s is busy, asking the previous process to release it", addr)
@@ -330,9 +340,11 @@ func listenReclaimingPort(addr string) (net.Listener, error) {
 
 	// The stale process needs a moment to unwind its wait and close the listener.
 	for attempt := range 10 {
-		listener, err := net.Listen("tcp", addr)
-		if err == nil {
-			return listener, nil
+		if !loopbackPortInUse(addr) {
+			listener, err := net.Listen("tcp", addr)
+			if err == nil {
+				return listener, nil
+			}
 		}
 
 		if attempt < 9 {
@@ -340,7 +352,26 @@ func listenReclaimingPort(addr string) (net.Listener, error) {
 		}
 	}
 
-	// Report the original failure, which describes why the port was unavailable in
-	// the first place, rather than the last retry's identical error.
-	return nil, fmt.Errorf("auth callback port %s is already in use: %w", addr, listenErr)
+	return nil, fmt.Errorf("auth callback port %s is already in use by another program; stop it and try again", addr)
+}
+
+// loopbackPortInUse reports whether anything accepts connections on addr's
+// port over IPv4 or IPv6 loopback. Only a completed connection counts, so a
+// slow refusal (Windows) reads as free.
+func loopbackPortInUse(addr string) bool {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+
+			return true
+		}
+	}
+
+	return false
 }

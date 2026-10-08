@@ -18,6 +18,15 @@ const (
 	DataRobotURL    = "endpoint"
 	DataRobotAPIKey = "token"
 
+	// OIDC settings for `dr auth login --oauth`, which signs in at an identity
+	// provider directly instead of through DataRobot. Saved per profile so a
+	// later plain login, or the automatic re-login, reuses the same IdP. Env
+	// overrides follow the usual DATAROBOT_CLI_ prefix (DATAROBOT_CLI_OAUTH_ISSUER).
+	OAuthIssuer      = "oauth-issuer"
+	OAuthClientID    = "oauth-client-id"
+	OAuthScopes      = "oauth-scopes"
+	OAuthRedirectURI = "oauth-redirect-uri"
+
 	APIConsumerTrackingEnabled = "api-consumer-tracking-enabled"
 
 	// SkipAuthKey is the viper key behind the --skip-auth persistent flag.
