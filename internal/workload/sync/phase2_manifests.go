@@ -106,12 +106,12 @@ func hashEntries(entries []fileops.Entry) (LocalManifest, error) {
 	out := make(LocalManifest, len(entries))
 
 	for _, ent := range entries {
-		hash, size, err := fileops.HashFile(ent.AbsPath)
+		hash, size, mode, err := fileops.HashFileMode(ent.AbsPath)
 		if err != nil {
 			return nil, fmt.Errorf("hash %s: %w", ent.RelPath, err)
 		}
 
-		out[ent.RelPath] = FileEntry{Hash: hash, Size: size}
+		out[ent.RelPath] = FileEntry{Hash: hash, Size: size, Executable: fileops.LocalExecutable(mode)}
 	}
 
 	return out, nil

@@ -126,7 +126,7 @@ func phase7State(e *Engine) error {
 func keepSkippedBaseEntries(e *Engine, files map[string]wapi.FileMeta) {
 	for _, fa := range e.plan.Skipped {
 		if entry, ok := e.base[fa.Path]; ok {
-			files[fa.Path] = wapi.FileMeta{Hash: entry.Hash, Size: entry.Size}
+			files[fa.Path] = wapi.FileMeta{Hash: entry.Hash, Size: entry.Size, Executable: entry.Executable}
 
 			continue
 		}
@@ -159,7 +159,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 	files := make(map[string]wapi.FileMeta, len(e.remote))
 
 	for path, fe := range e.remote {
-		files[path] = wapi.FileMeta{Hash: fe.Hash, Size: fe.Size}
+		files[path] = wapi.FileMeta{Hash: fe.Hash, Size: fe.Size, Executable: fe.Executable}
 	}
 
 	for _, fa := range e.plan.Uploads {
@@ -176,7 +176,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 			return wapi.Manifest{}, fmt.Errorf("internal: no streamed hash recorded for %s", fa.Path)
 		}
 
-		files[fa.Path] = wapi.FileMeta{Hash: sent.Hash, Size: sent.Size}
+		files[fa.Path] = wapi.FileMeta{Hash: sent.Hash, Size: sent.Size, Executable: sent.Executable}
 	}
 
 	for _, fa := range e.plan.Deletes {
@@ -188,7 +188,7 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 			continue
 		}
 
-		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize}
+		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize, Executable: fa.RemoteExec}
 	}
 
 	keepSkippedBaseEntries(e, files)

@@ -47,7 +47,7 @@ func stageUpload(t *testing.T, fake *fakeFilesClient, files map[string][]byte) *
 	require.NoError(t, err)
 
 	for path, data := range files {
-		err := fake.UploadToStage(fake.catalogID, stage.StageID, path, int64(len(data)), bytes.NewReader(data))
+		err := fake.UploadToStage(fake.catalogID, stage.StageID, path, int64(len(data)), false, bytes.NewReader(data))
 		require.NoError(t, err)
 	}
 
@@ -313,7 +313,7 @@ func TestFakeCallCounters(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		path := "file" + string(rune('a'+i)) + ".py"
-		err := fake.UploadToStage(fake.catalogID, stage.StageID, path, 1, strings.NewReader("x"))
+		err := fake.UploadToStage(fake.catalogID, stage.StageID, path, 1, false, strings.NewReader("x"))
 		require.NoError(t, err)
 	}
 
@@ -461,16 +461,16 @@ func TestFakeFaultInjection_FailNthUpload(t *testing.T) {
 	require.NoError(t, err)
 
 	// First upload succeeds.
-	err = fake.UploadToStage(fake.catalogID, stage.StageID, "a.py", 1, strings.NewReader("a"))
+	err = fake.UploadToStage(fake.catalogID, stage.StageID, "a.py", 1, false, strings.NewReader("a"))
 	require.NoError(t, err, "first upload must succeed")
 
 	// Second upload fails.
-	err = fake.UploadToStage(fake.catalogID, stage.StageID, "b.py", 1, strings.NewReader("b"))
+	err = fake.UploadToStage(fake.catalogID, stage.StageID, "b.py", 1, false, strings.NewReader("b"))
 	require.Error(t, err, "second upload must fail with fault injection")
 	require.Contains(t, err.Error(), "injected failure")
 
 	// Third upload succeeds (fault only fires on the Nth call).
-	err = fake.UploadToStage(fake.catalogID, stage.StageID, "c.py", 1, strings.NewReader("c"))
+	err = fake.UploadToStage(fake.catalogID, stage.StageID, "c.py", 1, false, strings.NewReader("c"))
 	require.NoError(t, err, "third upload must succeed after the fault fired")
 
 	assert.Equal(t, 3, fake.UploadToStageCalls())
@@ -488,7 +488,7 @@ func TestFakeFaultInjection_FailApplyStage(t *testing.T) {
 	stage, err := fake.CreateStage(fake.catalogID)
 	require.NoError(t, err)
 
-	err = fake.UploadToStage(fake.catalogID, stage.StageID, "app.py", 3, strings.NewReader("app"))
+	err = fake.UploadToStage(fake.catalogID, stage.StageID, "app.py", 3, false, strings.NewReader("app"))
 	require.NoError(t, err, "upload must succeed; fault is on ApplyStage only")
 
 	_, err = fake.ApplyStage(fake.catalogID, stage.StageID, filesapi.OverwriteReplace)
@@ -523,7 +523,7 @@ func TestFakeRaceFree_ConcurrentUploads(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			err := fake.UploadToStage(fake.catalogID, stage.StageID, path, int64(len(data)), bytes.NewReader(data))
+			err := fake.UploadToStage(fake.catalogID, stage.StageID, path, int64(len(data)), false, bytes.NewReader(data))
 			assert.NoError(t, err)
 		}()
 	}

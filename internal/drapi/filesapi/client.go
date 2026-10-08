@@ -21,7 +21,7 @@ import (
 type Client interface {
 	CreateCatalog(name string) (*CatalogResp, error)
 	CreateStage(catalogID string) (*StageResp, error)
-	UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error
+	UploadToStage(catalogID, stageID, name string, size int64, executable bool, body io.Reader) error
 	ApplyStage(catalogID, stageID, overwrite string) (*ApplyStageResp, error)
 	UploadFromZipExisting(catalogID, filename, overwrite string, size int64, body io.Reader) (*FromFileResp, error)
 	PollStatus(statusID string) (*StatusResp, error)

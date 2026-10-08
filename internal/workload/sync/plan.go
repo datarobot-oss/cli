@@ -25,6 +25,13 @@ type FileAction struct {
 	RemoteSize     int64
 	LocalHash      string
 	RemoteHash     string
+	LocalExec      *bool
+	RemoteExec     *bool
+}
+
+// ExecOnly reports a change to the executable bit alone, with the same bytes on both sides.
+func (fa FileAction) ExecOnly() bool {
+	return fa.LocalHash != "" && fa.LocalHash == fa.RemoteHash
 }
 
 // SyncPlan is the blueprint Phase 5 executes and the structure the display
@@ -154,7 +161,8 @@ func (p *SyncPlan) OverwrittenLocalPaths() []string {
 	var out []string
 
 	for _, fa := range p.Downloads {
-		if fa.Action == ActDownloadModify {
+		// Only the executable bit moved: the local bytes are the remote's, so there is nothing to keep.
+		if fa.Action == ActDownloadModify && !fa.ExecOnly() {
 			out = append(out, fa.Path)
 		}
 	}

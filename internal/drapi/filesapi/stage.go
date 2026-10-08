@@ -57,14 +57,21 @@ func (c *httpClient) CreateStage(catalogID string) (*StageResp, error) {
 	return &resp, nil
 }
 
-func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error {
+func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, executable bool, body io.Reader) error {
 	requestURL, err := drapi.EndpointURL(
 		"/files/"+url.PathEscape(catalogID)+"/stages/"+url.PathEscape(stageID)+"/upload/", nil)
 	if err != nil {
 		return fmt.Errorf("build upload url: %w", err)
 	}
 
-	req, err := newStreamingMultipartRequest(requestURL, nil, name, size, body)
+	// Sent only when set: the server defaults to false, and a plain file's request stays as it was.
+	var fields url.Values
+
+	if executable {
+		fields = url.Values{"isExecutable": []string{"true"}}
+	}
+
+	req, err := newStreamingMultipartRequest(requestURL, fields, name, size, body)
 	if err != nil {
 		return err
 	}

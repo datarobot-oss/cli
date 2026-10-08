@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
 // StageUploader implements the stage-based workflow: create catalog if
@@ -180,10 +181,14 @@ func uploadOneToStage(e *Engine, catalogID, stageID string, fa FileAction) (File
 	// is the right primitive: UploadToStage pipes the body through io.Copy,
 	// so every byte that reaches the wire passes through the hasher.
 	h := newStreamHasher()
+	exec := uploadExecutable(fileops.LocalExecutable(stat.Mode()), fa.RemoteExec)
 
-	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, size, io.TeeReader(f, h)); err != nil {
+	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, size, isSet(exec), io.TeeReader(f, h)); err != nil {
 		return FileEntry{}, fmt.Errorf("upload %s: %w", fa.Path, err)
 	}
 
-	return streamedEntry(h, size), nil
+	entry := streamedEntry(h, size)
+	entry.Executable = exec
+
+	return entry, nil
 }

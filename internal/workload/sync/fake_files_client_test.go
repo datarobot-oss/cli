@@ -65,6 +65,9 @@ type fakeFilesClient struct {
 	// Current staging area: path → content bytes (stage path only).
 	stagedFiles map[string][]byte
 
+	// isExecutable form field per staged path, as the server records it.
+	stagedExec map[string]bool
+
 	// Backward-compatible fields: recorded uploaded content and deleted
 	// paths, kept so existing tests that inspect them still work.
 	uploadedFiles map[string][]byte
@@ -282,11 +285,12 @@ func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
 
 	// Initialize a fresh staging area for this stage.
 	f.stagedFiles = make(map[string][]byte)
+	f.stagedExec = make(map[string]bool)
 
 	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil
 }
 
-func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Reader) error {
+func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, executable bool, body io.Reader) error {
 	// Read the body outside the mutex: each call has its own reader and
 	// holding the mutex during I/O would serialize uploads unnecessarily.
 	data, err := io.ReadAll(body)
@@ -309,6 +313,12 @@ func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Read
 	}
 
 	f.stagedFiles[name] = data
+
+	if f.stagedExec == nil {
+		f.stagedExec = make(map[string]bool)
+	}
+
+	f.stagedExec[name] = executable
 
 	// Backward-compatible: record uploaded content for tests that inspect it.
 	if f.uploadedFiles == nil {
@@ -336,9 +346,11 @@ func (f *fakeFilesClient) mergeStagedFiles(catalogID string) map[string]filesapi
 
 	for path, data := range f.stagedFiles {
 		h := sha256.Sum256(data)
+		exec := f.stagedExec[path]
 		newVersion[path] = filesapi.FileMeta{
-			Hash: hex.EncodeToString(h[:]),
-			Size: int64(len(data)),
+			Hash:       hex.EncodeToString(h[:]),
+			Size:       int64(len(data)),
+			Executable: &exec,
 		}
 	}
 
@@ -380,6 +392,7 @@ func (f *fakeFilesClient) ApplyStage(catalogID, _, _ string) (*filesapi.ApplySta
 
 	// Clear the staging area for the next stage.
 	f.stagedFiles = make(map[string][]byte)
+	f.stagedExec = make(map[string]bool)
 
 	// numFiles defaults to the count of ALL files in the resulting version,
 	// not just the ones uploaded. This matches the real API semantics.
@@ -630,9 +643,11 @@ func extractZipFiles(data []byte) (map[string]filesapi.FileMeta, error) {
 
 		h := sha256.Sum256(content)
 		path := fileops.NormalizePath(zf.Name)
+		exec := zf.Mode().Perm()&0o111 != 0
 		files[path] = filesapi.FileMeta{
-			Hash: hex.EncodeToString(h[:]),
-			Size: int64(len(content)),
+			Hash:       hex.EncodeToString(h[:]),
+			Size:       int64(len(content)),
+			Executable: &exec,
 		}
 	}
 

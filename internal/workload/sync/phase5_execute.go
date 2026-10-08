@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/ignore"
 )
@@ -290,6 +291,10 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 		// threading, so Engine state is the only channel between
 		// Phase 5 and Phase 7.
 		e.uploadOutcome = &outcome
+
+		if msg := executableNotice(outcome.Sent); msg != "" {
+			log.Warn(msg)
+		}
 
 		newCatalogID = outcome.CatalogID
 		newVersionID = outcome.VersionID

@@ -56,7 +56,7 @@ func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error) {
 	panic("unused")
 }
 
-func (*fakeClient) UploadToStage(string, string, string, int64, io.Reader) error {
+func (*fakeClient) UploadToStage(string, string, string, int64, bool, io.Reader) error {
 	panic("unused")
 }
 

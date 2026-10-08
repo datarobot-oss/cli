@@ -199,8 +199,45 @@ func TestUploadToStage_Multipart(t *testing.T) {
 
 	c := New()
 	body := strings.NewReader("print('hi')\n")
-	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), body)
+	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), false, body)
 	require.NoError(t, err)
+}
+
+func TestUploadToStage_ExecutableFormFieldPrecedesFile(t *testing.T) {
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.URL.RawQuery)
+
+		mr, err := r.MultipartReader()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		field, err := mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, "isExecutable", field.FormName())
+
+		value, err := io.ReadAll(field)
+		assert.NoError(t, err)
+		assert.Equal(t, "true", string(value))
+
+		file, err := mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, "file", file.FormName())
+		assert.Equal(t, "run.sh", file.FileName())
+
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
+	}))
+
+	c := New()
+	body := strings.NewReader("#!/bin/sh\n")
+	require.NoError(t, c.UploadToStage("cid-1", "st-1", "run.sh", int64(body.Len()), true, body))
 }
 
 // TestUploadToStage_AdvertisesContentLength verifies that the size
@@ -229,7 +266,7 @@ func TestUploadToStage_AdvertisesContentLength(t *testing.T) {
 
 	c := New()
 	body := strings.NewReader(payload)
-	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), body))
+	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), false, body))
 
 	assert.Greater(t, gotContentLength, int64(len(payload)),
 		"Content-Length should include multipart envelope, not just payload")
@@ -277,6 +314,27 @@ func TestAllFiles_Pagination(t *testing.T) {
 	assert.Len(t, got, 3)
 	assert.Equal(t, FileMeta{Hash: "aaa", Size: 10}, got["a.py"])
 	assert.Equal(t, FileMeta{Hash: "ccc", Size: 30}, got["café.py"])
+}
+
+func TestAllFiles_ExecutableFlag(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v2/files/cid-1/versions/v1/allFiles/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[` +
+			`{"fileName":"run.sh","fileSize":1,"fileChecksum":"aa","isExecutable":true},` +
+			`{"fileName":"a.py","fileSize":1,"fileChecksum":"bb","isExecutable":false},` +
+			`{"fileName":"old.py","fileSize":1,"fileChecksum":"cc"}]}`))
+	})
+
+	startServer(t, mux)
+
+	got, err := New().AllFiles("cid-1", "v1")
+	require.NoError(t, err)
+
+	require.NotNil(t, got["run.sh"].Executable)
+	assert.True(t, *got["run.sh"].Executable)
+	require.NotNil(t, got["a.py"].Executable)
+	assert.False(t, *got["a.py"].Executable)
+	assert.Nil(t, got["old.py"].Executable, "a server that omits the field leaves the bit unknown")
 }
 
 // TestAllFiles_RejectsCrossHostNext confirms that a pagination cursor

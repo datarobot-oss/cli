@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
 // syncZipName is the filename the zip travels under. It names the upload,
@@ -97,7 +98,7 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 	for _, fa := range files {
 		abs := filepath.Join(projectDir, filepath.FromSlash(fa.Path))
 
-		entry, err := addToZip(zw, abs, fa.Path)
+		entry, err := addToZip(zw, abs, fa.Path, fa.RemoteExec)
 		if err != nil {
 			_ = os.Remove(tmp.Name())
 			return "", nil, err
@@ -114,7 +115,9 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 	return tmp.Name(), sent, nil
 }
 
-func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
+// addToZip archives one file. The server reads the executable bit from the
+// entry's Unix mode, so every entry carries 0755 or 0644.
+func addToZip(zw *zip.Writer, src, archivePath string, remoteExec *bool) (FileEntry, error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return FileEntry{}, fmt.Errorf("open %s for zip: %w", src, err)
@@ -122,7 +125,15 @@ func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
 
 	defer func() { _ = in.Close() }()
 
+	stat, err := in.Stat()
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("stat %s for zip: %w", src, err)
+	}
+
+	exec := uploadExecutable(fileops.LocalExecutable(stat.Mode()), remoteExec)
+
 	hdr := &zip.FileHeader{Name: archivePath, Method: zip.Deflate}
+	hdr.SetMode(fileops.ArchivePerm(isSet(exec)))
 
 	w, err := zw.CreateHeader(hdr)
 	if err != nil {
@@ -141,7 +152,10 @@ func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
 		return FileEntry{}, fmt.Errorf("copy %s into zip: %w", archivePath, err)
 	}
 
-	return streamedEntry(h, n), nil
+	entry := streamedEntry(h, n)
+	entry.Executable = exec
+
+	return entry, nil
 }
 
 // postZip creates the catalog if the project has none, then adds the zip's

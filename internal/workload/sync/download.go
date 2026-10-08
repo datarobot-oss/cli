@@ -142,17 +142,27 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 		return fmt.Errorf("close %s: %w", fa.Path, closeErr)
 	}
 
-	if fa.RemoteSize > 0 && n != fa.RemoteSize {
+	if err := verifyDownload(fa, n, hex.EncodeToString(h.Sum(nil))); err != nil {
 		_ = os.Remove(dst)
+		return err
+	}
+
+	// os.Create keeps an existing file's mode, so the bit is set or cleared explicitly.
+	if err := fileops.ApplyExecutable(dst, fa.RemoteExec); err != nil {
+		return fmt.Errorf("set executable bit on %s: %w", fa.Path, err)
+	}
+
+	return nil
+}
+
+// verifyDownload checks the streamed size and hash against what the plan expects.
+func verifyDownload(fa FileAction, n int64, got string) error {
+	if fa.RemoteSize > 0 && n != fa.RemoteSize {
 		return fmt.Errorf("download size mismatch on %s: expected %d, got %d", fa.Path, fa.RemoteSize, n)
 	}
 
-	if fa.RemoteHash != "" {
-		got := hex.EncodeToString(h.Sum(nil))
-		if got != fa.RemoteHash {
-			_ = os.Remove(dst)
-			return fmt.Errorf("checksum mismatch on %s: expected %s, got %s", fa.Path, fa.RemoteHash, got)
-		}
+	if fa.RemoteHash != "" && got != fa.RemoteHash {
+		return fmt.Errorf("checksum mismatch on %s: expected %s, got %s", fa.Path, fa.RemoteHash, got)
 	}
 
 	return nil
