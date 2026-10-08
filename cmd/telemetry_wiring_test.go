@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/enclave"
-	"github.com/datarobot/cli/cmd/workload"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,8 +48,7 @@ var expectedTrackedCommands = []string{
 	"dr plugin update",
 
 	// Pipelines, workloads and artifacts are GA, so no feature gate hides them
-	// from the live RootCmd and they need no separate standalone list. The two
-	// workload leaves still behind a gate are checked further down.
+	// from the live RootCmd and they need no separate standalone list.
 	"dr pipeline create",
 	"dr pipeline get",
 	"dr pipeline clone",
@@ -99,6 +97,9 @@ var expectedTrackedCommands = []string{
 	"dr workload status",
 	"dr workload endpoint",
 	"dr workload logs",
+	"dr workload config",
+	"dr workload up",
+	"dr workload promote",
 
 	"dr artifact create",
 	"dr artifact get",
@@ -188,39 +189,6 @@ func leafCommands(root *cobra.Command) []*cobra.Command {
 	}
 
 	return leaves
-}
-
-// expectedGatedWorkloadTrackedCommands enumerates the `dr workload` leaves
-// still behind DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA. cli.CommandAdder leaves them
-// out of the tree while the variable is unset (the default in CI), so the
-// test below sets it and walks a freshly-built subtree from workload.Cmd()
-// rather than the global RootCmd.
-//
-// Paths are relative to workload.Cmd() (no "dr" prefix) because
-// findCommandByPath matches against the root's Name(), which is "workload"
-// for the standalone subtree.
-var expectedGatedWorkloadTrackedCommands = []string{
-	"workload config",
-	"workload up",
-}
-
-// TestTelemetryWiring_GatedWorkloadCommandsTracked enables the workload gate,
-// builds the subtree and asserts each gated leaf has the "telemetry"
-// annotation set by telemetry.Track / TrackWith.
-func TestTelemetryWiring_GatedWorkloadCommandsTracked(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "true")
-
-	workloadRoot := workload.Cmd()
-
-	for _, path := range expectedGatedWorkloadTrackedCommands {
-		t.Run("dr "+path, func(t *testing.T) {
-			cmd := findCommandByPath(workloadRoot, path)
-			require.NotNilf(t, cmd, "command %q not found in workload subtree", path)
-
-			assert.Containsf(t, cmd.Annotations, "telemetry",
-				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
-		})
-	}
 }
 
 // expectedEnclaveTrackedCommands enumerates leaf commands under `dr enclave`
