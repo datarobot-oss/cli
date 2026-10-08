@@ -126,10 +126,11 @@ type Plan struct {
 	DiffRuntime  []DiffRow
 
 	// Unmanaged lists the name-keyed elements the live object carries that
-	// the file never names and this plan leaves alone. A plan that rolls or
-	// resizes sends the file's block whole and drops them instead; those are
-	// Removed rows in DiffArtifact and DiffRuntime, not entries here.
-	Unmanaged []string
+	// the file never names and this plan leaves alone, each with the block it
+	// lives in. A plan that rolls or resizes sends the file's block whole and
+	// drops them instead; those are Removed rows in DiffArtifact and
+	// DiffRuntime, not entries here.
+	Unmanaged []LiveOnly
 
 	// InPlace reports that the change is written to the draft artifact the
 	// workload already runs and rolled from there; no version is minted.
@@ -542,23 +543,37 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 // any other plan they survive untouched and are listed as unmanaged, each
 // path once however many halves carry it.
 func (p *Plan) settleLiveOnly(spec, runtime map[string]any, live Live) {
-	var kept []string
+	var kept []LiveOnly
 
 	artifact := extraRows(spec, live.Spec)
 	if p.RollsArtifact() && len(spec) > 0 {
 		p.DiffArtifact = append(p.DiffArtifact, artifact...)
 	} else {
-		kept = append(kept, rowPaths(artifact)...)
+		kept = append(kept, liveOnly(BlockArtifact, artifact)...)
 	}
 
 	sizing := extraRows(runtime, live.Runtime)
 	if len(p.Runtime) > 0 && len(runtime) > 0 {
 		p.DiffRuntime = append(p.DiffRuntime, sizing...)
 	} else {
-		kept = append(kept, rowPaths(sizing)...)
+		kept = append(kept, liveOnly(BlockRuntime, sizing)...)
 	}
 
-	p.Unmanaged = dedupePaths(kept)
+	p.Unmanaged = kept
+}
+
+// The two blocks a manifest writes, as the JSON diff names them.
+const (
+	BlockArtifact = "artifact"
+	BlockRuntime  = "runtime"
+)
+
+// LiveOnly is one element the live object carries that the file never names,
+// in the block it lives in. A sidecar is in both the artifact's spec and the
+// workload's runtime, and a deploy can drop one side while leaving the other.
+type LiveOnly struct {
+	Block string
+	Path  string
 }
 
 // rowPaths is the paths of rows, in order.
@@ -567,6 +582,17 @@ func rowPaths(rows []DiffRow) []string {
 
 	for _, row := range rows {
 		out = append(out, row.Path)
+	}
+
+	return out
+}
+
+// liveOnly tags each row's path with its block, in order.
+func liveOnly(block string, rows []DiffRow) []LiveOnly {
+	out := make([]LiveOnly, 0, len(rows))
+
+	for _, row := range rows {
+		out = append(out, LiveOnly{Block: block, Path: row.Path})
 	}
 
 	return out
@@ -605,33 +631,23 @@ func createRows(loaded Loaded) ([]DiffRow, []DiffRow, error) {
 	return DiffRows(spec, nil), DiffRows(runtime, nil), nil
 }
 
-// dedupePaths merges the unmanaged path lists from the two halves of the
-// plan, keeping the first sighting of each path. The lists each arrive in a
-// deterministic order, and the same element can be reported by both -- a
-// sidecar the file never names exists in the artifact's spec and in the
-// workload's runtime alike -- so counting it twice would promise a reader
-// two fields where there is one name to go look at.
-func dedupePaths(lists ...[]string) []string {
-	var total int
+// distinctPaths is the unmanaged paths with each path once, for the count a
+// reader is told. A sidecar the file never names exists in the artifact's
+// spec and in the workload's runtime alike, so counting it twice would
+// promise two fields where there is one name to go look at.
+func distinctPaths(items []LiveOnly) []string {
+	seen := make(map[string]struct{}, len(items))
 
-	for _, list := range lists {
-		total += len(list)
-	}
+	out := make([]string, 0, len(items))
 
-	seen := make(map[string]struct{}, total)
-
-	out := make([]string, 0, total)
-
-	for _, list := range lists {
-		for _, path := range list {
-			if _, ok := seen[path]; ok {
-				continue
-			}
-
-			seen[path] = struct{}{}
-
-			out = append(out, path)
+	for _, item := range items {
+		if _, ok := seen[item.Path]; ok {
+			continue
 		}
+
+		seen[item.Path] = struct{}{}
+
+		out = append(out, item.Path)
 	}
 
 	return out

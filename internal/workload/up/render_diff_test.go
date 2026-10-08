@@ -337,15 +337,16 @@ func TestRenderDiff_UnmanagedNeverBecomesARemoval(t *testing.T) {
 		DiffRuntime: []DiffRow{
 			{Path: "containerGroups[default].replicaCount", Want: 3.0, Have: 1.0, Changed: true},
 		},
-		Unmanaged: []string{
-			"containerGroups[default].containers[metrics]",
-			"containerGroups[default].containers[primary].environmentVars[FOO]",
+		Unmanaged: []LiveOnly{
+			{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"},
+			{Block: BlockRuntime, Path: "containerGroups[default].containers[metrics]"},
+			{Block: BlockArtifact, Path: "containerGroups[default].containers[primary].environmentVars[FOO]"},
 		},
 	}
 
 	out := renderDiff(t, appSummary, plan)
 
-	assert.Contains(t, out, "2 fields not managed by this file")
+	assert.Contains(t, out, "2 fields not managed by this file", "a path in both blocks counts once")
 	assert.NotContains(t, out, "- containerGroups[default].containers[metrics]")
 	assert.NotContains(t, out, "- containerGroups[default].containers[primary].environmentVars[FOO]")
 	assert.Equal(t, 1, strings.Count(out, "not managed by this file"),
@@ -359,7 +360,7 @@ func TestRenderDiff_UnmanagedSummarySaysFieldOnce(t *testing.T) {
 	plan := Plan{
 		State:     StateRunning,
 		Code:      builtCode(0),
-		Unmanaged: []string{"containerGroups[default].containers[metrics]"},
+		Unmanaged: []LiveOnly{{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"}},
 	}
 
 	out := renderDiff(t, appSummary, plan)
@@ -376,9 +377,9 @@ func TestRenderDiff_EmptyPlanWithUnmanagedSurfacesThem(t *testing.T) {
 	plan := Plan{
 		State: StateRunning,
 		Code:  builtCode(0),
-		Unmanaged: []string{
-			"containerGroups[default].containers[metrics]",
-			"containerGroups[default].containers[primary].environmentVars[FOO]",
+		Unmanaged: []LiveOnly{
+			{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"},
+			{Block: BlockArtifact, Path: "containerGroups[default].containers[primary].environmentVars[FOO]"},
 		},
 	}
 
@@ -627,7 +628,7 @@ func TestRender_DefaultModeBaselineIsUnchanged(t *testing.T) {
 		DiffRuntime: []DiffRow{
 			{Path: "containerGroups[default].replicaCount", Want: 3.0, Have: 1.0, Changed: true},
 		},
-		Unmanaged: []string{"containerGroups[default].containers[metrics]"},
+		Unmanaged: []LiveOnly{{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"}},
 	}
 
 	assert.Equal(t,

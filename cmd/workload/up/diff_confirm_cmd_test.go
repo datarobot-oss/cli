@@ -97,7 +97,7 @@ func diffedResult() up.Result {
 				Have: 1.0, Want: 3.0, Changed: true,
 			}},
 
-			Unmanaged: []string{"containerGroups[default].containers[metrics]"},
+			Unmanaged: []up.LiveOnly{{Block: up.BlockArtifact, Path: "containerGroups[default].containers[metrics]"}},
 		},
 	}
 }
@@ -131,14 +131,19 @@ func TestCmd_JSONDiffSectionFollowsTheFlag(t *testing.T) {
 
 	first := changes[0].(map[string]any)
 
+	assert.Equal(t, "artifact", first["block"])
 	assert.Equal(t, "containerGroups[default].containers[primary].port", first["path"])
 	assert.InDelta(t, 8080.0, first["have"], 0)
 	assert.InDelta(t, 9090.0, first["want"], 0)
 	assert.Equal(t, false, first["absent"])
+	assert.Equal(t, "runtime", changes[1].(map[string]any)["block"])
 
 	unmanaged := diff["unmanaged"].([]any)
 	require.Len(t, unmanaged, 1)
-	assert.Equal(t, "containerGroups[default].containers[metrics]", unmanaged[0])
+	assert.Equal(t, map[string]any{
+		"block": "artifact",
+		"path":  "containerGroups[default].containers[metrics]",
+	}, unmanaged[0])
 
 	// The legacy arrays keep their place beside the new section.
 	artifact := plan["artifact"].([]any)

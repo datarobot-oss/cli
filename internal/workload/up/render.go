@@ -323,7 +323,9 @@ func leafText(path string, v any) string {
 // unmanagedNote is the diff's whole account of the live-only fields this
 // plan leaves alone, one counted line rather than a marking per field. The
 // ones a roll or a resize drops are not here: they are the `-` rows above.
-func unmanagedNote(paths []string) string {
+func unmanagedNote(items []LiveOnly) string {
+	paths := distinctPaths(items)
+
 	if len(paths) == 0 {
 		return ""
 	}
@@ -855,17 +857,26 @@ type DiffJSON struct {
 	// with would bury the few entries a consumer acts on.
 	Changes []ChangeJSON `json:"changes"`
 
-	// Unmanaged holds the paths of what the live object carries that the
-	// file never names and this deploy leaves alone. A roll or a resize
-	// drops those elements instead, and then they are entries in Changes
-	// marked removed, with the live value as have and no want.
-	Unmanaged []string `json:"unmanaged"`
+	// Unmanaged holds what the live object carries that the file never
+	// names and this deploy leaves alone. A roll or a resize drops those
+	// elements instead, and then they are entries in Changes marked removed,
+	// with the live value as have and no want. One path can be in both lists
+	// when the deploy drops one block's side of it and keeps the other's.
+	Unmanaged []UnmanagedJSON `json:"unmanaged"`
+}
+
+// UnmanagedJSON is one element left alone, in the block it lives in.
+type UnmanagedJSON struct {
+	Block string `json:"block"`
+	Path  string `json:"path"`
 }
 
 // ChangeJSON is one changing leaf, the structured twin of the `- old`/`+ new`
 // pair the diff prints for it. Have is null and Absent true for a leaf the
-// live object does not carry, which is an addition and not a swap.
+// live object does not carry, which is an addition and not a swap. Block is
+// "artifact" for the spec and "runtime" for sizing.
 type ChangeJSON struct {
+	Block  string `json:"block"`
 	Path   string `json:"path"`
 	Have   any    `json:"have"`
 	Want   any    `json:"want"`
@@ -968,19 +979,23 @@ func (p Plan) diffJSON() *DiffJSON {
 // agreeing ones are context on the way to a reader and noise in a list, and
 // the walk they come from already put the changing ones in the body's order.
 func changesJSON(artifact, runtime []DiffRow) []ChangeJSON {
-	leaves := make([]DiffRow, 0, len(artifact)+len(runtime))
+	out := make([]ChangeJSON, 0, len(artifact)+len(runtime))
 
-	leaves = append(leaves, artifact...)
-	leaves = append(leaves, runtime...)
+	out = appendChanges(out, BlockArtifact, artifact)
 
-	out := make([]ChangeJSON, 0, len(leaves))
+	return appendChanges(out, BlockRuntime, runtime)
+}
 
-	for _, leaf := range leaves {
+func appendChanges(out []ChangeJSON, block string, rows []DiffRow) []ChangeJSON {
+	for _, leaf := range rows {
 		if !leaf.Changed {
 			continue
 		}
 
-		out = append(out, changeJSON(leaf))
+		c := changeJSON(leaf)
+		c.Block = block
+
+		out = append(out, c)
 	}
 
 	return out
@@ -1139,10 +1154,14 @@ func scrubEnvList(v any) []any {
 	return out
 }
 
-// unmanagedJSON copies the unmanaged paths, always into a non-nil slice so
+// unmanagedJSON copies the unmanaged elements, always into a non-nil slice so
 // the JSON carries [] rather than null for "nothing unmanaged".
-func unmanagedJSON(paths []string) []string {
-	out := make([]string, 0, len(paths))
+func unmanagedJSON(items []LiveOnly) []UnmanagedJSON {
+	out := make([]UnmanagedJSON, 0, len(items))
 
-	return append(out, paths...)
+	for _, item := range items {
+		out = append(out, UnmanagedJSON(item))
+	}
+
+	return out
 }

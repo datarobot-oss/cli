@@ -876,9 +876,10 @@ func TestBuild_UnmanagedComesFromExtra(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t,
-		[]string{"containerGroups[default].containers[metrics]"},
-		plan.Unmanaged)
+	assert.Equal(t, []LiveOnly{
+		{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"},
+		{Block: BlockRuntime, Path: "containerGroups[default].containers[metrics]"},
+	}, plan.Unmanaged, "the sidecar is left alone in both blocks")
 }
 
 // TestBuild_SyntheticArtifactIDChangeEntersTheDiffRows: the artifact id is

@@ -111,9 +111,10 @@ func TestBuild_EmptyPlanLeavesLiveOnlyElementsAlone(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Empty())
 
-	assert.Equal(t, []string{
-		"containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]",
-		"containerGroups[default].containers[metrics]",
+	assert.Equal(t, []LiveOnly{
+		{Block: BlockArtifact, Path: "containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]"},
+		{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"},
+		{Block: BlockRuntime, Path: "containerGroups[default].containers[metrics]"},
 	}, plan.Unmanaged)
 	assert.Empty(t, removedRows(plan.DiffArtifact))
 	assert.Empty(t, removedRows(plan.DiffRuntime))
@@ -132,10 +133,10 @@ func TestBuild_ResizeDropsOnlyTheRuntimeSide(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.Retunes())
 
-	assert.Equal(t, []string{
-		"containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]",
-		"containerGroups[default].containers[metrics]",
-	}, plan.Unmanaged)
+	assert.Equal(t, []LiveOnly{
+		{Block: BlockArtifact, Path: "containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]"},
+		{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"},
+	}, plan.Unmanaged, "only the spec side is left alone")
 	assert.Empty(t, removedRows(plan.DiffArtifact))
 
 	removed := removedRows(plan.DiffRuntime)
@@ -158,8 +159,9 @@ func TestBuild_RollDropsTheSpecSide(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, plan.RollsArtifact())
 
-	assert.Equal(t, []string{"containerGroups[default].containers[metrics]"}, plan.Unmanaged,
-		"the runtime side is left alone")
+	assert.Equal(t, []LiveOnly{
+		{Block: BlockRuntime, Path: "containerGroups[default].containers[metrics]"},
+	}, plan.Unmanaged, "the runtime side is left alone")
 	assert.Empty(t, removedRows(plan.DiffRuntime))
 
 	removed := removedRows(plan.DiffArtifact)
@@ -184,8 +186,10 @@ func TestBuild_IDBoundRollDropsNothing(t *testing.T) {
 	require.True(t, plan.RollsArtifact())
 
 	assert.Empty(t, removedRows(plan.DiffArtifact))
-	assert.Equal(t, []string{"containerGroups[default]"}, plan.Unmanaged,
-		"the file manages nothing of either block, so the whole group is left alone")
+	assert.Equal(t, []LiveOnly{
+		{Block: BlockArtifact, Path: "containerGroups[default]"},
+		{Block: BlockRuntime, Path: "containerGroups[default]"},
+	}, plan.Unmanaged, "the file manages nothing of either block, so the whole group is left alone")
 }
 
 // The diff says what a roll drops as `-` lines, and the variable's value
@@ -232,11 +236,14 @@ func TestPlanJSON_DroppedElementsAreRemovedChanges(t *testing.T) {
 	}
 
 	require.Len(t, removed, 1)
+	assert.Equal(t, BlockRuntime, removed[0].Block)
 	assert.Equal(t, "containerGroups[default].containers[metrics]", removed[0].Path)
 	assert.NotNil(t, removed[0].Have)
 	assert.Nil(t, removed[0].Want)
 	assert.False(t, removed[0].Absent)
-	assert.Equal(t, []string{"containerGroups[default].containers[metrics]"}, diff.Unmanaged)
+	assert.Equal(t, []UnmanagedJSON{
+		{Block: BlockArtifact, Path: "containerGroups[default].containers[metrics]"},
+	}, diff.Unmanaged, "the same path, told apart by its block")
 }
 
 // A refused plan is described, not announced, in the diff as in the default
