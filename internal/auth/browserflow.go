@@ -288,9 +288,10 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	//
 	// The spinner draws on stderr, so it only carries the link to a reader who sees
 	// both streams on one terminal. Whenever stdout is not that terminal the label is
-	// printed there too, and with no keyboard to answer or no animation wanted the
-	// spinner is skipped altogether.
-	printLink, spin := loginOutput(reader.IsStdinTerminal(), reader.IsStdoutTerminal(), reader.IsNonInteractive())
+	// printed there too, and when the spinner would not draw it is skipped and the
+	// label goes to stdout alone.
+	printLink, spin := loginOutput(reader.IsStdinTerminal(), reader.IsStdoutTerminal(),
+		reader.IsStderrTerminal(), reader.IsNonInteractive())
 
 	if printLink {
 		fmt.Fprintln(os.Stdout, label)
@@ -310,10 +311,10 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 }
 
 // loginOutput decides where the login label goes: printed to stdout unless the
-// animated spinner will show it on the same terminal, and animated only with a
-// keyboard and when animation is wanted.
-func loginOutput(stdinTerm, stdoutTerm, nonInteractive bool) (printLink, spin bool) {
-	spin = stdinTerm && !nonInteractive
+// spinner will draw it on the same terminal. The spinner runs only when it
+// draws, by the spinner's own rule, so the two cannot disagree.
+func loginOutput(stdinTerm, stdoutTerm, stderrTerm, nonInteractive bool) (printLink, spin bool) {
+	spin = tui.SpinnerDrawn(stdinTerm, stderrTerm, nonInteractive)
 
 	return !spin || !stdoutTerm, spin
 }

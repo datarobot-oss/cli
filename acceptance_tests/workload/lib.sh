@@ -329,9 +329,11 @@ wl::delete_catalog() {
     # The header is read from stdin so the token never sits in curl's argv,
     # where any process on the machine can read it.
     printf 'Authorization: Bearer %s\n' "$token" \
-        | curl -s -o /dev/null -X DELETE -H @- \
+        | curl -sf -o /dev/null -X DELETE -H @- \
             "${DATAROBOT_ENDPOINT%/}/files/$cid/" --max-time 30 \
-        && echo "  🧹 deleted code catalog $cid" || true
+        && echo "  🧹 deleted code catalog $cid" \
+        || echo "  ⚠️  could not delete code catalog $cid; remove it by hand" >&2
+    return 0
 }
 
 # Register cleanup on EXIT for the current shell. Scenarios call this once.

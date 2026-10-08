@@ -188,6 +188,12 @@ const (
 	spinnerDrawn
 )
 
+// SpinnerDrawn reports whether a spinner would animate on stderr, for a
+// caller that must show its label some other way when it would not.
+func SpinnerDrawn(stdinTerm, stderrTerm, nonInteractive bool) bool {
+	return spinnerModeFor(stdinTerm, stderrTerm, nonInteractive) == spinnerDrawn
+}
+
 // spinnerModeFor decides how a spinner shows: animated only when both the
 // keyboard and the screen it draws on are a terminal.
 func spinnerModeFor(stdinTerm, stderrTerm, nonInteractive bool) spinnerMode {
