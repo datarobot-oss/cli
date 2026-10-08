@@ -15,6 +15,7 @@
 package enclave
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -179,16 +180,34 @@ var errPinUnsupported = errors.New(
 	"this server doesn't support the enclave pin permission yet; " +
 		"it needs a covalent-cloud-server with /api/v2/enclaves/pinAccess")
 
-// pinUnsupportedHint adds errPinUnsupported to a 404 from the pin endpoint. The
-// original *drapi.HTTPError stays reachable through errors.As.
+// pinUnsupportedHint adds errPinUnsupported to a 404 from the pin endpoint when
+// the route itself is missing. The original *drapi.HTTPError stays reachable
+// through errors.As.
 func pinUnsupportedHint(permission string, err error) error {
 	var httpErr *drapi.HTTPError
 	if permission != PermissionPin || !errors.As(err, &httpErr) ||
-		httpErr.StatusCode != http.StatusNotFound {
+		httpErr.StatusCode != http.StatusNotFound || !routeMissing(httpErr.Body) {
 		return err
 	}
 
 	return fmt.Errorf("%w: %w", errPinUnsupported, err)
+}
+
+// routeMissing reports whether a 404 body says the route doesn't exist, rather
+// than that the endpoint answered about something it couldn't find. FastAPI
+// answers an unknown route with {"detail":"Not Found"}; an empty or non-JSON
+// body comes from a proxy in front. Any other detail is the endpoint's own
+// error and passes through unchanged.
+func routeMissing(body []byte) bool {
+	var envelope struct {
+		Detail any `json:"detail"`
+	}
+
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return true
+	}
+
+	return envelope.Detail == nil || envelope.Detail == "Not Found"
 }
 
 // GrantCreatePermission allows the recipient to create (register) enclaves.

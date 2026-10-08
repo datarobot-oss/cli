@@ -135,12 +135,14 @@ func TestCollectionAccessPath(t *testing.T) {
 }
 
 func TestPinPermission_OlderServerHint(t *testing.T) {
-	// A server without /enclaves/pinAccess answers 404. Say so, and keep the
-	// HTTP error reachable for callers that branch on the status.
+	// A server without /enclaves/pinAccess answers FastAPI's default 404. Say
+	// so, and keep the HTTP error reachable for callers that branch on the status.
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Not Found"}`))
 	}))
 	defer srv.Close()
 
@@ -162,6 +164,34 @@ func TestPinPermission_OlderServerHint(t *testing.T) {
 		require.ErrorAs(t, err, &httpErr, name)
 		assert.Equal(t, http.StatusNotFound, httpErr.StatusCode, name)
 	}
+}
+
+func TestPinPermission_EndpointNotFoundHasNoHint(t *testing.T) {
+	// A 404 that the pin endpoint itself answered (its own detail) is about the
+	// request, not a missing route, so it passes through without the hint.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Enclave access control request failed (fetch account info)"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := GrantPinPermission(Recipient{Type: RecipientUser, ID: "u-1"})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, errPinUnsupported)
+}
+
+func TestRouteMissing(t *testing.T) {
+	assert.True(t, routeMissing([]byte(`{"detail":"Not Found"}`)))
+	assert.True(t, routeMissing(nil))
+	assert.True(t, routeMissing([]byte(`<html>404 Not Found</html>`)))
+	assert.True(t, routeMissing([]byte(`{"message":"no route"}`)))
+	assert.False(t, routeMissing([]byte(`{"detail":"user not found"}`)))
+	assert.False(t, routeMissing([]byte(`{"detail":[{"msg":"bad id"}]}`)))
 }
 
 func TestCreatePermission_NotFoundHasNoPinHint(t *testing.T) {
