@@ -826,3 +826,44 @@ func findSubstring(s, substr string) bool {
 
 	return false
 }
+
+// A linked artifact that is gone has no kind to match, so any draft is
+// accepted: relinking away from a deleted artifact is the main reason to
+// relink at all.
+func TestRunRelink_GoneOldArtifact_SkipsTypeGate(t *testing.T) {
+	dir := linkedProject(t)
+
+	store := ArtifactGetterFunc(func(id string) (*workload.Artifact, error) {
+		if id == newArtifactID {
+			return &workload.Artifact{ID: id, Name: "agent-fixture", Status: "DRAFT", Type: "agent"}, nil
+		}
+
+		return nil, &drapi.HTTPError{StatusCode: 404, URL: "https://test/"}
+	})
+
+	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, store, alwaysConfirm))
+
+	require.NoError(t, err)
+	assert.Equal(t, core.ActionPerformed, actions[0].Status)
+}
+
+// Any other failure to read the linked artifact is the API being unreachable,
+// not a reason to skip the gate: the relink stops with state untouched.
+func TestRunRelink_OldArtifactUnreadable_AbortsUnreachable(t *testing.T) {
+	dir := linkedProject(t)
+
+	before := stateFileHashes(t, dir)
+
+	store := ArtifactGetterFunc(func(id string) (*workload.Artifact, error) {
+		if id == newArtifactID {
+			return &workload.Artifact{ID: id, Name: "agent-fixture", Status: "DRAFT", Type: "agent"}, nil
+		}
+
+		return nil, &drapi.HTTPError{StatusCode: 500, URL: "https://test/"}
+	})
+
+	_, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, store, alwaysConfirm))
+
+	require.ErrorIs(t, err, ErrRelinkAPIUnreachable)
+	assert.Equal(t, before, stateFileHashes(t, dir))
+}

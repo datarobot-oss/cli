@@ -226,10 +226,14 @@ func relinkLoadOldConfig(projectDir string) (wapi.Config, error) {
 
 // relinkFetchAndValidate fetches the target artifact and runs the 404, locked,
 // and type gates. The type has to match the linked artifact's, since a
-// project's lineage never changes kind; an unreadable config has no kind to
-// match, so the gate is skipped. Returns (artifact, nil, nil) on success;
-// (nil, skippedActions, ErrRelinkAbort) for 404/locked/wrong-type;
-// (nil, nil, ErrRelinkAPIUnreachable) for any other fetch failure.
+// project's lineage never changes kind. The gate needs the linked artifact to
+// read its kind from, so it is skipped when there is none to read: an
+// unreadable config, or a linked artifact that is gone (404), which is the
+// common reason to relink at all. Any other failure to read it is the API
+// being unreachable, not a reason to skip the gate. Returns (artifact, nil,
+// nil) on success; (nil, skippedActions, ErrRelinkAbort) for
+// 404/locked/wrong-type; (nil, nil, ErrRelinkAPIUnreachable) for any other
+// fetch failure.
 func relinkFetchAndValidate(opts RelinkOptions, oldCfg wapi.Config) (*workload.Artifact, []core.Action, error) {
 	art, err := opts.Store.Get(opts.NewArtifactID)
 	if err != nil {
@@ -255,8 +259,11 @@ func relinkFetchAndValidate(opts RelinkOptions, oldCfg wapi.Config) (*workload.A
 
 	old, err := opts.Store.Get(oldCfg.ArtifactID)
 	if err != nil {
-		// The old artifact is gone or unreadable: nothing to match against.
-		return art, nil, nil
+		if isNotFound(err) {
+			return art, nil, nil
+		}
+
+		return nil, nil, fmt.Errorf("%w: %w", ErrRelinkAPIUnreachable, err)
 	}
 
 	want := manifest.ArtifactTypeOrDefault(old.Type)

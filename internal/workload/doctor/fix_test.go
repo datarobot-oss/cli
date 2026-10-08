@@ -16,6 +16,7 @@ package doctor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -588,4 +589,57 @@ func TestRunFix_MultipleProblems_AllRepairedInOneRun(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, string(beforeExtra), string(extraAfter), "non-rollback files must be untouched")
+}
+
+// The config is cleared before the manifest is emptied, so a failed config
+// write changes nothing: the manifest still describes the version the config
+// still names, rather than an empty BASE under a config claiming a version.
+func TestRunFix_ConfigWriteFails_ManifestUntouched(t *testing.T) {
+	dir := t.TempDir()
+
+	initStateDir(t, dir)
+
+	require.NoError(t, wapi.SaveConfig(dir, validConfig(testCatalogID, testVersionID)))
+	require.NoError(t, wapi.SaveManifest(dir, validManifest("65f1a2b3c4d5e6f7a8b9c0ff")))
+
+	before := stateFileHashes(t, dir)
+
+	prev := saveConfigFn
+	saveConfigFn = func(string, wapi.Config) error { return errors.New("disk full") }
+
+	t.Cleanup(func() { saveConfigFn = prev })
+
+	actions := RunFix(context.Background(), dir)
+
+	rebuild := actionByID(t, actions)[CheckIDManifest]
+	assert.Equal(t, core.ActionSkipped, rebuild.Status)
+	assert.Contains(t, rebuild.Reason, "nothing was changed")
+	assert.Equal(t, before, withoutLock(stateFileHashes(t, dir)), "neither file was written")
+}
+
+// When the manifest write fails after the config was cleared, the next sync
+// still lists the remote, and the report says which half happened.
+func TestRunFix_ManifestWriteFails_ConfigAlreadyCleared(t *testing.T) {
+	dir := t.TempDir()
+
+	initStateDir(t, dir)
+
+	require.NoError(t, wapi.SaveConfig(dir, validConfig(testCatalogID, testVersionID)))
+	require.NoError(t, wapi.SaveManifest(dir, validManifest("65f1a2b3c4d5e6f7a8b9c0ff")))
+
+	prev := saveManifestFn
+	saveManifestFn = func(string, wapi.Manifest) error { return errors.New("disk full") }
+
+	t.Cleanup(func() { saveManifestFn = prev })
+
+	actions := RunFix(context.Background(), dir)
+
+	rebuild := actionByID(t, actions)[CheckIDManifest]
+	assert.Equal(t, core.ActionPerformed, rebuild.Status)
+	assert.Contains(t, rebuild.Reason, "could not rebuild manifest.json")
+
+	cfg, err := wapi.LoadConfig(dir)
+
+	require.NoError(t, err)
+	assert.Nil(t, cfg.LastSyncedVersionID)
 }

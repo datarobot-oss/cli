@@ -206,7 +206,7 @@ func printMismatchGuidance(w io.Writer, dir, artifactID, givenID string) {
 		fmt.Sprintf("Already linked to artifact %s, but the catalog id no longer matches.", artifactID),
 	))
 	fmt.Fprintln(w, tui.DimStyle.Render(
-		"Run '"+relinkRemedy(dir, givenID)+"' to relink to a new artifact.",
+		"Run '"+relinkRemedy(dir, givenID)+"' to relink and re-pin the catalog.",
 	))
 }
 

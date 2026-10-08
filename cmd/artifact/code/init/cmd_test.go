@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -434,7 +435,8 @@ func TestRunE_AlreadyLinked_GoneArtifact_NonInteractive(t *testing.T) {
 }
 
 // TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive verifies catalog
-// mismatch in non-interactive mode points to doctor --relink, no delete
+// mismatch in non-interactive mode points to doctor --relink with the id init
+// was given (relinking the same artifact re-pins the catalog), no delete
 // advice, state unchanged.
 func TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive(t *testing.T) {
 	tmp := t.TempDir()
@@ -469,7 +471,7 @@ func TestRunE_AlreadyLinked_CatalogMismatch_NonInteractive(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, stdout, "catalog id no longer matches")
-	assert.Contains(t, stdout, "dr artifact code doctor --relink <new-artifact-id>")
+	assert.Contains(t, stdout, "dr artifact code doctor --relink art-mismatch-001")
 	assert.NotContains(t, stdout, "Delete")
 	assert.NotContains(t, stdout, "re-init")
 
@@ -907,6 +909,44 @@ func TestRunE_AlreadyLinked_RelinkJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &parsed))
 	assert.Equal(t, "ok", parsed["status"])
 	assert.Equal(t, "art-new-007", parsed["artifactId"])
+}
+
+// A relink that repointed config.json but failed a later write leaves the
+// project on the new id, so the JSON names that id and the --fix that finishes
+// the repair, not the old id and a fresh relink.
+func TestRunE_AlreadyLinked_PartialRelinkJSON(t *testing.T) {
+	tmp := t.TempDir()
+
+	require.NoError(t, wapi.Initialize(tmp, wapi.InitOptions{
+		ArtifactID: "art-gone-008",
+	}))
+
+	withFakeArtifact(t, func(_ string) (*workload.Artifact, error) {
+		return nil, &drapi.HTTPError{StatusCode: 404, URL: "test"}
+	})
+
+	withInteractive(t, true)
+
+	withOfferRelink(t, func(_ io.Writer, _, _ string) (string, error) {
+		return "art-new-008", nil
+	})
+
+	withRunRelink(t, func(_ context.Context, _ wldoctor.RelinkOptions) ([]core.Action, error) {
+		return []core.Action{{Status: core.ActionPerformed, Reason: "repointed config.json"}}, wldoctor.ErrRelinkPartial
+	})
+
+	cmd := newTestCmd(t, tmp, false, []string{"art-gone-008"})
+	require.NoError(t, cmd.Flags().Set("output-format", "json"))
+
+	stdout, _, err := runCapture(t, cmd)
+
+	require.Error(t, err)
+
+	var parsed map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &parsed))
+	assert.Equal(t, "art-new-008", parsed["artifactId"])
+	assert.Equal(t, "dr artifact code doctor --fix"+manifest.DirFlag(tmp), parsed["remedy"])
 }
 
 // TestRunE_AlreadyLinked_NoDeleteAdvice is the grep guard: no init output

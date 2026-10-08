@@ -108,6 +108,12 @@ func skipAllRepairs(reason string) []core.Action {
 	return actions
 }
 
+// Seams for the two writes the manifest repair makes, so a test can fail one.
+var (
+	saveConfigFn   = wapi.SaveConfig
+	saveManifestFn = wapi.SaveManifest
+)
+
 // fixManifest rebuilds manifest.json as an empty BASE and clears the config's
 // last-synced version with it: an empty BASE that still claims a synced
 // version makes the next sync skip the remote and upload every local file as
@@ -140,28 +146,42 @@ func fixManifest(projectDir string) core.Action {
 		return core.Action{ID: CheckIDManifest, Status: core.ActionNotNeeded}
 	}
 
+	// The config is cleared first, because that order fails safe: a config
+	// with no synced version makes the next sync list the remote whatever the
+	// manifest says, while an emptied manifest under a config that still
+	// claims a version is the state this repair exists to undo.
+	cleared := normalizeStringPtr(cfg.LastSyncedVersionID) != nil
+
+	if cleared {
+		cfg.LastSyncedVersionID = nil
+
+		if err := saveConfigFn(projectDir, cfg); err != nil {
+			return core.Action{
+				ID:     CheckIDManifest,
+				Status: core.ActionSkipped,
+				Reason: fmt.Sprintf("clear lastSyncedVersionId in config.json: %v; nothing was changed", err),
+			}
+		}
+	}
+
 	rebuilt := wapi.Manifest{
 		Version: wapi.ManifestVersion,
 		Files:   map[string]wapi.FileMeta{},
 	}
 
-	if err := wapi.SaveManifest(projectDir, rebuilt); err != nil {
-		return core.Action{
-			ID:     CheckIDManifest,
-			Status: core.ActionSkipped,
-			Reason: fmt.Sprintf("write rebuilt manifest: %v", err),
-		}
-	}
-
-	if normalizeStringPtr(cfg.LastSyncedVersionID) != nil {
-		cfg.LastSyncedVersionID = nil
-
-		if err := wapi.SaveConfig(projectDir, cfg); err != nil {
+	if err := saveManifestFn(projectDir, rebuilt); err != nil {
+		if !cleared {
 			return core.Action{
 				ID:     CheckIDManifest,
-				Status: core.ActionPerformed,
-				Reason: fmt.Sprintf("rebuilt manifest.json as an empty BASE, but could not clear lastSyncedVersionId in config.json: %v", err),
+				Status: core.ActionSkipped,
+				Reason: fmt.Sprintf("rebuild manifest.json: %v; nothing was changed", err),
 			}
+		}
+
+		return core.Action{
+			ID:     CheckIDManifest,
+			Status: core.ActionPerformed,
+			Reason: fmt.Sprintf("cleared lastSyncedVersionId, so the next sync lists the remote, but could not rebuild manifest.json: %v", err),
 		}
 	}
 

@@ -204,8 +204,10 @@ func IsCatalogMismatch(localCatalogID *string, art *workload.Artifact) bool {
 
 	codeRef := workload.ExtractCodeRef(*art)
 	if codeRef == nil || codeRef.CatalogID == "" {
-		// Not yet patched, as after an interrupted deploy: the next sync
-		// restores it from the local pin, so nothing has diverged.
+		// Not yet patched, as after an interrupted deploy. Nothing has
+		// diverged: re-running `dr workload up` points the artifact at the
+		// pinned code. A plain sync does not, since it patches the codeRef
+		// only when it uploads a new version.
 		return false
 	}
 

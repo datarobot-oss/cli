@@ -79,7 +79,9 @@ live sync blocks them. --fix and --relink are mutually exclusive.
 
 Pass --relink <new-artifact-id> to repoint the project at a different
 artifact with a fresh sync baseline. The target must exist, be a draft
-(not locked), and be the same kind as the linked artifact. A confirm prompt
+(not locked), and be the same kind as the linked artifact while that one can
+still be read; a linked artifact that was deleted has no kind left to match,
+so then any draft is accepted. A confirm prompt
 defaults to No; without a terminal the relink is refused unless --yes is
 given. The working tree is never touched and no server writes are made. The
 relink is logged to history.log.
@@ -117,7 +119,7 @@ Example:
 
 	c.Flags().String("relink", "",
 		"Repoint the project at <new-artifact-id> with a fresh sync baseline. "+
-			"The target must exist, be a draft, and be the same kind as the linked artifact. "+
+			"The target must exist, be a draft, and be the same kind as the linked artifact when that one still exists. "+
 			"Mutually exclusive with --fix.")
 
 	c.MarkFlagsMutuallyExclusive("fix", "relink")

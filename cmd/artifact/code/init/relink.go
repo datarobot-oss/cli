@@ -26,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 )
@@ -79,9 +80,10 @@ type goneOrMismatch struct {
 func handleGoneOrMismatch(cmd *cobra.Command, dir string, cfg wapi.Config, givenID string, outputFormat outputformat.OutputFormat, gone bool) error {
 	stderr := cmd.ErrOrStderr()
 
-	// The id init was given is the relink target, unless it is the one that
-	// is gone or mismatched.
-	if givenID == cfg.ArtifactID {
+	// The id init was given is the relink target, unless it is the gone one.
+	// On a catalog mismatch the same id is the repair: a relink re-pins the
+	// catalog from the artifact's current codeRef.
+	if gone && givenID == cfg.ArtifactID {
 		givenID = ""
 	}
 
@@ -156,6 +158,10 @@ func runRelinkFromInit(cmd *cobra.Command, dir, oldID, newID string, outputForma
 		Store:         wldoctor.ArtifactGetterFunc(getArtifactFn),
 		Confirm:       makeRelinkConfirmFn(cmd),
 	})
+	if errors.Is(err, wldoctor.ErrRelinkPartial) {
+		return reportPartialRelink(cmd, dir, newID, err, actions, outputFormat)
+	}
+
 	if err != nil {
 		// Relink aborted (404, locked, wrong type, lock held, declined,
 		// API unreachable). State is byte-identical.
@@ -186,6 +192,31 @@ func runRelinkFromInit(cmd *cobra.Command, dir, oldID, newID string, outputForma
 	printRelinkSuccess(cmd.OutOrStdout(), dir, newID)
 
 	return nil
+}
+
+// reportPartialRelink reports a relink that repointed config.json but failed a
+// later write: the project now names newID, so that is the id reported, and
+// the remedy is the --fix that rebuilds the rest from the new config.
+func reportPartialRelink(cmd *cobra.Command, dir, newID string, err error, actions []core.Action, outputFormat outputformat.OutputFormat) error {
+	stderr := cmd.ErrOrStderr()
+
+	for _, a := range actions {
+		fmt.Fprintln(stderr, a.Reason)
+	}
+
+	fmt.Fprintln(stderr, err)
+
+	if outputFormat == outputformat.OutputFormatJSON {
+		id := newID
+
+		renderAlreadyLinkedJSON(cmd.OutOrStdout(), &id, "dr artifact code doctor --fix"+manifest.DirFlag(dir))
+
+		cmd.SilenceErrors = true
+
+		return cli.ErrSilent
+	}
+
+	return errors.New("init aborted: relink incomplete")
 }
 
 // printRelinkAbortReason prints the relink abort reason to stderr. For
