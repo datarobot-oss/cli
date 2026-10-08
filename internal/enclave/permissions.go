@@ -17,6 +17,7 @@ package enclave
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -169,7 +170,25 @@ func updateCollectionAccess(permission, operation string, r Recipient) error {
 		ID:                 r.ID,
 	}
 
-	return drapi.PatchJSON(endpoint, "enclave", body, nil)
+	return pinUnsupportedHint(permission, drapi.PatchJSON(endpoint, "enclave", body, nil))
+}
+
+// errPinUnsupported explains a 404 on the pin endpoint: the server predates
+// /enclaves/pinAccess, so the request itself was fine.
+var errPinUnsupported = errors.New(
+	"this server doesn't support the enclave pin permission yet; " +
+		"it needs a covalent-cloud-server with /api/v2/enclaves/pinAccess")
+
+// pinUnsupportedHint adds errPinUnsupported to a 404 from the pin endpoint. The
+// original *drapi.HTTPError stays reachable through errors.As.
+func pinUnsupportedHint(permission string, err error) error {
+	var httpErr *drapi.HTTPError
+	if permission != PermissionPin || !errors.As(err, &httpErr) ||
+		httpErr.StatusCode != http.StatusNotFound {
+		return err
+	}
+
+	return fmt.Errorf("%w: %w", errPinUnsupported, err)
 }
 
 // GrantCreatePermission allows the recipient to create (register) enclaves.
@@ -326,7 +345,8 @@ func ListCreateAccess() ([]CreateAccessHolder, error) {
 
 // ListCollectionAccess returns who holds the named permission ("create" or
 // "pin"). For pin the server lists the users in the caller's organization.
-// System administrators only.
+// Create is listed for system administrators; pin for system administrators
+// and org admins.
 func ListCollectionAccess(permission string) ([]CreateAccessHolder, error) {
 	endpoint, err := config.GetEndpointURL(collectionAccessPath(permission))
 	if err != nil {
@@ -335,8 +355,9 @@ func ListCollectionAccess(permission string) ([]CreateAccessHolder, error) {
 
 	var holders []CreateAccessHolder
 
-	if err := drapi.GetJSON(endpoint, "enclave "+permission+" access", &holders); err != nil {
-		return nil, err
+	err = drapi.GetJSON(endpoint, "enclave "+permission+" access", &holders)
+	if err != nil {
+		return nil, pinUnsupportedHint(permission, err)
 	}
 
 	return holders, nil

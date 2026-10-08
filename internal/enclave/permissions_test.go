@@ -16,8 +16,11 @@ package enclave
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -129,4 +132,50 @@ func TestCollectionAccessPath(t *testing.T) {
 	// Pin has its own endpoint; it is not a field on createAccess.
 	assert.Equal(t, "/api/v2/enclaves/createAccess", collectionAccessPath(PermissionCreate))
 	assert.Equal(t, "/api/v2/enclaves/pinAccess", collectionAccessPath(PermissionPin))
+}
+
+func TestPinPermission_OlderServerHint(t *testing.T) {
+	// A server without /enclaves/pinAccess answers 404. Say so, and keep the
+	// HTTP error reachable for callers that branch on the status.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	errs := map[string]error{
+		"grant":  GrantPinPermission(Recipient{Type: RecipientUser, ID: "u-1"}),
+		"revoke": RevokePinPermission(Recipient{Type: RecipientUser, ID: "u-1"}),
+	}
+	_, errs["list"] = ListCollectionAccess(PermissionPin)
+
+	for name, err := range errs {
+		require.Error(t, err, name)
+		require.ErrorIs(t, err, errPinUnsupported, name)
+		assert.Contains(t, err.Error(), "pinAccess", name)
+
+		var httpErr *drapi.HTTPError
+
+		require.ErrorAs(t, err, &httpErr, name)
+		assert.Equal(t, http.StatusNotFound, httpErr.StatusCode, name)
+	}
+}
+
+func TestCreatePermission_NotFoundHasNoPinHint(t *testing.T) {
+	// The hint is for pin only; a 404 on createAccess passes through unchanged.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := GrantCreatePermission(Recipient{Type: RecipientUser, ID: "u-1"})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, errPinUnsupported)
 }
