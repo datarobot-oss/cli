@@ -138,14 +138,13 @@ func renderLine(line diffLine, redact func(string) bool) string {
 
 	switch line.kind {
 	case lineAdd:
-		return tui.SuccessStyle.Render("+ " + text)
+		text = "+ " + text
 	case lineDel:
-		return tui.WarnStyle.Render("- " + text)
+		text = "- " + text
 	case lineContext:
-		return tui.HintStyle.Render(text)
 	}
 
-	return tui.HintStyle.Render(text)
+	return lineStyle(line.kind).Render(text)
 }
 
 // redactedText is what a line prints when its value must not: the path,

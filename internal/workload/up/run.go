@@ -77,10 +77,11 @@ var (
 )
 
 // ErrDeclined is what a run answers when --confirm was given and the user
-// said no. It is returned before the first mutating branch runs, so a caller
-// can treat it as "nothing happened" rather than as a failure partway through
-// one: nothing was deployed, nothing was locked, and the plan it declined is
-// still the plan the next run will carry out.
+// said no. It is returned before the first deploying branch runs, so a caller
+// can treat it as "nothing was deployed" rather than as a failure partway
+// through one: nothing was locked, and the plan it declined is still the plan
+// the next run will carry out. A --sync-env re-send or a manifest the wizard
+// wrote before the question stands.
 var ErrDeclined = errors.New("declined: nothing was deployed")
 
 // Options is everything a run needs from its caller.

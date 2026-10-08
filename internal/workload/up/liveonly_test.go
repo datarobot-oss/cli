@@ -282,3 +282,53 @@ func TestRenderDiff_CodeBlockListsOnlyWhatTheDeployPushes(t *testing.T) {
 	assert.NotContains(t, out, "DOWNLOAD")
 	assert.NotContains(t, out, "CONFLICT")
 }
+
+// liveWithSecrets is liveWithEnvVar with a variable on the sidecar too, so a
+// roll drops one variable row and one whole container that carries another.
+const liveWithSecrets = `{
+  "type": "service",
+  "containerGroups": [
+    {"name": "default", "containers": [
+      {"name": "primary", "primary": true, "port": 8080,
+       "readinessProbe": {"path": "/health", "port": 8080},
+       "environmentVars": [{"name": "LEGACY_FLAG", "value": "s3cr3t-value"}]},
+      {"name": "metrics", "imageUri": "registry/metrics:v1",
+       "environmentVars": [{"name": "SIDECAR_KEY", "value": "s1decar-secret"}]}
+    ]}
+  ]
+}`
+
+// A removed row has no want, so only the redaction of its live side keeps a
+// value out of the JSON: by path for the variable, by scrub for the container.
+func TestPlanJSON_RemovedRowsNeverCarryLiveValues(t *testing.T) {
+	plan, err := Build(
+		loadedFrom(rolledPayload),
+		liveFrom(t, StateRunning, liveWithSecrets, planLiveRuntime),
+		builtCode(0),
+		Options{},
+	)
+	require.NoError(t, err)
+
+	doc, err := json.Marshal(plan.JSONWithDiff())
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(doc), "s3cr3t-value")
+	assert.NotContains(t, string(doc), "s1decar-secret")
+	assert.Contains(t, string(doc), "SIDECAR_KEY", "the variable's name survives the scrub")
+
+	byPath := map[string]ChangeJSON{}
+
+	for _, c := range plan.JSONWithDiff().Diff.Changes {
+		byPath[c.Path] = c
+	}
+
+	for _, path := range []string{
+		"containerGroups[default].containers[primary].environmentVars[LEGACY_FLAG]",
+		"containerGroups[default].containers[metrics]",
+	} {
+		c, ok := byPath[path]
+		require.True(t, ok, path)
+		assert.True(t, c.Removed, path)
+		assert.True(t, c.Redacted, path)
+	}
+}
