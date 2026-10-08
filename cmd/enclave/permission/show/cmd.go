@@ -30,18 +30,16 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Show your collection-level enclave permissions.",
-		Long: `Show which collection-level enclave permissions you hold, and where they come
-from.
+		Long: `Show whether you may create enclaves or pin workloads, and where that comes from.
 
-Collection-level permissions are not tied to any single enclave. There are two:
-CAN_CREATE, the right to register a new enclave, and
-CAN_OVERRIDE_WORKLOAD_PLACEMENT, the right to pin a workload to one chosen
-enclave (create implies pin). Use "dr enclave access show" for permissions on a
-specific enclave.
+Collection-level permissions are not tied to any single enclave: CAN_CREATE, the
+right to register a new enclave, and CAN_OVERRIDE_WORKLOAD_PLACEMENT, the right to
+pin a workload to one chosen enclave. Use "dr enclave access show" for
+permissions on a specific enclave.
 
 The reported source matters: a system administrator may create enclaves
 regardless of grants, and a server with enclave RBAC disabled enforces nothing —
-both are indistinguishable from holding a grant unless spelled out.
+both are indistinguishable from holding CAN_CREATE unless spelled out.
 
 Pass --user-id to inspect another user. That requires a system administrator.
 

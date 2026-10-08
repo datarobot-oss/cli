@@ -31,8 +31,9 @@ func Cmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List who holds a collection-level enclave permission.",
-		Long: `List the users, groups, and organizations granted a collection-level enclave
-permission ("create" by default; pass --permission pin for the pin permission).
+		Long: `List who has been granted an enclave permission: create by default, or pin
+with --permission pin. Create lists users, groups, and organizations; pin lists
+the users in your organization.
 
 This is the "did my grant land?" view for "dr enclave permission grant".
 "dr enclave permission show" answers only for a single subject, and for a system
@@ -41,7 +42,6 @@ been granted the permission.
 
 An empty result means nobody has been granted it — note that system
 administrators may create enclaves regardless and so do not appear here.
-Recipients holding create also hold pin and appear in both listings.
 
 Requires a system administrator, matching grant and revoke.
 
@@ -65,7 +65,7 @@ Example:
 				return err
 			}
 
-			return enclave.RenderCreateAccess(outputFormat, name, holders)
+			return enclave.RenderCollectionAccess(outputFormat, name, holders)
 		},
 	}
 

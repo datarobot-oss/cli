@@ -17,7 +17,7 @@ An **enclave** is a Kubernetes cluster registered with your DataRobot tenant tha
 Two separate things govern who can do what:
 
 - **Per-enclave access** (`dr enclave access`) — the `owner`, `user`, and `consumer` roles on one enclave. Deploying a workload onto an enclave requires at least the `user` role.
-- **Collection-level permission** (`dr enclave permission`) — who may create enclaves at all, independent of any single one.
+- **Collection-level permissions** (`dr enclave permission`) — who may create enclaves at all, and who may pin a workload to a chosen enclave, independent of any single one.
 
 DataRobot system administrators bypass both and always have full access.
 
@@ -61,8 +61,11 @@ Pin a workload to an enclave with [`dr workload create --enclave <name>`](worklo
 | `dr enclave access list`       | `GET    /api/v2/enclaves/{id}/sharedRoles`        | List who holds a role on one enclave.            |
 | `dr enclave access show`       | `GET    /api/v2/enclaves/{id}/permissions`        | Show effective permissions on one enclave.       |
 | `dr enclave permission grant`  | `PATCH  /api/v2/enclaves/createAccess`            | Allow a recipient to create enclaves.            |
+| `dr enclave permission grant --permission pin` | `PATCH  /api/v2/enclaves/pinAccess` | Allow a user to pin workloads.          |
 | `dr enclave permission revoke` | `PATCH  /api/v2/enclaves/createAccess`            | Stop a recipient from creating enclaves.         |
+| `dr enclave permission revoke --permission pin` | `PATCH  /api/v2/enclaves/pinAccess` | Stop a user from pinning workloads.    |
 | `dr enclave permission list`   | `GET    /api/v2/enclaves/createAccess`            | List who may create enclaves.                    |
+| `dr enclave permission list --permission pin` | `GET    /api/v2/enclaves/pinAccess` | List who may pin, in your organization.  |
 | `dr enclave permission show`   | `GET    /api/v2/enclaves/permissions`             | Show your own collection-level permissions.      |
 
 All paths are served at the root of your DataRobot host. They are new: the API
@@ -205,20 +208,26 @@ dr enclave access show <enclave-id>
 dr enclave access show <enclave-id> --user-id <datarobot-user-id>
 ```
 
-## Permission to create enclaves
+## Permissions to create enclaves and to pin workloads
 
-`dr enclave permission` governs who may create enclaves at all. It targets no single enclave, so these commands take no enclave id. Recipients are named by id: `--user-id`, `--group`, or `--org`.
+`dr enclave permission` governs two capabilities that target no single enclave, so these commands take no enclave id:
+
+- `create`: register new enclaves. Recipients are named by id: `--user-id`, `--group`, or `--org`.
+- `pin`: pin a workload to one chosen enclave with `dr workload create --enclave`, overriding the scheduler. **Users only** (`--user-id`). The enclave must still be linked to the workload's use case, and the user still needs deploy access to it.
+
+The two are independent: holding `create` does not allow pinning, and holding `pin` does not allow creating. A system administrator may create without a grant but needs a `pin` grant to pin.
 
 ### `permission grant`
 
 ```bash
 dr enclave permission grant --permission create --org <org-id>
 dr enclave permission grant --permission create --user-id <datarobot-user-id>
+dr enclave permission grant --permission pin --user-id <datarobot-user-id>
 ```
 
 | Flag           | Description                                  |
 | -------------- | -------------------------------------------- |
-| `--permission` | Permission to grant: `create` (required).    |
+| `--permission` | Permission to grant: `create` or `pin` (required). |
 | `--user-id`    | Grant a user by DataRobot user id.           |
 | `--group`      | Grant a group by id.                         |
 | `--org`        | Grant an entire organization by id.          |
@@ -227,19 +236,21 @@ dr enclave permission grant --permission create --user-id <datarobot-user-id>
 
 ```bash
 dr enclave permission revoke --permission create --org <org-id>
+dr enclave permission revoke --permission pin --user-id <datarobot-user-id>
 ```
 
 ### `permission list`
 
-List the recipients who have been granted the create permission. An empty result means nobody holds it; system administrators do not appear, because they bypass the permission rather than holding it.
+List the recipients who have been granted the create permission, or with `--permission pin` the users in your organization who may pin. An empty result means nobody holds it; system administrators do not appear in the create list, because they bypass that permission rather than holding it.
 
 ```bash
 dr enclave permission list
+dr enclave permission list --permission pin
 ```
 
 ### `permission show`
 
-Show whether a subject may create enclaves, and where that comes from. Defaults to you; `--user-id` inspects somebody else (system administrators only).
+Show whether a subject may create enclaves or pin workloads, and where that comes from. Defaults to you; `--user-id` inspects somebody else (system administrators only).
 
 ```bash
 dr enclave permission show

@@ -25,19 +25,17 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "permission",
-		Short: "Inspect and manage who can create enclaves.",
+		Short: "Inspect and manage who can create enclaves or pin workloads.",
 		Long: `Inspect ("show", "list") or manage ("grant", "revoke") collection-level enclave
 permissions — capabilities that are not tied to any single enclave.
 
-The permissions are:
-  create   register new enclaves. A system administrator grants it to org
-           admins and other users, so that creating enclaves is delegated as a
-           permission rather than inferred from a role.
-  pin      pin a workload to one chosen enclave, overriding the scheduler's
-           placement. Pinning is separate from deploy access: the pinned
-           enclave must still be allowed by the workload's use case, and the
-           user still needs deploy access to it. The create permission
-           implies pin.
+There are two, and they are independent (neither implies the other):
+  create   the right to register a new enclave. A system administrator grants
+           it to org admins and other users, so that creating enclaves is
+           delegated as a permission rather than inferred from a role.
+  pin      the right to pin a workload to one chosen enclave
+           ("dr workload create --enclave"), overriding the scheduler. Granted
+           to users only. A system administrator also needs a pin grant to pin.
 
 Use "dr enclave access" instead to manage access to an existing enclave.
 

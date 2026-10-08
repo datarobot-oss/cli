@@ -28,7 +28,9 @@ func TestParsePermission(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, PermissionCreate, got)
 	}
+}
 
+func TestParsePermission_Pin(t *testing.T) {
 	for _, in := range []string{"pin", "PIN", " Pin "} {
 		got, err := ParsePermission(in)
 		require.NoError(t, err)
@@ -37,30 +39,9 @@ func TestParsePermission(t *testing.T) {
 }
 
 func TestParsePermission_RejectsUnknown(t *testing.T) {
-	// deploy is a per-enclave permission (dr enclave access), not a
-	// collection-level one; the error should name what IS supported.
 	_, err := ParsePermission("deploy")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "create")
-	assert.Contains(t, err.Error(), "pin")
-}
-
-func TestCreateAccessUpdate_PermissionOnTheWire(t *testing.T) {
-	// "create" is the server default and must be OMITTED so requests keep
-	// working against servers that predate the pin permission; "pin" must be
-	// carried explicitly.
-	create, err := json.Marshal(createAccessUpdate{
-		Operation: "grant", ShareRecipientType: RecipientUser, ID: "u-1",
-	})
-	require.NoError(t, err)
-	assert.NotContains(t, string(create), "permission")
-
-	pin, err := json.Marshal(createAccessUpdate{
-		Operation: "grant", ShareRecipientType: RecipientUser, ID: "u-1",
-		Permission: PermissionPin,
-	})
-	require.NoError(t, err)
-	assert.Contains(t, string(pin), `"permission":"pin"`)
 }
 
 func TestResolveRecipientByID(t *testing.T) {
@@ -90,20 +71,16 @@ func TestResolveRecipientByID_Errors(t *testing.T) {
 	assert.Contains(t, err.Error(), "only one recipient")
 }
 
-func TestUpdateCollectionAccess_RequiresAnID(t *testing.T) {
+func TestUpdateCreateAccess_RequiresAnID(t *testing.T) {
 	// A username-only recipient cannot be used: the createAccess endpoint takes
 	// an id. Fail before issuing the request rather than sending an empty id.
-	for _, permission := range []string{PermissionCreate, PermissionPin} {
-		err := GrantCollectionPermission(
-			permission, Recipient{Type: RecipientUser, Username: "alice@corp.io"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "--user-id")
+	err := GrantCreatePermission(Recipient{Type: RecipientUser, Username: "alice@corp.io"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--user-id")
 
-		err = RevokeCollectionPermission(
-			permission, Recipient{Type: RecipientUser, Username: "alice@corp.io"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "--user-id")
-	}
+	err = RevokeCreatePermission(Recipient{Type: RecipientUser, Username: "alice@corp.io"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--user-id")
 }
 
 func TestRenderEnclavePermissions_JSONRoundTrip(t *testing.T) {
@@ -127,4 +104,29 @@ func TestRenderEnclavePermissions_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, true, back["rbacEnabled"])
 	assert.Equal(t, false, back["viaSysAdmin"])
 	assert.Len(t, back["permissions"], 2)
+}
+
+func TestPinPermission_UsersOnly(t *testing.T) {
+	// The server refuses group and organization recipients for pin; fail before
+	// sending the request, naming the one flag that works.
+	for _, r := range []Recipient{
+		{Type: RecipientGroup, ID: "g-1"},
+		{Type: RecipientOrg, ID: "org-1"},
+		{Type: RecipientUser, Username: "alice@corp.io"},
+	} {
+		err := GrantPinPermission(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "users only")
+		assert.Contains(t, err.Error(), "--user-id")
+
+		err = RevokePinPermission(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "users only")
+	}
+}
+
+func TestCollectionAccessPath(t *testing.T) {
+	// Pin has its own endpoint; it is not a field on createAccess.
+	assert.Equal(t, "/api/v2/enclaves/createAccess", collectionAccessPath(PermissionCreate))
+	assert.Equal(t, "/api/v2/enclaves/pinAccess", collectionAccessPath(PermissionPin))
 }

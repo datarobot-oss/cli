@@ -38,10 +38,11 @@ func Cmd() *cobra.Command {
 		Long: `Grant a collection-level enclave permission to a single recipient.
 
 The permissions are:
-  create   register new enclaves (implies pin)
-  pin      pin a workload to one chosen enclave, overriding the scheduler's
-           placement; the enclave must still be allowed by the workload's use
-           case, and deploy access to it is still required
+  create   register new enclaves (users, groups, or organizations)
+  pin      choose the one enclave a workload runs on, overriding the scheduler's
+           placement (users only, by --user-id). The enclave must still be
+           allowed by the workload's use case, and deploy access to it is still
+           required. Pin and create are independent: neither implies the other.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id

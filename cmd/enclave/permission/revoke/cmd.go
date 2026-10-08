@@ -38,10 +38,11 @@ func Cmd() *cobra.Command {
 		Long: `Revoke a collection-level enclave permission from a single recipient.
 
 The permissions are:
-  create   register new enclaves (implies pin, so revoking create also
-           removes pin)
-  pin      pin a workload to one chosen enclave. Pin cannot be revoked from a
-           recipient who holds create — revoke create instead.
+  create   register new enclaves (users, groups, or organizations)
+  pin      choose the one enclave a workload runs on, overriding the scheduler's
+           placement (users only, by --user-id). The enclave must still be
+           allowed by the workload's use case, and deploy access to it is still
+           required. Pin and create are independent: neither implies the other.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
