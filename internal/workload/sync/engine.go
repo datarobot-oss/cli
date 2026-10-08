@@ -105,6 +105,7 @@ type Engine struct {
 	artifact      *workload.Artifact
 	remoteVer     string
 	drifted       bool
+	execBackfill  bool
 	local         LocalManifest
 	remote        RemoteManifest
 	plan          *SyncPlan
@@ -176,6 +177,14 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 	)
 	if err != nil {
 		return nil, e.joinReleaseErr(err)
+	}
+
+	// An empty plan never reaches the state phase, so what a backfill
+	// learned is written here; a preview writes nothing.
+	if !e.previewOnly() && e.plan.IsEmpty() {
+		if err := persistExecutableBackfill(e); err != nil {
+			log.Debug("Could not record the executable bits", "error", err)
+		}
 	}
 
 	return e.plan, nil

@@ -16,6 +16,7 @@ package filesapi
 
 import (
 	"io"
+	"sync"
 )
 
 type Client interface {
@@ -35,4 +36,7 @@ func New() Client {
 	return &httpClient{}
 }
 
-type httpClient struct{}
+type httpClient struct {
+	execOnce      sync.Once
+	execSupported bool
+}

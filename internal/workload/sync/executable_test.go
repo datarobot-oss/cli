@@ -54,7 +54,11 @@ func TestClassifyExecutable(t *testing.T) {
 		{"remote flag set", no, no, yes, ClsRemoteModified},
 		{"remote flag cleared", yes, yes, no, ClsRemoteModified},
 		{"both moved the same way", no, yes, yes, ClsUnchanged},
-		{"old manifest entry", nil, yes, no, ClsUnchanged},
+		{"old manifest entry, the old upload dropped the bit", nil, yes, no, ClsLocalModified},
+		{"old manifest entry, the old download dropped the bit", nil, no, yes, ClsRemoteModified},
+		{"old manifest entry, both agree", nil, yes, yes, ClsUnchanged},
+		{"old manifest entry on windows", nil, nil, yes, ClsUnchanged},
+		{"old manifest entry on an old server", nil, yes, nil, ClsUnchanged},
 		{"old server", no, no, nil, ClsUnchanged},
 		{"old server with a local chmod", no, yes, nil, ClsLocalModified},
 		{"windows host", yes, nil, yes, ClsUnchanged},
@@ -98,9 +102,9 @@ func TestDiff_ExecutableOnlyChange(t *testing.T) {
 
 	t.Run("unknown is not drift", func(t *testing.T) {
 		for name, sides := range map[string][3]*bool{
-			"old manifest": {nil, boolPtr(true), boolPtr(false)},
-			"old server":   {boolPtr(true), boolPtr(true), nil},
-			"windows host": {boolPtr(true), nil, boolPtr(true)},
+			"old manifest, old server": {nil, boolPtr(true), nil},
+			"old server":               {boolPtr(true), boolPtr(true), nil},
+			"windows host":             {boolPtr(true), nil, boolPtr(true)},
 		} {
 			plan := Diff(
 				BaseManifest{"run.sh": entry(sides[0])},
@@ -131,8 +135,14 @@ func TestUploadExecutable(t *testing.T) {
 }
 
 func TestExecutableNotice(t *testing.T) {
-	assert.Empty(t, executableNotice(nil))
-	assert.Empty(t, executableNotice(map[string]FileEntry{"a.py": {Executable: boolPtr(false)}, "b.py": {}}))
+	assert.Empty(t, executableNotice(nil, nil))
+	assert.Empty(t, executableNotice(map[string]FileEntry{"a.py": {Executable: boolPtr(false)}, "b.py": {}}, nil))
+
+	// An edit to a script the catalog already holds as executable is not news.
+	assert.Empty(t, executableNotice(
+		map[string]FileEntry{"run.sh": {Executable: boolPtr(true)}},
+		RemoteManifest{"run.sh": {Executable: boolPtr(true)}},
+	))
 
 	msg := executableNotice(map[string]FileEntry{
 		"run.sh":  {Executable: boolPtr(true)},
@@ -142,7 +152,7 @@ func TestExecutableNotice(t *testing.T) {
 		"bin/c":   {Executable: boolPtr(true)},
 		"bin/d":   {Executable: boolPtr(true)},
 		"bin/e.x": {Executable: boolPtr(true)},
-	})
+	}, nil)
 
 	assert.Contains(t, msg, "COPY --chmod=755")
 	assert.Contains(t, msg, "bin/a, bin/b, bin/c, bin/d, bin/e.x and 1 more")
@@ -311,9 +321,10 @@ func TestEngine_RemoteExecutableFlagAppliedLocally(t *testing.T) {
 		remote[path] = filesapi.FileMeta{Hash: meta.Hash, Size: meta.Size, Executable: boolPtr(path == "run.sh")}
 	}
 
+	// Nothing is registered as downloadable: the bytes already match, so the
+	// bit is applied in place and a download attempt would fail the run.
 	fake := (&fakeFilesClient{catalogID: "cid", stageID: "st", versionID: "v3"}).
-		withVersion("cid", "v2", remote).
-		withDownloadable("v2", map[string][]byte{"run.sh": []byte("#!/bin/sh\n")})
+		withVersion("cid", "v2", remote)
 
 	result, err := execEngine(t, dir, fake, "v2").Run()
 	require.NoError(t, err)
@@ -322,6 +333,103 @@ func TestEngine_RemoteExecutableFlagAppliedLocally(t *testing.T) {
 
 	assertPerm(t, filepath.Join(dir, "run.sh"), 0o755)
 	assertPerm(t, filepath.Join(dir, ignore.FileName), 0o644)
+}
+
+// oldCLIProject is a project an older CLI synced: run.sh is executable on
+// disk, the manifest records no bits, and the catalog holds the dropped bit.
+func oldCLIProject(t *testing.T) (string, *fakeFilesClient) {
+	t.Helper()
+
+	dir := syncedProject(t, map[string]string{"run.sh": "#!/bin/sh\n"}, "cid", "v1")
+	require.NoError(t, os.Chmod(filepath.Join(dir, "run.sh"), 0o755))
+
+	m, err := wapi.LoadManifest(dir)
+	require.NoError(t, err)
+
+	remote := map[string]filesapi.FileMeta{}
+
+	for path, meta := range m.Files {
+		remote[path] = filesapi.FileMeta{Hash: meta.Hash, Size: meta.Size, Executable: boolPtr(false)}
+		meta.Executable = nil
+		m.Files[path] = meta
+	}
+
+	require.NoError(t, wapi.SaveManifest(dir, m))
+
+	fake := (&fakeFilesClient{catalogID: "cid", stageID: "st", versionID: "v2"}).withVersion("cid", "v1", remote)
+
+	return dir, fake
+}
+
+// The reported case: nothing was edited since an older CLI uploaded the
+// executable without its bit. The fast path lists the catalog once, and the
+// executable side wins, so the file goes up again with the bit.
+func TestEngine_OldManifestUploadsTheDroppedBit(t *testing.T) {
+	skipOnWindows(t)
+
+	dir, fake := oldCLIProject(t)
+
+	result, err := execEngine(t, dir, fake, "v1").Run()
+	require.NoError(t, err)
+	assert.Equal(t, 1, fake.AllFilesCalls(), "the old manifest triggers one listing")
+	assert.Equal(t, 1, result.UploadedCount)
+	assert.Equal(t, boolPtr(true), fake.versions["v2"]["run.sh"].Executable)
+}
+
+// When the catalog already agrees, the plan is empty and never reaches the
+// state phase, so the learned bits are written by the plan and the next sync
+// takes the fast path again.
+func TestEngine_OldManifestRecordsBitsOnce(t *testing.T) {
+	skipOnWindows(t)
+
+	dir, fake := oldCLIProject(t)
+	require.NoError(t, os.Chmod(filepath.Join(dir, "run.sh"), 0o644))
+
+	first := execEngine(t, dir, fake, "v1")
+
+	plan, err := first.Plan()
+	require.NoError(t, err)
+	assert.True(t, plan.IsEmpty())
+	require.NoError(t, first.Close())
+
+	m, err := wapi.LoadManifest(dir)
+	require.NoError(t, err)
+	assert.Equal(t, boolPtr(false), m.Files["run.sh"].Executable)
+
+	_, err = execEngine(t, dir, fake, "v1").Plan()
+	require.NoError(t, err)
+	assert.Equal(t, 1, fake.AllFilesCalls(), "the second sync takes the fast path")
+}
+
+// A preview lists the catalog so it shows the fix the sync would make, and
+// writes nothing.
+func TestEngine_OldManifestDryRunWritesNothing(t *testing.T) {
+	skipOnWindows(t)
+
+	dir, fake := oldCLIProject(t)
+
+	before, err := os.ReadFile(filepath.Join(wapi.Dir(dir), "manifest.json"))
+	require.NoError(t, err)
+
+	e, err := newWithDeps(dir, Options{DryRun: true, Yes: true}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{GetFn: func(id string) (*workload.Artifact, error) {
+			return draftArtifact(id, "cid", "v1"), nil
+		}},
+		Now:      time.Now,
+		Lockfile: noLockfileRunner,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e.Close() })
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+	assert.Len(t, plan.Uploads, 1, "the preview shows the upload the sync would make")
+
+	after, err := os.ReadFile(filepath.Join(wapi.Dir(dir), "manifest.json"))
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
 }
 
 func assertPerm(t *testing.T, path string, want os.FileMode) {

@@ -94,10 +94,10 @@ func refineExecutable(cls Classification, b, l, r FileEntry) Classification {
 }
 
 // classifyExecutable is the three-way diff of the executable bit alone. An
-// unknown side is never drift: without a base there is no telling who moved.
+// unknown local or remote side is never drift.
 func classifyExecutable(base, local, remote *bool) Classification {
 	if base == nil {
-		return ClsUnchanged
+		return classifyUnknownBase(local, remote)
 	}
 
 	localChanged := local != nil && *local != *base
@@ -112,6 +112,21 @@ func classifyExecutable(base, local, remote *bool) Classification {
 
 	// Both moved means both agree, since the bit has two values.
 	return ClsUnchanged
+}
+
+// classifyUnknownBase settles a file last synced before the bit was tracked.
+// Older CLIs dropped the bit and never added it, so where the two known sides
+// disagree the executable one is right: upload it, or apply it locally.
+func classifyUnknownBase(local, remote *bool) Classification {
+	if local == nil || remote == nil || *local == *remote {
+		return ClsUnchanged
+	}
+
+	if *local {
+		return ClsLocalModified
+	}
+
+	return ClsRemoteModified
 }
 
 func pathUnion(maps ...BaseManifest) map[string]struct{} {

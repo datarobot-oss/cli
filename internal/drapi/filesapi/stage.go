@@ -64,10 +64,11 @@ func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, 
 		return fmt.Errorf("build upload url: %w", err)
 	}
 
-	// Sent only when set: the server defaults to false, and a plain file's request stays as it was.
+	// Sent only when set and the server takes it: it defaults to false, and a
+	// plain file's request stays as it was.
 	var fields url.Values
 
-	if executable {
+	if executable && c.supportsExecutable() {
 		fields = url.Values{"isExecutable": []string{"true"}}
 	}
 

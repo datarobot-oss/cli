@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
 // executableNoticeMaxNames caps the file list so a tree of scripts stays one line.
@@ -38,13 +40,59 @@ func isSet(b *bool) bool {
 	return b != nil && *b
 }
 
+// hasUnknownExecutable reports a base entry written before the bit was tracked.
+func hasUnknownExecutable(base BaseManifest) bool {
+	for _, entry := range base {
+		if entry.Executable == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// persistExecutableBackfill records the bits a backfill listing learned for
+// files whose bytes still match, so the next sync takes the fast path again. A
+// run that executes a plan writes them in its state phase instead.
+func persistExecutableBackfill(e *Engine) error {
+	if !e.execBackfill {
+		return nil
+	}
+
+	m, err := wapi.LoadManifest(e.projectDir)
+	if err != nil {
+		return err
+	}
+
+	changed := false
+
+	for path, meta := range m.Files {
+		r, ok := e.remote[path]
+		if meta.Executable != nil || !ok || r.Executable == nil || r.Hash != meta.Hash {
+			continue
+		}
+
+		meta.Executable = r.Executable
+		m.Files[path] = meta
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+
+	return wapi.SaveManifest(e.projectDir, m)
+}
+
 // executableNotice warns that the image build drops the bit the catalog now
-// keeps, naming the executable files this sync uploaded; "" when there are none.
-func executableNotice(sent map[string]FileEntry) string {
+// keeps, naming the executable files whose bit this sync brought to the
+// catalog, so an edit to a file it already named stays quiet; "" when there
+// are none. Remove it once image builds apply the bit.
+func executableNotice(sent map[string]FileEntry, before RemoteManifest) string {
 	var names []string
 
 	for path, entry := range sent {
-		if isSet(entry.Executable) {
+		if isSet(entry.Executable) && !isSet(before[path].Executable) {
 			names = append(names, path)
 		}
 	}

@@ -116,6 +116,11 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 
 	dst := filepath.Join(dir, filepath.FromSlash(fa.Path))
 
+	// The bytes on disk are already the remote's; only the bit moved.
+	if fa.Action == ActDownloadModify && fa.ExecOnly() {
+		return applyRemoteExecutable(dst, fa)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("mkdir parent for %s: %w", fa.Path, err)
 	}
@@ -148,6 +153,10 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 	}
 
 	// os.Create keeps an existing file's mode, so the bit is set or cleared explicitly.
+	return applyRemoteExecutable(dst, fa)
+}
+
+func applyRemoteExecutable(dst string, fa FileAction) error {
 	if err := fileops.ApplyExecutable(dst, fa.RemoteExec); err != nil {
 		return fmt.Errorf("set executable bit on %s: %w", fa.Path, err)
 	}

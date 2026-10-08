@@ -73,15 +73,28 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
 	}
 
-	if !e.drifted {
-		// Nobody else changed the remote since our last sync; skip the
-		// allFiles round-trip and reuse BASE.
-		e.remote = copyManifest(e.base)
+	return resolveRemote(e)
+}
 
-		return nil
+// resolveRemote fills e.remote: listed from the Files API when the remote
+// moved or the base lacks the executable bits, copied from BASE otherwise.
+func resolveRemote(e *Engine) error {
+	codeRef := codeRefOrEmpty(e)
+
+	if !e.drifted {
+		// A base written before the executable bit was tracked cannot say what
+		// the catalog holds, so the remote is listed once to learn it.
+		if !hasUnknownExecutable(e.base) || codeRef.CatalogID == "" || e.remoteVer == "" {
+			// Nobody else changed the remote since our last sync; skip the
+			// allFiles round-trip and reuse BASE.
+			e.remote = copyManifest(e.base)
+
+			return nil
+		}
+
+		e.execBackfill = true
 	}
 
-	codeRef := codeRefOrEmpty(e)
 	if codeRef.CatalogID == "" || e.remoteVer == "" {
 		// First sync against an empty artifact: remote manifest is empty.
 		e.remote = RemoteManifest{}
@@ -90,6 +103,16 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	remote, err := e.files.AllFiles(codeRef.CatalogID, e.remoteVer)
+	if err != nil && e.execBackfill {
+		// The backfill only learns the bits; without it the sync is the one it was.
+		log.Debug("Could not list the remote to learn executable bits", "error", err)
+
+		e.execBackfill = false
+		e.remote = copyManifest(e.base)
+
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("fetch remote manifest: %w", err)
 	}

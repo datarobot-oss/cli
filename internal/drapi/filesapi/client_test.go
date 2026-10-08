@@ -38,11 +38,23 @@ import (
 func startServer(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
 
+	return startServerAt(t, `{"major": 2, "minor": 49, "versionString": "2.49"}`, handler)
+}
+
+// startServerAt is startServer with the API version the server reports.
+func startServerAt(t *testing.T, apiVersion string, handler http.Handler) *httptest.Server {
+	t.Helper()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/version/", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{}"))
+	})
+
+	mux.HandleFunc("/api/v2/version/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(apiVersion))
 	})
 
 	mux.Handle("/api/v2/", http.StripPrefix("", handler))
@@ -238,6 +250,35 @@ func TestUploadToStage_ExecutableFormFieldPrecedesFile(t *testing.T) {
 	c := New()
 	body := strings.NewReader("#!/bin/sh\n")
 	require.NoError(t, c.UploadToStage("cid-1", "st-1", "run.sh", int64(body.Len()), true, body))
+}
+
+// A server older than the field validates its form strictly, so it gets the
+// plain upload it always got: no isExecutable part, only the file.
+func TestUploadToStage_OlderServerGetsNoExecutableField(t *testing.T) {
+	for _, version := range []string{`{"major": 2, "minor": 48}`, `not json`} {
+		t.Run(version, func(t *testing.T) {
+			startServerAt(t, version, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mr, err := r.MultipartReader()
+				if !assert.NoError(t, err) {
+					return
+				}
+
+				first, err := mr.NextPart()
+				if !assert.NoError(t, err) {
+					return
+				}
+
+				assert.Equal(t, "file", first.FormName(), "no isExecutable field ahead of the file")
+
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
+			}))
+
+			c := New()
+			body := strings.NewReader("#!/bin/sh\n")
+			require.NoError(t, c.UploadToStage("cid-1", "st-1", "run.sh", int64(body.Len()), true, body))
+		})
+	}
 }
 
 // TestUploadToStage_AdvertisesContentLength verifies that the size

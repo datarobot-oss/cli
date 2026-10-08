@@ -292,7 +292,7 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 		// Phase 5 and Phase 7.
 		e.uploadOutcome = &outcome
 
-		if msg := executableNotice(outcome.Sent); msg != "" {
+		if msg := executableNotice(outcome.Sent, e.remote); msg != "" {
 			log.Warn(msg)
 		}
 
