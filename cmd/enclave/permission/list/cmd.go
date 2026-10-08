@@ -43,7 +43,8 @@ been granted the permission.
 An empty result means nobody has been granted it — note that system
 administrators may create enclaves regardless and so do not appear here.
 
-Requires a system administrator, matching grant and revoke.
+Create requires a system administrator. --permission pin also works for an org
+admin, and lists their own organization; matching grant and revoke.
 
 Example:
   dr enclave permission list

@@ -35,13 +35,16 @@ There are two, and they are independent (neither implies the other):
            delegated as a permission rather than inferred from a role.
   pin      the right to pin a workload to one chosen enclave
            ("dr workload create --enclave"), overriding the scheduler. Granted
-           to users only. A system administrator also needs a pin grant to pin.
+           to users only, by a system administrator (any user) or an org admin
+           (users in their own organization). A system administrator also needs
+           a pin grant to pin.
 
 Use "dr enclave access" instead to manage access to an existing enclave.
 
 These commands take effect only when the server has ENCLAVE_RBAC_ENABLED=true;
-otherwise the call succeeds but changes nothing. Granting and revoking require
-a system administrator.`,
+otherwise the call succeeds but changes nothing. Granting and revoking create
+require a system administrator; pin can also be managed by an org admin, for
+users in their own organization.`,
 	}
 
 	cmd.AddCommand(

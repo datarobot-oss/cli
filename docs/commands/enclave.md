@@ -217,12 +217,19 @@ dr enclave access show <enclave-id> --user-id <datarobot-user-id>
 
 The two are independent: holding `create` does not allow pinning, and holding `pin` does not allow creating. A system administrator may create without a grant but needs a `pin` grant to pin.
 
+Who may grant, revoke and list:
+
+| Permission | System administrator | Org admin | Anyone else |
+| ---------- | -------------------- | --------- | ----------- |
+| `create`   | yes                  | no        | no          |
+| `pin`      | yes, any user in any organization | yes, users in their own organization only (another organization's user: 403) | no (403), including users who hold `pin` |
+
 ### `permission grant`
 
 ```bash
 dr enclave permission grant --permission create --org <org-id>
 dr enclave permission grant --permission create --user-id <datarobot-user-id>
-dr enclave permission grant --permission pin --user-id <datarobot-user-id>
+dr enclave permission grant --permission pin --user-id <datarobot-user-id>   # sys admin, or an org admin for a user in their org
 ```
 
 | Flag           | Description                                  |

@@ -55,7 +55,13 @@ enclaves they already own, nor any permission granted to them by way of a
 different subject (for example, an organization-wide grant).
 
 Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise the
-call succeeds but changes nothing. Revoking requires a system administrator.
+call succeeds but changes nothing.
+
+Who may run it:
+  create   a system administrator.
+  pin      a system administrator, for any user; or an org admin, for users in
+           their own organization. A user in another organization, or any other
+           caller, is refused with 403.
 
 Example:
   dr enclave permission revoke --permission create --org 656f0000000000000000abcd
