@@ -20,6 +20,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
@@ -321,9 +322,41 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 	return draft, nil
 }
 
-// envVars is the .env listing the file will carry: everything the classifier
-// found by default, none when the user opted out. Local-only variables are
-// dropped, because deploying them would be wrong rather than unnecessary.
+// syncVars is every variable .env defines, which is what a reconciliation
+// carries.
+//
+// The classifier still decides the form an entry takes, a literal or a
+// reference to a credential, and no longer decides whether the variable
+// travels at all. That is the difference between this and envVars, and it is
+// deliberate: setup offers its verdicts on a screen you can argue with, while
+// a sync shows a table and asks once, so a name held back there would be one
+// the reader agreed to without ever seeing it.
+//
+// --skip-env still empties it. "Do not read the file" is a statement the user
+// makes; "this looks local to me" is a guess the classifier makes.
+func (a Answers) syncVars(detected Detected) []manifest.EnvVar {
+	if a.SkipEnv {
+		return nil
+	}
+
+	out := make([]manifest.EnvVar, 0, len(detected.EnvVars))
+
+	for _, v := range detected.EnvVars {
+		out = append(out, manifest.EnvVar{
+			Name:   v.Name,
+			Value:  v.Value,
+			Secret: v.Kind == EnvSecret,
+		})
+	}
+
+	return out
+}
+
+// envVars is the .env listing a fresh manifest will carry: everything the
+// classifier found by default, none when the user opted out. Local-only
+// variables are dropped, because deploying them would be wrong rather than
+// unnecessary. Setup asks about that verdict on a screen; a sync overrules it,
+// which is what syncVars above is for.
 func (a Answers) envVars(detected Detected) []manifest.EnvVar {
 	if a.SkipEnv {
 		return nil
@@ -385,7 +418,11 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 		return manifest.Build{Mode: manifest.BuildModeImage, ImageURI: a.Image}, nil
 
 	case manifest.BuildModeGenerated:
-		return a.generatedBuild()
+		if problem := detected.generatedBuild().problem; problem != "" {
+			return manifest.Build{}, fmt.Errorf("--build-mode %s: %s", manifest.BuildModeGenerated, problem)
+		}
+
+		return a.generatedBuild(detected)
 
 	default:
 		return manifest.Build{}, fmt.Errorf(
@@ -414,7 +451,7 @@ func (a Answers) buildMode(detected Detected) string {
 	}
 }
 
-func (a Answers) generatedBuild() (manifest.Build, error) {
+func (a Answers) generatedBuild(detected Detected) (manifest.Build, error) {
 	var missing []string
 
 	if a.ExecutionEnvironment == "" {
@@ -435,20 +472,32 @@ func (a Answers) generatedBuild() (manifest.Build, error) {
 		return manifest.Build{}, fmt.Errorf("--entrypoint %q: %w", a.Entrypoint, err)
 	}
 
-	// Resolved at setup, not at deploy: the file records both ids so the same
-	// manifest builds the same image after the environment moves on, and a
-	// name that does not exist fails now rather than after a sync.
-	id, versionID, err := resolveExecEnvFn(a.ExecutionEnvironment)
+	ee, err := a.executionEnvironment(detected)
 	if err != nil {
 		return manifest.Build{}, err
 	}
 
 	return manifest.Build{
 		Mode:                          manifest.BuildModeGenerated,
-		ExecutionEnvironmentID:        id,
-		ExecutionEnvironmentVersionID: versionID,
+		ExecutionEnvironmentID:        ee.ID,
+		ExecutionEnvironmentVersionID: ee.LatestSuccessfulVersion.ID,
 		Entrypoint:                    entrypoint,
 	}, nil
+}
+
+// executionEnvironment resolves --execution-environment at setup, so a missing
+// name or a wrong-language environment fails now rather than after a build.
+func (a Answers) executionEnvironment(detected Detected) (workload.ExecutionEnvironment, error) {
+	ee, err := findExecEnvFn(a.ExecutionEnvironment)
+	if err != nil {
+		return workload.ExecutionEnvironment{}, err
+	}
+
+	if problem := detected.EnvironmentMismatch(ee); problem != "" {
+		return workload.ExecutionEnvironment{}, fmt.Errorf("--execution-environment %q: %s", a.ExecutionEnvironment, problem)
+	}
+
+	return ee, nil
 }
 
 // splitCommand parses a command line the way a shell would, so quoted

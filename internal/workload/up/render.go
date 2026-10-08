@@ -17,6 +17,7 @@ package up
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -46,6 +47,15 @@ type Summary struct {
 	// exactly that. What changes is that it has to read as a description, where
 	// every other plan this command prints is an announcement.
 	Refused bool
+
+	// SecretsRotated is how many credentials this run re-sent before the plan
+	// was computed. A rotation writes to the credential store and to no file,
+	// so it can move nothing the plan is able to show, and an empty plan is
+	// still the truth about the manifest. It is not the whole truth about the
+	// workload, which goes on serving the value it started with until it is
+	// restarted, and a bare "Already up to date" above that reads as a
+	// contradiction.
+	SecretsRotated int
 }
 
 // shortIDLen is how much of an id is enough to label something with. The
@@ -63,6 +73,10 @@ const detailLimit = 6
 // environment variable can be a secret someone pasted in plaintext, and a
 // plan that echoed it would put it in terminal scrollback and CI logs. Names
 // are enough to see what changed.
+//
+// Only for a change that carries no keys to ask instead. The bracket is part
+// of the match because it is what tells the list apart from a field whose name
+// merely starts the same way.
 const envVarsSegment = ".environmentVars["
 
 // Render writes the plan block that `up` prints before it acts, and that
@@ -78,7 +92,7 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 	writeRefusedNote(&b, s)
 
 	if plan.Empty() {
-		b.WriteString("\n" + settledVerdict(plan) + "\n")
+		b.WriteString("\n" + settledVerdict(s, plan) + "\n")
 
 		_, err := io.WriteString(w, b.String())
 
@@ -107,10 +121,19 @@ func Render(w io.Writer, s Summary, plan Plan) error {
 // until it finishes, at which point the deploy that follows starts it again.
 // Saying nothing differs, without saying it will differ, is how a preview comes
 // to read as the opposite of what the deploy will do.
-func settledVerdict(plan Plan) string {
+func settledVerdict(s Summary, plan Plan) string {
 	if plan.State == StateSettling {
 		return tui.WarnStyle.Render("Nothing differs yet, but this workload is still settling") + "\n" +
 			tui.HintStyle.Render("  What a deploy does depends on where it lands, so it waits first.")
+	}
+
+	// About the manifest, which is what a plan is about. The note under it is
+	// about the credential store, which no plan can show, so the verdict says
+	// which of the two it is answering for rather than claiming both.
+	if s.SecretsRotated > 0 {
+		return tui.SuccessStyle.Render("✓ Already up to date") + "\n" +
+			tui.HintStyle.Render(fmt.Sprintf("  Apart from the %s just re-sent, which needs a restart to reach the container.",
+				plural(s.SecretsRotated, "secret", "secrets")))
 	}
 
 	return tui.SuccessStyle.Render("✓ Already up to date")
@@ -293,6 +316,10 @@ func createDetail(s Summary, plan Plan) string {
 	line := fmt.Sprintf("%s will be created: %s is bound to %s, which no longer exists",
 		s.Name, manifest.FileName, plan.PriorWorkloadID)
 
+	if plan.BoundArtifactID != "" {
+		return line + "; it comes up on artifact " + plan.BoundArtifactID
+	}
+
 	if !reusesLink(plan) {
 		return line
 	}
@@ -307,6 +334,11 @@ func fromArtifact(plan Plan) string {
 	// this says nothing rather than contradicting it two lines above.
 	if plan.Code.LinkLocked {
 		return ""
+	}
+
+	// The file names the artifact, so it is neither first nor the link's.
+	if plan.BoundArtifactID != "" {
+		return ", on artifact " + plan.BoundArtifactID + ", which exists already"
 	}
 
 	// Saying "its first artifact" of a project that already pushes to one is
@@ -354,6 +386,18 @@ func lockLines(plan Plan) []string {
 	}
 
 	switch {
+	case plan.Locked && plan.BoundArtifactID != "" && plan.BoundLocked:
+		// Nothing is minted on a named swap, and nothing is locked either
+		// when the named artifact already is.
+		return []string{entry("~", "lock",
+			"the running version is locked, and so is "+plan.BoundArtifactID+", so it is swapped in as it is")}
+
+	case plan.Locked && plan.BoundArtifactID != "":
+		// Nothing is minted on a named swap: the artifact the file names is
+		// locked to match before the swap.
+		return []string{entry("~", "lock",
+			"the running version is locked, so "+plan.BoundArtifactID+" is locked to match before the swap")}
+
 	case plan.Locked:
 		return []string{entry("~", "lock",
 			"the running version is locked, so a new one is created and permanently locked to match")}
@@ -378,17 +422,32 @@ func artifactLines(plan Plan) []string {
 		return nil
 	}
 
-	reason := "rebuilt from the synced code"
+	if plan.Reroll != "" {
+		return []string{entry("~", "artifact", plan.Reroll+"; rolling it again")}
+	}
+
+	marker, reason := "+", "rebuilt from the synced code"
+
+	// A file naming an artifact by id mints nothing: the workload is swapped
+	// onto a version that already exists.
+	if plan.BoundArtifactID != "" {
+		return []string{entry("~", "artifact", "swaps to "+plan.BoundArtifactID+", which exists already, so nothing is built")}
+	}
+
 	if len(plan.Artifact) > 0 {
-		reason = fmt.Sprintf("new version, %d spec %s",
-			len(plan.Artifact), plural(len(plan.Artifact), "change", "changes"))
+		changes := fmt.Sprintf("%d spec %s", len(plan.Artifact), plural(len(plan.Artifact), "change", "changes"))
+
+		reason = "new version, " + changes
+		if plan.InPlace {
+			marker, reason = "~", changes+", written to the draft in place"
+		}
 	}
 
 	if plan.InheritsImage {
 		reason += "; keeps the running image, so no rebuild"
 	}
 
-	return append([]string{entry("+", "artifact", reason)}, details(plan.Artifact)...)
+	return append([]string{entry(marker, "artifact", reason)}, details(plan.Artifact)...)
 }
 
 // runtimeLines describes a sizing change, which needs no new version. A
@@ -399,7 +458,7 @@ func runtimeLines(plan Plan) []string {
 	}
 
 	if len(plan.Runtime) == 1 {
-		return []string{entry("~", "runtime", describe(plan.Runtime[0]))}
+		return []string{entry("~", "runtime", shortLines(plan.Runtime)[0])}
 	}
 
 	head := entry("~", "runtime", fmt.Sprintf("%d %s",
@@ -439,15 +498,24 @@ var (
 
 // details lists individual changes under their entry, capped, saying out loud
 // how many it left out.
+//
+// The cap is applied before the lines are rendered, so a change nobody is
+// going to see cannot decide how the ones above it are labelled.
 func details(changes []Change) []string {
 	shown := changes
 	if len(shown) > detailLimit {
 		shown = shown[:detailLimit]
 	}
 
-	out := make([]string, 0, len(shown)+1)
-	for _, c := range shown {
-		out = append(out, "      "+describe(c))
+	rendered := shortLines(shown)
+
+	// Capacity from the cap rather than from the length it produced, which is
+	// the same number and says why: at most detailLimit lines, plus the one
+	// that counts what was left out. A length the analyser cannot see a bound
+	// on reads as a size computation that might overflow.
+	out := make([]string, 0, detailLimit+1)
+	for _, line := range rendered {
+		out = append(out, "      "+line)
 	}
 
 	if dropped := len(changes) - len(shown); dropped > 0 {
@@ -457,23 +525,43 @@ func details(changes []Change) []string {
 	return out
 }
 
-// describe renders one change, redacting the values of environment variables.
+// describe renders one change under its whole path, which is what the JSON
+// envelope carries.
 func describe(c Change) string {
-	if redacted(c.Path) {
-		if c.Absent {
-			return c.Path + ": set"
-		}
-
-		return c.Path + ": changed"
-	}
-
-	return c.String()
+	return describeAs(c, c.Path)
 }
 
-// redacted reports whether a path sits inside an environmentVars list, whose
+// describeAs renders one change under the label the caller has chosen for it,
+// redacting the values of environment variables.
+func describeAs(c Change, label string) string {
+	if redacted(c) {
+		if c.Absent {
+			return label + ": set"
+		}
+
+		return label + ": changed"
+	}
+
+	return c.at(label)
+}
+
+// redacted reports whether a change sits inside an environmentVars list, whose
 // values never reach the output.
-func redacted(path string) bool {
-	return strings.Contains(path, envVarsSegment)
+//
+// From the walk's keys wherever there are any, rather than from the path: the
+// path is a rendering, and a rendering is free to change shape. One that did
+// would take the redaction with it and say nothing, which is the one failure
+// here that cannot be taken back once it has reached a CI log.
+//
+// A name that happens to be "environmentVars" is redacted along with the list
+// itself. Being wrong that way costs a reader the two values behind a field
+// they can open the file to see; being wrong the other way prints a secret.
+func redacted(c Change) bool {
+	if len(c.Keys) > 0 {
+		return slices.Contains(c.Keys, keyEnvironmentVars)
+	}
+
+	return strings.Contains(c.Path, envVarsSegment)
 }
 
 // plural picks the right noun for a count.
@@ -516,10 +604,27 @@ type PlanJSON struct {
 	// legitimate first deploy.
 	PriorWorkloadID string `json:"priorWorkloadId"`
 
-	// KeepsImage reports that the version this run mints runs the image the
-	// current one runs, so no build happens. Intent under --dry-run, and what
-	// happened after a real run.
+	// KeepsImage reports that the generation this run brings up runs the
+	// image the current one runs, so no build happens. Intent under
+	// --dry-run, and what happened after a real run.
 	KeepsImage bool `json:"keepsImage"`
+
+	// InPlace reports that the workload is rolled onto the draft artifact it
+	// already runs, after any spec change is written to it, so the artifact
+	// id does not change. False whenever a version is minted.
+	InPlace bool `json:"inPlace"`
+
+	// Reroll is why the version serving is rolled onto itself with nothing in
+	// the file changed: its last rollout did not land. "" otherwise.
+	Reroll string `json:"reroll"`
+
+	// Unbuildable is why the platform could not build the generated image
+	// the plan asks for, and the reason the run was refused. "" otherwise.
+	Unbuildable string `json:"unbuildable"`
+
+	// Incompatible is why the workload cannot be swapped onto the artifact
+	// the file names, and the reason the run was refused. "" otherwise.
+	Incompatible string `json:"incompatible"`
 
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
@@ -558,7 +663,11 @@ func (p Plan) JSON() PlanJSON {
 		PriorWorkloadID: p.PriorWorkloadID,
 
 		// Already gated on there being a version to mint.
-		KeepsImage: p.InheritsImage,
+		KeepsImage:   p.InheritsImage,
+		InPlace:      p.InPlace,
+		Reroll:       p.Reroll,
+		Unbuildable:  p.Unbuildable,
+		Incompatible: p.Incompatible,
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),

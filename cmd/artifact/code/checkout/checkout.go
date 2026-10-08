@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
@@ -52,10 +53,12 @@ type checkoutMeta struct {
 	TotalSize    int64     `json:"totalSize"`
 }
 
-func runDownload(out io.Writer, format outputformat.OutputFormat, dir, verArg string, deps Deps) error {
+// runDownload checks out verArg of the catalog cfg names. cfg is the state
+// syncedCatalog already read and vetted, so it is not read again here.
+func runDownload(out io.Writer, format outputformat.OutputFormat, dir string, cfg wapi.Config, verArg string, deps Deps) error {
 	startedAt := time.Now()
 
-	pre, err := preflight(dir, verArg, deps)
+	pre, err := preflight(dir, cfg, verArg, deps)
 	if err != nil {
 		return err
 	}
@@ -197,16 +200,7 @@ type preflightResult struct {
 	checkoutDir string
 }
 
-func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
-	cfg, err := wapi.LoadConfig(dir)
-	if err != nil {
-		return preflightResult{}, fmt.Errorf("read %s: %w", wapi.ConfigPath(dir), err)
-	}
-
-	if cfg.CatalogID == nil || *cfg.CatalogID == "" {
-		return preflightResult{}, errors.New("no code has been synced yet. Run 'dr artifact code sync' first")
-	}
-
+func preflight(dir string, cfg wapi.Config, verArg string, deps Deps) (preflightResult, error) {
 	if err := probeArtifact(deps.GetArtifact, cfg.ArtifactID); err != nil {
 		return preflightResult{}, err
 	}
@@ -221,6 +215,21 @@ func preflight(dir, verArg string, deps Deps) (preflightResult, error) {
 		versionID:   versionID,
 		checkoutDir: wapi.CheckoutDir(dir, versionID),
 	}, nil
+}
+
+// syncedCatalog reads the linked project's state, or says that nothing has been
+// synced yet, in which case there is no catalog and so no version to check out.
+func syncedCatalog(dir string) (wapi.Config, error) {
+	cfg, err := wapi.LoadConfig(dir)
+	if err != nil {
+		return cfg, fmt.Errorf("read %s: %w", wapi.ConfigPath(dir), err)
+	}
+
+	if cfg.CatalogID == nil || *cfg.CatalogID == "" {
+		return cfg, fmt.Errorf("no code has been synced yet. Run 'dr artifact code sync%s' first", manifest.DirFlag(dir))
+	}
+
+	return cfg, nil
 }
 
 func prepareCheckoutsParent(parent string, totalSize int64) error {

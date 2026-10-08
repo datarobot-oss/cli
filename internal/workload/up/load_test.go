@@ -267,12 +267,12 @@ func TestLoad_ADirectoryAtThePathIsNotAManifest(t *testing.T) {
 // The flag exists because the first run of this command already reads .env:
 // with no manifest `up` is the wizard. The edit has to happen before the file
 // is read, or the deploy would carry the version from before it.
-func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
+func TestLoad_SyncEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 	dir := t.TempDir()
 	path := writeManifest(t, dir, boundManifest)
 
 	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
-		assert.True(t, opts.ImportEnv)
+		assert.True(t, opts.SyncEnv)
 		assert.Equal(t, dir, opts.Dir, "the edit lands next to the manifest being deployed")
 		assert.Equal(t, "dr workload up"+manifest.DirFlag(dir), opts.Remedy,
 			"what the edit's own notices tell the reader to run next")
@@ -287,7 +287,7 @@ func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 		return wizard.Result{Path: path, Action: wizard.ActionUpdated, EnvKeysListed: 1}, nil
 	})
 
-	loaded, err := load(dir, Options{ImportEnv: true})
+	loaded, err := load(dir, Options{SyncEnv: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, loaded.Env.KeysAdded)
@@ -297,17 +297,17 @@ func TestLoad_ImportEnvEditsTheManifestBeforeReadingIt(t *testing.T) {
 
 // A rotation writes to the credential store and leaves the file alone, so the
 // count is the only trace of it: the plan below has nothing to show.
-func TestLoad_UpdateEnvCarriesTheRotationCount(t *testing.T) {
+func TestLoad_SyncEnvCarriesTheRotationCount(t *testing.T) {
 	dir := t.TempDir()
 	writeManifest(t, dir, boundManifest)
 
 	swap(t, &runWizardFn, func(opts wizard.Options) (wizard.Result, error) {
-		assert.True(t, opts.UpdateEnv)
+		assert.True(t, opts.SyncEnv)
 
 		return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 2}, nil
 	})
 
-	loaded, err := load(dir, Options{UpdateEnv: true})
+	loaded, err := load(dir, Options{SyncEnv: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, loaded.Env.SecretsRotated)
@@ -355,35 +355,31 @@ func TestLoad_DriftNoticeNamesTheDeploysOwnFlags(t *testing.T) {
 
 	assert.Contains(t, out, "REGION", "a name .env has and the manifest does not")
 	assert.Contains(t, out, "LOG_LEVEL", "a declared value .env no longer agrees with")
-	assert.Contains(t, out, "'dr workload up"+at+" --import-env'")
-	assert.Contains(t, out, "'dr workload up"+at+" --update-env'")
+	// The fixture's manifest also declares OPENAI_API_KEY, which this .env does
+	// not name: a removal is drift too, and gets the same remedy.
+	assert.Contains(t, out, "OPENAI_API_KEY", "a name the manifest carries and .env dropped")
+	assert.Equal(t, 3, strings.Count(out, "'dr workload up"+at+" --sync-env'"),
+		"one flag reconciles all of it, so every finding sends the reader to the same command")
 
 	assert.NotContains(t, out, "dr workload config",
 		"both flags are on this command, so another one is a detour")
 	assert.NotContains(t, out, "trace", "names, never values")
 }
 
-// None of these can be settled by anything the reader is about to run, so on a
-// deploy each would print on every run for the life of the project. The
-// command that is about configuration keeps them; this one drops them, or the
-// drift beside them is what the reader learns to skip.
-func TestLoad_DriftNoticeLeavesTheStandingLinesToConfig(t *testing.T) {
+// The one standing fact left: a credential's value cannot be compared with
+// .env whatever either file says, so on a deploy it would print on every run
+// of every project that keeps a secret. Everything else the classifier used to
+// withhold is now drift with a remedy, and is named as such.
+func TestLoad_DriftNoticeLeavesTheStandingLineToConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeManifest(t, dir, strings.Replace(boundManifest,
-		"dr-credential:68f0cccc0000000000000003/apiToken", "dr-credential:PLACEHOLDER/apiToken", 1))
-	writeEnv(t, dir, "LOG_LEVEL=debug\n"+
-		// A credential's value, which nothing can compare with .env.
-		"OPENAI_API_KEY=fixture-not-a-real-key-1a2b3c4d\n"+
-		// A classifier verdict: held back on purpose, and no flag adds it.
-		"DATABASE_URL=postgres://localhost:5432/dev\n")
+	writeManifest(t, dir, boundManifest)
+	writeEnv(t, dir, "LOG_LEVEL=debug\nOPENAI_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
 
 	stderr := &strings.Builder{}
 
 	_, err := load(dir, Options{Stderr: stderr})
 	require.NoError(t, err)
 
-	// The placeholder is the third: the deploy raises its own refusal when it
-	// reaches the credential, so saying it here is the same news twice.
 	assert.Empty(t, stderr.String(), "the two files agree about everything that has moved")
 }
 
@@ -427,7 +423,7 @@ func TestLoad_DryRunPreviewsTheEdit(t *testing.T) {
 		return wizard.Result{Action: wizard.ActionPlanned, EnvKeysListed: 1}, nil
 	})
 
-	loaded, err := load(dir, Options{ImportEnv: true, DryRun: true})
+	loaded, err := load(dir, Options{SyncEnv: true, DryRun: true})
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, loaded.Env.KeysAdded)

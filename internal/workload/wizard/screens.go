@@ -66,25 +66,31 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// the fetch ran, and arriving at the first screen would clear it and drop
 	// the flag without saying so.
 	//
-	// Only those two. A bad --port, a path missing its slash and an importance
+	// Only these. A bad --port, a path missing its slash and an importance
 	// outside the enum are all values a screen shows and the user can correct,
 	// and refusing them here would turn a recoverable typo into a run that
-	// never starts.
-	for _, check := range []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive} {
+	// never starts. The kind joins them while its screen is not asked, since
+	// nothing else could correct a bad --type, and a spec file brings every
+	// check headless applies, since it skips the screens that would show a
+	// bad value.
+	checks := []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive}
+	if !askKind {
+		checks = append(checks, opts.Answers.checkKind)
+	}
+
+	if opts.SpecFile != "" {
+		checks = append(checks, opts.Answers.check)
+	}
+
+	for _, check := range checks {
 		if err := check(); err != nil {
 			return nil, manifest.Draft{}, "", err
 		}
 	}
 
-	var workloads []workload.Workload
-
-	if opts.Answers.WorkloadID == "" && opts.Answers.Name == "" {
-		fetched, err := listWorkloadsFn(workloadPickLimit, 0, nil, "")
-		if err != nil {
-			return nil, manifest.Draft{}, "", err
-		}
-
-		workloads = fetched
+	prepared, workloads, err := preparedAndWorkloads(opts)
+	if err != nil {
+		return nil, manifest.Draft{}, "", err
 	}
 
 	// The wizard draws on stderr, not stdout. stdout is this command's
@@ -93,6 +99,9 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// substitution would capture escape sequences ahead of the path.
 	//
 	started := newFlow(detected, workloads, opts.Answers)
+	if prepared != nil {
+		started = started.withPrepared(*prepared)
+	}
 	// Carried into the flow because the confirm screen is where secrets would
 	// be stored, and --dry-run has to mean the same thing on a terminal as it
 	// does headless: nothing created, here or on the platform.
@@ -113,13 +122,38 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// Printed here rather than from inside the flow: until tui.Run returns,
 	// the alt screen owns the terminal and anything written to stderr lands
 	// underneath a full-screen redraw.
-	reportImport(opts.Stderr, finished.imports)
+	reportImport(opts.Stderr, finished.imports, nil)
 
 	content, draft, err := finished.result()
 
 	// The directory screen may have moved the project; the caller writes the
 	// manifest where the flow ended up, not where setup was started.
 	return content, draft, finished.detected.Dir, err
+}
+
+// preparedAndWorkloads reads the spec file when one was given, and lists the
+// workloads to bind to when none was: a prepared spec is a workload to
+// create, so it gets no binding question and no list.
+func preparedAndWorkloads(opts Options) (*Prepared, []workload.Workload, error) {
+	if opts.SpecFile != "" {
+		loaded, err := LoadSpec(opts.SpecFile)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return &loaded, nil, nil
+	}
+
+	if opts.Answers.WorkloadID != "" || opts.Answers.Name != "" {
+		return nil, nil, nil
+	}
+
+	workloads, err := listWorkloadsFn(workloadPickLimit, 0, nil, "")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return nil, workloads, nil
 }
 
 // interactiveOutput is where the wizard draws. bubbletea needs the real
@@ -310,6 +344,20 @@ func (f flow) sourceOptions() []option {
 		dockerfileNote, missing = "no "+DockerfileName+" detected", true
 	}
 
+	generatedNote, generatedMissing := "", false
+
+	switch check := f.detected.generatedBuild(); {
+	case f.keepsLiveCode():
+		// The bound workload's own build is kept, not chosen: up pulls its
+		// code into this empty directory, so the missing files are no problem.
+		generatedNote = "built from the workload's current code"
+	case check.problem != "":
+		generatedNote = "needs pyproject.toml + uv.lock or package.json + package-lock.json"
+		generatedMissing = true
+	case check.note != "":
+		generatedNote = "uv.lock is generated at deploy if uv is installed; commit it"
+	}
+
 	return []option{
 		{
 			value: manifest.BuildModeDockerfile,
@@ -317,7 +365,12 @@ func (f flow) sourceOptions() []option {
 			note:  dockerfileNote,
 			warn:  missing,
 		},
-		{value: manifest.BuildModeGenerated, label: "Build from a managed execution environment"},
+		{
+			value: manifest.BuildModeGenerated,
+			label: "Build from a managed execution environment",
+			note:  generatedNote,
+			warn:  generatedMissing,
+		},
 		{value: manifest.BuildModeImage, label: "Use an already published image"},
 	}
 }
@@ -390,7 +443,7 @@ func (f flow) liveChoice(at screen) string {
 // is not mistaken for a fresh one and the preselected row is not mistaken for
 // the wizard's own guess.
 func (f flow) liveDefaultsNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -401,7 +454,7 @@ func (f flow) liveDefaultsNote() string {
 // liveValuesNote is the same idea for the screens made of fields rather than
 // options, where there is no row to tag.
 func (f flow) liveValuesNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -733,7 +786,7 @@ func (f flow) settingsNote() string {
 // release cannot read, in which case the field is not about that probe at all
 // and nothing typed here will touch it.
 func (f flow) liveProbeNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -830,7 +883,7 @@ func (f flow) previewText() string {
 		return f.diff
 	}
 
-	if f.live != nil {
+	if f.bound() {
 		return string(f.content) + "\n" + tui.HintStyle.Render("no change to the running workload")
 	}
 
@@ -937,7 +990,7 @@ func (f flow) readinessLine() string {
 	// A probe shape this release does not model is carried over untouched, so
 	// the answers do not describe it and neither should this line.
 	if present, readable := f.liveReadinessProbe(); present && !readable {
-		return "Readiness: " + f.live.Name + "'s own probe, kept as it is apart from the port it watches."
+		return "Readiness: " + f.probeOwner() + "'s own probe, kept as it is apart from the port it watches."
 	}
 
 	if !f.draft.WantsReadinessProbe() {
@@ -957,8 +1010,18 @@ func (f flow) liveReadinessProbe() (present, readable bool) {
 	return f.live.ReadinessProbe()
 }
 
+// probeOwner names whose probe a line is about: the bound workload, or the
+// spec file, which has no name to print.
+func (f flow) probeOwner() string {
+	if f.bound() {
+		return f.live.Name
+	}
+
+	return "the spec file"
+}
+
 func (f flow) nextStep() string {
-	if f.live != nil {
+	if f.bound() {
 		return "On `up`: deploys this repo to " + f.live.Name + "."
 	}
 
@@ -1151,6 +1214,8 @@ type pickedWorkload struct {
 type pickedEnv struct {
 	id        string
 	versionID string
+	name      string
+	language  string
 }
 
 // createNewLabel is the pinned row. It says what choosing it does, because
@@ -1198,7 +1263,7 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, liveID strin
 
 		row := tableRow{
 			cells: []string{ee.Name, languageLabel(ee.ProgrammingLanguage), ee.ID},
-			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID},
+			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID, name: ee.Name, language: ee.ProgrammingLanguage},
 		}
 
 		// The one a bound workload is already built on is tagged and lifted to
@@ -1240,16 +1305,15 @@ func (f flow) liveExecEnvID() string {
 }
 
 // languageLabel renders the language column: the platform's value as it came
-// (only the sort folds case; a server that says "R" is shown saying "R"), and
-// a dash where it says "other" or nothing — a word that means "unlabeled"
-// reads better as absence than as a category.
+// (a server that says "R" is shown saying "R"), and a dash where it names no
+// language — a word that means "unlabeled" reads better as absence than as a
+// category.
 func languageLabel(language string) string {
-	trimmed := strings.TrimSpace(language)
-	if lower := strings.ToLower(trimmed); lower == "" || lower == "other" {
+	if workload.EnvironmentLanguage(language) == "" {
 		return "—"
 	}
 
-	return trimmed
+	return strings.TrimSpace(language)
 }
 
 // replicaValue leaves the field empty rather than showing a zero, which is

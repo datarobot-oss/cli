@@ -16,6 +16,7 @@ package up
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -97,8 +98,8 @@ func TestRender_TheThreeClasses(t *testing.T) {
 	plan := Plan{
 		State:    StateRunning,
 		Code:     builtCode(14),
-		Artifact: []Change{{Path: "containerGroups[default].containers[primary].port", Have: 8080.0, Want: 9090.0}},
-		Runtime:  []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		Artifact: []Change{moved(inPrimary("port"), 8080.0, 9090.0)},
+		Runtime:  []Change{moved(inGroup("default", "replicaCount"), 1.0, 3.0)},
 	}
 
 	out := render(t, appSummary, plan)
@@ -106,7 +107,7 @@ func TestRender_TheThreeClasses(t *testing.T) {
 	assert.Contains(t, out, "my-app (68b0c1d2), running")
 	assert.Contains(t, out, "~ code       14 files changed since the last deploy")
 	assert.Contains(t, out, "+ artifact   new version, 1 spec change")
-	assert.Contains(t, out, "~ runtime    containerGroups[default].replicaCount: 1 -> 3")
+	assert.Contains(t, out, "~ runtime    replicaCount: 1 -> 3")
 	assert.NotContains(t, out, "Already up to date")
 }
 
@@ -118,7 +119,7 @@ func TestRender_TheThreeClasses(t *testing.T) {
 func TestRender_RefusedPlanIsDescribedRatherThanAnnounced(t *testing.T) {
 	plan := Plan{
 		State:    StateTerminated,
-		Artifact: []Change{{Path: "containerGroups[default].containers[primary].port", Have: 8080.0, Want: 9090.0}},
+		Artifact: []Change{moved(inPrimary("port"), 8080.0, 9090.0)},
 	}
 
 	out := render(t, Summary{Name: "old-name", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Refused: true}, plan)
@@ -148,10 +149,11 @@ func TestRender_AppliedPlanCarriesNoRefusedNote(t *testing.T) {
 func TestRender_SingleRuntimeChangeSitsOnItsOwnLine(t *testing.T) {
 	out := render(t, appSummary, Plan{
 		State:   StateRunning,
-		Runtime: []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		Runtime: []Change{moved(inGroup("default", "replicaCount"), 1.0, 3.0)},
 	})
 
-	assert.Contains(t, out, "~ runtime    containerGroups[default].replicaCount: 1 -> 3")
+	assert.Contains(t, out, "~ runtime    replicaCount: 1 -> 3")
+	assert.NotContains(t, out, "containerGroups", "one group is the answer for every line, so no line says it")
 	assert.NotContains(t, out, "2 changes")
 }
 
@@ -159,14 +161,17 @@ func TestRender_SeveralRuntimeChangesAreListed(t *testing.T) {
 	out := render(t, appSummary, Plan{
 		State: StateRunning,
 		Runtime: []Change{
-			{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0},
-			{Path: "containerGroups[default].containers[primary].resourceAllocation.cpu", Have: 0.5, Want: 2.0},
+			moved(inGroup("default", "replicaCount"), 1.0, 3.0),
+			moved(inPrimary("resourceAllocation", "cpu"), 0.5, 2.0),
 		},
 	})
 
 	assert.Contains(t, out, "~ runtime    2 changes")
-	assert.Contains(t, out, "      containerGroups[default].replicaCount: 1 -> 3")
-	assert.Contains(t, out, "      containerGroups[default].containers[primary].resourceAllocation.cpu: 0.5 -> 2")
+
+	// The group and the container it holds are two different places, so the
+	// column that separates them earns its width here.
+	assert.Contains(t, out, "      default  replicaCount: 1 -> 3")
+	assert.Contains(t, out, "      primary  resourceAllocation.cpu: 0.5 -> 2")
 }
 
 func TestRender_FirstDeploy(t *testing.T) {
@@ -206,7 +211,7 @@ func TestRender_PublishedImageNeverMentionsCode(t *testing.T) {
 	out := render(t, appSummary, Plan{
 		State:    StateRunning,
 		Code:     CodeChange{Applies: false, Files: 12},
-		Artifact: []Change{{Path: "containerGroups[default].containers[primary].imageUri", Have: "a:1", Want: "a:2"}},
+		Artifact: []Change{moved(inPrimary("imageUri"), "a:1", "a:2")},
 	})
 
 	assert.NotContains(t, out, "code")
@@ -225,7 +230,7 @@ func TestRender_ArtifactFromCodeAloneSaysWhy(t *testing.T) {
 // A deploy that keeps the running image takes seconds where one that rebuilds
 // takes minutes, and --dry-run is the whole of the review a deploy gets.
 func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
-	change := Change{Path: "containerGroups[default].containers[primary].environmentVars[LOG_LEVEL]", Absent: true}
+	change := absent(inEnv("primary", "LOG_LEVEL"))
 
 	kept := render(t, appSummary, Plan{State: StateRunning, InheritsImage: true, Artifact: []Change{change}})
 	assert.Contains(t, kept, "new version, 1 spec change; keeps the running image, so no rebuild")
@@ -233,6 +238,27 @@ func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
 	building := render(t, appSummary, Plan{State: StateRunning, Artifact: []Change{change}})
 	assert.Contains(t, building, "new version, 1 spec change")
 	assert.NotContains(t, building, "no rebuild", "a deploy about to build says nothing about keeping an image")
+}
+
+// A draft takes the change itself, so the plan says the artifact is changed
+// rather than that a new one is made, and the envelope says no version is
+// minted: a lock fact gated on minting is not reported for it.
+func TestRender_InPlaceSaysTheDraftIsWrittenTo(t *testing.T) {
+	change := absent(inEnv("primary", "LOG_LEVEL"))
+	plan := Plan{State: StateRunning, InheritsImage: true, InPlace: true, Artifact: []Change{change}}
+
+	out := render(t, appSummary, plan)
+	assert.Contains(t, out, "~ artifact   1 spec change, written to the draft in place; keeps the running image, so no rebuild")
+	assert.NotContains(t, out, "new version")
+
+	encoded := plan.JSON()
+	assert.True(t, encoded.InPlace)
+	assert.True(t, encoded.KeepsImage)
+	assert.Equal(t, "rolled", encoded.Action)
+	assert.False(t, plan.MintsVersion())
+
+	again := render(t, appSummary, plan.rerolling("the last rollout of this version ended errored"))
+	assert.Contains(t, again, "~ artifact   the last rollout of this version ended errored; rolling it again")
 }
 
 // An errored workload's line says what the deploy does about the failure,
@@ -263,17 +289,14 @@ func TestRender_ErroredSaysWhetherTheDeployReplacesTheFailure(t *testing.T) {
 func TestRender_NeverPrintsEnvironmentVariableValues(t *testing.T) {
 	const secret = "sk-abcdefghijklmnopqrstuvwxyz0123"
 
+	newToken := absent(inEnv("primary", "NEW_TOKEN"))
+	newToken.Want = map[string]any{"name": "NEW_TOKEN", "value": secret}
+
 	plan := Plan{
 		State: StateRunning,
 		Artifact: []Change{
-			{
-				Path: "containerGroups[default].containers[primary].environmentVars[OPENAI_API_KEY].value",
-				Have: "sk-oldvalue", Want: secret,
-			},
-			{
-				Path:   "containerGroups[default].containers[primary].environmentVars[NEW_TOKEN]",
-				Absent: true, Want: map[string]any{"name": "NEW_TOKEN", "value": secret},
-			},
+			moved(inEnv("primary", "OPENAI_API_KEY", "value"), "sk-oldvalue", secret),
+			newToken,
 		},
 	}
 
@@ -281,8 +304,8 @@ func TestRender_NeverPrintsEnvironmentVariableValues(t *testing.T) {
 
 	assert.NotContains(t, out, secret)
 	assert.NotContains(t, out, "sk-oldvalue")
-	assert.Contains(t, out, "environmentVars[OPENAI_API_KEY].value: changed")
-	assert.Contains(t, out, "environmentVars[NEW_TOKEN]: set")
+	assert.Contains(t, out, "env OPENAI_API_KEY: changed")
+	assert.Contains(t, out, "env NEW_TOKEN: set")
 	assert.Contains(t, out, "OPENAI_API_KEY", "the name is the whole point of showing the line")
 }
 
@@ -291,7 +314,7 @@ func TestRender_NeverPrintsEnvironmentVariableValues(t *testing.T) {
 func TestRender_CapsTheDetailListOutLoud(t *testing.T) {
 	changes := make([]Change, 0, 10)
 	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"} {
-		changes = append(changes, Change{Path: "spec." + name, Have: 1.0, Want: 2.0})
+		changes = append(changes, moved(Change{Path: "spec." + name, Keys: []string{"spec", name}}, 1.0, 2.0))
 	}
 
 	out := render(t, appSummary, Plan{State: StateRunning, Artifact: changes})
@@ -323,11 +346,11 @@ func TestRender_StoppedWorkloadWithNothingToChange(t *testing.T) {
 func TestRender_StoppedWorkloadWithDriftSaysBoth(t *testing.T) {
 	out := render(t, appSummary, Plan{
 		State:   StateStopped,
-		Runtime: []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		Runtime: []Change{moved(inGroup("default", "replicaCount"), 1.0, 3.0)},
 	})
 
 	assert.Contains(t, out, "started")
-	assert.Contains(t, out, "containerGroups[default].replicaCount: 1 -> 3")
+	assert.Contains(t, out, "replicaCount: 1 -> 3")
 }
 
 func TestRender_ShortIDLeavesShortIDsAlone(t *testing.T) {
@@ -346,8 +369,8 @@ func TestPlanJSON_Shape(t *testing.T) {
 	plan := Plan{
 		State:    StateRunning,
 		Code:     builtCode(14),
-		Artifact: []Change{{Path: "containerGroups[default].containers[primary].port", Have: 8080.0, Want: 9090.0}},
-		Runtime:  []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		Artifact: []Change{moved(inPrimary("port"), 8080.0, 9090.0)},
+		Runtime:  []Change{moved(inGroup("default", "replicaCount"), 1.0, 3.0)},
 	}
 
 	encoded, err := json.Marshal(plan.JSON())
@@ -359,6 +382,8 @@ func TestPlanJSON_Shape(t *testing.T) {
 	assert.Equal(t, "rolled", decoded["action"])
 	assert.Equal(t, "running", decoded["state"])
 	assert.Equal(t, false, decoded["creates"])
+	assert.Empty(t, decoded["unbuildable"], "emitted even when empty, like reroll and stateReason")
+	assert.Empty(t, decoded["incompatible"], "emitted even when empty, like unbuildable")
 
 	code, _ := decoded["code"].(map[string]any)
 	assert.Equal(t, true, code["changed"])
@@ -366,6 +391,30 @@ func TestPlanJSON_Shape(t *testing.T) {
 
 	artifact, _ := decoded["artifact"].([]any)
 	assert.Len(t, artifact, 1)
+}
+
+func TestPlanJSON_CarriesTheUnbuildableReason(t *testing.T) {
+	plan := Plan{State: StateUnbound, Creates: true, Unbuildable: "the project has neither pyproject.toml with uv.lock nor package.json with package-lock.json"}
+
+	encoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, plan.Unbuildable, decoded["unbuildable"])
+}
+
+func TestPlanJSON_CarriesTheIncompatibleReason(t *testing.T) {
+	plan := Plan{State: StateRunning, BoundArtifactID: "art-2", Incompatible: "artifact art-2 belongs to repository repo-2"}
+
+	encoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, plan.Incompatible, decoded["incompatible"])
 }
 
 // TestPlanJSON_EmptyListsAreNotNull keeps a consumer from having to special
@@ -385,11 +434,8 @@ func TestPlanJSON_RedactsToo(t *testing.T) {
 	const secret = "sk-abcdefghijklmnopqrstuvwxyz0123"
 
 	plan := Plan{
-		State: StateRunning,
-		Artifact: []Change{{
-			Path: "containerGroups[default].containers[primary].environmentVars[OPENAI_API_KEY].value",
-			Have: "old", Want: secret,
-		}},
+		State:    StateRunning,
+		Artifact: []Change{moved(inEnv("primary", "OPENAI_API_KEY", "value"), "old", secret)},
 	}
 
 	encoded, err := json.Marshal(plan.JSON())
@@ -397,6 +443,12 @@ func TestPlanJSON_RedactsToo(t *testing.T) {
 
 	assert.NotContains(t, string(encoded), secret)
 	assert.Contains(t, string(encoded), "OPENAI_API_KEY")
+
+	// Whole, where the printed plan shortens it: a caller acting on the
+	// envelope needs to know which container the variable is in, and it has no
+	// column beside it to read that off.
+	assert.Contains(t, string(encoded),
+		"containerGroups[default].containers[primary].environmentVars[OPENAI_API_KEY].value: changed")
 }
 
 // A locked artifact is only replaced by a run that mints a version. Saying so
@@ -480,7 +532,7 @@ func TestPlanJSON_NoLockFactsWhenNothingIsMinted(t *testing.T) {
 	sizing := Plan{
 		State:   StateRunning,
 		Locked:  true,
-		Runtime: []Change{{Path: "containerGroups[default].replicaCount", Have: 1.0, Want: 3.0}},
+		Runtime: []Change{moved(inGroup("default", "replicaCount"), 1.0, 3.0)},
 	}.JSON()
 
 	assert.False(t, sizing.Locked, "a sizing change is applied in place and mints nothing")
@@ -583,4 +635,64 @@ func TestRender_LinkedProjectOnAPublishedImageStillGetsANewArtifact(t *testing.T
 
 	assert.Contains(t, out, "with its first artifact")
 	assert.NotContains(t, out, "linked to")
+}
+
+// A rotation moves nothing a plan can show, so an empty plan is the truth
+// about the manifest and not about the workload: the run is about to restart
+// it, and a bare verdict above that reads as a contradiction.
+func TestRender_EmptyPlanSaysWhatTheRotationStillNeeds(t *testing.T) {
+	out := &strings.Builder{}
+
+	summary := Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: "running", SecretsRotated: 1}
+
+	require.NoError(t, Render(out, summary, Plan{State: StateRunning}))
+
+	assert.Contains(t, out.String(), "Already up to date")
+	assert.Contains(t, out.String(), "Apart from the secret just re-sent")
+}
+
+// The line belongs to the rotation, not to every run that finds nothing to do.
+func TestRender_EmptyPlanWithoutARotationSaysOnlyThat(t *testing.T) {
+	out := &strings.Builder{}
+
+	summary := Summary{Name: "my-app", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", Status: "running"}
+
+	require.NoError(t, Render(out, summary, Plan{State: StateRunning}))
+
+	assert.Contains(t, out.String(), "Already up to date")
+	assert.NotContains(t, out.String(), "re-sent")
+}
+
+// moved is a change with its two values filled in. The fixtures build their
+// paths through the same helpers the plan tests use, because the printed plan
+// reads the walk's keys: a fixture carrying only a path would exercise a
+// rendering nothing produces.
+func moved(c Change, have, want any) Change {
+	c.Have, c.Want = have, want
+
+	return c
+}
+
+// inGroup is a change on a container group itself, which is where the sizing
+// the runtime applies in place lives.
+func inGroup(name string, field ...string) Change {
+	return Change{
+		Path: fmt.Sprintf("containerGroups[%s].%s", name, strings.Join(field, ".")),
+		Keys: append([]string{keyContainerGroups, name}, field...),
+	}
+}
+
+// inEnv is a change to one environment variable, with its path spelled the way
+// the walk spells a name-keyed list. A change with no keys is redacted off
+// that spelling, so a fixture that dotted it would be a shape the walk never
+// produces standing in for the one it does.
+func inEnv(container, name string, leaf ...string) Change {
+	c := inContainer(container, append([]string{keyEnvironmentVars, name}, leaf...)...)
+
+	c.Path = fmt.Sprintf("containerGroups[default].containers[%s].environmentVars[%s]", container, name)
+	if len(leaf) > 0 {
+		c.Path += "." + strings.Join(leaf, ".")
+	}
+
+	return c
 }

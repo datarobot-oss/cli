@@ -149,6 +149,9 @@ notarize:
         key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         key: "{{ .Env.MACOS_NOTARY_KEY }}"
         wait: true
-        # notarization can take a while, but this is roughly 45s
-        # as of 2026-04-02. 10m feels like a safe upper bound.
-        timeout: 10m
+        # notarization used to take ~45s (as of 2026-04-02) but Apple's
+        # notary service stalled past 10 minutes on two consecutive
+        # release runs (v0.12.0, 2026-10-06), timing out both. 20m is
+        # goreleaser's hard ceiling — Apple rejects auth tokens with
+        # longer lifetimes — so this is as slow as a wait can legally be.
+        timeout: 20m

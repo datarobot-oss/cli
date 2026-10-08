@@ -34,7 +34,7 @@ func TestSyncLock_AcquireRelease(t *testing.T) {
 
 func TestSyncLock_DoubleAcquireFailsOnUnix(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("v1 sync lock is a no-op on windows; tracked in RAPTOR-16928")
+		t.Skip("v1 sync lock is a no-op on windows")
 	}
 
 	dir := setupProject(t)

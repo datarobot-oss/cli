@@ -16,6 +16,7 @@ package up
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -34,7 +35,7 @@ func TestReporter_StreamPrintsHeaderLinesAndCheckmark(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := newReporter(&out, false).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := newReporter(&out, false).stream(t.Context(), "Building the image", func(_ context.Context, say func(string, lipgloss.Style)) error {
 		say("step 1/4: FROM base", tui.HintStyle)
 		say("step 2/4: COPY . .", tui.HintStyle)
 
@@ -62,7 +63,7 @@ func TestReporter_StreamFailurePrintsNoCheckmark(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := newReporter(&out, false).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := newReporter(&out, false).stream(t.Context(), "Building the image", func(_ context.Context, say func(string, lipgloss.Style)) error {
 		say("step 1/4: FROM base", tui.HintStyle)
 
 		return errors.New("boom")
@@ -112,7 +113,7 @@ func TestReporter_StreamCollapsesOnSuccessOnTerminal(t *testing.T) {
 
 	// spinner=true marks out as the user's terminal, which is what arms
 	// truncation, the sliding window, and the erase.
-	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := newReporter(&out, true).stream(t.Context(), "Building the image", func(_ context.Context, say func(string, lipgloss.Style)) error {
 		say("short line", tui.HintStyle)
 		say("a very long line that cannot possibly fit in thirty columns", tui.HintStyle)
 
@@ -140,7 +141,7 @@ func TestReporter_StreamStopsTheAnimatorWhenFnPanics(t *testing.T) {
 	panicked := func() (p any) {
 		defer func() { p = recover() }()
 
-		_ = newReporter(&out, true).stream("Building the image", func(func(string, lipgloss.Style)) error {
+		_ = newReporter(&out, true).stream(t.Context(), "Building the image", func(context.Context, func(string, lipgloss.Style)) error {
 			panic("boom")
 		})
 
@@ -186,7 +187,7 @@ func TestReporter_StreamRendersTabsAsSpaces(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := newReporter(&out, true).stream(t.Context(), "Building the image", func(_ context.Context, say func(string, lipgloss.Style)) error {
 		say("a\tb", tui.HintStyle)
 
 		return nil
@@ -206,7 +207,7 @@ func TestReporter_StreamWindowNeverOutgrowsTheViewport(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := newReporter(&out, true).stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := newReporter(&out, true).stream(t.Context(), "Building the image", func(_ context.Context, say func(string, lipgloss.Style)) error {
 		for i := range 20 {
 			say(fmt.Sprintf("line %d", i), tui.HintStyle)
 		}
@@ -242,7 +243,7 @@ func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 
 	var waited string
 
-	force(t, &waitBuildFn, func(_, id string, _, _ time.Duration, onTick func(*workload.Build)) (*workload.Build, error) {
+	force(t, &waitBuildFn, func(_ context.Context, _, id string, _, _ time.Duration, onTick func(*workload.Build)) (*workload.Build, error) {
 		waited = id
 
 		if onTick != nil {
@@ -254,7 +255,7 @@ func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 
 	var out bytes.Buffer
 
-	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-1"}, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
+	buildID, err := maybeBuild(t.Context(), t.TempDir(), version{ID: "art-1"}, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
 	require.NoError(t, err)
 	assert.Equal(t, "bld-running", buildID)
 	assert.Equal(t, "bld-running", waited)
@@ -285,13 +286,13 @@ func TestMaybeBuild_TriggersInsteadOfAttachingToAWedgedBuild(t *testing.T) {
 
 		return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-new"}}, nil
 	})
-	force(t, &waitBuildFn, func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	force(t, &waitBuildFn, func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: "COMPLETED"}, nil
 	})
 
 	var out bytes.Buffer
 
-	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-1"}, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
+	buildID, err := maybeBuild(t.Context(), t.TempDir(), version{ID: "art-1"}, CodeChange{}, unchangedSync(), Options{}, newReporter(&out, false))
 	require.NoError(t, err)
 	assert.True(t, triggered, "a wedged build must be superseded, not attached to")
 	assert.Equal(t, "bld-new", buildID)
@@ -316,13 +317,13 @@ func TestMaybeBuild_TriggersDespiteRunningBuildWhenCodeChanged(t *testing.T) {
 
 		return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-new"}}, nil
 	})
-	force(t, &waitBuildFn, func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	force(t, &waitBuildFn, func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: "COMPLETED"}, nil
 	})
 
 	var out bytes.Buffer
 
-	buildID, err := maybeBuild(t.TempDir(), version{ID: "art-1"}, CodeChange{}, &sync.Result{UploadedCount: 1}, Options{}, newReporter(&out, false))
+	buildID, err := maybeBuild(t.Context(), t.TempDir(), version{ID: "art-1"}, CodeChange{}, &sync.Result{UploadedCount: 1}, Options{}, newReporter(&out, false))
 	require.NoError(t, err)
 	assert.True(t, triggered)
 	assert.Equal(t, "bld-new", buildID)

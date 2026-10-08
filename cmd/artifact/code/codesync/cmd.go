@@ -83,14 +83,17 @@ type runFlags struct {
 	Yes    bool
 	// AcceptRemote opts a non-interactive run into letting the remote
 	// overwrite or delete local files. Without it, such a run is refused
-	// rather than silently destroying local work (RAPTOR-19348).
+	// rather than silently destroying local work.
 	AcceptRemote bool
+	// PushOnly uploads and leaves every remote-side change alone; a
+	// conflict is refused, since neither side may win silently.
+	PushOnly bool
 }
 
 // Preview reports whether this run only shows a plan and writes nothing, on
 // either the local or the remote side. Such a run must never block on a
 // prompt: an operation that by definition changes nothing has no confirmation
-// to ask for (RAPTOR-19348).
+// to ask for.
 func (f runFlags) Preview() bool {
 	return f.DryRun || f.Diff
 }
@@ -141,9 +144,19 @@ so an automated sync never silently overwrites your local changes. A
 plain pull of a remote change you had not touched applies without
 prompting (still backed up to *.LOCAL).
 
-Use --dry-run to preview the plan without writing anything; --diff to
-also print per-file unified diffs. Both modes exit before any remote
-write and never prompt, so they are safe to run unattended. --yes
+Use --push-only to upload your changes and leave every file the remote
+changed as it is, on both sides: nothing is downloaded or removed
+locally, those files are listed as left alone, and the next plain sync
+still sees them. A conflict is refused in this mode, since neither side
+may win silently; resolve it with a plain sync.
+
+Use --dry-run to preview the plan; --diff to also print per-file unified
+diffs. Both modes exit before any remote write and never prompt, so they
+are safe to run unattended. The one local write they can still make is
+uv.lock: a Python project's lockfile is generated when missing and
+re-locked when it no longer matches pyproject.toml, before the plan is
+built, so that the preview shows the upload set a real sync would send.
+A lockfile that cannot be put right stops the preview too. --yes
 auto-confirms the post-plan prompt and skips any interactive directory
 prompt.
 
@@ -156,6 +169,7 @@ Example:
   dr artifact code sync --diff
   dr artifact code sync --yes
   dr artifact code sync --yes --accept-remote
+  dr artifact code sync --push-only --yes
   dr artifact code sync --output-format json`,
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -168,13 +182,17 @@ Example:
 	outputformat.AddFlag(c, &outputFormat)
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
-	c.Flags().Bool("dry-run", false, "Show plan, no writes.")
-	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs, no writes.")
+	c.Flags().Bool("dry-run", false, "Show plan; no remote writes (may still refresh uv.lock).")
+	c.Flags().Bool("diff", false, "Show plan + per-file unified diffs; no remote writes (may still refresh uv.lock).")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; auto-confirm.")
 	c.Flags().Bool("accept-remote", false,
 		"Allow the remote to overwrite or delete local files in a non-interactive run "+
 			"(your versions are still saved as *.LOCAL copies).")
+	c.Flags().Bool("push-only", false,
+		"Upload local changes and leave remote changes alone: nothing is downloaded or removed locally, "+
+			"and a conflict is refused.")
 	c.MarkFlagsMutuallyExclusive("dry-run", "diff")
+	c.MarkFlagsMutuallyExclusive("push-only", "accept-remote")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		flags := parseRunFlags(cmd)
@@ -184,6 +202,7 @@ Example:
 			"diff":          flags.Diff,
 			"yes":           flags.Yes,
 			"accept_remote": flags.AcceptRemote,
+			"push_only":     flags.PushOnly,
 			"output_format": string(outputFormat),
 		}
 	})
@@ -212,7 +231,9 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 		return errors.New("not linked: run 'dr artifact code init <artifact-id>' first")
 	}
 
-	engine, err := deps.NewEngine(dir, sync.Options{DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes})
+	engine, err := deps.NewEngine(dir, sync.Options{
+		DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes, PushOnly: flags.PushOnly,
+	})
 	if err != nil {
 		return err
 	}
@@ -249,12 +270,14 @@ func parseRunFlags(cmd *cobra.Command) runFlags {
 	diff, _ := cmd.Flags().GetBool("diff")
 
 	acceptRemote, _ := cmd.Flags().GetBool("accept-remote")
+	pushOnly, _ := cmd.Flags().GetBool("push-only")
 
 	return runFlags{
 		DryRun:       dryRun,
 		Diff:         diff,
 		Yes:          cli.IsNonInteractive(cmd),
 		AcceptRemote: acceptRemote,
+		PushOnly:     pushOnly,
 	}
 }
 
@@ -297,8 +320,8 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 // files may proceed. A plan that only uploads passes straight through. When it
 // would write the working tree from the remote side, an interactive run asks
 // first (default No), and a non-interactive run is refused unless --accept-remote
-// opted in — so CI fails loud instead of silently rewriting its checkout
-// (RAPTOR-19348). Either way, the files it would replace are backed up to
+// opted in — so CI fails loud instead of silently rewriting its checkout.
+// Either way, the files it would replace are backed up to
 // *.LOCAL before the remote lands.
 func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, flags runFlags, deps Deps) (bool, error) {
 	// Only conflicts gate: a REMOTE_MODIFIED or REMOTE_DELETED file is
@@ -310,6 +333,10 @@ func gateLocalOverwrite(cmd *cobra.Command, engine engineRunner, plan *sync.Sync
 	// conflict is the case that matters: both sides changed the same file.
 	if !plan.HasConflicts() {
 		return true, nil
+	}
+
+	if flags.PushOnly {
+		return false, pushOnlyConflictError(plan)
 	}
 
 	if flags.Yes {
@@ -357,6 +384,18 @@ func conflictRefusedError(plan *sync.SyncPlan) error {
 		len(paths), formatPathList(paths))
 }
 
+// pushOnlyConflictError is the refusal a push-only run gives a conflict: it
+// may not let either side win, so the files are named and a plain sync is
+// the way to settle them.
+func pushOnlyConflictError(plan *sync.SyncPlan) error {
+	paths := plan.ConflictPaths()
+
+	return fmt.Errorf(
+		"--push-only cannot settle %d file(s) changed both locally and on the remote:\n%s\n"+
+			"Run a plain 'dr artifact code sync' to resolve them (--dry-run to inspect the plan first)",
+		len(paths), formatPathList(paths))
+}
+
 // formatPathList renders up to listCap indented paths, summarizing the rest so
 // a plan touching hundreds of files does not bury the message.
 func formatPathList(paths []string) string {
@@ -387,12 +426,14 @@ func formatPathList(paths []string) string {
 // exactly one JSON document: the plan at the top level and, when a
 // version-writing Execute runs, its result under a "result" key. Emitting the
 // plan and the result as two concatenated documents broke every consumer's
-// json.loads (RAPTOR-19348).
+// json.loads.
 //
 // An Execute runs only when neither preview mode is set, the plan is non-empty,
 // and it does not require explicit confirmation. Conflicts without --yes are
 // treated like the human-path quit branch: the plan is emitted and no Execute
-// is run, so callers can inspect it and re-invoke with --yes to proceed.
+// is run, so callers can inspect it and re-invoke with --yes to proceed. Under
+// --push-only a conflict is an error with or without --yes, since no
+// re-invocation of that mode can let it through; a plain sync settles it.
 func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
 	locked := engine.LockedNotice() != ""
 
@@ -401,13 +442,17 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 	}
 
 	if plan.HasConflicts() {
+		if flags.PushOnly {
+			return pushOnlyConflictError(plan)
+		}
+
 		// Without --yes there is no confirmation channel in JSON mode, so the
 		// plan is emitted and nothing runs. The document carries "refused": true
 		// so a consumer sees the run applied nothing — including its uploads —
 		// rather than inferring it from an absent "result"; a script re-invokes
 		// with --yes --accept-remote to proceed. With --yes but no opt-in, the
 		// run is refused loudly (non-zero exit) rather than silently letting the
-		// remote win over local changes (RAPTOR-19348).
+		// remote win over local changes.
 		if !flags.Yes {
 			return display.RenderRefusedJSON(out, plan, locked)
 		}

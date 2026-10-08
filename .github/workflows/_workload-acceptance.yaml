@@ -1,0 +1,66 @@
+name: Workload/Artifact Acceptance Tests
+
+# Live acceptance scenarios for `dr workload` / `dr artifact` (RAPTOR-19533
+# bug-bash suite; see acceptance_tests/workload/TICKETS.md). These create real
+# workloads on the account and wait on platform rollouts, so they are slow and
+# environment-dependent by nature — they run nightly and on demand, and do NOT
+# gate releases.
+#
+# Ubuntu only: this surface is not OS-sensitive.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Git ref/tag to check out and build (e.g. v1.2.3)'
+        required: true
+        type: string
+    secrets:
+      DR_API_TOKEN:
+        required: true
+
+# S5: deny all by default; jobs opt-in to what they need.
+permissions:
+  contents: read
+
+jobs:
+  workload-acceptance-test:
+    runs-on: ubuntu-latest
+    name: Run Workload/Artifact Acceptance Tests
+    # Measured ~12 min end to end (2026-10-06, scenarios A/B/C/E + artifact
+    # against staging); the cap is generous headroom for platform slowness,
+    # not an estimate.
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Install smoke-test dependencies
+        uses: datarobot-oss/cli/.github/actions/install-deps@main
+
+      - name: Set up Go and Task
+        uses: datarobot-oss/cli/.github/actions/setup@main
+
+      - name: Build and Install the DR CLI Binary
+        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
+
+      - name: Run Workload/Artifact Acceptance Tests
+        env:
+          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+          # The runner has no drconfig.yaml, and lib.sh only overrides the
+          # configured endpoint when DATAROBOT_ENDPOINT is set. Without it the
+          # token alone is treated as unset (VerifyEnvCredentials requires the
+          # pair) and the suite's auth probe fails before anything runs. Same
+          # target the pre-release smoke suite pins in its ephemeral config.
+          DATAROBOT_ENDPOINT: https://app.datarobot.com/api/v2
+        # Scenarios A/B/C/E + artifact-lifecycle. D (~20-30 min, two image
+        # builds) stays local/opt-in via task acceptance-test-workload-full.
+        #
+        # lib.sh depends on jq throughout; it isn't installed explicitly by
+        # install-deps, only relied on as preinstalled on GitHub-hosted
+        # runner images. Low risk today, but worth knowing if this job ever
+        # starts failing at the very first `dr workload list` probe.
+        run: |
+          task acceptance-test-workload -- a b c e f artifact

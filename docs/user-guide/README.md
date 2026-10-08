@@ -30,6 +30,7 @@ For a complete overview and feature list, see the [main README](https://github.c
 - **[Quick reference](quick-reference.md)** ⚡ *Quick lookup*&mdash;one-page command reference for common tasks
 - **[Authentication](../commands/auth.md)**&mdash;managing DataRobot credentials and login
 - **[Configuration files](configuration.md)**&mdash;understanding config file structure and location
+- **[Telemetry](telemetry.md)**&mdash;what usage analytics the CLI collects, where they are sent, and how to opt out
 
 ### Feature guides
 

@@ -34,6 +34,10 @@ This command helps you choose the correct DataRobot environment:
   • Custom/On-Premise: Your organization's DataRobot URL
 
 💡 If you're unsure, check the URL you use to log in to DataRobot in your browser.`,
+		Annotations: map[string]string{
+			// set-url is expected to create a not-yet-existing --profile.
+			config.ProfileCreateAnnotationKey: "true",
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			var url string
 			if len(args) > 0 {

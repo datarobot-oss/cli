@@ -38,7 +38,9 @@ func RunE(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("debug viper config: %w", err)
 	}
 
-	cmd.Print(output)
+	// Write to stdout explicitly: cobra's cmd.Print goes to stderr, which
+	// breaks piping into grep and other filters.
+	fmt.Fprint(cmd.OutOrStdout(), output)
 
 	return nil
 }

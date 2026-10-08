@@ -38,7 +38,9 @@ type Change struct {
 
 	// Keys is Path as the segments the walk descended through, each name-keyed
 	// element contributing its name: {containerGroups, default, containers,
-	// primary, port}. A rebuild is decided from these.
+	// primary, port}. A rebuild is decided from these, and so is the short
+	// label the printed plan shows in place of the path, for the same reason:
+	// a name holding a bracket cannot be read back out of Path.
 	Keys []string
 
 	// Want is the value the manifest asks for.
@@ -54,13 +56,21 @@ type Change struct {
 	Absent bool
 }
 
-// String renders a change the way the plan prints it.
+// String renders a change under its whole path, which is what the JSON
+// envelope carries.
 func (c Change) String() string {
+	return c.at(c.Path)
+}
+
+// at is String under a label of the caller's choosing. The printed plan gives
+// a change the short name a person reads it by; the envelope beside it gives
+// the path something can act on.
+func (c Change) at(label string) string {
 	if c.Absent {
-		return fmt.Sprintf("%s: %v", c.Path, format(c.Want))
+		return fmt.Sprintf("%s: %v", label, format(c.Want))
 	}
 
-	return fmt.Sprintf("%s: %v -> %v", c.Path, format(c.Have), format(c.Want))
+	return fmt.Sprintf("%s: %v -> %v", label, format(c.Have), format(c.Want))
 }
 
 // Subset reports every leaf in want that the live side does not already

@@ -30,6 +30,10 @@ type Options struct {
 	DryRun    bool
 	ShowDiffs bool
 	Yes       bool
+	// PushOnly uploads local changes and leaves every remote-side change
+	// as it is on both sides: nothing is downloaded or removed locally, and
+	// the base keeps the old entry so the next plain sync still sees it.
+	PushOnly bool
 }
 
 // Result is the outcome of a successful sync.
@@ -66,20 +70,23 @@ func (workloadArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionI
 
 // Deps are the external dependencies injected into an Engine. Use
 // defaultDeps for production wiring; tests build their own. A nil
-// Lockfile falls back to the production runner (runUvLock).
+// Lockfile or LockfileCheck falls back to the production runner
+// (runUvLock, runUvLockCheck).
 type Deps struct {
-	Files     filesapi.Client
-	Artifacts artifactStore
-	Now       func() time.Time
-	Lockfile  LockfileRunner
+	Files         filesapi.Client
+	Artifacts     artifactStore
+	Now           func() time.Time
+	Lockfile      LockfileRunner
+	LockfileCheck LockfileChecker
 }
 
 func defaultDeps() Deps {
 	return Deps{
-		Files:     filesapi.New(),
-		Artifacts: workloadArtifactStore{},
-		Now:       time.Now,
-		Lockfile:  runUvLock,
+		Files:         filesapi.New(),
+		Artifacts:     workloadArtifactStore{},
+		Now:           time.Now,
+		Lockfile:      runUvLock,
+		LockfileCheck: runUvLockCheck,
 	}
 }
 
@@ -105,6 +112,7 @@ type Engine struct {
 	rollback      *Rollback
 	newCatalogID  string
 	newVersionID  string
+	uploadOutcome *UploadOutcome
 	localBackups  []string
 	result        *Result
 	startedAt     time.Time
@@ -114,6 +122,7 @@ type Engine struct {
 	lockedNote    string
 
 	lockfileFn        LockfileRunner
+	lockfileCheckFn   LockfileChecker
 	lockfileGenerated bool
 	lockfileHint      string
 }
@@ -134,13 +143,18 @@ func newWithDeps(projectDir string, opts Options, deps Deps) (*Engine, error) {
 		deps.Lockfile = runUvLock
 	}
 
+	if deps.LockfileCheck == nil {
+		deps.LockfileCheck = runUvLockCheck
+	}
+
 	return &Engine{
-		projectDir: projectDir,
-		opts:       opts,
-		files:      deps.Files,
-		artifacts:  deps.Artifacts,
-		nowFn:      deps.Now,
-		lockfileFn: deps.Lockfile,
+		projectDir:      projectDir,
+		opts:            opts,
+		files:           deps.Files,
+		artifacts:       deps.Artifacts,
+		nowFn:           deps.Now,
+		lockfileFn:      deps.Lockfile,
+		lockfileCheckFn: deps.LockfileCheck,
 	}, nil
 }
 
@@ -167,9 +181,9 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 	return e.plan, nil
 }
 
-// Execute runs phases 5-6 against the plan returned by Plan. The lock
-// is released on completion (success or error). A failure to release
-// the lock is joined into the returned error so callers see both.
+// Execute runs the execute and state phases against the plan returned by
+// Plan. The lock is released on completion (success or error). A failure to
+// release the lock is joined into the returned error so callers see both.
 func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 	if e.plan == nil || plan == nil {
 		return nil, e.joinReleaseErr(ErrNoPlan)
@@ -188,7 +202,7 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 	if err := runPhases(
 		e,
 		phase{name: "execute", run: phase5Execute},
-		phase{name: "state", run: phase6State},
+		phase{name: "state", run: phase7State},
 	); err != nil {
 		return nil, err
 	}

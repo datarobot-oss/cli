@@ -95,6 +95,7 @@ func (m *Manifest) Compile() (*Compiled, error) {
 
 	delete(doc, keyWorkloadID)
 	expandCredentialShorthand(doc)
+	nameRuntimeGroups(doc)
 
 	payload, err := json.Marshal(doc)
 	if err != nil {
@@ -108,6 +109,27 @@ func (m *Manifest) Compile() (*Compiled, error) {
 		ArtifactName:   artifactName,
 		CredentialRefs: refs,
 	}, nil
+}
+
+// nameRuntimeGroups gives an unnamed runtime group the name of the artifact
+// group at the same position, or the platform's default when the file binds
+// an artifact by id. The file leaves the name out because the platform
+// assigns it; the API joins the two lists by name, so the payload carries it.
+func nameRuntimeGroups(doc map[string]any) {
+	artifactGroups := slicesAt(mapAt(mapAt(doc, keyArtifact), keySpec), keyContainerGroups)
+
+	for i, group := range slicesAt(mapAt(doc, keyRuntime), keyContainerGroups) {
+		if stringAt(group, keyName) != "" {
+			continue
+		}
+
+		name := GroupName
+		if i < len(artifactGroups) && stringAt(artifactGroups[i], keyName) != "" {
+			name = stringAt(artifactGroups[i], keyName)
+		}
+
+		group[keyName] = name
+	}
 }
 
 // ArtifactPayload is the inline artifact block on its own, which is exactly

@@ -119,11 +119,13 @@ func TestResolve(t *testing.T) {
 		assert.Contains(t, err.Error(), "Pass a workload id")
 	})
 
-	t.Run("an unbound manifest says to deploy, not to create a file", func(t *testing.T) {
+	t.Run("an unbound manifest says how to bind it, not that the file is missing", func(t *testing.T) {
 		_, err := resolve(nil, project(t, "name: my-app\n"))
 		require.Error(t, err)
 		require.NotErrorIs(t, err, manifest.ErrNotFound)
 		assert.Contains(t, err.Error(), "specifies no workloadId yet")
+		assert.Contains(t, err.Error(), "workloadId: <id>")
+		assertNoGatedRemedy(t, err)
 	})
 }
 
@@ -137,6 +139,7 @@ func TestRefWrap(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "/p/.datarobot.yaml")
 		assert.Contains(t, err.Error(), "not on this instance")
+		assertNoGatedRemedy(t, err)
 
 		// The HTTPError stays in the chain, so a caller can still read the
 		// status back off it.
@@ -195,4 +198,15 @@ func TestResolve_ChecksDirEvenWithATypedID(t *testing.T) {
 
 	_, err = Resolve(cmd, nil)
 	require.ErrorIs(t, err, manifest.ErrNotADirectory)
+}
+
+// assertNoGatedRemedy pins the audience of these messages. A .datarobot.yaml
+// is committed, so a manifest reaching one of them says a teammate deployed
+// from this project, not that the reader can: a remedy naming a command the
+// gate withholds dead-ends at "unknown command".
+func assertNoGatedRemedy(t *testing.T, err error) {
+	t.Helper()
+
+	assert.NotContains(t, err.Error(), "workload up")
+	assert.NotContains(t, err.Error(), "workload config")
 }

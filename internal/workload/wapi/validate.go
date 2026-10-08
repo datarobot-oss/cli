@@ -140,16 +140,17 @@ func formatFieldError(fe validator.FieldError) string {
 
 // jsonFieldNames maps struct field names to JSON keys for user-facing errors.
 var jsonFieldNames = map[string]string{
-	"ArtifactID":          "artifactId",
-	"CatalogID":           "catalogId",
-	"LastSyncedVersionID": "lastSyncedVersionId",
-	"CreatedAt":           "createdAt",
-	"CLIVersion":          "cliVersion",
-	"Version":             "version",
-	"SyncedAt":            "syncedAt",
-	"SyncedVersionID":     "syncedVersionId",
-	"Hash":                "hash",
-	"Size":                "size",
+	"ArtifactID":           "artifactId",
+	"CatalogID":            "catalogId",
+	"LastSyncedVersionID":  "lastSyncedVersionId",
+	"RemoteChangesSkipped": "remoteChangesSkipped",
+	"CreatedAt":            "createdAt",
+	"CLIVersion":           "cliVersion",
+	"Version":              "version",
+	"SyncedAt":             "syncedAt",
+	"SyncedVersionID":      "syncedVersionId",
+	"Hash":                 "hash",
+	"Size":                 "size",
 }
 
 func jsonFieldName(fe validator.FieldError) string {

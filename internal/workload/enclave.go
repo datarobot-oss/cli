@@ -20,11 +20,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/datarobot/cli/internal/usecase"
 )
 
-// Enclave selection policies as serialized by the server. availability (the
-// default) lets DataRobot place the workload; manual pins it to the Enclaves
-// named in runtime.enclaves.
+// Enclave selection policies as serialized by the server. Enclave placement
+// is opt-in per workload: "availability" lets DataRobot pick among the
+// Enclaves granted to the workload's Use Case; "manual" pins the workload to
+// the Enclave named in runtime.enclaves. Without a policy the workload is
+// not placed on an Enclave.
 const (
 	EnclaveSelectionPolicyAvailability = "availability"
 	EnclaveSelectionPolicyManual       = "manual"
@@ -43,17 +47,9 @@ func ApplyEnclavePin(spec []byte, enclave string) (json.RawMessage, error) {
 		return nil, errors.New("invalid --enclave: the Enclave name must be non-blank")
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(spec))
-	dec.UseNumber()
-
-	var doc map[string]any
-
-	if err := dec.Decode(&doc); err != nil {
-		return nil, fmt.Errorf("invalid spec: %w", err)
-	}
-
-	if doc == nil {
-		return nil, errors.New("invalid spec: the spec must be a JSON object")
+	doc, err := decodeSpecObject(spec)
+	if err != nil {
+		return nil, err
 	}
 
 	runtime := map[string]any{}
@@ -78,6 +74,83 @@ func ApplyEnclavePin(spec []byte, enclave string) (json.RawMessage, error) {
 	runtime["enclaveSelectionPolicy"] = EnclaveSelectionPolicyManual
 	runtime["enclaves"] = []string{name}
 	doc["runtime"] = runtime
+
+	return json.Marshal(doc)
+}
+
+// decodeSpecObject decodes a JSON spec into a map, preserving numbers via
+// json.Number, and rejects anything that is not a JSON object.
+func decodeSpecObject(spec []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(spec))
+	dec.UseNumber()
+
+	var doc map[string]any
+
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("invalid spec: %w", err)
+	}
+
+	if doc == nil {
+		return nil, errors.New("invalid spec: the spec must be a JSON object")
+	}
+
+	return doc, nil
+}
+
+// SpecSetsUseCase reports whether a JSON workload create spec already names
+// a Use Case: a non-blank string in its top-level useCaseId field. A missing,
+// null or blank useCaseId names none, and neither does a value of another
+// type, which ApplyUseCase refuses. A spec that does not decode is reported as
+// not setting one; validation rejects it later with a clearer error.
+func SpecSetsUseCase(spec []byte) bool {
+	doc, err := decodeSpecObject(spec)
+	if err != nil {
+		return false
+	}
+
+	named, err := specUseCase(doc)
+
+	return err == nil && named
+}
+
+// specUseCase applies the one rule both SpecSetsUseCase and ApplyUseCase use:
+// useCaseId names a Use Case only when it is a non-blank string. Absent, null
+// and blank values name none; any other type is an invalid spec.
+func specUseCase(doc map[string]any) (bool, error) {
+	switch value := doc["useCaseId"].(type) {
+	case nil:
+		return false, nil
+	case string:
+		return strings.TrimSpace(value) != "", nil
+	default:
+		return false, errors.New("invalid spec: 'useCaseId' must be a string")
+	}
+}
+
+// ApplyUseCase links a workload create spec to a Use Case: the top-level
+// useCaseId field the server reads at create time. It leaves the placement
+// alone: a Use Case on its own is an organizational link, and the workload
+// goes to an Enclave only when the spec (or --enclave) sets an
+// enclaveSelectionPolicy. It errors if the spec already names a Use Case
+// rather than silently rewriting it; a null or blank useCaseId names none and
+// is filled in. Re-encodes the spec the same way ApplyEnclavePin does.
+func ApplyUseCase(spec []byte, id usecase.ID) (json.RawMessage, error) {
+	doc, err := decodeSpecObject(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	named, err := specUseCase(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	if named {
+		return nil, errors.New(
+			"spec already sets useCaseId; remove it from the spec or drop --use-case-id")
+	}
+
+	doc["useCaseId"] = string(id)
 
 	return json.Marshal(doc)
 }

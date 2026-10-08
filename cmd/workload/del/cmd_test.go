@@ -18,11 +18,11 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
@@ -83,7 +83,7 @@ func TestConfirmDelete_YesSources(t *testing.T) {
 				require.NoError(t, cmd.Flags().Set("yes", "true"))
 			}
 
-			confirmed, err := confirmDelete(cmd, idargs.Ref{ID: "wl-1"})
+			confirmed, err := confirmDelete(cmd, idargs.Ref{ID: "wl-1"}, false)
 
 			if c.wantErr {
 				require.Error(t, err)
@@ -123,7 +123,7 @@ func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -131,6 +131,11 @@ func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, parsed.WorkloadID())
 	assert.Contains(t, out, "Removed workloadId")
+
+	// The note says what the removal means for the project, not which
+	// command to run next: `dr workload up` is not generally available, and
+	// this line prints for everyone who deletes a bound workload.
+	assert.NotContains(t, out, "workload up")
 }
 
 // delete is addressed by id and can be run from any directory. A manifest
@@ -143,7 +148,7 @@ func TestClearStaleBinding_LeavesAnotherWorkloadsManifestAlone(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff")
+	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff", false)
 
 	out := buf.String()
 
@@ -160,7 +165,7 @@ func TestClearStaleBinding_SilentWithNoManifest(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -177,7 +182,7 @@ func TestClearStaleBinding_SilentWhenTheManifestCannotBeRead(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -198,7 +203,7 @@ func TestClearStaleBinding_NamesTheStillLinkedArtifact(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -216,7 +221,7 @@ func TestClearStaleBinding_NoArtifactNoteWithoutAStateDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -238,7 +243,7 @@ func TestClearStaleBinding_FindsAManifestUnderDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -252,13 +257,9 @@ func TestClearStaleBinding_FindsAManifestUnderDir(t *testing.T) {
 // fails must not fail the command. It does have to say so, because the user is
 // the one who has to finish the job.
 func TestClearStaleBinding_WarnsWhenTheManifestCannotBeWritten(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("directory permission bits do not block rename the same way on Windows")
-	}
+	testutil.SkipIfWindows(t, "directory permission bits do not block rename the same way on Windows")
 
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores directory permission bits")
-	}
+	testutil.SkipIfRoot(t)
 
 	dir := t.TempDir()
 	path := writeManifest(t, dir, boundManifest)
@@ -271,7 +272,7 @@ func TestClearStaleBinding_WarnsWhenTheManifestCannotBeWritten(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	out := buf.String()
 
@@ -294,7 +295,7 @@ func TestClearStaleBinding_NamesADirThatIsNotADirectory(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	assert.Contains(t, buf.String(), "No manifest was checked")
 	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
@@ -316,7 +317,7 @@ func TestClearStaleBinding_SilentOnAnUnwalkableManifest(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	assert.Empty(t, buf.String())
 }
@@ -330,7 +331,7 @@ func TestClearStaleBinding_RejectsAFileAsDir(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0")
+	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0", false)
 
 	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
 
@@ -359,13 +360,13 @@ func TestConfirmDelete_AmbientNeedsTheFlag(t *testing.T) {
 
 	typed := idargs.Ref{ID: "wl-1", Source: idargs.WorkloadIDSourceExplicit}
 
-	confirmed, err := confirmDelete(Cmd(), typed)
+	confirmed, err := confirmDelete(Cmd(), typed, false)
 	require.NoError(t, err)
 	assert.True(t, confirmed, "an id the user typed is still answered by the env var")
 
 	ambient := idargs.Ref{ID: "wl-1", Source: idargs.WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
 
-	_, err = confirmDelete(Cmd(), ambient)
+	_, err = confirmDelete(Cmd(), ambient, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pass --yes to run")
 	assert.NotContains(t, err.Error(), reader.NonInteractiveEnv,
@@ -381,12 +382,12 @@ func TestDeleteQuestion_AsksInTheSharedShapeWithItsOwnConsequence(t *testing.T) 
 	assert.Equal(t,
 		"Delete workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
 			"rather than on the command line. This stops and removes a running workload. [y/N] ",
-		deleteQuestion(ambient))
+		deleteQuestion(ambient, false))
 
 	typed := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceExplicit}
 
 	assert.Equal(t,
 		"Delete workload "+boundID+"? This stops and removes a running workload. [y/N] ",
-		deleteQuestion(typed),
+		deleteQuestion(typed, false),
 		"a typed id has no manifest to attribute it to")
 }

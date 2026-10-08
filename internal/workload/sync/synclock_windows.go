@@ -18,8 +18,8 @@ package sync
 
 import "os"
 
-// tryLockExclusive on Windows is a no-op; LockFileEx is tracked in
-// RAPTOR-16928.
+// tryLockExclusive on Windows is a no-op; a LockFileEx-backed one is still
+// to come.
 func tryLockExclusive(_ *os.File) error {
 	return nil
 }

@@ -30,7 +30,7 @@ import (
 // a Restore to pre-sync state.
 func phase5Execute(e *Engine) error {
 	// Above the empty-plan return, because this is a statement about the
-	// artifact rather than about the plan: phase 6 writes local state and a
+	// artifact rather than about the plan: phase 7 writes local state and a
 	// history entry for an empty plan too, and recording a sync against
 	// something immutable is the same lie as performing one. Phase 1 lets a
 	// preview plan against a locked artifact and Run returns before this phase
@@ -69,8 +69,13 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	// Phase 6 discards the rollback only after SaveConfig + SaveManifest
-	// succeed.
+	// Hand the rollback to Phase 7, which discards it at entry — before its
+	// first state write, not after its last. Once the plan has executed
+	// successfully the backup tree protects nothing, and discarding
+	// unconditionally keeps a Phase 7 write failure from stranding the dir
+	// for the next run's stale-restore to resurrect pre-sync bytes from.
+	// A Phase 5 failure above restores and returns, leaving the dir in place
+	// for exactly that stale-restore recovery.
 	e.rollback = rb
 
 	return nil
@@ -274,13 +279,20 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 	if len(e.plan.Uploads) > 0 {
 		uploader := ChooseUploader(e.plan)
 
-		cid, vid, err := uploader.ApplyUploads(e, e.plan.Uploads)
+		outcome, err := uploader.ApplyUploads(e, e.plan.Uploads)
 		if err != nil {
 			return "", "", err
 		}
 
-		newCatalogID = cid
-		newVersionID = vid
+		// Store the outcome on the engine so Phase 7 can read
+		// outcome.Sent[path]. The phase pipeline runs each phase
+		// independently via runPhases with no per-phase return
+		// threading, so Engine state is the only channel between
+		// Phase 5 and Phase 7.
+		e.uploadOutcome = &outcome
+
+		newCatalogID = outcome.CatalogID
+		newVersionID = outcome.VersionID
 	}
 
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {

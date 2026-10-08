@@ -1,0 +1,24 @@
+# Scenario → Ticket Index
+
+Maps each acceptance scenario to its related JIRA ticket, for easier reference
+during the bug bash. This is a temporary aid and can be removed once the bash
+ends; the canonical per-file tag is the `# Ticket:` header at the top of each
+scenario script (grep with `rg '^# Ticket:' acceptance_tests/workload`).
+
+| Scenario | File | Ticket | What it guards |
+| --- | --- | --- | --- |
+| A — whoami round trip | `RAPTOR-19533-A-roundtrip.sh` | RAPTOR-19533 | `up` validates at load time; bind renders a clean manifest |
+| B — account sweep | `RAPTOR-19533-B-sweep.sh` | RAPTOR-19533 | binding works against every workload on the account |
+| C — re-bind tuned | `RAPTOR-19533-C-rebind.sh` | RAPTOR-19533 | re-bind preserves live tuning; FileExists guard; delete-rebind restore |
+| D — built-workload rebuild | `RAPTOR-19533-D-built.sh` | RAPTOR-19533 | no ErrImagePull after re-bind; platform rebuilds from imageBuildConfig |
+| E — dry-run idempotency, stop/up reconcile, delete binding | `E-dryrun-stop-reconcile.sh` | RAPTOR-19749 | `up --dry-run` reports "Already up to date"; `stop` then `up --yes` reconciles the same workload; `delete --yes` clears the `workloadId:` binding |
+| F — delete --purge | `F-purge.sh` | RAPTOR-20801 | `delete --purge --yes` removes the workload, the draft artifact and the state directory, clears the binding; the next `up --dry-run` plans a fresh create |
+| Artifact lifecycle | `artifact-lifecycle.sh` | none — basic acceptance | `dr artifact` create/get/list/code sync/versions/del CLI-side state |
+
+## Adding a scenario for a new ticket
+
+1. Create `<TICKET>-<LETTER>-<name>.sh` (e.g. `RAPTOR-19533-A-roundtrip.sh`)
+   with `# Ticket: RAPTOR-XXXXX` as the first comment after the shebang.
+   A scenario with no ticket drops the prefix (e.g. `artifact-lifecycle.sh`).
+2. Register it in `run_workload_acceptance_test.sh`'s `scenario_script` map.
+3. Add a row here.

@@ -417,16 +417,19 @@ func TestPollStatus_CompletedRedirect(t *testing.T) {
 	assert.True(t, IsTerminalStatus(resp.Status))
 }
 
-// TestUploadFromZipExisting pins where the overwrite mode travels. The
-// Files API reads it from the multipart form: a value sent only in the
-// query is accepted and ignored, the rename default applies, and every
-// existing path comes back as "name (2).ext". So the form field must be
-// present and must precede the file part. The query copy stays until the
-// API documents which location is authoritative.
+// TestUploadFromZipExisting pins where the upload's parameters travel. The
+// Files API reads them from the multipart form: a value sent only in the
+// query is accepted and ignored. For the overwrite mode that meant the rename
+// default applied and every existing path came back as "name (2).ext"; for
+// useArchiveContents it meant extraction happened only because the server's
+// own default is true. So both form fields must be present and
+// must precede the file part. The overwrite query copy stays until the API
+// documents which location is authoritative; useArchiveContents has no query
+// copy at all.
 func TestUploadFromZipExisting(t *testing.T) {
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/files/cid-1/fromFile/", r.URL.Path)
-		assert.Equal(t, "true", r.URL.Query().Get("useArchiveContents"))
+		assert.False(t, r.URL.Query().Has("useArchiveContents"), "the query is not a channel the server reads")
 		assert.Equal(t, "REPLACE", r.URL.Query().Get("overwrite"))
 		assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
@@ -446,6 +449,18 @@ func TestUploadFromZipExisting(t *testing.T) {
 		value, err := io.ReadAll(part)
 		assert.NoError(t, err)
 		assert.Equal(t, "REPLACE", string(value))
+
+		part, err = mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, "useArchiveContents", part.FormName())
+		assert.Empty(t, part.FileName())
+
+		value, err = io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "true", string(value))
 
 		part, err = mr.NextPart()
 		if !assert.NoError(t, err) {
@@ -499,27 +514,22 @@ func TestUploadFromZipExisting_ContentLengthWithFormFields(t *testing.T) {
 			return
 		}
 
-		mr := multipart.NewReader(bytes.NewReader(raw), params["boundary"])
-
-		part, err := mr.NextPart()
+		// Looked up by name rather than read in order: this test is about
+		// the byte count, and a new form field sorting ahead of these must
+		// not fail it.
+		parts, err := decodeMultipart(multipart.NewReader(bytes.NewReader(raw), params["boundary"]))
 		if !assert.NoError(t, err) {
 			return
 		}
 
-		value, err := io.ReadAll(part)
-		assert.NoError(t, err)
-		assert.Equal(t, "overwrite", part.FormName())
-		assert.Equal(t, "REPLACE", string(value))
-
-		part, err = mr.NextPart()
-		if !assert.NoError(t, err) {
-			return
+		byName := make(map[string]multipartPart, len(parts))
+		for _, p := range parts {
+			byName[p.Name] = p
 		}
 
-		got, err := io.ReadAll(part)
-		assert.NoError(t, err)
-		assert.Equal(t, "file", part.FormName())
-		assert.Equal(t, payload, string(got))
+		assert.Equal(t, "REPLACE", string(byName["overwrite"].Content))
+		assert.Equal(t, "true", string(byName["useArchiveContents"].Content))
+		assert.Equal(t, payload, string(byName["file"].Content), "the streamed file arrived intact")
 
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))

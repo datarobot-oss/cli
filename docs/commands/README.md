@@ -16,7 +16,7 @@ These flags are available for all commands:
       --skip-auth                Skip authentication checks (for advanced users)
       --force-interactive        Force the setup wizard to run even if already completed
       --all-commands             Display all available commands and their flags in tree format
-      --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
+      --plugin-discovery-timeout duration   Timeout for plugin discovery when placed before the command (0s disables; config is read too late for startup discovery)
   -k, --skip-certificate-check   Skip TLS certificate verification (insecure)
       --ca-cert string           Path to a PEM-encoded CA certificate bundle
       --export-windows-certs     Export the Windows certificate store to the DataRobot CA bundle (Windows only)
@@ -58,8 +58,8 @@ These flags are available for all commands:
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API.                     |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
 | [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
@@ -144,7 +144,7 @@ dr
 │   ├── source         Display the source code of a pipeline
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
-├── artifact           Artifact management (feature-gated)
+├── artifact           Artifact management
 │   ├── create         Create an artifact
 │   ├── get            Display details of an artifact
 │   ├── list           List artifacts
@@ -160,7 +160,7 @@ dr
 │       ├── sync       Push and pull code changes
 │       ├── versions   List catalog versions
 │       └── checkout   Download a version snapshot
-├── workload           Workload management (alias: wl, feature-gated)
+├── workload           Workload management (alias: wl)
 │   ├── create         Create (deploy) a workload
 │   ├── get            Display details of a workload
 │   ├── list           List workloads
@@ -169,7 +169,9 @@ dr
 │   ├── stop           Stop a workload
 │   ├── status         Show a workload's status
 │   ├── endpoint       Print a workload's endpoint URL
-│   └── logs           Show a workload's container logs
+│   ├── logs           Show a workload's container logs
+│   ├── config         Write the .datarobot.yaml manifest for a project (feature-gated)
+│   └── up             Deploy the difference between .datarobot.yaml and what is running (feature-gated)
 ├── enclave            Enclave management (alias: enclaves, outpost(s), feature-gated)
 │   ├── register       Register an enclave, returning one-shot install secrets
 │   ├── get            Display details of an enclave
@@ -400,15 +402,17 @@ For detailed documentation on each command, see:
   - `source`&mdash;display the source code of a pipeline.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
-- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads.
   - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
   - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
   - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory.
 
-- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`).
   - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.
   - `start` / `stop` / `status`&mdash;run-state control and status polling.
   - `endpoint` / `logs`&mdash;print the endpoint URL and stream container logs.
+
+- **[artifact and workload spec](workload-spec.md)**&mdash;the reference for the two spec files those commands read: container groups and images, environment variables and secrets, replicas and resource allocation, and one walkthrough from source code to a running URL.
 
 ## Getting help
 

@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -530,6 +531,25 @@ func TestRenderBuildLogs_JSONPassthroughPreservesRaw(t *testing.T) {
 	assert.Equal(t, "raw", got[0]["message"])
 }
 
+// An empty result is said on stderr, so stdout stays log lines and a pipe is
+// not polluted; JSON gets [] rather than null.
+func TestRenderBuildLogs_Empty(t *testing.T) {
+	var stderr string
+
+	stdout := captureStdout(t, func() {
+		stderr = captureStderr(t, func() {
+			require.NoError(t, RenderBuildLogs(outputformat.OutputFormatText, nil))
+		})
+	})
+	assert.Empty(t, stdout)
+	assert.Equal(t, "No logs found.\n", stderr)
+
+	asJSON := captureStdout(t, func() {
+		require.NoError(t, RenderBuildLogs(outputformat.OutputFormatJSON, nil))
+	})
+	assert.JSONEq(t, `[]`, asJSON)
+}
+
 func TestFilterLogsByLevel(t *testing.T) {
 	entries := []BuildLogEntry{
 		{Levelname: "DEBUG", Message: "d"},
@@ -715,6 +735,8 @@ func TestPrintWorkloadsTable_Empty(t *testing.T) {
 	assert.Equal(t, "No workloads found.\n", output)
 }
 
+// stdout is the server's message alone, for a script that captures it; the
+// command that checks on the request goes to stderr as a Next: block.
 func TestRenderWorkloadOperation_TextPrintsServerMessage(t *testing.T) {
 	resp := WorkloadOperationResponse{
 		Status:     "Proton is already stopped",
@@ -722,11 +744,14 @@ func TestRenderWorkloadOperation_TextPrintsServerMessage(t *testing.T) {
 		TrackVia:   "/api/v2/workloads/wl-1",
 	}
 
+	var stderr bytes.Buffer
+
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadOperation(outputformat.OutputFormatText, resp))
+		require.NoError(t, RenderWorkloadOperation(&stderr, outputformat.OutputFormatText, "wl-1", resp))
 	})
 
 	assert.Equal(t, "Proton is already stopped\n", output)
+	assert.Equal(t, "\nNext:\n  dr workload status wl-1  Check the workload status\n", ansi.Strip(stderr.String()))
 }
 
 func TestRenderWorkloadOperation_JSON(t *testing.T) {
@@ -736,13 +761,16 @@ func TestRenderWorkloadOperation_JSON(t *testing.T) {
 		TrackVia:   "/api/v2/workloads/wl-1",
 	}
 
+	var stderr bytes.Buffer
+
 	output := captureStdout(t, func() {
-		require.NoError(t, RenderWorkloadOperation(outputformat.OutputFormatJSON, resp))
+		require.NoError(t, RenderWorkloadOperation(&stderr, outputformat.OutputFormatJSON, "wl-1", resp))
 	})
 
 	assert.JSONEq(t,
 		`{"status": "started", "workloadId": "wl-1", "trackVia": "/api/v2/workloads/wl-1"}`,
 		output)
+	assert.Empty(t, stderr.String(), "JSON mode prints the document and nothing else")
 }
 
 func TestRenderWorkloadStatus_TextBare(t *testing.T) {

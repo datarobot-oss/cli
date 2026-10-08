@@ -28,7 +28,7 @@ import (
 )
 
 // countDocuments reports how many top-level JSON documents b contains. The
-// whole point of RAPTOR-19348 is that this is always 1.
+// whole point of the single-document output is that this is always 1.
 func countDocuments(t *testing.T, b []byte) int {
 	t.Helper()
 

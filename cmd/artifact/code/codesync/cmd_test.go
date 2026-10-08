@@ -47,6 +47,10 @@ type fakeEngine struct {
 
 	executed bool
 	closed   bool
+
+	// opts is what the command asked the engine for, so a test can tell a
+	// flag that reached the engine from one that only shaped the fake plan.
+	opts sync.Options
 }
 
 func (f *fakeEngine) Plan() (*sync.SyncPlan, error) { return f.plan, f.planErr }
@@ -78,7 +82,9 @@ func (f *fakeEngine) Fetcher() display.ContentFetcher { return f.fetcher }
 // override ReadLine via stubReader.
 func fakeEngineDeps(fe *fakeEngine) Deps {
 	return Deps{
-		NewEngine: func(_ string, _ sync.Options) (engineRunner, error) {
+		NewEngine: func(_ string, opts sync.Options) (engineRunner, error) {
+			fe.opts = opts
+
 			return fe, nil
 		},
 	}
@@ -150,7 +156,7 @@ func TestCmd_NotLinked(t *testing.T) {
 
 // TestRunE_DryRun_DoesNotPromptForDirectory: --dry-run writes nothing, so it
 // resolves the directory without the prompt that used to block it forever
-// before the plan (RAPTOR-19348). No --dir and no --yes: the old code prompted.
+// before the plan. No --dir and no --yes: the old code prompted.
 func TestRunE_DryRun_DoesNotPromptForDirectory(t *testing.T) {
 	asked := false
 
@@ -328,7 +334,7 @@ func TestRunE_IgnoreFileNotice_GoesToStderrAndLeavesStdoutParseable(t *testing.T
 // assertOnlyJSON drains r and requires it to be exactly one JSON document. The
 // command emits a single object — the plan, with the result nested under
 // "result" when one ran — so a consumer's json.loads sees one document and no
-// longer needs a splitter (RAPTOR-19348).
+// longer needs a splitter.
 func assertOnlyJSON(t *testing.T, r io.Reader) {
 	t.Helper()
 
@@ -354,7 +360,7 @@ func assertOnlyJSON(t *testing.T, r io.Reader) {
 
 // TestRunE_JSONOutput emits exactly one JSON document on the non-conflict,
 // non-dry-run path: the plan at the top level with the executed result nested
-// under "result", parseable in a single Unmarshal (RAPTOR-19348).
+// under "result", parseable in a single Unmarshal.
 func TestRunE_JSONOutput(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -390,7 +396,7 @@ func TestRunE_JSONOutput(t *testing.T) {
 // A sync that fails during Execute leaves stdout empty and surfaces the error,
 // rather than the old behavior of leaving a plan document on stdout. stdout
 // carries a document only when there is a result to report; a consumer keys off
-// the exit status (RAPTOR-19348).
+// the exit status.
 func TestRunE_JSONOutput_ExecuteError_LeavesStdoutEmpty(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -481,7 +487,7 @@ func TestRunE_JSONOutput_ConflictWithoutYes(t *testing.T) {
 
 // TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote: in JSON mode,
 // --yes alone must not silently overwrite local files — it is refused loudly so
-// CI fails red instead of rewriting its checkout (RAPTOR-19348).
+// CI fails red instead of rewriting its checkout.
 func TestRunE_JSONOutput_YesRefusesOverwriteWithoutAcceptRemote(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)
@@ -671,6 +677,66 @@ func TestRunE_Yes_RefusesConflictWithoutAcceptRemote(t *testing.T) {
 	assert.False(t, fe.executed)
 }
 
+// --push-only never lets either side of a conflict win, so a conflict is
+// refused outright, with or without --yes, on the human and the JSON path.
+func TestRunE_PushOnly_RefusesConflicts(t *testing.T) {
+	for name, extra := range map[string]map[string]string{
+		"interactive":      {},
+		"yes":              {"yes": "true"},
+		"json":             {"yes": "true", "output-format": "json"},
+		"json without yes": {"output-format": "json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			linkProject(t, dir)
+
+			fe := &fakeEngine{plan: &sync.SyncPlan{Conflicts: []sync.FileAction{{Path: "both.py"}}}}
+
+			flags := map[string]string{"dir": dir, "push-only": "true"}
+			for k, v := range extra {
+				flags[k] = v
+			}
+
+			_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "--push-only cannot settle")
+			assert.Contains(t, err.Error(), "both.py")
+			assert.False(t, fe.executed)
+			assert.True(t, fe.opts.PushOnly, "the flag reaches the engine")
+			assert.NotContains(t, stdout.String(), `"result"`)
+		})
+	}
+}
+
+// --push-only runs the uploads and shows what it left alone, in both formats.
+func TestRunE_PushOnly_UploadsAndListsWhatItLeftAlone(t *testing.T) {
+	plan := &sync.SyncPlan{
+		Uploads: []sync.FileAction{{Path: "mine.py", Classification: sync.ClsLocalModified, Action: sync.ActUploadModify}},
+		Skipped: []sync.FileAction{{Path: "theirs.py", Classification: sync.ClsRemoteModified, Action: sync.ActDownloadModify}},
+	}
+
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: plan, result: &sync.Result{NewVersion: "v2", UploadedCount: 1}}
+
+	_, stdout, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "push-only": "true", "yes": "true"})
+	require.NoError(t, err)
+	assert.True(t, fe.executed)
+	assert.True(t, fe.opts.PushOnly, "the flag reaches the engine; the fake's plan shape alone would not prove it")
+	assert.Contains(t, stdout.String(), "LEFT ALONE (push-only)")
+	assert.Contains(t, stdout.String(), "theirs.py")
+
+	fe = &fakeEngine{plan: plan}
+
+	_, stdout, _, err = runWithDeps(t, fakeEngineDeps(fe),
+		map[string]string{"dir": dir, "push-only": "true", "dry-run": "true", "output-format": "json"})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), `"skipped"`)
+	assert.Contains(t, stdout.String(), `"skippedCount": 1`)
+	assert.False(t, fe.executed)
+}
+
 // TestRunE_Yes_AcceptRemoteExecutes: --yes --accept-remote proceeds.
 func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
 	dir := t.TempDir()
@@ -691,7 +757,7 @@ func TestRunE_Yes_AcceptRemoteExecutes(t *testing.T) {
 // TestRunE_FastForwardPull_RunsWithoutConfirmation: a REMOTE_MODIFIED /
 // REMOTE_DELETED plan (no conflicts) is a fast-forward with no unsaved work, so
 // it runs under --yes with no --accept-remote and no prompt. The engine still
-// backs those files up to .LOCAL; only conflicts gate (RAPTOR-19348).
+// backs those files up to .LOCAL; only conflicts gate.
 func TestRunE_FastForwardPull_RunsWithoutConfirmation(t *testing.T) {
 	dir := t.TempDir()
 	linkProject(t, dir)

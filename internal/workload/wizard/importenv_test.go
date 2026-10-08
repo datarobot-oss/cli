@@ -28,15 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// importing is a headless run that asks for the one edit setup makes to a
-// manifest already on disk.
-func importing(dir string, answers Answers) Options {
-	opts := headless(dir, answers)
-	opts.ImportEnv = true
-
-	return opts
-}
-
 // configured is a project that has been through setup once, with the .env it
 // was set up from. The tests then grow that .env and ask what the second run
 // makes of it.
@@ -58,7 +49,7 @@ func TestImportEnv_AddsWhatTheManifestDoesNotDeclare(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 
-	result, err := Run(importing(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionUpdated, result.Action)
@@ -72,38 +63,71 @@ func TestImportEnv_AddsWhatTheManifestDoesNotDeclare(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(after, "LOG_LEVEL"))
 }
 
-// The manifest is the deployed truth and .env is a local copy allowed to
-// drift, so a value that changed locally does not overwrite the one deployed.
-func TestImportEnv_LeavesDeclaredNamesAlone(t *testing.T) {
+// One flag, both acts, one run: the name .env has and the manifest does not is
+// added, and the declared value that moved is rewritten. Splitting these was
+// the thing people had to read a table to understand.
+func TestSyncEnv_AddsAndUpdatesInOneRun(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
-	writeEnvFile(t, dir, "LOG_LEVEL=trace\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
 
-	result, err := Run(importing(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionUnchanged, result.Action)
-	assert.Equal(t, 0, result.EnvKeysListed)
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Equal(t, 1, result.EnvKeysListed, "the name .env had and the manifest did not")
+	assert.Equal(t, 1, result.EnvValuesUpdated, "the declared value that had moved")
 
 	after := readManifest(t, dir)
-	assert.Contains(t, after, "debug")
-	assert.NotContains(t, after, "trace")
+	assert.Contains(t, after, "trace", ".env wins on a value the manifest already declares")
+	assert.NotContains(t, after, "debug")
+	assert.Contains(t, after, "eu-west-1")
+
+	// Counted as one act each, not twice: an added name arrives with the value
+	// .env holds, so a rewrite of it afterwards would report the same variable
+	// under both headings.
+	assert.Equal(t, 1, strings.Count(after, "REGION"))
 }
 
-// Removing a line from the developer's own copy says nothing about what the
-// workload should run, so nothing is taken away. .env both loses and gains a
-// name here, so the import actually runs rather than returning early.
-func TestImportEnv_DoesNotRemoveWhatEnvDropped(t *testing.T) {
+// A reconciliation is two-directional: a name .env no longer carries is one
+// the manifest loses. This asserted the opposite until the two flags became
+// one, and the reversal is why the run shows a table and takes an answer.
+func TestSyncEnv_RemovesWhatEnvDropped(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nZONE=eu-west-1a\n")
 
-	result, err := Run(importing(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	require.Equal(t, ActionUpdated, result.Action)
+	assert.Equal(t, 1, result.EnvNamesRemoved)
 
 	after := readManifest(t, dir)
-	assert.Contains(t, after, "ZONE")
-	assert.Contains(t, after, "REGION")
+	assert.Contains(t, after, "ZONE", "a name .env gained")
+	assert.NotContains(t, after, "REGION", "a name .env lost")
+}
+
+// A .env that is there and declares nothing is not an instruction to delete
+// the environment. A touch, or a secrets step that wrote an empty file before
+// a scheduled run passed --yes on its behalf, would otherwise strip every
+// variable the manifest carries, with a table nobody was reading as the only
+// guard.
+func TestSyncEnv_EmptyEnvFileLeavesTheManifestAlone(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	before := readManifest(t, dir)
+
+	writeEnvFile(t, dir, "# nothing yet\n")
+
+	stderr := &bytes.Buffer{}
+	opts := syncing(dir, Answers{})
+	opts.Stderr = stderr
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Equal(t, 0, result.EnvNamesRemoved)
+	assert.Equal(t, before, readManifest(t, dir), "the file is byte for byte what it was")
+	assert.Contains(t, stderr.String(), "declares no variables")
 }
 
 // The file belongs to the user. An edit that dropped their comments or
@@ -122,7 +146,7 @@ func TestImportEnv_PreservesCommentsAndHandTunedKeys(t *testing.T) {
 
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 
-	_, err := Run(importing(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	after := readManifest(t, dir)
@@ -140,7 +164,7 @@ func TestImportEnv_DryRunWritesNothingAndStoresNothing(t *testing.T) {
 
 	stored := credentialStore(t)
 
-	opts := importing(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.DryRun = true
 
 	result, err := Run(opts)
@@ -162,7 +186,7 @@ func TestImportEnv_StoresSecretsAndReferencesThem(t *testing.T) {
 
 	stored := credentialStore(t)
 
-	result, err := Run(importing(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionUpdated, result.Action)
@@ -185,7 +209,7 @@ func TestImportEnv_UnreachableStoreLeavesThePlaceholder(t *testing.T) {
 
 	noCredentialStore(t, errors.New("platform unreachable"))
 
-	result, err := Run(importing(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.EnvSecretsPending)
@@ -202,7 +226,7 @@ func TestImportEnv_RefusesAManifestWithNoContainerSpec(t *testing.T) {
 	require.NoError(t, os.WriteFile(manifest.Path(dir),
 		[]byte("name: by-id\nartifactId: 68b0bbbb0000000000000002\n"), 0o600))
 
-	_, err := Run(importing(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.Error(t, err)
 
 	assert.ErrorIs(t, err, manifest.ErrNoPrimaryContainer)
@@ -228,7 +252,7 @@ func TestRun_ExistingManifestNamesTheEnvDrift(t *testing.T) {
 	assert.Equal(t, before, readManifest(t, dir))
 
 	assert.Contains(t, stderr.String(), "REGION")
-	assert.Contains(t, stderr.String(), "--import-env")
+	assert.Contains(t, stderr.String(), "--sync-env")
 }
 
 // Values are what the plan output redacts on purpose, and a warning is not the
@@ -260,7 +284,7 @@ func TestRun_NoEnvFileIsSilent(t *testing.T) {
 	_, err := Run(opts)
 	require.NoError(t, err)
 
-	assert.NotContains(t, stderr.String(), "--import-env")
+	assert.NotContains(t, stderr.String(), "--sync-env")
 }
 
 // --skip-env says the file is not to be read, and the notice is reading it.
@@ -275,7 +299,7 @@ func TestRun_SkipEnvSilencesTheDriftNotice(t *testing.T) {
 	_, err := Run(opts)
 	require.NoError(t, err)
 
-	assert.NotContains(t, stderr.String(), "--import-env")
+	assert.NotContains(t, stderr.String(), "--sync-env")
 }
 
 // readManifest is the file as it stands, which is what every assertion here
@@ -301,7 +325,7 @@ func TestImportEnv_StoresNothingWhenTheManifestCannotTakeIt(t *testing.T) {
 
 	stored := credentialStore(t)
 
-	_, err := Run(importing(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.ErrorIs(t, err, manifest.ErrNoPrimaryContainer)
 
 	assert.Empty(t, *stored)
@@ -313,7 +337,7 @@ func TestImportEnv_ReportsWhatItAddedForDisclosure(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\nZONE=eu-west-1a\n")
 
-	result, err := Run(importing(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	names := make([]string, 0, len(result.Draft.EnvVars))
@@ -331,7 +355,7 @@ func TestImportEnv_RefusesAnUnparseableEnvFile(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nBAD=\"unterminated\n")
 
-	_, err := Run(importing(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), EnvFileName)
@@ -353,52 +377,43 @@ func TestRun_ExistingManifestNamesAnUnreadableEnvFile(t *testing.T) {
 	assert.Contains(t, stderr.String(), "cannot parse")
 }
 
-// An entry the CLI wrote and never finished is skipped by every later import,
-// because the name counts as declared. Saying so is what keeps the retry from
-// reading as "everything is fine".
-func TestImportEnv_NamesAnUnfinishedCredential(t *testing.T) {
+// A placeholder is an entry the CLI wrote and could not finish. The retry
+// after the store comes back completes it, where the additive import skipped
+// it forever because the name already counted as declared.
+func TestSyncEnv_FinishesACredentialAnEarlierRunCouldNotStore(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nSTRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
 
 	noCredentialStore(t, errors.New("platform unreachable"))
 
-	first, err := Run(importing(dir, Answers{}))
+	first, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 	require.Equal(t, 1, first.EnvSecretsPending)
+	require.Contains(t, readManifest(t, dir), manifest.CredentialPlaceholder)
 
 	// The store is back, and the obvious thing to do is run it again.
 	credentialStore(t)
 
-	stderr := &bytes.Buffer{}
-	opts := importing(dir, Answers{})
-	opts.Stderr = stderr
-
-	again, err := Run(opts)
+	again, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionUnchanged, again.Action)
-	assert.Contains(t, stderr.String(), "STRIPE_API_KEY")
-	assert.Contains(t, stderr.String(), manifest.CredentialPlaceholder)
+	assert.Equal(t, ActionUpdated, again.Action)
+	assert.NotContains(t, readManifest(t, dir), manifest.CredentialPlaceholder)
 }
 
-// A local-only verdict is a heuristic, and this path has no table to overrule
-// it on, so the name has to be said or the user cannot learn it was held back.
-func TestImportEnv_NamesWhatWasHeldBackAsLocalOnly(t *testing.T) {
+// The classifier no longer decides whether a variable travels, only what form
+// its entry takes, so a value it reads as local-only is carried like any
+// other. The table is where that verdict is now overruled, and it is shown
+// before anything is written.
+func TestSyncEnv_CarriesWhatUsedToBeHeldBack(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nDATABASE_URL=postgres://localhost:5432/dev\n")
 
-	stderr := &bytes.Buffer{}
-	opts := importing(dir, Answers{})
-	opts.Stderr = stderr
-
-	result, err := Run(opts)
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionUnchanged, result.Action)
-	assert.Contains(t, stderr.String(), "DATABASE_URL")
-	assert.Contains(t, stderr.String(), "local-only")
-	// Names, never values.
-	assert.NotContains(t, stderr.String(), "postgres://localhost:5432/dev")
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Contains(t, readManifest(t, dir), "DATABASE_URL")
 }
 
 // No .env is not "the manifest already declares everything".
@@ -407,14 +422,14 @@ func TestImportEnv_SaysWhenThereIsNoEnvFile(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, EnvFileName)))
 
 	stderr := &bytes.Buffer{}
-	opts := importing(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionUnchanged, result.Action)
-	assert.Contains(t, stderr.String(), "nothing to import")
+	assert.Contains(t, stderr.String(), "nothing to reconcile")
 	assert.NotContains(t, stderr.String(), "already declares")
 }
 
@@ -424,10 +439,10 @@ func TestImportEnv_RefusesWhenThereIsNoManifest(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 	writeEnvFile(t, dir, "REGION=eu-west-1\n")
 
-	_, err := Run(importing(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.Error(t, err)
 
-	assert.Contains(t, err.Error(), "nothing to import")
+	assert.Contains(t, err.Error(), "nothing to reconcile")
 	assert.NoFileExists(t, manifest.Path(dir))
 }
 
@@ -448,7 +463,7 @@ func TestRun_DriftNoticeDoesNotAdvertiseAnImportThatWouldRefuse(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "cannot be added automatically")
-	assert.NotContains(t, stderr.String(), "--import-env")
+	assert.NotContains(t, stderr.String(), "--sync-env")
 }
 
 // A JSON run stays quiet because the command hands over no writer at all,
@@ -509,11 +524,11 @@ func TestRun_DriftNoticeCapsTheList(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "SETTING_19")
 }
 
-// updating is a headless run that asks for the other half: the values of
-// names the manifest already declares.
-func updating(dir string, answers Answers) Options {
+// syncing is a headless run that asks for the reconciliation: the names the
+// manifest does not declare, and the values behind the ones it does.
+func syncing(dir string, answers Answers) Options {
 	opts := headless(dir, answers)
-	opts.UpdateEnv = true
+	opts.SyncEnv = true
 
 	return opts
 }
@@ -531,41 +546,20 @@ func TestRun_NamesAChangedLiteral(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "LOG_LEVEL")
-	assert.Contains(t, stderr.String(), "--update-env")
+	assert.Contains(t, stderr.String(), "--sync-env")
 	// Names, never values: neither side of the comparison is printed.
 	assert.NotContains(t, stderr.String(), "trace")
 }
 
-// An update adds no names, so one the manifest is missing is still missing
-// when it finishes. This used to be said only on the run that found nothing to
-// do, which left the run that reconciled every value it could reading as a
-// clean bill of health for a file short a variable.
-func TestUpdateEnv_NamesUndeclaredVariablesAfterRewritingOne(t *testing.T) {
-	dir := configured(t, "LOG_LEVEL=debug\n")
-	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
-
-	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
-	opts.Stderr = stderr
-
-	result, err := Run(opts)
-	require.NoError(t, err)
-	require.Equal(t, 1, result.EnvValuesUpdated, "the run has to have changed something")
-
-	assert.Contains(t, stderr.String(), "does not declare")
-	assert.Contains(t, stderr.String(), "REGION")
-	assert.Contains(t, stderr.String(), "--import-env")
-}
-
-// The other half of the same branch: an import puts the missing names in the
-// file, so naming them afterwards would report as missing exactly what the run
-// just added.
-func TestImportEnv_DoesNotNameWhatItJustAdded(t *testing.T) {
+// A name the manifest is missing is added rather than reported, which is what
+// collapsing the two flags bought: the run that reconciles the values also
+// carries the names, so there is nothing left to send the reader back for.
+func TestSyncEnv_AddsRatherThanNamesWhatIsMissing(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 
 	stderr := &bytes.Buffer{}
-	opts := importing(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
@@ -575,12 +569,12 @@ func TestImportEnv_DoesNotNameWhatItJustAdded(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "does not declare")
 }
 
-// --update-env rewrites it, and leaves every other key alone.
+// A sync rewrites it, and leaves every other key alone.
 func TestUpdateEnv_RewritesAChangedLiteral(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
 
-	result, err := Run(updating(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionUpdated, result.Action)
@@ -592,16 +586,17 @@ func TestUpdateEnv_RewritesAChangedLiteral(t *testing.T) {
 	assert.Contains(t, after, "eu-west-1")
 }
 
-// A name .env does not define is not drift, so an update leaves it alone.
-func TestUpdateEnv_LeavesUndefinedNamesAlone(t *testing.T) {
+// The reverse of what this used to assert: a name .env does not define is one
+// the reconciliation takes out.
+func TestSyncEnv_TakesOutNamesEnvDoesNotDefine(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\n")
 
-	result, err := Run(updating(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionUnchanged, result.Action)
-	assert.Contains(t, readManifest(t, dir), "eu-west-1")
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.NotContains(t, readManifest(t, dir), "eu-west-1")
 }
 
 // The case the original report was about: a rotated key reaches the workload,
@@ -621,7 +616,7 @@ func TestUpdateEnv_RotatesADeclaredSecret(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	result, err := Run(updating(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.EnvSecretsRotated)
@@ -672,7 +667,7 @@ func TestUpdateEnv_NamesAFailedRotation(t *testing.T) {
 	failingRotation(t, errors.New("platform unreachable"))
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
@@ -693,7 +688,7 @@ func TestUpdateEnv_DryRunSendsNothing(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.DryRun = true
 
 	result, err := Run(opts)
@@ -709,8 +704,8 @@ func TestEditEnv_BothFlagsAddAndUpdate(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=trace\nREGION=eu-west-1\n")
 
-	opts := importing(dir, Answers{})
-	opts.UpdateEnv = true
+	opts := syncing(dir, Answers{})
+	opts.SyncEnv = true
 
 	result, err := Run(opts)
 	require.NoError(t, err)
@@ -742,7 +737,7 @@ func TestUpdateEnv_RotationIsNotAFileEdit(t *testing.T) {
 	rotatingStore(t)
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
@@ -758,7 +753,7 @@ func TestUpdateEnv_RotationIsNotAFileEdit(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "already gives every variable")
 }
 
-// A preview of --update-env that said nothing about the secrets would leave
+// A preview that said nothing about the secrets would leave
 // out the only part of it that reaches the tenant.
 func TestUpdateEnv_DryRunSaysWhatItWouldReSend(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
@@ -775,7 +770,7 @@ func TestUpdateEnv_DryRunSaysWhatItWouldReSend(t *testing.T) {
 	sent := rotatingStore(t)
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.DryRun = true
 	opts.Stderr = stderr
 
@@ -804,7 +799,7 @@ func TestUpdateEnv_CountsAFailedRotation(t *testing.T) {
 	failingRotation(t, errors.New("platform unreachable"))
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
@@ -818,21 +813,20 @@ func TestUpdateEnv_CountsAFailedRotation(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "already gives every variable")
 }
 
-// The two flags do opposite things, so the run that found nothing to do says
-// which of the two it found nothing for.
-func TestUpdateEnv_NothingToDoIsAboutValues(t *testing.T) {
+// A run that found nothing to do says so in one sentence, because one flag
+// asked one question. It used to be four, one per combination of two flags.
+func TestSyncEnv_NothingToDoSaysSoOnce(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionUnchanged, result.Action)
-	assert.Contains(t, stderr.String(), "already gives every variable it declares the value .env does")
-	assert.NotContains(t, stderr.String(), "that can be imported")
+	assert.Contains(t, stderr.String(), "already says what .env says")
 }
 
 // The values are read by the walk that resolves aliases and applied by the one
@@ -853,7 +847,7 @@ func TestRun_ValueDriftNamesTheRefusalNotTheFlag(t *testing.T) {
 
 	assert.Contains(t, stderr.String(), "LOG_LEVEL")
 	assert.Contains(t, stderr.String(), "cannot be edited automatically")
-	assert.NotContains(t, stderr.String(), "--update-env")
+	assert.NotContains(t, stderr.String(), "--sync-env")
 }
 
 // sharedEnvManifest is a valid manifest whose primary container shares its
@@ -906,7 +900,7 @@ func TestUpdateEnv_NeverRotatesALocalOnlyValue(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	result, err := Run(updating(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, 0, result.EnvSecretsRotated)
@@ -927,7 +921,7 @@ func TestUpdateEnv_SkipEnvSendsNothing(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	_, err = Run(updating(dir, Answers{SkipEnv: true}))
+	_, err = Run(syncing(dir, Answers{SkipEnv: true}))
 	require.NoError(t, err)
 
 	assert.Empty(t, *sent)
@@ -952,7 +946,7 @@ func TestUpdateEnv_RefusesACredentialFieldItDoesNotWrite(t *testing.T) {
 	sent := rotatingStore(t)
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
@@ -971,22 +965,22 @@ func TestUpdateEnv_RefusesWhenThereIsNoManifest(t *testing.T) {
 
 	stored := credentialStore(t)
 
-	_, err := Run(updating(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.Error(t, err)
 
-	// The verb is the one that was asked for: an --update-env run told about
+	// The verb is the one that was asked for: a sync told about
 	// importing is being answered about a flag it did not pass.
-	assert.Contains(t, err.Error(), "nothing to update")
+	assert.Contains(t, err.Error(), "nothing to reconcile")
 	assert.NoFileExists(t, manifest.Path(dir))
 	assert.Empty(t, *stored)
 }
 
-// A .env that could not be read is not one with nothing to update.
+// A .env that could not be read is not one with nothing to reconcile.
 func TestUpdateEnv_RefusesAnUnparseableEnvFile(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\n")
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\nBAD=\"unterminated\n")
 
-	_, err := Run(updating(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), EnvFileName)
@@ -1008,7 +1002,7 @@ func TestUpdateEnv_RotationAloneIsNotAFileEdit(t *testing.T) {
 	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
 	rotatingStore(t)
 
-	result, err := Run(updating(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.EnvSecretsRotated)
@@ -1031,7 +1025,7 @@ func TestUpdateEnv_DryRunCountsWhatItWouldSend(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.DryRun = true
 
 	result, err := Run(opts)
@@ -1041,25 +1035,10 @@ func TestUpdateEnv_DryRunCountsWhatItWouldSend(t *testing.T) {
 	assert.Empty(t, *sent)
 }
 
-// An update alone still owes the names the manifest is missing.
-func TestUpdateEnv_StillNamesUndeclaredVariables(t *testing.T) {
-	dir := configured(t, "LOG_LEVEL=debug\n")
-	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
-
-	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
-	opts.Stderr = stderr
-
-	_, err := Run(opts)
-	require.NoError(t, err)
-
-	assert.Contains(t, stderr.String(), "REGION")
-	assert.NotContains(t, stderr.String(), "already declares every variable")
-}
-
-// A value that changed enough to change the classifier's verdict is acted on
-// by neither half, so it has to be named.
-func TestRun_NamesAReclassifiedVariable(t *testing.T) {
+// A value that changed enough to change the classifier's verdict used to be
+// named as something no flag would apply. A reconciliation applies it, so it
+// is drift like any other and gets the same remedy.
+func TestRun_NamesAReclassifiedVariableAsDrift(t *testing.T) {
 	dir := configured(t, "REGION=eu-west-1\n")
 	require.Contains(t, readManifest(t, dir), "eu-west-1")
 
@@ -1073,8 +1052,8 @@ func TestRun_NamesAReclassifiedVariable(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "REGION")
-	assert.Contains(t, stderr.String(), "different kind")
-	assert.NotContains(t, stderr.String(), "fixture-not-a-real-key-1a2b3c4d")
+	assert.Contains(t, stderr.String(), "--sync-env", "the flag that settles it")
+	assert.NotContains(t, stderr.String(), "fixture-not-a-real-key-1a2b3c4d", "names, never values")
 }
 
 // A credential id pasted by hand may name one other workloads read, and the
@@ -1101,7 +1080,7 @@ func TestUpdateEnv_RefusesACredentialThisProjectDidNotCreate(t *testing.T) {
 	sent := rotatingStore(t)
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	result, err := Run(opts)
@@ -1121,7 +1100,7 @@ func TestRun_DoesNotOfferToRotateAPlaceholder(t *testing.T) {
 
 	noCredentialStore(t, errors.New("platform unreachable"))
 
-	_, err := Run(importing(dir, Answers{}))
+	_, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 	require.Contains(t, readManifest(t, dir), manifest.CredentialPlaceholder)
 
@@ -1145,23 +1124,23 @@ func TestImportEnv_DryRunDoesNotReportPendingSecrets(t *testing.T) {
 
 	credentialStore(t)
 
-	opts := importing(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.DryRun = true
 
 	planned, err := Run(opts)
 	require.NoError(t, err)
 
-	actual, err := Run(importing(dir, Answers{}))
+	actual, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, planned.EnvKeysListed, actual.EnvKeysListed)
 	assert.Equal(t, actual.EnvSecretsPending, planned.EnvSecretsPending)
 }
 
-// A value written as a mapping is not something either flag rewrites, so
-// calling it drift would send the user to a flag that changes nothing, every
-// run, for ever.
-func TestRun_StructuredValueIsNotReportedAsDrift(t *testing.T) {
+// A value the manifest keeps as a mapping cannot be what .env says, because
+// .env holds only strings. That used to be reported as something no flag would
+// touch; the reconciliation overwrites it, so it is drift with a remedy.
+func TestRun_StructuredValueIsReportedAsDrift(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
 	writeEnvFile(t, dir, "SETTINGS=plain\n")
 
@@ -1175,31 +1154,26 @@ func TestRun_StructuredValueIsNotReportedAsDrift(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "SETTINGS")
-	assert.Contains(t, stderr.String(), "not a plain string")
-	assert.NotContains(t, stderr.String(), "Apply it with")
+	assert.Contains(t, stderr.String(), "Apply it with")
 }
 
-// The summary of a run that changed nothing must not claim an agreement the
-// notice above it has just denied.
-func TestUpdateEnv_NoOpDoesNotClaimAgreementItCannotVerify(t *testing.T) {
+// .env wins on a value the manifest holds as a mapping, which is the one
+// category where winning loses information the file cannot get back. It is a
+// row in the table for exactly that reason.
+func TestSyncEnv_OverwritesAStructuredValue(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
 	writeEnvFile(t, dir, "SETTINGS=plain\n")
 
 	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(structuredValueManifest), 0o600))
 
-	before := readManifest(t, dir)
-
-	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
-	opts.Stderr = stderr
-
-	result, err := Run(opts)
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionUnchanged, result.Action)
-	assert.Equal(t, before, readManifest(t, dir))
-	assert.Contains(t, stderr.String(), "not a plain string")
-	assert.NotContains(t, stderr.String(), "already gives every variable")
+	assert.Equal(t, ActionUpdated, result.Action)
+
+	after := readManifest(t, dir)
+	assert.Contains(t, after, "value: plain")
+	assert.NotContains(t, after, "nested")
 }
 
 // A deploy from a subdirectory reads the manifest above it, so a run told
@@ -1211,11 +1185,28 @@ func TestImportEnv_NamesTheManifestAboveTheDirectory(t *testing.T) {
 	require.NoError(t, os.MkdirAll(sub, 0o755))
 	writeEnvFile(t, sub, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
 
-	_, err := Run(importing(sub, Answers{}))
+	_, err := Run(syncing(sub, Answers{}))
 	require.Error(t, err)
 
 	assert.Contains(t, err.Error(), manifest.Path(root))
-	assert.Contains(t, err.Error(), "--dir "+root)
+
+	// The argument the remedy actually carries, read back out of the message.
+	//
+	// Not "--dir "+root, which assumed a native separator and no quoting: that
+	// holds on POSIX and fails on Windows the moment a temp path carries an
+	// 8.3 name like RUNNER~1, which DirFlag quotes. Not DirFlag(root) either,
+	// which would only be this message agreeing with the function that built
+	// it. How the flag is spelled is settled in TestDirFlag_*; the only thing
+	// tolerated here is the quoting, because that is what varies by platform.
+	//
+	// Compared whole rather than searched for, because the directory that was
+	// searched is a child of the one that has the manifest, so a remedy
+	// pointing at the wrong one of the two still contains the right one.
+	_, remedy, found := strings.Cut(err.Error(), "--dir ")
+	require.True(t, found, "the remedy names the flag")
+
+	assert.Equal(t, filepath.ToSlash(root), strings.Trim(remedy, `"`),
+		"and points it at the project that has the manifest, not the one that was searched")
 }
 
 // A container that inherits its environment through a merge key is serving
@@ -1296,8 +1287,8 @@ func TestReportEnvDrift_NamesBothDriftsAndTheCallersOwnCommand(t *testing.T) {
 
 	assert.Contains(t, out, "REGION", "a name .env has and the manifest does not")
 	assert.Contains(t, out, "LOG_LEVEL", "a declared value .env no longer agrees with")
-	assert.Contains(t, out, "'dr workload up --import-env'")
-	assert.Contains(t, out, "'dr workload up --update-env'")
+	assert.Equal(t, 2, strings.Count(out, "'dr workload up --sync-env'"),
+		"one flag reconciles both, so both findings send the reader to the same command")
 
 	assert.NotContains(t, out, "dr workload config", "the caller named its own command")
 	assert.NotContains(t, out, "trace", "names, never values")
@@ -1319,6 +1310,23 @@ func TestReportEnvDrift_SilentWhenTheFilesAgree(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+// An empty .env is not drift either: the sync leaves such a file alone, so a
+// notice announcing the removals it would make would be advertising something
+// the flag is not going to do.
+func TestReportEnvDrift_EmptyEnvFileReportsNoRemovals(t *testing.T) {
+	dir := configured(t, "LOG_LEVEL=debug\n")
+	writeEnvFile(t, dir, "# nothing yet\n")
+
+	parsed, err := manifest.Load(manifest.Path(dir))
+	require.NoError(t, err)
+
+	stderr := &bytes.Buffer{}
+
+	ReportEnvDrift(dir, "dr workload up", stderr, parsed)
+
+	assert.Empty(t, stderr.String())
+}
+
 // The standing facts stay with the command that is about configuration. None
 // of them can be settled by anything the reader of a deploy is about to run,
 // so said there each would print on every run for the life of the project, and
@@ -1327,10 +1335,9 @@ func TestReportEnvDrift_LeavesTheStandingLinesToConfig(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(credentialEnvManifest), 0o600))
 	writeEnvFile(t, dir, "LOG_LEVEL=debug\n"+
-		// A credential's value, which nothing can compare with .env.
-		"STRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n"+
-		// A classifier verdict: held back on purpose, and no flag adds it.
-		"DATABASE_URL=postgres://localhost:5432/dev\n")
+		// A credential's value, which nothing can compare with .env. It is the
+		// one standing fact left now that the classifier withholds nothing.
+		"STRIPE_API_KEY=fixture-not-a-real-key-1a2b3c4d\n")
 
 	parsed, err := manifest.Load(manifest.Path(dir))
 	require.NoError(t, err)
@@ -1342,8 +1349,7 @@ func TestReportEnvDrift_LeavesTheStandingLinesToConfig(t *testing.T) {
 	_, err = Run(opts)
 	require.NoError(t, err)
 	require.Contains(t, setup.String(), "cannot be compared",
-		"setup says them, and the point of this test is the command that does not")
-	require.Contains(t, setup.String(), "local-only")
+		"setup says it, and the point of this test is the command that does not")
 
 	notice := &bytes.Buffer{}
 
@@ -1442,7 +1448,7 @@ func TestUpdateEnv_RefusesAValueBorrowedFromAnAnchor(t *testing.T) {
 	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(aliasedValueManifest), 0o600))
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	_, err := Run(opts)
@@ -1480,11 +1486,12 @@ runtime:
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 `
 
-// A declared variable whose .env value has turned local-only is one the
-// rotation is right to hold back and one no notice covered: the held-back line
-// is about names the manifest does not carry. Unsaid, the run reported a value
-// it had just declined to send as already agreeing with .env.
-func TestUpdateEnv_NamesADeclaredValueTurnedLocalOnly(t *testing.T) {
+// The sharpest edge of .env winning on everything: a declared secret whose
+// value has been repointed at the developer's own machine is sent to the
+// credential store anyway, where it used to be held back. That is the trade
+// the single flag makes, and the table is the only thing standing in front of
+// it.
+func TestSyncEnv_SendsAValueTheClassifierWouldHaveHeldBack(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
 	writeEnvFile(t, dir, "DATABASE_URL=postgres://user:pw@db.prod.example.com:5432/app\n")
 
@@ -1493,37 +1500,45 @@ func TestUpdateEnv_NamesADeclaredValueTurnedLocalOnly(t *testing.T) {
 	_, err := Run(headless(dir, Answers{Name: "my-app"}))
 	require.NoError(t, err)
 
-	// Repointed at the developer's own machine, which the classifier holds back.
+	// Repointed at the developer's own machine.
 	writeEnvFile(t, dir, "DATABASE_URL=postgres://localhost:5432/dev\n")
 
-	sent := rotatingStore(t)
+	rotatingStore(t)
 
-	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
-	opts.Stderr = stderr
-
-	_, err = Run(opts)
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
-	assert.Empty(t, *sent)
-	assert.Contains(t, stderr.String(), "DATABASE_URL")
-	assert.Contains(t, stderr.String(), "declared variable as local-only")
-	assert.NotContains(t, stderr.String(), "already gives every variable")
+	// Not rotated: .env now reads the value as local-only, which is a plain
+	// value rather than a secret, so the entry stops being a reference at all.
+	// The credential is left where it is, and the value it used to hide lands
+	// in the manifest in the clear. That is what .env winning on the form as
+	// well as the value costs, and it is why the run discloses every literal
+	// it wrote.
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Contains(t, readManifest(t, dir), "postgres://localhost:5432/dev")
+
+	written := make([]string, 0, len(result.Draft.EnvVars))
+	for _, v := range result.Draft.EnvVars {
+		written = append(written, v.Name)
+	}
+
+	assert.Contains(t, written, "DATABASE_URL",
+		"so the command can name it among the values written in the clear")
 }
 
-// The missing-name notice ends in the held-back one, so an update that found
-// nothing to do and printed both said the same name twice.
-func TestUpdateEnv_HeldBackNamesAreSaidOnce(t *testing.T) {
+// Nothing is held back any more, so there is no held-back line to say twice.
+// The value travels, and the table is where it was agreed to.
+func TestSyncEnv_CarriesALocalOnlyValueRatherThanNamingIt(t *testing.T) {
 	dir := configured(t, "LOG_LEVEL=debug\nDATABASE_URL=postgres://localhost:5432/dev\n")
 
 	stderr := &bytes.Buffer{}
-	opts := updating(dir, Answers{})
+	opts := syncing(dir, Answers{})
 	opts.Stderr = stderr
 
 	_, err := Run(opts)
 	require.NoError(t, err)
 
-	assert.Equal(t, 1, strings.Count(stderr.String(), "deliberately left out of the manifest"))
+	assert.NotContains(t, stderr.String(), "deliberately left out of the manifest")
 }
 
 // A container whose environment another one reads through an anchor takes no
@@ -1540,7 +1555,7 @@ func TestUpdateEnv_RotatesThroughASharedEnvironment(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	result, err := Run(updating(dir, Answers{}))
+	result, err := Run(syncing(dir, Answers{}))
 	require.NoError(t, err)
 
 	assert.Equal(t, ActionUnchanged, result.Action)
@@ -1550,6 +1565,31 @@ func TestUpdateEnv_RotatesThroughASharedEnvironment(t *testing.T) {
 	require.Len(t, *sent, 1)
 	assert.Equal(t, "66f000000000000000000001", (*sent)[0].Name)
 	assert.Equal(t, "fixture-key-after-rotation-b2b2", (*sent)[0].Value)
+}
+
+// Nobody to ask is a refusal, not a pass. Without a terminal and without --yes
+// the question the deploy hands over errors, and a rotation through a shared
+// block is behind it like every other write to the tenant.
+func TestUpdateEnv_NobodyToAskMeansNoRotationThroughASharedEnvironment(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		return false, errors.New("there is nowhere here to ask you about it")
+	}
+
+	_, err := Run(opts)
+	require.ErrorContains(t, err, "nowhere here to ask")
+
+	assert.Empty(t, *sent, "nothing reached the store")
+	assert.Equal(t, sharedEnvSecretManifest, readManifest(t, dir))
 }
 
 // The other side of that line: once a literal in the shared block is one .env
@@ -1563,11 +1603,51 @@ func TestUpdateEnv_StillRefusesALiteralInASharedEnvironment(t *testing.T) {
 
 	sent := rotatingStore(t)
 
-	_, err := Run(updating(dir, Answers{}))
+	// Refused before the question: a table listing the rewrite as an update
+	// would be asking for agreement to something the run was never going to do.
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		t.Fatal("the rewrite was never going to be taken, so there was nothing to agree to")
+
+		return false, nil
+	}
+
+	_, err := Run(opts)
 	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
 
 	assert.Empty(t, *sent)
 	assert.Equal(t, sharedEnvManifest, readManifest(t, dir))
+}
+
+// A rotation through a shared block is still a write to the tenant, so it is
+// still asked about: the re-send is a row of the table whether or not the file
+// takes an edit, and a refusal leaves the store as it was.
+func TestUpdateEnv_SharedEnvironmentStillAsksBeforeARotation(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	asked := false
+
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		asked = true
+
+		return false, nil
+	}
+
+	result, err := Run(opts)
+	require.NoError(t, err)
+
+	assert.True(t, asked, "a re-send overwrites a value on the tenant, and is agreed to like every other")
+	assert.Equal(t, 0, result.EnvSecretsRotated)
+	assert.Empty(t, *sent, "a refusal sends nothing")
+	assert.Equal(t, sharedEnvSecretManifest, readManifest(t, dir))
 }
 
 // sharedEnvSecretManifest shares its environment the way sharedEnvManifest
@@ -1620,5 +1700,59 @@ func TestRun_SecretDriftNamesTheFlagThroughASharedEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "LLM_API_KEY")
-	assert.Contains(t, stderr.String(), "re-send it with 'dr workload config --update-env'")
+	assert.Contains(t, stderr.String(), "re-send it with 'dr workload config --sync-env'")
+}
+
+// The third thing a shared block can be asked for, after a rewrite and a
+// rotation: a name .env carries that the block does not.
+//
+// It cannot have it. Appending to a node other containers read would add the
+// variable to all of them, so the refusal is the same one a rewrite gets. It
+// used to pass instead, because only a changed literal counted as a write into
+// the file, and the run then went on to report that the manifest "already
+// declares every variable in .env that can be added" without ever naming the
+// ones it had not added. The reader asked for the two files to agree and was
+// told they did.
+func TestSyncEnv_RefusesASharedEnvironmentWithNamesToAdd(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LOG_LEVEL=debug\nREGION=eu-west-1\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvManifest), 0o600))
+
+	sent := rotatingStore(t)
+
+	opts := syncing(dir, Answers{})
+	opts.Confirm = func() (bool, error) {
+		t.Fatal("the add was never going to happen, so there was nothing to agree to")
+
+		return false, nil
+	}
+
+	_, err := Run(opts)
+	require.ErrorIs(t, err, manifest.ErrSharedEnvVars)
+
+	assert.Empty(t, *sent)
+	assert.Equal(t, sharedEnvManifest, readManifest(t, dir))
+}
+
+// The line that refusal must not cross. A shared block already carrying every
+// name .env has is one a rotation can still go through, because the id it
+// sends to is read through the alias and the file is not touched. Reading the
+// declared names off the walk that does not resolve aliases would count every
+// one of them as missing and refuse this too.
+func TestSyncEnv_StillRotatesThroughASharedEnvironmentThatDeclaresEverything(t *testing.T) {
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 8080\n")
+	writeEnvFile(t, dir, "LLM_API_KEY=fixture-key-after-rotation-b2b2\n")
+
+	require.NoError(t, os.WriteFile(manifest.Path(dir), []byte(sharedEnvSecretManifest), 0o600))
+
+	ownedCredential(t, "shared/LLM_API_KEY")
+
+	sent := rotatingStore(t)
+
+	result, err := Run(syncing(dir, Answers{}))
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.EnvSecretsRotated)
+	require.Len(t, *sent, 1)
 }

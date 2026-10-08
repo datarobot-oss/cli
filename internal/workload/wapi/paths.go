@@ -141,6 +141,22 @@ func Exists(projectDir string) bool {
 	return fsutil.DirExists(Dir(projectDir))
 }
 
+// StateDirs is every state directory the project has, current and legacy,
+// for a caller removing the project's state rather than reading it: Dir
+// prefers the current one, and a legacy tree left beside it would be found
+// again once the current one is gone.
+func StateDirs(projectDir string) []string {
+	var dirs []string
+
+	for _, dir := range []string{filepath.Join(projectDir, RootDirName, StateDirName), legacyDir(projectDir)} {
+		if fsutil.DirExists(dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+
+	return dirs
+}
+
 // CheckoutsDir is the parent directory holding read-only version snapshots
 // produced by `dr artifact code checkout`. Each snapshot is a sub-directory
 // named after the full catalog version ID.
