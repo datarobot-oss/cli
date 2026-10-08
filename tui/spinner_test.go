@@ -313,3 +313,26 @@ func TestSpinnerVerdict(t *testing.T) {
 		})
 	}
 }
+
+// The spinner animates only with a keyboard and a screen: stdin to answer
+// keystrokes, stderr to draw on. A redirected stderr gets the plain line, so
+// nothing is drawn into a file, and stdout is never involved.
+func TestSpinnerModeFor(t *testing.T) {
+	tests := []struct {
+		name                         string
+		stdinTerm, stderrTerm, nonIn bool
+		want                         spinnerMode
+	}{
+		{"no terminal at all", false, false, false, spinnerSilent},
+		{"piped stdin, terminal stderr", false, true, false, spinnerSilent},
+		{"both terminals", true, true, false, spinnerDrawn},
+		{"stderr redirected", true, false, false, spinnerLine},
+		{"non-interactive", true, true, true, spinnerLine},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, spinnerModeFor(tt.stdinTerm, tt.stderrTerm, tt.nonIn))
+		})
+	}
+}

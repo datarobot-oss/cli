@@ -84,7 +84,9 @@ wl::pass "up accepted its own manifest"
 # robust to the rendered manifest's exact indentation. The paths target the
 # runtime containerGroup, matching the runbook's "edit the runtime group".
 RT='.runtime.containerGroups[0]'
-RTC="$RT.containers[0]"
+# Environment variables live on the artifact's container; the runtime
+# container has none, and the validator does not read them there.
+ARC='.artifact.spec.containerGroups[0].containers[0]'
 
 # Snapshot the clean manifest once; restore it between probes by copying back.
 cp .datarobot.yaml "$WL_SCRATCH/manifest-clean.yaml"
@@ -116,16 +118,19 @@ wl::pass "probe c: replicaCount + active autoscaling fails at load time"
 restore
 
 # (d) environmentVars entry with neither value nor credential source -> FAIL
-yq -i "$RTC.environmentVars = [{\"key\": \"FOO\"}]" .datarobot.yaml
-wl::dr_capture workload up
+# A dry run: a probe that wrongly passes must not deploy.
+yq -i "$ARC.environmentVars = [{\"name\": \"FOO\"}]" .datarobot.yaml
+wl::dr_capture workload up --dry-run
 if [[ "$WL_RC" -eq 0 ]]; then
     wl::fail "probe d: envVar without value should have failed at validate time"
 fi
+echo "$WL_ERR" | grep -q 'environmentVars\[0\].value' \
+    || wl::fail "probe d: expected the finding on environmentVars[0].value, got: $WL_ERR"
 wl::pass "probe d: envVar without value fails at validate time"
 restore
 
 # (e) same entry with value: "" (explicitly empty)        -> PASS (dry-run)
-yq -i "$RTC.environmentVars = [{\"key\": \"FOO\", \"value\": \"\"}]" .datarobot.yaml
+yq -i "$ARC.environmentVars = [{\"name\": \"FOO\", \"value\": \"\"}]" .datarobot.yaml
 wl::dr_capture workload up --dry-run
 wl::assert_cmd_ok "$WL_RC" "$WL_OUT" "$WL_ERR" "probe e: envVar with explicit empty value"
 wl::pass "probe e: envVar with explicit empty value passes (dry-run)"
