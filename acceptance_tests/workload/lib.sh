@@ -95,9 +95,7 @@ wl::init_env() {
     # configured endpoint wins (env binding would otherwise shadow config).
     [[ -n "${DATAROBOT_ENDPOINT:-}" ]] && export DATAROBOT_ENDPOINT
 
-    # The workload feature gate is CLI-side and never in drconfig.yaml, so the
-    # suite always sets it. Non-interactive keeps prompts out of CI/local runs.
-    export DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true
+    # Non-interactive keeps prompts out of CI/local runs.
     export DATAROBOT_CLI_NON_INTERACTIVE=1
 
     # Per-run scratch directory; removed on exit (see wl::register_cleanup).

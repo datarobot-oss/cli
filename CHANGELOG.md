@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Changed
 
-- The feature gate for `dr workload config`, `up` and `promote` is now `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true`; the three commands are alpha and stay gated. `DATAROBOT_CLI_FEATURE_WORKLOAD` is no longer read, so a script that set it must set the new variable to keep seeing them.
+- `dr workload config`, `up` and `promote` are released and no longer behind a feature gate: they are in `--help`, completion and dispatch with nothing set. A script that still sets `DATAROBOT_CLI_FEATURE_WORKLOAD` or `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA` keeps working; neither is needed. `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA` stays reserved for workload features still in alpha.
 
 ## Added
 

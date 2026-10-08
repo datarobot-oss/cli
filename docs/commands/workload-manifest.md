@@ -2,9 +2,6 @@
 
 The file `dr workload config` writes and `dr workload up` deploys from. This page is the reference for the file itself and for what `up` does with it. The commands and their flags are documented in [`dr workload`](workload.md).
 
-> [!NOTE]
-> `config` and `up` are alpha and behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true` to use them.
-
 ## What the file is
 
 `.datarobot.yaml` sits at the root of your project and is the **workload-create spec, verbatim**: the same document `dr workload create --spec-file` accepts, with every field documented in the [spec reference](workload-spec.md#workload-spec). Keys the CLI does not know are passed to the platform untouched, so a platform addition needs no CLI release.
