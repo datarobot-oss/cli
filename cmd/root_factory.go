@@ -445,6 +445,12 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 		return err
 	}
 
+	// A format set only in drconfig.yaml is known from here on; executeRoot
+	// reads root's SilenceErrors as "report failures as JSON".
+	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
+		cmd.Root().SilenceErrors = true
+	}
+
 	// Configure the default HTTP transport (ca-cert, skip-verify).
 	if err := f.deps.TLSSetup(cmd); err != nil {
 		return err
