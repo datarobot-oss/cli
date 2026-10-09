@@ -39,6 +39,46 @@ type PlanJSON struct {
 	// like, and a script reading only this document has nothing else to go on:
 	// the human warning goes to stderr and the exit status is 0.
 	Locked bool `json:"locked"`
+
+	// Verified reports that the BASE-vs-REMOTE check ran: --verify was given
+	// and the artifact had not moved. Without it an empty Divergence list
+	// says nothing about the server.
+	Verified bool `json:"verified"`
+
+	// Divergence lists the paths where manifest.json (BASE) disagrees with
+	// the server (REMOTE), as detected by a --verify run. Always emitted,
+	// empty when there is nothing to report; read it with Verified. The
+	// findings are diagnostics: the plan already reconciles them and the
+	// exit status is unchanged.
+	Divergence []DivergenceJSON `json:"divergence"`
+
+	// SkippedSymlinks lists every symlink the walk did not follow, filtered
+	// through the ignore matcher. Like Locked and Divergence it is always
+	// emitted and explicitly empty when there are none, so a script never
+	// has to guess whether a missing key meant "no symlinks" or "never
+	// checked". The findings are diagnostics: the plan already excludes them
+	// and the exit status is unchanged.
+	SkippedSymlinks []SkippedSymlinkJSON `json:"skippedSymlinks"`
+}
+
+// SkippedSymlinkJSON is one symlink the walk did not follow, in the plan
+// document. IsDir distinguishes a single skipped file from an entire omitted
+// subtree (a directory symlink prunes all of its children), which is the
+// distinction that makes the notice actionable.
+type SkippedSymlinkJSON struct {
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
+}
+
+// DivergenceJSON is one BASE-vs-REMOTE disagreement in the plan document.
+// Kind is the fixed vocabulary shared with the stderr prose (hash_mismatch /
+// base_only / remote_only); the hash of the side a kind does not involve is
+// omitted, so a script can identify each finding without re-fetching.
+type DivergenceJSON struct {
+	Path       string              `json:"path"`
+	Kind       sync.DivergenceKind `json:"kind"`
+	BaseHash   string              `json:"baseHash,omitempty"`
+	RemoteHash string              `json:"remoteHash,omitempty"`
 }
 
 type FileActionJSON struct {
@@ -89,20 +129,39 @@ type SyncJSON struct {
 	Refused bool `json:"refused,omitempty"`
 }
 
-// planJSON builds the plan view. A nil plan carries only the locked flag, which
-// is all a preview of an unreadable plan can report.
-func planJSON(plan *sync.SyncPlan, locked bool) PlanJSON {
+// Findings are the Phase 2 diagnostics a document carries beside the plan:
+// the divergences a --verify run found and the symlinks the walk skipped.
+// Both are rendered whatever the plan went on to do, empty lists included.
+type Findings struct {
+	// Verified says the divergence check ran, so an empty Divergence list
+	// means clean rather than unchecked.
+	Verified        bool
+	Divergence      []sync.Divergence
+	SkippedSymlinks []sync.SkippedSymlink
+}
+
+// planJSON builds the plan view. A nil plan carries only the locked flag and
+// the findings, which is all a preview of an unreadable plan can report.
+func planJSON(plan *sync.SyncPlan, locked bool, f Findings) PlanJSON {
 	if plan == nil {
-		return PlanJSON{Locked: locked}
+		return PlanJSON{
+			Locked:          locked,
+			Verified:        f.Verified,
+			Divergence:      divergencesJSON(f.Divergence),
+			SkippedSymlinks: skippedSymlinksJSON(f.SkippedSymlinks),
+		}
 	}
 
 	return PlanJSON{
-		Locked:    locked,
-		Uploads:   actionsJSON(plan.Uploads),
-		Downloads: actionsJSON(plan.Downloads),
-		Deletes:   actionsJSON(plan.Deletes),
-		Conflicts: actionsJSON(plan.Conflicts),
-		Skipped:   actionsJSON(plan.Skipped),
+		Locked:          locked,
+		Verified:        f.Verified,
+		Divergence:      divergencesJSON(f.Divergence),
+		SkippedSymlinks: skippedSymlinksJSON(f.SkippedSymlinks),
+		Uploads:         actionsJSON(plan.Uploads),
+		Downloads:       actionsJSON(plan.Downloads),
+		Deletes:         actionsJSON(plan.Deletes),
+		Conflicts:       actionsJSON(plan.Conflicts),
+		Skipped:         actionsJSON(plan.Skipped),
 		Stats: PlanStatsJSON{
 			UploadCount:     len(plan.Uploads),
 			DownloadCount:   len(plan.Downloads),
@@ -118,8 +177,8 @@ func planJSON(plan *sync.SyncPlan, locked bool) PlanJSON {
 
 // RenderSyncJSON writes the one-document sync view to w: the plan, plus the
 // result under "result" when result is non-nil.
-func RenderSyncJSON(w io.Writer, plan *sync.SyncPlan, result *sync.Result, locked bool) error {
-	out := SyncJSON{PlanJSON: planJSON(plan, locked)}
+func RenderSyncJSON(w io.Writer, plan *sync.SyncPlan, result *sync.Result, locked bool, f Findings) error {
+	out := SyncJSON{PlanJSON: planJSON(plan, locked, f)}
 
 	if result != nil {
 		r := resultJSON(result)
@@ -132,8 +191,8 @@ func RenderSyncJSON(w io.Writer, plan *sync.SyncPlan, result *sync.Result, locke
 // RenderRefusedJSON writes the plan with "refused": true and no result: the run
 // declined to apply anything because the plan needs a confirmation it could not
 // give (conflicts, no --yes). One document, like the others.
-func RenderRefusedJSON(w io.Writer, plan *sync.SyncPlan, locked bool) error {
-	return encodeSyncJSON(w, SyncJSON{PlanJSON: planJSON(plan, locked), Refused: true})
+func RenderRefusedJSON(w io.Writer, plan *sync.SyncPlan, locked bool, f Findings) error {
+	return encodeSyncJSON(w, SyncJSON{PlanJSON: planJSON(plan, locked, f), Refused: true})
 }
 
 func encodeSyncJSON(w io.Writer, out SyncJSON) error {
@@ -145,6 +204,41 @@ func encodeSyncJSON(w io.Writer, out SyncJSON) error {
 	}
 
 	return nil
+}
+
+// divergencesJSON converts the engine's findings to the wire shape. The
+// result is never nil: an empty input yields an explicit empty slice so the
+// rendered document says "no divergence" instead of null.
+func divergencesJSON(in []sync.Divergence) []DivergenceJSON {
+	out := make([]DivergenceJSON, len(in))
+
+	for i, d := range in {
+		out[i] = DivergenceJSON{
+			Path:       d.Path,
+			Kind:       d.Kind,
+			BaseHash:   d.BaseHash,
+			RemoteHash: d.RemoteHash,
+		}
+	}
+
+	return out
+}
+
+// skippedSymlinksJSON converts the engine's skipped-symlink findings to the
+// wire shape. The result is never nil: an empty input yields an explicit
+// empty slice so the rendered document says "no skipped symlinks" instead
+// of null, mirroring the divergence and locked precedents.
+func skippedSymlinksJSON(in []sync.SkippedSymlink) []SkippedSymlinkJSON {
+	out := make([]SkippedSymlinkJSON, len(in))
+
+	for i, s := range in {
+		out[i] = SkippedSymlinkJSON{
+			Path:  s.Path,
+			IsDir: s.IsDir,
+		}
+	}
+
+	return out
 }
 
 type ResultJSON struct {

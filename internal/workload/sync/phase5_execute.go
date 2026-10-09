@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -299,6 +300,13 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 		newVersionID = outcome.VersionID
 	}
 
+	// Before the codeRef PATCH: a version the check rejects is never the one
+	// the artifact serves, and the failure trips the rollback while the
+	// state phase has written nothing.
+	if err := verifyPostApplyUploads(e, e.uploadOutcome); err != nil {
+		return "", "", err
+	}
+
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {
 		if err := e.artifacts.PatchCodeRef(e.config.ArtifactID, newCatalogID, newVersionID); err != nil {
 			return "", "", fmt.Errorf("update artifact codeRef: %w", err)
@@ -333,4 +341,68 @@ func applyDeletes(e *Engine, catalogID string) (string, error) {
 	}
 
 	return resp.CatalogVersionID, nil
+}
+
+// verifyPostApplyUploads is --verify's second effect: after ApplyUploads,
+// fetch the new version's file listing and confirm the server's checksum for
+// every UPLOADED path equals the hash of the bytes this run streamed. The
+// comparison is plain strings because the server's file checksum is the
+// SHA-256 hex of the content, the same digest the uploader computed while
+// streaming.
+//
+// It runs in Phase 5, before the codeRef PATCH: a mismatch fails the phase
+// and trips the rollback while the state phase has written nothing, and the
+// artifact goes on serving the version it served before. The rejected
+// version stays in the catalog unreferenced; the config still names the old
+// one, so the next sync re-uploads the changed files.
+//
+// Only uploaded paths are compared. Stage REPLACE merges staged paths into
+// the version in place, so the listing legitimately contains files this sync
+// never touched, some carrying checksums from earlier runs; flagging one of
+// those would fail honest runs.
+//
+// numFiles from ApplyStage counts every file in the resulting version, not
+// the ones uploaded, so it has no arithmetic relationship to the plan and is
+// never used to gate, skip, or abort this check.
+//
+// The check is skipped entirely when nothing was uploaded: a downloads-only
+// or empty plan makes no AllFiles request here, and a nil outcome or an
+// empty Sent map is not an error.
+func verifyPostApplyUploads(e *Engine, outcome *UploadOutcome) error {
+	if !e.opts.Verify || outcome == nil || len(outcome.Sent) == 0 {
+		return nil
+	}
+
+	listing, err := e.files.AllFiles(outcome.CatalogID, outcome.VersionID)
+	if err != nil {
+		return fmt.Errorf("post-apply verification: fetch files of version %s: %w", outcome.VersionID, err)
+	}
+
+	// Sorted so the reported path is deterministic when several differ.
+	paths := make([]string, 0, len(outcome.Sent))
+
+	for path := range outcome.Sent {
+		paths = append(paths, path)
+	}
+
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		sent := outcome.Sent[path]
+
+		held, ok := listing[path]
+		if !ok {
+			return fmt.Errorf("post-apply verification: uploaded file %s is absent from server version %s; "+
+				"the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID)
+		}
+
+		if held.Hash != sent.Hash {
+			return fmt.Errorf("post-apply verification: server checksum for %s in version %s does not match the uploaded bytes "+
+				"(sent %s, server holds %s); the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID, sent.Hash, held.Hash)
+		}
+	}
+
+	return nil
 }

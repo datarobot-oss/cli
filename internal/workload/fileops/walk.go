@@ -15,6 +15,7 @@
 package fileops
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -26,7 +27,14 @@ import (
 type IgnoreFunc func(relPath string, isDir bool) bool
 
 // SymlinkLogger is called once per skipped symlink. nil disables it.
-type SymlinkLogger func(relPath, target string)
+//
+// isDir reports whether the link target resolves to a directory (resolved
+// via os.Stat, which follows the link). A dangling symlink reports an empty
+// target, isDir false, and dangling true: its target does not exist, so its
+// kind is unknowable rather than "not a directory". Callers that filter by
+// ignore patterns can use dangling to check both spellings of a pattern
+// (file and directory) instead of only the file spelling.
+type SymlinkLogger func(relPath, target string, isDir, dangling bool)
 
 type Entry struct {
 	AbsPath string
@@ -95,13 +103,31 @@ func walkVisit(
 	return nil
 }
 
+// notifySymlink resolves the link target and its kind, then delivers the
+// callback. os.Stat follows the symlink, so a dangling link fails here and is
+// reported with an empty target and isDir false — the user sees that a link
+// points nowhere rather than getting a walk error. os.Readlink is still
+// attempted first so a resolvable link reports the link text the user wrote;
+// only when Stat fails (the target does not exist) is the target cleared.
 func notifySymlink(onSymlink SymlinkLogger, absPath, relPath string) {
 	if onSymlink == nil {
 		return
 	}
 
 	target, _ := os.Readlink(absPath)
-	onSymlink(relPath, target)
+
+	// Stat follows the link. A failure means the target does not exist
+	// (dangling) or is inaccessible. The two are kept apart: a dangling
+	// link's kind is unknowable (dangling=true), while other Stat errors
+	// keep the historical empty-target, isDir=false report.
+	info, err := os.Stat(absPath)
+	if err != nil {
+		onSymlink(relPath, "", false, errors.Is(err, fs.ErrNotExist))
+
+		return
+	}
+
+	onSymlink(relPath, target, info.IsDir(), false)
 }
 
 func dirAction(relPath string, ignore IgnoreFunc) error {

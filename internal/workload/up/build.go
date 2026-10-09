@@ -588,7 +588,9 @@ func triggerBuild(artifactID string) (string, error) {
 // going to happen; a second prompt from inside a phase would be a surprise,
 // and in CI it would be a hang.
 func defaultSync(projectDir string) (*sync.Result, error) {
-	engine, err := sync.New(projectDir, sync.Options{Yes: true})
+	// Quiet: the sizing pass before the plan already reported the symlinks
+	// and divergences of this tree.
+	engine, err := sync.New(projectDir, sync.Options{Yes: true, Quiet: true})
 	if err != nil {
 		return nil, err
 	}
