@@ -26,7 +26,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "task",
 		GroupID:       "core",
-		Short:         "🛠️ Task management commands",
+		Short:         "🧰 Task management commands",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Long: `Task management commands for your DataRobot applications.
