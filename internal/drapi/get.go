@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -123,9 +124,12 @@ func Get(url, info string, timeout ...time.Duration) (*http.Response, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		// Keep the start of the body, as the write helpers do: a caller that knows
+		// its API's error shape reads meaning into it (see HTTPError.Body).
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		resp.Body.Close()
 
-		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url}
+		return nil, &HTTPError{StatusCode: resp.StatusCode, URL: url, Body: body}
 	}
 
 	return resp, err

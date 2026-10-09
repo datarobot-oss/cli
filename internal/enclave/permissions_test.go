@@ -182,7 +182,31 @@ func TestPinPermission_EndpointNotFoundHasNoHint(t *testing.T) {
 
 	err := GrantPinPermission(Recipient{Type: RecipientUser, ID: "u-1"})
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, errPinUnsupported)
+	require.NotErrorIs(t, err, errPinUnsupported)
+}
+
+func TestPinList_EndpointNotFoundHasNoHint(t *testing.T) {
+	// The list goes through drapi.Get, which must carry the body too: a 404 the
+	// pin endpoint answered itself is not a missing route.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Enclave access control request failed (fetch account info)"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListCollectionAccess(PermissionPin)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errPinUnsupported)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
 }
 
 func TestRouteMissing(t *testing.T) {
@@ -207,5 +231,5 @@ func TestCreatePermission_NotFoundHasNoPinHint(t *testing.T) {
 
 	err := GrantCreatePermission(Recipient{Type: RecipientUser, ID: "u-1"})
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, errPinUnsupported)
+	require.NotErrorIs(t, err, errPinUnsupported)
 }
