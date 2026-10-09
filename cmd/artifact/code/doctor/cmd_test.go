@@ -324,6 +324,23 @@ func TestRunE_HealthyProject_JSONReport(t *testing.T) {
 	assert.Equal(t, healthySummary(0), report.Summary)
 }
 
+// A corrupt config is linked but unreadable: the header must not say "not
+// linked" above a table whose presence check says the project is linked.
+func TestRunE_Text_CorruptConfig_HeaderSaysUnreadable(t *testing.T) {
+	tmp := t.TempDir()
+
+	writeStateFile(t, tmp, "config.json", `{"artifactId":"abc`)
+
+	c, out, _ := newTestCmd(t, "--dir", tmp)
+
+	_ = c.Execute()
+
+	header, _, _ := strings.Cut(out.String(), "\n")
+
+	assert.Contains(t, header, "artifact: unknown (config unreadable)")
+	assert.NotContains(t, header, "not linked")
+}
+
 func TestRunE_JSONOutput_CorruptConfig_FailWithPath(t *testing.T) {
 	tmp := t.TempDir()
 

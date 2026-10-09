@@ -31,9 +31,11 @@ Key invariants:
 `--fix` runs safe local auto-repairs (rebuild the manifest from config,
 restore an interrupted rollback) behind a global safety gate that skips every
 repair while a live process holds the sync lock and holds the lock itself for
-the repairs, then
-re-runs the full check suite so the report and exit code reflect the post-fix
-state. `--relink <new-artifact-id>` repoints the project at a different
+the repairs, then re-runs the full check suite so the report and exit code
+reflect the post-fix state. Windows has no sync lock (`sync` itself runs
+unlocked there), so `local.lock` reports SKIP and `--fix` and `--relink` run
+with nothing stopping a concurrent sync: the gate protects Linux and macOS
+only. `--relink <new-artifact-id>` repoints the project at a different
 artifact with a fresh sync baseline (empty BASE reset). `--fix` and `--relink`
 are mutually exclusive.
 
@@ -143,10 +145,12 @@ Notes for check authors:
 - **Remedies are canonical.** Add exactly one remedy string per check
   condition in `remedies.go` and reuse it verbatim in both reporters — the
   command layer renders remedy strings as-is, never rewording them.
-- **Check order is pinned and user-visible.** The six local checks run
-  before the four remote checks, in the table order. New checks append at a
-  deliberate position. Do not reorder existing checks without intent: IDs and
-  order are part of the output contract.
+- **Check IDs and their order are a stable public contract.** Scripts match
+  on the `id` values in `--output-format json` from the first release, so
+  renaming an ID (`local.*`, `remote.*`) or reordering checks is a breaking
+  change. The six local checks run before the four remote checks, in the table
+  order; a new check gets a new ID and a deliberate position, and existing ones
+  keep theirs.
 - **Pure diagnostics.** A check `Run` must not mutate local state or make
   server writes. Repairs live behind `--fix`/`--relink` in
   `internal/workload/doctor` (`fix.go`, `relink.go`); the command layer only

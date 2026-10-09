@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"runtime"
 	"time"
 
@@ -101,7 +102,7 @@ type RelinkOptions struct {
 // RunRelink executes the `doctor --relink <new-artifact-id>` operation for
 // projectDir: an in-place repoint with a fresh-BASE reset.
 //
-// Safety gates (every abort leaves state byte-identical):
+// Safety gates (an abort changes no state content; an empty sync.lock may remain):
 //  1. Lock probe (non-creating) — held by a live process → abort.
 //  2. Not-linked project → error pointing to init.
 //  3. Fetch new artifact — unreachable/unauthenticated → error abort.
@@ -138,9 +139,9 @@ func RunRelink(ctx context.Context, opts RelinkOptions) ([]core.Action, error) {
 	}
 
 	// Gate 2: not-linked project → error pointing to init, before any network fetch.
-	oldCfg, err := relinkLoadOldConfig(opts.ProjectDir)
+	oldCfg, loadActions, err := relinkLoadOldConfig(opts.ProjectDir)
 	if err != nil {
-		return nil, err
+		return loadActions, err
 	}
 
 	// Gate 3-5: fetch the target artifact and validate it (404, locked, type).
@@ -209,19 +210,28 @@ func relinkLockGate(ctx context.Context, opts RelinkOptions) ([]core.Action, err
 
 // relinkLoadOldConfig loads the current config to get the old artifact id.
 // Returns ErrRelinkNotLinked when the project has no state directory. A
-// missing or unreadable config.json inside one is relinked over: the relink
-// is the only repair for it, since nothing else can name the artifact.
-func relinkLoadOldConfig(projectDir string) (wapi.Config, error) {
+// missing or corrupt config.json inside one is relinked over: the relink is
+// the only repair for it, since nothing else can name the artifact. A file
+// that cannot be read at all may be intact, so that aborts instead.
+func relinkLoadOldConfig(projectDir string) (wapi.Config, []core.Action, error) {
 	if !wapi.Exists(projectDir) {
-		return wapi.Config{}, ErrRelinkNotLinked
+		return wapi.Config{}, nil, ErrRelinkNotLinked
 	}
 
 	cfg, err := wapi.LoadConfig(projectDir)
-	if err != nil {
-		return wapi.Config{}, nil
+
+	var readErr *fs.PathError
+
+	switch {
+	case err == nil:
+		return cfg, nil, nil
+	case errors.As(err, &readErr):
+		return wapi.Config{}, relinkSkipped(fmt.Sprintf(
+			"cannot read config.json (%v); fix its permissions and retry, nothing was changed", readErr.Err,
+		)), ErrRelinkAbort
 	}
 
-	return cfg, nil
+	return wapi.Config{}, nil, nil
 }
 
 // relinkFetchAndValidate fetches the target artifact and runs the 404, locked,

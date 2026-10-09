@@ -75,7 +75,9 @@ Pass --fix to attempt the safe local repairs (rebuild the manifest and clear
 the synced version so the next sync lists the remote, restore an interrupted
 rollback), then re-run every check and report the post-fix state. Nothing is
 ever written to the server, and the sync lock is held for the repairs, so a
-live sync blocks them. --fix and --relink are mutually exclusive.
+live sync blocks them. Windows has no sync lock: there the lock check is
+skipped and repairs run unprotected, so do not run --fix or --relink while a
+sync may be running. --fix and --relink are mutually exclusive.
 
 Pass --relink <new-artifact-id> to repoint the project at a different
 artifact with a fresh sync baseline. The target must exist, be a draft
@@ -180,6 +182,7 @@ func pageDoctor(cmd *cobra.Command, outputFormat outputformat.OutputFormat) erro
 	).Run(cmd.Context())
 
 	report := core.NewReport(projectDir, linkedArtifactID(projectDir), results)
+	report.NoArtifactLabel = unreadableLinkLabel(projectDir)
 
 	report.Actions = actions
 
@@ -295,9 +298,24 @@ func resolveProjectDir(dir string) (string, error) {
 	return resolved, nil
 }
 
+// unreadableLinkLabel is the header's artifact for a project that is linked
+// but whose config.json cannot be read, so it does not read as "not linked"
+// above a table saying the project is linked; "" otherwise.
+func unreadableLinkLabel(projectDir string) string {
+	if !wapi.Exists(projectDir) {
+		return ""
+	}
+
+	if _, err := wapi.LoadConfig(projectDir); err != nil && !errors.Is(err, wapi.ErrNotInitialized) {
+		return "unknown (config unreadable)"
+	}
+
+	return ""
+}
+
 // linkedArtifactID reads the linked artifact id from the project's state
 // config for the report header. Any read failure or an empty id (empty ≈ nil
-// normalization) reports the project as unlinked.
+// normalization) leaves it nil.
 func linkedArtifactID(projectDir string) *string {
 	cfg, err := wapi.LoadConfig(projectDir)
 	if err != nil || cfg.ArtifactID == "" {

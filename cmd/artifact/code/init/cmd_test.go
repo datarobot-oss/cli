@@ -1131,3 +1131,25 @@ func TestRunE_AlreadyLinked_RelinkAccept_PropagatesContext(t *testing.T) {
 	require.NoError(t, cfgErr)
 	assert.Equal(t, "art-ctx-002", cfg.ArtifactID, "relink must have repointed to the new artifact")
 }
+
+// Without a terminal and without --yes nobody can answer the relink warning,
+// so it declines rather than rewriting config.json; --yes is the consent.
+// go test never has a terminal on stdin.
+func TestMakeInitRelinkConfirm_NoTerminalNeedsYes(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "")
+
+	tmp := t.TempDir()
+
+	var stderr bytes.Buffer
+
+	declining := newTestCmd(t, tmp, false, nil)
+	declining.SetErr(&stderr)
+
+	assert.False(t, makeInitRelinkConfirm(declining)("this replaces config.json"))
+	assert.Contains(t, stderr.String(), "this replaces config.json", "the warning still prints")
+
+	consenting := newTestCmd(t, tmp, true, nil)
+	consenting.SetErr(&stderr)
+
+	assert.True(t, makeInitRelinkConfirm(consenting)("this replaces config.json"))
+}

@@ -32,7 +32,12 @@ import (
 // line with per-status counts plus the overall verdict.
 func WriteText(w io.Writer, report Report) error {
 	artifact := report.linkedArtifact()
-	if artifact == "" {
+
+	switch {
+	case artifact != "":
+	case report.NoArtifactLabel != "":
+		artifact = report.NoArtifactLabel
+	default:
 		artifact = "not linked"
 	}
 
@@ -123,20 +128,34 @@ func renderDetail(res Result) string {
 	return strings.Join(parts, "\n")
 }
 
-// writeRemedies prints the remedy for each non-OK check that carries one.
+// writeRemedies prints the remedy for each non-OK check that carries one,
+// once per distinct remedy with every check that shares it, so one cause
+// skipping five checks reads as one line.
 func writeRemedies(w io.Writer, report Report) error {
-	remedies := make([]string, 0, len(report.Checks))
+	var order []string
+
+	ids := map[string][]string{}
 
 	for _, res := range report.Checks {
 		if res.Status == StatusOK || res.Remedy == "" {
 			continue
 		}
 
-		remedies = append(remedies, fmt.Sprintf("  %s: %s", res.CheckID, res.Remedy))
+		if _, seen := ids[res.Remedy]; !seen {
+			order = append(order, res.Remedy)
+		}
+
+		ids[res.Remedy] = append(ids[res.Remedy], res.CheckID)
 	}
 
-	if len(remedies) == 0 {
+	if len(order) == 0 {
 		return nil
+	}
+
+	remedies := make([]string, 0, len(order))
+
+	for _, remedy := range order {
+		remedies = append(remedies, fmt.Sprintf("  %s: %s", strings.Join(ids[remedy], ", "), remedy))
 	}
 
 	if _, err := fmt.Fprintln(w, "\nRemedies"); err != nil {

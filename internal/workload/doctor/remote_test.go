@@ -539,3 +539,18 @@ func TestIsCatalogMismatch(t *testing.T) {
 		})
 	}
 }
+
+// A report is pasted into tickets, so an API failure is named by its status
+// alone: text the server sent (here wrapped around the error) stays out.
+func TestFetchFailureSummary_KeepsServerTextOut(t *testing.T) {
+	apiErr := fmt.Errorf("get artifact: body=SECRET-SENTINEL: %w",
+		&drapi.HTTPError{StatusCode: 500, URL: "https://test/artifacts/x/"})
+
+	summary := remoteSkipResult(apiErr).Summary
+
+	assert.Equal(t, "could not fetch the linked artifact: the API answered HTTP 500", summary)
+	assert.NotContains(t, summary, "SECRET-SENTINEL")
+
+	assert.Contains(t, remoteSkipResult(errors.New("dial tcp: connection refused")).Summary,
+		"connection refused", "a client-side failure keeps its text")
+}

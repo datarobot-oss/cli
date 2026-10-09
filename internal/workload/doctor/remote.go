@@ -170,9 +170,21 @@ func (b remoteBase) fetchedArtifact(cfg wapi.Config) (art *workload.Artifact, re
 func remoteSkipResult(err error) core.Result {
 	return core.Result{
 		Status:  core.StatusSKIP,
-		Summary: fmt.Sprintf("could not fetch the linked artifact: %s", err),
+		Summary: fetchFailureSummary(err),
 		Remedy:  RemedyRemoteConnectivity,
 	}
+}
+
+// fetchFailureSummary names an API failure by its status alone, so no server
+// text reaches a report people paste into tickets. Other errors are the
+// client's own (connection, auth) and keep their text.
+func fetchFailureSummary(err error) string {
+	var httpErr *drapi.HTTPError
+	if errors.As(err, &httpErr) {
+		return fmt.Sprintf("could not fetch the linked artifact: the API answered HTTP %d", httpErr.StatusCode)
+	}
+
+	return fmt.Sprintf("could not fetch the linked artifact: %s", err)
 }
 
 // IsNotFound reports whether err is the API's 404 (possibly wrapped),
@@ -358,8 +370,8 @@ func (c *catalogMismatchCheck) Run(_ context.Context) core.Result {
 	remote := codeRefCatalog(art)
 
 	// Comparisons anchor on the local pin: nothing pinned locally is the
-	// healthy never-synced state, while a pin whose remote counterpart
-	// vanished is as divergent as a different catalog id.
+	// healthy never-synced state, a pin with no codeRef yet is a deploy that
+	// stopped short (WARN), and only a different catalog id is a mismatch.
 	switch {
 	case local == nil:
 		return core.Result{
@@ -385,9 +397,9 @@ func (c *catalogMismatchCheck) Run(_ context.Context) core.Result {
 	}
 }
 
-// catalogMismatchResult builds the FAIL for a one-sided or divergent catalog
-// pin, naming both values (null when absent) so the report shows exactly
-// which side moved.
+// catalogMismatchResult builds the FAIL for a pin that names a different
+// catalog than the artifact's codeRef, naming both so the report shows
+// exactly which side moved.
 func catalogMismatchResult(local, remote *string) core.Result {
 	return core.Result{
 		Status:  core.StatusFAIL,

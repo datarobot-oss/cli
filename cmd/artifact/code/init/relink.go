@@ -164,7 +164,7 @@ func runRelinkFromInit(cmd *cobra.Command, dir, oldID, newID string, outputForma
 
 	if err != nil {
 		// Relink aborted (404, locked, wrong type, lock held, declined,
-		// API unreachable). State is byte-identical.
+		// API unreachable). No state content changed.
 		if outputFormat == outputformat.OutputFormatJSON {
 			id := oldID
 
@@ -274,21 +274,26 @@ func defaultOfferRelink(w io.Writer, notice, givenID string) (string, error) {
 // makeInitRelinkConfirm builds the confirm function for the relink from the
 // init offer. Interactive (TTY, no --yes): the warning and a [y/N] prompt go
 // to stderr; only "y"/"yes" proceeds (empty Enter declines — this is the
-// bespoke default-No prompt, NOT reader.AskYesNo). Non-interactive (--yes or
-// non-TTY): the warning is printed to stderr and the relink proceeds.
+// bespoke default-No prompt, NOT reader.AskYesNo). With --yes the warning is
+// printed and the relink proceeds; with no terminal and no --yes it declines.
 func makeInitRelinkConfirm(cmd *cobra.Command) wldoctor.RelinkConfirmFunc {
 	nonInteractive := cli.IsNonInteractive(cmd)
 
 	stderr := cmd.ErrOrStderr()
 
 	return func(warning string) bool {
-		if nonInteractive || !reader.IsStdinTerminal() {
-			fmt.Fprintln(stderr, warning)
+		fmt.Fprintln(stderr, warning)
 
+		// --yes (or DATAROBOT_CLI_NON_INTERACTIVE) is explicit consent.
+		if nonInteractive {
 			return true
 		}
 
-		fmt.Fprintln(stderr, warning)
+		// No terminal and no --yes: nobody can answer, so decline rather than
+		// rewrite config.json, as doctor --relink does.
+		if !reader.IsStdinTerminal() {
+			return false
+		}
 
 		fmt.Fprint(stderr, "Proceed? [y/N] ")
 

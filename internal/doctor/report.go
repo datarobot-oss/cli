@@ -26,6 +26,10 @@ type Report struct {
 	// to unlinked (empty ≈ nil).
 	ArtifactID *string
 
+	// NoArtifactLabel replaces "not linked" in the text header when ArtifactID
+	// is nil for another reason, such as a config that cannot be read.
+	NoArtifactLabel string
+
 	// Checks holds the results in runner order.
 	Checks []Result
 

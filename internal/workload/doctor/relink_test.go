@@ -738,6 +738,40 @@ func TestRunRelink_PreservesCreatedAtAndCLIVersion(t *testing.T) {
 // TestRunRelink_CorruptConfig_Replaces covers a corrupt config: the relink
 // is the only repair for it, so the file is replaced rather than refused,
 // with a fresh creation time and CLI version since nothing survives.
+// A config.json that cannot be read may be intact, so the relink stops and
+// says why instead of replacing it; only a corrupt one is relinked over.
+func TestRunRelink_UnreadableConfig_Aborts(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a file mode that denies reading")
+	}
+
+	dir := linkedProject(t)
+	cfgPath := filepath.Join(wapi.Dir(dir), "config.json")
+
+	require.NoError(t, os.Chmod(cfgPath, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(cfgPath, 0o600) })
+
+	confirmed := false
+	confirm := func(string) bool {
+		confirmed = true
+
+		return true
+	}
+
+	actions, err := RunRelink(context.Background(), relinkOpts(dir, newArtifactID, fakeStore(fakeDraftArtifact(newArtifactID, nil)), confirm))
+
+	require.ErrorIs(t, err, ErrRelinkAbort)
+	require.Len(t, actions, 1)
+	assert.Contains(t, actions[0].Reason, "cannot read config.json")
+	assert.False(t, confirmed, "nothing is offered for replacement")
+
+	require.NoError(t, os.Chmod(cfgPath, 0o600))
+
+	cfg, err := wapi.LoadConfig(dir)
+	require.NoError(t, err)
+	assert.NotEqual(t, newArtifactID, cfg.ArtifactID, "the config is untouched")
+}
+
 func TestRunRelink_CorruptConfig_Replaces(t *testing.T) {
 	dir := t.TempDir()
 

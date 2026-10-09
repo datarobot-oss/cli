@@ -91,6 +91,28 @@ func TestTextReporter_NotLinked(t *testing.T) {
 	assert.NotContains(t, out, "abc123")
 }
 
+// One cause that skips several checks prints its remedy once, naming them all.
+func TestTextReporter_RemediesDeduplicated(t *testing.T) {
+	var buf bytes.Buffer
+
+	relink := "dr artifact code doctor --relink <artifact-id>"
+
+	report := NewReport("/tmp/x", nil, []Result{
+		{CheckID: "local.manifest", Status: StatusSKIP, Summary: "config unreadable", Remedy: relink},
+		{CheckID: "local.divergence", Status: StatusSKIP, Summary: "config unreadable", Remedy: relink},
+		{CheckID: "local.lock", Status: StatusWARN, Summary: "held", Remedy: "wait for the sync"},
+		{CheckID: "remote.exists", Status: StatusSKIP, Summary: "config unreadable", Remedy: relink},
+	})
+
+	require.NoError(t, WriteText(&buf, report))
+
+	out := stripANSI(buf.String())
+
+	assert.Equal(t, 1, strings.Count(out, relink))
+	assert.Contains(t, out, "local.manifest, local.divergence, remote.exists: "+relink)
+	assert.Less(t, strings.Index(out, relink), strings.Index(out, "wait for the sync"), "first-seen order is kept")
+}
+
 func TestTextReporter_NoRemediesWhenAllOK(t *testing.T) {
 	var buf bytes.Buffer
 
