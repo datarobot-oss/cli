@@ -457,6 +457,16 @@ EDITOR                              # External editor for file editing (fallback
 | 2    | Command usage error.  |
 | 130  | Interrupted (Ctrl+C). |
 
+With `--output-format json` (or `DATAROBOT_CLI_OUTPUT_FORMAT=json`), a failing command writes its error to stderr as one line of JSON instead of an `Error:` line:
+
+```json
+{"error":{"message":"HTTP 404 Not Found: workload not found (url: https://app.datarobot.com/api/v2/workloads/abc/)","statusCode":404,"url":"https://app.datarobot.com/api/v2/workloads/abc/","detail":"workload not found"}}
+```
+
+`message` is always there. `statusCode`, `url` and `detail` appear when the failure was an API response. stdout gets nothing new on failure, and the exit code is still non-zero.
+
+Two kinds of command report their own failures and get no envelope. `dr run` (`dr task run`) and plugin commands pass on the exit code of the task or plugin they ran, with its own output. A command that has already printed its failure keeps that output, which may be on stdout, and still exits non-zero.
+
 ## See also
 
 - [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)

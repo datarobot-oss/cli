@@ -22,6 +22,8 @@ When a command is invoked with `--output-format json` (or the deprecated `-o jso
 
 All non-JSON diagnostics must go to **stderr**, never stdout.
 
+A failing command's error becomes a `{"error": {...}}` envelope on stderr through the root execution path; flag a command that prints its own error text in JSON mode, or flattens a `drapi.HTTPError` with `%v` so `errors.As` can no longer find it.
+
 Prefer `outputformat.PrintJSONEnvelope` for structured output so the payload is always a single JSON object.
 
 ## Pagination Safety

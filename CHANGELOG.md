@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Changed
 
 - `dr workload config`, `up` and `promote` are released and no longer behind a feature gate: they are in `--help`, completion and dispatch with nothing set. A script that still sets `DATAROBOT_CLI_FEATURE_WORKLOAD` or `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA` keeps working; neither is needed. `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA` stays reserved for workload features still in alpha.
+- A command that fails under `--output-format json` now writes its error to stderr as one line of JSON, `{"error": {"message": ...}}`, in place of the plaintext `Error:` line and usage text, so a script or agent can tell what failed without parsing prose. When the failure was an API response the envelope also carries `statusCode`, `url` and `detail`. stdout and exit codes are unchanged, and text mode prints what it did before. `dr run` and plugin commands pass on their task's or plugin's own output and exit code, so they get no envelope.
 
 ## Added
 
