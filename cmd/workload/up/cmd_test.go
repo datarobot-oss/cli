@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -397,10 +398,11 @@ func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
 func onATerminal(t *testing.T) {
 	t.Helper()
 
-	prev := isStdinTerminalFn
+	prev, prevAsk := isStdinTerminalFn, canAskFn
 	isStdinTerminalFn = func() bool { return true }
+	canAskFn = func(*cobra.Command) bool { return true }
 
-	t.Cleanup(func() { isStdinTerminalFn = prev })
+	t.Cleanup(func() { isStdinTerminalFn, canAskFn = prev, prevAsk })
 }
 
 // --yes is the answer, so there is nothing left to ask and the deploy is
