@@ -16,15 +16,18 @@ package create
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,6 +56,18 @@ func serveFailingBuild(t *testing.T, logs func(w http.ResponseWriter)) {
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 	viperx.Set(config.SkipAuthKey, true)
 	t.Cleanup(viperx.Reset)
+
+	settleWithin(t, 50*time.Millisecond)
+}
+
+// settleWithin bounds how long a failed build's tail waits for its last lines.
+func settleWithin(t *testing.T, budget time.Duration) {
+	t.Helper()
+
+	prev := logSettleBudget
+	logSettleBudget = budget
+
+	t.Cleanup(func() { logSettleBudget = prev })
 }
 
 // A --wait that ends on a failed build names the logs only when there are
@@ -102,7 +117,7 @@ func TestCmd_WaitOnAFailedBuildNamesTheLogsOnlyWhenThereAreSome(t *testing.T) {
 			cmd := Cmd()
 			cmd.PreRunE = nil
 			cmd.SetErr(&stderr)
-			cmd.SetArgs([]string{"art-1", "--wait"})
+			cmd.SetArgs([]string{"art-1", "--wait", "--poll-interval", "1ms"})
 
 			err := cmd.Execute()
 			require.Error(t, err)
@@ -111,6 +126,58 @@ func TestCmd_WaitOnAFailedBuildNamesTheLogsOnlyWhenThereAreSome(t *testing.T) {
 			assert.Contains(t, stderr.String(), "Waiting for build b-1")
 		})
 	}
+}
+
+// A build that fails faster than its log is ingested ends the wait before a
+// single line has landed: on staging a Dockerfile that failed in 3s left the
+// stream and logTail both empty. The command reads on until the builder's
+// closing line arrives, so the cause reaches stderr and logTail ends where
+// the log does.
+func TestCmd_WaitOnAFastFailingBuildReadsUntilItsLastLines(t *testing.T) {
+	var reads atomic.Int32
+
+	serveFailingBuild(t, func(w http.ResponseWriter) {
+		if reads.Add(1) <= 3 {
+			fmt.Fprint(w, `{"data":[],"count":0,"next":""}`)
+
+			return
+		}
+
+		fmt.Fprint(w, `{"data":[
+			{"timestamp":"2026-10-02T10:00:03Z","level":"info","message":"Image build FAILED in 3.069211 seconds."},
+			{"timestamp":"2026-10-02T10:00:02Z","level":"error","message":"failed to solve: process did not complete successfully: exit code: 7"},
+			{"timestamp":"2026-10-02T10:00:00Z","level":"info","message":"#1 [internal] load build definition from Dockerfile"}
+		],"count":3,"next":""}`)
+	})
+	settleWithin(t, time.Minute)
+
+	var stderr bytes.Buffer
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"art-1", "--wait", "--poll-interval", "1ms", "--output-format", "json"})
+
+	var err error
+
+	stdout := testutil.CaptureStdout(t, func() { err = cmd.Execute() })
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 b-1'")
+	assert.Contains(t, stderr.String(), "waiting up to a minute for its last log lines")
+	assert.Contains(t, stderr.String(), "exit code: 7")
+
+	var summaries []struct {
+		LogTail []struct {
+			Message string `json:"message"`
+		} `json:"logTail"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &summaries))
+	require.Len(t, summaries, 1)
+	require.Len(t, summaries[0].LogTail, 3)
+	assert.Contains(t, summaries[0].LogTail[1].Message, "exit code: 7")
+	assert.Equal(t, "Image build FAILED in 3.069211 seconds.", summaries[0].LogTail[2].Message)
 }
 
 func TestCmd_RejectsExtraArgs(t *testing.T) {

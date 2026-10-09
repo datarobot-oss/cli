@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"time"
@@ -97,6 +98,19 @@ func BuildStatusLine(status string) string {
 // past the build's end.
 const buildLogHoldback = 10 * time.Second
 
+// BuildLogSettleTimeout bounds how long a failed build's tail keeps reading
+// for the lines that say why. Ingestion trails the builder by 20-40s, measured
+// on staging, and the follower's own lag allowance stops at a minute too.
+const BuildLogSettleTimeout = 60 * time.Second
+
+// buildClosingLinePrefixes open the line the builder writes last, once the
+// build has ended either way. It is flushed to the log pipeline before the
+// builder reports the status the CLI polls, so by the time a build reads
+// FAILED the line is on its way, and its arrival means the lines before it
+// have arrived too. A builder that dies before writing it, or a rewording of
+// it, costs the full settle wait and never a line.
+var buildClosingLinePrefixes = []string{"Image build FAILED in ", "Image build COMPLETED in "}
+
 // BuildLogTail streams one build's log lines incrementally, driven by the
 // caller's own cadence (WaitForBuild's per-poll callback) rather than a
 // clock of its own. Lines pass through a holdback reorder buffer so
@@ -122,6 +136,10 @@ type BuildLogTail struct {
 	// emitted counts the lines handed to onLine, so a caller can tell a
 	// build that logged from one that did not without another fetch.
 	emitted int
+
+	// closed is set once the builder's closing line has been fetched: the
+	// stream has nothing further to deliver for this build.
+	closed bool
 }
 
 // Emitted reports whether the tail has delivered at least one line.
@@ -194,6 +212,20 @@ func (t *BuildLogTail) buffer(e WorkloadLogEntry) {
 
 	t.pending = append(t.pending, bufferedLogLine{at: at, seq: t.seq, entry: e})
 	t.seq++
+
+	if isBuildClosingLine(e.Message) {
+		t.closed = true
+	}
+}
+
+func isBuildClosingLine(message string) bool {
+	for _, prefix := range buildClosingLinePrefixes {
+		if strings.HasPrefix(message, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // flush emits buffered lines in event order: everything when all is set,
@@ -231,6 +263,48 @@ func (t *BuildLogTail) flush(all bool) {
 func (t *BuildLogTail) Finish() {
 	t.Poll()
 	t.flush(true)
+}
+
+// Settle keeps reading the stream of a build that failed, at the caller's
+// cadence, until the builder's closing line arrives, budget runs out, or ctx
+// ends. The lines that say why a build failed are its last, and they land
+// well after its status does: read at once, a build that failed in seconds
+// has no lines at all and a slower one has only its opening. Any other build
+// returns at once. onWait (nil-safe) gets one notice when there is something
+// to wait for. Call Finish after it, as always.
+func (t *BuildLogTail) Settle(ctx context.Context, build *Build, interval, budget time.Duration, onWait func(string)) {
+	if !t.awaitsLines(build) || interval <= 0 || budget <= 0 {
+		return
+	}
+
+	if onWait != nil {
+		onWait("build failed; waiting up to a minute for its last log lines")
+	}
+
+	deadline := time.Now().Add(budget)
+
+	for t.awaitsLines(build) && time.Now().Before(deadline) {
+		if !sleepInterval(ctx, interval) {
+			return
+		}
+
+		t.Poll()
+	}
+
+	// One more interval before Finish reads again: lines land out of order
+	// across polls, and the error just before the closing line is the one
+	// this wait is for.
+	if t.closed {
+		sleepInterval(ctx, interval)
+	}
+}
+
+// awaitsLines reports whether build failed and its closing line has yet to
+// arrive on a stream still being read. Only FAILED qualifies: a cancelled
+// build was stopped from outside, writes no closing line, and its log holds
+// no cause to wait for.
+func (t *BuildLogTail) awaitsLines(build *Build) bool {
+	return build != nil && IsBuildFailed(build.Status) && !t.closed && !t.disabled
 }
 
 // Poll fetches once and emits any unseen lines. Call it from the build wait's

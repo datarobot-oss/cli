@@ -246,6 +246,11 @@ type BuildSummary struct {
 	// LogTailErr is why LogTail is empty when the fetch failed, so an empty
 	// tail is not read as "no logs". Not rendered.
 	LogTailErr error `json:"-"`
+
+	// LogTailShown is set when the build's lines already reached the
+	// terminal as they streamed, so text output does not print the same
+	// lines a second time. JSON still carries LogTail. Not rendered.
+	LogTailShown bool `json:"-"`
 }
 
 // LogEvidence is what the summary can say about the build's logs.
@@ -284,6 +289,12 @@ func IsTerminalBuildStatus(s string) bool {
 // succeed its wait and then have no image to ship.
 func IsBuildCompleted(s string) bool {
 	return strings.EqualFold(s, BuildStatusCompleted)
+}
+
+// IsBuildFailed reports whether s is FAILED alone, without the CANCELLED that
+// IsBuildErrorStatus also counts.
+func IsBuildFailed(s string) bool {
+	return strings.EqualFold(s, BuildStatusFailed)
 }
 
 // IsBuildErrorStatus reports whether s is a terminal failure.
