@@ -48,6 +48,8 @@ type FileActionJSON struct {
 	RemoteSize     int64  `json:"remoteSize,omitempty"`
 	LocalHash      string `json:"localHash,omitempty"`
 	RemoteHash     string `json:"remoteHash,omitempty"`
+	LocalExec      *bool  `json:"localExecutable,omitempty"`
+	RemoteExec     *bool  `json:"remoteExecutable,omitempty"`
 }
 
 type PlanStatsJSON struct {
@@ -181,6 +183,8 @@ func actionsJSON(in []sync.FileAction) []FileActionJSON {
 			RemoteSize:     fa.RemoteSize,
 			LocalHash:      fa.LocalHash,
 			RemoteHash:     fa.RemoteHash,
+			LocalExec:      fa.LocalExec,
+			RemoteExec:     fa.RemoteExec,
 		}
 	}
 

@@ -56,7 +56,7 @@ func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error) {
 	panic("unused")
 }
 
-func (*fakeClient) UploadToStage(string, string, string, int64, io.Reader) error {
+func (*fakeClient) UploadToStage(string, string, string, int64, bool, io.Reader) error {
 	panic("unused")
 }
 
@@ -304,3 +304,5 @@ func TestVersions_CatalogNotFoundSpecialized(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "catalog cat-1 not found", err.Error())
 }
+
+func (*fakeClient) SupportsExecutable() bool { return true }

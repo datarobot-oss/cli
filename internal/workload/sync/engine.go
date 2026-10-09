@@ -46,6 +46,11 @@ type Result struct {
 	ConflictCount   int
 	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
 	Duration        time.Duration
+
+	// ExecutableNotice warns that image builds drop the executable bit of the
+	// files it names; "" when this sync uploaded none. Returned rather than
+	// logged, because up's progress display silences the stderr logger.
+	ExecutableNotice string
 }
 
 var ErrNoPlan = errors.New("sync engine: Execute called before Plan")
@@ -105,6 +110,9 @@ type Engine struct {
 	artifact      *workload.Artifact
 	remoteVer     string
 	drifted       bool
+	execBackfill  bool
+	remoteListed  bool
+	execNotice    string
 	local         LocalManifest
 	remote        RemoteManifest
 	plan          *SyncPlan
@@ -176,6 +184,14 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 	)
 	if err != nil {
 		return nil, e.joinReleaseErr(err)
+	}
+
+	// An empty plan never reaches the state phase, so what a backfill
+	// learned is written here; a preview writes nothing.
+	if !e.previewOnly() && e.plan.IsEmpty() {
+		if err := persistExecutableBackfill(e); err != nil {
+			log.Debug("Could not record the executable bits", "error", err)
+		}
 	}
 
 	return e.plan, nil

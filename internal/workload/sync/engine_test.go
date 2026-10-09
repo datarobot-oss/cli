@@ -148,12 +148,13 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 	require.NoError(t, wapi.SaveConfig(dir, cfg))
 
 	manifest := wapi.Manifest{Version: wapi.ManifestVersion, Files: map[string]wapi.FileMeta{}}
+	notExec := false
 
 	for _, rel := range []string{"agent.py", ".drignore"} {
 		hash, size, err := hashLocal(t, dir, rel)
 		require.NoError(t, err)
 
-		manifest.Files[rel] = wapi.FileMeta{Hash: hash, Size: size}
+		manifest.Files[rel] = wapi.FileMeta{Hash: hash, Size: size, Executable: &notExec}
 	}
 
 	require.NoError(t, wapi.SaveManifest(dir, manifest))

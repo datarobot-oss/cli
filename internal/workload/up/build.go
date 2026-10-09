@@ -300,6 +300,12 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 			result.ConflictCount, result.ConflictCopies)
 	}
 
+	// Said here rather than logged: the progress display silences the stderr
+	// logger while the sync runs.
+	if result != nil && result.ExecutableNotice != "" {
+		report.say("  Warning: %s\n", result.ExecutableNotice)
+	}
+
 	return result, nil
 }
 

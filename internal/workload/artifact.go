@@ -219,6 +219,17 @@ func primaryContainer(artifact Artifact) *Container {
 	return &artifact.Spec.ContainerGroups[0].Containers[0]
 }
 
+// GeneratesDockerfile reports whether the platform writes the artifact's
+// Dockerfile (source "generated") rather than reading one from the code.
+func GeneratesDockerfile(artifact Artifact) bool {
+	container := primaryContainer(artifact)
+	if container == nil || container.ImageBuildConfig == nil || container.ImageBuildConfig.Dockerfile == nil {
+		return false
+	}
+
+	return container.ImageBuildConfig.Dockerfile.Source == "generated"
+}
+
 // ExtractCodeRef returns the primary container's codeRef, or nil when the
 // primary has no codeRef (rather than falling through to a sidecar, which
 // would surface stale catalog info in display).

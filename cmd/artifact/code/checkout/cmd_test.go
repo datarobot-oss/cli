@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	gosync "sync"
 	"testing"
 
@@ -42,8 +43,9 @@ import (
 type fakeClient struct {
 	mu gosync.Mutex
 
-	versions []filesapi.CatalogVersion
-	content  map[string][]byte
+	versions   []filesapi.CatalogVersion
+	content    map[string][]byte
+	executable map[string]bool
 
 	allFilesErr error
 	downloadErr error
@@ -70,7 +72,13 @@ func (f *fakeClient) AllFiles(_, _ string) (map[string]filesapi.FileMeta, error)
 
 	for path, data := range f.content {
 		sum := sha256.Sum256(data)
-		out[path] = filesapi.FileMeta{Hash: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+		meta := filesapi.FileMeta{Hash: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+
+		if exec, ok := f.executable[path]; ok {
+			meta.Executable = &exec
+		}
+
+		out[path] = meta
 	}
 
 	return out, nil
@@ -104,9 +112,12 @@ func (f *fakeClient) callCounts() (all, dl int) {
 }
 
 // Panicking stubs for the rest of filesapi.Client.
-func (*fakeClient) CreateCatalog(string) (*filesapi.CatalogResp, error)          { panic("unused") }
-func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error)              { panic("unused") }
-func (*fakeClient) UploadToStage(string, string, string, int64, io.Reader) error { panic("unused") }
+func (*fakeClient) CreateCatalog(string) (*filesapi.CatalogResp, error) { panic("unused") }
+func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error)     { panic("unused") }
+func (*fakeClient) UploadToStage(string, string, string, int64, bool, io.Reader) error {
+	panic("unused")
+}
+
 func (*fakeClient) ApplyStage(string, string, string) (*filesapi.ApplyStageResp, error) {
 	panic("unused")
 }
@@ -202,6 +213,32 @@ func TestCheckout_ReportsStateMigration(t *testing.T) {
 	assert.Contains(t, buf.String(), wapi.LegacyDirName)
 	assert.Contains(t, buf.String(), path.Join(wapi.RootDirName, wapi.StateDirName))
 	assert.NoDirExists(t, legacy, "and the move actually happened")
+}
+
+func TestCheckout_RestoresExecutableBit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no executable bit")
+	}
+
+	dir := initLinkedDir(t, "cat-1")
+
+	fc := &fakeClient{
+		versions:   []filesapi.CatalogVersion{{ID: verA}},
+		content:    map[string][]byte{"run.sh": []byte("#!/bin/sh\n"), "app.py": []byte("x"), "old.py": []byte("y")},
+		executable: map[string]bool{"run.sh": true, "app.py": false},
+	}
+
+	cmd, _ := newTestCmd(t, dir, fakeDeps(draftArtifact("art-abc-123"), fc), []string{verA})
+	require.NoError(t, cmd.Execute())
+
+	checkoutDir := wapi.CheckoutDir(dir, verA)
+
+	// Only the executable bits: the rest follow the host's umask.
+	for name, want := range map[string]bool{"run.sh": true, "app.py": false, "old.py": false} {
+		info, err := os.Stat(filepath.Join(checkoutDir, name))
+		require.NoError(t, err)
+		assert.Equal(t, want, info.Mode().Perm()&0o111 != 0, name)
+	}
 }
 
 func TestCheckout_NoCatalog(t *testing.T) {
@@ -559,3 +596,5 @@ func TestCheckout_PromptsForVersionWhenMissing(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Next:")
 	assert.DirExists(t, wapi.CheckoutDir(dir, verA))
 }
+
+func (*fakeClient) SupportsExecutable() bool { return true }

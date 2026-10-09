@@ -288,7 +288,7 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 	out := cmd.OutOrStdout()
 
 	if outputFormat == outputformat.OutputFormatJSON {
-		return finishJSON(engine, plan, out, flags)
+		return finishJSON(engine, plan, out, cmd.ErrOrStderr(), flags)
 	}
 
 	if err := renderHumanPlan(cmd, engine, plan, flags.Diff); err != nil {
@@ -312,6 +312,8 @@ func finishSync(cmd *cobra.Command, engine engineRunner, plan *sync.SyncPlan, ou
 	if err != nil {
 		return err
 	}
+
+	format.Warning(cmd.ErrOrStderr(), result.ExecutableNotice)
 
 	return display.PrintResult(out, result)
 }
@@ -434,7 +436,7 @@ func formatPathList(paths []string) string {
 // is run, so callers can inspect it and re-invoke with --yes to proceed. Under
 // --push-only a conflict is an error with or without --yes, since no
 // re-invocation of that mode can let it through; a plain sync settles it.
-func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags runFlags) error {
+func finishJSON(engine engineRunner, plan *sync.SyncPlan, out, errOut io.Writer, flags runFlags) error {
 	locked := engine.LockedNotice() != ""
 
 	if flags.Preview() || plan.IsEmpty() {
@@ -473,6 +475,8 @@ func finishJSON(engine engineRunner, plan *sync.SyncPlan, out io.Writer, flags r
 	if err != nil {
 		return err
 	}
+
+	format.Warning(errOut, result.ExecutableNotice)
 
 	return display.RenderSyncJSON(out, plan, result, locked)
 }

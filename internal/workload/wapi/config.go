@@ -46,6 +46,11 @@ type Config struct {
 	// though the synced version is current. The next sync lists the remote
 	// instead of trusting the base, and clears this once it applied them.
 	RemoteChangesSkipped bool `json:"remoteChangesSkipped,omitempty"`
+
+	// ExecutableUnreported records that the catalog's listing carries no
+	// executable bits (a server older than API 2.49), so a fast-path sync
+	// stops listing it to learn them. A listing that does carry them clears it.
+	ExecutableUnreported bool `json:"executableUnreported,omitempty"`
 }
 
 // LoadConfig reads and parses the project's config.json. Returns ErrNotInitialized if

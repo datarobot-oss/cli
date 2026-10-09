@@ -86,7 +86,7 @@ func TestHashFile_ExceedsMaxSize(t *testing.T) {
 		path := filepath.Join(dir, "x.bin")
 		require.NoError(t, os.WriteFile(path, []byte("0123456789"), 0o644))
 
-		_, _, err := hashFile(path, 4)
+		_, _, _, err := hashFile(path, 4)
 		require.ErrorIs(t, err, ErrFileTooLarge)
 		assert.Contains(t, err.Error(), "x.bin")
 	})

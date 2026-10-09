@@ -73,15 +73,34 @@ func phase2Manifests(e *Engine) error {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
 	}
 
-	if !e.drifted {
-		// Nobody else changed the remote since our last sync; skip the
-		// allFiles round-trip and reuse BASE.
-		e.remote = copyManifest(e.base)
+	return resolveRemote(e)
+}
 
-		return nil
+// needsExecutableBackfill reports a fast-path sync that should list the
+// remote anyway: a base written before the executable bit was tracked cannot
+// say what the catalog holds, unless the server is known not to report it.
+func needsExecutableBackfill(e *Engine, codeRef codeRefRef) bool {
+	return hasUnknownExecutable(e.base) && !e.config.ExecutableUnreported &&
+		codeRef.CatalogID != "" && e.remoteVer != ""
+}
+
+// resolveRemote fills e.remote: listed from the Files API when the remote
+// moved or the base lacks the executable bits, copied from BASE otherwise.
+func resolveRemote(e *Engine) error {
+	codeRef := codeRefOrEmpty(e)
+
+	if !e.drifted {
+		if !needsExecutableBackfill(e, codeRef) {
+			// Nobody else changed the remote since our last sync; skip the
+			// allFiles round-trip and reuse BASE.
+			e.remote = copyManifest(e.base)
+
+			return nil
+		}
+
+		e.execBackfill = true
 	}
 
-	codeRef := codeRefOrEmpty(e)
 	if codeRef.CatalogID == "" || e.remoteVer == "" {
 		// First sync against an empty artifact: remote manifest is empty.
 		e.remote = RemoteManifest{}
@@ -90,11 +109,22 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	remote, err := e.files.AllFiles(codeRef.CatalogID, e.remoteVer)
+	if err != nil && e.execBackfill {
+		// The backfill only learns the bits; without it the sync is the one it was.
+		log.Debug("Could not list the remote to learn executable bits", "error", err)
+
+		e.execBackfill = false
+		e.remote = copyManifest(e.base)
+
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("fetch remote manifest: %w", err)
 	}
 
 	e.remote = FromFilesAPI(remote)
+	e.remoteListed = true
 
 	return nil
 }
@@ -106,12 +136,12 @@ func hashEntries(entries []fileops.Entry) (LocalManifest, error) {
 	out := make(LocalManifest, len(entries))
 
 	for _, ent := range entries {
-		hash, size, err := fileops.HashFile(ent.AbsPath)
+		hash, size, mode, err := fileops.HashFileMode(ent.AbsPath)
 		if err != nil {
 			return nil, fmt.Errorf("hash %s: %w", ent.RelPath, err)
 		}
 
-		out[ent.RelPath] = FileEntry{Hash: hash, Size: size}
+		out[ent.RelPath] = FileEntry{Hash: hash, Size: size, Executable: fileops.LocalExecutable(mode)}
 	}
 
 	return out, nil

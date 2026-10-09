@@ -16,12 +16,16 @@ package filesapi
 
 import (
 	"io"
+	"sync"
 )
 
 type Client interface {
 	CreateCatalog(name string) (*CatalogResp, error)
 	CreateStage(catalogID string) (*StageResp, error)
-	UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error
+	UploadToStage(catalogID, stageID, name string, size int64, executable bool, body io.Reader) error
+	// SupportsExecutable reports whether the server keeps a file's executable
+	// bit (API 2.49 or later), so a caller records it only when it was sent.
+	SupportsExecutable() bool
 	ApplyStage(catalogID, stageID, overwrite string) (*ApplyStageResp, error)
 	UploadFromZipExisting(catalogID, filename, overwrite string, size int64, body io.Reader) (*FromFileResp, error)
 	PollStatus(statusID string) (*StatusResp, error)
@@ -35,4 +39,7 @@ func New() Client {
 	return &httpClient{}
 }
 
-type httpClient struct{}
+type httpClient struct {
+	execOnce      sync.Once
+	execSupported bool
+}

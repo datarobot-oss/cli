@@ -19,10 +19,12 @@ import (
 	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
-// FileEntry is the minimal per-file shape needed by Diff.
+// FileEntry is the minimal per-file shape needed by Diff. Executable is nil
+// when the bit is unknown: an old manifest entry, an old server, or Windows.
 type FileEntry struct {
-	Hash string
-	Size int64
+	Hash       string
+	Size       int64
+	Executable *bool
 }
 
 type (
@@ -41,7 +43,7 @@ func Diff(base, local, remote BaseManifest) *SyncPlan {
 		l := local[path]
 		r := remote[path]
 
-		cls := Classify(b.Hash, l.Hash, r.Hash)
+		cls := refineExecutable(Classify(b.Hash, l.Hash, r.Hash), b, l, r)
 
 		// A system-excluded path is never on the local side, since the walk
 		// does not list it, so a remote copy is an older CLI's upload from
@@ -69,10 +71,63 @@ func Diff(base, local, remote BaseManifest) *SyncPlan {
 			RemoteSize:     r.Size,
 			LocalHash:      l.Hash,
 			RemoteHash:     r.Hash,
+			LocalExec:      l.Executable,
+			RemoteExec:     r.Executable,
+			BaseExec:       b.Executable,
 		})
 	}
 
 	return plan
+}
+
+// refineExecutable turns a path whose content agrees on both sides into a
+// modification when only its executable bit moved since the last sync.
+func refineExecutable(cls Classification, b, l, r FileEntry) Classification {
+	if cls != ClsUnchanged && cls != ClsConverged {
+		return cls
+	}
+
+	if exec := classifyExecutable(b.Executable, l.Executable, r.Executable); exec != ClsUnchanged {
+		return exec
+	}
+
+	return cls
+}
+
+// classifyExecutable is the three-way diff of the executable bit alone. An
+// unknown local or remote side is never drift.
+func classifyExecutable(base, local, remote *bool) Classification {
+	if base == nil {
+		return classifyUnknownBase(local, remote)
+	}
+
+	localChanged := local != nil && *local != *base
+	remoteChanged := remote != nil && *remote != *base
+
+	switch {
+	case localChanged && !remoteChanged:
+		return ClsLocalModified
+	case remoteChanged && !localChanged:
+		return ClsRemoteModified
+	}
+
+	// Both moved means both agree, since the bit has two values.
+	return ClsUnchanged
+}
+
+// classifyUnknownBase settles a file last synced before the bit was tracked.
+// Older CLIs dropped the bit and never added it, so where the two known sides
+// disagree the executable one is right: upload it, or apply it locally.
+func classifyUnknownBase(local, remote *bool) Classification {
+	if local == nil || remote == nil || *local == *remote {
+		return ClsUnchanged
+	}
+
+	if *local {
+		return ClsLocalModified
+	}
+
+	return ClsRemoteModified
 }
 
 func pathUnion(maps ...BaseManifest) map[string]struct{} {
@@ -91,7 +146,7 @@ func pathUnion(maps ...BaseManifest) map[string]struct{} {
 func FromFilesAPI(remote map[string]filesapi.FileMeta) RemoteManifest {
 	out := make(RemoteManifest, len(remote))
 	for k, v := range remote {
-		out[k] = FileEntry{Hash: v.Hash, Size: v.Size}
+		out[k] = FileEntry{Hash: v.Hash, Size: v.Size, Executable: v.Executable}
 	}
 
 	return out

@@ -104,7 +104,7 @@ func TestZipBuild_HashesStreamedBytes(t *testing.T) {
 
 	actions := fileActionsFrom(files)
 
-	zipPath, sent, err := buildZip(dir, actions)
+	zipPath, sent, err := buildZip(dir, actions, true)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(zipPath) })
@@ -175,7 +175,7 @@ func TestZipBuild_SameSizeContentChange(t *testing.T) {
 		LocalSize: plannedSize,
 	}}
 
-	zipPath, sent, err := buildZip(dir, actions)
+	zipPath, sent, err := buildZip(dir, actions, true)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(zipPath) })
@@ -258,7 +258,7 @@ func TestZipBuild_SizeChange(t *testing.T) {
 				LocalSize: plannedSize,
 			}}
 
-			zipPath, sent, err := buildZip(dir, actions)
+			zipPath, sent, err := buildZip(dir, actions, true)
 			require.NoError(t, err, "upload must not fail due to a size change")
 
 			t.Cleanup(func() { _ = os.Remove(zipPath) })

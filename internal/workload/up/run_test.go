@@ -2761,6 +2761,25 @@ func TestRun_SyncConflictsAreReported(t *testing.T) {
 	assert.Contains(t, stderr, "app.py.LOCAL.170")
 }
 
+// The executable-bit warning rides on the sync result, because the progress
+// display silences the stderr logger while the sync runs.
+func TestRun_SyncExecutableNoticeIsReported(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{UploadedCount: 1, ExecutableNotice: "Image builds do not keep the executable bit yet; start.sh"}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "Warning: Image builds do not keep the executable bit yet; start.sh")
+}
+
 // Sizing the working tree is the whole of what a --dry-run does, and it is
 // where the engine reads the ignore file, so a preview that stayed silent
 // would be a preview of a different run than the one that follows.
