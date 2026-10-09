@@ -39,7 +39,7 @@ type ZipUploader struct{}
 // ApplyUploads zips the files, POSTs, polls until done, and returns the
 // per-path streamed hashes so Phase 7 can record what entered the archive.
 func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error) {
-	zipPath, sent, err := buildZip(e.projectDir, files)
+	zipPath, sent, err := buildZip(e.projectDir, files, e.files.SupportsExecutable())
 	if err != nil {
 		return UploadOutcome{}, err
 	}
@@ -81,7 +81,9 @@ func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, e
 // buildZip writes a zip archive to a temp file and returns the per-path
 // streamed hashes. Buffering on disk keeps very large zips from pinning a
 // multi-GiB allocation.
-func buildZip(projectDir string, files []FileAction) (string, map[string]FileEntry, error) {
+// buildZip archives files. supported says whether the server keeps the
+// executable bit; when it does not, the sent entries record it as unknown.
+func buildZip(projectDir string, files []FileAction, supported bool) (string, map[string]FileEntry, error) {
 	tmp, err := os.CreateTemp("", "wapi-sync-*.zip")
 	if err != nil {
 		return "", nil, fmt.Errorf("create zip tempfile: %w", err)
@@ -98,12 +100,13 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 	for _, fa := range files {
 		abs := filepath.Join(projectDir, filepath.FromSlash(fa.Path))
 
-		entry, err := addToZip(zw, abs, fa.Path, fa.RemoteExec)
+		entry, err := addToZip(zw, abs, fa)
 		if err != nil {
 			_ = os.Remove(tmp.Name())
 			return "", nil, err
 		}
 
+		entry.Executable = sentExecutable(entry.Executable, supported)
 		sent[fa.Path] = entry
 	}
 
@@ -116,8 +119,11 @@ func buildZip(projectDir string, files []FileAction) (string, map[string]FileEnt
 }
 
 // addToZip archives one file. The server reads the executable bit from the
-// entry's Unix mode, so every entry carries 0755 or 0644.
-func addToZip(zw *zip.Writer, src, archivePath string, remoteExec *bool) (FileEntry, error) {
+// entry's Unix mode, so every entry carries 0755 or 0644, from the bit merged
+// with the base and the remote.
+func addToZip(zw *zip.Writer, src string, fa FileAction) (FileEntry, error) {
+	archivePath := fa.Path
+
 	in, err := os.Open(src)
 	if err != nil {
 		return FileEntry{}, fmt.Errorf("open %s for zip: %w", src, err)
@@ -130,7 +136,12 @@ func addToZip(zw *zip.Writer, src, archivePath string, remoteExec *bool) (FileEn
 		return FileEntry{}, fmt.Errorf("stat %s for zip: %w", src, err)
 	}
 
-	exec := uploadExecutable(fileops.LocalExecutable(stat.Mode()), remoteExec)
+	local := fileops.LocalExecutable(stat.Mode())
+	exec := mergeExecutable(fa.BaseExec, local, fa.RemoteExec)
+
+	if err := keepLocalExecutable(src, local, exec); err != nil {
+		return FileEntry{}, fmt.Errorf("%s: %w", archivePath, err)
+	}
 
 	hdr := &zip.FileHeader{Name: archivePath, Method: zip.Deflate}
 	hdr.SetMode(fileops.ArchivePerm(isSet(exec)))

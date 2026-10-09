@@ -67,6 +67,7 @@ func phase7State(e *Engine) error {
 	// version, so the next sync has to list the remote rather than trust the
 	// base; a run that applied everything clears the mark.
 	cfg.RemoteChangesSkipped = len(e.plan.Skipped) > 0
+	cfg.ExecutableUnreported = executableUnreported(e, cfg)
 
 	// Build and write the manifest BEFORE writing config. Both orders leave
 	// a one-file failure window, but only one direction self-heals:
@@ -236,6 +237,8 @@ func (e *Engine) populateResult(versionForState string) {
 		ConflictCount:   len(e.plan.Conflicts),
 		ConflictCopies:  e.localBackups,
 		Duration:        e.nowFn().Sub(e.startedAt),
+
+		ExecutableNotice: e.execNotice,
 	}
 
 	// "Old" should be the version BEFORE Phase 7 overwrote config.

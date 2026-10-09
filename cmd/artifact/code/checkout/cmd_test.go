@@ -233,10 +233,11 @@ func TestCheckout_RestoresExecutableBit(t *testing.T) {
 
 	checkoutDir := wapi.CheckoutDir(dir, verA)
 
-	for name, want := range map[string]os.FileMode{"run.sh": 0o755, "app.py": 0o644, "old.py": 0o644} {
+	// Only the executable bits: the rest follow the host's umask.
+	for name, want := range map[string]bool{"run.sh": true, "app.py": false, "old.py": false} {
 		info, err := os.Stat(filepath.Join(checkoutDir, name))
 		require.NoError(t, err)
-		assert.Equal(t, want, info.Mode().Perm(), name)
+		assert.Equal(t, want, info.Mode().Perm()&0o111 != 0, name)
 	}
 }
 
@@ -595,3 +596,5 @@ func TestCheckout_PromptsForVersionWhenMissing(t *testing.T) {
 	assert.NotContains(t, stderr.String(), "Next:")
 	assert.DirExists(t, wapi.CheckoutDir(dir, verA))
 }
+
+func (*fakeClient) SupportsExecutable() bool { return true }

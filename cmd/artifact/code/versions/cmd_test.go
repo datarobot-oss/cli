@@ -304,3 +304,5 @@ func TestVersions_CatalogNotFoundSpecialized(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "catalog cat-1 not found", err.Error())
 }
+
+func (*fakeClient) SupportsExecutable() bool { return true }

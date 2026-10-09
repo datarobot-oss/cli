@@ -55,3 +55,8 @@ func (c *httpClient) supportsExecutable() bool {
 
 	return c.execSupported
 }
+
+// SupportsExecutable reports whether the server keeps a file's executable bit.
+func (c *httpClient) SupportsExecutable() bool {
+	return c.supportsExecutable()
+}

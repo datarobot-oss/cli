@@ -181,14 +181,20 @@ func uploadOneToStage(e *Engine, catalogID, stageID string, fa FileAction) (File
 	// is the right primitive: UploadToStage pipes the body through io.Copy,
 	// so every byte that reaches the wire passes through the hasher.
 	h := newStreamHasher()
-	exec := uploadExecutable(fileops.LocalExecutable(stat.Mode()), fa.RemoteExec)
+	local := fileops.LocalExecutable(stat.Mode())
+	exec := mergeExecutable(fa.BaseExec, local, fa.RemoteExec)
+	supported := e.files.SupportsExecutable()
 
-	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, size, isSet(exec), io.TeeReader(f, h)); err != nil {
+	if err := keepLocalExecutable(abs, local, exec); err != nil {
+		return FileEntry{}, fmt.Errorf("%s: %w", fa.Path, err)
+	}
+
+	if err := e.files.UploadToStage(catalogID, stageID, fa.Path, size, supported && isSet(exec), io.TeeReader(f, h)); err != nil {
 		return FileEntry{}, fmt.Errorf("upload %s: %w", fa.Path, err)
 	}
 
 	entry := streamedEntry(h, size)
-	entry.Executable = exec
+	entry.Executable = sentExecutable(exec, supported)
 
 	return entry, nil
 }

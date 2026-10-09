@@ -30,8 +30,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 func skipOnWindows(t *testing.T) {
 	t.Helper()
 
@@ -127,22 +125,51 @@ func TestDiff_ExecutableOnlyChange(t *testing.T) {
 	})
 }
 
-func TestUploadExecutable(t *testing.T) {
-	assert.Equal(t, boolPtr(true), uploadExecutable(boolPtr(true), boolPtr(false)), "the local bit wins")
-	assert.Equal(t, boolPtr(false), uploadExecutable(boolPtr(false), boolPtr(true)))
-	assert.Equal(t, boolPtr(true), uploadExecutable(nil, boolPtr(true)), "Windows keeps the remote bit")
-	assert.Nil(t, uploadExecutable(nil, nil))
+// The bit is merged apart from the bytes: whichever side moved it off BASE
+// wins, so a chmod survives an edit to the same file on the other side.
+func TestMergeExecutable(t *testing.T) {
+	yes, no := boolPtr(true), boolPtr(false)
+
+	cases := []struct {
+		name                string
+		base, local, remote *bool
+		want                *bool
+	}{
+		{"nothing moved", no, no, no, no},
+		{"local chmod +x, teammate edited", no, yes, no, yes},
+		{"teammate chmod +x, local edit", no, no, yes, yes},
+		{"local chmod -x", yes, no, yes, no},
+		{"teammate chmod -x", yes, yes, no, no},
+		{"windows keeps the remote's chmod", no, nil, yes, yes},
+		{"windows keeps the base", yes, nil, yes, yes},
+		{"old manifest, executable side wins", nil, no, yes, yes},
+		{"old manifest, local known only", nil, no, nil, no},
+		{"nothing known", nil, nil, nil, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, mergeExecutable(tc.base, tc.local, tc.remote))
+		})
+	}
 }
 
 func TestExecutableNotice(t *testing.T) {
-	assert.Empty(t, executableNotice(nil, nil))
-	assert.Empty(t, executableNotice(map[string]FileEntry{"a.py": {Executable: boolPtr(false)}, "b.py": {}}, nil))
+	assert.Empty(t, executableNotice(nil, nil, false))
+	assert.Empty(t, executableNotice(map[string]FileEntry{"a.py": {Executable: boolPtr(false)}, "b.py": {}}, nil, false),
+		"an unknown bit, as on a server that never took it, names nothing")
 
 	// An edit to a script the catalog already holds as executable is not news.
 	assert.Empty(t, executableNotice(
 		map[string]FileEntry{"run.sh": {Executable: boolPtr(true)}},
 		RemoteManifest{"run.sh": {Executable: boolPtr(true)}},
+		false,
 	))
+
+	// A generated build has no Dockerfile to edit, so it gets no COPY advice.
+	generated := executableNotice(map[string]FileEntry{"run.sh": {Executable: boolPtr(true)}}, nil, true)
+	assert.Contains(t, generated, "run.sh")
+	assert.NotContains(t, generated, "COPY")
 
 	msg := executableNotice(map[string]FileEntry{
 		"run.sh":  {Executable: boolPtr(true)},
@@ -152,7 +179,7 @@ func TestExecutableNotice(t *testing.T) {
 		"bin/c":   {Executable: boolPtr(true)},
 		"bin/d":   {Executable: boolPtr(true)},
 		"bin/e.x": {Executable: boolPtr(true)},
-	}, nil)
+	}, nil, false)
 
 	assert.Contains(t, msg, "COPY --chmod=755")
 	assert.Contains(t, msg, "bin/a, bin/b, bin/c, bin/d, bin/e.x and 1 more")
@@ -167,7 +194,7 @@ func TestBuildZip_EntryModeCarriesExecutableBit(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "run.sh"), []byte("#!/bin/sh\n"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("x"), 0o644))
 
-	zipPath, sent, err := buildZip(dir, []FileAction{{Path: "run.sh"}, {Path: "app.py"}})
+	zipPath, sent, err := buildZip(dir, []FileAction{{Path: "run.sh"}, {Path: "app.py"}}, true)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(zipPath) })
@@ -435,7 +462,8 @@ func TestEngine_OldManifestDryRunWritesNothing(t *testing.T) {
 func assertPerm(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 
+	// Only the executable bits: the rest follow the host's umask.
 	info, err := os.Stat(path)
 	require.NoError(t, err)
-	assert.Equal(t, want, info.Mode().Perm(), path)
+	assert.Equal(t, want&0o111 != 0, info.Mode().Perm()&0o111 != 0, path)
 }

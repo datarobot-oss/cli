@@ -173,7 +173,7 @@ func TestFakeServerState_ZipPathRecordsContent(t *testing.T) {
 		},
 	}
 
-	zipPath, _, err := buildZip(dir, plan.Uploads)
+	zipPath, _, err := buildZip(dir, plan.Uploads, true)
 	require.NoError(t, err)
 
 	zipData, err := os.ReadFile(zipPath)

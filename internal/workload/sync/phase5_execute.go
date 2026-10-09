@@ -20,7 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/ignore"
 )
@@ -292,9 +292,8 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 		// Phase 5 and Phase 7.
 		e.uploadOutcome = &outcome
 
-		if msg := executableNotice(outcome.Sent, e.remote); msg != "" {
-			log.Warn(msg)
-		}
+		e.execNotice = executableNotice(outcome.Sent, e.remote,
+			e.artifact != nil && workload.GeneratesDockerfile(*e.artifact))
 
 		newCatalogID = outcome.CatalogID
 		newVersionID = outcome.VersionID

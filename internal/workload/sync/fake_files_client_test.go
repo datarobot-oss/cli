@@ -68,6 +68,10 @@ type fakeFilesClient struct {
 	// isExecutable form field per staged path, as the server records it.
 	stagedExec map[string]bool
 
+	// oldServer models one older than API 2.49: it takes no executable bit
+	// and reports none in its listings.
+	oldServer bool
+
 	// Backward-compatible fields: recorded uploaded content and deleted
 	// paths, kept so existing tests that inspect them still work.
 	uploadedFiles map[string][]byte
@@ -350,7 +354,7 @@ func (f *fakeFilesClient) mergeStagedFiles(catalogID string) map[string]filesapi
 		newVersion[path] = filesapi.FileMeta{
 			Hash:       hex.EncodeToString(h[:]),
 			Size:       int64(len(data)),
-			Executable: &exec,
+			Executable: f.reportedExec(exec),
 		}
 	}
 
@@ -420,7 +424,7 @@ func (f *fakeFilesClient) UploadFromZipExisting(catalogID, _, _ string, _ int64,
 	f.uploadFromZipCalls++
 	f.zippedIntoCatalog = catalogID
 
-	zipFiles, err := extractZipFiles(data)
+	zipFiles, err := f.extractZipFiles(data)
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +631,7 @@ func (f *fakeFilesClient) ListVersions(_ string, _ int) ([]filesapi.CatalogVersi
 // extractZipFiles reads a zip archive from raw bytes and returns a map of
 // path → FileMeta with the SHA-256 hash and size of each entry's content.
 // This models what the server does when it extracts an uploaded archive.
-func extractZipFiles(data []byte) (map[string]filesapi.FileMeta, error) {
+func (f *fakeFilesClient) extractZipFiles(data []byte) (map[string]filesapi.FileMeta, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("open zip: %w", err)
@@ -647,7 +651,7 @@ func extractZipFiles(data []byte) (map[string]filesapi.FileMeta, error) {
 		files[path] = filesapi.FileMeta{
 			Hash:       hex.EncodeToString(h[:]),
 			Size:       int64(len(content)),
-			Executable: &exec,
+			Executable: f.reportedExec(exec),
 		}
 	}
 
@@ -670,4 +674,16 @@ func readZipEntry(zf *zip.File) ([]byte, error) {
 	}
 
 	return content, nil
+}
+
+// SupportsExecutable is false for a server older than API 2.49.
+func (f *fakeFilesClient) SupportsExecutable() bool { return !f.oldServer }
+
+// reportedExec is the bit a listing reports: none on an old server.
+func (f *fakeFilesClient) reportedExec(exec bool) *bool {
+	if f.oldServer {
+		return nil
+	}
+
+	return &exec
 }

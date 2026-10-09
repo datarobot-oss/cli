@@ -73,6 +73,7 @@ func Diff(base, local, remote BaseManifest) *SyncPlan {
 			RemoteHash:     r.Hash,
 			LocalExec:      l.Executable,
 			RemoteExec:     r.Executable,
+			BaseExec:       b.Executable,
 		})
 	}
 

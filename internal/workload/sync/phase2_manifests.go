@@ -76,15 +76,21 @@ func phase2Manifests(e *Engine) error {
 	return resolveRemote(e)
 }
 
+// needsExecutableBackfill reports a fast-path sync that should list the
+// remote anyway: a base written before the executable bit was tracked cannot
+// say what the catalog holds, unless the server is known not to report it.
+func needsExecutableBackfill(e *Engine, codeRef codeRefRef) bool {
+	return hasUnknownExecutable(e.base) && !e.config.ExecutableUnreported &&
+		codeRef.CatalogID != "" && e.remoteVer != ""
+}
+
 // resolveRemote fills e.remote: listed from the Files API when the remote
 // moved or the base lacks the executable bits, copied from BASE otherwise.
 func resolveRemote(e *Engine) error {
 	codeRef := codeRefOrEmpty(e)
 
 	if !e.drifted {
-		// A base written before the executable bit was tracked cannot say what
-		// the catalog holds, so the remote is listed once to learn it.
-		if !hasUnknownExecutable(e.base) || codeRef.CatalogID == "" || e.remoteVer == "" {
+		if !needsExecutableBackfill(e, codeRef) {
 			// Nobody else changed the remote since our last sync; skip the
 			// allFiles round-trip and reuse BASE.
 			e.remote = copyManifest(e.base)
@@ -118,6 +124,7 @@ func resolveRemote(e *Engine) error {
 	}
 
 	e.remote = FromFilesAPI(remote)
+	e.remoteListed = true
 
 	return nil
 }

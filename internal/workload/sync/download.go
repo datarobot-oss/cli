@@ -118,7 +118,7 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 
 	// The bytes on disk are already the remote's; only the bit moved.
 	if fa.Action == ActDownloadModify && fa.ExecOnly() {
-		return applyRemoteExecutable(dst, fa)
+		return applyMergedExecutable(dst, fa)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -153,11 +153,13 @@ func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa Fi
 	}
 
 	// os.Create keeps an existing file's mode, so the bit is set or cleared explicitly.
-	return applyRemoteExecutable(dst, fa)
+	return applyMergedExecutable(dst, fa)
 }
 
-func applyRemoteExecutable(dst string, fa FileAction) error {
-	if err := fileops.ApplyExecutable(dst, fa.RemoteExec); err != nil {
+// applyMergedExecutable sets the bit merged apart from the bytes, so a local
+// chmod survives a teammate's edit to the same file.
+func applyMergedExecutable(dst string, fa FileAction) error {
+	if err := fileops.ApplyExecutable(dst, fa.MergedExec()); err != nil {
 		return fmt.Errorf("set executable bit on %s: %w", fa.Path, err)
 	}
 

@@ -27,6 +27,13 @@ type FileAction struct {
 	RemoteHash     string
 	LocalExec      *bool
 	RemoteExec     *bool
+	BaseExec       *bool
+}
+
+// MergedExec is the executable bit the file ends with after this action,
+// merged apart from its bytes; see mergeExecutable.
+func (fa FileAction) MergedExec() *bool {
+	return mergeExecutable(fa.BaseExec, fa.LocalExec, fa.RemoteExec)
 }
 
 // ExecOnly reports a change to the executable bit alone, with the same bytes on both sides.
@@ -125,6 +132,11 @@ func (p *SyncPlan) TotalDownloadBytes() int64 {
 	var n int64
 
 	for _, fa := range p.Downloads {
+		// A change to the executable bit alone is a chmod in place.
+		if fa.ExecOnly() {
+			continue
+		}
+
 		n += fa.RemoteSize
 	}
 

@@ -46,6 +46,11 @@ type Result struct {
 	ConflictCount   int
 	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
 	Duration        time.Duration
+
+	// ExecutableNotice warns that image builds drop the executable bit of the
+	// files it names; "" when this sync uploaded none. Returned rather than
+	// logged, because up's progress display silences the stderr logger.
+	ExecutableNotice string
 }
 
 var ErrNoPlan = errors.New("sync engine: Execute called before Plan")
@@ -106,6 +111,8 @@ type Engine struct {
 	remoteVer     string
 	drifted       bool
 	execBackfill  bool
+	remoteListed  bool
+	execNotice    string
 	local         LocalManifest
 	remote        RemoteManifest
 	plan          *SyncPlan
