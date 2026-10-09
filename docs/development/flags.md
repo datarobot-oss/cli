@@ -174,6 +174,7 @@ stdout gets nothing new and the exit code stays non-zero, so the exit code is st
 - JSON mode is read from `--output-format` in the arguments, then `DATAROBOT_CLI_OUTPUT_FORMAT`, before cobra parses anything, so flag and argument errors get the envelope too. An `output-format` set only in `drconfig.yaml` is picked up once the config is read, so it covers runtime errors but not flag errors.
 - Return a wrapped error rather than a formatted string when the failure came from the API, so `errors.As` can still find the `HTTPError` and fill the HTTP fields.
 - A command that renders its own failure and returns `cli.ErrSilent` gets no envelope.
+- `dr task run` (and `dr run`) and plugin commands leave through `telemetry.ExitWithContext` to pass on the subprocess's exit code, so they never return to `executeRoot` and get no envelope either.
 
 ## Universal flags (forwarded to plugins)
 
