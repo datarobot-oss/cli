@@ -77,6 +77,7 @@ func ReadString() (string, error) {
 
 	str, err := readLine(reader)
 	if err != nil {
+		// print a newline so the cursor leaves the prompt line
 		fmt.Println()
 	}
 
