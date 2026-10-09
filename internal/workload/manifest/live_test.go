@@ -16,6 +16,8 @@ package manifest
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1133,6 +1135,54 @@ func TestLive_RenderStripsResolvedBundle(t *testing.T) {
 	assert.NotContains(t, string(rendered), "resolvedBundle")
 }
 
+// A bound manifest ports the same way a fresh one does: the server's runtime
+// group name is left out of the file, and the live document keeps it.
+func TestLive_RenderLeavesOutTheRuntimeGroupName(t *testing.T) {
+	live := reporterShapedLive(t)
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	runtime := string(rendered[strings.Index(string(rendered), "\nruntime:"):])
+	assert.NotContains(t, runtime, "name: default")
+	assert.Contains(t, runtime, "replicaCount")
+	assert.Equal(t, "default", stringAt(slicesAt(live.Runtime, keyContainerGroups)[0], keyName))
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
+// With two artifact groups the runtime group keeps its name: the file has to
+// say which group the sizing belongs to, and the validator would refuse it
+// otherwise.
+func TestLive_RenderKeepsTheRuntimeGroupNameWhenTheArtifactHasSeveralGroups(t *testing.T) {
+	live := Live{
+		Name: "my-app", ArtifactName: "my-app-artifact",
+		Spec: map[string]any{keyContainerGroups: []any{
+			map[string]any{keyName: "default", keyContainers: []any{
+				map[string]any{keyName: "primary", keyPrimary: true, keyPort: 8080, keyImageURI: "nginx:latest"},
+			}},
+			map[string]any{keyName: "worker", keyContainers: []any{
+				map[string]any{keyName: "main", keyImageURI: "nginx:latest"},
+			}},
+		}},
+		Runtime: map[string]any{keyContainerGroups: []any{
+			map[string]any{keyName: "worker", keyReplicaCount: 2},
+		}},
+	}
+
+	rendered, err := live.Render()
+	require.NoError(t, err)
+
+	runtime := string(rendered[strings.Index(string(rendered), "\nruntime:"):])
+	assert.Contains(t, runtime, "name: worker")
+
+	parsed, err := Parse(rendered, "")
+	require.NoError(t, err)
+	require.NoError(t, parsed.Validate())
+}
+
 // NewLive must not mutate the caller's documents, even though it strips server
 // outputs and null-valued keys from its own copies.
 func TestLive_DoesNotMutateInputDocs(t *testing.T) {
@@ -1212,8 +1262,13 @@ func assertNameLeadsInIdentifierMappings(t *testing.T, node *yaml.Node, parentKe
 			keys := mappingKeys(node)
 
 			require.NotEmpty(t, keys)
-			assert.Equal(t, keyName, keys[0],
-				"identifier mapping under %s should lead with name", parentKey)
+
+			// The runtime group is written without a name; there is
+			// nothing to hoist in it.
+			if slices.Contains(keys, keyName) {
+				assert.Equal(t, keyName, keys[0],
+					"identifier mapping under %s should lead with name", parentKey)
+			}
 		}
 
 		for i := 0; i+1 < len(node.Content); i += 2 {
@@ -1271,8 +1326,11 @@ func TestLive_RenderLeadsWithNameInContainerGroups(t *testing.T) {
 	spec := mapValue(mapValue(root, keyArtifact), keySpec)
 	checkGroups(mapValue(spec, keyContainerGroups))
 
+	// The runtime group is the one mapping written without a name.
 	runtime := mapValue(root, keyRuntime)
-	checkGroups(mapValue(runtime, keyContainerGroups))
+	for _, group := range seqItems(mapValue(runtime, keyContainerGroups)) {
+		assert.NotContains(t, mappingKeys(group), keyName, "the runtime group carries no name")
+	}
 }
 
 // The rendered manifest's top-level mapping lists keys in the agreed order.
@@ -1417,7 +1475,7 @@ func TestLive_RenderPreservesNameInOpaqueMappings(t *testing.T) {
 
 // An artifact doc whose container carries imageUri alongside an
 // imageBuildConfig with only server-managed keys (codeRef + dockerfile:null)
-// is the exact review repro for RAPTOR-19533. stripKeys purges dockerfile:null
+// is the exact review repro. stripKeys purges dockerfile:null
 // first; stripBuildOutputs then deletes codeRef, which empties the map. The
 // fix keeps the user-declared imageUri and drops the emptied imageBuildConfig
 // key entirely, so the rendered file has a single valid image source and
@@ -1884,4 +1942,137 @@ func TestLive_RenderRoundTripsEnvironmentVarsAllVariants(t *testing.T) {
 	assert.Equal(t, workloadID, compiled.WorkloadID)
 	require.Len(t, compiled.CredentialRefs, 1)
 	assert.Equal(t, "68f0cccc0000000000000003", compiled.CredentialRefs[0].CredentialID)
+}
+
+// The platform answers with a number of bytes, and every fixture in this file
+// spelled memory as a string — which is how a re-bind came to report the
+// documented 512MB default for every workload, whatever it was running on,
+// and then write that default into the file for the next deploy to shrink it
+// to. The byte counts below are the ones actually in use on
+// staging.
+func TestLive_ReadsMemoryBackWhenTheServerSendsBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		bytes string
+		want  string
+		// file is how want is spelled in the rendered manifest when that
+		// differs from want itself; empty means the same.
+		file string
+	}{
+		{"the documented default, as bytes", "512000000", "512MB", ""},
+		{"a smaller allocation", "128000000", "128MB", ""},
+		{"a GPU workload's 20GB", "20000000000", "20GB", ""},
+		{
+			// 2 GiB. This package refuses binary units on purpose — the
+			// platform reads 2Gi as 2GB — so rounding here would take 7% of a
+			// running workload's memory away. The byte count is exact and
+			// round-trips. Quoted in the file, because a bare number would
+			// otherwise read back as a YAML integer rather than a size.
+			"a binary size no decimal unit divides", "2147483648", "2147483648", `"2147483648"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var workloadDoc, artifactDoc map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "sized",
+              "runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+                "containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": `+tc.bytes+`}}]}]}
+            }`), &workloadDoc))
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "a",
+              "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+                {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+            }`), &artifactDoc))
+
+			live, err := NewLive("68b0", workloadDoc, artifactDoc)
+			require.NoError(t, err)
+
+			draft := live.Defaults()
+			assert.Equal(t, tc.want, draft.Runtime.Memory,
+				"the wizard must report what the workload is running on, not the default")
+			assert.InDelta(t, 1.0, draft.Runtime.CPU, 0.0001, "cpu was never broken; it must stay unbroken")
+
+			// The whole point: what the wizard reports is what gets written,
+			// so a re-bind that changes nothing must not change the sizing.
+			applied, err := live.Apply(draft)
+			require.NoError(t, err)
+
+			rendered, err := applied.Render()
+			require.NoError(t, err)
+
+			inFile := tc.file
+			if inFile == "" {
+				inFile = tc.want
+			}
+
+			assert.Contains(t, string(rendered), "memory: "+inFile)
+
+			// Only meaningful for a workload that is not on the default: one
+			// that is should of course be written as it.
+			if tc.want != DefaultMemory {
+				assert.NotContains(t, string(rendered), "memory: "+DefaultMemory,
+					"a workload not running on the default must never be written as the default")
+			}
+		})
+	}
+}
+
+// A string is still the other way a size arrives — a manifest that has been
+// through Apply carries one — and it comes back normalized, so a file and a
+// live workload describing the same size describe it the same way.
+func TestLive_StillReadsMemoryWrittenAsAString(t *testing.T) {
+	for _, tc := range []struct{ written, want string }{
+		{`"1GB"`, "1GB"},
+		{`"512 mb"`, "512MB"},
+		{`"2147483648"`, "2147483648"},
+	} {
+		t.Run(tc.written, func(t *testing.T) {
+			var workloadDoc, artifactDoc map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "sized",
+              "runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+                "containers": [{"name": "app", "resourceAllocation": {"cpu": 1, "memory": `+tc.written+`}}]}]}
+            }`), &workloadDoc))
+
+			require.NoError(t, json.Unmarshal([]byte(`{
+              "name": "a",
+              "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+                {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+            }`), &artifactDoc))
+
+			live, err := NewLive("68b0", workloadDoc, artifactDoc)
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.want, live.Defaults().Runtime.Memory)
+		})
+	}
+}
+
+// A container with no allocation at all still reports the documented
+// defaults: there is nothing to read back, which is not the same as reading
+// back a zero.
+func TestLive_NoAllocationKeepsTheDefaults(t *testing.T) {
+	var workloadDoc, artifactDoc map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "unsized",
+      "runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+        "containers": [{"name": "app"}]}]}
+    }`), &workloadDoc))
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+      "name": "a",
+      "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+        {"name": "app", "primary": true, "port": 8080, "imageUri": "example/app:v1"}]}]}
+    }`), &artifactDoc))
+
+	live, err := NewLive("68b0", workloadDoc, artifactDoc)
+	require.NoError(t, err)
+
+	draft := live.Defaults()
+	assert.Equal(t, DefaultMemory, draft.Runtime.Memory)
+	assert.InDelta(t, DefaultCPU, draft.Runtime.CPU, 0.0001)
 }

@@ -56,12 +56,16 @@ func IsBackupCopy(relPath string) bool {
 	return backupCopyPattern.MatchString(path.Base(relPath))
 }
 
-// systemExcludes are always-ignored paths, not overridable by .drignore.
+// systemPatterns are always-ignored paths, not overridable by .drignore. They
+// are gitignore patterns compiled by the same engine as the user's file, so
+// they match at any depth the way a user's own `.git` line would: a vendored
+// checkout's `sub/.git/` used to be uploaded because the old prefix check
+// only saw the project root.
 //
-// The state directory is listed at its full path, not as a bare ".datarobot":
-// entries match as prefixes, so a bare one would also exclude the CLI's own
-// tool state under .datarobot/cli/, which syncs today. The legacy ".wapi"
-// stays listed so an un-migrated project does not upload its state.
+// The state directory is listed at its full path, not as a bare ".datarobot",
+// and root-anchored by the leading slash: a bare one would also exclude the
+// CLI's own tool state under .datarobot/cli/, which syncs today. The legacy
+// ".wapi" stays listed so an un-migrated project does not upload its state.
 //
 // The manifest is excluded because a deploy rewrites it: `up` writes the new
 // workload's id into it after the sync has run. Uploaded, it would differ from
@@ -71,7 +75,21 @@ func IsBackupCopy(relPath string) bool {
 // container has no use for it.
 //
 // Entries must be lowercase: matchesSystemExclude folds the path it is given.
-var systemExcludes = []string{".datarobot/workload", ".wapi", ".git", ".gitignore", ".datarobot.yaml"}
+var systemPatterns = []string{
+	"/.datarobot/workload", // the leading slash keeps the state dir root-anchored
+	".wapi",
+	".git",
+	// Root-anchored: a nested .gitignore is often the "keep this empty
+	// directory" placeholder (`logs/.gitignore` holding `*` and `!.gitignore`),
+	// and since a system exclude cannot be overridden from .drignore, matching
+	// it at depth would keep that directory out of every image for good.
+	"/.gitignore",
+	".datarobot.yaml",
+}
+
+// system is systemPatterns compiled once. The same engine as the user file,
+// so the two cannot disagree about what "a path under .git" means.
+var system = gitignore.CompileIgnoreLines(systemPatterns...)
 
 // Matcher decides whether a path is excluded from sync. Match is safe for
 // concurrent use after New.
@@ -262,20 +280,24 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 		return false
 	}
 
-	if m.user.MatchesPath(relPath) {
-		return true
-	}
-
-	// Directory-only patterns need a trailing slash to match in go-gitignore.
+	// One probe, and for a directory it is the slashed form: the single
+	// question git asks. A bare pattern ("build") matches "build/" just as
+	// well as "build", so nothing is lost, and probing the unslashed form
+	// first was a bug: with `*` followed by `!build/`, the `*` rule matched
+	// "build" and returned before the negation the user wrote to bring the
+	// directory back was ever consulted. The engine applies patterns in file
+	// order and a negation only clears an earlier match, so the probe has to
+	// be the one the negation was written against.
+	probe := relPath
 	if isDir {
-		return m.user.MatchesPath(relPath + "/")
+		probe += "/"
 	}
 
-	return false
+	return m.user.MatchesPath(probe)
 }
 
 // matchesSystemExclude reports whether relPath is or lives inside a
-// system-excluded directory.
+// system-excluded directory, at any depth.
 //
 // The comparison folds case because macOS and Windows preserve case without
 // distinguishing it: a project that already holds a differently-cased
@@ -283,14 +305,20 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 // exclude would then let config.json and manifest.json sync to the remote. The
 // cost is that a case-sensitive filesystem also excludes a genuine .Git or
 // .DataRobot, which is not a directory anyone keeps alongside the real ones.
+//
+// The path is probed as given, without a trailing slash, because every entry
+// is a name rather than a directory-only pattern: "sub/.git" matches `.git`
+// whether it is a file or a directory, and "sub/.git/HEAD" matches it as
+// something inside.
 func matchesSystemExclude(relPath string) bool {
-	lowered := strings.ToLower(relPath)
+	return system.MatchesPath(strings.ToLower(relPath))
+}
 
-	for _, name := range systemExcludes {
-		if lowered == name || strings.HasPrefix(lowered, name+"/") {
-			return true
-		}
-	}
-
-	return false
+// IsSystemExcluded is matchesSystemExclude for callers outside the walk. The
+// sync engine asks it about the remote manifest: a path the walk would never
+// list, but that an older CLI uploaded before the excludes reached every
+// depth, is something to delete from the remote rather than download over
+// the real local file.
+func IsSystemExcluded(relPath string) bool {
+	return matchesSystemExclude(relPath)
 }

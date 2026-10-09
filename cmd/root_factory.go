@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -232,6 +233,12 @@ type RootFactory struct {
 	// build. It is also stored in the cobra context, but we keep a reference
 	// here so Exit() can flush events when main's error path fires.
 	telemetryClient *telemetry.Client
+
+	// pluginsRegistered guards the execution-time plugin discovery pass,
+	// tracked per command tree because one factory can Build() many trees.
+	// Each tree must register plugins exactly once: idempotent for repeated
+	// calls, but never silently skipped for a freshly built tree.
+	pluginsRegistered map[*cobra.Command]bool
 }
 
 // NewRootFactory creates a RootFactory with the given functional options
@@ -293,14 +300,15 @@ func (f *RootFactory) TelemetryClient() *telemetry.Client {
 
 // Build constructs and returns a fully-wired *cli.CommandAdder. The returned
 // command includes all registered sub-commands, persistent flags, help
-// overrides, plugin discovery, and unknown-arg guards.
+// overrides, and unknown-arg guards. Plugin discovery is deferred until
+// ExecuteContext so leading global flags, such as --plugin-discovery-timeout,
+// can affect it before command resolution.
 //
 // The returned tree is self-contained — fresh flags, sub-commands, and a
 // per-build output format — but Build is not free of shared-state effects:
 // the default ViperBinder re-points the global viper bindings at the new
-// tree, and the default PluginRegistrar reads global viper config and
-// executes any dr-* binaries found on PATH. Use NewIsolatedRootFactory to
-// build a tree with none of those side effects.
+// tree. Use NewIsolatedRootFactory to build a tree with none of those side
+// effects.
 func (f *RootFactory) Build() *cli.CommandAdder {
 	// outputFormat is captured per-build (not package-level) so parallel
 	// builds in tests cannot race on a shared variable.
@@ -313,15 +321,36 @@ func (f *RootFactory) Build() *cli.CommandAdder {
 	f.deps.ViperBinder(adder)
 	f.addGroups(adder)
 	f.addSubcommands(adder)
-	f.deps.PluginRegistrar(adder.Command)
 
-	// Guard every pure-parent command against unrecognised positional args.
-	// Must run after all sub-commands (including plugins) are registered.
+	// Guard every built-in pure-parent command against unrecognised positional
+	// args. RegisterPlugins runs this again after plugin discovery so any
+	// execution-time commands get the same protection.
 	setUnknownArgGuards(adder.Command)
 
 	f.configureHelp(adder)
 
 	return adder
+}
+
+// RegisterPlugins discovers plugins at execution time, after leading global
+// flags have been parsed. That lets --plugin-discovery-timeout=0s disable the
+// expensive PATH scan before Cobra tries to resolve a command.
+func (f *RootFactory) RegisterPlugins(adder *cli.CommandAdder) {
+	if f.pluginsRegistered == nil {
+		f.pluginsRegistered = make(map[*cobra.Command]bool)
+	}
+
+	if f.pluginsRegistered[adder.Command] {
+		return
+	}
+
+	f.deps.PluginRegistrar(adder.Command)
+
+	// Re-run the unknown-arg walk after plugin discovery so any commands added
+	// at execution time follow the same parent-command behaviour as built-ins.
+	setUnknownArgGuards(adder.Command)
+
+	f.pluginsRegistered[adder.Command] = true
 }
 
 // buildRootCommand constructs the bare cobra.Command with its Use, Long, and
@@ -395,8 +424,9 @@ using pre-built templates. Get from idea to production in minutes, not hours.
 	cmd.SetVersionTemplate(internalVersion.GetAppNameVersionText() + "\n\nTo update: dr self update\n")
 
 	// Only the prefix is styled; the message itself is often multi-line and is
-	// the part a user copies into a bug report.
-	cmd.SetErrPrefix(tui.ErrorStyle.Render("Error:"))
+	// the part a user copies into a bug report. It is styled for stderr, where
+	// cobra prints it, so a 2> file stays plain even when stdout is a terminal.
+	cmd.SetErrPrefix(tui.StylesFor(os.Stderr).Error.Render("Error:"))
 
 	return cmd
 }
@@ -520,7 +550,11 @@ func (f *RootFactory) registerFlags(adder *cli.CommandAdder, outputFormat *outpu
 	flags.Bool("all-commands", false, "display all available commands and their flags in tree format")
 	flags.Bool(config.SkipAuthKey, false, "skip authentication checks (for advanced users)")
 	flags.Bool("force-interactive", false, "force setup wizards to run even if already completed")
-	flags.Duration("plugin-discovery-timeout", 2*time.Second, "timeout for plugin discovery (0s disables)")
+	flags.Duration(
+		"plugin-discovery-timeout",
+		internalPlugin.DefaultDiscoveryTimeout,
+		"timeout for plugin discovery when placed before the command (0s disables; config is read too late for startup discovery)",
+	)
 	flags.Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	flags.Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	flags.Bool("disable-telemetry", false, "disable usage telemetry")

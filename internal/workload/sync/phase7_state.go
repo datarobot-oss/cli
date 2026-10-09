@@ -63,6 +63,11 @@ func phase7State(e *Engine) error {
 		cfg.LastSyncedVersionID = &versionForState
 	}
 
+	// Set aside remote changes leave the base behind the remote at this very
+	// version, so the next sync has to list the remote rather than trust the
+	// base; a run that applied everything clears the mark.
+	cfg.RemoteChangesSkipped = len(e.plan.Skipped) > 0
+
 	// Build and write the manifest BEFORE writing config. Both orders leave
 	// a one-file failure window, but only one direction self-heals:
 	//
@@ -115,6 +120,21 @@ func phase7State(e *Engine) error {
 // downloads, not false uploads. Past the first write, the stranded dir
 // instead resurrects pre-sync bytes as phantom local edits the next sync
 // silently re-uploads over the remote.
+// keepSkippedBaseEntries gives a skipped file its old base entry back, so the
+// next plain sync sees the remote change again instead of reading the
+// untouched local copy as an edit to upload over it.
+func keepSkippedBaseEntries(e *Engine, files map[string]wapi.FileMeta) {
+	for _, fa := range e.plan.Skipped {
+		if entry, ok := e.base[fa.Path]; ok {
+			files[fa.Path] = wapi.FileMeta{Hash: entry.Hash, Size: entry.Size}
+
+			continue
+		}
+
+		delete(files, fa.Path)
+	}
+}
+
 func discardRollback(e *Engine) error {
 	if e.rollback == nil {
 		return nil
@@ -171,15 +191,19 @@ func buildNewBaseManifest(e *Engine, syncedVersionID string, syncedAt time.Time)
 		files[fa.Path] = wapi.FileMeta{Hash: fa.RemoteHash, Size: fa.RemoteSize}
 	}
 
-	syncedAtCopy := syncedAt
-	versionCopy := syncedVersionID
+	keepSkippedBaseEntries(e, files)
 
-	return wapi.Manifest{
-		Version:         wapi.ManifestVersion,
-		SyncedAt:        &syncedAtCopy,
-		SyncedVersionID: &versionCopy,
-		Files:           files,
-	}, nil
+	manifest := wapi.Manifest{Version: wapi.ManifestVersion, Files: files}
+
+	// The two sync fields go together: a time with no version is a state the
+	// loader refuses, so a run that produced no version records neither.
+	if syncedVersionID != "" {
+		syncedAtCopy := syncedAt
+		versionCopy := syncedVersionID
+		manifest.SyncedAt, manifest.SyncedVersionID = &syncedAtCopy, &versionCopy
+	}
+
+	return manifest, nil
 }
 
 // syncHistoryEntry assembles the JSONL line written to history.log.

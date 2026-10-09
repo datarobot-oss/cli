@@ -87,12 +87,15 @@ func TestBuildLogTail_EmitsOnlyUnseenLinesAcrossPolls(t *testing.T) {
 		lines = append(lines, e.Message)
 	}, nil)
 
+	assert.False(t, tail.Emitted(), "nothing delivered before the first poll")
+
 	tail.Poll()
 	tail.Poll()
 	tail.flush(true) // drain the holdback buffer without another fetch
 
 	assert.Equal(t, []string{"a", "b", "c"}, lines)
 	assert.Equal(t, 2, calls)
+	assert.True(t, tail.Emitted())
 }
 
 func TestBuildLogTail_HoldbackReordersLateLines(t *testing.T) {

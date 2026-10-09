@@ -47,7 +47,7 @@ const buildLogLagAllowance = 60 * time.Second
 // fetchArtifactBuildLogs retrieves one build's log lines newest-first across
 // pages, by filtering the artifact's OTEL stream on external_build_id.
 func fetchArtifactBuildLogs(artifactID, buildID string, maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
-	query := logsQueryParams(maxEntries, level, since)
+	query := logsQueryParams(maxEntries, LogFilter{Level: level}, since)
 	query.Set("searchKeys", "external_build_id")
 	query.Set("searchValues", buildID)
 
@@ -118,6 +118,15 @@ type BuildLogTail struct {
 	pending []bufferedLogLine
 	seq     int
 	newest  time.Time
+
+	// emitted counts the lines handed to onLine, so a caller can tell a
+	// build that logged from one that did not without another fetch.
+	emitted int
+}
+
+// Emitted reports whether the tail has delivered at least one line.
+func (t *BuildLogTail) Emitted() bool {
+	return t.emitted > 0
 }
 
 // bufferedLogLine is one held-back line: its parsed event time and an
@@ -132,12 +141,20 @@ type bufferedLogLine struct {
 // unseen line in chronological order; onWarn (nil-safe) receives the one
 // notice given when the tail gives up.
 func NewBuildLogTail(artifactID, buildID string, onLine func(WorkloadLogEntry), onWarn func(string)) *BuildLogTail {
+	return NewBuildLogTailFetching(func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
+		return fetchArtifactBuildLogs(artifactID, buildID, maxEntries, level, since, reqInfo)
+	}, onLine, onWarn)
+}
+
+// NewBuildLogTailFetching is NewBuildLogTail over any source of lines, which
+// is what lets a test drive the stream without a server.
+func NewBuildLogTailFetching(
+	fetch func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error),
+	onLine func(WorkloadLogEntry),
+	onWarn func(string),
+) *BuildLogTail {
 	if onWarn == nil {
 		onWarn = func(string) {}
-	}
-
-	fetch := func(maxEntries int, level, since, reqInfo string) ([]WorkloadLogEntry, error) {
-		return fetchArtifactBuildLogs(artifactID, buildID, maxEntries, level, since, reqInfo)
 	}
 
 	// The interval passed here only satisfies the follower's validation; the
@@ -198,6 +215,7 @@ func (t *BuildLogTail) flush(all bool) {
 	for _, line := range t.pending {
 		if all || !line.at.After(watermark) {
 			t.onLine(line.entry)
+			t.emitted++
 		} else {
 			kept = append(kept, line)
 		}

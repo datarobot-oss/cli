@@ -26,6 +26,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// getLogsFn is the fetch, a variable so tests can stand in for it.
+var getLogsFn = workload.GetArtifactBuildLogs
+
 var validLevels = map[string]bool{
 	"debug":   true,
 	"info":    true,
@@ -78,14 +81,22 @@ Examples:
 				return err
 			}
 
-			entries, err := workload.GetArtifactBuildLogs(artifactID, buildID)
+			entries, err := getLogsFn(artifactID, buildID)
 			if err != nil {
 				return err
 			}
 
-			entries = workload.FilterLogsByLevel(entries, lower)
+			kept := workload.FilterLogsByLevel(entries, lower)
 
-			return workload.RenderBuildLogs(outputFormat, entries)
+			// Lines that exist but sit below --level are not "no logs".
+			if len(kept) == 0 && len(entries) > 0 && outputFormat != outputformat.OutputFormatJSON {
+				fmt.Fprintf(cmd.ErrOrStderr(), "No logs at level %s or above; %d below it. Use --level debug to see them.\n",
+					lower, len(entries))
+
+				return nil
+			}
+
+			return workload.RenderBuildLogs(outputFormat, kept)
 		},
 	}
 

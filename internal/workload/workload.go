@@ -16,6 +16,7 @@ package workload
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -145,6 +146,24 @@ func IsTerminatedWorkloadStatus(s string) bool {
 // and a terminated workload is never coming back.
 func IsErroredWorkloadStatus(s string) bool {
 	return strings.EqualFold(s, WorkloadStatusErrored)
+}
+
+// IsRunningWorkloadStatus reports whether the platform says the workload is
+// running. Named for the same reason as IsTerminatedWorkloadStatus: the shell
+// asks it of a deploy's result, where the status arrives either from the
+// platform or through State.String(), and the two must not be spelled apart.
+func IsRunningWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusRunning)
+}
+
+// IsStartingWorkloadStatus reports whether the platform says the workload is on
+// its way up: accepted, being provisioned, or being launched. Narrower than
+// "not steady", which also covers stopping and unknown, neither of which says
+// the workload is coming up.
+func IsStartingWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusSubmitted) ||
+		strings.EqualFold(s, WorkloadStatusProvisioning) ||
+		strings.EqualFold(s, WorkloadStatusLaunching)
 }
 
 // IsStoppedWorkloadStatus reports whether s is one of the three ways a
@@ -440,6 +459,7 @@ type Serving struct {
 //
 // onTick may be nil and is invoked after each poll, mirroring WaitForBuild.
 func WaitForWorkload(
+	ctx context.Context,
 	workloadID string,
 	want Serving,
 	interval, timeout time.Duration,
@@ -450,7 +470,7 @@ func WaitForWorkload(
 	// The error term is first and unguarded: an errored workload still reports
 	// whatever it was running, so requiring the artifact too would poll a dead
 	// workload to its timeout instead of failing on first sight.
-	stop := func(wl *Workload) bool {
+	stop := func(wl *Workload) bool { //nolint:contextcheck // drapi takes no context; see abandoned below
 		if IsWorkloadErrorStatus(wl.Status) {
 			return true
 		}
@@ -494,9 +514,9 @@ func WaitForWorkload(
 		return true
 	}
 
-	wl, err := pollWorkload(workloadID, interval, timeout, stop, onTick)
+	wl, err := pollWorkload(ctx, workloadID, interval, timeout, stop, onTick)
 	if err != nil {
-		return wl, unpromoted(workloadID, wl, want, err)
+		return wl, unpromoted(workloadID, wl, want, err) //nolint:contextcheck // drapi takes no context; see abandoned below
 	}
 
 	if IsWorkloadErrorStatus(wl.Status) {
@@ -628,11 +648,12 @@ func stalledOn(workloadID string, want Serving) string {
 // just started. A caller that treats a nil error as "healthy" is reading this
 // as the wrong function; that is what WaitForWorkload is for.
 func WaitForSteadyWorkload(
+	ctx context.Context,
 	workloadID string,
 	interval, timeout time.Duration,
 	onTick func(*Workload),
 ) (*Workload, error) {
-	return pollWorkload(workloadID, interval, timeout, func(wl *Workload) bool {
+	return pollWorkload(ctx, workloadID, interval, timeout, func(wl *Workload) bool {
 		return IsSteadyWorkloadStatus(wl.Status)
 	}, onTick)
 }
@@ -660,6 +681,7 @@ func (e *waitTimeoutError) Error() string {
 // The last-seen workload comes back with every error that has one, so a caller
 // can still say what the workload was doing when the wait gave up.
 func pollWorkload(
+	ctx context.Context,
 	workloadID string,
 	interval, timeout time.Duration,
 	stop func(*Workload) bool,
@@ -675,7 +697,11 @@ func pollWorkload(
 	var last *Workload
 
 	for {
-		wl, err := GetWorkload(workloadID)
+		if err := ctx.Err(); err != nil {
+			return last, abandoned(workloadID, err)
+		}
+
+		wl, err := GetWorkload(workloadID) //nolint:contextcheck // drapi takes no context; see abandoned below
 		if err != nil {
 			if !budget.forgive(err) {
 				return last, fmt.Errorf("poll workload %s: %w", workloadID, err)
@@ -698,8 +724,29 @@ func pollWorkload(
 			return last, &waitTimeoutError{workloadID: workloadID, timeout: timeout}
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return last, abandoned(workloadID, ctx.Err())
+		}
 	}
+}
+
+// abandoned reports a wait that stopped because its context ended rather than
+// because the workload arrived anywhere. The last-seen workload still comes
+// back with it, so a caller can say where it had got to; what must not happen
+// is a nil error, which every caller reads as "it is up".
+//
+// It is also where the //nolint:contextcheck directives in this package's poll
+// loops point, because this is the function that says how far the context
+// reaches. The loops honour it; the requests they make do not. drapi takes no
+// context — GetJSON and roughly fifty call sites across the CLI would have to
+// change to give it one — so contextcheck is right that a request cannot be
+// cancelled and wrong that this makes the context pointless. What it buys is
+// that the loop stops: an interrupt lands at the next poll boundary instead of
+// mid request, which for a wait that polls every few seconds is the difference
+// between stopping and running until the process exits. Threading a context
+// through drapi is worth doing and is not this change.
+func abandoned(workloadID string, err error) error {
+	return fmt.Errorf("stopped waiting for workload %s: %w", workloadID, err)
 }
 
 // defaultWorkloadPollInterval keeps an exported poller from busy-spinning when

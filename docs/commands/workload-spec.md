@@ -98,7 +98,7 @@ containers:
         entrypoint: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-`executionEnvironmentId` and `executionEnvironmentVersionId` are only valid when `source` is `generated`. No CLI command lists execution environments yet; take the ids from the DataRobot UI or from `GET /api/v2/executionEnvironments/`.
+The platform works out the runtime from the project's own files: `pyproject.toml` with `uv.lock`, or `package.json` with `package-lock.json`. A `pyproject.toml` without `uv.lock` is accepted: the deploy's sync generates the lock before the upload if `uv` is installed where the deploy runs, so commit it. A project with neither file pair, or a `package.json` without its lock, cannot be built this way, and `dr workload config` refuses the mode up front rather than letting the build fail after the code is synced; `dr workload up` refuses the same cases before it creates anything. Binding to a workload already built this way from a directory with none of the usual project files keeps its build: `dr workload up` pulls the workload's code into that directory first. A directory with project files of its own is uploaded as it is, so it has to be buildable. The environment also has to match the project: a Node project on a Python base image fails at build time, so `dr workload config` refuses the pair when the environment's language and the project's files disagree; an environment with no language label is accepted. `executionEnvironmentId` and `executionEnvironmentVersionId` are only valid when `source` is `generated`. No CLI command lists execution environments yet; take the ids from the DataRobot UI or from `GET /api/v2/executionEnvironments/`.
 
 `imageBuildConfig.codeRef` names the catalog version the build compiles, and `dr artifact code sync` writes it for you:
 
@@ -163,6 +163,7 @@ A container reads its environment once, at startup. Rotating a secret (`PATCH /a
 | `artifactId` | one of the two | An existing artifact, normally a locked one. |
 | `artifact` | one of the two | An inline artifact definition, created and deployed in the same call. Takes the same fields as the artifact spec above. |
 | `importance` | no | `low` (the default), `moderate`, `high` or `critical`. |
+| `useCaseId` | no | Links the workload to a Use Case. On its own an organizational link; it is also what Enclave placement is governed by. See [Placement](#placement). |
 | `runtime` | no | Replicas, resources and placement. Without it the platform applies its own defaults. |
 
 ### Runtime
@@ -172,7 +173,7 @@ name: my-app
 artifactId: 68b0c1d2e3f4a5b6c7d8e9f0
 runtime:
   containerGroups:
-    - name: default            # must match a group in the artifact
+    - name: default            # must match a group in the artifact; the platform assumes default when omitted
       replicaCount: 1
       containers:
         - name: primary        # must match a container in that group
@@ -188,7 +189,7 @@ runtime:
 | `replicaCount` | Fixed scale. Mutually exclusive with `autoscaling.enabled: true` on the same group. |
 | `autoscaling` | Dynamic scale. See below. |
 | `resourceAllocation.cpu` | CPU cores. Fractional values are allowed (`0.5`). |
-| `resourceAllocation.memory` | A byte count or a **1000-based** unit: `B`, `KB`, `MB`, `GB`, `TB`. Binary units such as `Gi` are read as their decimal namesakes rather than converted, so write the decimal unit you actually mean. |
+| `resourceAllocation.memory` | A byte count or a **1000-based** unit: `B`, `KB`, `MB`, `GB`, `TB`. Binary units such as `Gi` are read as their decimal namesakes rather than converted, so write the decimal unit you actually mean. The CLI reads memory back the same way: `2GB` for 2,000,000,000 bytes, and the exact byte count (`"2147483648"`) when no decimal unit divides it. Sizes elsewhere in the CLI, such as code uploads and checkouts, are binary and labelled `KiB`/`MiB`/`GiB`. |
 
 ### Fixed replicas or autoscaling, not both
 
@@ -217,7 +218,31 @@ runtime:
 
 ### Placement
 
-`runtime.enclaveSelectionPolicy` and `runtime.enclaves` pin a workload to a named Enclave. Rather than writing them by hand, pass [`dr workload create --enclave <name>`](workload.md#create), which sets both and refuses to override a spec that already sets either. Without them, DataRobot picks the placement.
+Enclave placement is opt-in, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload that names that Use Case in `useCaseId` can be placed on them. Without `useCaseId` a workload runs outside any Enclave. `useCaseId` on its own changes nothing about placement when the Use Case has no Enclaves; when it has some, a spec that names the Use Case must also set a policy, or the server refuses it with `ENCLAVE_TARGETING_REQUIRED`.
+
+| Field | Notes |
+| --- | --- |
+| `useCaseId` | Top-level. The Use Case whose Enclaves the workload may run on. `dr workload create --use-case-id <id>` writes it. |
+| `runtime.enclaveSelectionPolicy` | `availability`: DataRobot picks among the Enclaves granted to the Use Case. `manual`: run on the Enclaves listed in `runtime.enclaves`. |
+| `runtime.enclaves` | A list of Enclave names, read with the `manual` policy. Rather than writing it by hand, pass [`dr workload create --enclave <name>`](workload.md#create), which sets the policy and a one-element list. |
+
+```yaml
+name: my-app
+artifactId: 68b0c1d2e3f4a5b6c7d8e9f0
+useCaseId: 68b0aa11bb22cc33dd44ee55
+runtime:
+  enclaveSelectionPolicy: availability
+  containerGroups:
+    - name: default
+      replicaCount: 1
+      containers:
+        - name: primary
+          resourceAllocation:
+            cpu: 1
+            memory: 512MB
+```
+
+The server refuses a spec that asks for placement without a Use Case (`MISSING_USE_CASE`), and one whose Use Case has Enclaves but sets no policy (`ENCLAVE_TARGETING_REQUIRED`). The `create` flags refuse to override a spec that already sets the fields they write. The flag-level story, including the breaking change to `--enclave`, is in [`dr workload create`](workload.md#use-case-and-enclave-placement).
 
 ---
 

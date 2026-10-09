@@ -841,8 +841,9 @@ func (d Draft) runtime() *yaml.Node {
 	)
 	allocation.Style = yaml.FlowStyle
 
+	// No group name: the platform assigns it, and the Terraform and Pulumi
+	// providers refuse the field, so a file without it ports unchanged.
 	return mapping(field{key: keyContainerGroups, value: sequence(mapping(
-		field{key: keyName, value: scalar(GroupName), comment: "matches the artifact group"},
 		field{key: keyReplicaCount, value: number(d.Runtime.Replicas)},
 		field{key: keyContainers, value: sequence(mapping(
 			field{key: keyName, value: scalar(PrimaryContainerName)},
@@ -1174,4 +1175,79 @@ func fillPlaceholders(vars *yaml.Node, ids map[string]string) {
 		// now happened.
 		value.LineComment = ""
 	}
+}
+
+// ResetCredentialReferences puts CredentialPlaceholder back into every
+// environment variable that references one of ids, in the shorthand or the
+// object form, and reports how many it changed. The entries read as
+// unfinished again, which the next --sync-env finishes; for a purge that
+// deleted the credentials, a manifest naming ids that no longer exist would
+// have the next deploy refuse instead.
+func ResetCredentialReferences(path string, ids map[string]bool) (int, error) {
+	reset := 0
+
+	_, err := editRoot(path, "reset the credential references", false, func(root *yaml.Node) (bool, error) {
+		reset = resetCredentialRefs(root, ids)
+
+		return reset > 0, nil
+	})
+
+	return reset, err
+}
+
+// resetCredentialRefs walks every environmentVars sequence, the way
+// setCredentialIDs does, and resets the references it finds.
+func resetCredentialRefs(node *yaml.Node, ids map[string]bool) int {
+	node = resolveAlias(node)
+	if node == nil {
+		return 0
+	}
+
+	reset := 0
+
+	switch node.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == keyEnvironmentVars {
+				reset += resetReferencesIn(node.Content[i+1], ids)
+			}
+
+			reset += resetCredentialRefs(node.Content[i+1], ids)
+		}
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			reset += resetCredentialRefs(item, ids)
+		}
+	case yaml.DocumentNode, yaml.ScalarNode, yaml.AliasNode:
+		// Leaves. AliasNode is unreachable: resolveAlias replaced it above.
+	}
+
+	return reset
+}
+
+// resetReferencesIn rewrites one environmentVars sequence.
+func resetReferencesIn(vars *yaml.Node, ids map[string]bool) int {
+	reset := 0
+
+	for _, entry := range seqItems(vars) {
+		if value := mapValue(entry, keyValue); value != nil {
+			if current, ok := scalarString(value); ok && strings.HasPrefix(current, CredentialShorthandPrefix) {
+				if id, key, ok := parseCredentialShorthand(current); ok && ids[id] {
+					value.SetString(CredentialShorthandPrefix + CredentialPlaceholder + "/" + key)
+					value.LineComment = "replace " + CredentialPlaceholder + " with the credential id"
+					reset++
+				}
+			}
+		}
+
+		if idNode := mapValue(entry, keyDRCredentialID); idNode != nil {
+			if id, ok := scalarString(idNode); ok && ids[id] {
+				idNode.SetString(CredentialPlaceholder)
+
+				reset++
+			}
+		}
+	}
+
+	return reset
 }

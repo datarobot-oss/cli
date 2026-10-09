@@ -34,11 +34,11 @@ When a command is removed, it:
 Set the env var `DATAROBOT_CLI_FEATURE_<FEATURE_NAME>=true` or `=1`:
 
 ```bash
-DATAROBOT_CLI_FEATURE_WORKLOAD=true dr workload up --help
+DATAROBOT_CLI_FEATURE_ENCLAVE=true dr enclave --help
 ```
 
 Feature names are converted from lowercase with hyphens to uppercase with underscores:
-- `workload` → `DATAROBOT_CLI_FEATURE_WORKLOAD`
+- `workload-alpha` → `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA`
 - `my-feature` → `DATAROBOT_CLI_FEATURE_MY_FEATURE`
 
 ### Config File (Future)
@@ -101,7 +101,7 @@ func Cmd() *cobra.Command {
 
 When the parent command itself is gated and disabled, child commands are implicitly unavailable because the parent is never added to the tree.
 
-The live example is `cmd/workload/cmd.go`: `dr workload` itself is not gated, and it registers `config` and `up` through a `cli.CommandAdder` with the `workload` gate on those two commands only, so `DATAROBOT_CLI_FEATURE_WORKLOAD=true` unlocks exactly them.
+`cmd/workload/cmd.go` is set up this way: `dr workload` is not gated, and it registers its subcommands through a `cli.CommandAdder`, so a new alpha subcommand only needs `features.SetGate(c, "workload-alpha")` to stay behind `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true`. No workload subcommand is gated today.
 
 ## Removing a Feature Gate (GA Release)
 

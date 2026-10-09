@@ -17,6 +17,7 @@ package workload
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strconv"
@@ -262,9 +263,21 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 	return nil
 }
 
+// RenderBuildLogs prints a build's log lines, or [] under JSON and "No logs
+// found." on stderr in text when there are none, so stdout stays log lines.
 func RenderBuildLogs(format outputformat.OutputFormat, entries []BuildLogEntry) error {
 	if format == outputformat.OutputFormatJSON {
+		if len(entries) == 0 {
+			entries = []BuildLogEntry{}
+		}
+
 		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No logs found.")
+
+		return nil
 	}
 
 	for _, entry := range entries {
@@ -507,17 +520,29 @@ func printArtifactsTable(artifacts []Artifact) {
 }
 
 // RenderWorkloadOperation renders the acknowledgement of an asynchronous
-// start/stop request. Text mode prints the server's human-readable outcome
-// message; JSON mode emits the full operation response document so scripts
-// keep the workloadId and trackVia handles.
-func RenderWorkloadOperation(format outputformat.OutputFormat, resp WorkloadOperationResponse) error {
+// start/stop request on workload id. Text mode prints the server's
+// human-readable outcome message, and on stderr the command that checks how
+// it went, since the request has only been accepted; stdout stays the
+// acknowledgement alone for a script that captures it. JSON mode emits the
+// full operation response document, so scripts keep the workloadId and
+// trackVia handles, and nothing else.
+func RenderWorkloadOperation(stderr io.Writer, format outputformat.OutputFormat, id string, resp WorkloadOperationResponse) error {
 	if format == outputformat.OutputFormatJSON {
 		return printJSON(resp)
 	}
 
 	fmt.Println(resp.Status)
 
+	tui.PrintNextSteps(stderr, StatusStep(" "+id))
+
 	return nil
+}
+
+// StatusStep is the follow-up that checks on a workload, worded once for every
+// command that suggests it. at names the workload the way the command line
+// would: " <id>", a --dir flag, or empty for the project the shell is in.
+func StatusStep(at string) tui.NextStep {
+	return tui.NextStep{Command: "dr workload status" + at, Description: "Check the workload status"}
 }
 
 // RenderWorkloadStatus renders just the workload's status. Text mode prints

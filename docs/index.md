@@ -20,6 +20,9 @@ irm https://cli.datarobot.com/winstall | iex
 
 For more installation options, see the [Installation](https://github.com/datarobot-oss/cli/blob/main/README.md#installation) section in the main README.
 
+> [!NOTE]
+> The CLI collects usage analytics linked to your DataRobot user ID. You can opt out at any time. See [Telemetry](user-guide/telemetry.md).
+
 ## Documentation structure
 
 ### 📚 User guide
@@ -30,6 +33,7 @@ End-user documentation for using the CLI:
 - [Quick reference](user-guide/quick-reference.md)&mdash;one-page command reference for the most common commands.
 - [Shell completions](user-guide/shell-completions.md)&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell.
 - [Configuration files](user-guide/configuration.md)&mdash;understanding config file structure, location, and how to manage multiple environments.
+- [Telemetry](user-guide/telemetry.md)&mdash;what usage analytics the CLI collects, where they are sent, and how to opt out.
 
 ### 🎯 Template system
 

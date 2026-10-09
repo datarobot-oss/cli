@@ -40,6 +40,12 @@ type Config struct {
 	LastBuiltVersionID *string   `json:"lastBuiltVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
 	CreatedAt          time.Time `json:"createdAt" validate:"required"`
 	CLIVersion         string    `json:"cliVersion" validate:"required"`
+
+	// RemoteChangesSkipped records that the last sync was push-only and set
+	// remote changes aside, so the base does not mirror the remote even
+	// though the synced version is current. The next sync lists the remote
+	// instead of trusting the base, and clears this once it applied them.
+	RemoteChangesSkipped bool `json:"remoteChangesSkipped,omitempty"`
 }
 
 // LoadConfig reads and parses the project's config.json. Returns ErrNotInitialized if

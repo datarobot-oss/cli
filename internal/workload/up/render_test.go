@@ -240,6 +240,27 @@ func TestRender_ArtifactSaysWhetherTheImageIsKept(t *testing.T) {
 	assert.NotContains(t, building, "no rebuild", "a deploy about to build says nothing about keeping an image")
 }
 
+// A draft takes the change itself, so the plan says the artifact is changed
+// rather than that a new one is made, and the envelope says no version is
+// minted: a lock fact gated on minting is not reported for it.
+func TestRender_InPlaceSaysTheDraftIsWrittenTo(t *testing.T) {
+	change := absent(inEnv("primary", "LOG_LEVEL"))
+	plan := Plan{State: StateRunning, InheritsImage: true, InPlace: true, Artifact: []Change{change}}
+
+	out := render(t, appSummary, plan)
+	assert.Contains(t, out, "~ artifact   1 spec change, written to the draft in place; keeps the running image, so no rebuild")
+	assert.NotContains(t, out, "new version")
+
+	encoded := plan.JSON()
+	assert.True(t, encoded.InPlace)
+	assert.True(t, encoded.KeepsImage)
+	assert.Equal(t, "rolled", encoded.Action)
+	assert.False(t, plan.MintsVersion())
+
+	again := render(t, appSummary, plan.rerolling("the last rollout of this version ended errored"))
+	assert.Contains(t, again, "~ artifact   the last rollout of this version ended errored; rolling it again")
+}
+
 // An errored workload's line says what the deploy does about the failure,
 // with the platform's reason beside the state, and the reason travels in the
 // envelope too.
@@ -361,6 +382,8 @@ func TestPlanJSON_Shape(t *testing.T) {
 	assert.Equal(t, "rolled", decoded["action"])
 	assert.Equal(t, "running", decoded["state"])
 	assert.Equal(t, false, decoded["creates"])
+	assert.Empty(t, decoded["unbuildable"], "emitted even when empty, like reroll and stateReason")
+	assert.Empty(t, decoded["incompatible"], "emitted even when empty, like unbuildable")
 
 	code, _ := decoded["code"].(map[string]any)
 	assert.Equal(t, true, code["changed"])
@@ -368,6 +391,30 @@ func TestPlanJSON_Shape(t *testing.T) {
 
 	artifact, _ := decoded["artifact"].([]any)
 	assert.Len(t, artifact, 1)
+}
+
+func TestPlanJSON_CarriesTheUnbuildableReason(t *testing.T) {
+	plan := Plan{State: StateUnbound, Creates: true, Unbuildable: "the project has neither pyproject.toml with uv.lock nor package.json with package-lock.json"}
+
+	encoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, plan.Unbuildable, decoded["unbuildable"])
+}
+
+func TestPlanJSON_CarriesTheIncompatibleReason(t *testing.T) {
+	plan := Plan{State: StateRunning, BoundArtifactID: "art-2", Incompatible: "artifact art-2 belongs to repository repo-2"}
+
+	encoded, err := json.Marshal(plan.JSON())
+	require.NoError(t, err)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, plan.Incompatible, decoded["incompatible"])
 }
 
 // TestPlanJSON_EmptyListsAreNotNull keeps a consumer from having to special

@@ -17,9 +17,11 @@ package cmd
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/misc/reader"
+	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/tools"
 	"github.com/spf13/cobra"
@@ -346,6 +348,50 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 	assert.NotContains(t, err.Error(), "unknown command:", "explicit Args validator should not be overridden")
 }
 
+func TestParseLeadingGlobalFlags_ParsesTimeoutBeforeCommand(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"--plugin-discovery-timeout=0s", "self", "version"})
+
+	flag := root.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey)
+	require.NotNil(t, flag)
+	assert.True(t, flag.Changed)
+
+	value, err := root.PersistentFlags().GetDuration(internalPlugin.DiscoveryTimeoutKey)
+	require.NoError(t, err)
+	assert.Equal(t, time.Duration(0), value)
+}
+
+func TestParseLeadingGlobalFlags_ParsesSeparatedFlagValue(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"--plugin-discovery-timeout", "25ms", "self", "version"})
+
+	value, err := root.PersistentFlags().GetDuration(internalPlugin.DiscoveryTimeoutKey)
+	require.NoError(t, err)
+	assert.Equal(t, 25*time.Millisecond, value)
+}
+
+func TestParseLeadingGlobalFlags_IgnoresFlagsAfterCommand(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"self", "--plugin-discovery-timeout=0s", "version"})
+
+	flag := root.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey)
+	require.NotNil(t, flag)
+	assert.False(t, flag.Changed)
+}
+
+func TestParseLeadingGlobalFlags_StopsAtDoubleDash(t *testing.T) {
+	root := newIsolatedRootCmd()
+
+	parseLeadingGlobalFlags(root.Command, []string{"--", "--plugin-discovery-timeout=0s", "self"})
+
+	flag := root.PersistentFlags().Lookup(internalPlugin.DiscoveryTimeoutKey)
+	require.NotNil(t, flag)
+	assert.False(t, flag.Changed)
+}
+
 // ---------------------------------------------------------------------------
 // Structural tests (read-only, no Execute)
 // ---------------------------------------------------------------------------
@@ -354,10 +400,10 @@ func TestSetUnknownArgGuards_SkipsExplicitArgs(t *testing.T) {
 // default command tree. The command carries no feature-gate annotation any
 // more, so cli.CommandAdder must not filter it out. The env var is neutralized
 // so the test proves the command is there on its own merits, not because
-// DATAROBOT_CLI_FEATURE_WORKLOAD happens to be set in the ambient environment
+// DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA happens to be set in the ambient environment
 // (the repo's gitignored .env sets it, and `task test` loads that file).
 func TestWorkloadCommandPresentByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
@@ -369,7 +415,7 @@ func TestWorkloadCommandPresentByDefault(t *testing.T) {
 // default command tree. It used to share the "workload" feature gate; both
 // roots are registered unconditionally now.
 func TestArtifactCommandPresentByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
@@ -377,21 +423,17 @@ func TestArtifactCommandPresentByDefault(t *testing.T) {
 		"artifact command should be present by default now that it is no longer feature-gated")
 }
 
-// TestWorkloadUpAndConfigAbsentByDefault verifies that the two workload
-// subcommands still behind DATAROBOT_CLI_FEATURE_WORKLOAD are missing from the
-// tree while it is unset: not hidden, absent, so they are out of help,
-// completion and dispatch alike. The env var is neutralized for the same
-// reason as above.
-func TestWorkloadUpAndConfigAbsentByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD", "")
+// TestWorkloadUpConfigPromotePresentByDefault verifies that config, up and
+// promote are released: present in the tree with the alpha gate unset. The
+// env var is neutralized for the same reason as above.
+func TestWorkloadUpConfigPromotePresentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
-	require.NotNil(t, findCommandByPath(root.Command, "dr workload"))
-
-	for _, path := range []string{"dr workload up", "dr workload config"} {
-		assert.Nil(t, findCommandByPath(root.Command, path),
-			"%s should be absent when DATAROBOT_CLI_FEATURE_WORKLOAD is unset", path)
+	for _, path := range []string{"dr workload up", "dr workload config", "dr workload promote"} {
+		assert.NotNil(t, findCommandByPath(root.Command, path),
+			"%s should be present without DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", path)
 	}
 }
 

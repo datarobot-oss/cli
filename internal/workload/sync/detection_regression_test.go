@@ -28,7 +28,7 @@ import (
 )
 
 // These tests lock in the fact that change detection is purely content-hash
-// based. The ticket (RAPTOR-19525) alleged a size+mtime fast path that silently
+// based. A bug report alleged a size+mtime fast path that silently
 // skips files whose content changed but whose size and mtime are preserved.
 // That mechanism does not exist in this codebase: Diff receives only hashes,
 // and hashEntries rehashes every file every run. These tests would fail loudly
@@ -81,7 +81,7 @@ func uploadPathSet(plan *SyncPlan) map[string]struct{} {
 	return out
 }
 
-// TestSameSizeSameMtimeDetected is the codified refutation of RAPTOR-19525's
+// TestSameSizeSameMtimeDetected is the codified refutation of that report's
 // stated mechanism. A file is rewritten to different bytes of identical length,
 // and its mtime is restored to the pre-change value via os.Chtimes. If change
 // detection were size+mtime based (as the ticket alleged), this file would be

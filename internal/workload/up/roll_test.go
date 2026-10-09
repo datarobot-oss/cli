@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -153,13 +154,18 @@ func wiredRoll(tr *track) fakes {
 
 			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
 		},
+		promote: func(id string) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, "promote:"+id)
+
+			return &workload.Workload{ID: id}, nil
+		},
 		replace: func(workloadID, artifactID string, runtime json.RawMessage) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "replace:"+artifactID)
 			tr.rolledRuntime = runtime
 
 			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID, ArtifactID: artifactID}, nil
 		},
-		waitReplace: func(_ string, started *workload.Replacement, _, _ time.Duration,
+		waitReplace: func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 			_ func(*workload.Replacement),
 		) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "await-rollout")
@@ -170,12 +176,19 @@ func wiredRoll(tr *track) fakes {
 		// The artifact this fake is asked to wait for is recorded rather than
 		// ignored: returning "art-2" unprompted is how a wait that settled on
 		// the old version read as a passing test.
-		wait: func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			tr.steps = append(tr.steps, servingLabel(want))
+
+			// The platform reports what is running; a wait that names no
+			// artifact (a resize, an in-place roll) finds the one it had.
+			artifact := want.ArtifactID
+			if artifact == "" {
+				artifact = "68a0000000000000000000a1"
+			}
 
 			return &workload.Workload{
 				ID: id, Name: "my-app", Status: workload.WorkloadStatusRunning,
-				ArtifactID: want.ArtifactID, Endpoint: "https://app.datarobot.com/workloads/68b0/",
+				ArtifactID: artifact, Endpoint: "https://app.datarobot.com/workloads/68b0/",
 			}, nil
 		},
 	})
@@ -231,6 +244,13 @@ func TestRun_RollUsesTheArtifactTheFileNames(t *testing.T) {
 
 		return nil, nil
 	}
+	// The plan reads the named artifact once, to know the swap is one the
+	// platform takes.
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "read:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
 
 	install(t, f)
 
@@ -239,7 +259,7 @@ func TestRun_RollUsesTheArtifactTheFileNames(t *testing.T) {
 	result, _, err := runIn(t, named, Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"guard", "guard", "replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain"}, tr.steps)
+	assert.Equal(t, []string{"read:68b0bbbb0000000000000002", "guard", "guard", "replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain"}, tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }
 
@@ -313,9 +333,9 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 }
 
 // A file naming an artifact by id is the one way to reach matchLock with a
-// candidate this run did not create, so it is the only path that asks the
-// platform whether the successor is locked already. Locking twice is not a
-// no-op there, which is what the question is for.
+// candidate this run did not create. The plan has already read it to judge
+// the swap, so the roll takes the answer from there: locking twice is not a
+// no-op, and reading twice is one call too many.
 func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 	var tr track
 
@@ -341,9 +361,9 @@ func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"guard", "guard", "read:68b0bbbb0000000000000002",
+		"read:68b0bbbb0000000000000002", "guard", "guard",
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
-	}, tr.steps, "an artifact already locked is read, not locked again")
+	}, tr.steps, "an artifact already locked is read once by the plan, not locked again")
 	assert.True(t, result.Locked)
 }
 
@@ -370,7 +390,7 @@ func TestRun_LockedRollLocksANamedDraft(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"guard", "guard", "read:68b0bbbb0000000000000002", "lock:68b0bbbb0000000000000002",
+		"read:68b0bbbb0000000000000002", "guard", "guard", "lock:68b0bbbb0000000000000002",
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
 	}, tr.steps)
 	assert.True(t, result.Locked)
@@ -484,7 +504,7 @@ func TestRun_JSONOutputStillAsksBeforeRollingProduction(t *testing.T) {
 	assert.NotContains(t, tr.steps, "replace:art-2")
 }
 
-// --lock and a locked predecessor both lock, and locking twice is not a
+// --promote and a locked predecessor both lock, and locking twice is not a
 // no-op at the platform.
 func TestRun_LockFlagDoesNotLockTheVersionTwice(t *testing.T) {
 	var tr track
@@ -523,7 +543,7 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 	var settleTimeout time.Duration
 
 	f := wiredRoll(&tr)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		tr.steps = append(tr.steps, "await-rollout")
@@ -531,7 +551,7 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 
 		return started, nil
 	}
-	f.wait = func(id string, want workload.Serving, _, timeout time.Duration,
+	f.wait = func(_ context.Context, id string, want workload.Serving, _, timeout time.Duration,
 		_ func(*workload.Workload),
 	) (*workload.Workload, error) {
 		settleTimeout = timeout
@@ -552,11 +572,11 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 		"the second wait may not start a fresh copy of the budget the first one was already spending")
 }
 
-// The sharpest consequence of a wait that could settle early. On a draft
-// workload --lock is applied after the swap, to result.ArtifactID, which is
-// whatever the wait last saw. A wait that returned on the version being rolled
-// off locked the wrong artifact, and locking is one-way.
-func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
+// On a draft workload --promote is applied after the swap, through the
+// workload's promote route, which locks whatever the workload is serving by
+// then. The wait has to finish first: promoting before the swap lands would
+// lock the version being rolled off, and locking is one-way.
+func TestRun_DraftRollPromotesAfterTheSwap(t *testing.T) {
 	var tr track
 
 	install(t, wiredRoll(&tr))
@@ -567,9 +587,9 @@ func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"guard", "create-artifact", "guard", "replace:art-2",
-			"await-rollout", "settle:art-2+drain", "lock:art-2",
+			"await-rollout", "settle:art-2+drain", "promote:68b0c1d2e3f4a5b6c7d8e9f0",
 		}, tr.steps,
-		"the lock follows the wait, so the wait is what decides which artifact becomes permanent")
+		"the promotion follows the wait, so the wait is what decides which artifact becomes permanent")
 	assert.NotContains(t, tr.steps, "lock:68a0000000000000000000a1",
 		"locking the version being rolled off cannot be undone")
 	assert.Equal(t, "art-2", result.ArtifactID)
@@ -582,14 +602,14 @@ func TestRun_FailedRolloutSaysTheOldVersionIsStillServing(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		started.Status = workload.ReplacementStatusFailed
 
 		return started, errors.New("replacement rep-1 ended with status failed")
 	}
-	f.wait = func(string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a failed rollout has nothing to settle")
 
 		return nil, nil
@@ -808,8 +828,15 @@ func TestRun_StoppedRollLocksOnlyTheVersionItLeavesServing(t *testing.T) {
 	result, _, err := runIn(t, newImage(), Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"lock:art-2"}, locks(tr.steps),
-		"one lock, on the version the run left running")
+	assert.Equal(t, []string{"promote:68b0c1d2e3f4a5b6c7d8e9f0"}, locks(tr.steps),
+		"one promotion, so the version rolled off is never made permanent")
+
+	// The order is the whole point: the promote route locks whatever the
+	// workload serves when it is called, so it must come after the swap.
+	promoted := slices.Index(tr.steps, "promote:68b0c1d2e3f4a5b6c7d8e9f0")
+	replaced := slices.Index(tr.steps, "replace:art-2")
+	require.NotEqual(t, -1, replaced)
+	assert.Greater(t, promoted, replaced, "promoted before the swap would lock the version being rolled off: %v", tr.steps)
 	assert.True(t, result.Locked)
 }
 
@@ -879,7 +906,7 @@ func stoppedRoll(tr *track) fakes {
 	// The artifact each is told to expect rides along in the label: a start
 	// carries none, only the roll that follows names one.
 	settled := false
-	f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 		step := "await-start"
 		artifact := "68a0000000000000000000a1"
 
@@ -1067,7 +1094,7 @@ func TestRun_StoppedWorkloadThatStartsErroredIsStillRolled(t *testing.T) {
 			f := stoppedRoll(&tr)
 
 			started := false
-			f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			f.wait = func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 				if started {
 					tr.steps = append(tr.steps, servingLabel(want))
 
@@ -1110,7 +1137,7 @@ func TestRun_StoppedWorkloadThatStartsErroredIsStillRolled(t *testing.T) {
 // errored is that attempt, and it disqualifies the copy for the same reason an
 // already-errored workload never inherits: the image the copy carries forward
 // is the one that just failed, and the roll would promote it, permanently under
-// --lock.
+// --promote.
 func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	var tr track
 
@@ -1135,7 +1162,7 @@ func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	}
 
 	started := false
-	f.wait = func(id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 		if started {
 			tr.steps = append(tr.steps, servingLabel(want))
 
@@ -1160,6 +1187,7 @@ func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	assert.Equal(t, "bld-2", result.BuildID)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.False(t, result.Plan.InheritsImage)
+	assert.False(t, result.Plan.InPlace, "the envelope follows the plan the run actually carried out")
 	assert.Contains(t, stderr, "so the new version is built rather than copied")
 }
 
@@ -1172,7 +1200,7 @@ func TestRun_StartAloneThatLandsErroredStillFails(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return &workload.Workload{ID: id, Status: workload.WorkloadStatusErrored},
 				errors.New("workload " + id + " ended with status errored")
 		},
@@ -1203,7 +1231,7 @@ func locks(steps []string) []string {
 	var out []string
 
 	for _, step := range steps {
-		if strings.HasPrefix(step, "lock:") {
+		if strings.HasPrefix(step, "lock:") || strings.HasPrefix(step, "promote:") {
 			out = append(out, step)
 		}
 	}
@@ -1247,7 +1275,7 @@ func builtRoll(tr *track) fakes {
 
 		return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-2"}}, nil
 	}
-	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusCompleted}, nil
 	}
 
@@ -1520,7 +1548,7 @@ func TestRun_FailedRolloutDoesNotReportThatItRolled(t *testing.T) {
 	var tr track
 
 	f := wiredRoll(&tr)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		started.Status = workload.ReplacementStatusFailed
@@ -1745,7 +1773,7 @@ func TestRun_FailedBuildOnARollLeavesTheOldVersionServing(t *testing.T) {
 	f.project = syncedProject("68a0000000000000000000a1")
 	// WaitForBuild's own contract: a terminal failure comes back as the build
 	// and an error together.
-	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 	}
@@ -1800,17 +1828,18 @@ func updateSpecStep(tr *track) func(string, json.RawMessage) error {
 	return func(artifactID string, spec json.RawMessage) error {
 		tr.steps = append(tr.steps, "update-spec:"+artifactID)
 		tr.updatedSpec = spec
+		tr.updatedTo = artifactID
 
 		return nil
 	}
 }
 
 // readBackStep answers the read after the write the way the platform does: the
-// written spec with the server-owned image put back. Anything that is not the
-// copy is the version now serving.
+// written spec with the server-owned image put back. An artifact nothing was
+// written to reads as the version now serving.
 func readBackStep(tr *track, copied *workload.Artifact, live func() workload.Document) func(string) (workload.Document, error) {
 	return func(id string) (workload.Document, error) {
-		if id != copied.ID || tr.updatedSpec == nil {
+		if id != tr.updatedTo || tr.updatedSpec == nil {
 			return live(), nil
 		}
 
@@ -1820,10 +1849,18 @@ func readBackStep(tr *track, copied *workload.Artifact, live func() workload.Doc
 			return nil, err
 		}
 
-		doc := workload.Document{"id": copied.ID, "status": copied.Status, "spec": spec}
+		// The write landed on the copy, or on the version serving itself.
+		written, image := live(), ""
+		if id == copied.ID {
+			written, image = workload.Document{"status": copied.Status}, workload.GetPrimaryContainerImageURI(*copied)
+		} else if uri, ok := primaryOf(written)["imageUri"].(string); ok {
+			image = uri
+		}
 
-		if uri := workload.GetPrimaryContainerImageURI(*copied); uri != "" {
-			workload.PrimaryContainerInDocument(doc)["imageUri"] = uri
+		doc := workload.Document{"id": id, "status": written["status"], "spec": spec}
+
+		if image != "" {
+			workload.PrimaryContainerInDocument(doc)["imageUri"] = image
 		}
 
 		return doc, nil
@@ -1837,19 +1874,41 @@ func draftLiveArtifact() workload.Document {
 	return d
 }
 
-func runtimeOnlyRoll(tr *track) fakes {
-	return runtimeOnlyRollOf(tr, copiedArtifact())
+func lockedLiveArtifact() workload.Document {
+	return docOf(liveArtifactJSON)
 }
 
-func runtimeOnlyRollOf(tr *track, copied *workload.Artifact) fakes {
+// liveTyped is the version serving as the typed read returns it, which the
+// in-place write asks for its code reference.
+func liveTyped(id string) (*workload.Artifact, error) {
+	artifact := copiedArtifact()
+	artifact.ID = id
+
+	return artifact, nil
+}
+
+// runtimeOnlyRoll is a spec change the running image can take, on a draft:
+// the version serving is written to and rolled onto itself.
+func runtimeOnlyRoll(tr *track) fakes {
+	return runtimeOnlyRollOf(tr, copiedArtifact(), draftLiveArtifact)
+}
+
+// lockedRuntimeOnlyRoll is the same change on a locked version, which cannot
+// be written to and so is copied, the copy written over and locked to match.
+func lockedRuntimeOnlyRoll(tr *track) fakes {
+	return runtimeOnlyRollOf(tr, copiedArtifact(), lockedLiveArtifact)
+}
+
+func runtimeOnlyRollOf(tr *track, copied *workload.Artifact, live func() workload.Document) fakes {
 	f := builtRoll(tr)
 
 	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
 	f.sync = emptySync(tr)
 	f.linked = func(string) bool { return true }
 	f.project = syncedProject("68a0000000000000000000a1")
+	f.getArtifact = liveTyped
 	f.copyArtifact = copyStep(tr, copied)
-	f.artifactD = readBackStep(tr, copied, draftLiveArtifact)
+	f.artifactD = readBackStep(tr, copied, live)
 	f.updateSpec = updateSpecStep(tr)
 	f.deleteArtifact = func(id string) error {
 		tr.steps = append(tr.steps, "delete:"+id)
@@ -1880,53 +1939,313 @@ func buildDrift() string {
 				"                entrypoint: [\"python\", \"app.py\"]\n", 1)
 }
 
-// The deploy this whole path exists for. The copy's code reference has to
-// survive the write, since the manifest states none.
-// Production is the same deploy plus the lock, and is where the saving is worth
-// most: the platform checks image provenance across the tenant, precisely so a
-// copy can still be locked.
-func TestRun_RuntimeOnlyRollCopiesTheRunningVersion(t *testing.T) {
+// A draft takes the change itself; a locked version is copied and the copy
+// locked. Either way the code reference survives the write.
+func TestRun_RuntimeOnlyRollKeepsTheRunningImage(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
 	for _, c := range []struct {
-		name  string
-		live  func() workload.Document
-		steps []string
+		name     string
+		fixture  func(*track) fakes
+		steps    []string
+		artifact string
+		relinked string
+		line     string
 	}{
 		{
-			name:  "a draft is replaced by a draft",
-			live:  draftLiveArtifact,
-			steps: []string{"guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+			name:    "a draft is written to in place",
+			fixture: runtimeOnlyRoll,
+			steps: []string{
+				"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:+drain",
+			},
+			artifact: live,
+			line:     "~ artifact   1 spec change, written to the draft in place; keeps the running image, so no rebuild",
 		},
 		{
-			name:  "a locked one is replaced by a locked one",
-			live:  func() workload.Document { return docOf(liveArtifactJSON) },
-			steps: []string{"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain"},
+			name:    "a locked one is replaced by a locked copy",
+			fixture: lockedRuntimeOnlyRoll,
+			steps: []string{
+				"guard", "copy:" + live, "update-spec:art-2", "relink", "sync",
+				"guard", "lock:art-2", "replace:art-2", "await-rollout", "settle:art-2+drain",
+			},
+			artifact: "art-2",
+			relinked: "art-2",
+			line:     "+ artifact   new version, 1 spec change; keeps the running image, so no rebuild",
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var tr track
 
-			f := runtimeOnlyRoll(&tr)
-			f.artifactD = readBackStep(&tr, copiedArtifact(), c.live)
+			install(t, c.fixture(&tr))
 
-			install(t, f)
-
-			result, _, err := runIn(t, envDrift(), Options{NonInteractive: true})
+			result, stderr, err := runIn(t, envDrift(), Options{NonInteractive: true})
 			require.NoError(t, err)
 
-			assert.Equal(t, append([]string{
-				"guard", "copy:68a0000000000000000000a1", "update-spec:art-2", "relink", "sync",
-			}, c.steps...), tr.steps)
+			assert.Equal(t, c.steps, tr.steps)
 			assert.Empty(t, result.BuildID, "a version that inherits an image has none to build")
 			assert.Equal(t, ActionRolled, result.Action)
-			assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the project pushes to the version it made")
-			assert.Equal(t, "gpt-oss-20b-vllm-artifact", tr.copiedAs)
+			assert.Equal(t, c.artifact, result.ArtifactID)
+			assert.Equal(t, c.relinked, tr.savedCfg.ArtifactID, "the project pushes to the version it made, if any")
+			assert.Contains(t, stderr, c.line)
 
 			spec := string(tr.updatedSpec)
 			assert.Contains(t, spec, "LOG_LEVEL", "the change that started the run has to land")
-			assert.Contains(t, spec, `"catalogId":"cat1"`, "and must not cost the copy its code reference")
+			assert.Contains(t, spec, `"catalogId":"cat1"`, "and must not cost the artifact its code reference")
 			assert.Contains(t, spec, `"catalogVersionId":"ver1"`)
 		})
 	}
+}
+
+// A published image has nothing to build, so a change the container reads at
+// start is written to the draft the same way; the image itself changing is
+// still a new version.
+func TestRun_ImageManifestDraftTakesAnEnvVarInPlace(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	var tr track
+
+	f := wiredRoll(&tr)
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.updateSpec = updateSpecStep(&tr)
+	f.artifactD = readBackStep(&tr, copiedArtifact(), func() workload.Document { return docOf(liveImageArtifactJSON) })
+
+	install(t, f)
+
+	withEnv := strings.Replace(boundImageManifest, "            port: 8080\n",
+		"            port: 8080\n            environmentVars:\n              - name: GREETING\n                value: hello\n", 1)
+
+	result, stderr, err := runIn(t, withEnv, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"guard", "update-spec:" + live, "guard", "replace:" + live, "await-rollout", "settle:+drain"},
+		tr.steps)
+	assert.Equal(t, live, result.ArtifactID)
+	assert.Contains(t, stderr, "written to the draft in place")
+	assert.NotContains(t, stderr, "new version")
+	assert.Contains(t, string(tr.updatedSpec), "GREETING")
+
+	// The image moving is a rebuild of what runs, so that one is still minted.
+	tr = track{}
+	f = wiredRoll(&tr)
+	install(t, f)
+
+	result, stderr, err = runIn(t, newImage(), Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, tr.steps, "create-artifact")
+	assert.Equal(t, "art-2", result.ArtifactID)
+	assert.Contains(t, stderr, "new version")
+}
+
+// A write the platform answers without an image is not rolled on trust: the
+// image is built onto the same artifact first.
+func TestRun_InPlaceWriteThatLosesTheImageBuildsOne(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.artifactD = func(id string) (workload.Document, error) {
+		if id != tr.updatedTo || tr.updatedSpec == nil {
+			return draftLiveArtifact(), nil
+		}
+
+		var spec map[string]any
+
+		require.NoError(t, json.Unmarshal(tr.updatedSpec, &spec))
+
+		return workload.Document{"id": id, "status": workload.ArtifactStatusDraft, "spec": spec}, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, envDrift(), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{
+		"guard", "update-spec:" + live, "build", "guard", "replace:" + live, "await-rollout", "settle:+drain",
+	}, tr.steps)
+	assert.Equal(t, "bld-2", result.BuildID)
+	assert.Equal(t, live, result.ArtifactID)
+	assert.Contains(t, stderr, "without an image, so one is built")
+	assert.False(t, result.Plan.InheritsImage, "a run that built kept no image")
+}
+
+// A write to the draft that fails rolls nothing: the version serving is
+// unchanged and the error names it, so the reader knows what was touched.
+func TestRun_InPlaceWriteThatFailsRollsNothing(t *testing.T) {
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.updateSpec = func(id string, _ json.RawMessage) error {
+		tr.steps = append(tr.steps, "update-spec:"+id)
+
+		return errors.New("spec rejected")
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, envDrift(), Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "cannot write the change to artifact 68a0000000000000000000a1")
+	assert.Contains(t, err.Error(), "spec rejected")
+	assert.Equal(t, []string{"guard", "update-spec:68a0000000000000000000a1"}, tr.steps)
+	assert.Equal(t, ActionUnchanged, result.Action)
+}
+
+// An in-place write whose rollout never landed leaves the file and the artifact
+// agreeing while the workload runs the old spec.
+func TestRun_ADraftChangedAfterItsGenerationStartedIsRolledAgain(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	changed := time.Date(2026, 10, 2, 13, 5, 42, 0, time.UTC)
+
+	proton := func(artifactID string, createdAt time.Time) *workload.Proton {
+		return &workload.Proton{ID: "gen-1", ArtifactID: artifactID, Role: workload.ProtonRoleActive, CreatedAt: createdAt}
+	}
+
+	for _, c := range []struct {
+		name   string
+		active *workload.Proton
+		rolls  bool
+		stderr string
+	}{
+		{
+			name: "the generation predates the change", active: proton(live, changed.Add(-23*time.Second)), rolls: true,
+			stderr: "~ artifact   the artifact was changed after the generation serving it started; rolling it again",
+		},
+		{name: "the generation was launched after the change", active: proton(live, changed.Add(10*time.Second)), stderr: "Already up to date"},
+		{name: "the generation runs another artifact", active: proton("art-9", changed.Add(-time.Minute)), stderr: "Already up to date"},
+		{name: "no generation is marked as serving", stderr: "Already up to date"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var tr track
+
+			f := runtimeOnlyRoll(&tr)
+			f.artifactD = func(string) (workload.Document, error) {
+				d := draftLiveArtifact()
+				d["updatedAt"] = changed.Format(time.RFC3339Nano)
+
+				return d, nil
+			}
+			f.activeProton = func(string) (*workload.Proton, error) { return c.active, nil }
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			assert.Contains(t, stderr, c.stderr)
+
+			if !c.rolls {
+				assert.Empty(t, tr.steps)
+				assert.Equal(t, ActionUnchanged, result.Action)
+
+				return
+			}
+
+			assert.Equal(t, []string{"guard", "guard", "replace:" + live, "await-rollout", "settle:+drain"},
+				tr.steps, "nothing is written: the artifact already says what the file says")
+			assert.Equal(t, ActionRolled, result.Action)
+			assert.Equal(t, live, result.ArtifactID)
+			assert.True(t, result.Plan.JSON().InPlace, "the envelope says the version was rolled onto itself")
+			assert.Contains(t, result.Plan.JSON().Reroll, "changed after the generation")
+		})
+	}
+}
+
+// A sizing-only change launches the new generation from the artifact as it
+// stands, so a change that did not land rides along with it; the plan says
+// so and rolls both in one swap, rather than blaming the sizing if it fails.
+func TestRun_ASizingChangeOnAStaleDraftRollsTheArtifactToo(t *testing.T) {
+	const live = "68a0000000000000000000a1"
+
+	changed := time.Date(2026, 10, 2, 13, 5, 42, 0, time.UTC)
+
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) {
+		d := draftLiveArtifact()
+		d["updatedAt"] = changed.Format(time.RFC3339Nano)
+
+		return d, nil
+	}
+	f.activeProton = func(string) (*workload.Proton, error) {
+		return &workload.Proton{ID: "gen-1", ArtifactID: live, Role: workload.ProtonRoleActive, CreatedAt: changed.Add(-time.Minute)}, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"guard", "guard", "replace:" + live, "await-rollout", "settle:+drain"}, tr.steps)
+	assert.NotEmpty(t, tr.rolledRuntime, "the sizing travels with the swap")
+	assert.Equal(t, ActionRolled, result.Action)
+	assert.Contains(t, stderr, "~ runtime")
+	assert.Contains(t, stderr, "rolling it again")
+}
+
+// A code sync moves the artifact's code reference, which bumps it, and leaves
+// the image stale. Restarting the old image onto itself would help nothing,
+// so that artifact is not read as ahead of its generation.
+func TestRun_AStaleDraftWithAStaleImageIsNotRerolled(t *testing.T) {
+	changed := time.Date(2026, 10, 2, 13, 5, 42, 0, time.UTC)
+
+	var tr track
+
+	f := unchangedTree(builtRoll(&tr), &tr)
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true, ImageStale: true}, nil }
+	f.artifactD = func(string) (workload.Document, error) {
+		d := draftLiveArtifact()
+		d["updatedAt"] = changed.Format(time.RFC3339Nano)
+
+		return d, nil
+	}
+	f.activeProton = func(string) (*workload.Proton, error) {
+		t.Fatal("a plan that rebuilds does not ask about the generation")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Empty(t, tr.steps)
+	assert.NotContains(t, stderr, "rolling it again")
+}
+
+// A generation list that cannot be read does not fail a run that was about
+// to change nothing; the plan stands on the two documents, as it did.
+func TestRun_UnreadableGenerationsLeaveAnEmptyPlanAlone(t *testing.T) {
+	var tr track
+
+	f := runtimeOnlyRoll(&tr)
+	f.artifactD = func(string) (workload.Document, error) {
+		d := draftLiveArtifact()
+		d["updatedAt"] = "2026-10-02T13:05:42Z"
+
+		return d, nil
+	}
+	f.activeProton = func(string) (*workload.Proton, error) { return nil, errors.New("protons route: 503") }
+
+	install(t, f)
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Already up to date")
+	assert.Empty(t, tr.steps)
 }
 
 // The four ways a roll still pays for a build.
@@ -1951,10 +2270,11 @@ func TestRun_RollsThatStillBuild(t *testing.T) {
 	cases := []struct {
 		name     string
 		manifest string
+		files    []string
 		force    bool
 		tweak    func(*fakes)
 	}{
-		{name: "the dockerfile changed", manifest: buildDrift()},
+		{name: "the dockerfile changed", manifest: buildDrift(), files: []string{"pyproject.toml", "uv.lock"}},
 		{name: "--force-build asked for one", manifest: envDrift(), force: true},
 		{name: "the running version has no image", manifest: envDrift(), tweak: noImage},
 		{name: "the code has moved past the running image", manifest: envDrift(), tweak: stale},
@@ -1971,7 +2291,7 @@ func TestRun_RollsThatStillBuild(t *testing.T) {
 
 			install(t, f)
 
-			result, _, err := runIn(t, c.manifest, Options{NonInteractive: true, ForceBuild: c.force})
+			result, _, err := runIn(t, c.manifest, Options{NonInteractive: true, ForceBuild: c.force}, c.files...)
 			require.NoError(t, err)
 
 			assert.NotContains(t, tr.steps, "copy:68a0000000000000000000a1")
@@ -2034,7 +2354,7 @@ func TestRun_CopiesThatGoWrong(t *testing.T) {
 			breaks: func(f *fakes, _ *track, copied *workload.Artifact) {
 				copied.ArtifactRepositoryID = "repo-other"
 				f.artifactD = func(string) (workload.Document, error) {
-					d := draftLiveArtifact()
+					d := lockedLiveArtifact()
 					d["artifactRepositoryId"] = "repo-1"
 
 					return d, nil
@@ -2066,12 +2386,14 @@ func TestRun_CopiesThatGoWrong(t *testing.T) {
 		},
 	}
 
+	// A locked version is the one that is copied now; a draft takes the change
+	// itself and has no copy to go wrong.
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var tr track
 
 			copied := copiedArtifact()
-			f := runtimeOnlyRollOf(&tr, copied)
+			f := runtimeOnlyRollOf(&tr, copied, lockedLiveArtifact)
 			c.breaks(&f, &tr, copied)
 
 			install(t, f)
@@ -2157,7 +2479,7 @@ func TestRun_RecordingWhatABuildWasMadeFrom(t *testing.T) {
 			f.recordBuilt = func(dir string) { recorded = append(recorded, dir) }
 
 			if c.fails {
-				f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+				f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 					return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 						fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 				}
@@ -2181,6 +2503,9 @@ func TestRun_ALeftoverWithItsOwnCodeIsStillReAnchored(t *testing.T) {
 	var tr track
 
 	f := builtRoll(&tr)
+	// The tree matches, yet the project pushes to a leftover rather than the
+	// version serving, so the draft is not written to in place: the leftover
+	// may hold code an earlier attempt synced and never built.
 	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
 	f.sync = emptySync(&tr)
 	f.linked = func(string) bool { return true }

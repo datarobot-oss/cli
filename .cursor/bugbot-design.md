@@ -43,3 +43,8 @@ Extract utility functions only after the same code appears in 2+ independent pla
 ## Scope Discipline: Foundational PRs
 
 Foundational PRs should do architectural work without bundling unrelated refactorings.
+
+## Document Intentional Asymmetry Between Look-Alike Siblings
+
+When two structurally similar functions/phases behave differently on failure by design, say so
+inline — otherwise a later refactor "fixes" the asymmetry and breaks the reason it existed.

@@ -219,7 +219,7 @@ export DATAROBOT_CLI_DISABLE_TELEMETRY=true
 disable-telemetry: true
 ```
 
-When telemetry is disabled, no data is sent over the network. See the [developer documentation](../development/telemetry.md) for details on what is collected and how the system works.
+When telemetry is disabled, no data is sent over the network. See [Telemetry](telemetry.md) for details on what is collected, where it is sent, and how to opt out.
 
 ### Advanced flags
 
@@ -238,7 +238,7 @@ dr templates list --verbose
 # Enable debug logging
 dr templates list --debug
 
-# Timeout for plugin discovery (0s disables discovery)
+# Timeout for startup plugin discovery (0s disables discovery; place before the command)
 dr --plugin-discovery-timeout 2s --help
 ```
 

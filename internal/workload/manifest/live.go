@@ -17,6 +17,7 @@ package manifest
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -184,6 +185,20 @@ func (m *Manifest) BuildMode() string {
 	return ""
 }
 
+// ExecutionEnvironmentID is the environment a generated build is made from,
+// "" for any other build.
+func (m *Manifest) ExecutionEnvironmentID() string {
+	container := primaryContainerNode(mapValue(mapValue(m.root, keyArtifact), keySpec))
+	if container == nil {
+		return ""
+	}
+
+	dockerfile := mapValue(mapValue(container, keyImageBuildConfig), keyDockerfile)
+	id, _ := scalarString(mapValue(dockerfile, keyExecEnvID))
+
+	return id
+}
+
 // findPrimary walks container groups looking for the primary container,
 // falling back to the first container the way both the node and map walks do.
 // The traversal is parameterised by the container representation so the logic
@@ -261,7 +276,7 @@ func (l Live) runtimeDefaults() Runtime {
 		runtime.CPU = cpu
 	}
 
-	if memory := stringAt(allocation, keyMemory); memory != "" {
+	if memory := memoryAt(allocation, keyMemory); memory != "" {
 		runtime.Memory = memory
 	}
 
@@ -582,6 +597,12 @@ func (l Live) primaryContainerName() string {
 	return stringAt(container, keyName)
 }
 
+// HasPrimaryContainer reports whether the spec carries a container to write
+// the answers into, which Apply needs.
+func (l Live) HasPrimaryContainer() bool {
+	return l.primaryContainer() != nil
+}
+
 // applyReadiness writes the port and points the readiness probe wherever the
 // answers say, which includes having no probe at all.
 //
@@ -778,7 +799,7 @@ func (l Live) Render() ([]byte, error) {
 		artifact = append(artifact, field{key: keySpec, value: spec})
 	}
 
-	runtime, err := documentNode(l.Runtime)
+	runtime, err := documentNode(withoutRuntimeGroupName(l.Runtime, len(slicesAt(l.Spec, keyContainerGroups))))
 	if err != nil {
 		return nil, err
 	}
@@ -789,10 +810,15 @@ func (l Live) Render() ([]byte, error) {
 	// (schema.go) and shared with Draft.Render so both renderers emit the
 	// same key sequence.
 	values := map[string]*yaml.Node{
-		keyWorkloadID: scalar(l.WorkloadID),
 		keyName:       scalar(l.Name),
 		keyImportance: scalar(orDefaultString(l.Importance, DefaultImportance)),
 		keyArtifact:   mapping(artifact...),
+	}
+
+	// A document prepared from a spec file binds nothing yet; writing an
+	// empty binding would read as one.
+	if l.WorkloadID != "" {
+		values[keyWorkloadID] = scalar(l.WorkloadID)
 	}
 
 	if runtime != nil {
@@ -818,6 +844,26 @@ func (l Live) Render() ([]byte, error) {
 	}
 
 	return spaceTopLevelBlocks(buf.Bytes()), nil
+}
+
+// withoutRuntimeGroupName is the runtime with its single group's name left
+// out, as the writer leaves it: the platform assigns it. Only when the
+// artifact has one group too, so the file still says which group a sizing
+// belongs to whenever there is a choice. Shallow copies, so the live document
+// is not touched.
+func withoutRuntimeGroupName(runtime map[string]any, artifactGroups int) map[string]any {
+	groups := slicesAt(runtime, keyContainerGroups)
+	if len(groups) != 1 || artifactGroups > 1 {
+		return runtime
+	}
+
+	group := maps.Clone(groups[0])
+	delete(group, keyName)
+
+	copied := maps.Clone(runtime)
+	copied[keyContainerGroups] = []any{group}
+
+	return copied
 }
 
 // primaryContainer finds the container traffic reaches: the one flagged
@@ -1065,6 +1111,39 @@ func stringAt(document map[string]any, key string) string {
 	value, _ := document[key].(string)
 
 	return value
+}
+
+// memoryAt reads a memory allocation whichever way it arrived, and returns
+// "" when there is none to read, so the caller keeps its default.
+//
+// The platform answers with a number of bytes — 512000000, 20000000000 — and
+// reading that with stringAt returned "" for every workload, so the wizard
+// reported the documented 512MB default no matter what the workload was
+// actually running on. A re-bind then wrote that default into the file and
+// the next deploy silently shrank it, which is the one thing a re-bind must
+// never do. CPU escaped because it is read with floatAt.
+//
+// A string is still accepted first: it is what a manifest round-tripped
+// through Apply carries. It goes through the same bytes-and-back as the
+// number, so a file and a live workload describing the same size describe it
+// the same way whichever form it arrived in — "20000000000" and 20000000000
+// both come back as 20GB. A string this package cannot read as a size is
+// returned as it is, for the validator to refuse in its own words.
+func memoryAt(document map[string]any, key string) string {
+	if value := stringAt(document, key); value != "" {
+		if bytes, ok := MemoryBytes(value); ok {
+			return MemoryString(bytes)
+		}
+
+		return value
+	}
+
+	bytes, ok := floatAt(document, key)
+	if !ok {
+		return ""
+	}
+
+	return MemoryString(int64(bytes))
 }
 
 // floatAt reads a number that arrived as JSON (always float64), as YAML (int

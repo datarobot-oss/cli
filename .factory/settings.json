@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "factory-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "Factory-AI/factory-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "droid-control@factory-plugins": true
+  }
+}

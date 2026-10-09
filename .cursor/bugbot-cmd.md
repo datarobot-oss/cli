@@ -38,3 +38,16 @@ Prefer emoji whose display width every layer (width library, terminal, font) agr
 Never rely on a variation selector to make a character "wide" — the selector picks the glyph, not its width. See UAX #11 (East Asian Width), UTS #51 (emoji presentation sequences), and Markus Kuhn's wcwidth notes for why display width is unspecified across terminals.
 
 Enforced by `cmd/emoji_convention_test.go`, which walks the live command tree and fails on violations in Short/Long/Example.
+
+## Repeated Flag Shapes Register Through a Shared pflag.Value
+
+A flag shape that recurs across commands, or carries the same validation requirement wherever
+it appears (a count, a duration, an ID format), must register through one shared `pflag.Value`
+(see `internal/countflags`, `cmd/internal/pollflags`) — not a fresh ad hoc check hand-rolled in
+each command's `RunE`.
+
+## Sentinel Defaults Are a Documented Exception
+
+A flag where a value like `0` means "unset, use a default" (a port, a replica count) must not
+be forced through a shared validator built for a different flag's semantics — but the exception
+must be called out.

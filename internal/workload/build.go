@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -109,7 +110,7 @@ func (b Build) ImageIsApplied() bool {
 // image is the one a deploy would now get. This, not the status alone, is
 // what --wait waits for: COMPLETED lands a moment before the artifact is
 // repointed, and a script that deploys in that window gets the previous
-// build's image, or none at all (RAPTOR-20311).
+// build's image, or none at all.
 //
 // False when the server said nothing, which is not the same as "no". Use
 // buildIsDeployable for the question a caller actually has, since it can
@@ -241,6 +242,22 @@ type BuildSummary struct {
 	// stable shape so consumers can jq it either way, while a reason that
 	// was never given is better absent than present and blank.
 	FailureReason string `json:"failureReason,omitempty"`
+
+	// LogTailErr is why LogTail is empty when the fetch failed, so an empty
+	// tail is not read as "no logs". Not rendered.
+	LogTailErr error `json:"-"`
+}
+
+// LogEvidence is what the summary can say about the build's logs.
+func (s BuildSummary) LogEvidence() LogEvidence {
+	switch {
+	case len(s.LogTail) > 0:
+		return LogsCaptured
+	case s.LogTailErr != nil:
+		return LogsUnknown
+	default:
+		return LogsAbsent
+	}
 }
 
 // IsTerminalBuildStatus reports whether s is a state from which the build
@@ -473,32 +490,48 @@ func GetArtifactBuildLogs(artifactID, buildID string) ([]BuildLogEntry, error) {
 // cannot redraw the spinner label from inside fn(), so this is a passive
 // seam in PR 1).
 func WaitForBuild(
+	ctx context.Context,
 	artifactID, buildID string,
 	interval, timeout time.Duration,
 	onTick func(*Build),
 ) (*Build, error) {
 	deadline := time.Now().Add(timeout)
 
+	// The last successful read travels with a cancellation, as it does from
+	// every other waiter: a caller saying where the build got to has nothing
+	// else to say it from, and buildImage reads a nil build as "never ran".
+	var last *Build
+
 	for {
-		build, err := fetchArtifactBuild(artifactID, buildID, "")
+		if err := ctx.Err(); err != nil {
+			return last, abandonedBuild(buildID, err)
+		}
+
+		// The reads below carry no context; see abandoned in workload.go for
+		// how far it reaches and why the loop is still worth gating.
+		build, err := fetchArtifactBuild(artifactID, buildID, "") //nolint:contextcheck // drapi takes no context
 		if err != nil {
 			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
 		}
+
+		last = build
 
 		if onTick != nil {
 			onTick(build)
 		}
 
 		if IsBuildErrorStatus(build.Status) {
-			return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
+			// No logs hint here: only callers know whether any exist. They
+			// word the final error with BuildFailureMessage.
+			return build, fmt.Errorf("build %s ended with status %s", buildID, build.Status)
 		}
 
 		// COMPLETED is not the end of the wait. It means the image exists;
 		// the artifact is repointed at it a moment later, and a caller that
 		// deploys in between gets the build before this one, or an artifact
 		// with no runtime image at all. Waiting for the artifact to catch up
-		// is the whole point of --wait (RAPTOR-20311).
-		if buildIsDeployable(build) {
+		// is the whole point of --wait.
+		if buildIsDeployable(build) { //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
 			return build, nil
 		}
 
@@ -513,8 +546,62 @@ func WaitForBuild(
 			return build, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return build, abandonedBuild(buildID, ctx.Err())
+		}
 	}
+}
+
+// abandonedBuild is abandoned's counterpart for a build wait: the build is
+// still running server-side, so the last read comes back with the error.
+func abandonedBuild(buildID string, err error) error {
+	return fmt.Errorf("stopped waiting for build %s: %w", buildID, err)
+}
+
+// LogEvidence is what a failed build's error can say about its logs.
+type LogEvidence int
+
+const (
+	// LogsUnknown means the logs could not be read.
+	LogsUnknown LogEvidence = iota
+	// LogsCaptured means at least one line exists.
+	LogsCaptured
+	// LogsAbsent means the stream has nothing for the build so far.
+	LogsAbsent
+)
+
+// BuildLogsAvailable asks for one log line of the build, which is all a hint
+// needs. A fetch error is reported as unknown rather than read as "none".
+func BuildLogsAvailable(artifactID, buildID string) LogEvidence {
+	entries, err := fetchArtifactBuildLogs(artifactID, buildID, 1, "", "", "build logs")
+
+	switch {
+	case err != nil:
+		return LogsUnknown
+	case len(entries) == 0:
+		return LogsAbsent
+	default:
+		return LogsCaptured
+	}
+}
+
+// BuildFailureMessage words the error for a build that ended badly. The logs
+// command is named as the place to read when lines exist, and as the place
+// to check later when none have arrived yet, since ingestion lags the build.
+func BuildFailureMessage(artifactID, buildID, status string, logs LogEvidence) error {
+	head := fmt.Sprintf("build %s ended with status %s", buildID, status)
+	command := fmt.Sprintf("dr artifact build logs %s %s", artifactID, buildID)
+
+	switch logs {
+	case LogsCaptured:
+		return fmt.Errorf("%s; see '%s'", head, command)
+	case LogsAbsent:
+		return fmt.Errorf("%s; no log lines have been captured for it yet, '%s' shows any that arrive", head, command)
+	case LogsUnknown:
+		return fmt.Errorf("%s; its logs could not be read just now, try '%s'", head, command)
+	}
+
+	return errors.New(head)
 }
 
 // BuildSummaryFor composes the terminal-state summary RenderBuildSummary
@@ -543,12 +630,10 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {
-				// Surface the fetch error via debug logging rather than
-				// failing the whole summary -- the user still benefits
-				// from seeing the build's terminal state even when the
-				// build-service logs endpoint is unavailable (which is
-				// common right after a CANCELLED build, when the logs
-				// have been garbage-collected).
+				// Kept on the summary rather than failing it: the terminal
+				// state is still worth showing when the logs are gone.
+				summary.LogTailErr = lerr
+
 				log.Debug("BuildSummaryFor: log tail fetch failed", "build_id", build.ID, "err", lerr)
 			} else {
 				summary.LogTail = lastN(logs, tailLen)

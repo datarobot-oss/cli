@@ -77,28 +77,45 @@ func readMultipartParts(r *http.Request) ([]multipartPart, error) {
 	return decodeMultipart(mr)
 }
 
-// TestUploadFromZipExisting_UseArchiveContentsStaysInQuery pins the
-// placement of useArchiveContents. The monorepo fromFile validator
-// declares it as a multipart form field whose default is 'True' (archive
-// extraction), and the route binds validator fields from the parsed form
-// only — request.args is never consulted. Extraction therefore happens via
-// the server default regardless of what the CLI sends, so leaving the
-// flag in the query string (where it is ignored) changes nothing
-// observable. This test documents that decision so any future move into
-// the form is a conscious one.
-func TestUploadFromZipExisting_UseArchiveContentsStaysInQuery(t *testing.T) {
+// TestUploadFromZipExisting_UseArchiveContentsTravelsInTheForm pins the
+// placement of useArchiveContents. The monorepo fromFile validator declares
+// it as a multipart form field whose default is 'True' (archive extraction),
+// and the route binds validator fields from the parsed form only —
+// request.args is never consulted. The flag used to be sent in the query,
+// where it changed nothing observable and stayed correct only for as long as
+// the server default did; a default flip, or the Files API starting to reject
+// recognised parameters sent in the query, would have turned every zip upload
+// into a single archive file or a failure with no CLI change. It travels in
+// the form now, before the file part, and not in the query at all.
+func TestUploadFromZipExisting_UseArchiveContentsTravelsInTheForm(t *testing.T) {
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "true", r.URL.Query().Get("useArchiveContents"))
+		assert.False(t, r.URL.Query().Has("useArchiveContents"),
+			"the query is not a channel the server reads, so nothing should be stated there")
 
 		parts, err := readMultipartParts(r)
 		if !assert.NoError(t, err) {
 			return
 		}
 
-		for _, part := range parts {
-			assert.NotEqual(t, "useArchiveContents", part.Name,
-				"useArchiveContents is intentionally left out of the form body")
+		var flag *multipartPart
+
+		fileAt := -1
+
+		for i := range parts {
+			switch parts[i].Name {
+			case "useArchiveContents":
+				flag = &parts[i]
+			case multipartFormField:
+				fileAt = i
+			}
 		}
+
+		if assert.NotNil(t, flag, "useArchiveContents must be a form field") {
+			assert.Equal(t, "true", string(flag.Content))
+			assert.Empty(t, flag.FileName)
+		}
+
+		assert.Equal(t, len(parts)-1, fileAt, "the file part comes last, after every field")
 
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))

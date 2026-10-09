@@ -29,7 +29,9 @@ type PlanJSON struct {
 	Downloads []FileActionJSON `json:"downloads"`
 	Deletes   []FileActionJSON `json:"deletes"`
 	Conflicts []FileActionJSON `json:"conflicts"`
-	Stats     PlanStatsJSON    `json:"stats"`
+	// Skipped lists the remote-side changes a push-only run left alone.
+	Skipped []FileActionJSON `json:"skipped,omitempty"`
+	Stats   PlanStatsJSON    `json:"stats"`
 
 	// Locked marks a plan that can never be applied, because the artifact it
 	// was computed against is immutable. A preview of a locked artifact is the
@@ -53,6 +55,7 @@ type PlanStatsJSON struct {
 	DownloadCount   int    `json:"downloadCount"`
 	DeleteCount     int    `json:"deleteCount"`
 	ConflictCount   int    `json:"conflictCount"`
+	SkippedCount    int    `json:"skippedCount,omitempty"`
 	UploadBytes     int64  `json:"uploadBytes"`
 	DownloadBytes   int64  `json:"downloadBytes"`
 	OldVersionShort string `json:"oldVersionShort,omitempty"`
@@ -64,7 +67,7 @@ type PlanStatsJSON struct {
 //
 // One document per invocation: emitting the plan and the result as two
 // concatenated top-level objects made stdout unparseable by a plain json.loads
-// and forced every consumer to write a splitter (RAPTOR-19348).
+// and forced every consumer to write a splitter.
 //
 // The plan sits at the top level (result nested), which is the opposite of
 // `dr workload up` (scalars at the top level, plan under "plan"). The shapes
@@ -80,7 +83,7 @@ type SyncJSON struct {
 	// it needs a confirmation the run could not give (conflicts under
 	// --output-format json without --yes). It is the positive signal that the
 	// run is a no-op — uploads included — so a consumer does not have to infer
-	// that from a missing "result" (RAPTOR-19348).
+	// that from a missing "result".
 	Refused bool `json:"refused,omitempty"`
 }
 
@@ -97,11 +100,13 @@ func planJSON(plan *sync.SyncPlan, locked bool) PlanJSON {
 		Downloads: actionsJSON(plan.Downloads),
 		Deletes:   actionsJSON(plan.Deletes),
 		Conflicts: actionsJSON(plan.Conflicts),
+		Skipped:   actionsJSON(plan.Skipped),
 		Stats: PlanStatsJSON{
 			UploadCount:     len(plan.Uploads),
 			DownloadCount:   len(plan.Downloads),
 			DeleteCount:     len(plan.Deletes),
 			ConflictCount:   len(plan.Conflicts),
+			SkippedCount:    len(plan.Skipped),
 			UploadBytes:     plan.TotalUploadBytes(),
 			DownloadBytes:   plan.TotalDownloadBytes(),
 			OldVersionShort: plan.OldVersionShort,

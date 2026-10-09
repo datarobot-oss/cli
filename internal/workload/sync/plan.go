@@ -35,9 +35,35 @@ type SyncPlan struct {
 	Deletes   []FileAction // LOCAL_DELETED + REMOTE_DELETED
 	Conflicts []FileAction // CONFLICT + ADD_CONFLICT + DEL_EDIT_CONFLICT
 
+	// Skipped is what a push-only run leaves as it is on both sides: the
+	// downloads and the remote deletes it would otherwise apply locally.
+	Skipped []FileAction
+
 	// OldVersionShort is the 8-char prefix of the BASE manifest's
 	// syncedVersionId; empty before the first successful sync.
 	OldVersionShort string
+}
+
+// pushOnly moves every action that would write the working tree from the
+// remote side into Skipped. Conflicts stay where they are: the command
+// refuses them, since a push-only run lets neither side win silently.
+func (p *SyncPlan) pushOnly() {
+	p.Skipped = append(p.Skipped, p.Downloads...)
+	p.Downloads = nil
+
+	kept := p.Deletes[:0]
+
+	for _, fa := range p.Deletes {
+		if fa.Action == ActDownloadDelete {
+			p.Skipped = append(p.Skipped, fa)
+
+			continue
+		}
+
+		kept = append(kept, fa)
+	}
+
+	p.Deletes = kept
 }
 
 // Append routes a FileAction into the right group based on its Action.
@@ -60,7 +86,7 @@ func (p *SyncPlan) Append(fa FileAction) {
 
 // Sort orders every group by path. Call once after all Append calls.
 func (p *SyncPlan) Sort() {
-	for _, group := range [][]FileAction{p.Uploads, p.Downloads, p.Deletes, p.Conflicts} {
+	for _, group := range [][]FileAction{p.Uploads, p.Downloads, p.Deletes, p.Conflicts, p.Skipped} {
 		sort.Slice(group, func(i, j int) bool { return group[i].Path < group[j].Path })
 	}
 }

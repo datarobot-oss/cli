@@ -129,7 +129,7 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
-	return renderInitResult(outputFormat, newInitResult(*art, dir))
+	return renderInitResult(cmd.ErrOrStderr(), outputFormat, newInitResult(*art, dir))
 }
 
 func fetchArtifact(artifactID string) (*workload.Artifact, error) {

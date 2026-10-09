@@ -34,6 +34,7 @@ import (
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wizard"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -87,6 +88,7 @@ type configResult struct {
 type flags struct {
 	dir        string
 	dockerfile string
+	specFile   string
 	dryRun     bool
 	yes        bool
 	syncEnv    bool
@@ -168,6 +170,7 @@ Examples:
 			"type":          f.answers.Type,
 			"build_mode":    f.answers.BuildMode,
 			"bound":         f.answers.WorkloadID != "",
+			"spec_file":     f.specFile != "",
 			"sync_env":      f.syncEnv,
 			"dry_run":       f.dryRun,
 			"output_format": string(outputFormat),
@@ -188,6 +191,11 @@ func addFlags(cmd *cobra.Command, f *flags) {
 		"Do not prompt; answer every question from flags and what the project directory shows. "+
 			"A question neither of those answers is an error naming the flag that would settle it.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the manifest and write nothing.")
+	cmd.Flags().StringVar(&f.specFile, "spec-file", "",
+		"Take the answers from a prepared artifact spec or workload spec (JSON or YAML, what 'dr artifact create' "+
+			"and 'dr workload create' take) and ask only what it leaves open: a name if it has none, the .env "+
+			"import, the sizing if it has no runtime block. The file is left alone; .datarobot.yaml is written. "+
+			"The build-source flags, --type, --a2a-enabled, --sync-env and --workload-id cannot be combined with it.")
 	cmd.Flags().BoolVar(&f.answers.SkipEnv, "skip-env", false,
 		"Do not carry the project's .env into the manifest. By default its variables are written there: "+
 			"ordinary values as literals, secrets as credential references you complete later.")
@@ -202,7 +210,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 			"without being compared, because the platform never returns a stored value.")
 
 	cmd.Flags().StringVar(&f.answers.WorkloadID, "workload-id", "", "Bind an existing workload by id. Exclusive with --name.")
-	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first `dr workload up`.")
+	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first 'dr workload up'.")
 	cmd.Flags().StringVar(&f.answers.Type, "type", "", "Workload kind: service or agent (default service).")
 	cmd.Flags().BoolVar(&f.answers.A2AEnabled, "a2a-enabled", false,
 		"Agent only: publish the app's A2A agent card to the tenant-wide agent registry.")
@@ -245,7 +253,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 }
 
 func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
-	if err := checkDockerfileFlag(cmd, f.dockerfile); err != nil {
+	if err := checkSourceFlags(cmd, f); err != nil {
 		return err
 	}
 
@@ -283,6 +291,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		NonInteractive: yes || asJSON,
 		DryRun:         f.dryRun,
 		SyncEnv:        f.syncEnv,
+		SpecFile:       f.specFile,
 		// f.yes rather than the merged signal: the environment variable that
 		// suppresses wizards in CI is not consent to overwrite a value on the
 		// tenant, which is the line `dr workload delete` already draws.
@@ -361,6 +370,21 @@ func checkSyncEnvFlags(cmd *cobra.Command, f flags) error {
 		return fmt.Errorf("--sync-env acts on the .env variables of a manifest that already "+
 			"exists, so they cannot also apply %s. Edit %s directly for those, and run the env flags on their own",
 			strings.Join(ignored, ", "), manifest.FileName)
+	}
+
+	return nil
+}
+
+// checkSourceFlags refuses the image-source flags this command cannot honour:
+// a Dockerfile elsewhere than the project root, and --dockerfile beside a
+// spec file that already says how the image is built.
+func checkSourceFlags(cmd *cobra.Command, f flags) error {
+	if err := checkDockerfileFlag(cmd, f.dockerfile); err != nil {
+		return err
+	}
+
+	if f.specFile != "" && cmd.Flags().Changed("dockerfile") {
+		return errors.New("--dockerfile cannot be combined with --spec-file: the file says how the image is built")
 	}
 
 	return nil
@@ -445,13 +469,27 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 		// The wizard may have written the manifest into a directory the shell
 		// is not standing in; a bare `up` there would configure and deploy
 		// the wrong tree.
-		fmt.Fprintf(stderr, "\nNext: dr workload up%s\n", manifest.DirFlag(filepath.Dir(result.Path)))
+		tui.PrintNextSteps(stderr, tui.NextStep{
+			Command:     "dr workload up" + manifest.DirFlag(filepath.Dir(result.Path)),
+			Description: deployStep(result.EnvSecretsPending),
+		})
 	}
 
 	// stdout carries the path and nothing else, so it can be piped.
 	fmt.Fprintln(cmd.OutOrStdout(), result.Path)
 
 	return nil
+}
+
+// deployStep is what the suggested `up` will do. A secret still on the
+// credential placeholder is refused by the deploy, as the lines above have
+// just said, so promising one outright would send the reader to a failure.
+func deployStep(secretsPending int) string {
+	if secretsPending == 0 {
+		return "Deploy the workload"
+	}
+
+	return fmt.Sprintf("Deploy the workload, once every %s holds a credential id", manifest.CredentialPlaceholder)
 }
 
 // writeVerb says what happened to the file. Updated rather than wrote, because

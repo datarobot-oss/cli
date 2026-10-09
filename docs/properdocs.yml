@@ -1,5 +1,5 @@
 site_name: DataRobot CLI Documentation
-site_url: https://datarobot-oss.github.io/cli/dev-docs/
+site_url: https://cli.datarobot.com/dev-docs/
 site_description: Documentation for the DataRobot CLI tool
 repo_url: https://github.com/datarobot-oss/cli
 repo_name: datarobot-oss/cli
@@ -78,6 +78,7 @@ nav:
       - Quick reference: user-guide/quick-reference.md
       - Shell completions: user-guide/shell-completions.md
       - Configuration: user-guide/configuration.md
+      - Telemetry: user-guide/telemetry.md
   - Template system:
       - template-system/README.md
       - Structure: template-system/structure.md
@@ -96,8 +97,10 @@ nav:
       - component: commands/component-managed-updates.md
       - dependencies: commands/dependencies.md
       - artifact: commands/artifact.md
+      - enclave: commands/enclave.md
       - workload: commands/workload.md
       - spec reference: commands/workload-spec.md
+      - manifest reference: commands/workload-manifest.md
       - pipeline: commands/pipeline.md
       - pipeline reference: commands/pipelines-reference.md
       - llm-gateway: commands/llm-gateway.md
@@ -110,7 +113,7 @@ nav:
       - Authentication: development/authentication.md
       - Releasing: development/releasing.md
       - Plugins: development/plugins.md
-      - Telemetry: development/telemetry.md
+      - Telemetry (contributors): development/telemetry.md
       - Configuration & viper: development/configuration.md
       - Flags: development/flags.md
       - Feature gates: development/feature-gates.md
