@@ -56,6 +56,42 @@ Test suites that exercise plugin discovery should:
 2. Set a generous test-specific timeout before discovering:
    `viperx.Set("plugin.manifest_timeout_ms", 5000)` (5 seconds).
 
+### Discovery cache
+
+To avoid re-executing every `dr-*` binary on every invocation, manifest probe
+results are cached on disk (CFX-4726):
+
+- **Location:** `~/.local/state/dr/plugin-discovery-cache.json` (respects `XDG_STATE_HOME`),
+  written atomically (temp file + rename) with mode `0600`.
+- **Contents:** one entry per probed executable, keyed by absolute path,
+  storing either the returned manifest or the probe failure. Failed probes are
+  cached too, so binaries that are not plugins (e.g. pyenv shims named `dr-*`)
+  stop costing a probe on every run.
+- **Invalidation:** an entry is reused only while it is inside the TTL **and**
+  the executable's fingerprint still matches. The fingerprint is the target's
+  mtime + size (via `os.Stat`) plus the `filepath.EvalSymlinks` resolved path,
+  so symlink repoints (e.g. Homebrew upgrades) invalidate as well. The directory
+  scan itself is never cached: new and deleted binaries are picked up
+  immediately regardless of the TTL.
+- **TTL:** default `24h`, configurable via the global flag
+  `--plugin-discovery-cache-ttl` (placed before the command) or
+  `DATAROBOT_CLI_PLUGIN_DISCOVERY_CACHE_TTL`. `0s` disables the cache entirely
+  (no reads and no writes). Like the discovery timeout, config-file values are
+  read too late to affect startup discovery.
+- **Exclusions:** managed plugins (`~/.config/datarobot/plugins/`) are never
+  cached; they read `manifest.json` from disk, and skipping the cache keeps
+  `dr plugin install/uninstall/update` immediately consistent.
+- **Robustness:** corrupt, oversized (>1 MiB / 10k entries), or future-version
+  cache files are discarded and rebuilt. Concurrent `dr` processes coordinate
+  via atomic rename; a lost race costs one extra probe on the next run.
+- **Management:** `dr plugin cache status` shows the cache location, entry
+  counts, and effective TTL; `dr plugin cache clear` deletes it. Note that
+  every `dr` invocation — including these — runs startup discovery first, so
+  a `status` call immediately after `clear` shows a freshly rebuilt cache.
+
+With `--debug` enabled, cache activity (loads, per-entry invalidation reasons,
+saves) is logged to `.dr-tui-debug.log`.
+
 ## Manifest protocol
 
 To be recognized as a plugin, the executable **must** respond to the special argument:
