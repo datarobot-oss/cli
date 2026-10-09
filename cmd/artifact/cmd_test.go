@@ -18,7 +18,9 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/internal/features"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCmd_NotFeatureGated(t *testing.T) {
@@ -30,4 +32,27 @@ func TestCmd_NotFeatureGated(t *testing.T) {
 	// cmd/root_test.go for the end-to-end guard.
 	assert.NotContains(t, cmd.Annotations, features.AnnotationKey,
 		"artifact is GA and must not carry a %q annotation", features.AnnotationKey)
+}
+
+// findChild returns the named direct subcommand, or nil.
+func findChild(cmd *cobra.Command, name string) *cobra.Command {
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == name {
+			return sub
+		}
+	}
+
+	return nil
+}
+
+func TestCmd_RegistersDoctorUnderCode(t *testing.T) {
+	codeCmd := findChild(Cmd(), "code")
+
+	require.NotNil(t, codeCmd)
+
+	doctorCmd := findChild(codeCmd, "doctor")
+
+	require.NotNil(t, doctorCmd, "doctor is registered under artifact code")
+	assert.NotContains(t, doctorCmd.Annotations, features.AnnotationKey,
+		"doctor ships ungated like the rest of the artifact tree")
 }

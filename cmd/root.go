@@ -86,7 +86,7 @@ func ExecuteContext(ctx context.Context) error {
 	parseLeadingGlobalFlags(RootCmd.Command, os.Args[1:])
 	productionFactory.RegisterPlugins(RootCmd)
 
-	if err := RootCmd.ExecuteContext(ctx); err != nil {
+	if err := executeRoot(ctx, RootCmd.Command, os.Args[1:]); err != nil {
 		return fmt.Errorf("execute root command: %w", err)
 	}
 

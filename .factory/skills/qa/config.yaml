@@ -66,8 +66,8 @@ feature_flags:
   provider: custom-environment
   how_to_override: >
     Set DATAROBOT_CLI_FEATURE_<NAME>=true for the selected flow only.
-    Workload config/up use DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA; enclave uses
-    DATAROBOT_CLI_FEATURE_ENCLAVE. A CLI gate does not grant platform entitlements.
+    Enclave uses DATAROBOT_CLI_FEATURE_ENCLAVE; workload commands are ungated.
+    A CLI gate does not grant platform entitlements.
 
 integrations:
   datarobot:

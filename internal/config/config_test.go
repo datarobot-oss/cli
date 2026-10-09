@@ -15,6 +15,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -299,4 +300,26 @@ func TestDebugViperConfig_DoesNotRedactNonSensitiveKey(t *testing.T) {
 	output, err := DebugViperConfig()
 	require.NoError(t, err)
 	assert.Contains(t, output, "debug: true")
+}
+
+// The --debug dump is a diagnostic: it goes to stderr so stdout stays the
+// command's data, one JSON document under --output-format json.
+func TestPrintDebugConfigIfEnabled_WritesToDebugOut(t *testing.T) {
+	prevOut, prevDebug := debugOut, viper.GetBool("debug")
+
+	t.Cleanup(func() {
+		debugOut = prevOut
+
+		viper.Set("debug", prevDebug)
+	})
+
+	var buf bytes.Buffer
+
+	debugOut = &buf
+
+	viper.Set("debug", true)
+	require.NoError(t, printDebugConfigIfEnabled())
+	assert.Contains(t, buf.String(), "Configuration initialized")
+
+	assert.Equal(t, os.Stderr, prevOut, "the dump's default destination is stderr")
 }

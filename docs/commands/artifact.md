@@ -58,7 +58,7 @@ The same path with the deploy on the end, and with what each step writes, is in 
 | `dr artifact delete`  | `DELETE /api/v2/artifacts/{id}/`       | Delete an artifact.                                                        |
 | `dr artifact build …`    | `…/artifacts/{id}/builds[/{build-id}]` | Trigger and inspect image builds.                                       |
 | `dr artifact build logs` | `GET /api/v2/otel/artifact/{id}/logs/` | Read a build's logs, served by the telemetry route rather than builds.  |
-| `dr artifact code …`  | DataRobot catalog (Files API)          | Sync local code with an artifact (`init`, `sync`, `versions`, `checkout`). |
+| `dr artifact code …`  | DataRobot catalog (Files API)          | Sync local code with an artifact (`init`, `sync`, `versions`, `checkout`, `doctor`). |
 
 ## Subcommands
 
@@ -215,6 +215,7 @@ dr artifact code init     [<artifact-id>] [--dir <path>] [--yes]
 dr artifact code sync     [--dir <path>] [--dry-run | --diff] [--accept-remote | --push-only] [--yes]
 dr artifact code versions [--dir <path>] [--limit N]
 dr artifact code checkout [<ver>] [--dir <path>] [--clean]
+dr artifact code doctor   [--dir <path>] [--output-format text|json] [--fix | --relink <artifact-id>]
 ```
 
 - `init` creates the `.datarobot/workload/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle. It also drops a starter `.drignore` at the project root, in gitignore syntax, listing what `sync` should leave out. Edit it and commit it. A project that already has an ignore file under either name keeps it, and no new one is written.
@@ -227,6 +228,7 @@ dr artifact code checkout [<ver>] [--dir <path>] [--clean]
 - `versions` lists the artifact's catalog versions, marking the one the artifact currently points at (`*`) and noting the one you last synced.
 - `checkout` downloads a version into `.datarobot/workload/.checkouts/<version-id>/` for read-only inspection; your working directory is left untouched. `--clean` removes checkout directories instead of downloading.
 - Sizes in `versions` and `checkout` output are binary and labelled as such: `1.0 KiB` is 1024 bytes and `1.0 GiB` is 1,073,741,824 bytes. Workload memory is the one size the CLI spells in decimal units (`512MB` is 512,000,000 bytes); see the [spec reference](workload-spec.md#runtime).
+- `doctor` is a read-only diagnostic of a linked project's sync state. It runs local checks (linked artifact, `config.json`/`manifest.json` health, config/manifest agreement, interrupted rollbacks, the sync lock) and, when credentials resolve, remote checks against the linked artifact, reporting each as `OK`, `WARN`, `FAIL`, or `SKIP` with a concrete remedy. Pass `--fix` to run the safe local auto-repairs (rebuild the manifest and clear the synced version so the next sync lists the remote, restore an interrupted rollback) and re-run the suite so the report and exit code reflect the post-fix state; pass `--relink <new-artifact-id>` to repoint the project at a different artifact of the same kind with a fresh sync baseline, which without a terminal needs `--yes`. The two flags are mutually exclusive, and the sync lock is held for the repairs, so a live sync blocks them. Windows has no sync lock: there the lock check is skipped and repairs run unprotected, so do not run `--fix` or `--relink` while a sync may be running. Exit code is `1` when any check `FAIL`s. See the [architecture and check-authoring guide](../development/doctor.md) for contributor details.
 
 ## Shared flags
 

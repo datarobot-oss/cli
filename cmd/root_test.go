@@ -423,21 +423,17 @@ func TestArtifactCommandPresentByDefault(t *testing.T) {
 		"artifact command should be present by default now that it is no longer feature-gated")
 }
 
-// TestWorkloadUpAndConfigAbsentByDefault verifies that the two workload
-// subcommands still behind DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA are missing from the
-// tree while it is unset: not hidden, absent, so they are out of help,
-// completion and dispatch alike. The env var is neutralized for the same
-// reason as above.
-func TestWorkloadUpAndConfigAbsentByDefault(t *testing.T) {
+// TestWorkloadUpConfigPromotePresentByDefault verifies that config, up and
+// promote are released: present in the tree with the alpha gate unset. The
+// env var is neutralized for the same reason as above.
+func TestWorkloadUpConfigPromotePresentByDefault(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", "")
 
 	root := newIsolatedRootCmd()
 
-	require.NotNil(t, findCommandByPath(root.Command, "dr workload"))
-
-	for _, path := range []string{"dr workload up", "dr workload config"} {
-		assert.Nil(t, findCommandByPath(root.Command, path),
-			"%s should be absent when DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA is unset", path)
+	for _, path := range []string{"dr workload up", "dr workload config", "dr workload promote"} {
+		assert.NotNil(t, findCommandByPath(root.Command, path),
+			"%s should be present without DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA", path)
 	}
 }
 

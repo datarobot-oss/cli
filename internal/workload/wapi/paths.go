@@ -108,6 +108,12 @@ func ConfigPath(projectDir string) string {
 	return configPath(projectDir)
 }
 
+// ManifestPath is the project's manifest.json, exported for the same reason
+// as ConfigPath: diagnostics should name the real file, not re-derive it.
+func ManifestPath(projectDir string) string {
+	return manifestPath(projectDir)
+}
+
 func configPath(projectDir string) string {
 	return filepath.Join(Dir(projectDir), configFile)
 }
