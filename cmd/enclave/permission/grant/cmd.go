@@ -37,8 +37,12 @@ func Cmd() *cobra.Command {
 		Short: "Grant a collection-level enclave permission to a recipient.",
 		Long: `Grant a collection-level enclave permission to a single recipient.
 
-The permission is:
-  create   register new enclaves
+The permissions are:
+  create   register new enclaves (users, groups, or organizations)
+  pin      choose the one enclave a workload runs on, overriding the scheduler's
+           placement (users only, by --user-id). The enclave must still be
+           allowed by the workload's use case, and deploy access to it is still
+           required. Pin and create are independent: neither implies the other.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -50,11 +54,18 @@ Recipients are named by id only — unlike "dr enclave access", there is no
 subject; grant the tenant's organization with --org to cover every user in it.
 
 Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise the
-call succeeds but grants nothing. Granting requires a system administrator.
+call succeeds but grants nothing.
+
+Who may run it:
+  create   a system administrator.
+  pin      a system administrator, for any user; or an org admin, for users in
+           their own organization. A user in another organization, or any other
+           caller, is refused with 403.
 
 Example:
   dr enclave permission grant --permission create --org 656f0000000000000000abcd
-  dr enclave permission grant --permission create --user-id 656f0000000000000000abce`,
+  dr enclave permission grant --permission create --user-id 656f0000000000000000abce
+  dr enclave permission grant --permission pin --user-id 656f0000000000000000abce`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -71,7 +82,7 @@ Example:
 				return err
 			}
 
-			if err := enclave.GrantCreatePermission(recipient); err != nil {
+			if err := enclave.GrantCollectionPermission(name, recipient); err != nil {
 				return err
 			}
 
@@ -86,7 +97,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().StringVar(&permission, "permission", "", "Permission to grant: create (required)")
+	cmd.Flags().StringVar(&permission, "permission", "", "Permission to grant: create or pin (required)")
 	_ = cmd.MarkFlagRequired("permission")
 
 	cmd.Flags().StringVar(&userID, "user-id", "", "Grant a user by DataRobot user id")

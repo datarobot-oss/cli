@@ -37,8 +37,12 @@ func Cmd() *cobra.Command {
 		Short: "Revoke a collection-level enclave permission from a recipient.",
 		Long: `Revoke a collection-level enclave permission from a single recipient.
 
-The permission is:
-  create   register new enclaves
+The permissions are:
+  create   register new enclaves (users, groups, or organizations)
+  pin      choose the one enclave a workload runs on, overriding the scheduler's
+           placement (users only, by --user-id). The enclave must still be
+           allowed by the workload's use case, and deploy access to it is still
+           required. Pin and create are independent: neither implies the other.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -51,11 +55,18 @@ enclaves they already own, nor any permission granted to them by way of a
 different subject (for example, an organization-wide grant).
 
 Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise the
-call succeeds but changes nothing. Revoking requires a system administrator.
+call succeeds but changes nothing.
+
+Who may run it:
+  create   a system administrator.
+  pin      a system administrator, for any user; or an org admin, for users in
+           their own organization. A user in another organization, or any other
+           caller, is refused with 403.
 
 Example:
   dr enclave permission revoke --permission create --org 656f0000000000000000abcd
-  dr enclave permission revoke --permission create --user-id 656f0000000000000000abce`,
+  dr enclave permission revoke --permission create --user-id 656f0000000000000000abce
+  dr enclave permission revoke --permission pin --user-id 656f0000000000000000abce`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -72,7 +83,7 @@ Example:
 				return err
 			}
 
-			if err := enclave.RevokeCreatePermission(recipient); err != nil {
+			if err := enclave.RevokeCollectionPermission(name, recipient); err != nil {
 				return err
 			}
 
@@ -87,7 +98,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().StringVar(&permission, "permission", "", "Permission to revoke: create (required)")
+	cmd.Flags().StringVar(&permission, "permission", "", "Permission to revoke: create or pin (required)")
 	_ = cmd.MarkFlagRequired("permission")
 
 	cmd.Flags().StringVar(&userID, "user-id", "", "Revoke from a user by DataRobot user id")

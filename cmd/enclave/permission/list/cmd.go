@@ -25,12 +25,15 @@ import (
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
+	var permission string
+
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List who may create enclaves.",
-		Long: `List the users, groups, and organizations granted the enclave create
-permission.
+		Short:   "List who holds a collection-level enclave permission.",
+		Long: `List who has been granted an enclave permission: create by default, or pin
+with --permission pin. Create lists users, groups, and organizations; pin lists
+the users in your organization.
 
 This is the "did my grant land?" view for "dr enclave permission grant".
 "dr enclave permission show" answers only for a single subject, and for a system
@@ -40,10 +43,12 @@ been granted the permission.
 An empty result means nobody has been granted it — note that system
 administrators may create enclaves regardless and so do not appear here.
 
-Requires a system administrator, matching grant and revoke.
+Create requires a system administrator. --permission pin also works for an org
+admin, and lists their own organization; matching grant and revoke.
 
 Example:
   dr enclave permission list
+  dr enclave permission list --permission pin
   dr enclave permission list --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -51,19 +56,30 @@ Example:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			holders, err := enclave.ListCreateAccess()
+			name, err := enclave.ParsePermission(permission)
 			if err != nil {
 				return err
 			}
 
-			return enclave.RenderCreateAccess(outputFormat, holders)
+			holders, err := enclave.ListCollectionAccess(name)
+			if err != nil {
+				return err
+			}
+
+			return enclave.RenderCollectionAccess(outputFormat, name, holders)
 		},
 	}
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
+	cmd.Flags().StringVar(&permission, "permission", enclave.PermissionCreate,
+		"Permission to list holders of: create or pin")
+
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
-		return map[string]any{"output_format": string(outputFormat)}
+		return map[string]any{
+			"permission":    permission,
+			"output_format": string(outputFormat),
+		}
 	})
 
 	return cmd
