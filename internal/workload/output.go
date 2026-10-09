@@ -252,7 +252,7 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 		fmt.Fprintf(os.Stderr, "Reason: %s\n", summary.FailureReason)
 	}
 
-	if len(summary.LogTail) > 0 {
+	if len(summary.LogTail) > 0 && !summary.LogTailShown {
 		fmt.Fprintf(os.Stderr, "--- last %d log lines ---\n", len(summary.LogTail))
 
 		for _, entry := range summary.LogTail {

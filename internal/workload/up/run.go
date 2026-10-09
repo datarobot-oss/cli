@@ -73,6 +73,10 @@ var (
 	saveProjectFn        = wapi.SaveConfig
 	patchCodeRefFn       = workload.PatchArtifactCodeRef
 	syncProjectFn        = defaultSync
+
+	// buildLogSettleBudget is how long a failed build's stream waits for
+	// its last lines.
+	buildLogSettleBudget = workload.BuildLogSettleTimeout
 )
 
 // Options is everything a run needs from its caller.

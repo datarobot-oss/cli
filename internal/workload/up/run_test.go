@@ -2560,6 +2560,52 @@ func TestRun_FailedBuildWhoseStreamSpokeSkipsTheProbe(t *testing.T) {
 	assert.Contains(t, stderr, "step 3 exited 1")
 }
 
+// A build that fails faster than its log is ingested ends the wait with
+// nothing streamed. The phase reads on until the builder's closing line
+// lands, so the cause is in the failed phase rather than only in a command
+// the user has to run next.
+func TestRun_FailedBuildReadsUntilItsLastLines(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, onTick func(*workload.Build)) (*workload.Build, error) {
+		failed := &workload.Build{ID: id, Status: workload.BuildStatusFailed}
+		onTick(failed)
+
+		return failed, fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+	f.hasLogs = func(string, string) workload.LogEvidence {
+		t.Fatal("the stream printed lines, so nothing is left to ask")
+
+		return workload.LogsUnknown
+	}
+
+	install(t, f)
+
+	force(t, &buildLogSettleBudget, time.Minute)
+	force(t, &newBuildLogTailFn, func(_, _ string, onLine func(workload.WorkloadLogEntry), onWarn func(string)) *workload.BuildLogTail {
+		reads := 0
+
+		return workload.NewBuildLogTailFetching(func(int, string, string, string) ([]workload.WorkloadLogEntry, error) {
+			if reads++; reads <= 3 {
+				return nil, nil
+			}
+
+			return []workload.WorkloadLogEntry{
+				{Timestamp: "2026-10-02T10:00:03Z", Level: "info", Message: "Image build FAILED in 3.069211 seconds."},
+				{Timestamp: "2026-10-02T10:00:02Z", Level: "error", Message: "failed to solve: exit code: 7"},
+			}, nil
+		}, onLine, onWarn)
+	})
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, PollInterval: time.Millisecond})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 bld-1'")
+	assert.Contains(t, stderr, "waiting up to a minute for its last log lines")
+	assert.Contains(t, stderr, "failed to solve: exit code: 7")
+	assert.Contains(t, stderr, "Image build FAILED in 3.069211 seconds.")
+}
+
 // A build that died before the builder wrote anything is not sent to a logs
 // command that prints nothing; the error says no lines exist yet, and where
 // to look if they arrive.

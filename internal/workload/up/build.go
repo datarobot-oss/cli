@@ -518,6 +518,9 @@ func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, 
 
 		// The final catch-up: ingestion lags the build, so the last lines
 		// routinely land after the wait, and the reorder buffer must drain.
+		// A failed build's are waited for, since they are the ones that say
+		// why.
+		tail.Settle(ctx, b, opts.PollInterval, buildLogSettleBudget, func(note string) { say(note, tui.HintStyle) })
 		tail.Finish()
 		logged = tail.Emitted()
 
