@@ -1,4 +1,4 @@
-* @datarobot-oss/cli-maintainers
+* @datarobot-oss/agent-lifecycle
 cmd/workload/ @datarobot-oss/workload-cli
 cmd/artifact/ @datarobot-oss/workload-cli
 internal/workload/ @datarobot-oss/workload-cli
