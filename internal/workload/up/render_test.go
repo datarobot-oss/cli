@@ -111,6 +111,20 @@ func TestRender_TheThreeClasses(t *testing.T) {
 	assert.NotContains(t, out, "Already up to date")
 }
 
+// A deploy that died after the push has no files left to count, and "0 files
+// changed" over a roll would read as a run with nothing to do.
+func TestRender_CodePushedButNotRunning(t *testing.T) {
+	plan := Plan{State: StateRunning, Code: CodeChange{Applies: true, Unserved: true}}
+
+	out := render(t, appSummary, plan)
+
+	assert.Contains(t, out, "~ code       already pushed, but not what the workload is running")
+	assert.NotContains(t, out, "0 files")
+	assert.NotContains(t, out, "Already up to date")
+	assert.True(t, plan.JSON().Code.Unserved)
+	assert.True(t, plan.JSON().Code.Changed)
+}
+
 // TestRender_RefusedPlanIsDescribedRatherThanAnnounced is the reported bug:
 // a state that cannot take a deploy still had its drift announced as work
 // about to happen, and the reader only found out on the last line. The block

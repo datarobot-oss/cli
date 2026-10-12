@@ -25,19 +25,23 @@ import (
 )
 
 // Two of the three answers cost nothing: a copy carries its image, and a create
-// cannot have one. Only a leftover is a real question, and a history that
-// cannot be read is not an answer: "no image" would spend a build on a guess,
-// "has one" would promote an artifact with nothing to run.
+// cannot have one. Only a leftover is a real question, and the platform's
+// record of what its image was built from answers it. A read that fails is not
+// an answer: "no image" would spend a build on a guess, "has one" would promote
+// an artifact with nothing to run.
 func TestImageInHand(t *testing.T) {
 	leftover := version{ID: "art-abandoned"}
+	failed := errors.New("gateway timeout")
 
 	cases := []struct {
-		name    string
-		made    version
-		builds  []workload.Build
-		readErr error
-		asks    bool
-		want    bool
+		name       string
+		made       version
+		builtFrom  string
+		docErr     error
+		historyErr error
+		reads      bool
+		lists      bool
+		want       bool
 	}{
 		{
 			name: "a carried image answers itself", want: true,
@@ -45,30 +49,41 @@ func TestImageInHand(t *testing.T) {
 		},
 		{name: "so does a version created moments ago", made: version{ID: "art-2", Fresh: true}},
 		{
-			name: "a leftover with a completed build has one", made: leftover, asks: true, want: true,
-			builds: []workload.Build{{Status: workload.BuildStatusCompleted}},
+			name: "a leftover built from the code it points at has one", made: leftover, builtFrom: "ver2",
+			reads: true, want: true,
 		},
-		{name: "a leftover with none does not", made: leftover, asks: true},
 		{
-			name: "a history that cannot be read is an error", made: leftover, asks: true,
-			readErr: errors.New("gateway timeout"),
+			name: "a leftover built from code it has since moved past does not", made: leftover, builtFrom: "ver1",
+			reads: true, lists: true,
+		},
+		{name: "a leftover never built does not", made: leftover, reads: true, lists: true},
+		{name: "a document that cannot be read is an error", made: leftover, docErr: failed, reads: true},
+		{
+			name: "a history that cannot be read is an error", made: leftover, historyErr: failed,
+			reads: true, lists: true,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			asked := false
+			read, listed := false, false
 
+			force(t, &getArtifactDocFn, func(string) (workload.Document, error) {
+				read = true
+
+				return builtDoc("ver2", c.builtFrom), c.docErr
+			})
 			force(t, &listBuildsFn, func(string, int) ([]workload.Build, error) {
-				asked = true
+				listed = true
 
-				return c.builds, c.readErr
+				return []workload.Build{}, c.historyErr
 			})
 
 			got, builds, err := imageInHand(c.made)
-			assert.Equal(t, c.asks, asked, "only a leftover is worth a round trip")
+			assert.Equal(t, c.reads, read, "only a leftover is worth a round trip")
+			assert.Equal(t, c.lists, listed, "the history is read only for a build to attach to")
 
-			if c.readErr != nil {
+			if c.docErr != nil || c.historyErr != nil {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), c.made.ID)
 
@@ -77,8 +92,43 @@ func TestImageInHand(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, c.want, got)
-			assert.Equal(t, c.builds != nil, builds != nil, "the history comes back only when fetched")
+			assert.Equal(t, c.lists, builds != nil, "the history comes back only when fetched")
 		})
+	}
+}
+
+// builtDoc is an artifact whose primary container points at codeVersion and
+// carries the platform's record of a completed build of builtFrom. An empty
+// builtFrom leaves the record out, as the platform does when the code moves.
+func builtDoc(codeVersion, builtFrom string) workload.Document {
+	container := map[string]any{"primary": true}
+	stampBuild(container, codeVersion, builtFrom)
+
+	return workload.Document{"spec": map[string]any{
+		"containerGroups": []any{map[string]any{"containers": []any{container}}},
+	}}
+}
+
+// stampBuild writes builtDoc's code reference and build record onto a decoded
+// container.
+func stampBuild(container map[string]any, codeVersion, builtFrom string) {
+	ref := func(version string) map[string]any {
+		return map[string]any{"datarobot": map[string]any{"catalogId": "cat1", "catalogVersionId": version}}
+	}
+
+	config, _ := container["imageBuildConfig"].(map[string]any)
+	if config == nil {
+		config = map[string]any{}
+		container["imageBuildConfig"] = config
+	}
+
+	config["codeRef"] = ref(codeVersion)
+
+	if builtFrom != "" {
+		container["build"] = map[string]any{
+			"status":    workload.BuildStatusCompleted,
+			"builtFrom": map[string]any{"codeRef": ref(builtFrom)},
+		}
 	}
 }
 
@@ -114,6 +164,41 @@ func TestImageStale(t *testing.T) {
 			})
 
 			assert.Equal(t, c.want, imageStale("/project", Live{CodeVersionID: c.live}))
+		})
+	}
+}
+
+// A roll links the project to the new version before it pushes, so a run that
+// dies after the push leaves the last push ahead of what the workload runs.
+// Unlike imageStale, what cannot be established is no: yes rolls the workload.
+func TestUnserved(t *testing.T) {
+	cases := []struct {
+		name    string
+		linked  bool
+		loadErr error
+		synced  *string
+		live    string
+		want    bool
+	}{
+		{name: "the workload runs the code last pushed", linked: true, synced: ptr("ver1"), live: "ver1"},
+		{name: "the last push never reached the workload", linked: true, synced: ptr("ver2"), live: "ver1", want: true},
+		{name: "nothing has been pushed from here", linked: true, live: "ver1"},
+		{name: "the running version points at no code", linked: true, synced: ptr("ver2")},
+		{name: "the project is not linked", synced: ptr("ver2"), live: "ver1"},
+		{
+			name: "the record cannot be read", linked: true, synced: ptr("ver2"), live: "ver1",
+			loadErr: errors.New("permission denied"),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			force(t, &projectLinkedFn, func(string) bool { return c.linked })
+			force(t, &loadProjectFn, func(string) (wapi.Config, error) {
+				return wapi.Config{ArtifactID: "art-2", LastSyncedVersionID: c.synced}, c.loadErr
+			})
+
+			assert.Equal(t, c.want, unserved("/project", Live{CodeVersionID: c.live}))
 		})
 	}
 }

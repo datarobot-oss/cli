@@ -2217,6 +2217,7 @@ func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) 
 		Files:        len(plan.Uploads) + len(plan.Deletes),
 		IgnoreNotice: notice,
 		ImageStale:   imageStale(loaded.ProjectDir, live),
+		Unserved:     unserved(loaded.ProjectDir, live),
 		// The engine says so rather than this asking a second time: it fetched
 		// the artifact to build the plan, and a locked one is the reason it
 		// left a notice at all.
@@ -2247,6 +2248,41 @@ func imageStale(projectDir string, live Live) bool {
 	// No code reference on the running version is the same unknown from the
 	// other side: nothing says the image matches it.
 	return live.CodeVersionID == "" || *cfg.LastBuiltVersionID != live.CodeVersionID
+}
+
+// unserved reports that the code this project last pushed is not the code the
+// running version points at.
+//
+// A roll links the project to the new version before it pushes, so a run that
+// dies after the push and before the rollout leaves the link and the last push
+// one version ahead of the workload. The tree then matches the push, the spec
+// matches the running version, and without this the next run reported the
+// project up to date while the endpoint went on serving the old code. Saying so
+// makes the next run roll, and the roll picks up the version that run left
+// behind, along with any build of it that finished.
+//
+// The comparison is against the running version rather than the record of the
+// last build: a run that saw its build finish and then failed to roll out, or
+// died before asking, leaves that record matching the push and the workload
+// behind it. Another checkout rolling the workload onto its own code reads the
+// same way, and gets the same answer: this deploy rolls out what this checkout
+// holds.
+//
+// Unlike imageStale, an answer it cannot establish is no. This decides whether
+// a run rolls at all, so a record that is missing or unreadable would roll
+// every run for as long as it stayed that way; no is the answer before this
+// existed.
+func unserved(projectDir string, live Live) bool {
+	if live.CodeVersionID == "" || !projectLinkedFn(projectDir) {
+		return false
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || cfg.LastSyncedVersionID == nil {
+		return false
+	}
+
+	return *cfg.LastSyncedVersionID != live.CodeVersionID
 }
 
 // ignoreFileNotice is the deprecation line for this project, empty when there

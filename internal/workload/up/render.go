@@ -367,6 +367,10 @@ func codeDetail(code CodeChange) string {
 		return "all project files, uploaded for the first time"
 	}
 
+	if code.Files == 0 && code.Unserved {
+		return "already pushed, but not what the workload is running"
+	}
+
 	return fmt.Sprintf("%d %s changed since the last deploy", code.Files, plural(code.Files, "file", "files"))
 }
 
@@ -640,6 +644,10 @@ type CodeJSON struct {
 	Files       int  `json:"files"`
 	FirstDeploy bool `json:"firstDeploy"`
 
+	// Unserved reports that the code this project last pushed is not what the
+	// workload runs, which is why a plan with no files changed still rolls.
+	Unserved bool `json:"unserved"`
+
 	// LinkLocked reports that the artifact this project pushes into can no
 	// longer take code, so the run will mint one that can and move the link
 	// onto it. The live workload is not locked in that case, so the envelope's
@@ -673,6 +681,7 @@ func (p Plan) JSON() PlanJSON {
 			Changed:     p.Code.Changed(),
 			Files:       p.Code.Files,
 			FirstDeploy: p.Code.FirstDeploy,
+			Unserved:    p.Code.Unserved,
 			LinkLocked:  p.Code.LinkLocked && mints,
 		},
 		Artifact: describeAll(p.Artifact),
