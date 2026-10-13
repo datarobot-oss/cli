@@ -1435,9 +1435,15 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
 	require.NoError(t, err)
 
+	// The leftover carries no mark, as one an earlier release left or a version
+	// this checkout saw serve before someone else's replaced it would not. The
+	// one write before the sync is the mark, so an interruption from here on is
+	// resumed.
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "relink", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
 		tr.steps)
+	assert.Equal(t, "art-abandoned", tr.savedCfg.ArtifactID, "the link stays where it is")
+	assert.Equal(t, ptr("art-abandoned"), tr.savedCfg.PendingRolloutArtifactID)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
 }
@@ -1579,7 +1585,7 @@ func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "relink", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }

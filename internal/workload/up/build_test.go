@@ -260,6 +260,30 @@ func TestLinkProject_MarksTheVersionPending(t *testing.T) {
 		assert.Equal(t, ptr("art-2"), saved.PendingRolloutArtifactID, "in the same write as the link")
 	})
 
+	t.Run("an earlier attempt picked up again", func(t *testing.T) {
+		var saved []wapi.Config
+
+		force(t, &projectLinkedFn, func(string) bool { return true })
+		force(t, &saveProjectFn, func(_ string, cfg wapi.Config) error {
+			saved = append(saved, cfg)
+
+			return nil
+		})
+
+		leftover := version{ID: "art-2"}
+
+		for _, pending := range []*string{nil, ptr("art-2")} {
+			force(t, &loadProjectFn, func(string) (wapi.Config, error) {
+				return wapi.Config{ArtifactID: "art-2", PendingRolloutArtifactID: pending}, nil
+			})
+
+			require.NoError(t, linkProject("/project", leftover, newReporter(io.Discard, false)))
+		}
+
+		require.Len(t, saved, 1, "marked once, and not again while the mark is there")
+		assert.Equal(t, ptr("art-2"), saved[0].PendingRolloutArtifactID)
+	})
+
 	t.Run("linked for the first time", func(t *testing.T) {
 		var opts wapi.InitOptions
 

@@ -781,9 +781,11 @@ func sameArtifactTypeAs(wanted, running string) bool {
 // which is how the next one knows the deploy is its own to finish.
 func linkProject(projectDir string, made version, report *reporter) error {
 	// An artifact picked up from an earlier attempt is the one the project is
-	// already pointed at, which is how it was found.
+	// already pointed at, which is how it was found. It still needs the mark:
+	// the attempt may have been a deploy this checkout saw serve before
+	// someone else's replaced it, and this run is about to roll onto it again.
 	if !made.Fresh {
-		return nil
+		return markPending(projectDir, made.ID)
 	}
 
 	if !projectLinkedFn(projectDir) {
@@ -811,6 +813,29 @@ func linkProject(projectDir string, made version, report *reporter) error {
 	}
 
 	report.say("  Project now pushes to artifact %s.\n", made.ID)
+
+	return nil
+}
+
+// markPending records the version the project is already linked to as the one
+// a roll is about to move the workload onto. A mark already there is left as
+// it is, so resuming the attempt that set it writes nothing.
+func markPending(projectDir, artifactID string) error {
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil {
+		return fmt.Errorf("cannot read which artifact %s is linked to: %w", projectDir, err)
+	}
+
+	if deref(cfg.PendingRolloutArtifactID) == artifactID {
+		return nil
+	}
+
+	cfg.PendingRolloutArtifactID = &artifactID
+
+	if err := saveProjectFn(projectDir, cfg); err != nil {
+		return fmt.Errorf("cannot record artifact %s as the one being rolled out in %s: %w",
+			artifactID, wapi.ConfigPath(projectDir), err)
+	}
 
 	return nil
 }
