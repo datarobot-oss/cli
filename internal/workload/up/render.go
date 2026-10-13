@@ -367,6 +367,10 @@ func codeDetail(code CodeChange) string {
 		return "all project files, uploaded for the first time"
 	}
 
+	if code.Files == 0 && code.Unserved {
+		return "already pushed, but not what the workload is running"
+	}
+
 	return fmt.Sprintf("%d %s changed since the last deploy", code.Files, plural(code.Files, "file", "files"))
 }
 
@@ -635,10 +639,20 @@ type PlanJSON struct {
 type CodeJSON struct {
 	// Applies is false for a manifest that names a published image, where
 	// there is no code to sync and Files means nothing.
-	Applies     bool `json:"applies"`
+	Applies bool `json:"applies"`
+
+	// Changed is whether the workload is behind this checkout's code: files to
+	// push, or a first deploy, or code already pushed that it does not run
+	// (Unserved). It is not "the tree has edits": with Unserved it is true and
+	// Files is 0.
 	Changed     bool `json:"changed"`
 	Files       int  `json:"files"`
 	FirstDeploy bool `json:"firstDeploy"`
+
+	// Unserved reports that a deploy from this checkout pushed code it never
+	// saw the workload serve, which is why a plan with no files changed still
+	// rolls.
+	Unserved bool `json:"unserved"`
 
 	// LinkLocked reports that the artifact this project pushes into can no
 	// longer take code, so the run will mint one that can and move the link
@@ -673,6 +687,7 @@ func (p Plan) JSON() PlanJSON {
 			Changed:     p.Code.Changed(),
 			Files:       p.Code.Files,
 			FirstDeploy: p.Code.FirstDeploy,
+			Unserved:    p.Code.Unserved,
 			LinkLocked:  p.Code.LinkLocked && mints,
 		},
 		Artifact: describeAll(p.Artifact),

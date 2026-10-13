@@ -34,6 +34,10 @@ type InitOptions struct {
 	ArtifactID          string `validate:"required,dr_id"`
 	CatalogID           string `validate:"omitempty,dr_id"`
 	LastSyncedVersionID string `validate:"omitempty,dr_id"`
+
+	// RolloutPending marks ArtifactID as a version a deploy is about to roll
+	// onto, which Config.PendingRolloutArtifactID records.
+	RolloutPending bool
 }
 
 // Initialize creates the state directory at projectDir and writes all the
@@ -73,6 +77,10 @@ func Initialize(projectDir string, opts InitOptions) error {
 		LastSyncedVersionID: stringPtr(opts.LastSyncedVersionID),
 		CreatedAt:           now,
 		CLIVersion:          version.Version,
+	}
+
+	if opts.RolloutPending {
+		cfg.PendingRolloutArtifactID = stringPtr(opts.ArtifactID)
 	}
 
 	if err := writeConfig(projectDir, cfg); err != nil {

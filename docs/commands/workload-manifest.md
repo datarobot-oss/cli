@@ -96,7 +96,7 @@ Three kinds of change, each applied one way:
 
 | Change | How it is detected | What `up` does |
 | --- | --- | --- |
-| **Code** (only when the file builds the image) | the working tree is compared with what was last pushed to the artifact; code pushed by `dr artifact code sync` but never built counts too | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it |
+| **Code** (only when the file builds the image) | the working tree is compared with what was last pushed to the artifact, and a deploy from this checkout that pushed code and never saw it serve is finished; code pushed by `dr artifact code sync` but never built is rebuilt when the run rolls for another reason, or on its own with `--force-build` | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it |
 | **Artifact spec** (environment variables, port, probes, image) | the file's `artifact` block is compared with the artifact the workload runs | mints a new artifact version and rolls the workload onto it; a change that does not affect the image keeps the running image, so no rebuild. When the artifact is a draft and the image is kept, the change is written to that artifact in place and the workload rolled onto it again, so no new version |
 | **Runtime** (replicas, CPU, memory) | the file's `runtime` block is compared with the live runtime | a settings update in place, with no new version; when a roll is happening anyway, the sizing rides along on it |
 
@@ -110,7 +110,7 @@ A roll swaps the workload onto a version, new or the same one rewritten; the end
 
 | File | What it holds |
 | --- | --- |
-| `config.json` | which artifact and code catalog this checkout pushes to, and the last synced version |
+| `config.json` | which artifact and code catalog this checkout pushes to, the last synced and last built versions, and a version a deploy linked and has not yet seen serve |
 | `manifest.json` | the sync engine's index of what was last pushed, used to diff the next sync |
 | `history.log` | one line per sync |
 | `.checkouts/` | versions downloaded with `dr artifact code checkout` |
@@ -120,7 +120,7 @@ A roll swaps the workload onto a version, new or the same one rewritten; the end
 
 The code sync is the one step that writes to your working tree, and it does so safely. Before it replaces or deletes a local file it keeps a copy as `<path>.LOCAL.<timestamp>`, and before any write it copies the originals into `.rollback/`. A sync that fails partway restores them; a sync that was interrupted is restored by the next one before it starts. The `.LOCAL` copies are left for you to inspect and are never uploaded.
 
-A deploy that fails after the workload exists still reports the workload, so the next run continues rather than creating a second one. A run that dies between minting a version and promoting it leaves a draft the next run picks up.
+A deploy that fails after the workload exists still reports the workload, so the next run continues rather than creating a second one. A run that dies between minting a version and promoting it leaves a draft the next run picks up, even when nothing has changed since: the draft stays marked pending in `config.json` until a run sees the workload serve it, so the next `up` rolls it out rather than reporting the project up to date, and reuses its image when the platform records it as built from the code the draft holds. A workload someone else has moved on since carries no such mark from this checkout, and is not rolled back.
 
 ## What the CLI checks before sending
 

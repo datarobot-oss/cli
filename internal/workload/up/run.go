@@ -294,10 +294,17 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	if plan.Empty() {
-		return lockOnly(loaded, live, result, opts)
+		result, err = lockOnly(loaded, live, result, opts)
+	} else {
+		result, err = apply(ctx, loaded, live, plan, result, opts)
 	}
 
-	return apply(ctx, loaded, live, plan, result, opts)
+	// After either path, failed or not: a roll moves result.ArtifactID onto the
+	// new version only once it has seen the rollout promote it, so it never
+	// names a version a swap was merely asked for.
+	clearServedRollout(loaded.ProjectDir, result.ArtifactID)
+
+	return result, err
 }
 
 // keepInPlace drops the in-place path when the project pushes code to another
@@ -2217,6 +2224,7 @@ func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) 
 		Files:        len(plan.Uploads) + len(plan.Deletes),
 		IgnoreNotice: notice,
 		ImageStale:   imageStale(loaded.ProjectDir, live),
+		Unserved:     unserved(loaded.ProjectDir, live),
 		// The engine says so rather than this asking a second time: it fetched
 		// the artifact to build the plan, and a locked one is the reason it
 		// left a notice at all.
@@ -2247,6 +2255,71 @@ func imageStale(projectDir string, live Live) bool {
 	// No code reference on the running version is the same unknown from the
 	// other side: nothing says the image matches it.
 	return live.CodeVersionID == "" || *cfg.LastBuiltVersionID != live.CodeVersionID
+}
+
+// unserved reports that a deploy from this checkout pushed code into a new
+// version and never saw the workload serve it.
+//
+// A roll links the project to the new version and marks it pending before it
+// pushes, so a run that dies after the push and before the rollout leaves the
+// mark, and the link and the last push one version ahead of the workload. The
+// tree then matches the push and the spec matches the running version, so
+// without this the next run reported the project up to date while the endpoint
+// went on serving the old code. Saying so makes the next run roll, and the roll
+// picks up the version that run left behind, along with any build of it that
+// finished.
+//
+// The mark is what keeps this from undoing someone else's deploy. Another
+// checkout, a CI job or a rollback in the UI also leave this checkout's link
+// and last push behind the workload, and without the mark a run with nothing
+// to do would roll this checkout's older version back out. A version this
+// checkout has seen serve carries no mark, so those runs stay up to date.
+//
+// The code is compared as well as the link, against the running version
+// rather than the record of the last build. A roll that changed only the spec
+// leaves a pending version holding the code already running, which is a roll
+// the spec drives on its own and no reason to build. And a run that saw its
+// build finish and then failed to roll out, or died before asking, leaves the
+// build record matching the push and the workload behind it.
+//
+// Unlike imageStale, an answer it cannot establish is no. This decides whether
+// a run rolls at all, so a record that is missing or unreadable would roll
+// every run for as long as it stayed that way.
+func unserved(projectDir string, live Live) bool {
+	if live.CodeVersionID == "" || !projectLinkedFn(projectDir) {
+		return false
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || cfg.LastSyncedVersionID == nil || deref(cfg.PendingRolloutArtifactID) != cfg.ArtifactID {
+		return false
+	}
+
+	return cfg.ArtifactID != live.ArtifactID && *cfg.LastSyncedVersionID != live.CodeVersionID
+}
+
+// clearServedRollout drops the pending mark once the workload runs the version
+// it names. That is a roll this run saw promoted, or one an earlier run left in
+// flight and the platform finished since. Left in place, it would make a later
+// run read someone else's newer deploy as this checkout's unfinished one.
+//
+// Best effort: a mark that stays only means the next run that sees the version
+// serving clears it instead.
+func clearServedRollout(projectDir, servingArtifactID string) {
+	if servingArtifactID == "" || !projectLinkedFn(projectDir) {
+		return
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || deref(cfg.PendingRolloutArtifactID) != servingArtifactID {
+		return
+	}
+
+	cfg.PendingRolloutArtifactID = nil
+
+	if err := saveProjectFn(projectDir, cfg); err != nil {
+		log.Debug("cannot clear the pending rollout mark", "project_dir", projectDir, "err", err)
+	}
 }
 
 // ignoreFileNotice is the deprecation line for this project, empty when there

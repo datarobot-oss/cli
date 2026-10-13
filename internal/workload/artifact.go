@@ -517,13 +517,47 @@ const (
 	keyRawDatarobot        = "datarobot"
 	keyRawCatalogID        = "catalogId"
 	keyRawCatalogVersionID = "catalogVersionId"
+
+	// The platform's record of a container's last build, which it drops when
+	// the code reference moves.
+	keyRawBuild       = "build"
+	keyRawBuildStatus = "status"
+	keyRawBuiltFrom   = "builtFrom"
 )
 
 // CodeRefInContainer reads the catalog pair a decoded container points at, nil
 // when it names none. The read half of setPrimaryCodeRefInRawArtifact.
 func CodeRefInContainer(container map[string]any) *DatarobotCodeRef {
 	build, _ := container[keyRawImageBuildConfig].(map[string]any)
-	ref, _ := build[keyRawCodeRef].(map[string]any)
+
+	return codeRefIn(build)
+}
+
+// ImageBuiltFromItsCode reports whether the platform says a decoded
+// container's image was built from the code the container points at now: its
+// last build completed, from that same catalog version.
+//
+// The build history cannot answer this. A completed build from older code
+// stays in it after the code moves on, while the platform drops the
+// container's build record the moment the code reference changes. Anything
+// missing answers no.
+func ImageBuiltFromItsCode(container map[string]any) bool {
+	build, _ := container[keyRawBuild].(map[string]any)
+
+	status, _ := build[keyRawBuildStatus].(string)
+	if !IsBuildCompleted(status) {
+		return false
+	}
+
+	builtFrom, _ := build[keyRawBuiltFrom].(map[string]any)
+	from, now := codeRefIn(builtFrom), CodeRefInContainer(container)
+
+	return from != nil && now != nil && from.CatalogVersionID != "" && *from == *now
+}
+
+// codeRefIn reads the catalog pair under a codeRef key, nil when there is none.
+func codeRefIn(holder map[string]any) *DatarobotCodeRef {
+	ref, _ := holder[keyRawCodeRef].(map[string]any)
 
 	datarobot, ok := ref[keyRawDatarobot].(map[string]any)
 	if !ok {

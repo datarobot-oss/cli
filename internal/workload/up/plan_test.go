@@ -64,6 +64,7 @@ func TestCodeChange_Changed(t *testing.T) {
 		{"nothing differs", builtCode(0), false},
 		{"files differ", builtCode(3), true},
 		{"a first deploy has everything to send", CodeChange{Applies: true, FirstDeploy: true}, true},
+		{"code already pushed that the workload is not running", CodeChange{Applies: true, Unserved: true}, true},
 	}
 
 	for _, c := range cases {
@@ -84,6 +85,7 @@ func TestPlan_EmptyIsExactlyNothingToDo(t *testing.T) {
 		{"running and identical", Plan{State: StateRunning, Code: builtCode(0)}, true},
 		{"a published image with a dirty tree", Plan{State: StateRunning, Code: CodeChange{Files: 5}}, true},
 		{"code differs", Plan{State: StateRunning, Code: builtCode(1)}, false},
+		{"pushed code never rolled out", Plan{State: StateRunning, Code: CodeChange{Applies: true, Unserved: true}}, false},
 		{"spec differs", Plan{State: StateRunning, Artifact: []Change{{Path: "port"}}}, false},
 		{"sizing differs", Plan{State: StateRunning, Runtime: []Change{{Path: "replicaCount"}}}, false},
 		{"nothing exists yet", Plan{State: StateUnbound, Creates: true}, false},
@@ -331,6 +333,28 @@ func TestBuild_MatchingLiveStateIsEmpty(t *testing.T) {
 	assert.Equal(t, ActionUnchanged, plan.Action())
 	assert.Empty(t, plan.Artifact)
 	assert.Empty(t, plan.Runtime)
+}
+
+// The same file and workload, after a deploy that pushed new code and died
+// before rolling it out. Nothing in the file differs and the tree matches the
+// push, which is how the run came to call the old code up to date. The
+// running image was built from that old code, so the new version must not
+// keep it, and a draft must not be rolled onto itself.
+func TestBuild_UnservedCodeRollsAVersionOfItsOwn(t *testing.T) {
+	loaded := loadedFrom(planPayload)
+	loaded.Compiled.ArtifactName = "my-app-artifact"
+
+	live := liveFrom(t, StateRunning, planLiveSpec, planLiveRuntime)
+	live.ImageURI = "registry/team/app@sha256:old"
+
+	plan, err := Build(loaded, live, CodeChange{Applies: true, Unserved: true}, Options{})
+	require.NoError(t, err)
+
+	assert.False(t, plan.Empty())
+	assert.Equal(t, ActionRolled, plan.Action())
+	assert.True(t, plan.RebuildsImage())
+	assert.False(t, plan.InheritsImage, "the running image is of the code being replaced")
+	assert.False(t, plan.InPlace)
 }
 
 func TestBuild_SplitsDriftIntoItsTwoHalves(t *testing.T) {

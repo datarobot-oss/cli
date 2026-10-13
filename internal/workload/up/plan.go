@@ -59,6 +59,13 @@ type CodeChange struct {
 	// artifact has since moved past, which `dr artifact code sync` does.
 	ImageStale bool
 
+	// Unserved reports that a deploy from this checkout pushed code into a new
+	// version and never saw the workload serve it. A deploy interrupted
+	// between the sync and the rollout leaves it so, and the tree then
+	// matches the last push exactly, so Files alone would call a workload
+	// still serving the old code up to date.
+	Unserved bool
+
 	// LinkLocked reports that the artifact this project pushes into can no
 	// longer take code. The deploy answers by minting one that can and moving
 	// the link onto it, which the plan says out loud because nothing in the
@@ -66,9 +73,10 @@ type CodeChange struct {
 	LinkLocked bool
 }
 
-// Changed reports whether the code needs syncing and rebuilding.
+// Changed reports whether the workload is behind the working tree's code:
+// there is code to push, or code already pushed that it is not running.
 func (c CodeChange) Changed() bool {
-	return c.Applies && (c.FirstDeploy || c.Files > 0)
+	return c.Applies && (c.FirstDeploy || c.Files > 0 || c.Unserved)
 }
 
 // Plan is what a run intends to do, computed before it does any of it.

@@ -1356,6 +1356,7 @@ func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
 		tr.steps)
 	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the sync has to land in the new version, not the live one")
+	assert.Equal(t, ptr("art-2"), tr.savedCfg.PendingRolloutArtifactID, "pending until a run sees it serve")
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Equal(t, "bld-2", result.BuildID, "the envelope has to be able to name the build")
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
@@ -1434,11 +1435,107 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
 	require.NoError(t, err)
 
+	// The leftover carries no mark, as one an earlier release left or a version
+	// this checkout saw serve before someone else's replaced it would not. The
+	// one write before the sync is the mark, so an interruption from here on is
+	// resumed.
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "relink", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
 		tr.steps)
+	assert.Equal(t, "art-abandoned", tr.savedCfg.ArtifactID, "the link stays where it is")
+	assert.Equal(t, ptr("art-abandoned"), tr.savedCfg.PendingRolloutArtifactID)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
+}
+
+// The attempt that left the draft died after the push. The tree matches the
+// push and the file matches the workload, which is the run that used to print
+// "Already up to date" over an endpoint still serving the old code. It
+// finishes the deploy instead: on the image the attempt's build made when that
+// build finished, and on a new one when the draft's image predates its code,
+// which a second interrupted attempt whose build then failed leaves behind.
+func TestRun_ResumesADeployThatDiedAfterThePush(t *testing.T) {
+	cases := []struct {
+		name      string
+		builtFrom string
+		rebuilds  bool
+	}{
+		{name: "its build finished", builtFrom: "ver2"},
+		{name: "its image is of older code", builtFrom: "ver1", rebuilds: true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var (
+				tr       track
+				recorded int
+				saved    []wapi.Config
+			)
+
+			catalog, pushed := "cat1", "ver2"
+
+			f := builtRoll(&tr)
+			f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true, Unserved: true}, nil }
+			f.sync = emptySync(&tr)
+			f.linked = func(string) bool { return true }
+			f.project = func(string) (wapi.Config, error) {
+				return wapi.Config{
+					ArtifactID: "art-abandoned", CatalogID: &catalog, LastSyncedVersionID: &pushed,
+					PendingRolloutArtifactID: ptr("art-abandoned"),
+				}, nil
+			}
+			f.save = func(_ string, cfg wapi.Config) error {
+				saved = append(saved, cfg)
+
+				return nil
+			}
+			f.getArtifact = func(id string) (*workload.Artifact, error) {
+				return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+			}
+
+			docs := artifactDocs("art-abandoned", 8000)
+			f.artifactD = func(id string) (workload.Document, error) {
+				d, err := docs(id)
+				if id == "art-abandoned" {
+					stampBuild(primaryOf(d), pushed, c.builtFrom)
+				}
+
+				return d, err
+			}
+			f.builds = func(string, int) ([]workload.Build, error) {
+				return []workload.Build{{ID: "bld-2", Status: workload.BuildStatusFailed}}, nil
+			}
+			f.recordBuilt = func(string) { recorded++ }
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			steps := []string{
+				"guard", "sync", "carry-code", "guard", "replace:art-abandoned", "await-rollout",
+				"settle:art-abandoned+drain",
+			}
+
+			if c.rebuilds {
+				steps = slices.Insert(steps, 3, "build")
+			}
+
+			assert.Equal(t, steps, tr.steps)
+			assert.Equal(t, []string{"art-abandoned", "cat1", "ver2"}, tr.carried)
+			assert.Equal(t, ActionRolled, result.Action)
+			assert.Equal(t, 1, recorded, "the next run measures the image against this record")
+			assert.NotContains(t, stderr, "Already up to date")
+			assert.Contains(t, stderr, "already pushed, but not what the workload is running")
+			assert.Contains(t, stderr, "earlier attempt")
+			assert.Equal(t, !c.rebuilds, strings.Contains(stderr, "no rebuild needed"))
+
+			require.Len(t, saved, 1, "the only write is the mark coming off")
+			assert.Nil(t, saved[0].PendingRolloutArtifactID, "the version it named is serving now")
+		})
+	}
 }
 
 // The same reuse against the shape the platform actually answers with. The
@@ -1488,7 +1585,7 @@ func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "relink", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }

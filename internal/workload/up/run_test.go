@@ -2692,8 +2692,11 @@ func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
 	var tr track
 
 	f := linkedAndSynced(&tr)
+	f.artifactD = linkedAndBuilt("ver-1")
 	f.builds = func(string, int) ([]workload.Build, error) {
-		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusCompleted}}, nil
+		t.Fatal("the artifact's own build record has answered the question")
+
+		return nil, nil
 	}
 
 	install(t, f)
@@ -2705,16 +2708,16 @@ func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
 	assert.Contains(t, stderr, "Image is up to date")
 }
 
-// The same skip, from a build the platform reported in lower case. hasImage
-// asks the question BuildSummaryFor asks, so it folds the way that does: left
-// exact, a completed build reads as no image at all and every deploy spends
-// minutes rebuilding one that is already sitting on the artifact.
-func TestRun_UnchangedTreeWithALowercaseCompletedBuildSkipsTheBuild(t *testing.T) {
+// The image on the artifact was built from code it has since moved past, which
+// is what a sync into it after the build leaves. A completed build in its
+// history used to be enough to skip, and the deploy then ran the older code.
+func TestRun_UnchangedTreeWithAnOlderImageStillBuilds(t *testing.T) {
 	var tr track
 
 	f := linkedAndSynced(&tr)
+	f.artifactD = linkedAndBuilt("ver-0")
 	f.builds = func(string, int) ([]workload.Build, error) {
-		return []workload.Build{{ID: "bld-0", Status: "completed"}}, nil
+		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusCompleted}}, nil
 	}
 
 	install(t, f)
@@ -2722,8 +2725,8 @@ func TestRun_UnchangedTreeWithALowercaseCompletedBuildSkipsTheBuild(t *testing.T
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"sync", "create-workload"}, tr.steps)
-	assert.Contains(t, stderr, "Image is up to date")
+	assert.Equal(t, []string{"sync", "build", "create-workload"}, tr.steps)
+	assert.NotContains(t, stderr, "Image is up to date")
 }
 
 // The same run where the previous attempt never got as far as an image. The
@@ -2786,6 +2789,17 @@ func linkedAndSynced(tr *track) fakes {
 	}
 
 	return f
+}
+
+// linkedAndBuilt is linkedArtifactDoc pointing at ver-1, with the platform's
+// record of a completed build of builtFrom.
+func linkedAndBuilt(builtFrom string) func(string) (workload.Document, error) {
+	return func(id string) (workload.Document, error) {
+		d, err := linkedArtifactDoc(id)
+		stampBuild(workload.PrimaryContainerInDocument(d), "ver-1", builtFrom)
+
+		return d, err
+	}
 }
 
 // A conflict is not a failure, and it cannot be silent either: what was just
