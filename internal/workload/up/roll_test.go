@@ -1356,6 +1356,7 @@ func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
 		tr.steps)
 	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the sync has to land in the new version, not the live one")
+	assert.Equal(t, ptr("art-2"), tr.savedCfg.PendingRolloutArtifactID, "pending until a run sees it serve")
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Equal(t, "bld-2", result.BuildID, "the envelope has to be able to name the build")
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
@@ -1462,6 +1463,7 @@ func TestRun_ResumesADeployThatDiedAfterThePush(t *testing.T) {
 			var (
 				tr       track
 				recorded int
+				saved    []wapi.Config
 			)
 
 			catalog, pushed := "cat1", "ver2"
@@ -1471,7 +1473,15 @@ func TestRun_ResumesADeployThatDiedAfterThePush(t *testing.T) {
 			f.sync = emptySync(&tr)
 			f.linked = func(string) bool { return true }
 			f.project = func(string) (wapi.Config, error) {
-				return wapi.Config{ArtifactID: "art-abandoned", CatalogID: &catalog, LastSyncedVersionID: &pushed}, nil
+				return wapi.Config{
+					ArtifactID: "art-abandoned", CatalogID: &catalog, LastSyncedVersionID: &pushed,
+					PendingRolloutArtifactID: ptr("art-abandoned"),
+				}, nil
+			}
+			f.save = func(_ string, cfg wapi.Config) error {
+				saved = append(saved, cfg)
+
+				return nil
 			}
 			f.getArtifact = func(id string) (*workload.Artifact, error) {
 				return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
@@ -1515,6 +1525,9 @@ func TestRun_ResumesADeployThatDiedAfterThePush(t *testing.T) {
 			assert.Contains(t, stderr, "already pushed, but not what the workload is running")
 			assert.Contains(t, stderr, "earlier attempt")
 			assert.Equal(t, !c.rebuilds, strings.Contains(stderr, "no rebuild needed"))
+
+			require.Len(t, saved, 1, "the only write is the mark coming off")
+			assert.Nil(t, saved[0].PendingRolloutArtifactID, "the version it named is serving now")
 		})
 	}
 }

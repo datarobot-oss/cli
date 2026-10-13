@@ -16,6 +16,7 @@ package up
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/datarobot/cli/internal/workload"
@@ -168,26 +169,58 @@ func TestImageStale(t *testing.T) {
 	}
 }
 
-// A roll links the project to the new version before it pushes, so a run that
-// dies after the push leaves the last push ahead of what the workload runs.
-// Unlike imageStale, what cannot be established is no: yes rolls the workload.
+// The project is linked to art-2 throughout. A roll marks the version it links
+// pending, so a run that dies after the push leaves the mark, the link and the
+// last push ahead of the workload. Everything else that leaves the link behind
+// the workload carries no mark, and rolling on it would undo someone else's
+// deploy. Unlike imageStale, what cannot be established is no.
 func TestUnserved(t *testing.T) {
 	cases := []struct {
-		name    string
-		linked  bool
-		loadErr error
-		synced  *string
-		live    string
-		want    bool
+		name     string
+		linked   bool
+		loadErr  error
+		pending  *string
+		synced   *string
+		liveArt  string
+		liveCode string
+		want     bool
 	}{
-		{name: "the workload runs the code last pushed", linked: true, synced: ptr("ver1"), live: "ver1"},
-		{name: "the last push never reached the workload", linked: true, synced: ptr("ver2"), live: "ver1", want: true},
-		{name: "nothing has been pushed from here", linked: true, live: "ver1"},
-		{name: "the running version points at no code", linked: true, synced: ptr("ver2")},
-		{name: "the project is not linked", synced: ptr("ver2"), live: "ver1"},
 		{
-			name: "the record cannot be read", linked: true, synced: ptr("ver2"), live: "ver1",
-			loadErr: errors.New("permission denied"),
+			name: "a deploy from here died before its rollout", linked: true, pending: ptr("art-2"),
+			synced: ptr("ver2"), liveArt: "art-1", liveCode: "ver1", want: true,
+		},
+		{
+			name: "the workload runs what this checkout last deployed", linked: true,
+			synced: ptr("ver2"), liveArt: "art-2", liveCode: "ver2",
+		},
+		{
+			name: "another checkout, a CI job or a rollback moved the workload on", linked: true,
+			synced: ptr("ver2"), liveArt: "art-3", liveCode: "ver3",
+		},
+		{
+			name: "a sync elsewhere moved the code of the version serving", linked: true, pending: ptr("art-2"),
+			synced: ptr("ver2"), liveArt: "art-2", liveCode: "ver3",
+		},
+		{
+			name: "the pending version holds the code already running", linked: true, pending: ptr("art-2"),
+			synced: ptr("ver1"), liveArt: "art-1", liveCode: "ver1",
+		},
+		{
+			name: "the mark names a version the project has since left", linked: true, pending: ptr("art-9"),
+			synced: ptr("ver2"), liveArt: "art-1", liveCode: "ver1",
+		},
+		{
+			name: "nothing has been pushed from here", linked: true, pending: ptr("art-2"),
+			liveArt: "art-1", liveCode: "ver1",
+		},
+		{
+			name: "the running version points at no code", linked: true, pending: ptr("art-2"),
+			synced: ptr("ver2"), liveArt: "art-1",
+		},
+		{name: "the project is not linked", pending: ptr("art-2"), synced: ptr("ver2"), liveArt: "art-1", liveCode: "ver1"},
+		{
+			name: "the record cannot be read", linked: true, pending: ptr("art-2"), synced: ptr("ver2"),
+			liveArt: "art-1", liveCode: "ver1", loadErr: errors.New("permission denied"),
 		},
 	}
 
@@ -195,10 +228,97 @@ func TestUnserved(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			force(t, &projectLinkedFn, func(string) bool { return c.linked })
 			force(t, &loadProjectFn, func(string) (wapi.Config, error) {
-				return wapi.Config{ArtifactID: "art-2", LastSyncedVersionID: c.synced}, c.loadErr
+				return wapi.Config{
+					ArtifactID: "art-2", LastSyncedVersionID: c.synced, PendingRolloutArtifactID: c.pending,
+				}, c.loadErr
 			})
 
-			assert.Equal(t, c.want, unserved("/project", Live{CodeVersionID: c.live}))
+			got := unserved("/project", Live{ArtifactID: c.liveArt, CodeVersionID: c.liveCode})
+			assert.Equal(t, c.want, got)
+		})
+	}
+}
+
+// A version a roll links to stays pending until a run sees it serve, whether
+// the roll re-pointed a linked project or linked it for the first time.
+func TestLinkProject_MarksTheVersionPending(t *testing.T) {
+	made := version{ID: "art-2", Fresh: true}
+
+	t.Run("relinked", func(t *testing.T) {
+		var saved wapi.Config
+
+		force(t, &projectLinkedFn, func(string) bool { return true })
+		force(t, &loadProjectFn, func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-1"}, nil })
+		force(t, &saveProjectFn, func(_ string, cfg wapi.Config) error {
+			saved = cfg
+
+			return nil
+		})
+
+		require.NoError(t, linkProject("/project", made, newReporter(io.Discard, false)))
+		assert.Equal(t, "art-2", saved.ArtifactID)
+		assert.Equal(t, ptr("art-2"), saved.PendingRolloutArtifactID, "in the same write as the link")
+	})
+
+	t.Run("linked for the first time", func(t *testing.T) {
+		var opts wapi.InitOptions
+
+		force(t, &projectLinkedFn, func(string) bool { return false })
+		force(t, &initProjectFn, func(_ string, o wapi.InitOptions) error {
+			opts = o
+
+			return nil
+		})
+
+		require.NoError(t, linkProject("/project", made, newReporter(io.Discard, false)))
+		assert.Equal(t, wapi.InitOptions{ArtifactID: "art-2", RolloutPending: true}, opts)
+	})
+}
+
+// The mark goes once the workload runs the version it names, and only then.
+// Cleared early, a deploy that dies in its rollout is never finished; left in
+// place, a later run reads someone else's newer deploy as this checkout's
+// unfinished one.
+func TestClearServedRollout(t *testing.T) {
+	cases := []struct {
+		name    string
+		linked  bool
+		pending *string
+		serving string
+		clears  bool
+	}{
+		{name: "the pending version is serving", linked: true, pending: ptr("art-2"), serving: "art-2", clears: true},
+		{name: "the workload is still on another version", linked: true, pending: ptr("art-2"), serving: "art-1"},
+		{name: "nothing is pending", linked: true, serving: "art-2"},
+		{name: "no version was seen serving", linked: true, pending: ptr("art-2")},
+		{name: "the project is not linked", pending: ptr("art-2"), serving: "art-2"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var saved *wapi.Config
+
+			force(t, &projectLinkedFn, func(string) bool { return c.linked })
+			force(t, &loadProjectFn, func(string) (wapi.Config, error) {
+				return wapi.Config{ArtifactID: "art-2", PendingRolloutArtifactID: c.pending}, nil
+			})
+			force(t, &saveProjectFn, func(_ string, cfg wapi.Config) error {
+				saved = &cfg
+
+				return nil
+			})
+
+			clearServedRollout("/project", c.serving)
+
+			if !c.clears {
+				assert.Nil(t, saved, "nothing to write")
+
+				return
+			}
+
+			require.NotNil(t, saved)
+			assert.Nil(t, saved.PendingRolloutArtifactID)
+			assert.Equal(t, "art-2", saved.ArtifactID, "the link stays where it is")
 		})
 	}
 }

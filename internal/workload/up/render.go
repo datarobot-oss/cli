@@ -639,13 +639,19 @@ type PlanJSON struct {
 type CodeJSON struct {
 	// Applies is false for a manifest that names a published image, where
 	// there is no code to sync and Files means nothing.
-	Applies     bool `json:"applies"`
+	Applies bool `json:"applies"`
+
+	// Changed is whether the workload is behind this checkout's code: files to
+	// push, or a first deploy, or code already pushed that it does not run
+	// (Unserved). It is not "the tree has edits": with Unserved it is true and
+	// Files is 0.
 	Changed     bool `json:"changed"`
 	Files       int  `json:"files"`
 	FirstDeploy bool `json:"firstDeploy"`
 
-	// Unserved reports that the code this project last pushed is not what the
-	// workload runs, which is why a plan with no files changed still rolls.
+	// Unserved reports that a deploy from this checkout pushed code it never
+	// saw the workload serve, which is why a plan with no files changed still
+	// rolls.
 	Unserved bool `json:"unserved"`
 
 	// LinkLocked reports that the artifact this project pushes into can no

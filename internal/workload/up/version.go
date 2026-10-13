@@ -775,6 +775,10 @@ func sameArtifactTypeAs(wanted, running string) bool {
 // version last pushed to it are carried across untouched: they describe the
 // code store, which is shared, and clearing them would make the next sync
 // treat every file as new.
+//
+// The same write marks the version pending, and a run that sees it serving
+// clears the mark (clearServedRollout). A run that dies in between leaves it,
+// which is how the next one knows the deploy is its own to finish.
 func linkProject(projectDir string, made version, report *reporter) error {
 	// An artifact picked up from an earlier attempt is the one the project is
 	// already pointed at, which is how it was found.
@@ -783,7 +787,7 @@ func linkProject(projectDir string, made version, report *reporter) error {
 	}
 
 	if !projectLinkedFn(projectDir) {
-		if err := initProjectFn(projectDir, wapi.InitOptions{ArtifactID: made.ID}); err != nil {
+		if err := initProjectFn(projectDir, wapi.InitOptions{ArtifactID: made.ID, RolloutPending: true}); err != nil {
 			return linkFailure(made.ID, projectDir, err)
 		}
 
@@ -800,6 +804,7 @@ func linkProject(projectDir string, made version, report *reporter) error {
 	}
 
 	cfg.ArtifactID = made.ID
+	cfg.PendingRolloutArtifactID = &made.ID
 
 	if err := saveProjectFn(projectDir, cfg); err != nil {
 		return relinkFailure(made.ID, projectDir, err)

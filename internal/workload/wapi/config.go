@@ -35,11 +35,19 @@ type Config struct {
 	LastSyncedVersionID *string `json:"lastSyncedVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
 
 	// LastBuiltVersionID is the code version the last image was built from, nil
-	// when none has been recorded. Nothing on the platform holds it, so without
-	// it a deploy that inherits an image cannot tell whether the code moved.
-	LastBuiltVersionID *string   `json:"lastBuiltVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
-	CreatedAt          time.Time `json:"createdAt" validate:"required"`
-	CLIVersion         string    `json:"cliVersion" validate:"required"`
+	// when none has been recorded. The platform forgets it once the artifact's
+	// code moves on, so without it a deploy that inherits an image cannot tell
+	// whether the code moved.
+	LastBuiltVersionID *string `json:"lastBuiltVersionId" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+
+	// PendingRolloutArtifactID is the version a deploy from this checkout
+	// linked to and has not yet seen the workload serve, nil once one has. It
+	// is what tells a deploy that died before its rollout apart from a
+	// workload someone else has since moved on.
+	PendingRolloutArtifactID *string `json:"pendingRolloutArtifactId,omitempty" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+
+	CreatedAt  time.Time `json:"createdAt" validate:"required"`
+	CLIVersion string    `json:"cliVersion" validate:"required"`
 
 	// RemoteChangesSkipped records that the last sync was push-only and set
 	// remote changes aside, so the base does not mirror the remote even

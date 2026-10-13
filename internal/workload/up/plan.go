@@ -59,11 +59,11 @@ type CodeChange struct {
 	// artifact has since moved past, which `dr artifact code sync` does.
 	ImageStale bool
 
-	// Unserved reports that the code this project last pushed is not the code
-	// the workload runs. A deploy interrupted between the sync and the
-	// rollout leaves it so, and the tree then matches the last push exactly,
-	// so Files alone would call a workload still serving the old code up to
-	// date.
+	// Unserved reports that a deploy from this checkout pushed code into a new
+	// version and never saw the workload serve it. A deploy interrupted
+	// between the sync and the rollout leaves it so, and the tree then
+	// matches the last push exactly, so Files alone would call a workload
+	// still serving the old code up to date.
 	Unserved bool
 
 	// LinkLocked reports that the artifact this project pushes into can no
