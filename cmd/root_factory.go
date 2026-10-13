@@ -561,6 +561,11 @@ func (f *RootFactory) registerFlags(adder *cli.CommandAdder, outputFormat *outpu
 		internalPlugin.DefaultDiscoveryTimeout,
 		"timeout for plugin discovery when placed before the command (0s disables; config is read too late for startup discovery)",
 	)
+	flags.Duration(
+		"plugin-discovery-cache-ttl",
+		internalPlugin.DefaultDiscoveryCacheTTL,
+		"TTL for cached plugin discovery manifests (0s disables the cache; config is read too late for startup discovery)",
+	)
 	flags.Duration("plugin-update-check-interval", internalPlugin.DefaultUpdateCheckInterval, "cooldown between plugin update checks (0s disables)")
 	flags.Bool("skip-plugin-update-check", false, "skip plugin update checks before running plugins")
 	flags.Bool("disable-telemetry", false, "disable usage telemetry")
@@ -612,6 +617,7 @@ func bindViperFlags(adder *cli.CommandAdder) {
 	_ = viperx.BindPFlag(config.SkipAuthKey, pflags.Lookup(config.SkipAuthKey))
 	_ = viperx.BindPFlag("force-interactive", pflags.Lookup("force-interactive"))
 	_ = viperx.BindPFlag("plugin-discovery-timeout", pflags.Lookup("plugin-discovery-timeout"))
+	_ = viperx.BindPFlag("plugin-discovery-cache-ttl", pflags.Lookup("plugin-discovery-cache-ttl"))
 	_ = viperx.BindPFlag("plugin-update-check-interval", pflags.Lookup("plugin-update-check-interval"))
 	_ = viperx.BindPFlag("skip-plugin-update-check", pflags.Lookup("skip-plugin-update-check"))
 	_ = viperx.BindPFlag("output-format", pflags.Lookup("output-format"))
