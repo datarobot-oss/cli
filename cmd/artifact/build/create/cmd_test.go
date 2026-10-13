@@ -180,6 +180,73 @@ func TestCmd_WaitOnAFastFailingBuildReadsUntilItsLastLines(t *testing.T) {
 	assert.Equal(t, "Image build FAILED in 3.069211 seconds.", summaries[0].LogTail[2].Message)
 }
 
+// In text mode the summary's own tail is left out only when the stream
+// already printed the whole log. A stream that printed the opening lines and
+// then gave up never showed the cause, so the summary's separate read has to.
+func TestCmd_TextSummaryRepeatsTheTailOnlyWhenTheStreamStoppedShort(t *testing.T) {
+	const (
+		opening = `{"timestamp":"2026-10-02T10:00:00Z","level":"info","message":"Resolving build context..."}`
+		fullLog = `{"data":[
+			{"timestamp":"2026-10-02T10:00:03Z","level":"info","message":"Image build FAILED in 3.069211 seconds."},
+			{"timestamp":"2026-10-02T10:00:02Z","level":"error","message":"failed to solve: exit code: 7"},
+			` + opening + `
+		],"count":3,"next":""}`
+	)
+
+	for _, c := range []struct {
+		name       string
+		reads      []string // the log route's answers in order; the last one repeats
+		wantRepeat bool
+	}{
+		{
+			name:  "the stream printed the whole log",
+			reads: []string{`{"data":[],"count":0,"next":""}`, fullLog},
+		},
+		{
+			// The tail's second read is refused outright, which ends the
+			// stream; the summary's own read still gets everything.
+			name:       "the stream gave up after the opening lines",
+			reads:      []string{`{"data":[` + opening + `],"count":1,"next":""}`, "403", fullLog},
+			wantRepeat: true,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var n atomic.Int32
+
+			serveFailingBuild(t, func(w http.ResponseWriter) {
+				answer := c.reads[min(int(n.Add(1)), len(c.reads))-1]
+				if answer == "403" {
+					w.WriteHeader(http.StatusForbidden)
+
+					return
+				}
+
+				fmt.Fprint(w, answer)
+			})
+			settleWithin(t, time.Minute)
+
+			var stream bytes.Buffer
+
+			cmd := Cmd()
+			cmd.PreRunE = nil
+			cmd.SetErr(&stream)
+			cmd.SetArgs([]string{"art-1", "--wait", "--poll-interval", "1ms"})
+
+			var err error
+
+			summaryErr := testutil.CaptureStderr(t, func() {
+				testutil.CaptureStdout(t, func() { err = cmd.Execute() })
+			})
+
+			require.Error(t, err)
+			assert.Equal(t, c.wantRepeat, strings.Contains(summaryErr, "--- last 3 log lines ---"))
+			assert.Equal(t, c.wantRepeat, strings.Contains(summaryErr, "exit code: 7"))
+			assert.Equal(t, !c.wantRepeat, strings.Contains(stream.String(), "exit code: 7"),
+				"the cause is printed once, by whichever of the two had it")
+		})
+	}
+}
+
 func TestCmd_RejectsExtraArgs(t *testing.T) {
 	cmd := Cmd()
 	cmd.PreRunE = nil

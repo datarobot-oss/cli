@@ -284,23 +284,15 @@ func TestBuildLogTail_SettleGivesUpAtTheBudget(t *testing.T) {
 	assert.Greater(t, calls, 2, "the wait kept reading until the budget ran out")
 }
 
-// Nothing is waited for, or announced, when the stream has already said all
-// it will (the closing line is in, or the tail has given up on the stream),
-// or when the build was cancelled: a builder stopped from outside writes no
-// closing line, and the wait would run its whole budget for nothing.
+// Nothing is waited for, or announced, when the tail has given up on the
+// stream, or when the build was cancelled: a builder stopped from outside
+// writes no closing line, and the wait would run its whole budget for nothing.
 func TestBuildLogTail_SettleHasNothingToWaitFor(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		build *Build
 		fetch func(calls *int) func(int, string, string, string) ([]WorkloadLogEntry, error)
 	}{
-		{
-			name:  "the closing line arrived during the wait",
-			build: failedBuild,
-			fetch: func(calls *int) func(int, string, string, string) ([]WorkloadLogEntry, error) {
-				return scriptedBuildLogs(calls, []WorkloadLogEntry{failedBuildClosing, failedBuildCause})
-			},
-		},
 		{
 			name:  "the tail gave up on the stream",
 			build: failedBuild,
@@ -333,6 +325,71 @@ func TestBuildLogTail_SettleHasNothingToWaitFor(t *testing.T) {
 			assert.Equal(t, 1, calls)
 		})
 	}
+}
+
+// settleGraceWithin shrinks the pause Settle takes after the closing line.
+func settleGraceWithin(t *testing.T, grace time.Duration) {
+	t.Helper()
+
+	prev := buildLogSettleGrace
+	buildLogSettleGrace = grace
+
+	t.Cleanup(func() { buildLogSettleGrace = prev })
+}
+
+// A long --poll-interval cannot stretch the wait past its budget: no sleep
+// runs past the deadline, and the last read happens at it. The context only
+// keeps a regression from hanging the suite for the hour.
+func TestBuildLogTail_SettleNeverSleepsPastItsBudget(t *testing.T) {
+	settleGraceWithin(t, 10*time.Millisecond)
+
+	calls := 0
+
+	tail := NewBuildLogTailFetching(scriptedBuildLogs(&calls, nil), func(WorkloadLogEntry) {}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tail.Poll()
+
+	start := time.Now()
+
+	tail.Settle(ctx, failedBuild, time.Hour, 100*time.Millisecond, nil)
+
+	assert.Less(t, time.Since(start), 2*time.Second)
+	assert.Equal(t, 2, calls, "one read, at the deadline")
+}
+
+// A closing line that landed on the wait's own last poll still gets the pause
+// before Finish reads again, since lines land out of order across polls; it
+// is announced as no wait, and the pause stays short however long the
+// interval.
+func TestBuildLogTail_SettlePausesForAClosingLineThatAlreadyArrived(t *testing.T) {
+	settleGraceWithin(t, 20*time.Millisecond)
+
+	calls := 0
+
+	tail := NewBuildLogTailFetching(
+		scriptedBuildLogs(&calls, []WorkloadLogEntry{failedBuildClosing, failedBuildCause}),
+		func(WorkloadLogEntry) {}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tail.Poll()
+
+	start := time.Now()
+
+	tail.Settle(ctx, failedBuild, time.Hour, time.Minute, func(string) {
+		t.Error("the closing line is in, so there is nothing to announce")
+	})
+
+	elapsed := time.Since(start)
+
+	assert.GreaterOrEqual(t, elapsed, 20*time.Millisecond)
+	assert.Less(t, elapsed, 2*time.Second)
+	assert.Equal(t, 1, calls, "the pause is for Finish's read, not another one here")
+	assert.True(t, tail.Complete())
 }
 
 // Ctrl-C ends the wait at once: it is a courtesy to the user, not something

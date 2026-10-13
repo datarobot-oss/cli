@@ -247,9 +247,9 @@ type BuildSummary struct {
 	// tail is not read as "no logs". Not rendered.
 	LogTailErr error `json:"-"`
 
-	// LogTailShown is set when the build's lines already reached the
-	// terminal as they streamed, so text output does not print the same
-	// lines a second time. JSON still carries LogTail. Not rendered.
+	// LogTailShown is set when the stream already printed the whole log,
+	// closing line included, so text output does not print the same lines a
+	// second time. JSON still carries LogTail. Not rendered.
 	LogTailShown bool `json:"-"`
 }
 

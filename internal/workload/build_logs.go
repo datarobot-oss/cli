@@ -103,12 +103,20 @@ const buildLogHoldback = 10 * time.Second
 // on staging, and the follower's own lag allowance stops at a minute too.
 const BuildLogSettleTimeout = 60 * time.Second
 
+// buildLogSettleGrace caps the pause between the closing line's arrival and
+// the final read, so a long --poll-interval cannot stretch it. A var so tests
+// do not spend it.
+var buildLogSettleGrace = 5 * time.Second
+
 // buildClosingLinePrefixes open the line the builder writes last, once the
-// build has ended either way. It is flushed to the log pipeline before the
-// builder reports the status the CLI polls, so by the time a build reads
-// FAILED the line is on its way, and its arrival means the lines before it
-// have arrived too. A builder that dies before writing it, or a rewording of
-// it, costs the full settle wait and never a line.
+// build has ended either way: the build service's image builder emits it from
+// its FAILED and COMPLETED status templates. It is flushed to the log
+// pipeline before the builder reports the status the CLI polls, so by the
+// time a build reads FAILED the line is on its way, and its arrival means the
+// lines before it have arrived too. A builder that dies before writing it, or
+// a rewording of it, costs the full settle wait and never a line. A prefix
+// rather than a substring, because BuildKit prefixes the build's own output
+// ("#8 0.04 ..."), so a RUN that echoes these words cannot end the wait.
 var buildClosingLinePrefixes = []string{"Image build FAILED in ", "Image build COMPLETED in "}
 
 // BuildLogTail streams one build's log lines incrementally, driven by the
@@ -270,41 +278,55 @@ func (t *BuildLogTail) Finish() {
 // ends. The lines that say why a build failed are its last, and they land
 // well after its status does: read at once, a build that failed in seconds
 // has no lines at all and a slower one has only its opening. Any other build
-// returns at once. onWait (nil-safe) gets one notice when there is something
-// to wait for. Call Finish after it, as always.
+// returns at once: a cancelled one was stopped from outside, writes no
+// closing line, and its log holds no cause to wait for. onWait (nil-safe)
+// gets one notice when there is something to wait for. Call Finish after it,
+// as always.
+//
+// The whole of it fits in budget whatever the interval: no sleep runs past
+// the deadline, and the grace after the closing line is reserved out of it.
 func (t *BuildLogTail) Settle(ctx context.Context, build *Build, interval, budget time.Duration, onWait func(string)) {
-	if !t.awaitsLines(build) || interval <= 0 || budget <= 0 {
+	if build == nil || !IsBuildFailed(build.Status) || interval <= 0 || budget <= 0 {
 		return
 	}
 
-	if onWait != nil {
-		onWait("build failed; waiting up to a minute for its last log lines")
+	grace := min(interval, buildLogSettleGrace)
+
+	if !t.closed && !t.disabled {
+		if onWait != nil {
+			onWait("build failed; waiting up to a minute for its last log lines")
+		}
+
+		t.readUntilClosed(ctx, interval, time.Now().Add(budget-grace))
 	}
 
-	deadline := time.Now().Add(budget)
+	// A pause before Finish reads again, however the closing line arrived
+	// (here, or on the wait's own last poll): lines land out of order across
+	// polls, and the error just before the closing line is the one this wait
+	// is for.
+	if t.closed {
+		sleepInterval(ctx, grace)
+	}
+}
 
-	for t.awaitsLines(build) && time.Now().Before(deadline) {
-		if !sleepInterval(ctx, interval) {
+// readUntilClosed polls at interval until the closing line arrives or the
+// tail gives up, never sleeping past deadline: the last read happens at it.
+func (t *BuildLogTail) readUntilClosed(ctx context.Context, interval time.Duration, deadline time.Time) {
+	for !t.closed && !t.disabled {
+		wait := min(interval, time.Until(deadline))
+		if wait <= 0 || !sleepInterval(ctx, wait) {
 			return
 		}
 
 		t.Poll()
 	}
-
-	// One more interval before Finish reads again: lines land out of order
-	// across polls, and the error just before the closing line is the one
-	// this wait is for.
-	if t.closed {
-		sleepInterval(ctx, interval)
-	}
 }
 
-// awaitsLines reports whether build failed and its closing line has yet to
-// arrive on a stream still being read. Only FAILED qualifies: a cancelled
-// build was stopped from outside, writes no closing line, and its log holds
-// no cause to wait for.
-func (t *BuildLogTail) awaitsLines(build *Build) bool {
-	return build != nil && IsBuildFailed(build.Status) && !t.closed && !t.disabled
+// Complete reports whether the stream delivered the builder's closing line.
+// After Finish that means every line before it was delivered too, so a
+// caller that printed them has printed the whole log.
+func (t *BuildLogTail) Complete() bool {
+	return t.closed
 }
 
 // Poll fetches once and emits any unseen lines. Call it from the build wait's
