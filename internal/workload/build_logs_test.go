@@ -15,12 +15,15 @@
 package workload
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -222,4 +225,185 @@ func TestBuildLogTail_DisablesAfterSustainedFailuresWithoutErroring(t *testing.T
 	// Exactly one user-visible notice that streaming gave up, at the end.
 	require.NotEmpty(t, warns)
 	assert.Contains(t, warns[len(warns)-1], "the build itself is unaffected")
+}
+
+// scriptedBuildLogs answers a tail's fetches from batches, newest first as the
+// server sends them, repeating the last batch once the script runs out.
+func scriptedBuildLogs(calls *int, batches ...[]WorkloadLogEntry) func(int, string, string, string) ([]WorkloadLogEntry, error) {
+	return func(int, string, string, string) ([]WorkloadLogEntry, error) {
+		*calls++
+
+		return slices.Clone(batches[min(*calls, len(batches))-1]), nil
+	}
+}
+
+var (
+	failedBuild        = &Build{ID: "bld-1", ArtifactID: "art-1", Status: BuildStatusFailed}
+	failedBuildCause   = WorkloadLogEntry{Timestamp: "2026-06-11T14:04:15Z", Level: "error", Message: "Image build failed while building and pushing the image."}
+	failedBuildClosing = WorkloadLogEntry{Timestamp: "2026-06-11T14:04:16Z", Level: "info", Message: "Image build FAILED in 3.069211 seconds."}
+)
+
+// A build that failed faster than its lines are ingested has nothing to show
+// when the wait ends. Settle keeps reading until the builder's closing line
+// lands, and stops there rather than spending the rest of its budget.
+func TestBuildLogTail_SettleReadsUntilTheClosingLine(t *testing.T) {
+	calls := 0
+
+	var lines, notes []string
+
+	tail := NewBuildLogTailFetching(
+		scriptedBuildLogs(&calls, nil, nil, nil, []WorkloadLogEntry{failedBuildClosing, failedBuildCause}),
+		func(e WorkloadLogEntry) { lines = append(lines, e.Message) }, nil)
+
+	tail.Poll() // the wait's last tick, the one that saw FAILED
+	tail.Settle(context.Background(), failedBuild, time.Millisecond, time.Minute, func(n string) { notes = append(notes, n) })
+	tail.Finish()
+
+	assert.Equal(t, []string{failedBuildCause.Message, failedBuildClosing.Message}, lines)
+	assert.Equal(t, 5, calls, "the closing line ends the wait: one more read, by Finish, and no others")
+	require.Len(t, notes, 1)
+	assert.Contains(t, notes[0], "waiting up to a minute")
+}
+
+// A builder that never writes its closing line costs the budget, not a hang,
+// and whatever did arrive is still delivered.
+func TestBuildLogTail_SettleGivesUpAtTheBudget(t *testing.T) {
+	calls := 0
+
+	var lines []string
+
+	tail := NewBuildLogTailFetching(
+		scriptedBuildLogs(&calls, nil, []WorkloadLogEntry{failedBuildCause}),
+		func(e WorkloadLogEntry) { lines = append(lines, e.Message) }, nil)
+
+	tail.Poll()
+	tail.Settle(context.Background(), failedBuild, time.Millisecond, 20*time.Millisecond, nil)
+	tail.Finish()
+
+	assert.Equal(t, []string{failedBuildCause.Message}, lines)
+	assert.Greater(t, calls, 2, "the wait kept reading until the budget ran out")
+}
+
+// Nothing is waited for, or announced, when the tail has given up on the
+// stream, or when the build was cancelled: a builder stopped from outside
+// writes no closing line, and the wait would run its whole budget for nothing.
+func TestBuildLogTail_SettleHasNothingToWaitFor(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		build *Build
+		fetch func(calls *int) func(int, string, string, string) ([]WorkloadLogEntry, error)
+	}{
+		{
+			name:  "the tail gave up on the stream",
+			build: failedBuild,
+			fetch: func(calls *int) func(int, string, string, string) ([]WorkloadLogEntry, error) {
+				return func(int, string, string, string) ([]WorkloadLogEntry, error) {
+					*calls++
+
+					return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+				}
+			},
+		},
+		{
+			name:  "the build was cancelled",
+			build: &Build{ID: "bld-1", ArtifactID: "art-1", Status: BuildStatusCancelled},
+			fetch: func(calls *int) func(int, string, string, string) ([]WorkloadLogEntry, error) {
+				return scriptedBuildLogs(calls, nil)
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			calls := 0
+
+			tail := NewBuildLogTailFetching(c.fetch(&calls), func(WorkloadLogEntry) {}, nil)
+
+			tail.Poll()
+			tail.Settle(context.Background(), c.build, time.Millisecond, time.Minute, func(string) {
+				t.Error("nothing to wait for, so nothing to announce")
+			})
+
+			assert.Equal(t, 1, calls)
+		})
+	}
+}
+
+// settleGraceWithin shrinks the pause Settle takes after the closing line.
+func settleGraceWithin(t *testing.T, grace time.Duration) {
+	t.Helper()
+
+	prev := buildLogSettleGrace
+	buildLogSettleGrace = grace
+
+	t.Cleanup(func() { buildLogSettleGrace = prev })
+}
+
+// A long --poll-interval cannot stretch the wait past its budget: no sleep
+// runs past the deadline, and the last read happens at it. The context only
+// keeps a regression from hanging the suite for the hour.
+func TestBuildLogTail_SettleNeverSleepsPastItsBudget(t *testing.T) {
+	settleGraceWithin(t, 10*time.Millisecond)
+
+	calls := 0
+
+	tail := NewBuildLogTailFetching(scriptedBuildLogs(&calls, nil), func(WorkloadLogEntry) {}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tail.Poll()
+
+	start := time.Now()
+
+	tail.Settle(ctx, failedBuild, time.Hour, 100*time.Millisecond, nil)
+
+	assert.Less(t, time.Since(start), 2*time.Second)
+	assert.Equal(t, 2, calls, "one read, at the deadline")
+}
+
+// A closing line that landed on the wait's own last poll still gets the pause
+// before Finish reads again, since lines land out of order across polls; it
+// is announced as no wait, and the pause stays short however long the
+// interval.
+func TestBuildLogTail_SettlePausesForAClosingLineThatAlreadyArrived(t *testing.T) {
+	settleGraceWithin(t, 20*time.Millisecond)
+
+	calls := 0
+
+	tail := NewBuildLogTailFetching(
+		scriptedBuildLogs(&calls, []WorkloadLogEntry{failedBuildClosing, failedBuildCause}),
+		func(WorkloadLogEntry) {}, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tail.Poll()
+
+	start := time.Now()
+
+	tail.Settle(ctx, failedBuild, time.Hour, time.Minute, func(string) {
+		t.Error("the closing line is in, so there is nothing to announce")
+	})
+
+	elapsed := time.Since(start)
+
+	assert.GreaterOrEqual(t, elapsed, 20*time.Millisecond)
+	assert.Less(t, elapsed, 2*time.Second)
+	assert.Equal(t, 1, calls, "the pause is for Finish's read, not another one here")
+	assert.True(t, tail.Complete())
+}
+
+// Ctrl-C ends the wait at once: it is a courtesy to the user, not something
+// they owe the build.
+func TestBuildLogTail_SettleEndsWithItsContext(t *testing.T) {
+	calls := 0
+
+	tail := NewBuildLogTailFetching(scriptedBuildLogs(&calls, nil), func(WorkloadLogEntry) {}, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tail.Poll()
+	tail.Settle(ctx, failedBuild, time.Hour, time.Hour, nil)
+
+	assert.Equal(t, 1, calls)
 }

@@ -43,7 +43,9 @@ first argument is the artifact-id and the second is the build-id.
 With --wait the command polls the build until it reaches a terminal
 status (COMPLETED, FAILED, CANCELLED) and prints a summary instead
 of the raw Build object. If the build is already terminal, --wait
-returns immediately.
+returns immediately. A failed build's summary carries the tail of its
+log; when the wait saw the build fail, those last lines arrive after the
+failure does, so the command keeps reading for up to a minute.
 
 Examples:
   dr artifact build get b-xyz-456                # uses the linked artifact id
@@ -113,6 +115,12 @@ func runGet(
 
 		build, waitErr = workload.WaitForBuild(cmd.Context(), artifactID, buildID, poll.Interval, poll.Timeout, nil)
 
+		// A failure this wait saw happen has its last log lines, the ones
+		// that say why, still on their way; the summary below reads them.
+		// One that had failed before the first GET is left alone, being
+		// most often long past and as complete as it will get.
+		settleLogs(cmd, build, poll)
+
 		if build == nil {
 			// WaitForBuild errored before its first successful GET; render a
 			// minimal summary so the user still sees something.
@@ -142,4 +150,23 @@ func runGet(
 	}
 
 	return waitErr
+}
+
+// logSettleBudget is how long a failed build's logs are waited for; a var so
+// tests do not spend it.
+var logSettleBudget = workload.BuildLogSettleTimeout
+
+// settleLogs reads a failed build's stream until its last lines have
+// arrived, printing none of them: this command shows the summary's tail, not
+// a stream.
+func settleLogs(cmd *cobra.Command, build *workload.Build, poll pollflags.Set) {
+	if build == nil || !workload.IsBuildFailed(build.Status) {
+		return
+	}
+
+	out := cmd.ErrOrStderr()
+
+	tail := workload.NewBuildLogTail(build.ArtifactID, build.ID, func(workload.WorkloadLogEntry) {}, nil)
+	tail.Poll()
+	tail.Settle(cmd.Context(), build, poll.Interval, logSettleBudget, func(note string) { fmt.Fprintln(out, "  "+note) })
 }
