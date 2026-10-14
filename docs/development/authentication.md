@@ -146,9 +146,8 @@ Three rules matter when changing this code:
   no fetch metadata, so rejecting absent would deadlock two concurrent logins. Do not
   gate on `Sec-Fetch-Site`: the genuine callback is legitimately cross-site.
 - **Surface the timeout, don't leak the raw error.** `Wait` returns `ErrLoginTimedOut`
-  after `DefaultLoginTimeout` (override with `LoginOptions.Timeout`, exposed as
-  `dr auth login --timeout`). Both callers print `FprintLoginTimeoutHelp` to stderr on it,
-  since the bare Go timeout string gives the user no next step.
+  after `DefaultLoginTimeout` (override with `LoginOptions.Timeout`, i.e. `--timeout`).
+  Callers print `FprintLoginTimeoutHelp` to stderr; the setup wizard renders its own line.
 
 `auth.RunBrowserLoginWith` accepts `LoginOptions{NoBrowser: true}` for `--no-browser`,
 which renders the link prominently without reporting a failure.

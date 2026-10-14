@@ -129,7 +129,7 @@ func (f *BrowserFlow) OpenBrowser() error {
 }
 
 // Wait serves the callback endpoint until the API key arrives, the user
-// interrupts, or DefaultLoginTimeout elapses.
+// interrupts, or the timeout elapses.
 func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 	go func() {
 		err := f.server.Serve(f.listener)
@@ -171,12 +171,11 @@ func FprintLoginTimeoutHelp(w io.Writer) {
 
 	fmt.Fprintln(w, base.Render("❌ No authorization came back from the browser."))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, base.Render("If your browser showed a sign-in error, click through it and run login again."))
-	fmt.Fprintln(w, base.Render("The sign-in often completes on the second attempt:"))
+	fmt.Fprintln(w, base.Render("A browser sign-in error often clears on a second attempt:"))
 	fmt.Fprintln(w, info.Render("  dr auth login"))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, base.Render("Or set the DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN environment variables"))
-	fmt.Fprintln(w, base.Render("(from Developer Tools) to authenticate without the browser."))
+	fmt.Fprintln(w, base.Render("Or set DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN (from Developer Tools)"))
+	fmt.Fprintln(w, base.Render("to authenticate without the browser."))
 }
 
 // Close shuts the callback server down. It is safe to call more than once.

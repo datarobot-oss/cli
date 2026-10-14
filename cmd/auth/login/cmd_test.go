@@ -19,37 +19,21 @@ import (
 	"io"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCmd_HasTimeoutFlag(t *testing.T) {
-	cmd := Cmd()
+// newLoginCmd returns a login command aimed at a dead endpoint, with no browser
+// and the given --timeout.
+func newLoginCmd(t *testing.T, timeout string) *cobra.Command {
+	t.Helper()
 
-	f := cmd.Flags().Lookup("timeout")
-	require.NotNil(t, f, "dr auth login must expose --timeout")
-	assert.Equal(t, "0s", f.DefValue, "zero default means DefaultLoginTimeout applies")
-
-	require.NoError(t, cmd.Flags().Set("timeout", "30s"))
-
-	got, err := cmd.Flags().GetDuration("timeout")
-	require.NoError(t, err)
-	assert.Equal(t, 30*time.Second, got)
-}
-
-func TestCmd_HasNoBrowserFlag(t *testing.T) {
-	assert.NotNil(t, Cmd().Flags().Lookup("no-browser"), "dr auth login must keep --no-browser")
-}
-
-// TestRunE_TimeoutPrintsHelpAndReturnsSilent drives the timeout branch end to end:
-// a tiny --timeout with no browser and a dead endpoint reaches ErrLoginTimedOut fast.
-func TestRunE_TimeoutPrintsHelpAndReturnsSilent(t *testing.T) {
 	testutil.SetTestHomeDir(t, t.TempDir())
 	t.Setenv("DATAROBOT_ENDPOINT", "")
 	t.Setenv("DATAROBOT_API_TOKEN", "")
@@ -61,45 +45,41 @@ func TestRunE_TimeoutPrintsHelpAndReturnsSilent(t *testing.T) {
 	cmd := Cmd()
 	cmd.SetContext(context.Background())
 	require.NoError(t, cmd.Flags().Set("no-browser", "true"))
-	require.NoError(t, cmd.Flags().Set("timeout", "50ms"))
+	require.NoError(t, cmd.Flags().Set("timeout", timeout))
 
-	oldOut, oldErr := os.Stdout, os.Stderr
-	rOut, wOut, err := os.Pipe()
-	require.NoError(t, err)
+	return cmd
+}
 
+func TestCmd_HasTimeoutFlag(t *testing.T) {
+	f := Cmd().Flags().Lookup("timeout")
+
+	require.NotNil(t, f, "dr auth login must expose --timeout")
+	assert.Equal(t, "0s", f.DefValue, "zero default means DefaultLoginTimeout applies")
+}
+
+func TestRunE_TimeoutPrintsHelpAndReturnsSilent(t *testing.T) {
+	cmd := newLoginCmd(t, "50ms")
+
+	oldStderr := os.Stderr
 	rErr, wErr, err := os.Pipe()
 	require.NoError(t, err)
 
-	os.Stdout, os.Stderr = wOut, wErr
+	os.Stderr = wErr
 
 	runErr := RunE(cmd, nil)
 
-	require.NoError(t, wOut.Close())
 	require.NoError(t, wErr.Close())
 
-	os.Stdout, os.Stderr = oldOut, oldErr
+	os.Stderr = oldStderr
 
 	stderr, _ := io.ReadAll(rErr)
-	_, _ = io.ReadAll(rOut)
 
 	require.ErrorIs(t, runErr, cli.ErrSilent, "a timeout returns the silent sentinel, not the raw error")
 	assert.Contains(t, string(stderr), "authorization came back", "the recovery help must reach stderr")
 }
 
 func TestRunE_RejectsNegativeTimeout(t *testing.T) {
-	testutil.SetTestHomeDir(t, t.TempDir())
-	t.Setenv("DATAROBOT_ENDPOINT", "")
-	t.Setenv("DATAROBOT_API_TOKEN", "")
+	err := RunE(newLoginCmd(t, "-1s"), nil)
 
-	viperx.Reset()
-	t.Cleanup(viperx.Reset)
-	viperx.Set(config.DataRobotURL, "https://nonexistent.invalid")
-
-	cmd := Cmd()
-	cmd.SetContext(context.Background())
-	require.NoError(t, cmd.Flags().Set("no-browser", "true"))
-	require.NoError(t, cmd.Flags().Set("timeout", "-1s"))
-
-	err := RunE(cmd, nil)
 	assert.ErrorIs(t, err, cli.ErrSilent, "a negative --timeout is rejected before the browser flow starts")
 }

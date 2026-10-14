@@ -37,8 +37,7 @@ type LoginModel struct {
 
 type errMsg struct{ error } //nolint: errname
 
-// Unwrap lets errors.Is reach the wrapped error, so callers can match sentinels
-// like auth.ErrLoginTimedOut through the tea.Msg envelope.
+// Unwrap lets errors.Is match sentinels such as auth.ErrLoginTimedOut through the envelope.
 func (e errMsg) Unwrap() error { return e.error }
 
 type startedMsg struct {

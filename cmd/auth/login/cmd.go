@@ -83,8 +83,6 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	if timeout < 0 {
 		log.Errorf("--timeout must be zero or positive, got %s", timeout)
 
-		cmd.SilenceUsage = true
-
 		return cli.ErrSilent
 	}
 
@@ -95,7 +93,6 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	if err != nil {
 		cmd.SilenceUsage = true
 
-		// The bare timeout error is a Go string with no next step; the help block is.
 		if errors.Is(err, auth.ErrLoginTimedOut) {
 			auth.FprintLoginTimeoutHelp(os.Stderr)
 
