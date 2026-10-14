@@ -11,7 +11,7 @@ scenario script (grep with `rg '^# Ticket:' acceptance_tests/workload`).
 | B — account sweep | `RAPTOR-19533-B-sweep.sh` | RAPTOR-19533 | binding works against every workload on the account |
 | C — re-bind tuned | `RAPTOR-19533-C-rebind.sh` | RAPTOR-19533 | re-bind preserves live tuning; FileExists guard; delete-rebind restore |
 | D — built-workload rebuild | `RAPTOR-19533-D-built.sh` | RAPTOR-19533 | no ErrImagePull after re-bind; platform rebuilds from imageBuildConfig |
-| E — dry-run idempotency, stop/up reconcile, delete binding | `E-dryrun-stop-reconcile.sh` | RAPTOR-19749 | `up --dry-run` reports "Already up to date"; `stop` then `up --yes` reconciles the same workload; `delete --yes` clears the `workloadId:` binding |
+| E — dry-run idempotency, stop/up reconcile, delete binding | `E-dryrun-stop-reconcile.sh` | RAPTOR-19749 | `up --dry-run` reports "Already up to date", and `--dry-run --diff` agrees in text and JSON; `stop` then `up --yes` reconciles the same workload; `delete --yes` clears the `workloadId:` binding |
 | F — delete --purge | `F-purge.sh` | RAPTOR-20801 | `delete --purge --yes` removes the workload, the draft artifact and the state directory, clears the binding; the next `up --dry-run` plans a fresh create |
 | Artifact lifecycle | `artifact-lifecycle.sh` | none — basic acceptance | `dr artifact` create/get/list/code sync/versions/del CLI-side state |
 
