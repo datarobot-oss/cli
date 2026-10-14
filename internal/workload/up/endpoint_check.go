@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -40,6 +41,13 @@ const (
 	endpointCheckAuthenticated endpointCheckAuthMode = "authenticated"
 	workloadEndpointPathPrefix                       = config.DRAPIURLSuffix + "/endpoints/workloads/"
 )
+
+// keyProbePath is the route a probe asks, inside readinessProbe.
+const keyProbePath = "path"
+
+// servedArtifactFn reads the artifact the workload ended up serving, for the
+// readiness probe it declares. Swapped by tests.
+var servedArtifactFn = workload.GetArtifactDocument
 
 // checkEndpointFn performs the GET, swapped by tests. The request is
 // anonymous for direct workload URLs and authenticated for the DataRobot public
@@ -89,6 +97,13 @@ var checkEndpointFn = func(rawURL string) (int, error) {
 // nothing ends in a green tick and the discovery is left to whoever the URL
 // was shared with.
 //
+// The GET asks the readiness probe's path when the artifact now serving
+// declares one, and / only when it declares none. The probe path is the route
+// the app's author named as answering, and the one the platform's readiness
+// gate asks inside the cluster before it reports running, so asking it here
+// adds the hop that gate skips: the public gateway in front of the container.
+// An app need not serve / at all.
+//
 // It reports and never fails the run, whatever comes back. The probe default
 // was removed because a wrong guess about an app's routes kills a healthy
 // deploy; failing the deploy on the same guess here would be the same
@@ -115,8 +130,9 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 	}
 
 	var (
-		status int
-		err    error
+		target, probePath string
+		status            int
+		err               error
 	)
 
 	// Wrapped like every other wait in the package, because it can sit for
@@ -126,7 +142,8 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 	// it found; failing the run over what this observes is the one thing it
 	// must never do.
 	phaseErr := report.run("Checking the endpoint", func() error {
-		status, err = checkEndpointFn(result.Endpoint)
+		target, probePath = targetFor(result.Endpoint, servedArtifact(result.ArtifactID))
+		status, err = checkEndpointFn(target)
 
 		return nil
 	})
@@ -156,8 +173,28 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 		return false
 	}
 
+	// The mode of the URL actually sent, which a probe path changes only by
+	// climbing out of the endpoint with "..".
+	if mode, modeErr := endpointCheckAuthForURL(target); modeErr == nil {
+		authMode = mode
+	}
+
+	asked := "/"
+	if probePath != "" {
+		asked = probePath + ", the readiness probe's path,"
+	}
+
 	report.say("  %s\n", tui.HintStyle.Render(
-		"Endpoint check: an "+string(authMode)+" GET answered HTTP "+httpStatusLabel(status)+"."))
+		"Endpoint check: an "+string(authMode)+" GET of "+asked+" answered HTTP "+httpStatusLabel(status)+"."))
+
+	// Said only of /, which the check asks when it found no route named: an
+	// app need not serve it, and a bare 404 under a green tick reads as a
+	// broken deploy. A 404 on a probe path is a real finding and stays bare.
+	if probePath == "" && status == http.StatusNotFound {
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The check found no readiness probe path to ask, so it asked for /; "+
+				"a 404 there only means the app serves nothing at /."))
+	}
 
 	// Said only when the wait could not confirm the handover, and carrying the
 	// reason, because they are not the same problem: an install without the
@@ -172,6 +209,75 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 	}
 
 	return false
+}
+
+// servedArtifact reads the artifact the workload ended up serving, nil when
+// there is none to read or the read fails. The check then asks /, which is
+// what it asked before it read probes at all, so a failed read costs the
+// better route and nothing else.
+func servedArtifact(artifactID string) workload.Document {
+	if artifactID == "" {
+		return nil
+	}
+
+	doc, err := servedArtifactFn(artifactID)
+	if err != nil {
+		log.Debug("endpoint check: cannot read the served artifact, asking /",
+			"artifact", artifactID,
+			"error", err)
+
+		return nil
+	}
+
+	return doc
+}
+
+// targetFor is what the check GETs, and the probe path that URL asks: the
+// endpoint with the served artifact's readiness probe path under it, or the
+// endpoint itself and "" when there is no such path.
+func targetFor(endpoint string, served workload.Document) (string, string) {
+	path := readinessPath(served)
+	if path == "" {
+		return endpoint, ""
+	}
+
+	target, err := probeURL(endpoint, path)
+	if err != nil {
+		return endpoint, ""
+	}
+
+	return target, path
+}
+
+// readinessPath is the readiness probe path of the doc's primary container,
+// "" when it declares none. The probe's port, scheme and host are not read,
+// because the platform's readiness gate does not read them either: it asks
+// the path on the container's own port, which is the port the endpoint
+// reaches.
+func readinessPath(doc workload.Document) string {
+	probe, _ := workload.PrimaryContainerInDocument(doc)[keyReadinessProbe].(map[string]any)
+	path, _ := probe[keyProbePath].(string)
+
+	return strings.TrimSpace(path)
+}
+
+// probeURL is the endpoint with path under it. A query in the probe path is
+// split off first, since JoinPath would escape its "?" into the path, and the
+// endpoint's own query, which a proton-pinned URL carries, is kept.
+func probeURL(endpoint, path string) (string, error) {
+	base, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+
+	route, query, _ := strings.Cut(path, "?")
+	target := base.JoinPath(route)
+
+	if query != "" {
+		target.RawQuery = strings.TrimPrefix(target.RawQuery+"&"+query, "&")
+	}
+
+	return target.String(), nil
 }
 
 // endpointCheckAuthForURL keeps the credential-safety decision next to the
