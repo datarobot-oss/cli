@@ -63,7 +63,7 @@ func TestRenderSyncJSON_OneDocumentWithNestedResult(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	require.NoError(t, RenderSyncJSON(&buf, plan, result, false))
+	require.NoError(t, RenderSyncJSON(&buf, plan, result, false, Findings{}))
 
 	assert.Equal(t, 1, countDocuments(t, buf.Bytes()), "must be exactly one JSON document")
 
@@ -87,7 +87,7 @@ func TestRenderSyncJSON_OmitsResultWhenNil(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	require.NoError(t, RenderSyncJSON(&buf, plan, nil, true))
+	require.NoError(t, RenderSyncJSON(&buf, plan, nil, true, Findings{}))
 
 	assert.Equal(t, 1, countDocuments(t, buf.Bytes()))
 	assert.NotContains(t, buf.String(), `"result"`, "a plan-only run carries no result key")
