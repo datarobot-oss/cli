@@ -18,9 +18,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"testing"
 
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -100,13 +100,9 @@ func TestEnsureMigrated_BothPresentKeepsCurrent(t *testing.T) {
 // A move that cannot happen must not fail the command: the legacy directory
 // stays readable and every path helper keeps resolving to it.
 func TestEnsureMigrated_UnmovableFallsBackToLegacy(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("directory permission bits do not block rename the same way on Windows")
-	}
+	testutil.SkipIfWindows(t, "directory permission bits do not block rename the same way on Windows")
 
-	if os.Geteuid() == 0 {
-		t.Skip("root ignores directory permission bits")
-	}
+	testutil.SkipIfRoot(t)
 
 	tmp := t.TempDir()
 	legacy := seedLegacyDir(t, tmp)

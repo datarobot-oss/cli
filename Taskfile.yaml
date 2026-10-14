@@ -10,7 +10,7 @@ vars:
     -X {{.VERSION_PACKAGE}}.Version={{.VERSION}} \
     -X {{.VERSION_PACKAGE}}.BuildDate={{.BUILD_DATE}}
   BIN_DIR: "$PWD/tmp/bin"
-  GOLANGCI_LINT_VERSION: "v2.13.2"
+  GOLANGCI_LINT_VERSION: "v2.14.0"
   LEFTHOOK_VERSION: "v2.1.10"
   JSCPD_VERSION: "5.0.12"
   GORELEASER_VERSION: "v2.17.1"
@@ -308,16 +308,16 @@ tasks:
     deps: [build]
     cmds:
       - ./smoke_test_scripts/run_plugin_update_smoke_test.sh
-  smoke-test-workload:
+  acceptance-test-workload:
     desc: "Run workload/artifact acceptance scenarios (live; uses configured drconfig.yaml auth)"
     deps: [build]
     cmds:
-      - ./smoke_test_scripts/run_workload_smoke_test.sh {{.CLI_ARGS}}
-  smoke-test-workload-full:
+      - ./acceptance_tests/run_workload_acceptance_test.sh {{.CLI_ARGS}}
+  acceptance-test-workload-full:
     desc: "Run the full workload/artifact acceptance suite incl. the ~20-30 min built-workload scenario (live; uses configured drconfig.yaml auth)"
     deps: [build]
     cmds:
-      - WORKLOAD_SMOKE_INCLUDE_D=1 ./smoke_test_scripts/run_workload_smoke_test.sh
+      - WORKLOAD_ACCEPTANCE_INCLUDE_D=1 ./acceptance_tests/run_workload_acceptance_test.sh
 
   smoke-test-windows:
     desc: "Run smoke tests (Windows)"
@@ -337,7 +337,16 @@ tasks:
       - echo "📚 Starting documentation server…"
       - uv sync
       - echo "🌐 Open http://localhost:8000 in your browser"
-      - uv run mkdocs serve
+      - uv run properdocs serve
+
+  docs-build:
+    silent: true
+    desc: "Build documentation site"
+    dir: docs
+    cmds:
+      - echo "📚 Building documentation site…"
+      - uv sync
+      - uv run properdocs build
 
   copyright:
     silent: true

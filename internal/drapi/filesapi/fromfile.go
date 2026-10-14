@@ -24,18 +24,6 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 )
 
-func (c *httpClient) UploadFromZipNew(name string, size int64, body io.Reader) (*FromFileResp, error) {
-	q := url.Values{}
-	q.Set("useArchiveContents", "true")
-
-	requestURL, err := drapi.EndpointURL("/files/fromFile/", q)
-	if err != nil {
-		return nil, fmt.Errorf("build files url: %w", err)
-	}
-
-	return uploadZipMultipart(requestURL, nil, name, size, body)
-}
-
 // UploadFromZipExisting adds a zip's contents to catalogID as a new version.
 //
 // The overwrite mode is sent both as a multipart form field and as a query
@@ -45,28 +33,35 @@ func (c *httpClient) UploadFromZipNew(name string, size int64, body io.Reader) (
 // duplicate while the original keeps its old bytes. The contract does not
 // say which location is authoritative, so the query copy stays until it
 // does; the form field is the one that takes effect today.
-func (c *httpClient) UploadFromZipExisting(catalogID, name, overwrite string, size int64, body io.Reader) (*FromFileResp, error) {
+//
+// useArchiveContents travels in the form only. It used to be sent in the
+// query, where the server discards it the same way, and extraction happened
+// regardless because the server's form default for the field is true: the
+// request stated an intent in a place nobody read, and stayed correct only
+// for as long as that default did. Verified against staging with the query
+// set to false, which changed nothing.
+func (c *httpClient) UploadFromZipExisting(catalogID, filename, overwrite string, size int64, body io.Reader) (*FromFileResp, error) {
 	if overwrite == "" {
 		overwrite = OverwriteReplace
 	}
 
 	q := url.Values{}
-	q.Set("useArchiveContents", "true")
 	q.Set("overwrite", overwrite)
 
 	fields := url.Values{}
 	fields.Set("overwrite", overwrite)
+	fields.Set("useArchiveContents", "true")
 
 	requestURL, err := drapi.EndpointURL("/files/"+url.PathEscape(catalogID)+"/fromFile/", q)
 	if err != nil {
 		return nil, fmt.Errorf("build fromFile url: %w", err)
 	}
 
-	return uploadZipMultipart(requestURL, fields, name, size, body)
+	return uploadZipMultipart(requestURL, fields, filename, size, body)
 }
 
-func uploadZipMultipart(requestURL string, fields url.Values, name string, size int64, body io.Reader) (*FromFileResp, error) {
-	req, err := newStreamingMultipartRequest(requestURL, fields, name, size, body)
+func uploadZipMultipart(requestURL string, fields url.Values, filename string, size int64, body io.Reader) (*FromFileResp, error) {
+	req, err := newStreamingMultipartRequest(requestURL, fields, filename, size, body)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +70,7 @@ func uploadZipMultipart(requestURL string, fields url.Values, name string, size 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("zip upload %s: %w", name, err)
+		return nil, fmt.Errorf("zip upload %s: %w", filename, err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()

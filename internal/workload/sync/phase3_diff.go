@@ -18,6 +18,11 @@ package sync
 func phase3Diff(e *Engine) error {
 	plan := Diff(e.base, e.local, e.remote)
 	plan.OldVersionShort = ShortVer(ptrOrEmpty(e.config.LastSyncedVersionID))
+
+	if e.opts.PushOnly {
+		plan.pushOnly()
+	}
+
 	e.plan = plan
 
 	return nil

@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -173,6 +174,42 @@ func TestSeed_PullsCodeIntoAnEmptyBoundProject(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(dir, "app.py"))
 	require.NoError(t, err)
 	assert.Equal(t, "print('hi')\n", string(got))
+}
+
+// The pull keeps the catalog's executable bit, so a script the deploy runs
+// arrives runnable.
+func TestSeed_PullKeepsTheExecutableBit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no executable bit")
+	}
+
+	dir := t.TempDir()
+	yes, no := true, false
+
+	force(t, &projectLinkedFn, func(string) bool { return false })
+	force(t, &getArtifactFn, func(string) (*workload.Artifact, error) {
+		return artifactWithCode("cat-1", "ver-1"), nil
+	})
+	stubFiles(t, &fakeFiles{
+		files: map[string]filesapi.FileMeta{
+			"start.sh":       {Executable: &yes},
+			"pyproject.toml": {Executable: &no},
+		},
+		content: map[string]string{
+			"start.sh":       "#!/bin/sh\n",
+			"pyproject.toml": "[project]\nname = \"x\"\n",
+		},
+	})
+
+	err := seedFromLiveArtifact(loadedForSeed(t, dir, boundGeneratedManifest), Live{ArtifactID: "art-1"},
+		Options{Stderr: io.Discard})
+	require.NoError(t, err)
+
+	for name, want := range map[string]bool{"start.sh": true, "pyproject.toml": false} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		require.NoError(t, err)
+		assert.Equal(t, want, info.Mode().Perm()&0o111 != 0, name)
+	}
 }
 
 // A download that fails mid-stream must not leave the partial file behind: on

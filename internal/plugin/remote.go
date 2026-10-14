@@ -41,6 +41,7 @@ const (
 	registryFetchTimeout  = 30 * time.Second
 	pluginDownloadTimeout = 5 * time.Minute  // Future note: this might need to be configurable for very large plugins
 	httpDialTimeout       = 30 * time.Second // Connection timeout - fail fast if no internet
+	httpKeepAlive         = 30 * time.Second // Matches http.DefaultTransport's dialer
 )
 
 // FetchRegistry downloads and parses the plugin registry from the remote URL.
@@ -522,6 +523,38 @@ func copyFileURL(url string) (string, error) {
 	return tmpFile.Name(), nil
 }
 
+// newDownloadTransport returns the transport used to download plugin archives.
+//
+// It clones http.DefaultTransport instead of building a fresh http.Transport so
+// the download inherits the proxy resolution (HTTP_PROXY / HTTPS_PROXY /
+// NO_PROXY) and whatever TLS configuration tls.Apply installed. A zero-value
+// http.Transport has a nil Proxy, which silently bypasses a corporate forward
+// proxy and fails on the direct DNS lookup instead.
+//
+// Errors rather than falling back to a hand-built transport: tls.Apply already
+// refuses to run when http.DefaultTransport is not *http.Transport, so this
+// cannot happen in practice, and a fallback would quietly drop --ca-cert — the
+// very problem this function exists to fix.
+func newDownloadTransport() (*http.Transport, error) {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("http.DefaultTransport is not *http.Transport")
+	}
+
+	transport := base.Clone()
+
+	// Same 30s connect timeout the clone already carries, stated explicitly so
+	// the plugin download keeps failing fast if the network is unreachable even
+	// if the default changes. KeepAlive is carried over deliberately: setting
+	// only Timeout would silently drop it to the net.Dialer default.
+	transport.DialContext = (&net.Dialer{
+		Timeout:   httpDialTimeout,
+		KeepAlive: httpKeepAlive,
+	}).DialContext
+
+	return transport, nil
+}
+
 // downloadHTTP downloads a file via HTTP to a temp file.
 func downloadHTTP(finalURL string) (string, error) {
 	log.Debug("Downloading plugin", "url", finalURL)
@@ -529,11 +562,9 @@ func downloadHTTP(finalURL string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), pluginDownloadTimeout)
 	defer cancel()
 
-	// Custom transport with connection timeout to fail fast if no internet
-	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: httpDialTimeout,
-		}).DialContext,
+	transport, err := newDownloadTransport()
+	if err != nil {
+		return "", err
 	}
 
 	client := &http.Client{Transport: transport}

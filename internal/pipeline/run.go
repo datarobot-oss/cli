@@ -127,7 +127,7 @@ func ListRuns(pipelineID string, scope Scope, version *int, offset, limit int) (
 
 // GetRun fetches a single run by id within the given scope.
 func GetRun(pipelineID string, scope Scope, version *int, runID string) (*Run, error) {
-	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches/"+runID)
+	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches/"+escapeID(runID))
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func GetRun(pipelineID string, scope Scope, version *int, runID string) (*Run, e
 // GetRunStatus calls the lightweight GET .../status endpoint useful for
 // polling without re-downloading the full run record.
 func GetRunStatus(pipelineID string, scope Scope, version *int, runID string) (*RunStatus, error) {
-	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches/"+runID+"/status")
+	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches/"+escapeID(runID)+"/status")
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func GetRunStatus(pipelineID string, scope Scope, version *int, runID string) (*
 // CancelRun issues a DELETE on a run, transitioning it to CANCELLED if
 // it is still in a non-terminal state.
 func CancelRun(pipelineID string, scope Scope, version *int, runID string) error {
-	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches/"+runID)
+	endpoint, err := EndpointFor(pipelineID, scope, version, "dispatches/"+escapeID(runID))
 	if err != nil {
 		return err
 	}

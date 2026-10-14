@@ -157,7 +157,7 @@ func importReason(err error, name string) string {
 // wrong answer either way: a secret that was stored is a thing that now exists
 // outside this repository, and one that was not is an entry the next deploy
 // will refuse.
-func reportImport(stderr io.Writer, report Import) {
+func reportImport(stderr io.Writer, report Import, keepsPlaceholder func(name string) bool) {
 	if stderr == nil || !report.Any() {
 		return
 	}
@@ -174,9 +174,26 @@ func reportImport(stderr io.Writer, report Import) {
 			tui.WarnStyle.Render("!"),
 			tui.WarnStyle.Render(failure.Name+" was not stored"),
 			failure.Reason,
-			tui.HintStyle.Render(fmt.Sprintf("%s keeps %s for it, and a deploy will refuse that.",
-				manifest.FileName, manifest.CredentialPlaceholder)))
+			tui.HintStyle.Render(unstoredOutcome(keepsPlaceholder == nil || keepsPlaceholder(failure.Name))))
 	}
+}
+
+// unstoredOutcome is what the file is left holding for a secret that never
+// reached the store. The two answers are different enough that saying the
+// wrong one is worse than saying nothing.
+//
+// A name being added has nowhere to point, so its new entry carries the
+// placeholder and the next deploy refuses it. A name the manifest already
+// declares as something else keeps exactly what it had: replacing a working
+// literal with a placeholder would throw the value away and break a deploy
+// that was working, on the strength of a store that could not be reached.
+func unstoredOutcome(keepsPlaceholder bool) string {
+	if keepsPlaceholder {
+		return fmt.Sprintf("%s keeps %s for it, and a deploy will refuse that.",
+			manifest.FileName, manifest.CredentialPlaceholder)
+	}
+
+	return manifest.FileName + " keeps the entry it already had, so nothing is lost and nothing is reconciled for it."
 }
 
 // pendingSecrets counts the entries still carrying a placeholder, which is

@@ -128,6 +128,15 @@ func Prompt(verb string, ref Ref, consequence string) string {
 	return fmt.Sprintf("%s workload %s? %s%s[y/N] ", verb, ref.ID, ref.Provenance(), consequence)
 }
 
+// CanAsk reports whether there is somebody at both ends: a terminal to read
+// the answer from and one to write the question to. Exported so the two
+// commands that reconcile .env ask the same question this package already asks
+// about an id, rather than each deciding for itself and getting the
+// redirected-stderr case wrong.
+func CanAsk(cmd *cobra.Command) bool {
+	return canAsk(cmd)
+}
+
 // canAsk reports whether there is a terminal on both ends of the question.
 //
 // stdout is not consulted: the answer is read from stdin and the question is

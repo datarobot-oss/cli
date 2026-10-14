@@ -23,7 +23,10 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 )
 
-func (c *httpClient) CreateCatalog() (*CatalogResp, error) {
+// CreateCatalog creates an empty catalog entry, named after name when it
+// is non-empty. An empty name leaves the entry on the platform's default,
+// which the File Registry shows as "Untitled Dataset".
+func (c *httpClient) CreateCatalog(name string) (*CatalogResp, error) {
 	requestURL, err := drapi.EndpointURL("/files/", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build catalog url: %w", err)
@@ -31,7 +34,8 @@ func (c *httpClient) CreateCatalog() (*CatalogResp, error) {
 
 	var resp CatalogResp
 
-	if err := drapi.PostJSON(requestURL, "catalog", struct{}{}, &resp); err != nil {
+	body := CreateCatalogReq{Name: ClampCatalogName(name)}
+	if err := drapi.PostJSON(requestURL, "catalog", body, &resp); err != nil {
 		return nil, err
 	}
 
@@ -53,14 +57,22 @@ func (c *httpClient) CreateStage(catalogID string) (*StageResp, error) {
 	return &resp, nil
 }
 
-func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, body io.Reader) error {
+func (c *httpClient) UploadToStage(catalogID, stageID, name string, size int64, executable bool, body io.Reader) error {
 	requestURL, err := drapi.EndpointURL(
 		"/files/"+url.PathEscape(catalogID)+"/stages/"+url.PathEscape(stageID)+"/upload/", nil)
 	if err != nil {
 		return fmt.Errorf("build upload url: %w", err)
 	}
 
-	req, err := newStreamingMultipartRequest(requestURL, nil, name, size, body)
+	// Sent only when set and the server takes it: it defaults to false, and a
+	// plain file's request stays as it was.
+	var fields url.Values
+
+	if executable && c.supportsExecutable() {
+		fields = url.Values{"isExecutable": []string{"true"}}
+	}
+
+	req, err := newStreamingMultipartRequest(requestURL, fields, name, size, body)
 	if err != nil {
 		return err
 	}

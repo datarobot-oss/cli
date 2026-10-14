@@ -303,13 +303,10 @@ func doMultipart(method, endpoint, filePath string, fields map[string]string, in
 		log.Infof("%s at: %s", info, endpoint)
 	}
 
-	// Only build the redacted request dump when debug logging is enabled —
-	// httputil.DumpRequestOut(req, true) drains req.Body, which silently
-	// breaks PATCH/POST multipart requests by leaving them with
-	// ContentLength=N and a 0-byte body.
-	if log.GetLevel() <= log.DebugLevel {
-		log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
-	}
+	// config.RedactedReqInfo is headers-only, so it no longer drains req.Body.
+	// That used to silently break these multipart uploads (ContentLength=N with
+	// a 0-byte body), which is why this call was guarded on the log level.
+	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
 	resp, err := drapi.Do(req, uploadTimeout)
 	if err != nil {

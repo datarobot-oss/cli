@@ -19,6 +19,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func entry(hash string, size int64) FileEntry { return FileEntry{Hash: hash, Size: size} }
@@ -98,6 +99,47 @@ func TestDiff_Deletes(t *testing.T) {
 	gotPaths := []string{plan.Deletes[0].Path, plan.Deletes[1].Path}
 	assert.Contains(t, gotPaths, "a.py")
 	assert.Contains(t, gotPaths, "b.py")
+}
+
+// A system-excluded path an older CLI uploaded is deleted from the remote,
+// never downloaded: the walk does not list it locally, so left to the plain
+// classification it reads as added or edited on the remote and lands on top
+// of the real local file.
+func TestDiff_SystemExcludedRemoteFilesAreDeletedThere(t *testing.T) {
+	for name, tc := range map[string]struct{ base, remote BaseManifest }{
+		"no base: would be REMOTE_ADDED": {
+			remote: BaseManifest{"sub/.git/HEAD": entry("ref", 23)},
+		},
+		"base and a remote edit: would be EDIT_DEL_CONFLICT": {
+			base:   BaseManifest{"sub/.git/HEAD": entry("ref", 23)},
+			remote: BaseManifest{"sub/.git/HEAD": entry("other", 24)},
+		},
+		"base and no change: already LOCAL_DELETED": {
+			base:   BaseManifest{"sub/.git/HEAD": entry("ref", 23)},
+			remote: BaseManifest{"sub/.git/HEAD": entry("ref", 23)},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			local := BaseManifest{"agent.py": entry("aaa", 10)}
+			if tc.remote["agent.py"].Hash == "" {
+				tc.remote["agent.py"] = entry("aaa", 10)
+			}
+
+			plan := Diff(tc.base, local, tc.remote)
+
+			assert.Empty(t, plan.Downloads, "nothing may land over the local file")
+			assert.Empty(t, plan.Conflicts)
+			require.Len(t, plan.Deletes, 1)
+			assert.Equal(t, "sub/.git/HEAD", plan.Deletes[0].Path)
+			assert.Equal(t, ClsLocalDeleted, plan.Deletes[0].Classification)
+			assert.Equal(t, ActUploadDelete, plan.Deletes[0].Action, "the delete goes to the remote")
+		})
+	}
+
+	// Gone from the remote already: nothing to do, whatever the base says.
+	plan := Diff(BaseManifest{"sub/.git/HEAD": entry("ref", 23)}, BaseManifest{}, BaseManifest{})
+	assert.Empty(t, plan.Deletes)
+	assert.Empty(t, plan.Downloads)
 }
 
 func TestDiff_BytesAccounting(t *testing.T) {

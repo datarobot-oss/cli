@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -41,7 +42,9 @@ import (
 // of starting again. A workload created up front would instead sit there
 // pointing at an image that does not exist yet, visible in the UI and unable
 // to start, for as long as the build took.
-func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options, report *reporter) (Result, error) {
+func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
 	made, err := ensureArtifact(loaded, report)
 
 	// Recorded before the error check, the same way roll records the build it
@@ -71,7 +74,7 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 		return result, err
 	}
 
-	buildID, err := maybeBuild(loaded.ProjectDir, made, code, synced, opts, report)
+	buildID, err := maybeBuild(ctx, loaded.ProjectDir, made, code, synced, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
@@ -86,7 +89,7 @@ func buildAndCreate(loaded Loaded, code CodeChange, result Result, opts Options,
 		return result, err
 	}
 
-	result, err = create(loaded, payload, result, opts, report)
+	result, err = create(ctx, loaded, payload, result, opts, report)
 	if err != nil && !fresh {
 		// The artifact was not minted by this run, so a refusal to create a
 		// workload on it is most likely the platform's one-per-draft-artifact
@@ -297,6 +300,12 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 			result.ConflictCount, result.ConflictCopies)
 	}
 
+	// Said here rather than logged: the progress display silences the stderr
+	// logger while the sync runs.
+	if result != nil && result.ExecutableNotice != "" {
+		report.say("  Warning: %s\n", result.ExecutableNotice)
+	}
+
 	return result, nil
 }
 
@@ -304,6 +313,7 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 // build it ran so the caller can report it. An empty id means no build
 // happened, which is not the same as a build that produced nothing.
 func maybeBuild(
+	ctx context.Context,
 	projectDir string,
 	made version,
 	code CodeChange,
@@ -320,6 +330,11 @@ func maybeBuild(
 		if built {
 			report.say("  Image is up to date; no rebuild needed.\n")
 
+			// The image in hand was built from the code last synced, whoever
+			// watched the build. Left unrecorded, a deploy resumed on a
+			// leftover's finished build would read as stale to every later run.
+			recordBuiltFn(projectDir)
+
 			return "", nil
 		}
 
@@ -332,16 +347,22 @@ func maybeBuild(
 		if running := runningBuild(builds, attachMaxAge(opts)); running != "" {
 			report.say("  A build of this code is already running; attaching to it (--force-build starts a new one).\n")
 
-			return buildAndRecord(projectDir, made.ID, running, opts, report)
+			return buildAndRecord(ctx, projectDir, made.ID, running, opts, report)
 		}
 	}
 
-	return buildAndRecord(projectDir, made.ID, "", opts, report)
+	return buildAndRecord(ctx, projectDir, made.ID, "", opts, report)
 }
 
 // imageInHand reports whether the candidate already has something to run, and
 // hands back the build history when it had to be fetched. Only a leftover
 // reaches the platform: a copy carries its image and a create has none.
+//
+// A leftover's image counts only when the platform says it was built from the
+// code the leftover now points at. A completed build anywhere in its history
+// is not enough: a deploy interrupted twice, the second time with a build that
+// then failed, leaves the first one's image under newer code, and rolling it
+// out would report a deploy of code the endpoint does not serve.
 func imageInHand(made version) (bool, []workload.Build, error) {
 	if made.ImageURI != "" {
 		return true, nil, nil
@@ -351,18 +372,30 @@ func imageInHand(made version) (bool, []workload.Build, error) {
 		return false, nil, nil
 	}
 
-	builds, err := listBuildsFn(made.ID, buildHistoryLimit)
+	doc, err := getArtifactDocFn(made.ID)
 	if err != nil {
 		return false, nil, fmt.Errorf("cannot tell whether artifact %s has been built: %w", made.ID, err)
 	}
 
-	return hasImage(builds), builds, nil
+	if workload.ImageBuiltFromItsCode(workload.PrimaryContainerInDocument(doc)) {
+		return true, nil, nil
+	}
+
+	// Fetched only for a build already running, which the caller attaches to.
+	builds, err := listBuildsFn(made.ID, buildHistoryLimit)
+	if err != nil {
+		return false, nil, fmt.Errorf("cannot tell whether artifact %s is being built: %w", made.ID, err)
+	}
+
+	return false, builds, nil
 }
 
-// buildAndRecord builds and notes what the image was made from, the one fact
-// nothing on the platform keeps.
-func buildAndRecord(projectDir, artifactID, attachTo string, opts Options, report *reporter) (string, error) {
-	buildID, err := buildImage(artifactID, attachTo, opts, report)
+// buildAndRecord builds and notes what the image was made from, which the
+// platform forgets as soon as the artifact's code moves on.
+func buildAndRecord(ctx context.Context, projectDir, artifactID, attachTo string, opts Options,
+	report *reporter,
+) (string, error) {
+	buildID, err := buildImage(ctx, artifactID, attachTo, opts, report)
 	if err == nil && buildID != "" {
 		recordBuiltFn(projectDir)
 	}
@@ -400,7 +433,8 @@ func attachMaxAge(opts Options) time.Duration {
 }
 
 // recordBuiltVersion notes the code version the image was built from, which
-// nothing on the platform holds. Best effort: not writing it costs a build.
+// the platform forgets once the artifact's code moves on. Best effort: not
+// writing it costs a build.
 func recordBuiltVersion(projectDir string) {
 	if !projectLinkedFn(projectDir) {
 		return
@@ -431,23 +465,9 @@ func changed(code CodeChange, synced *sync.Result) bool {
 	return synced.UploadedCount > 0 || synced.DeletedCount > 0
 }
 
-// hasImage reports whether the artifact has ever built successfully. Any
-// completed build answers it, whichever is newest: this is only asked when the
-// working tree matches what was last synced. Code pushed by `dr artifact code
-// sync` between deploys is the exception, answered by CodeChange.ImageStale.
-func hasImage(builds []workload.Build) bool {
-	for _, build := range builds {
-		if workload.IsBuildCompleted(build.Status) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// buildHistoryLimit bounds the look back for a completed build. A handful of
-// attempts is all a deploy can have made; past that the answer is no.
-const buildHistoryLimit = 20
+// buildHistoryLimit is how much of a leftover's build history is read. Only
+// the newest build matters, as the one to attach to while it runs.
+const buildHistoryLimit = 1
 
 // buildImage builds the artifact's image and waits for it, streaming the
 // build's own log lines beneath the phase header while it runs. attachTo, when
@@ -456,10 +476,13 @@ const buildHistoryLimit = 20
 // The wait is not optional even under --detach: a workload created against an
 // artifact with no image would come up unable to start, and --detach promises
 // not to wait for the workload, not to deploy something that cannot run.
-func buildImage(artifactID, attachTo string, opts Options, report *reporter) (string, error) {
-	var built *workload.Build
+func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, report *reporter) (string, error) {
+	var (
+		built  *workload.Build
+		logged bool
+	)
 
-	err := report.stream("Building the image", func(say func(string, lipgloss.Style)) error {
+	err := report.stream(ctx, "Building the image", func(ctx context.Context, say func(string, lipgloss.Style)) error {
 		buildID := attachTo
 		if buildID == "" {
 			triggered, triggerErr := triggerBuild(artifactID)
@@ -481,7 +504,7 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		// build wait carries on. Its notices go into the stream marked as the
 		// CLI's own — silence here is indistinguishable from a hang, which is
 		// worse than one meta line among the build's output.
-		tail := workload.NewBuildLogTail(artifactID, buildID,
+		tail := newBuildLogTailFn(artifactID, buildID,
 			func(e workload.WorkloadLogEntry) { line, style := buildLogLine(e); say(line, style) },
 			func(w string) { say("(log stream) "+w, tui.WarnStyle) })
 
@@ -504,12 +527,16 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 		// WaitForBuild hands the build back alongside its error when the
 		// build ends badly or the wait runs out, so the id is taken from it
 		// before the error is looked at: it is the only way to the logs.
-		b, waitErr := waitBuildFn(artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
+		b, waitErr := waitBuildFn(ctx, artifactID, buildID, opts.PollInterval, opts.PollTimeout, onTick)
 		built = b
 
 		// The final catch-up: ingestion lags the build, so the last lines
 		// routinely land after the wait, and the reorder buffer must drain.
+		// A failed build's are waited for, since they are the ones that say
+		// why.
+		tail.Settle(ctx, b, opts.PollInterval, buildLogSettleBudget, func(note string) { say(note, tui.HintStyle) })
 		tail.Finish()
+		logged = tail.Emitted()
 
 		return waitErr
 	})
@@ -520,10 +547,14 @@ func buildImage(artifactID, attachTo string, opts Options, report *reporter) (st
 	}
 
 	if workload.IsBuildErrorStatus(built.Status) {
-		// Said here rather than left to the wait's own wording, because this
-		// is the only place that knows which artifact the build belongs to.
-		return built.ID, fmt.Errorf("build %s finished as %s; see 'dr artifact build logs %s %s'",
-			built.ID, built.Status, artifactID, built.ID)
+		// The tail already knows whether the build said anything; only a
+		// silent one costs a fetch to tell "nothing yet" from "unreadable".
+		logs := workload.LogsCaptured
+		if !logged {
+			logs = hasLogsFn(artifactID, built.ID)
+		}
+
+		return built.ID, workload.BuildFailureMessage(artifactID, built.ID, built.Status, logs)
 	}
 
 	// A build still running when the wait expires keeps its id too: it is
@@ -568,7 +599,9 @@ func triggerBuild(artifactID string) (string, error) {
 // going to happen; a second prompt from inside a phase would be a surprise,
 // and in CI it would be a hang.
 func defaultSync(projectDir string) (*sync.Result, error) {
-	engine, err := sync.New(projectDir, sync.Options{Yes: true})
+	// Quiet: the sizing pass before the plan already reported the symlinks
+	// and divergences of this tree.
+	engine, err := sync.New(projectDir, sync.Options{Yes: true, Quiet: true})
 	if err != nil {
 		return nil, err
 	}

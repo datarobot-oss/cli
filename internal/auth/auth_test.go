@@ -191,7 +191,7 @@ func TestEnsureAuthenticated_EnvInvalidStoredValid(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result,
-		"Expected EnsureAuthenticated to fail instead of falling back to the valid stored profile")
+		"Expected EnsureAuthenticated to fail instead of falling back to the valid stored credentials")
 }
 
 // TestEnsureAuthenticated_EnvMalformedEndpointStoredValid covers the malformed
@@ -207,7 +207,7 @@ func TestEnsureAuthenticated_EnvMalformedEndpointStoredValid(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result,
-		"Expected EnsureAuthenticated to fail on a malformed endpoint instead of using the stored profile")
+		"Expected EnsureAuthenticated to fail on a malformed endpoint instead of using the stored credentials")
 }
 
 func TestReportEnvCredentialsError(t *testing.T) {
@@ -318,20 +318,27 @@ func TestReportEnvCredentialsError(t *testing.T) {
 		assert.NotContains(t, buf.String(), "Could not connect")
 	})
 
-	// Only 401 and 403 may blame the token; every other status is the server
-	// failing to answer the version check.
+	// Only 401 blames the token; 403 authenticated but the account lacks access,
+	// and every other status is the server failing to answer the version check.
 	creds := &EnvCredentials{Endpoint: "https://app.example.com/api/v2", Token: "some-token"}
 
-	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
-		t.Run(fmt.Sprintf("%d blames the token", status), func(t *testing.T) {
-			var buf bytes.Buffer
+	t.Run("401 blames the token", func(t *testing.T) {
+		var buf bytes.Buffer
 
-			ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: status})
+		ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: http.StatusUnauthorized})
 
-			assert.Contains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
-			assert.Contains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
-		})
-	}
+		assert.Contains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
+		assert.Contains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+	})
+
+	t.Run("403 reports lacking access, not a bad token", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		ReportEnvCredentialsError(&buf, creds, &config.HTTPStatusError{StatusCode: http.StatusForbidden})
+
+		assert.Contains(t, buf.String(), "lacks API access")
+		assert.NotContains(t, buf.String(), "unset DATAROBOT_API_TOKEN")
+	})
 
 	for _, status := range []int{
 		http.StatusNotFound, http.StatusTooManyRequests, http.StatusInternalServerError,
@@ -363,7 +370,7 @@ func TestReportUnjudged(t *testing.T) {
 		{"429", endpoint, &config.HTTPStatusError{StatusCode: http.StatusTooManyRequests}, true, "answered HTTP 429"},
 		{"503", endpoint, &config.HTTPStatusError{StatusCode: http.StatusServiceUnavailable}, true, "answered HTTP 503"},
 		{"401 is a verdict", endpoint, &config.HTTPStatusError{StatusCode: http.StatusUnauthorized}, false, ""},
-		{"403 is a verdict", endpoint, &config.HTTPStatusError{StatusCode: http.StatusForbidden}, false, ""},
+		{"403 stops the relaunch", endpoint, &config.HTTPStatusError{StatusCode: http.StatusForbidden}, true, "lacks API access"},
 		// An absent token carries no status, so it must read as a verdict and
 		// let the caller start the login flow.
 		{"empty token is a verdict", endpoint, errors.New("empty token"), false, ""},
@@ -451,7 +458,7 @@ func TestEnsureAuthenticated_StoredProfileServerError(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 
-	assert.False(t, result, "Expected EnsureAuthenticated to fail on a 503 from the stored profile")
+	assert.False(t, result, "Expected EnsureAuthenticated to fail on a 503 from the stored credentials")
 	assert.Equal(t, "valid-token", viperx.GetString(config.DataRobotAPIKey),
 		"Expected the stored token to survive a status the instance never judged it with")
 }
@@ -476,6 +483,33 @@ func TestEnsureAuthenticated_StoredProfileRejected(t *testing.T) {
 	assert.True(t, result)
 	assert.True(t, loginStarted, "Expected a 401 to still open the login flow")
 	assert.Equal(t, "fresh-token", viperx.GetString(config.DataRobotAPIKey))
+}
+
+// TestEnsureAuthenticated_StoredProfile403 proves a 403 stops the relaunch: the
+// key authenticated, so a fresh login would mint another key that 403s the same.
+func TestEnsureAuthenticated_StoredProfile403(t *testing.T) {
+	_, cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	viperx.Set(config.DataRobotURL, server.URL+"/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "valid-token")
+
+	APIKeyCallbackFunc = func(_ context.Context, _ string) (string, error) {
+		t.Error("login flow must not start on a 403; a fresh key would 403 too")
+
+		return "", errors.New("unexpected login flow")
+	}
+
+	result := EnsureAuthenticated(context.Background())
+
+	assert.False(t, result, "Expected EnsureAuthenticated to fail on a 403 from the stored profile")
+	assert.Equal(t, "valid-token", viperx.GetString(config.DataRobotAPIKey),
+		"Expected the stored token to survive a 403 (the account, not the key, was refused)")
 }
 
 // TestEnsureAuthenticated_NoStoredToken keeps a fresh install working: an absent
@@ -518,7 +552,7 @@ func TestEnsureAuthenticated_EnvUnreachableStoredValid(t *testing.T) {
 
 	result := EnsureAuthenticated(context.Background())
 	assert.False(t, result,
-		"Expected EnsureAuthenticated to fail on an unreachable endpoint instead of using the stored profile")
+		"Expected EnsureAuthenticated to fail on an unreachable endpoint instead of using the stored credentials")
 }
 
 func TestReportStoredProfileNotUsed(t *testing.T) {
@@ -527,20 +561,20 @@ func TestReportStoredProfileNotUsed(t *testing.T) {
 
 	creds := &EnvCredentials{Endpoint: "https://requested.example.com/api/v2", Token: "bad-token"}
 
-	t.Run("names both endpoints when a stored profile exists", func(t *testing.T) {
+	t.Run("names both endpoints when stored credentials exist", func(t *testing.T) {
 		var buf bytes.Buffer
 
-		reportStoredProfileNotUsed(&buf, creds)
+		reportStoredCredentialsNotUsed(&buf, creds)
 
 		assert.Contains(t, buf.String(), "https://requested.example.com")
-		assert.Contains(t, buf.String(), "not falling back to the stored profile")
+		assert.Contains(t, buf.String(), "not falling back to the stored credentials")
 	})
 
-	t.Run("silent without a stored profile", func(t *testing.T) {
+	t.Run("silent without a stored credentials", func(t *testing.T) {
 		var buf bytes.Buffer
 
 		viperx.Set(config.DataRobotURL, "")
-		reportStoredProfileNotUsed(&buf, creds)
+		reportStoredCredentialsNotUsed(&buf, creds)
 
 		assert.Empty(t, buf.String())
 	})

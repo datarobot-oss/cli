@@ -19,9 +19,10 @@ on:
           - deps
           - install-integration
           - installation
+          - acceptance
         default: all
       version:
-        description: 'installation suite only — specific version to install (e.g. v0.2.49). Empty installs latest.'
+        description: 'installation suite: specific version to install (e.g. v0.2.49), empty installs latest. acceptance suite: git ref to check out and build, empty builds main.'
         required: false
         type: string
         default: ''
@@ -58,3 +59,17 @@ jobs:
     uses: ./.github/workflows/_install-tests.yaml
     with:
       version: ${{ inputs.version }}
+
+  # The live workload/artifact acceptance suite, on demand — e.g. to validate
+  # a fix before the nightly run, or to exercise a PR's behavior end to end.
+  # Deliberately not part of `all`: it is the heaviest suite (~15 min against
+  # a live account) and needs DR_API_TOKEN.
+  acceptance:
+    if: ${{ inputs.suite == 'acceptance' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_workload-acceptance.yaml
+    with:
+      version: ${{ inputs.version || 'main' }}
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}

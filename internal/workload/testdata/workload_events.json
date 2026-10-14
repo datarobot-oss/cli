@@ -1,0 +1,54 @@
+{
+    "totalCount": 3,
+    "count": 3,
+    "next": null,
+    "previous": null,
+    "data": [
+        {
+            "id": "6abd4fff3c3cd8abc575db97",
+            "workloadId": "6abbbaea720810ff290d71eb",
+            "timestamp": "2026-09-30T18:07:59.572000+00:00",
+            "eventType": "Replacement Completed",
+            "actorId": "683e3b2eb7aefb434d49763b",
+            "details": {
+                "replacementId": "6abd4fff3c3cd8abc575db97",
+                "artifactId": "6abbbac04df5d926abdf03fc",
+                "message": "Maintenance of the inference server replacement completed.",
+                "protonStatuses": null,
+                "candidateProtonIds": [
+                    "6abd4feb9a6fa4c38620c751"
+                ]
+            }
+        },
+        {
+            "id": "6abd4e3a9a6fa4c38620c750",
+            "workloadId": "6abbbaea720810ff290d71eb",
+            "timestamp": "2026-09-30T18:10:08.607000+00:00",
+            "eventType": "Replacement Completed",
+            "actorId": "683e3b2eb7aefb434d49763b",
+            "details": {
+                "replacementId": "6abd4e3a9a6fa4c38620c750",
+                "artifactId": "6abbbac04df5d926abdf03fc",
+                "message": "Maintenance of the inference server replacement completed.",
+                "protonStatuses": null,
+                "candidateProtonIds": [
+                    "6abd4e2d9a6fa4c38620c74f"
+                ]
+            }
+        },
+        {
+            "id": "6abd4e2bb969860feb20c74e",
+            "workloadId": "6abbbaea720810ff290d71eb",
+            "timestamp": "2026-09-30T18:10:08.555000+00:00",
+            "eventType": "Replacement Errored",
+            "actorId": "683e3b2eb7aefb434d49763b",
+            "details": {
+                "replacementId": "6abd4e2bb969860feb20c74e",
+                "artifactId": "6abbbac04df5d926abdf03fc",
+                "message": "Failed to launch candidate protons: ResourceBundleInferenceError: At least one resource signal is required. Provide resourceBundles in runtime.containerGroups or resourceAllocation on runtime containers.",
+                "protonStatuses": null,
+                "candidateProtonIds": []
+            }
+        }
+    ]
+}

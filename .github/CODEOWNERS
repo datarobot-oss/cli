@@ -1,7 +1,10 @@
-* @datarobot-oss/cli-maintainers
+* @datarobot-oss/agent-lifecycle
 cmd/workload/ @datarobot-oss/workload-cli
 cmd/artifact/ @datarobot-oss/workload-cli
 internal/workload/ @datarobot-oss/workload-cli
 cmd/pipeline/ @datarobot-oss/compute-services
 internal/pipeline/ @datarobot-oss/compute-services
 docs/commands/pipeline*.md @datarobot-oss/compute-services
+cmd/enclave/ @datarobot-oss/compute-services
+internal/enclave/ @datarobot-oss/compute-services
+docs/commands/enclave.md @datarobot-oss/compute-services

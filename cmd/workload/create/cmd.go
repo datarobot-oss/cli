@@ -15,9 +15,14 @@
 package create
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/usecase"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/spf13/cobra"
 )
@@ -26,8 +31,9 @@ func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
 	var (
-		specFile string
-		enclave  string
+		specFile  string
+		enclave   string
+		useCaseID string
 	)
 
 	cmd := &cobra.Command{
@@ -49,14 +55,25 @@ stay strings (for example "0644" or "1.10"), and unquoted dates are sent
 as RFC3339 timestamps. The server validates field-level shape and returns
 a 422 with a JSON-path detail on a mismatch.
 
-Use --enclave <name> to pin the workload to a specific Enclave: it sets
-runtime.enclaveSelectionPolicy to "manual" and runtime.enclaves to the
-named Enclave, which must be eligible and grant you deploy access. The
-flag refuses to override a spec that already sets either field, and using
-it means the spec is re-encoded rather than sent byte-for-byte. Without
-the flag (or with enclaveSelectionPolicy "availability"), DataRobot picks
-the placement. Confirm where the workload landed with
-'dr workload list --enclave <name>'.
+--use-case-id <id> links the workload to a Use Case at create time. On its
+own it does not place the workload on an Enclave: without a selection
+policy the workload runs outside any Enclave, like any other asset in the
+Use Case. To place it on the Enclaves an administrator has granted to the
+Use Case, set the policy in the spec:
+
+  "runtime": {"enclaveSelectionPolicy": "availability", ...}
+
+and DataRobot picks among the granted Enclaves. If the Use Case has
+Enclaves and the spec sets no policy, the server refuses the create with
+ENCLAVE_TARGETING_REQUIRED. Add --enclave <name> to pin one specific
+Enclave instead (the policy becomes "manual"); pinning requires the
+CAN_OVERRIDE_WORKLOAD_PLACEMENT permission on workloads, and the pinned
+Enclave must be granted to the Use Case. --enclave needs a Use Case, from
+--use-case-id or useCaseId in the spec. Without a policy or --enclave the
+workload is not placed on an Enclave. The flags refuse to override a spec
+that already sets the fields they write, and using them means the spec is
+re-encoded rather than sent byte-for-byte. Confirm where the workload
+landed with 'dr workload list --enclave <name>'.
 
 Three flows:
 
@@ -129,7 +146,8 @@ Three flows:
 Example:
   dr workload create --spec-file workload.json
   dr workload create --spec-file workload.yaml
-  dr workload create --spec-file workload.json --enclave prod-east
+  dr workload create --spec-file workload.json --use-case-id 68b0aa11bb22cc33dd44ee55
+  dr workload create --spec-file workload.json --use-case-id 68b0aa11bb22cc33dd44ee55 --enclave prod-east
   dr workload create --spec-file workload.yaml --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -142,13 +160,9 @@ Example:
 				return err
 			}
 
-			// Changed, not enclave != "": an explicit --enclave "" must be
-			// rejected by ApplyEnclavePin, not silently create unpinned.
-			if cmd.Flags().Changed("enclave") {
-				payload, err = workload.ApplyEnclavePin(payload, enclave)
-				if err != nil {
-					return err
-				}
+			payload, err = applyPlacementFlags(cmd, payload, enclave, useCaseID)
+			if err != nil {
+				return err
 			}
 
 			if err := workload.ValidateWorkloadCreateRequest(payload); err != nil {
@@ -170,14 +184,71 @@ Example:
 	_ = cmd.MarkFlagRequired("spec-file")
 
 	cmd.Flags().StringVar(&enclave, "enclave", "",
-		"Pin the workload to the named Enclave (sets runtime.enclaveSelectionPolicy=manual)")
+		"Pin the workload to the named Enclave (sets runtime.enclaveSelectionPolicy=manual); requires --use-case-id")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	cmd.Flags().StringVar(&useCaseID, "use-case-id", "",
+		"Link the workload to this Use Case; set runtime.enclaveSelectionPolicy in the spec to place it on the Use Case's Enclaves")
+
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+		// No raw ids: whether each flag was given, and the placement they ask for.
 		return map[string]any{
-			"output_format": string(outputFormat),
-			"enclave":       enclave,
+			"output_format":        string(outputFormat),
+			"use_case_id_provided": cmd.Flags().Changed("use-case-id"),
+			"enclave_provided":     cmd.Flags().Changed("enclave"),
+			"placement_mode":       placementMode(cmd),
 		}
 	})
 
 	return cmd
+}
+
+// applyPlacementFlags applies --enclave and --use-case-id to the create spec.
+func applyPlacementFlags(
+	cmd *cobra.Command, payload json.RawMessage, enclave, useCaseID string,
+) (json.RawMessage, error) {
+	var err error
+
+	// The server requires a Use Case for any Enclave-targeted create;
+	// fail here instead of a guaranteed round-trip rejection. A spec
+	// that already names one satisfies the requirement.
+	if !workload.SpecSetsUseCase(payload) {
+		if err := cli.RequireFlagWhenChanged(cmd, "enclave", "use-case-id"); err != nil {
+			return nil, fmt.Errorf(
+				"%w (or useCaseId in the spec): Enclave placement is governed by a Use Case", err)
+		}
+	}
+
+	// Changed, not enclave != "": an explicit --enclave "" must be
+	// rejected by ApplyEnclavePin, not silently create unpinned.
+	if cmd.Flags().Changed("enclave") {
+		payload, err = workload.ApplyEnclavePin(payload, enclave)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if cmd.Flags().Changed("use-case-id") {
+		id, err := usecase.ParseID(useCaseID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --use-case-id: %w", err)
+		}
+
+		payload, err = workload.ApplyUseCase(payload, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return payload, nil
+}
+
+// placementMode names the Enclave placement the flags ask for: "manual" for
+// --enclave, "none" otherwise. --use-case-id alone asks for no placement. It
+// reads the flags only; a spec can still choose its own placement.
+func placementMode(cmd *cobra.Command) string {
+	if cmd.Flags().Changed("enclave") {
+		return workload.EnclaveSelectionPolicyManual
+	}
+
+	return "none"
 }

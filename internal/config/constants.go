@@ -32,6 +32,17 @@ const (
 	// either an LLM Gateway model id or a DataRobot deployment id.
 	DefaultLLMID = "default-llm-id"
 
+	// ProfileKey is the viper key behind the --profile persistent flag and the
+	// DATAROBOT_CLI_PROFILE env var. It must match the flag name exactly (see
+	// the SkipAuthKey comment above for why). Empty means the default
+	// (top-level) profile.
+	ProfileKey = "profile"
+
+	// ProfileCreateAnnotationKey marks a command permitted to name a profile
+	// that does not exist yet in drconfig.yaml, because the command is about
+	// to create it (e.g. auth login, auth set-url).
+	ProfileCreateAnnotationKey = "profile-may-create"
+
 	// EnvPrefix is the canonical prefix for all DATAROBOT_CLI_* environment
 	// variables. Use this constant instead of hard-coding the string literal.
 	EnvPrefix = "DATAROBOT_CLI_"

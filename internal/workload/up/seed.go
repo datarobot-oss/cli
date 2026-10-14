@@ -302,7 +302,9 @@ func pullCode(
 	actions := make([]sync.FileAction, 0, len(paths))
 	for _, path := range paths {
 		meta := files[path]
-		actions = append(actions, sync.FileAction{Path: path, RemoteSize: meta.Size, RemoteHash: meta.Hash})
+		actions = append(actions, sync.FileAction{
+			Path: path, RemoteSize: meta.Size, RemoteHash: meta.Hash, RemoteExec: meta.Executable,
+		})
 	}
 
 	// The pull is parallel and stops on the first error, but the files that

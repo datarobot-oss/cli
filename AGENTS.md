@@ -24,7 +24,7 @@ Use Taskfile tasks rather than raw Go commands:
 - Tests use `testify/assert` for assertions
 - Test files follow `*_test.go` naming convention
 - If DR_API_TOKEN is set, run smoke tests: `task smoke-test` (but ask for permission before using a real API token)
-- Workload/artifact acceptance (live): `task smoke-test-workload` for scenarios A–C + artifact, or `task smoke-test-workload-full` to include the ~20-30 min built-workload scenario D. Uses the CLI's existing `drconfig.yaml` auth (set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override); CI wiring is pending team review.
+- Workload/artifact acceptance (live): `task acceptance-test-workload` for scenarios A–C + artifact, or `task acceptance-test-workload-full` to include the ~20-30 min built-workload scenario D. Uses the CLI's existing `drconfig.yaml` auth (set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override). Runs nightly in CI (`nightly-smoke.yaml`) and on demand (`manual-smoke.yaml`, suite `acceptance`); it does not gate releases.
 
 **Go Version Requirement:** Tests run with the `-race` flag for data race detection. The race runtime must match your Go compiler version exactly. If you see errors like `compile: version "go1.X.Y" does not match go tool version "go1.X.Z"`, ensure your installed Go version matches the version in `go.mod` (run `brew upgrade go` or adjust `go.mod` accordingly).
 
@@ -167,6 +167,14 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
 
+## Auth & API Client Conventions
+
+For OAuth/browser login internals, see [docs/development/authentication.md](docs/development/authentication.md).
+For wiring in a new authenticated DataRobot API call&mdash;timeout clamping,
+the `HTTPError`/`errors.As` contract, and the origin-safety check before
+attaching credentials to a server-supplied URL&mdash;see
+[docs/development/drapi-client.md](docs/development/drapi-client.md).
+
 ## Code Review Guidelines
 
 All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUGBOT.md). Rules are organized by risk level:
@@ -225,7 +233,7 @@ Feature gates allow commands to be hidden until ready for release. For comprehen
 
 **Quick reference:**
 - Gate a command via `features.SetGate(cmd, "feature-name")` (sets the annotation on the command)
-- Enable via env var: `DATAROBOT_CLI_FEATURE_<NAME>=true` (e.g., `DATAROBOT_CLI_FEATURE_WORKLOAD=true`)
+- Enable via env var: `DATAROBOT_CLI_FEATURE_<NAME>=true` (e.g., `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true`)
 - Currently supported: environment variables only (config file support planned)
 - Filtering happens via `cli.CommandAdder.AddCommand` at registration time — `CommandAdder` is the only filtering mechanism
 - To gate a **nested** subcommand, wrap the parent with `&cli.CommandAdder{Command: parent}` and call `adder.AddCommand(...)` instead of `parent.AddCommand(...)`

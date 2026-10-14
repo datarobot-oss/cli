@@ -213,16 +213,18 @@ Sensitive values that should be masked during input and display.
 To define secret variables:
 
 ```yaml
-# In .datarobot/prompts.yaml
+# In .datarobot/prompts.yaml (or any *.yaml/*.yml file under .datarobot/)
 prompts:
   - key: "api_key"
     env: "API_KEY"
     type: "secret_string"
     help: "Enter your API key"
 ```
-#### Auto-detection
+#### Masking is type-driven
 
-Variables with names containing `PASSWORD`, `SECRET`, `KEY`, or `TOKEN` are automatically treated as secrets.
+A prompt is masked because it declares `type: secret_string`&mdash;the variable's
+name is not inspected. Naming a variable `MY_API_KEY` does not, by itself, mask
+it; the prompt must set `type: secret_string`.
 
 #### Display behavior
 
@@ -261,7 +263,7 @@ prompts:
 These variables are only shown or required based on your other selections:
 
 ```yaml
-# In .datarobot/prompts.yaml
+# In .datarobot/prompts.yaml (or any *.yaml/*.yml file under .datarobot/)
 prompts:
   - key: "enable_database"
     options:
@@ -288,7 +290,9 @@ APP_NAME=
 PORT=8080
 ```
 
-### 2. Prompt definitions (.datarobot/prompts.yaml)
+### 2. Prompt definitions (.datarobot/**/*.yaml)
+
+Any number of YAML files under `.datarobot/` (recursed up to 5 levels deep) can define prompts:
 
 ```yaml
 prompts:
@@ -313,12 +317,14 @@ export PORT=3000
 
 ### Merge priority
 
-The CLI merges in the following order of priority (highest priority first):
+When resolving a prompt's starting value, the CLI checks sources in the following order of priority (highest priority first):
 
-1. User input from wizard.
-2. Current shell environment.
-3. Existing `.env` values.
-4. Template defaults.
+1. Current shell environment variable.
+2. Existing `.env` value (or `.env.template` when `.env` doesn't exist yet).
+3. The prompt's `default:` value.
+4. A generated value, for `secret_string` prompts with `generate: true`.
+
+User input in the wizard is applied on top of whatever value was resolved.
 
 ## Common patterns
 

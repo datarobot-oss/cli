@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/ignore"
 )
@@ -30,7 +32,7 @@ import (
 // a Restore to pre-sync state.
 func phase5Execute(e *Engine) error {
 	// Above the empty-plan return, because this is a statement about the
-	// artifact rather than about the plan: phase 6 writes local state and a
+	// artifact rather than about the plan: phase 7 writes local state and a
 	// history entry for an empty plan too, and recording a sync against
 	// something immutable is the same lie as performing one. Phase 1 lets a
 	// preview plan against a locked artifact and Run returns before this phase
@@ -69,8 +71,13 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	// Phase 6 discards the rollback only after SaveConfig + SaveManifest
-	// succeed.
+	// Hand the rollback to Phase 7, which discards it at entry — before its
+	// first state write, not after its last. Once the plan has executed
+	// successfully the backup tree protects nothing, and discarding
+	// unconditionally keeps a Phase 7 write failure from stranding the dir
+	// for the next run's stale-restore to resurrect pre-sync bytes from.
+	// A Phase 5 failure above restores and returns, leaving the dir in place
+	// for exactly that stale-restore recovery.
 	e.rollback = rb
 
 	return nil
@@ -274,13 +281,30 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 	if len(e.plan.Uploads) > 0 {
 		uploader := ChooseUploader(e.plan)
 
-		cid, vid, err := uploader.ApplyUploads(e, e.plan.Uploads)
+		outcome, err := uploader.ApplyUploads(e, e.plan.Uploads)
 		if err != nil {
 			return "", "", err
 		}
 
-		newCatalogID = cid
-		newVersionID = vid
+		// Store the outcome on the engine so Phase 7 can read
+		// outcome.Sent[path]. The phase pipeline runs each phase
+		// independently via runPhases with no per-phase return
+		// threading, so Engine state is the only channel between
+		// Phase 5 and Phase 7.
+		e.uploadOutcome = &outcome
+
+		e.execNotice = executableNotice(outcome.Sent, e.remote,
+			e.artifact != nil && workload.GeneratesDockerfile(*e.artifact))
+
+		newCatalogID = outcome.CatalogID
+		newVersionID = outcome.VersionID
+	}
+
+	// Before the codeRef PATCH: a version the check rejects is never the one
+	// the artifact serves, and the failure trips the rollback while the
+	// state phase has written nothing.
+	if err := verifyPostApplyUploads(e, e.uploadOutcome); err != nil {
+		return "", "", err
 	}
 
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {
@@ -317,4 +341,68 @@ func applyDeletes(e *Engine, catalogID string) (string, error) {
 	}
 
 	return resp.CatalogVersionID, nil
+}
+
+// verifyPostApplyUploads is --verify's second effect: after ApplyUploads,
+// fetch the new version's file listing and confirm the server's checksum for
+// every UPLOADED path equals the hash of the bytes this run streamed. The
+// comparison is plain strings because the server's file checksum is the
+// SHA-256 hex of the content, the same digest the uploader computed while
+// streaming.
+//
+// It runs in Phase 5, before the codeRef PATCH: a mismatch fails the phase
+// and trips the rollback while the state phase has written nothing, and the
+// artifact goes on serving the version it served before. The rejected
+// version stays in the catalog unreferenced; the config still names the old
+// one, so the next sync re-uploads the changed files.
+//
+// Only uploaded paths are compared. Stage REPLACE merges staged paths into
+// the version in place, so the listing legitimately contains files this sync
+// never touched, some carrying checksums from earlier runs; flagging one of
+// those would fail honest runs.
+//
+// numFiles from ApplyStage counts every file in the resulting version, not
+// the ones uploaded, so it has no arithmetic relationship to the plan and is
+// never used to gate, skip, or abort this check.
+//
+// The check is skipped entirely when nothing was uploaded: a downloads-only
+// or empty plan makes no AllFiles request here, and a nil outcome or an
+// empty Sent map is not an error.
+func verifyPostApplyUploads(e *Engine, outcome *UploadOutcome) error {
+	if !e.opts.Verify || outcome == nil || len(outcome.Sent) == 0 {
+		return nil
+	}
+
+	listing, err := e.files.AllFiles(outcome.CatalogID, outcome.VersionID)
+	if err != nil {
+		return fmt.Errorf("post-apply verification: fetch files of version %s: %w", outcome.VersionID, err)
+	}
+
+	// Sorted so the reported path is deterministic when several differ.
+	paths := make([]string, 0, len(outcome.Sent))
+
+	for path := range outcome.Sent {
+		paths = append(paths, path)
+	}
+
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		sent := outcome.Sent[path]
+
+		held, ok := listing[path]
+		if !ok {
+			return fmt.Errorf("post-apply verification: uploaded file %s is absent from server version %s; "+
+				"the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID)
+		}
+
+		if held.Hash != sent.Hash {
+			return fmt.Errorf("post-apply verification: server checksum for %s in version %s does not match the uploaded bytes "+
+				"(sent %s, server holds %s); the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID, sent.Hash, held.Hash)
+		}
+	}
+
+	return nil
 }

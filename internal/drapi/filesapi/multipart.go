@@ -39,14 +39,18 @@ const multipartFormField = "file"
 // The Files API binds a POST's parameters from the parsed body alone
 // and drops unrecognized query parameters without complaining, so an
 // option that has to reach the server travels here and not in the URL.
+// That covers the upload's overwrite mode, which is silently lost from a
+// query string. A new catalog's name is the counter-case and travels on
+// the JSON create call instead: this route validates its form strictly,
+// so a field a server does not know fails the whole upload, and re-trying
+// without it would mean streaming the archive twice.
 //
-// useArchiveContents on the fromFile routes reads like a counter-example
-// and is not one. It is sent in the query, discarded there like anything
-// else, and extraction still happens only because the server's declared
-// form default for that field is already true. It is inert rather than
-// honoured, so it says nothing about the query being a usable channel,
-// and a flip of that default would stop extraction with no error.
-// Moving it into the form is a separate change.
+// useArchiveContents on the fromFile routes is the same story and travels
+// the same way. It used to be sent in the query, discarded there like
+// anything else, with extraction happening only because the server's
+// declared form default for that field is already true: inert rather than
+// honoured, and one default flip away from zips landing as a single file
+// with no error.
 //
 // Trade-off: the request has no GetBody, so http.Transport cannot
 // transparently retry the body on connection reset. Callers needing

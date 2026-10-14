@@ -155,6 +155,17 @@ func GetCredential(credentialID string) (*Credential, error) {
 	return &cred, nil
 }
 
+// DeleteCredential removes a stored credential. The store is tenant-wide, so
+// the caller checks the credential is its own first.
+func DeleteCredential(credentialID string) error {
+	url, err := config.GetEndpointURL("/api/v2/credentials/" + escapeID(credentialID) + "/")
+	if err != nil {
+		return err
+	}
+
+	return drapi.DeleteJSON(url, "credential", nil, nil)
+}
+
 // UpdateCredential replaces the secret a credential holds, keeping its id so
 // every manifest reference to it keeps working.
 //

@@ -726,6 +726,77 @@ artifact: {}
 	})
 }
 
+// One runtime group may go unnamed, since the platform names it; its
+// containers are still checked against the artifact's one group. Two groups
+// have to say which is which.
+func TestValidate_RuntimeGroupNameIsOptionalForOneGroup(t *testing.T) {
+	err := validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: nginx:latest
+runtime:
+  containerGroups:
+    - replicaCount: 1
+      containers:
+        - name: primry
+          resourceAllocation: {cpu: 0.5, memory: 512MB}
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 17, Path: "runtime.containerGroups[0].containers[0].name", Msg: `"primry" matches no container in artifact group "default"`},
+	})
+
+	err = validateString(t, "", `name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+    containerGroups:
+      - name: default
+        containers:
+          - name: primary
+            primary: true
+            port: 8080
+            imageUri: nginx:latest
+      - name: worker
+        containers:
+          - name: main
+            imageUri: nginx:latest
+runtime:
+  containerGroups:
+    - replicaCount: 1
+    - name: worker
+      replicaCount: 1
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 19, Path: "runtime.containerGroups[0].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+	})
+
+	// Bound by id there is no artifact group to copy a name from, and two
+	// unnamed groups would both compile to the platform's default.
+	err = validateString(t, "", `name: my-app
+artifactId: 68b0bbbb0000000000000002
+runtime:
+  containerGroups:
+    - replicaCount: 1
+    - replicaCount: 2
+`)
+
+	requireFindings(t, err, []FieldError{
+		{Line: 5, Path: "runtime.containerGroups[0].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+		{Line: 6, Path: "runtime.containerGroups[1].name", Msg: "is required when the artifact or the runtime lists more than one container group"},
+	})
+}
+
 func TestValidate_RuntimeNamesMustMatchTheArtifact(t *testing.T) {
 	err := validateString(t, "", `name: my-app
 artifact:
@@ -929,5 +1000,77 @@ func TestValidMemory_AcceptsWhatPeopleType(t *testing.T) {
 			assert.False(t, ValidMemory(input))
 			assert.Equal(t, input, NormalizeMemory(input), "an unrecognized size is returned untouched")
 		})
+	}
+}
+
+// MemoryString is what turns the platform's byte count back into something a
+// manifest can carry, and it has to pick the largest unit that divides
+// exactly: 20000000MB is the same size as 20GB and nobody writes it.
+func TestMemoryString_PicksTheLargestExactUnit(t *testing.T) {
+	for _, tc := range []struct {
+		bytes int64
+		want  string
+	}{
+		{0, ""},
+		{-1, ""},
+		{1, "1"},
+		{999, "999"},
+		{1_000, "1KB"},
+		{128_000_000, "128MB"},
+		{512_000_000, "512MB"},
+		{20_000_000_000, "20GB"},
+		{2_000_000_000_000, "2TB"},
+
+		// No decimal unit divides these, so the byte count stands, bare: the
+		// documented form a string size already reads back as, and the one
+		// that has been through a deploy. The first is 2 GiB, which is what a
+		// workload on staging is running: rounding it to 2GB would be a 7%
+		// cut, and 2Gi is refused by this package because the platform reads
+		// it as 2GB anyway.
+		{2_147_483_648, "2147483648"},
+		{1_500, "1500"},
+		{1_048_576, "1048576"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			got := MemoryString(tc.bytes)
+			assert.Equal(t, tc.want, got)
+
+			if got == "" {
+				return
+			}
+
+			// Whatever it writes has to be a size this package accepts and
+			// reads back as the same number. Without that the two halves
+			// could drift and a re-bind would resize a workload.
+			require.True(t, ValidMemory(got), "MemoryString wrote a size ValidMemory rejects")
+
+			bytes, ok := MemoryBytes(got)
+			require.True(t, ok)
+			assert.Equal(t, tc.bytes, bytes, "MemoryString and MemoryBytes must be inverses")
+		})
+	}
+}
+
+// The order MemoryString tries units in is its own list, so it cannot be
+// broken by a reorder of memoryUnits — but it can be broken by a unit being
+// added to one list and not the other, which would leave MemoryString unable
+// to use it and nothing to say so.
+func TestMemoryString_KnowsEveryUnitThereIs(t *testing.T) {
+	for _, unit := range memoryUnits {
+		if unit == "B" {
+			continue // the fallback, deliberately not a candidate
+		}
+
+		assert.Contains(t, memoryUnitsLargestFirst, unit,
+			"%s is a unit the file may carry, but MemoryString would never write it", unit)
+	}
+
+	// And in descending order, which is the property the loop relies on.
+	for i := 1; i < len(memoryUnitsLargestFirst); i++ {
+		bigger := memoryScale[memoryUnitsLargestFirst[i-1]]
+		smaller := memoryScale[memoryUnitsLargestFirst[i]]
+
+		assert.Greater(t, bigger, smaller,
+			"%s must come before %s", memoryUnitsLargestFirst[i-1], memoryUnitsLargestFirst[i])
 	}
 }

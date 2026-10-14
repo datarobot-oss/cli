@@ -276,9 +276,13 @@ func resolve(args []string, dir string) (Ref, error) {
 
 	id := strings.TrimSpace(m.WorkloadID())
 	if id == "" {
+		// The remedy names no deploy command on purpose. A manifest is a
+		// committed file, so reaching this line says a teammate wrote one,
+		// not that this user can run whatever wrote it; both remedies here
+		// work for anyone holding the file.
 		return Ref{}, fmt.Errorf(
-			"%s specifies no workloadId yet. Run 'dr workload up%s', or pass an id",
-			DisplayPath(path), manifest.DirFlag(dir))
+			"%s specifies no workloadId yet. Pass a workload id, or add a 'workloadId: <id>' line to that file",
+			DisplayPath(path))
 	}
 
 	return Ref{ID: id, Source: WorkloadIDSourceManifest, Path: path, Dir: dir}, nil
@@ -310,8 +314,8 @@ func (r Ref) Wrap(err error) error {
 
 	return fmt.Errorf(
 		"workload %s is not on this instance, though it is %s. Check the endpoint and organisation, "+
-			"or redeploy with 'dr workload up%s': %w",
-		r.ID, specifiedIn(r.Path), manifest.DirFlag(r.Dir), err)
+			"or point that workloadId at a workload this instance has: %w",
+		r.ID, specifiedIn(r.Path), err)
 }
 
 // TelemetryID is the workload id to report: the resolved one, falling back to

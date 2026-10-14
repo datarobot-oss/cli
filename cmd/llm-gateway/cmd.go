@@ -25,7 +25,7 @@ func Cmd() *cobra.Command {
 		Use:     "llm-gateway",
 		Aliases: []string{"llm-gateways", "llm"},
 		GroupID: "core",
-		Short:   "Manage LLM Gateway models",
+		Short:   "🤖 Manage LLM Gateway models",
 	}
 
 	cmd.AddCommand(list.Cmd(), selectcmd.Cmd())

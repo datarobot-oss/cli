@@ -168,6 +168,11 @@ func TestContainerStatus_Failure(t *testing.T) {
 			"sidecar: last run exited 137 (OOMKilled)",
 		},
 		{"nothing to say", ContainerStatus{Name: "lrs-p1-primary"}, ""},
+		// A container that completed is said as such: on an errored workload
+		// a process that exited zero and did not come back is the reason.
+		{"a completed container is named", ContainerStatus{Name: "lrs-p1-primary", Reason: "Completed"}, "primary: Completed"},
+		// A previous run that exited zero is a restart, not a fault.
+		{"a clean previous run is not a finding", ContainerStatus{Name: "primary", LastState: &ContainerState{Reason: "Completed", ExitCode: new(int)}}, ""},
 	}
 
 	for _, c := range cases {

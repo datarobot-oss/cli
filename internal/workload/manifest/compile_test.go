@@ -38,6 +38,46 @@ artifactId: 68b0bbbb0000000000000002
 	assert.JSONEq(t, `{"name": "my-app", "artifactId": "68b0bbbb0000000000000002"}`, string(compiled.Payload))
 }
 
+// The file leaves the runtime group's name out; the payload carries the
+// artifact group's, which is what the API joins the two lists by. Bound by
+// id, there is no artifact group to copy from, so the platform's default goes.
+func TestCompile_NamesTheRuntimeGroupAfterTheArtifactGroup(t *testing.T) {
+	m, err := Parse([]byte(`name: my-app
+artifact:
+  spec:
+    containerGroups:
+      - name: web
+        containers:
+          - name: primary
+            imageUri: a:1
+runtime:
+  containerGroups:
+    - replicaCount: 2
+`), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	var payload map[string]any
+
+	require.NoError(t, json.Unmarshal(compiled.Payload, &payload))
+	assert.Equal(t, "web", stringAt(slicesAt(mapAt(payload, keyRuntime), keyContainerGroups)[0], keyName))
+
+	bound, err := Parse([]byte(`name: my-app
+artifactId: 68b0bbbb0000000000000002
+runtime:
+  containerGroups:
+    - replicaCount: 2
+`), "")
+	require.NoError(t, err)
+
+	compiled, err = bound.Compile()
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(compiled.Payload, &payload))
+	assert.Equal(t, GroupName, stringAt(slicesAt(mapAt(payload, keyRuntime), keyContainerGroups)[0], keyName))
+}
+
 // The shorthand must compile to exactly the object the workload package's
 // EnvironmentVar marshals to: the expected JSON is built from that struct, so
 // a drifted field tag fails here instead of at the API.

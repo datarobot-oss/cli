@@ -139,6 +139,50 @@ func MemoryBytes(value string) (int64, bool) {
 	return amount * scale, true
 }
 
+// MemoryString is MemoryBytes backwards: the spelling a file should carry for
+// a size the platform handed back as a number of bytes. Zero and below return
+// "", meaning "nothing to say" — the caller keeps whatever default it had.
+//
+// The largest unit that divides exactly wins, and a size that divides by
+// nothing keeps its byte count. That last case is not hypothetical: a
+// workload running on 2147483648 bytes is on 2 GiB, and this package refuses
+// binary units on purpose, because the platform reads 2Gi as its decimal
+// namesake. Rounding that to "2GB" would quietly take 7% of a running
+// workload's memory away on the next deploy, so it is written as a bare
+// "2147483648" — unlovely, exact, and it round-trips through MemoryBytes.
+// Bare rather than with a B suffix: both are accepted by the validator, but
+// the bare form is what a string size already reads back as, and it is the
+// one the CLI has actually put through a deploy.
+func MemoryString(bytes int64) string {
+	if bytes <= 0 {
+		return ""
+	}
+
+	// Largest first, so 20000000000 is 20GB rather than 20000MB.
+	for _, unit := range memoryUnitsLargestFirst {
+		scale := memoryScale[unit]
+
+		if bytes >= scale && bytes%scale == 0 {
+			return strconv.FormatInt(bytes/scale, 10) + unit
+		}
+	}
+
+	return strconv.FormatInt(bytes, 10)
+}
+
+// memoryUnitsLargestFirst is the order MemoryString tries units in, and it is
+// its own list on purpose. Walking memoryUnits backwards would have read the
+// same today and been silently wrong the day somebody sorted that slice: it is
+// documented as "the suffixes as the file should spell them", which is a
+// statement about spelling and not about scale, and it is also what the
+// validator's error message lists. A reorder there would have MemoryString
+// answer 20000000KB for a 20GB workload with every test still passing, because
+// the sizes worth testing divide cleanly at more than one unit.
+//
+// B is absent because it is the fallback, not a candidate: every size divides
+// by one, so including it would end the loop before any real unit was tried.
+var memoryUnitsLargestFirst = []string{"TB", "GB", "MB", "KB"}
+
 // MemoryUnits lists the suffixes a size may carry, for a prompt that would
 // rather show them than describe them.
 func MemoryUnits() []string {
@@ -503,7 +547,9 @@ func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
 		return
 	}
 
-	for i, group := range seqItems(mapValue(runtime, keyContainerGroups)) {
+	groups := seqItems(mapValue(runtime, keyContainerGroups))
+
+	for i, group := range groups {
 		path := fmt.Sprintf("%s.%s[%d]", keyRuntime, keyContainerGroups, i)
 
 		v.checkScaling(group, path)
@@ -511,7 +557,21 @@ func (v *validator) checkRuntime(runtime *yaml.Node, shapes []groupShape) {
 		name, _ := scalarString(mapValue(group, keyName))
 		shape, matched := findShape(shapes, name)
 
-		if shapes != nil && !matched {
+		switch {
+		case name == "" && len(groups) == 1 && len(shapes) <= 1:
+			// The platform names the one group itself, so the file may leave
+			// it out; the compiler fills it in.
+			if len(shapes) == 1 {
+				shape, matched = shapes[0], true
+			}
+
+		case name == "":
+			v.add(nil, group, joinPath(path, keyName),
+				"is required when the artifact or the runtime lists more than one container group")
+
+			continue
+
+		case shapes != nil && !matched:
 			v.add(mapValue(group, keyName), group, joinPath(path, keyName),
 				"%q matches no artifact container group (have %s)", name, quotedNames(shapeNames(shapes)))
 		}

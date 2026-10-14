@@ -27,3 +27,8 @@ Rollback and restore operations must be idempotent.
 ## File Permissions & Attributes Preserved
 
 File modes, symlinks, and extended attributes must be preserved through backup and restore cycles.
+
+## Duplicated Constants Need a Canonical-Source Comment
+
+When an import cycle forces a second copy of a shared constant (timeout, retry count), comment
+it as a duplicate pointing at the canonical definition — so the two don't drift silently.

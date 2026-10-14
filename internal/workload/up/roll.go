@@ -15,9 +15,11 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
@@ -45,12 +47,14 @@ import (
 // locked for a rollout that is then refused can be neither unlocked nor
 // deleted. Taking the lock only once nothing is left that can say no is what
 // keeps a lost race from leaving one behind.
-func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Options, report *reporter) (Result, error) {
+func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
 	if err := guardRollout(live.WorkloadID, "nothing was built or rolled out"); err != nil {
 		return result, err
 	}
 
-	made, err := candidateArtifact(loaded, live, plan, opts, report)
+	made, err := candidateArtifact(ctx, loaded, live, plan, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
@@ -60,6 +64,7 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 	// copy, a platform with no copy endpoint and a tree that moved between the
 	// plan and the sync all reach this line having built anyway.
 	result.Plan.InheritsImage = plan.InheritsImage && err == nil && made.BuildID == ""
+	result.Plan.InPlace = plan.InPlace
 
 	if err != nil {
 		return result, err
@@ -78,7 +83,7 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 		return result, err
 	}
 
-	return replace(live.WorkloadID, made, lock, sizing, result, opts, report)
+	return replace(ctx, live.WorkloadID, made, lock, sizing, plan.InPlace, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -93,6 +98,7 @@ func roll(loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Op
 // workload deployed ten times reads as ten versions of one thing rather than
 // ten artifacts that happen to share a name.
 func candidateArtifact(
+	ctx context.Context,
 	loaded Loaded,
 	live Live,
 	plan Plan,
@@ -100,7 +106,22 @@ func candidateArtifact(
 	report *reporter,
 ) (version, error) {
 	if id := loaded.Compiled.ArtifactID; id != "" {
-		return version{ID: id}, nil
+		return version{ID: id, StatusRead: plan.BoundRead, Locked: plan.BoundLocked}, nil
+	}
+
+	if plan.InPlace {
+		made, err := patchedVersion(loaded, live, plan, report)
+		if err != nil || made.ImageURI != "" || !plan.Code.Applies {
+			return made, err
+		}
+
+		// The platform keeps the image on a write that omits it; a readback
+		// without one is not promoted on trust.
+		report.say("  The write left artifact %s without an image, so one is built.\n", made.ID)
+
+		made.BuildID, err = buildAndRecord(ctx, loaded.ProjectDir, made.ID, "", opts, report)
+
+		return made, err
 	}
 
 	repository := sameRepository(loaded, live)
@@ -109,7 +130,7 @@ func candidateArtifact(
 	// tree: two answers to "does the platform build this image" coming apart is
 	// how a plan describes a deploy that does not happen.
 	if plan.Code.Applies {
-		return buildVersion(loaded, live, plan, repository, opts, report)
+		return buildVersion(ctx, loaded, live, plan, repository, opts, report)
 	}
 
 	return createVersion(loaded, repository, labelNewVersion, report)
@@ -200,16 +221,21 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 func matchLock(made version, report *reporter) (bool, error) {
 	// A candidate the file named, or one left by an earlier attempt, may
 	// already be locked, and locking twice answers 403. A create and a copy are
-	// both drafts, so only a leftover has to be asked about.
-	if !made.Fresh {
-		already, lockedErr := lockedAlready(made.ID)
+	// both drafts, and a named artifact the plan read is known, so only a
+	// leftover has to be asked about.
+	already := made.Locked
+
+	if !made.Fresh && !made.StatusRead {
+		var lockedErr error
+
+		already, lockedErr = lockedAlready(made.ID)
 		if lockedErr != nil {
 			return false, lockedErr
 		}
+	}
 
-		if already {
-			return true, nil
-		}
+	if already {
+		return true, nil
 	}
 
 	err := report.run("Locking the new version", func() error {
@@ -296,19 +322,28 @@ func stateClause(live Live) string {
 // "running" throughout a swap, so naming the artifact is what makes the wait
 // that follows wait for this rollout rather than the state it was already in.
 func replace(
+	ctx context.Context,
 	workloadID string,
 	made version,
 	lock bool,
 	sizing json.RawMessage,
+	inPlace bool,
 	result Result,
 	opts Options,
 	report *reporter,
 ) (Result, error) {
+	label := "Rolling out the new version"
+	consequence := "the version serving keeps serving and the one just minted is left unpromoted"
+
+	if inPlace {
+		label = "Rolling out the change"
+		consequence = "the version serving keeps serving, and the change written to it rolls out with the next deploy or settings change"
+	}
+
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
-	if err := guardRollout(workloadID,
-		"the version serving keeps serving and the one just minted is left unpromoted"); err != nil {
+	if err := guardRollout(workloadID, consequence); err != nil {
 		return result, err
 	}
 
@@ -323,7 +358,7 @@ func replace(
 
 	var started *workload.Replacement
 
-	err := report.run("Rolling out the new version", func() error {
+	err := report.run(label, func() error {
 		replacement, startErr := startReplacementFn(workloadID, made.ID, sizing)
 		started = replacement
 
@@ -351,34 +386,47 @@ func replace(
 	// --poll-timeout the user set is a bound on the deploy, not on each half.
 	waitFrom := time.Now()
 
-	if err := awaitRollout(workloadID, started, opts, report); err != nil {
+	if err := awaitRollout(ctx, workloadID, started, opts, report); err != nil {
 		return result, err
 	}
 
 	result.Action = ActionRolled
 
-	return settle(workloadID, workload.Serving{ArtifactID: made.ID, AwaitDrain: true},
-		result, budgetLeft(opts, waitFrom), report)
+	// Both generations of an in-place roll run the same artifact, so naming
+	// it would read the outgoing one as the new one; the drain is what tells
+	// them apart, as for a resize.
+	want := workload.Serving{ArtifactID: made.ID, AwaitDrain: true}
+	if inPlace {
+		want = workload.Serving{AwaitDrain: true}
+	}
+
+	return settle(ctx, workloadID, want, result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.
 // They are two questions: the rollout says whether the new version was
 // promoted, and a failed one leaves the old version serving, so reporting the
 // workload as healthy afterwards would be true and completely misleading.
-func awaitRollout(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
-	var settled *workload.Replacement
+func awaitRollout(ctx context.Context, workloadID string, started *workload.Replacement, opts Options,
+	report *reporter,
+) error {
+	var last held[workload.Replacement]
 
-	err := report.run("Waiting for the rollout", func() error {
-		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
-		settled = replacement
+	const label = "Waiting for the rollout"
 
-		return waitErr
-	})
+	err := report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout,
+				rolloutProgress(strings.ToLower(label), opts, report, note))
+			last.set(replacement)
+
+			return waitErr
+		})
 	if err == nil {
 		return nil
 	}
 
-	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+	if settled := last.get(); settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return fmt.Errorf(
 			"the rollout of workload %s ended as %s, so it is still running the version it was; "+
 				"check 'dr workload logs %s': %w",

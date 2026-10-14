@@ -43,7 +43,9 @@ first argument is the artifact-id and the second is the build-id.
 With --wait the command polls the build until it reaches a terminal
 status (COMPLETED, FAILED, CANCELLED) and prints a summary instead
 of the raw Build object. If the build is already terminal, --wait
-returns immediately.
+returns immediately. A failed build's summary carries the tail of its
+log; when the wait saw the build fail, those last lines arrive after the
+failure does, so the command keeps reading for up to a minute.
 
 Examples:
   dr artifact build get b-xyz-456                # uses the linked artifact id
@@ -102,10 +104,22 @@ func runGet(
 
 	var waitErr error
 
-	if !workload.IsTerminalBuildStatus(build.Status) {
+	// Not "is it terminal": COMPLETED is terminal and still not the end of
+	// the wait, because the artifact is repointed at the image a moment
+	// after. Skipping the wait there returned success inside exactly the
+	// window this is supposed to close. Only a build that
+	// failed has nothing left to wait for; an already-deployable one costs
+	// one poll, which returns immediately.
+	if !workload.IsBuildErrorStatus(build.Status) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Waiting for build %s...\n", buildID)
 
-		build, waitErr = workload.WaitForBuild(artifactID, buildID, poll.Interval, poll.Timeout, nil)
+		build, waitErr = workload.WaitForBuild(cmd.Context(), artifactID, buildID, poll.Interval, poll.Timeout, nil)
+
+		// A failure this wait saw happen has its last log lines, the ones
+		// that say why, still on their way; the summary below reads them.
+		// One that had failed before the first GET is left alone, being
+		// most often long past and as complete as it will get.
+		settleLogs(cmd, build, poll)
 
 		if build == nil {
 			// WaitForBuild errored before its first successful GET; render a
@@ -128,18 +142,31 @@ func runGet(
 		return err
 	}
 
-	if waitErr != nil {
-		return waitErr
-	}
-
-	// The build may have been already terminal-error on the first GET, in
-	// which case WaitForBuild was skipped and waitErr stays nil. Surface
-	// that explicitly so the process exits non-zero; hint at the logs
-	// command so the user has a one-step recovery to inspect what went
-	// wrong.
+	// Covers a build that was already failed on the first GET as well as one
+	// that failed during the wait. The summary fetched the logs already, so
+	// it says whether there are any.
 	if workload.IsBuildErrorStatus(build.Status) {
-		return fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", build.ID, build.Status, build.ID)
+		return workload.BuildFailureMessage(artifactID, build.ID, build.Status, summary.LogEvidence())
 	}
 
-	return nil
+	return waitErr
+}
+
+// logSettleBudget is how long a failed build's logs are waited for; a var so
+// tests do not spend it.
+var logSettleBudget = workload.BuildLogSettleTimeout
+
+// settleLogs reads a failed build's stream until its last lines have
+// arrived, printing none of them: this command shows the summary's tail, not
+// a stream.
+func settleLogs(cmd *cobra.Command, build *workload.Build, poll pollflags.Set) {
+	if build == nil || !workload.IsBuildFailed(build.Status) {
+		return
+	}
+
+	out := cmd.ErrOrStderr()
+
+	tail := workload.NewBuildLogTail(build.ArtifactID, build.ID, func(workload.WorkloadLogEntry) {}, nil)
+	tail.Poll()
+	tail.Settle(cmd.Context(), build, poll.Interval, logSettleBudget, func(note string) { fmt.Fprintln(out, "  "+note) })
 }

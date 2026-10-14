@@ -34,7 +34,18 @@ func StateNotice(w io.Writer, notice string) {
 	fmt.Fprintln(w, tui.DimStyle.Render(notice))
 }
 
-// Bytes renders n in base-1024 units, capping at PB to avoid suffix overflow.
+// Warning prints a "Warning: " line to w (stderr in practice); "" prints nothing.
+func Warning(w io.Writer, notice string) {
+	if notice == "" {
+		return
+	}
+
+	fmt.Fprintln(w, "Warning: "+notice)
+}
+
+// Bytes renders n in base-1024 units with the IEC labels that mean base 1024
+// (KiB, MiB, ...), capping at PiB to avoid suffix overflow. Workload memory
+// is the one size the CLI spells in decimal units, and it keeps KB/MB/GB.
 func Bytes(n int64) string {
 	const unit = 1024
 
@@ -42,7 +53,7 @@ func Bytes(n int64) string {
 		return fmt.Sprintf("%d B", n)
 	}
 
-	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
+	suffixes := []string{"KiB", "MiB", "GiB", "TiB", "PiB"}
 	div, exp := int64(unit), 0
 
 	for x := n / unit; x >= unit && exp < len(suffixes)-1; x /= unit {

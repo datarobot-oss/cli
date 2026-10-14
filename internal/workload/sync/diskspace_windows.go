@@ -20,7 +20,7 @@ import "math"
 
 // realAvailableBytes on Windows returns effectively unlimited space so
 // EnsureSpaceFor never blocks. A proper GetDiskFreeSpaceEx-backed
-// implementation is tracked in RAPTOR-16928.
+// implementation is still to come.
 func realAvailableBytes(_ string) (int64, error) {
 	return math.MaxInt64, nil
 }

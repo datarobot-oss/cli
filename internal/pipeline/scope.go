@@ -87,6 +87,12 @@ func ResolveScope(scope string, version *int) (Scope, *int, error) {
 // so this returns just the segment beginning at "/pipelines".
 //
 // suffix should NOT start with a slash (e.g. "inputs", "inputs/abc").
+//
+// pipelineID is percent-encoded here. The suffix is NOT -- it legitimately
+// contains slashes as path separators, so escaping it wholesale would break
+// the path and escaping it per-segment would still let an id containing "/"
+// split into two segments. Callers that interpolate an id into the suffix must
+// therefore wrap it themselves: EndpointFor(pid, s, v, "inputs/"+escapeID(id)).
 func PipelinePath(pipelineID string, scope Scope, version *int, suffix string) (string, error) {
 	if pipelineID == "" {
 		return "", errors.New("pipeline id is required")
@@ -94,7 +100,7 @@ func PipelinePath(pipelineID string, scope Scope, version *int, suffix string) (
 
 	suffix = strings.TrimPrefix(suffix, "/")
 
-	base := "/api/v2/pipelines/" + pipelineID
+	base := "/api/v2/pipelines/" + escapeID(pipelineID)
 
 	if scope == ScopeLocked {
 		if version == nil {

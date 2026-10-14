@@ -21,7 +21,7 @@ dr self completion fish > ~/.config/fish/completions/dr.fish
 After installation, reload your shell to activate completions.
 
 > [!NOTE]
-> **First time?** If you're new to the CLI, start with the [Quick start](../../README.md#quick-start) for step-by-step setup instructions.
+> **First time?** If you're new to the CLI, start with the [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start) for step-by-step setup instructions.
 
 ## Synopsis
 
@@ -455,5 +455,5 @@ dr templates list > ~/.dr-templates-cache
 ## See also
 
 - [Shell completion guide](../user-guide/shell-completions.md)&mdash;detailed setup instructions.
-- [Quick start](../../README.md#quick-start)&mdash;initial setup.
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;initial setup.
 - Command completion is powered by [Cobra](https://github.com/spf13/cobra).

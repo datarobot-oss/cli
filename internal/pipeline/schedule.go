@@ -69,7 +69,7 @@ type ScheduleUpdateRequest struct {
 }
 
 func scheduleBase(pipelineID string) (string, error) {
-	return config.GetEndpointURL("/api/v2/pipelines/" + pipelineID + "/schedules")
+	return config.GetEndpointURL("/api/v2/pipelines/" + escapeID(pipelineID) + "/schedules")
 }
 
 // CreateSchedule registers a new recurring run for a locked pipeline version.
@@ -126,7 +126,7 @@ func GetSchedule(pipelineID, scheduleID string) (*Schedule, error) {
 		return nil, err
 	}
 
-	endpoint = endpoint + "/" + scheduleID
+	endpoint = endpoint + "/" + escapeID(scheduleID)
 
 	var schedule Schedule
 
@@ -145,7 +145,7 @@ func UpdateSchedule(pipelineID, scheduleID string, body ScheduleUpdateRequest) (
 		return nil, err
 	}
 
-	endpoint = endpoint + "/" + scheduleID
+	endpoint = endpoint + "/" + escapeID(scheduleID)
 
 	var result Schedule
 
@@ -164,5 +164,5 @@ func DeleteSchedule(pipelineID, scheduleID string) error {
 		return err
 	}
 
-	return doDelete(endpoint+"/"+scheduleID, "delete schedule")
+	return doDelete(endpoint+"/"+escapeID(scheduleID), "delete schedule")
 }

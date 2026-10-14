@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
@@ -92,6 +93,10 @@ func (r *Rollback) Backup(relPath string) error {
 
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("close backup file: %w", err)
+	}
+
+	if err := fileops.ApplyExecutable(dst, fileops.LocalExecutable(info.Mode())); err != nil {
+		return fmt.Errorf("keep executable bit on backup: %w", err)
 	}
 
 	return nil
@@ -182,32 +187,45 @@ func restoreFromDir(rollDir, projectDir string) error {
 			return fmt.Errorf("relativize rollback %s: %w", p, err)
 		}
 
-		dst := filepath.Join(projectDir, rel)
-
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return fmt.Errorf("mkdir restore parent: %w", err)
-		}
-
-		in, err := os.Open(p) //nolint:gosec // low TOCTOU risk for backup restore
-		if err != nil {
-			return fmt.Errorf("open backup %s: %w", p, err)
-		}
-
-		out, err := os.Create(dst)
-		if err != nil {
-			_ = in.Close()
-			return fmt.Errorf("create restored file %s: %w", dst, err)
-		}
-
-		_, copyErr := io.Copy(out, in)
-
-		_ = in.Close()
-		_ = out.Close()
-
-		if copyErr != nil {
-			return fmt.Errorf("restore copy %s: %w", dst, copyErr)
-		}
-
-		return nil
+		return restoreOne(p, filepath.Join(projectDir, rel))
 	})
+}
+
+// restoreOne copies one backup back over dst, executable bit included.
+func restoreOne(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("mkdir restore parent: %w", err)
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open backup %s: %w", src, err)
+	}
+
+	info, err := in.Stat()
+	if err != nil {
+		_ = in.Close()
+		return fmt.Errorf("stat backup %s: %w", src, err)
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		_ = in.Close()
+		return fmt.Errorf("create restored file %s: %w", dst, err)
+	}
+
+	_, copyErr := io.Copy(out, in)
+
+	_ = in.Close()
+	_ = out.Close()
+
+	if copyErr != nil {
+		return fmt.Errorf("restore copy %s: %w", dst, copyErr)
+	}
+
+	if err := fileops.ApplyExecutable(dst, fileops.LocalExecutable(info.Mode())); err != nil {
+		return fmt.Errorf("restore executable bit on %s: %w", dst, err)
+	}
+
+	return nil
 }

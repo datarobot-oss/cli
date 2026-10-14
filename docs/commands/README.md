@@ -2,7 +2,7 @@
 
 Complete reference documentation for all DataRobot CLI commands.
 
-This document provides a comprehensive overview of all available commands, their flags, and usage examples. For getting started with the CLI, see the [Quick start guide](../../README.md#quick-start).
+This document provides a comprehensive overview of all available commands, their flags, and usage examples. For getting started with the CLI, see the [Quick start guide](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start).
 
 ## Global flags
 
@@ -16,7 +16,7 @@ These flags are available for all commands:
       --skip-auth                Skip authentication checks (for advanced users)
       --force-interactive        Force the setup wizard to run even if already completed
       --all-commands             Display all available commands and their flags in tree format
-      --plugin-discovery-timeout duration   Timeout for plugin discovery (e.g. 2s, 500ms; default: 2s; 0s disables)
+      --plugin-discovery-timeout duration   Timeout for plugin discovery when placed before the command (0s disables; config is read too late for startup discovery)
   -k, --skip-certificate-check   Skip TLS certificate verification (insecure)
       --ca-cert string           Path to a PEM-encoded CA certificate bundle
       --export-windows-certs     Export the Windows certificate store to the DataRobot CA bundle (Windows only)
@@ -57,9 +57,10 @@ These flags are available for all commands:
 | [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts (feature-gated).        |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts (feature-gated). |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API.                     |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
 ### Command tree
@@ -96,7 +97,7 @@ dr
 ├── llm-gateway        LLM model management (alias: llm, llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
-├── pipeline           Pipelines API management (feature-gated)
+├── pipeline           Pipelines API management (alias: pipelines)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines
 │   ├── get            Display pipeline details and versions
@@ -112,7 +113,12 @@ dr
 │   │   ├── list       List runs for a pipeline
 │   │   ├── get        Display a single run
 │   │   ├── status     Lightweight run status (for polling)
-│   │   └── cancel     Cancel a running run
+│   │   ├── cancel     Cancel a running run
+│   │   └── task       Inspect per-run task executions (dispatch records)
+│   │       ├── list   List task invocations for a run (TASK ID · NODE ID)
+│   │       ├── get    Lifecycle record for a single task invocation
+│   │       ├── logs   Fetch a task invocation's logs (live or durable)
+│   │       └── result Presigned URL for a completed task's result
 │   ├── input          Manage pipeline input payloads
 │   │   ├── create     Register a JSON payload on a pipeline
 │   │   ├── list       List inputs for a pipeline (draft or locked scope)
@@ -125,16 +131,20 @@ dr
 │   │   ├── get        Display a single schedule
 │   │   ├── update     Change cron expression / timezone
 │   │   └── delete     Delete a schedule
-│   ├── environment    Manage named, versioned pip-package environments
-│   │   ├── create     Register a new environment with an initial version
-│   │   ├── list       List registered environments
-│   │   ├── update     Append a new version to an environment
-│   │   ├── delete     Soft-delete the latest active version of an environment
-│   │   └── version    Manage environment versions
-│   │       └── delete Delete a specific version
+│   ├── image          Manage pipeline execution images
+│   │   ├── create     Create a pipeline execution image
+│   │   ├── get        Fetch details of a pipeline execution image
+│   │   ├── list       List pipeline execution images
+│   │   ├── update     Add a new version to a pipeline execution image
+│   │   ├── delete     Delete a pipeline execution image
+│   │   └── version    Manage versions of a pipeline execution image
+│   │       ├── delete Delete a specific version
+│   │       └── logs   Fetch build logs for a specific version
+│   ├── clone          Clone a pipeline into a new draft
+│   ├── source         Display the source code of a pipeline
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
-├── artifact           Artifact management (feature-gated)
+├── artifact           Artifact management
 │   ├── create         Create an artifact
 │   ├── get            Display details of an artifact
 │   ├── list           List artifacts
@@ -149,8 +159,9 @@ dr
 │       ├── init       Link a directory to an artifact
 │       ├── sync       Push and pull code changes
 │       ├── versions   List catalog versions
-│       └── checkout   Download a version snapshot
-├── workload           Workload management (alias: wl, feature-gated)
+│       ├── checkout   Download a version snapshot
+│       └── doctor     Diagnose and repair the local sync state
+├── workload           Workload management (alias: wl)
 │   ├── create         Create (deploy) a workload
 │   ├── get            Display details of a workload
 │   ├── list           List workloads
@@ -159,7 +170,26 @@ dr
 │   ├── stop           Stop a workload
 │   ├── status         Show a workload's status
 │   ├── endpoint       Print a workload's endpoint URL
-│   └── logs           Show a workload's container logs
+│   ├── logs           Show a workload's container logs
+│   ├── config         Write the .datarobot.yaml manifest for a project (feature-gated)
+│   └── up             Deploy the difference between .datarobot.yaml and what is running (feature-gated)
+├── enclave            Enclave management (alias: enclaves, outpost(s), feature-gated)
+│   ├── register       Register an enclave, returning one-shot install secrets
+│   ├── get            Display details of an enclave
+│   ├── list           List enclaves
+│   ├── deactivate     Take an active enclave out of scheduling
+│   ├── reactivate     Return a deactivated enclave to service
+│   ├── delete         Delete an enclave
+│   ├── access         Manage who can access one enclave
+│   │   ├── grant      Grant a role (owner|user|consumer) on an enclave
+│   │   ├── revoke     Revoke a recipient's role on an enclave
+│   │   ├── list       List who holds a role on an enclave
+│   │   └── show       Show effective permissions on an enclave
+│   └── permission     Manage who can create enclaves
+│       ├── grant      Allow a recipient to create enclaves
+│       ├── revoke     Stop a recipient from creating enclaves
+│       ├── list       List who may create enclaves
+│       └── show       Show your collection-level permissions
 └── self               CLI utility commands
     ├── completion     Shell completion
     │   ├── install    Install completions interactively
@@ -356,7 +386,7 @@ For detailed documentation on each command, see:
   - `list` (`ls`)&mdash;fetch available LLMs and display them in a table (`ID · NAME · SOURCE · PROVIDER · MODEL · CONTEXT`). The currently-selected model is marked with `*`. Both sources are queried in parallel by default; `--source gateway` or `--source deployed` narrows it to one and skips the other request. Supports `--output-format json` (each entry includes `source`, `deployment_id`, and a `selected` boolean).
   - `select [llm-id]`&mdash;set the default LLM. Without an argument, launches an interactive TUI picker. With an argument (a gateway model id or a deployment id), validates it against the available LLMs and persists it immediately. The selection is saved to `drconfig.yaml` under the key `default-llm-id`.
 
-- **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent (feature-gated behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`).
+- **[pipeline](pipeline.md)**&mdash;manage AI/ML pipelines orchestrated by Covalent.
   - `create`&mdash;upload a Python file to register a new pipeline.
   - `list`&mdash;list pipelines with mode filtering and pagination.
   - `get`&mdash;display full details of a pipeline including all versions.
@@ -365,21 +395,25 @@ For detailed documentation on each command, see:
   - `lock`&mdash;promote a draft pipeline to locked mode.
   - `version`&mdash;`list` / `get` to inspect pipeline versions.
   - `graph`&mdash;display the pipeline/task DAG (draft or locked).
-  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions.
+  - `run`&mdash;`create`/`list`/`get`/`status`/`cancel` pipeline executions; `run task` (`list`/`get`/`logs`/`result`) inspects the per-`@task` executions of a single run.
   - `input`&mdash;`create`/`list`/`get`/`update`/`delete` JSON payloads used by runs.
   - `schedule`&mdash;`create`/`list`/`get`/`update`/`delete` recurring (cron) runs on locked versions.
-  - `environment`&mdash;`create`/`list`/`update`/`delete` named pip-package environments; `version delete` removes a specific version.
+  - `image`&mdash;`create`/`get`/`list`/`update`/`delete` pipeline execution images; `version delete` and `version logs` operate on a specific image version.
+  - `clone`&mdash;clone an existing pipeline into a new draft.
+  - `source`&mdash;display the source code of a pipeline.
   - `task`&mdash;`get` to inspect a task's source code, function signature parameters, and (for locked versions) the latest pipeline input payload.
 
-- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads (feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+- **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads.
   - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
   - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
-  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory.
+  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory, plus `doctor` to diagnose and repair that state.
 
-- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`; feature-gated behind `DATAROBOT_CLI_FEATURE_WORKLOAD=true`).
+- **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`).
   - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.
   - `start` / `stop` / `status`&mdash;run-state control and status polling.
   - `endpoint` / `logs`&mdash;print the endpoint URL and stream container logs.
+
+- **[artifact and workload spec](workload-spec.md)**&mdash;the reference for the two spec files those commands read: container groups and images, environment variables and secrets, replicas and resource allocation, and one walkthrough from source code to a running URL.
 
 ## Getting help
 
@@ -423,8 +457,18 @@ EDITOR                              # External editor for file editing (fallback
 | 2    | Command usage error.  |
 | 130  | Interrupted (Ctrl+C). |
 
+With `--output-format json` (or `DATAROBOT_CLI_OUTPUT_FORMAT=json`), a failing command writes its error to stderr as one line of JSON instead of an `Error:` line:
+
+```json
+{"error":{"message":"HTTP 404 Not Found: workload not found (url: https://app.datarobot.com/api/v2/workloads/abc/)","statusCode":404,"url":"https://app.datarobot.com/api/v2/workloads/abc/","detail":"workload not found"}}
+```
+
+`message` is always there. `statusCode`, `url` and `detail` appear when the failure was an API response. stdout gets nothing new on failure, and the exit code is still non-zero.
+
+Two kinds of command report their own failures and get no envelope. `dr run` (`dr task run`) and plugin commands pass on the exit code of the task or plugin they ran, with its own output. A command that has already printed its failure keeps that output, which may be on stdout, and still exits non-zero.
+
 ## See also
 
-- [Quick start](../../README.md#quick-start)
-- [User guide](../user-guide/)
-- [Template system](../template-system/)
+- [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)
+- [User guide](../user-guide/README.md)
+- [Template system](../template-system/README.md)

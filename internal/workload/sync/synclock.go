@@ -22,7 +22,10 @@ import (
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
-const syncLockFile = "sync.lock"
+// LockFileName is the advisory lock file the sync engine creates inside the
+// state directory. Exported so read-only consumers (e.g. the doctor's
+// non-creating lock probe) can locate the file without duplicating the name.
+const LockFileName = "sync.lock"
 
 // SyncLock is the platform-specific exclusive lock for a sync run.
 type SyncLock struct {
@@ -40,7 +43,7 @@ func AcquireSyncLock(projectDir string) (*SyncLock, error) {
 		return nil, fmt.Errorf("acquire sync lock: %w", err)
 	}
 
-	path := filepath.Join(stateDir, syncLockFile)
+	path := filepath.Join(stateDir, LockFileName)
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {

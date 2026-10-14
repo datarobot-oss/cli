@@ -28,7 +28,7 @@ import (
 )
 
 // countDocuments reports how many top-level JSON documents b contains. The
-// whole point of RAPTOR-19348 is that this is always 1.
+// whole point of the single-document output is that this is always 1.
 func countDocuments(t *testing.T, b []byte) int {
 	t.Helper()
 
@@ -63,7 +63,7 @@ func TestRenderSyncJSON_OneDocumentWithNestedResult(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	require.NoError(t, RenderSyncJSON(&buf, plan, result, false))
+	require.NoError(t, RenderSyncJSON(&buf, plan, result, false, Findings{}))
 
 	assert.Equal(t, 1, countDocuments(t, buf.Bytes()), "must be exactly one JSON document")
 
@@ -87,7 +87,7 @@ func TestRenderSyncJSON_OmitsResultWhenNil(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	require.NoError(t, RenderSyncJSON(&buf, plan, nil, true))
+	require.NoError(t, RenderSyncJSON(&buf, plan, nil, true, Findings{}))
 
 	assert.Equal(t, 1, countDocuments(t, buf.Bytes()))
 	assert.NotContains(t, buf.String(), `"result"`, "a plan-only run carries no result key")

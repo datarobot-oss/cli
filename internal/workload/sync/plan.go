@@ -25,6 +25,20 @@ type FileAction struct {
 	RemoteSize     int64
 	LocalHash      string
 	RemoteHash     string
+	LocalExec      *bool
+	RemoteExec     *bool
+	BaseExec       *bool
+}
+
+// MergedExec is the executable bit the file ends with after this action,
+// merged apart from its bytes; see mergeExecutable.
+func (fa FileAction) MergedExec() *bool {
+	return mergeExecutable(fa.BaseExec, fa.LocalExec, fa.RemoteExec)
+}
+
+// ExecOnly reports a change to the executable bit alone, with the same bytes on both sides.
+func (fa FileAction) ExecOnly() bool {
+	return fa.LocalHash != "" && fa.LocalHash == fa.RemoteHash
 }
 
 // SyncPlan is the blueprint Phase 5 executes and the structure the display
@@ -35,9 +49,35 @@ type SyncPlan struct {
 	Deletes   []FileAction // LOCAL_DELETED + REMOTE_DELETED
 	Conflicts []FileAction // CONFLICT + ADD_CONFLICT + DEL_EDIT_CONFLICT
 
+	// Skipped is what a push-only run leaves as it is on both sides: the
+	// downloads and the remote deletes it would otherwise apply locally.
+	Skipped []FileAction
+
 	// OldVersionShort is the 8-char prefix of the BASE manifest's
 	// syncedVersionId; empty before the first successful sync.
 	OldVersionShort string
+}
+
+// pushOnly moves every action that would write the working tree from the
+// remote side into Skipped. Conflicts stay where they are: the command
+// refuses them, since a push-only run lets neither side win silently.
+func (p *SyncPlan) pushOnly() {
+	p.Skipped = append(p.Skipped, p.Downloads...)
+	p.Downloads = nil
+
+	kept := p.Deletes[:0]
+
+	for _, fa := range p.Deletes {
+		if fa.Action == ActDownloadDelete {
+			p.Skipped = append(p.Skipped, fa)
+
+			continue
+		}
+
+		kept = append(kept, fa)
+	}
+
+	p.Deletes = kept
 }
 
 // Append routes a FileAction into the right group based on its Action.
@@ -60,7 +100,7 @@ func (p *SyncPlan) Append(fa FileAction) {
 
 // Sort orders every group by path. Call once after all Append calls.
 func (p *SyncPlan) Sort() {
-	for _, group := range [][]FileAction{p.Uploads, p.Downloads, p.Deletes, p.Conflicts} {
+	for _, group := range [][]FileAction{p.Uploads, p.Downloads, p.Deletes, p.Conflicts, p.Skipped} {
 		sort.Slice(group, func(i, j int) bool { return group[i].Path < group[j].Path })
 	}
 }
@@ -92,6 +132,11 @@ func (p *SyncPlan) TotalDownloadBytes() int64 {
 	var n int64
 
 	for _, fa := range p.Downloads {
+		// A change to the executable bit alone is a chmod in place.
+		if fa.ExecOnly() {
+			continue
+		}
+
 		n += fa.RemoteSize
 	}
 
@@ -128,7 +173,8 @@ func (p *SyncPlan) OverwrittenLocalPaths() []string {
 	var out []string
 
 	for _, fa := range p.Downloads {
-		if fa.Action == ActDownloadModify {
+		// Only the executable bit moved: the local bytes are the remote's, so there is nothing to keep.
+		if fa.Action == ActDownloadModify && !fa.ExecOnly() {
 			out = append(out, fa.Path)
 		}
 	}

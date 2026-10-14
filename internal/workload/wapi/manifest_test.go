@@ -58,6 +58,44 @@ func TestManifest_SaveLoadRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Files, got.Files)
 }
 
+func TestManifest_ExecutableRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	initWapiDir(t, tmp)
+
+	yes, no := true, false
+
+	original := Manifest{
+		Version: ManifestVersion,
+		Files: map[string]FileMeta{
+			"run.sh":   {Hash: testHash('1'), Size: 1, Executable: &yes},
+			"agent.py": {Hash: testHash('2'), Size: 2, Executable: &no},
+			"old.py":   {Hash: testHash('3'), Size: 3},
+		},
+	}
+
+	require.NoError(t, SaveManifest(tmp, original))
+
+	raw, err := os.ReadFile(filepath.Join(Dir(tmp), manifestFile))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"executable": false`, "a known false is written, not dropped")
+
+	got, err := LoadManifest(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, original.Files, got.Files)
+}
+
+func TestManifest_WithoutExecutableLoadsAsUnknown(t *testing.T) {
+	tmp := t.TempDir()
+	initWapiDir(t, tmp)
+
+	body := `{"version":1,"syncedAt":null,"syncedVersionId":null,"files":{"a.py":{"hash":"` + testHash('a') + `","size":1}}}`
+	require.NoError(t, os.WriteFile(filepath.Join(Dir(tmp), manifestFile), []byte(body), 0o644))
+
+	got, err := LoadManifest(tmp)
+	require.NoError(t, err)
+	assert.Nil(t, got.Files["a.py"].Executable)
+}
+
 func TestManifest_EmptyFilesMap(t *testing.T) {
 	tmp := t.TempDir()
 	initWapiDir(t, tmp)

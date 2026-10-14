@@ -281,22 +281,26 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	var err error
 
-	// The link is what this command exists to produce, so it goes to stdout - where
-	// the animated spinner renders its own copy (tui.Run hands bubbletea os.Stdout)
-	// and where callers that redirect the streams separately look for it. The Windows
+	// The link is what this command exists to produce, so it always reaches stdout,
+	// where callers that redirect the streams separately look for it. The Windows
 	// smoke test is one such caller; the expect-based Linux and macOS ones cannot tell
 	// the difference, because a PTY merges stdout and stderr.
 	//
-	// Printing it here rather than leaving it to tui.RunWithSpinner, which only shows
-	// the label while it animates: it drops the label outright without a terminal, and
-	// diverts it to stderr under DATAROBOT_CLI_NON_INTERACTIVE. Neither leaves the
-	// link on stdout, and the spinner is no use in either case anyway.
-	if !reader.IsStdinTerminal() || reader.IsNonInteractive() {
-		fmt.Fprintln(os.Stdout, label)
+	// The spinner draws on stderr, so it only carries the link to a reader who sees
+	// both streams on one terminal. Whenever stdout is not that terminal the label is
+	// printed there too, and when the spinner would not draw it is skipped and the
+	// label goes to stdout alone.
+	printLink, spin := loginOutput(reader.IsStdinTerminal(), reader.IsStdoutTerminal(),
+		reader.IsStderrTerminal(), reader.IsNonInteractive())
 
-		err = wait()
-	} else {
+	if printLink {
+		fmt.Fprintln(os.Stdout, label)
+	}
+
+	if spin {
 		err = tui.RunWithSpinner(label, wait)
+	} else {
+		err = wait()
 	}
 
 	if err != nil {
@@ -304,6 +308,15 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	}
 
 	return apiKey, nil
+}
+
+// loginOutput decides where the login label goes: printed to stdout unless the
+// spinner will draw it on the same terminal. The spinner runs only when it
+// draws, by the spinner's own rule, so the two cannot disagree.
+func loginOutput(stdinTerm, stdoutTerm, stderrTerm, nonInteractive bool) (printLink, spin bool) {
+	spin = tui.SpinnerDrawn(stdinTerm, stderrTerm, nonInteractive)
+
+	return !spin || !stdoutTerm, spin
 }
 
 // listenReclaimingPort binds addr, first asking any auth server left over from a

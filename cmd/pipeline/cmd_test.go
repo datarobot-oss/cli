@@ -37,12 +37,15 @@ func TestCmd_HasAlias(t *testing.T) {
 	assert.Contains(t, cmd.Aliases, "pipelines")
 }
 
-func TestCmd_FeatureGate(t *testing.T) {
+func TestCmd_NotFeatureGated(t *testing.T) {
 	cmd := Cmd()
 
-	gate, ok := cmd.Annotations[features.AnnotationKey]
-	assert.True(t, ok, "expected feature-gate annotation to be set")
-	assert.Equal(t, "pipeline", gate)
+	// Pipelines went GA: the command must carry no feature-gate annotation, or
+	// cli.CommandAdder drops it from the root command tree unless an env var is
+	// set. See TestPipelineCommandPresentByDefault in cmd/root_test.go for the
+	// end-to-end guard.
+	_, ok := cmd.Annotations[features.AnnotationKey]
+	assert.False(t, ok, "pipeline is GA and must not carry a %q annotation", features.AnnotationKey)
 }
 
 func TestCmd_IsGroupOnly(t *testing.T) {
@@ -57,6 +60,7 @@ func TestCmd_HasExpectedSubcommands(t *testing.T) {
 	want := map[string]bool{
 		"create":   false,
 		"get":      false,
+		"clone":    false,
 		"list":     false,
 		"update":   false,
 		"delete":   false,
@@ -66,6 +70,9 @@ func TestCmd_HasExpectedSubcommands(t *testing.T) {
 		"run":      false,
 		"input":    false,
 		"schedule": false,
+		"image":    false,
+		"source":   false,
+		"task":     false,
 	}
 
 	for _, sub := range cmd.Commands() {

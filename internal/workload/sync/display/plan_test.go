@@ -32,6 +32,31 @@ func TestPrintPlan_Empty(t *testing.T) {
 	assert.Equal(t, "Up to date.\n", buf.String())
 }
 
+// A push-only plan names what it leaves alone, and a plan that only leaves
+// things alone says there is nothing to push rather than "Up to date".
+func TestPrintPlan_PushOnlyListsWhatItLeavesAlone(t *testing.T) {
+	skipped := []sync.FileAction{
+		{Path: "theirs.py", Classification: sync.ClsRemoteModified, Action: sync.ActDownloadModify, RemoteSize: 10},
+	}
+
+	var buf bytes.Buffer
+
+	require.NoError(t, PrintPlan(&buf, &sync.SyncPlan{
+		Uploads: []sync.FileAction{{Path: "mine.py", Classification: sync.ClsLocalModified, Action: sync.ActUploadModify, LocalSize: 5}},
+		Skipped: skipped,
+	}))
+	assert.Contains(t, buf.String(), "↑ UPLOAD (1)")
+	assert.Contains(t, buf.String(), "↷ LEFT ALONE (push-only) (1)")
+	assert.Contains(t, buf.String(), "theirs.py")
+
+	buf.Reset()
+
+	require.NoError(t, PrintPlan(&buf, &sync.SyncPlan{Skipped: skipped}))
+	assert.Contains(t, buf.String(), "Nothing to push.")
+	assert.NotContains(t, buf.String(), "Up to date")
+	assert.Contains(t, buf.String(), "theirs.py")
+}
+
 func TestPrintPlan_Full(t *testing.T) {
 	plan := &sync.SyncPlan{
 		Uploads: []sync.FileAction{

@@ -66,8 +66,9 @@ const (
 	// to be running.
 	StateStopped
 
-	// StateSettling is a workload still moving under its own power. `up`
-	// waits for it rather than acting on a state that is about to change.
+	// StateSettling is a workload still moving. `up` waits for it rather than
+	// acting on a state that is about to change. A dry run also reads a swap
+	// in flight as this, since a workload being replaced reports itself running.
 	StateSettling
 
 	// StateRunning is the ordinary case: reconcile against it.
