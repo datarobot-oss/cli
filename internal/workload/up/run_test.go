@@ -248,6 +248,12 @@ func install(t *testing.T, f fakes) {
 	force(t, &checkEndpointFn, func(string) (int, error) { return http.StatusOK, nil })
 	swap(t, &checkEndpointFn, f.checkEndpoint)
 
+	// The same check first reads the served artifact for its readiness probe.
+	// It defaults to an artifact with none, so the check asks /. Being its own
+	// seam, this default leaves every other artifact read alone, and tests
+	// keep wiring those through artifactD.
+	force(t, &servedArtifactFn, func(string) (workload.Document, error) { return nil, nil })
+
 	// swap leaves a seam alone when the test supplied nothing, so without this
 	// a stopped fixture with no start fake POSTs to whatever tenant the
 	// developer is logged into.

@@ -210,6 +210,123 @@ func TestCheckEndpoint_ReportsTheRedirectItselfWithoutFollowing(t *testing.T) {
 	assert.Equal(t, http.StatusFound, status)
 }
 
+// The check asks the route the served artifact's readiness probe names, which
+// is the one the platform's readiness gate asks before it reports running, and
+// asks / only when there is none.
+func TestTargetFor(t *testing.T) {
+	const (
+		root   = "https://app.example.test/api/v2/endpoints/workloads/wl-1/"
+		pinned = "https://app.example.test/api/v2/endpoints/workloads/wl-1?protonId=p-1"
+	)
+
+	probe := func(member string) workload.Document {
+		return servedDoc(t, `, "readinessProbe": `+member)
+	}
+
+	sidecarFirst := doc(t, `{"spec": {"containerGroups": [{"containers": [
+		{"name": "bridge", "readinessProbe": {"path": "/bridge"}},
+		{"name": "primary", "primary": true, "port": 8080, "readinessProbe": {"path": "/version"}}
+	]}]}}`)
+
+	tests := []struct {
+		name      string
+		endpoint  string
+		served    workload.Document
+		wantURL   string
+		wantProbe string
+	}{
+		{"no artifact read", root, nil, root, ""},
+		{"no readiness probe", root, servedDoc(t, ""), root, ""},
+		{"blank probe path", root, probe(`{"path": "  ", "port": 8080}`), root, ""},
+		{"probe path", root, probe(`{"path": "/version", "port": 8080}`), root + "version", "/version"},
+		// The gate asks the path on the container's port whatever the probe
+		// names, so a workload that reached running answers it there.
+		{"probe on another port", root, probe(`{"path": "/version", "port": 9000}`), root + "version", "/version"},
+		{"path without a leading slash", root, probe(`{"path": "health"}`), root + "health", "health"},
+		{"trailing slash kept", root, probe(`{"path": "/health/"}`), root + "health/", "/health/"},
+		{
+			"pinned endpoint keeps its query", pinned, probe(`{"path": "/version"}`),
+			"https://app.example.test/api/v2/endpoints/workloads/wl-1/version?protonId=p-1", "/version",
+		},
+		{
+			"probe query joins the endpoint's", pinned, probe(`{"path": "/health?full=1"}`),
+			"https://app.example.test/api/v2/endpoints/workloads/wl-1/health?protonId=p-1&full=1", "/health?full=1",
+		},
+		{"the primary container's probe, not a sidecar's", root, sidecarFirst, root + "version", "/version"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, gotProbe := targetFor(tt.endpoint, tt.served)
+
+			assert.Equal(t, tt.wantURL, gotURL)
+			assert.Equal(t, tt.wantProbe, gotProbe)
+		})
+	}
+}
+
+// The line names the path it asked, and qualifies a 404 only where the check
+// fell back to /, which an app need not serve. A 404 on the probe's own path
+// is a real finding and stays bare.
+func TestVerifyEndpoint_NamesThePathItAsked(t *testing.T) {
+	const endpoint = "https://x.example/w/"
+
+	probed := servedDoc(t, `, "readinessProbe": {"path": "/version", "port": 8080}`)
+	bare := servedDoc(t, "")
+
+	tests := []struct {
+		name    string
+		served  workload.Document
+		readErr error
+		status  int
+		wantURL string
+		want    string
+		hint    bool
+	}{
+		{
+			"probe path answering", probed, nil, http.StatusOK, endpoint + "version",
+			"anonymous GET of /version, the readiness probe's path, answered HTTP 200 OK.", false,
+		},
+		{
+			"probe path missing", probed, nil, http.StatusNotFound, endpoint + "version",
+			"GET of /version, the readiness probe's path, answered HTTP 404 Not Found.", false,
+		},
+		{"root answering", bare, nil, http.StatusOK, endpoint, "GET of / answered HTTP 200 OK.", false},
+		{"root missing", bare, nil, http.StatusNotFound, endpoint, "GET of / answered HTTP 404 Not Found.", true},
+		{
+			"unreadable artifact", nil, errors.New("403 Forbidden"), http.StatusNotFound, endpoint,
+			"GET of / answered HTTP 404 Not Found.", true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			force(t, &servedArtifactFn, func(id string) (workload.Document, error) {
+				assert.Equal(t, "art-1", id)
+
+				return tt.served, tt.readErr
+			})
+			force(t, &checkEndpointFn, func(url string) (int, error) {
+				assert.Equal(t, tt.wantURL, url)
+
+				return tt.status, nil
+			})
+
+			var out bytes.Buffer
+
+			verifyEndpoint(Result{Endpoint: endpoint, WorkloadID: "wl-1", ArtifactID: "art-1"}, "", newReporter(&out, false))
+
+			assert.Contains(t, out.String(), tt.want)
+
+			if tt.hint {
+				assert.Contains(t, out.String(), "serves nothing at /")
+			} else {
+				assert.NotContains(t, out.String(), "serves nothing at /")
+			}
+		})
+	}
+}
+
 // A deploy whose endpoint answers nothing still succeeds. Failing it would be
 // the probe mistake again: a guess about the app's routes killing a deploy
 // the platform considers healthy.
@@ -252,6 +369,49 @@ func TestRun_ReportsTheEndpointAnswer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "Endpoint check")
 	assert.Contains(t, stderr, "200 OK")
+}
+
+// The probe is read off the artifact the workload ended up serving, not off
+// the file. A manifest that names its artifact by id carries no probe at all,
+// and its check still asks the route that artifact declares.
+func TestRun_EndpointCheckAsksTheServedArtifactsProbe(t *testing.T) {
+	var asked string
+
+	install(t, fakes{
+		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(string, string) error { return nil },
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+		checkEndpoint: func(url string) (int, error) {
+			asked = url
+
+			return http.StatusOK, nil
+		},
+	})
+	force(t, &servedArtifactFn, func(id string) (workload.Document, error) {
+		assert.Equal(t, "art-1", id, "the artifact the wait saw serving")
+
+		return doc(t, liveArtifactJSON), nil
+	})
+
+	_, stderr, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, "https://app.datarobot.com/workloads/wl-new/health", asked)
+	assert.Contains(t, stderr, "GET of /health, the readiness probe's path")
+}
+
+// servedDoc is an artifact as the server returns it, with one primary
+// container on 8080. member is spliced into that container, for example
+// `, "readinessProbe": {"path": "/version"}`; "" leaves it without a probe.
+func servedDoc(t *testing.T, member string) workload.Document {
+	t.Helper()
+
+	return doc(t, `{"spec": {"containerGroups": [{"containers": [`+
+		`{"name": "primary", "primary": true, "port": 8080`+member+`}]}]}}`)
 }
 
 func installEndpointCheckAuth(t *testing.T, baseURL, token string) {
