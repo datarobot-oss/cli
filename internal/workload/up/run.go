@@ -331,6 +331,8 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 		return result, err
 	}
 
+	var err error
+
 	if plan.Empty() {
 		result, err = lockOnly(loaded, live, result, opts)
 	} else {
