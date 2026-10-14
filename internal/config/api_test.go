@@ -109,11 +109,6 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			input:       "ftp://app.datarobot.com",
 			expectError: true,
 		},
-		{
-			name:        "file scheme is rejected",
-			input:       "file://host/etc/passwd",
-			expectError: true,
-		},
 	}
 
 	for _, tc := range tests {

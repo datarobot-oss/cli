@@ -48,8 +48,7 @@ This command helps you choose the correct DataRobot environment:
 				url = args[0]
 			}
 
-			// An explicit arg that won't validate is the user's to fix; report it
-			// rather than silently dropping into the interactive picker.
+			// A bad explicit arg is reported, not silently replaced by the picker.
 			if url != "" {
 				if err := config.SetURLToConfig(url); err != nil {
 					log.Error(err.Error())

@@ -60,8 +60,7 @@ func SchemeHostOnly(longURL string) (string, error) {
 	return parsedURL.String(), nil
 }
 
-// unsupportedSchemeError is an ErrInvalidURL, so the interactive picker re-asks
-// on a bad scheme instead of aborting, while keeping its specific message.
+// unsupportedSchemeError wraps ErrInvalidURL so the pickers re-ask instead of aborting.
 type unsupportedSchemeError struct{ scheme string }
 
 func (e *unsupportedSchemeError) Error() string {
@@ -70,8 +69,8 @@ func (e *unsupportedSchemeError) Error() string {
 
 func (e *unsupportedSchemeError) Unwrap() error { return ErrInvalidURL }
 
-// RequireHTTPScheme rejects a normalized base URL whose scheme is not http or
-// https. SchemeHostOnly stays scheme-agnostic (export and GetBaseURL share it).
+// RequireHTTPScheme rejects a normalized base URL that is not http or https.
+// SchemeHostOnly stays scheme-agnostic because export and GetBaseURL share it.
 func RequireHTTPScheme(baseURL string) error {
 	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
 		return &unsupportedSchemeError{scheme}
@@ -205,11 +204,8 @@ func SaveURLToConfig(newURL string) error {
 		return err
 	}
 
-	// Empty is the reset case below; a non-empty host has to be http/https.
-	if newURL != "" {
-		if err = RequireHTTPScheme(newURL); err != nil {
-			return err
-		}
+	if err = RequireHTTPScheme(newURL); err != nil {
+		return err
 	}
 
 	if err = CreateConfigFileDirIfNotExists(); err != nil {
