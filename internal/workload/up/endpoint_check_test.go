@@ -212,7 +212,7 @@ func TestCheckEndpoint_ReportsTheRedirectItselfWithoutFollowing(t *testing.T) {
 
 // The check asks the route the served artifact's readiness probe names, which
 // is the one the platform's readiness gate asks before it reports running, and
-// asks / only when there is none.
+// asks / only when there is none it can send, saying which reason applied.
 func TestTargetFor(t *testing.T) {
 	const (
 		root   = "https://app.example.test/api/v2/endpoints/workloads/wl-1/"
@@ -223,56 +223,71 @@ func TestTargetFor(t *testing.T) {
 		return servedDoc(t, `, "readinessProbe": `+member)
 	}
 
+	asks := func(url, path string) checkTarget {
+		return checkTarget{url: url, probePath: path}
+	}
+
 	sidecarFirst := doc(t, `{"spec": {"containerGroups": [{"containers": [
 		{"name": "bridge", "readinessProbe": {"path": "/bridge"}},
 		{"name": "primary", "primary": true, "port": 8080, "readinessProbe": {"path": "/version"}}
 	]}]}}`)
 
+	refused := checkTarget{url: root, fallback: fallbackRefused}
+
 	tests := []struct {
-		name      string
-		endpoint  string
-		served    workload.Document
-		wantURL   string
-		wantProbe string
+		name     string
+		endpoint string
+		served   workload.Document
+		want     checkTarget
 	}{
-		{"no artifact read", root, nil, root, ""},
-		{"no readiness probe", root, servedDoc(t, ""), root, ""},
-		{"blank probe path", root, probe(`{"path": "  ", "port": 8080}`), root, ""},
-		{"probe path", root, probe(`{"path": "/version", "port": 8080}`), root + "version", "/version"},
+		{"no artifact read", root, nil, checkTarget{url: root, fallback: fallbackUnread}},
+		{"no readiness probe", root, servedDoc(t, ""), checkTarget{url: root, fallback: fallbackNoProbe}},
+		{"blank probe path", root, probe(`{"path": "  ", "port": 8080}`), checkTarget{url: root, fallback: fallbackNoProbe}},
+		{"probe path", root, probe(`{"path": "/version", "port": 8080}`), asks(root+"version", "/version")},
 		// The gate asks the path on the container's port whatever the probe
 		// names, so a workload that reached running answers it there.
-		{"probe on another port", root, probe(`{"path": "/version", "port": 9000}`), root + "version", "/version"},
-		{"path without a leading slash", root, probe(`{"path": "health"}`), root + "health", "health"},
-		{"trailing slash kept", root, probe(`{"path": "/health/"}`), root + "health/", "/health/"},
+		{"probe on another port", root, probe(`{"path": "/version", "port": 9000}`), asks(root+"version", "/version")},
+		{"path without a leading slash", root, probe(`{"path": "health"}`), asks(root+"health", "/health")},
+		{"trailing slash kept", root, probe(`{"path": "/health/"}`), asks(root+"health/", "/health/")},
 		{
 			"pinned endpoint keeps its query", pinned, probe(`{"path": "/version"}`),
-			"https://app.example.test/api/v2/endpoints/workloads/wl-1/version?protonId=p-1", "/version",
+			asks("https://app.example.test/api/v2/endpoints/workloads/wl-1/version?protonId=p-1", "/version"),
 		},
 		{
 			"probe query joins the endpoint's", pinned, probe(`{"path": "/health?full=1"}`),
-			"https://app.example.test/api/v2/endpoints/workloads/wl-1/health?protonId=p-1&full=1", "/health?full=1",
+			asks("https://app.example.test/api/v2/endpoints/workloads/wl-1/health?protonId=p-1&full=1", "/health?full=1"),
 		},
-		{"the primary container's probe, not a sidecar's", root, sidecarFirst, root + "version", "/version"},
+		{"a .. in the query is not a segment", root, probe(`{"path": "/health?next=../x"}`), asks(root+"health?next=../x", "/health?next=../x")},
+		{"the primary container's probe, not a sidecar's", root, sidecarFirst, asks(root+"version", "/version")},
+
+		// A path that could leave the endpoint is never sent: the GET carries
+		// the token, and a proxy that decodes and resolves the segment would
+		// aim it at any path on the host.
+		{"plain .. segments", root, probe(`{"path": "../../../../account/info"}`), refused},
+		{"encoded .. segments", root, probe(`{"path": "%2e%2e/%2e%2e/%2e%2e/%2e%2e/account/info"}`), refused},
+		{"double-encoded .. segments", root, probe(`{"path": "/%252e%252e/account/info"}`), refused},
+		{"encoded slashes around ..", root, probe(`{"path": "/x/..%2f..%2faccount"}`), refused},
+		{"backslash separators", root, probe(`{"path": "/..\\..\\account"}`), refused},
+		{"a . segment", root, probe(`{"path": "/./version"}`), refused},
+		{"an escape that does not decode", root, probe(`{"path": "/health%zz"}`), refused},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotURL, gotProbe := targetFor(tt.endpoint, tt.served)
-
-			assert.Equal(t, tt.wantURL, gotURL)
-			assert.Equal(t, tt.wantProbe, gotProbe)
+			assert.Equal(t, tt.want, targetFor(tt.endpoint, tt.served))
 		})
 	}
 }
 
 // The line names the path it asked, and qualifies a 404 only where the check
-// fell back to /, which an app need not serve. A 404 on the probe's own path
-// is a real finding and stays bare.
+// fell back to /, which an app need not serve, saying why it did. A 404 on the
+// probe's own path is a real finding and stays bare.
 func TestVerifyEndpoint_NamesThePathItAsked(t *testing.T) {
 	const endpoint = "https://x.example/w/"
 
 	probed := servedDoc(t, `, "readinessProbe": {"path": "/version", "port": 8080}`)
 	bare := servedDoc(t, "")
+	climbing := servedDoc(t, `, "readinessProbe": {"path": "%2e%2e/%2e%2e/account/info"}`)
 
 	tests := []struct {
 		name    string
@@ -281,21 +296,31 @@ func TestVerifyEndpoint_NamesThePathItAsked(t *testing.T) {
 		status  int
 		wantURL string
 		want    string
-		hint    bool
+		note    string
 	}{
 		{
 			"probe path answering", probed, nil, http.StatusOK, endpoint + "version",
-			"anonymous GET of /version, the readiness probe's path, answered HTTP 200 OK.", false,
+			"anonymous GET of /version, the readiness probe's path, answered HTTP 200 OK.", "",
 		},
 		{
 			"probe path missing", probed, nil, http.StatusNotFound, endpoint + "version",
-			"GET of /version, the readiness probe's path, answered HTTP 404 Not Found.", false,
+			"GET of /version, the readiness probe's path, answered HTTP 404 Not Found.", "",
 		},
-		{"root answering", bare, nil, http.StatusOK, endpoint, "GET of / answered HTTP 200 OK.", false},
-		{"root missing", bare, nil, http.StatusNotFound, endpoint, "GET of / answered HTTP 404 Not Found.", true},
+		{"root answering", bare, nil, http.StatusOK, endpoint, "GET of / answered HTTP 200 OK.", ""},
+		{
+			"root missing", bare, nil, http.StatusNotFound, endpoint, "GET of / answered HTTP 404 Not Found.",
+			"The check asked for / because the served artifact declares no readiness probe path; " +
+				"a 404 there only means the app serves nothing at /.",
+		},
 		{
 			"unreadable artifact", nil, errors.New("403 Forbidden"), http.StatusNotFound, endpoint,
-			"GET of / answered HTTP 404 Not Found.", true,
+			"GET of / answered HTTP 404 Not Found.",
+			"The check asked for / because it could not read the served artifact for its readiness probe;",
+		},
+		{
+			"refused probe path", climbing, nil, http.StatusNotFound, endpoint,
+			"GET of / answered HTTP 404 Not Found.",
+			"The check asked for / because the readiness probe path would not stay under the endpoint;",
 		},
 	}
 
@@ -318,10 +343,10 @@ func TestVerifyEndpoint_NamesThePathItAsked(t *testing.T) {
 
 			assert.Contains(t, out.String(), tt.want)
 
-			if tt.hint {
-				assert.Contains(t, out.String(), "serves nothing at /")
+			if tt.note != "" {
+				assert.Contains(t, out.String(), tt.note)
 			} else {
-				assert.NotContains(t, out.String(), "serves nothing at /")
+				assert.NotContains(t, out.String(), "The check asked for /")
 			}
 		})
 	}
