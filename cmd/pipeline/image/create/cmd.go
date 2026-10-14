@@ -95,7 +95,7 @@ Example:
 	cmd.Flags().StringSliceVar(&rawPackages, "package", nil, "Pip package spec (repeatable, also accepts comma-separated values)")
 	cmd.Flags().StringSliceVar(&rawConda, "conda", nil, "Conda package spec (repeatable)")
 	cmd.Flags().StringSliceVar(&rawCondaChans, "conda-channel", nil, "Conda channel (repeatable; if set, sends a structured CondaSpec)")
-	cmd.Flags().StringVar(&pythonVersion, "python-version", "", "Python interpreter version, e.g. 3.11 (allowed: 3.10-3.13)")
+	cmd.Flags().StringVar(&pythonVersion, "python-version", "", "Python interpreter version, e.g. 3.11 (allowed: 3.11-3.13)")
 	cmd.Flags().StringVar(&baseImage, "base-image", "", "DEPRECATED: use --python-version. A bare version (e.g. 3.11) is accepted; a full image reference is ignored at build time")
 	cmd.Flags().BoolVar(&gpu, "gpu", false, "Enable GPU support (rejected with 422 if the environment has no GPU capacity)")
 	cmd.Flags().BoolVar(&nvidia, "nvidia", false, "DEPRECATED: use --gpu")
