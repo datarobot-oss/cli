@@ -145,6 +145,9 @@ Three rules matter when changing this code:
   CLI-to-CLI port handover in `listenReclaimingPort` uses a Go `http.Client`, which sends
   no fetch metadata, so rejecting absent would deadlock two concurrent logins. Do not
   gate on `Sec-Fetch-Site`: the genuine callback is legitimately cross-site.
+- **Surface the timeout, don't leak the raw error.** `Wait` returns `ErrLoginTimedOut`
+  after `DefaultLoginTimeout` (override with `LoginOptions.Timeout`, i.e. `--timeout`).
+  Callers print `FprintLoginTimeoutHelp` to stderr; the setup wizard renders its own line.
 
 `auth.RunBrowserLoginWith` accepts `LoginOptions{NoBrowser: true}` for `--no-browser`,
 which renders the link prominently without reporting a failure.

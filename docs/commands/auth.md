@@ -44,6 +44,7 @@ dr auth login
 | Flag           | Description                                                |
 | -------------- | ---------------------------------------------------------- |
 | `--no-browser` | Print the login link instead of opening a browser (useful over SSH) |
+| `--timeout`    | How long to wait for the browser callback (default 5m) |
 
 **What happens:**
 
@@ -97,7 +98,12 @@ $ dr auth login
 ```
 
 If another `dr` process is already waiting on `localhost:51164`, the new one asks it to
-release the port and takes over. The wait times out after 5 minutes.
+release the port and takes over.
+
+If no callback arrives within 5 minutes, the CLI suggests trying again with a longer
+`--timeout` (for example `dr auth login --timeout 10m`, for a slow SSO or MFA sign-in)
+or setting `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN`, which other `dr` commands use
+instead of the browser (`dr auth login` itself always opens it).
 
 ### `logout`
 
