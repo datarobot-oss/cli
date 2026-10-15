@@ -102,8 +102,9 @@ release the port and takes over.
 
 If no callback arrives within 5 minutes, the CLI suggests retrying (a browser sign-in
 error often clears on the second attempt) or setting `DATAROBOT_ENDPOINT` and
-`DATAROBOT_API_TOKEN` to skip the browser. Behind a slow identity provider, extend the
-wait, for example `dr auth login --timeout 10m`.
+`DATAROBOT_API_TOKEN`, which other `dr` commands use instead of the browser (`dr auth
+login` itself always opens it). Behind a slow identity provider, extend the wait, for
+example `dr auth login --timeout 10m`.
 
 ### `logout`
 

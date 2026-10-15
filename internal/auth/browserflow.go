@@ -174,8 +174,8 @@ func FprintLoginTimeoutHelp(w io.Writer) {
 	fmt.Fprintln(w, base.Render("A browser sign-in error often clears on a second attempt:"))
 	fmt.Fprintln(w, info.Render("  dr auth login"))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, base.Render("Or set DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN (from Developer Tools)"))
-	fmt.Fprintln(w, base.Render("to authenticate without the browser."))
+	fmt.Fprintln(w, base.Render("Or set DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN (from Developer Tools),"))
+	fmt.Fprintln(w, base.Render("then run any other dr command, which skips the browser."))
 }
 
 // Close shuts the callback server down. It is safe to call more than once.

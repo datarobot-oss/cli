@@ -39,6 +39,13 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return err
 	}
 
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	if timeout < 0 {
+		log.Errorf("--timeout must be zero or positive, got %s", timeout)
+
+		return cli.ErrSilent
+	}
+
 	var url string
 	if len(args) > 0 {
 		url = args[0]
@@ -78,13 +85,6 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	viperx.Set(config.DataRobotAPIKey, "")
 
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
-
-	timeout, _ := cmd.Flags().GetDuration("timeout")
-	if timeout < 0 {
-		log.Errorf("--timeout must be zero or positive, got %s", timeout)
-
-		return cli.ErrSilent
-	}
 
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
 		NoBrowser: noBrowser,
