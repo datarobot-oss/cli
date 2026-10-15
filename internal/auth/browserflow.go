@@ -165,14 +165,15 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 }
 
 // FprintLoginTimeoutHelp writes recovery steps after a browser login timed out:
-// retry (a sign-in error often clears next try), or use the env-var credentials.
+// retry (with a longer --timeout for a slow SSO or MFA sign-in), or use the env-var
+// credentials.
 func FprintLoginTimeoutHelp(w io.Writer) {
 	base, info := writerStyles(w)
 
 	fmt.Fprintln(w, base.Render("❌ No authorization came back from the browser."))
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, base.Render("A browser sign-in error often clears on a second attempt:"))
-	fmt.Fprintln(w, info.Render("  dr auth login"))
+	fmt.Fprintln(w, base.Render("Try again, or give a slow SSO or MFA sign-in more time:"))
+	fmt.Fprintln(w, info.Render("  dr auth login --timeout 10m"))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, base.Render("Or set DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN (from Developer Tools),"))
 	fmt.Fprintln(w, base.Render("then run any other dr command, which skips the browser."))
