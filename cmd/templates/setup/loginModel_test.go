@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,11 @@ func TestLoginModel_View_TimeoutShowsRecovery(t *testing.T) {
 	assert.Contains(t, view, "Login timed out", "a timeout must surface the recovery line, not the raw error")
 	assert.Contains(t, view, "dr auth login")
 	assert.NotContains(t, view, "something went wrong")
+
+	// Bubble Tea clips lines at the terminal width, so keep each within 80 columns.
+	for _, line := range strings.Split(view, "\n") {
+		assert.LessOrEqual(t, len(line), 80, "line would be clipped on an 80-column terminal: %q", line)
+	}
 }
 
 func TestLoginModelSuite(t *testing.T) {
