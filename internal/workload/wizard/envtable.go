@@ -114,11 +114,7 @@ func (t envTable) vars() []manifest.EnvVar {
 			continue
 		}
 
-		out = append(out, manifest.EnvVar{
-			Name:   row.Name,
-			Value:  row.Value,
-			Secret: row.Kind == EnvSecret,
-		})
+		out = append(out, manifestVar(row.Name, row.Value, row.Kind == EnvSecret))
 	}
 
 	return out

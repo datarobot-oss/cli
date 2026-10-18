@@ -677,6 +677,13 @@ func (o Options) compareValues(
 		case declared.Unwritten:
 			changed = append(changed, declared.Name)
 
+		// The platform's own key replaces a literal or a credential, and once
+		// declared has no value of .env's to compare or re-send.
+		case declared.APIKey != want.APIKey:
+			changed = append(changed, declared.Name)
+
+		case declared.APIKey:
+
 		// A placeholder has no stored value to compare or re-send, and the
 		// reconciliation finishes it rather than rotating it. On a dry run
 		// nothing is minted, so nothing is written either, and the row says

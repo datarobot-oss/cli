@@ -10,6 +10,7 @@ Two conveniences are layered on top, and both are the CLI's to manage:
 
 - **`workloadId`** binds the file to a workload. `up` writes it after the first deploy, and every later deploy reads it to find the workload. It is stripped before anything is sent to the API. Commit it: a checkout without it creates a new workload on the next `up`.
 - **`dr-credential:<credential-id>/<key>`** as an environment variable value is shorthand for the credential-backed object form (`source: dr-credential`, `drCredentialId`, `key`). The object form is accepted too.
+- **`source: api-key`** on an environment variable gives the workload its own API key, which the platform fills in at start; it carries no `value`. `config` and `--sync-env` write it for `DATAROBOT_API_TOKEN`, whatever your `.env` holds for that name.
 
 This is what `config` writes for a project with a Dockerfile:
 

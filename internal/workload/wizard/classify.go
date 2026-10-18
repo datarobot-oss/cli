@@ -178,6 +178,12 @@ func evidentSecret(value string) (string, bool) {
 }
 
 func classify(name, value string) EnvVar {
+	// Said here so the table tells the truth: the entry is written as the
+	// workload's own key, whatever the secret signals below would conclude.
+	if name == manifest.APIKeyEnvName {
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "replaced by the workload's own key (source: api-key)"}
+	}
+
 	for _, signal := range secretValuePatterns {
 		if signal.pattern.MatchString(value) {
 			return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "looks like " + signal.reason}

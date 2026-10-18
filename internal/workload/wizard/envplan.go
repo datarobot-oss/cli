@@ -114,7 +114,11 @@ func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool) 
 
 	for _, v := range undeclared(wanted, declared) {
 		detail := "written into " + manifest.FileName + " as a literal"
-		if v.Secret {
+
+		switch {
+		case v.APIKey:
+			detail = "declared as the workload's own key (source: api-key); nothing is stored"
+		case v.Secret:
 			detail = "stored as a new credential, and referenced by id"
 		}
 
