@@ -384,7 +384,7 @@ func LiteralNames(vars []manifest.EnvVar) []string {
 	// moved in the file, but naming the variable twice reads as a fault in the
 	// report rather than in the file it is describing.
 	for _, v := range vars {
-		if v.Secret || seen[v.Name] {
+		if v.Secret || v.APIKey || seen[v.Name] {
 			continue
 		}
 

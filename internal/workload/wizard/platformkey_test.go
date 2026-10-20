@@ -55,3 +55,17 @@ func TestClassifyEnv_SaysThePlatformKeyReplacesTheToken(t *testing.T) {
 
 	assert.Contains(t, got.Reason, "workload's own key")
 }
+
+func TestLiteralNames_SkipsThePlatformKey(t *testing.T) {
+	names := LiteralNames([]manifest.EnvVar{
+		{Name: manifest.APIKeyEnvName, APIKey: true},
+		{Name: "GREETING", Value: "hello"},
+	})
+
+	assert.Equal(t, []string{"GREETING"}, names)
+}
+
+func TestPlan_NamesThePlatformKey(t *testing.T) {
+	assert.Equal(t, "workload's own key", plan(EnvVar{Name: manifest.APIKeyEnvName, Kind: EnvSecret}))
+	assert.Equal(t, "credential reference", plan(EnvVar{Name: "TOKEN", Kind: EnvSecret}))
+}

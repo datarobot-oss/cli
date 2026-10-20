@@ -520,11 +520,13 @@ func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
 }
 
 // isAPIKeyEntry reports an entry the platform fills with the workload's own
-// key, which carries `source: api-key` and no value.
+// key, which carries `source: api-key` and no value. An entry that also carries
+// a value is not one: which of the two the platform honours is unclear, so it
+// is rewritten to the clean form rather than trusted.
 func isAPIKeyEntry(entry *yaml.Node) bool {
 	source, _ := scalarString(mapValue(entry, keySource))
 
-	return source == sourceAPIKey
+	return source == sourceAPIKey && mapValue(entry, keyValue) == nil
 }
 
 // structuredValue reports an entry whose value is a mapping or a list rather
@@ -694,6 +696,15 @@ func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 		}
 
 		want, asked := wanted[name]
+
+		// The platform fills this entry and .env never supplies its value, so
+		// a .env that does not name it is not a request to drop it.
+		if !asked && isAPIKeyEntry(entry) {
+			kept = append(kept, entry)
+
+			continue
+		}
+
 		if !asked {
 			if err := checkRemovable(entry); err != nil {
 				return SyncChanges{}, err

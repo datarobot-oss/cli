@@ -49,7 +49,7 @@ func newEnvTable(rows []EnvVar, width, height int) envTable {
 func (t envTable) cells() []tableRow {
 	out := make([]tableRow, 0, len(t.rows))
 	for _, row := range t.rows {
-		out = append(out, tableRow{cells: []string{row.Name, row.Kind.String(), plan(row.Kind)}})
+		out = append(out, tableRow{cells: []string{row.Name, row.Kind.String(), plan(row)}})
 	}
 
 	return out
@@ -139,8 +139,12 @@ func (t envTable) note() string {
 // plan is what listing this row does to the file, in the file's own terms.
 // Kept to two words: the note under the table has room to say more, the
 // column does not.
-func plan(kind EnvKind) string {
-	switch kind {
+func plan(row EnvVar) string {
+	if row.Name == manifest.APIKeyEnvName && row.Kind != EnvLocal {
+		return "workload's own key"
+	}
+
+	switch row.Kind {
 	case EnvSecret:
 		return "credential reference"
 	case EnvLocal:

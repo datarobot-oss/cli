@@ -73,3 +73,52 @@ func TestDeclaredEnvVars_MarksThePlatformKey(t *testing.T) {
 	assert.False(t, declared[0].Unwritten)
 	assert.False(t, declared[0].Secret())
 }
+
+// A .env that lacks the token is not a request to drop the workload's own key.
+func TestSyncEnvVars_KeepsThePlatformKeyWhenEnvLacksIt(t *testing.T) {
+	path := syncFixture(t, container(`            environmentVars:
+              - name: DATAROBOT_API_TOKEN
+                source: api-key
+              - name: GREETING
+                value: hello
+`))
+
+	changes, _, err := SyncEnvVars(path, []EnvVar{{Name: "GREETING", Value: "hello"}}, false)
+	require.NoError(t, err)
+
+	assert.False(t, changes.Any(), "nothing is removed, so there is nothing to write")
+}
+
+// An entry carrying both source and value is not settled: which one the
+// platform honours is unclear, so it is rewritten to the clean form.
+func TestSyncEnvVars_RewritesAPlatformKeyThatAlsoHoldsAValue(t *testing.T) {
+	path := syncFixture(t, container(`            environmentVars:
+              - name: DATAROBOT_API_TOKEN
+                source: api-key
+                value: dr-credential:68f0cccc0000000000000001/apiToken
+`))
+
+	changes, out, err := SyncEnvVars(path, []EnvVar{{Name: APIKeyEnvName, APIKey: true}}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{APIKeyEnvName}, syncNames(changes.Replaced))
+	assert.NotContains(t, string(out), "dr-credential")
+}
+
+// Binding a live workload declares the key as the platform's, never as an
+// empty literal that would deploy the container without a token.
+func TestLive_ApplyDeclaresThePlatformKey(t *testing.T) {
+	live := liveFixture(t)
+
+	draft := live.Defaults()
+	draft.EnvVars = []EnvVar{{Name: APIKeyEnvName, APIKey: true}}
+
+	applied, err := live.Apply(draft)
+	require.NoError(t, err)
+
+	rendered, err := applied.Render()
+	require.NoError(t, err)
+
+	assert.Contains(t, string(rendered), "source: api-key")
+	assert.NotContains(t, string(rendered), `value: ""`)
+}

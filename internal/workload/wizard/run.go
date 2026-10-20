@@ -656,7 +656,7 @@ func applyLine(blocker error, advice string) string {
 // A secret stays apart because it is genuinely unanswerable: the platform
 // never returns a stored value, so nothing here can tell a rotated key from an
 // untouched one, and the run re-sends rather than guessing.
-func (o Options) compareValues(
+func (o Options) compareValues( //nolint:cyclop // ordered rule list; the case order is the logic
 	parsed *manifest.Manifest, detected Detected,
 ) (changed, unverifiable []string) {
 	local := make(map[string]manifest.EnvVar, len(detected.EnvVars))
