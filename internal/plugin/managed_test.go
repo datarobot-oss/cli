@@ -42,6 +42,16 @@ func installFakeManagedPlugin(t *testing.T, dir, name string) string {
 	return pluginDir
 }
 
+func TestLoadManagedPlugin_RejectsUnsafeNames(t *testing.T) {
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", t.TempDir())
+
+	for _, name := range []string{"", ".", "..", "../outside", "a/b", `a\b`} {
+		_, err := LoadManagedPlugin(name)
+
+		assert.Error(t, err, "name %q should be rejected before touching the filesystem", name)
+	}
+}
+
 func TestLoadManagedPlugin_NotInstalled(t *testing.T) {
 	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", t.TempDir())
 

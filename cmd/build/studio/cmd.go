@@ -78,6 +78,8 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	forwardYesConsent(cmd)
+
 	fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + xpPluginName))
 
 	pluginArgs := append([]string{enableAssistFlag}, args...)
@@ -86,6 +88,18 @@ func run(cmd *cobra.Command, args []string) error {
 	telemetry.ExitWithContext(cmd.Context(), exitCode)
 
 	return nil
+}
+
+// forwardYesConsent makes the cobra-parsed --yes flag visible to plugin
+// execution: the dependency prompt inside ExecutePlugin reads consent only
+// from the plugin's own args (which must stay clean — xp has no --yes flag)
+// or from the non-interactive env var, so the env var is the channel. The
+// xp subprocess inherits it, which matches the flag's intent of suppressing
+// prompts.
+func forwardYesConsent(cmd *cobra.Command) {
+	if cli.IsNonInteractive(cmd) {
+		_ = os.Setenv(reader.NonInteractiveEnv, "1")
+	}
 }
 
 // ensureStudioPlugins makes sure both plugins Build Studio needs are

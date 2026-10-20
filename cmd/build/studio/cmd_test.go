@@ -17,8 +17,10 @@ package studio
 import (
 	"errors"
 	"io"
+	"os"
 	"testing"
 
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -218,6 +220,23 @@ func TestInstallPlugin_NoVersions(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to resolve the latest version")
+}
+
+// TestForwardYesConsent verifies that the cobra-parsed --yes flag is
+// translated into the non-interactive env var, which is the only consent
+// channel the dependency prompt inside plugin execution can see.
+func TestForwardYesConsent(t *testing.T) {
+	t.Setenv(reader.NonInteractiveEnv, "")
+
+	cmd := Cmd()
+
+	forwardYesConsent(cmd)
+	assert.Empty(t, os.Getenv(reader.NonInteractiveEnv), "without --yes the env var must stay unset")
+
+	require.NoError(t, cmd.Flags().Set("yes", "true"))
+
+	forwardYesConsent(cmd)
+	assert.Equal(t, "1", os.Getenv(reader.NonInteractiveEnv), "--yes should set the non-interactive env var")
 }
 
 // TestResolveInstalled_ManagedFallback verifies that a plugin absent from the

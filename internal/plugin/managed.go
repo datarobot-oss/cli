@@ -20,6 +20,10 @@ package plugin
 // (nil, nil) when the plugin is not installed, so callers can distinguish
 // "not installed" from a broken installation.
 func LoadManagedPlugin(name string) (*DiscoveredPlugin, error) {
+	if err := validatePluginName(name); err != nil {
+		return nil, err
+	}
+
 	dirs, err := ManagedPluginsDirs()
 	if err != nil {
 		return nil, err
