@@ -38,6 +38,17 @@ const (
 	enableAssistFlag = "--enable-assist"
 )
 
+// Test seams: unit tests swap these out so they never run plugin discovery,
+// touch the network, or install anything. Discovery in particular is cached
+// process-wide behind a sync.Once, which test order must not consume.
+var (
+	getPlugins           = plugin.GetPlugins
+	loadManagedPlugin    = plugin.LoadManagedPlugin
+	fetchRegistry        = plugin.FetchRegistry
+	installRegistryEntry = plugin.InstallPlugin
+	checkAndInstallDeps  = plugin.CheckAndInstallDeps
+)
+
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "studio",
@@ -106,7 +117,7 @@ func ensureStudioPlugins(cmd *cobra.Command) (*plugin.DiscoveredPlugin, error) {
 		return xp, nil
 	}
 
-	xp, err := plugin.LoadManagedPlugin(xpPluginName)
+	xp, err := loadManagedPlugin(xpPluginName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load plugin %q after installation: %w", xpPluginName, err)
 	}
@@ -129,7 +140,7 @@ func resolveInstalled(name string) *plugin.DiscoveredPlugin {
 		return p
 	}
 
-	p, err := plugin.LoadManagedPlugin(name)
+	p, err := loadManagedPlugin(name)
 	if err != nil {
 		log.Debug("Failed to load managed plugin, will reinstall", "plugin", name, "error", err)
 
@@ -142,7 +153,7 @@ func resolveInstalled(name string) *plugin.DiscoveredPlugin {
 // findInstalled returns the discovered plugin with the given name, or nil
 // when it is not installed. Discovery results are cached process-wide.
 func findInstalled(name string) *plugin.DiscoveredPlugin {
-	plugins, _ := plugin.GetPlugins()
+	plugins, _ := getPlugins()
 
 	for i := range plugins {
 		if plugins[i].Manifest.Name == name {
@@ -166,7 +177,7 @@ func installFromRegistry(cmd *cobra.Command, names []string) error {
 		func() error {
 			var fetchErr error
 
-			registry, baseURL, fetchErr = plugin.FetchRegistry(plugin.PluginRegistryURL)
+			registry, baseURL, fetchErr = fetchRegistry(plugin.PluginRegistryURL)
 
 			return fetchErr
 		},
@@ -197,7 +208,7 @@ func installPlugin(cmd *cobra.Command, registry *plugin.PluginRegistry, baseURL,
 
 	if err := tui.RunWithSpinner(
 		fmt.Sprintf("Installing %s %s…", entry.Name, version.Version),
-		func() error { return plugin.InstallPlugin(entry, *version, baseURL) },
+		func() error { return installRegistryEntry(entry, *version, baseURL) },
 	); err != nil {
 		return fmt.Errorf("failed to install plugin %q: %w", name, err)
 	}
@@ -221,7 +232,7 @@ func checkAndInstallPluginDeps(cmd *cobra.Command, pluginName string) error {
 		return reader.AskYesNo()
 	}
 
-	if err := plugin.CheckAndInstallDeps(pluginName, confirm, os.Stdout); err != nil {
+	if err := checkAndInstallDeps(pluginName, confirm, os.Stdout); err != nil {
 		if errors.Is(err, plugin.ErrDepsDeclined) {
 			return nil
 		}
