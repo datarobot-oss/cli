@@ -33,7 +33,7 @@ func Cmd() *cobra.Command {
 		Short:   "List who holds a collection-level enclave permission.",
 		Long: `List who has been granted an enclave permission: create by default, or pin
 with --permission pin. Create lists users, groups, and organizations; pin lists
-the users in your organization.
+the users and groups in your organization.
 
 This is the "did my grant land?" view for "dr enclave permission grant".
 "dr enclave permission show" answers only for a single subject, and for a system
