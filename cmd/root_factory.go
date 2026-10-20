@@ -36,6 +36,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/artifact"
 	"github.com/datarobot/cli/cmd/auth"
+	"github.com/datarobot/cli/cmd/build"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
 	"github.com/datarobot/cli/cmd/dotenv"
@@ -633,6 +634,7 @@ func (f *RootFactory) addSubcommands(adder *cli.CommandAdder) {
 	adder.AddCommand(
 		artifact.Cmd(),
 		auth.Cmd(),
+		build.Cmd(),
 		component.Cmd(),
 		dependencies.Cmd(),
 		dotenv.Cmd(),
