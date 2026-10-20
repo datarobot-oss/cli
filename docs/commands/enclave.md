@@ -272,3 +272,5 @@ Every subcommand accepts `--output-format` (`text` or `json`). `text` is the def
 
 - [`dr workload`](workload.md) — deploy workloads, and pin one to an enclave with `--enclave <name>`
 - [Feature gates](../development/feature-gates.md) — enabling `DATAROBOT_CLI_FEATURE_ENCLAVE`
+
+<!-- INF-465 review-routing test. This PR is closed without merging. -->
