@@ -1,18 +1,18 @@
 # CI Workflows & Composite Actions
 
-## Composite Action Changes Require Special Testing
+## Composite Action Changes Are Validated By The PR's Own CI
 
-Reusable composite actions under `.github/actions/` (e.g. `install-deps`, `setup`,
-`install-dr-bin`) are referenced by workflows like `_smoke.yaml` and
-`_pre-release-smoke.yaml` via a pinned `@main` ref
-(`datarobot-oss/cli/.github/actions/<name>@main`), not the calling ref. This is
-intentional — but it means **a PR that modifies a composite action's `action.yaml`
-cannot exercise that change through its own CI run**: the workflow always pulls the
-action's code from `main`, so the fix only takes effect after merge.
+Retired 2026-10-22 (fix for the v0.15.2 release incident). Composite actions under
+`.github/actions/` are now referenced **locally** (`./.github/actions/<name>`) by all
+workflows, including reusable ones, with `actions/checkout` always first. A PR that
+edits a composite action's `action.yaml` therefore exercises the change in its own
+CI run — no temporary ref-pointing or post-merge `workflow_dispatch` verification
+needed.
 
-When reviewing a PR that touches `.github/actions/*/action.yaml`, flag it as an
-**informational callout**: CI on this PR does not validate the new behavior. Confirm
-the author has a plan to verify it — e.g., temporarily pointing the ref at the PR
-branch to get a real CI run (then reverting before merge), or verifying immediately
-after merge via a manual `workflow_dispatch` run of a workflow that exercises that
-action (see `.github/workflows/README.md` for which workflows call which suites).
+The old `datarobot-oss/cli/.github/actions/<name>@main` pattern is forbidden: the
+runner downloads the entire repository tarball to materialize a remote action, into
+a fixed 2 GiB buffer that this repo now exceeds (`docs/plugins/` tracks ~2 GiB of
+binaries). Flag any new remote same-repo action ref as a bug: it will fail at job
+setup with `Cannot write more bytes to the buffer than the configured maximum buffer
+size` as soon as the tarball is over the limit, and it silently masks PR changes to
+the action. See `.github/workflows/README.md` for the full rationale.
