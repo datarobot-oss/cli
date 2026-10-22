@@ -294,6 +294,12 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.14",
+          "url": "opencode/opencode-0.1.14.tar.xz",
+          "sha256": "db6753ae6c81925ce4dc30e41f9e400b4608f59a5f7a260293e378e6bb33b01d",
+          "releaseDate": "2026-10-22"
+        },
+        {
           "version": "0.1.13",
           "url": "opencode/opencode-0.1.13.tar.xz",
           "sha256": "c169946af48ae21c3c65cb7eb1b51515531e018690723ab2ebd815fefed7df03",
