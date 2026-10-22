@@ -15,11 +15,28 @@
 package telemetry
 
 import (
+	"context"
 	"sync"
 
 	"github.com/amplitude/analytics-go/amplitude/types"
 	"github.com/spf13/cobra"
 )
+
+// TrackCommandFromContext enqueues the telemetry event for cmd (if cmd is
+// tracked) on the client stored in ctx. RunE callbacks that terminate the
+// process via ExitWithContext must call this first: os.Exit skips the
+// cobra.OnFinalize hook that normally fires the event, so without it only
+// error paths (which return normally and do reach the hook) get recorded.
+func TrackCommandFromContext(ctx context.Context, cmd *cobra.Command, args []string) {
+	client, ok := ctx.Value(ClientContextKey{}).(*Client)
+	if !ok {
+		return
+	}
+
+	if event, ok := EventFor(cmd, args); ok {
+		client.Track(event)
+	}
+}
 
 // trackAnnotation is the cobra annotation key set by Track / TrackWith / TrackPlugin
 // to mark a command as one whose invocations should fire a telemetry event.
