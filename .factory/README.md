@@ -75,6 +75,14 @@ installation. Missing prerequisites are reported BLOCKED, not passed.
 Failure learning only suggests updates in reports. Changing to an automatic
 write mode requires a separately configured workflow and permissions.
 
+## Release
+
+The `/release` skill runs the release pipeline: readiness review, semver decision,
+tag push to `upstream`, promotion monitoring, release notes, and the #dr-cli
+announcement. It serves Factory Droid here in `.factory/skills/`, Claude Code
+through the `.claude/skills/release` symlink, and Opencode, which discovers
+`.claude/skills/` natively. Edit it here, in `.factory/skills/`.
+
 ## Related Documentation
 
 - [Droid Computers](https://docs.factory.ai/cli/features/droid-computers)
