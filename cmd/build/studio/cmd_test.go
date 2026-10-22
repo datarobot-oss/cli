@@ -15,13 +15,14 @@
 package studio
 
 import (
+	"context"
 	"errors"
-	"io"
-	"os"
+	"fmt"
 	"testing"
 
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,16 +37,16 @@ func stubSeams(t *testing.T) {
 
 	origGetPlugins := getPlugins
 	origLoadManaged := loadManagedPlugin
-	origFetchRegistry := fetchRegistry
-	origInstall := installRegistryEntry
-	origCheckDeps := checkAndInstallDeps
+	origInstall := installPluginByName
+	origExecute := executePlugin
+	origUpdate := checkPluginUpdate
 
 	t.Cleanup(func() {
 		getPlugins = origGetPlugins
 		loadManagedPlugin = origLoadManaged
-		fetchRegistry = origFetchRegistry
-		installRegistryEntry = origInstall
-		checkAndInstallDeps = origCheckDeps
+		installPluginByName = origInstall
+		executePlugin = origExecute
+		checkPluginUpdate = origUpdate
 	})
 
 	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
@@ -54,19 +55,17 @@ func stubSeams(t *testing.T) {
 	loadManagedPlugin = func(string) (*plugin.DiscoveredPlugin, error) {
 		return nil, nil
 	}
-	fetchRegistry = func(string) (*plugin.PluginRegistry, string, error) {
-		t.Fatal("unexpected registry fetch")
-
-		return nil, "", nil
-	}
-	installRegistryEntry = func(plugin.RegistryPlugin, plugin.RegistryVersion, string) error {
-		t.Fatal("unexpected plugin install")
+	installPluginByName = func(_ *cobra.Command, name string, _ bool) error {
+		t.Fatalf("unexpected install of plugin %q", name)
 
 		return nil
 	}
-	checkAndInstallDeps = func(string, func() bool, io.Writer) error {
-		return nil
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, _ string, _ []string, _ *pflag.FlagSet, _ ...plugin.ExecOption) int {
+		t.Fatal("unexpected plugin execution")
+
+		return 1
 	}
+	checkPluginUpdate = func(string, string, string) {}
 }
 
 func discovered(name, executable string) plugin.DiscoveredPlugin {
@@ -78,32 +77,63 @@ func discovered(name, executable string) plugin.DiscoveredPlugin {
 	}
 }
 
-// testRegistry returns a registry holding the xp and opencode entries with a
-// single version each.
-func testRegistry() *plugin.PluginRegistry {
-	return &plugin.PluginRegistry{
-		Plugins: map[string]plugin.RegistryPlugin{
-			"xp": {
-				Name:     "xp",
-				Versions: []plugin.RegistryVersion{{Version: "2.2.0", URL: "xp/xp-2.2.0.tar.xz"}},
-			},
-			"opencode": {
-				Name:     "opencode",
-				Versions: []plugin.RegistryVersion{{Version: "0.1.11", URL: "opencode/opencode-0.1.11.tar.xz"}},
-			},
-		},
-	}
-}
-
 func TestCmdMetadata(t *testing.T) {
 	cmd := Cmd()
 
 	assert.Equal(t, "studio", cmd.Use)
 	assert.NotNil(t, cmd.RunE)
-	assert.NotNil(t, cmd.Flags().Lookup("yes"), "studio should expose the --yes flag")
+	assert.True(t, cmd.DisableFlagParsing, "unknown flags must reach dr xp, so cobra must not parse them")
+	assert.NotNil(t, cmd.Flags().Lookup("yes"), "studio should document the --yes flag")
 }
 
-func TestEnsureStudioPlugins_AllInstalled(t *testing.T) {
+func TestParseArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		rawArgs     []string
+		want        studioArgs
+		passthrough []string
+	}{
+		{
+			name:    "empty",
+			rawArgs: nil,
+			want:    studioArgs{},
+		},
+		{
+			name:    "yes short and long are consumed",
+			rawArgs: []string{"-y", "--yes"},
+			want:    studioArgs{yes: true},
+		},
+		{
+			name:        "unknown flags pass through",
+			rawArgs:     []string{"--port", "9000"},
+			want:        studioArgs{},
+			passthrough: []string{"--port", "9000"},
+		},
+		{
+			name:    "help is consumed",
+			rawArgs: []string{"--help"},
+			want:    studioArgs{help: true},
+		},
+		{
+			name:        "flags after double dash are not extracted",
+			rawArgs:     []string{"-y", "--", "-y", "--help"},
+			want:        studioArgs{yes: true},
+			passthrough: []string{"--", "-y", "--help"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseArgs(tt.rawArgs)
+
+			assert.Equal(t, tt.want.yes, got.yes)
+			assert.Equal(t, tt.want.help, got.help)
+			assert.Equal(t, tt.passthrough, got.passthrough)
+		})
+	}
+}
+
+func TestRunStudio_AllInstalled(t *testing.T) {
 	stubSeams(t)
 
 	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
@@ -113,27 +143,69 @@ func TestEnsureStudioPlugins_AllInstalled(t *testing.T) {
 		}, nil
 	}
 
-	xp, err := ensureStudioPlugins(Cmd())
+	var (
+		gotExecutable string
+		gotArgs       []string
+		gotOptCount   int
+		updateChecked []string
+	)
+
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, executable string, args []string, _ *pflag.FlagSet, opts ...plugin.ExecOption) int {
+		gotExecutable = executable
+		gotArgs = args
+		gotOptCount = len(opts)
+
+		return 7
+	}
+	checkPluginUpdate = func(name, _, _ string) {
+		updateChecked = append(updateChecked, name)
+	}
+
+	exitCode, err := runStudio(Cmd(), studioArgs{passthrough: []string{"--port", "9000"}})
 
 	require.NoError(t, err)
-	require.NotNil(t, xp)
-	assert.Equal(t, "xp", xp.Manifest.Name)
-	assert.Equal(t, "/fake/xp.sh", xp.Executable)
+	assert.Equal(t, 7, exitCode, "xp's exit code should propagate")
+	assert.Equal(t, "/fake/xp.sh", gotExecutable)
+	assert.Equal(t, []string{"--enable-assist", "--port", "9000"}, gotArgs,
+		"--enable-assist must come first, passthrough args after")
+	assert.Zero(t, gotOptCount, "no consent option without --yes")
+	assert.Equal(t, []string{"xp", "opencode"}, updateChecked, "both plugins should get an update check")
 }
 
-func TestEnsureStudioPlugins_InstallsMissing(t *testing.T) {
+func TestRunStudio_YesGrantsDepsConsent(t *testing.T) {
+	stubSeams(t)
+
+	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
+		return []plugin.DiscoveredPlugin{
+			discovered("xp", "/fake/xp.sh"),
+			discovered("opencode", "/fake/opencode.sh"),
+		}, nil
+	}
+
+	var gotOptCount int
+
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, _ string, _ []string, _ *pflag.FlagSet, opts ...plugin.ExecOption) int {
+		gotOptCount = len(opts)
+
+		return 0
+	}
+
+	_, err := runStudio(Cmd(), studioArgs{yes: true})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, gotOptCount, "--yes should pass the explicit deps-consent option")
+}
+
+func TestRunStudio_InstallsMissing(t *testing.T) {
 	stubSeams(t)
 
 	var installed []string
 
 	installedSet := map[string]bool{}
 
-	fetchRegistry = func(string) (*plugin.PluginRegistry, string, error) {
-		return testRegistry(), "https://example.invalid/plugins", nil
-	}
-	installRegistryEntry = func(entry plugin.RegistryPlugin, version plugin.RegistryVersion, _ string) error {
-		installed = append(installed, entry.Name+" "+version.Version)
-		installedSet[entry.Name] = true
+	installPluginByName = func(_ *cobra.Command, name string, consent bool) error {
+		installed = append(installed, fmt.Sprintf("%s consent=%t", name, consent))
+		installedSet[name] = true
 
 		return nil
 	}
@@ -148,95 +220,71 @@ func TestEnsureStudioPlugins_InstallsMissing(t *testing.T) {
 
 		return &p, nil
 	}
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, executable string, _ []string, _ *pflag.FlagSet, _ ...plugin.ExecOption) int {
+		assert.Equal(t, "/managed/xp.sh", executable)
 
-	xp, err := ensureStudioPlugins(Cmd())
+		return 0
+	}
+
+	exitCode, err := runStudio(Cmd(), studioArgs{yes: true})
 
 	require.NoError(t, err)
-	require.NotNil(t, xp)
-	assert.Equal(t, "/managed/xp.sh", xp.Executable, "xp should be resolved from the managed dir after installation")
-	assert.ElementsMatch(t, []string{"xp 2.2.0", "opencode 0.1.11"}, installed,
-		"both missing plugins should be installed at their latest versions")
+	assert.Zero(t, exitCode)
+	assert.Equal(t, []string{"xp consent=true", "opencode consent=true"}, installed,
+		"both missing plugins should be installed with consent forwarded")
 }
 
-func TestEnsureStudioPlugins_InstallsOnlyOpenCode(t *testing.T) {
+func TestRunStudio_InstallsOnlyOpenCode(t *testing.T) {
 	stubSeams(t)
-
-	var installed []string
 
 	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
 		return []plugin.DiscoveredPlugin{discovered("xp", "/fake/xp.sh")}, nil
 	}
-	fetchRegistry = func(string) (*plugin.PluginRegistry, string, error) {
-		return testRegistry(), "https://example.invalid/plugins", nil
-	}
-	installRegistryEntry = func(entry plugin.RegistryPlugin, version plugin.RegistryVersion, _ string) error {
-		installed = append(installed, entry.Name+" "+version.Version)
+
+	var installed []string
+
+	installedSet := map[string]bool{}
+
+	installPluginByName = func(_ *cobra.Command, name string, _ bool) error {
+		installed = append(installed, name)
+		installedSet[name] = true
 
 		return nil
 	}
+	loadManagedPlugin = func(name string) (*plugin.DiscoveredPlugin, error) {
+		if !installedSet[name] {
+			return nil, nil
+		}
 
-	xp, err := ensureStudioPlugins(Cmd())
+		p := discovered(name, "/managed/"+name+".sh")
+
+		return &p, nil
+	}
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, executable string, _ []string, _ *pflag.FlagSet, _ ...plugin.ExecOption) int {
+		assert.Equal(t, "/fake/xp.sh", executable, "the already-installed xp should be reused")
+
+		return 0
+	}
+
+	_, err := runStudio(Cmd(), studioArgs{})
 
 	require.NoError(t, err)
-	require.NotNil(t, xp)
-	assert.Equal(t, "/fake/xp.sh", xp.Executable, "the already-installed xp should be reused")
-	assert.Equal(t, []string{"opencode 0.1.11"}, installed, "only the missing opencode plugin should be installed")
+	assert.Equal(t, []string{"opencode"}, installed, "only the missing opencode plugin should be installed")
 }
 
-func TestEnsureStudioPlugins_FetchRegistryFails(t *testing.T) {
+func TestRunStudio_InstallFailureHasArchiveHint(t *testing.T) {
 	stubSeams(t)
 
-	fetchRegistry = func(string) (*plugin.PluginRegistry, string, error) {
-		return nil, "", errors.New("boom")
+	installPluginByName = func(_ *cobra.Command, _ string, _ bool) error {
+		return errors.New("registry unreachable")
 	}
 
-	_, err := ensureStudioPlugins(Cmd())
+	_, err := runStudio(Cmd(), studioArgs{})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to fetch plugin registry")
-}
-
-func TestInstallPlugin_UnknownName(t *testing.T) {
-	stubSeams(t)
-
-	registry := &plugin.PluginRegistry{Plugins: map[string]plugin.RegistryPlugin{}}
-
-	err := installPlugin(Cmd(), registry, "https://example.invalid", "xp")
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `plugin "xp" not found`)
-}
-
-func TestInstallPlugin_NoVersions(t *testing.T) {
-	stubSeams(t)
-
-	registry := &plugin.PluginRegistry{
-		Plugins: map[string]plugin.RegistryPlugin{
-			"xp": {Name: "xp"},
-		},
-	}
-
-	err := installPlugin(Cmd(), registry, "https://example.invalid", "xp")
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to resolve the latest version")
-}
-
-// TestForwardYesConsent verifies that the cobra-parsed --yes flag is
-// translated into the non-interactive env var, which is the only consent
-// channel the dependency prompt inside plugin execution can see.
-func TestForwardYesConsent(t *testing.T) {
-	t.Setenv(reader.NonInteractiveEnv, "")
-
-	cmd := Cmd()
-
-	forwardYesConsent(cmd)
-	assert.Empty(t, os.Getenv(reader.NonInteractiveEnv), "without --yes the env var must stay unset")
-
-	require.NoError(t, cmd.Flags().Set("yes", "true"))
-
-	forwardYesConsent(cmd)
-	assert.Equal(t, "1", os.Getenv(reader.NonInteractiveEnv), "--yes should set the non-interactive env var")
+	assert.Contains(t, err.Error(), "registry unreachable")
+	assert.Contains(t, err.Error(), "dr plugin install xp --file",
+		"the error should point air-gapped users at the archive install path")
 }
 
 // TestResolveInstalled_ManagedFallback verifies that a plugin absent from the
@@ -253,20 +301,41 @@ func TestResolveInstalled_ManagedFallback(t *testing.T) {
 		return &p, nil
 	}
 
-	p := resolveInstalled("xp")
+	p, err := resolveInstalled("xp")
 
+	require.NoError(t, err)
 	require.NotNil(t, p, "a managed plugin should resolve even when absent from discovery results")
 	assert.Equal(t, "/managed/xp.sh", p.Executable)
 }
 
-// TestResolveInstalled_BrokenManagedInstall verifies that a managed plugin
-// that fails to load is treated as not installed, so it gets reinstalled.
-func TestResolveInstalled_BrokenManagedInstall(t *testing.T) {
+// TestResolveInstalled_CorruptTriggersReinstall verifies that a corrupt
+// managed installation reads as "not installed" so it gets repaired by a
+// reinstall.
+func TestResolveInstalled_CorruptTriggersReinstall(t *testing.T) {
 	stubSeams(t)
 
 	loadManagedPlugin = func(string) (*plugin.DiscoveredPlugin, error) {
-		return nil, errors.New("missing script")
+		return nil, fmt.Errorf("%w: manifest is garbage", plugin.ErrCorruptInstall)
 	}
 
-	assert.Nil(t, resolveInstalled("xp"), "a broken managed installation should resolve to nil")
+	p, err := resolveInstalled("xp")
+
+	require.NoError(t, err)
+	assert.Nil(t, p, "a corrupt installation should resolve to nil so it is reinstalled")
+}
+
+// TestResolveInstalled_TransientErrorAborts verifies that a transient load
+// failure (e.g. permission denied) aborts instead of triggering a reinstall
+// that would wipe the plugin directory.
+func TestResolveInstalled_TransientErrorAborts(t *testing.T) {
+	stubSeams(t)
+
+	loadManagedPlugin = func(string) (*plugin.DiscoveredPlugin, error) {
+		return nil, errors.New("permission denied")
+	}
+
+	_, err := resolveInstalled("xp")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "permission denied")
 }

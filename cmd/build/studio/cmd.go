@@ -19,8 +19,9 @@ import (
 	"fmt"
 	"os"
 
+	plugininstall "github.com/datarobot/cli/cmd/plugin/install"
+	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/cli"
-	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
@@ -42,11 +43,11 @@ const (
 // touch the network, or install anything. Discovery in particular is cached
 // process-wide behind a sync.Once, which test order must not consume.
 var (
-	getPlugins           = plugin.GetPlugins
-	loadManagedPlugin    = plugin.LoadManagedPlugin
-	fetchRegistry        = plugin.FetchRegistry
-	installRegistryEntry = plugin.InstallPlugin
-	checkAndInstallDeps  = plugin.CheckAndInstallDeps
+	getPlugins          = plugin.GetPlugins
+	loadManagedPlugin   = plugin.LoadManagedPlugin
+	installPluginByName = installViaPluginInstall
+	executePlugin       = plugin.ExecutePlugin
+	checkPluginUpdate   = shared.CheckAndPromptPluginUpdate
 )
 
 func Cmd() *cobra.Command {
@@ -56,112 +57,209 @@ func Cmd() *cobra.Command {
 		Long: `Open Build Studio — the Assist tab of the dr xp experimentation dashboard.
 
 When the xp or opencode plugin is missing, it is installed from the plugin
-registry first. Arguments after -- are passed through to dr xp.`,
+registry first. All flags except -y/--yes and -h/--help are passed through
+to dr xp.`,
 		Example: `  dr build studio
-  dr build studio -- --port 9000`,
+  dr build studio --port 9000`,
 		Args: cobra.ArbitraryArgs,
-		RunE: run,
+		// Unrecognized flags belong to dr xp (e.g. --port), so cobra must not
+		// reject them; parseArgs extracts this command's own flags instead.
+		DisableFlagParsing: true,
+		RunE:               run,
 	}
 
+	// Registered for help output only: with flag parsing disabled, cobra
+	// never parses it — parseArgs consumes it from the raw args instead.
 	cmd.Flags().BoolP(cli.YesFlagName, "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
-
-	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.Track(cmd)
 
 	return cmd
 }
 
-func run(cmd *cobra.Command, args []string) error {
-	xp, err := ensureStudioPlugins(cmd)
+func run(cmd *cobra.Command, rawArgs []string) error {
+	args := parseArgs(rawArgs)
+
+	if args.help {
+		return cmd.Help()
+	}
+
+	exitCode, err := runStudio(cmd, args)
 	if err != nil {
 		return err
 	}
 
-	forwardYesConsent(cmd)
-
-	fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + xpPluginName))
-
-	pluginArgs := append([]string{enableAssistFlag}, args...)
-	exitCode := plugin.ExecutePlugin(cmd.Context(), xp.Manifest, xp.Executable, pluginArgs, cmd.Root().PersistentFlags())
-
+	// Enqueue the command's telemetry event before exiting: os.Exit skips
+	// the OnFinalize hook that normally fires it. Error paths return above
+	// and reach the hook as usual.
+	telemetry.TrackCommandFromContext(cmd.Context(), cmd, rawArgs)
 	telemetry.ExitWithContext(cmd.Context(), exitCode)
 
 	return nil
 }
 
-// forwardYesConsent makes the cobra-parsed --yes flag visible to plugin
-// execution: the dependency prompt inside ExecutePlugin reads consent only
-// from the plugin's own args (which must stay clean — xp has no --yes flag)
-// or from the non-interactive env var, so the env var is the channel. The
-// xp subprocess inherits it, which matches the flag's intent of suppressing
-// prompts.
-func forwardYesConsent(cmd *cobra.Command) {
-	if cli.IsNonInteractive(cmd) {
-		_ = os.Setenv(reader.NonInteractiveEnv, "1")
+// studioArgs is the result of splitting raw args into the flags this command
+// owns and everything that is forwarded to dr xp.
+type studioArgs struct {
+	help        bool
+	yes         bool
+	passthrough []string
+}
+
+// consent reports whether dependency-install prompts are pre-approved,
+// either by the --yes flag or by the non-interactive env var.
+func (a studioArgs) consent() bool {
+	return a.yes || reader.IsNonInteractive()
+}
+
+// parseArgs scans raw args manually (flag parsing is disabled so unknown
+// flags reach dr xp): -y/--yes and -h/--help are consumed here, everything
+// else is forwarded verbatim. A "--" ends extraction, so flags after it
+// always reach dr xp untouched.
+func parseArgs(rawArgs []string) studioArgs {
+	var (
+		parsed     studioArgs
+		extracting = true
+	)
+
+	for _, arg := range rawArgs {
+		if extracting {
+			switch arg {
+			case "--":
+				extracting = false
+			case "-y", "--yes":
+				parsed.yes = true
+
+				continue
+			case "-h", "--help":
+				parsed.help = true
+
+				continue
+			}
+		}
+
+		parsed.passthrough = append(parsed.passthrough, arg)
 	}
+
+	return parsed
+}
+
+// runStudio makes sure the plugins are present, offers pending updates, and
+// launches xp with the Assist tab enabled. Returns xp's exit code.
+func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
+	xp, openCode, err := ensureStudioPlugins(cmd, args.consent())
+	if err != nil {
+		return 0, err
+	}
+
+	for _, p := range []*plugin.DiscoveredPlugin{xp, openCode} {
+		checkPluginUpdate(p.Manifest.Name, p.Manifest.Version, p.Executable)
+	}
+
+	// The banner goes to stderr so stdout stays reserved for xp's own output
+	// (e.g. under --output-format json).
+	fmt.Fprintln(os.Stderr, tui.InfoStyle.Render("🔌 Running plugin: "+xpPluginName))
+	log.Debug("Executing plugin", "name", xpPluginName, "executable", xp.Executable)
+
+	pluginArgs := append([]string{enableAssistFlag}, args.passthrough...)
+
+	var execOpts []plugin.ExecOption
+
+	if args.consent() {
+		execOpts = append(execOpts, plugin.WithDepsConsent())
+	}
+
+	return executePlugin(cmd.Context(), xp.Manifest, xp.Executable, pluginArgs, cmd.Root().PersistentFlags(), execOpts...), nil
 }
 
 // ensureStudioPlugins makes sure both plugins Build Studio needs are
-// installed, fetching the plugin registry at most once, and returns the xp
-// plugin to execute. The opencode plugin is only installed, not executed:
-// xp drives it to power the Assist tab.
-func ensureStudioPlugins(cmd *cobra.Command) (*plugin.DiscoveredPlugin, error) {
-	xp := resolveInstalled(xpPluginName)
-
-	var missing []string
-
-	if xp == nil {
-		missing = append(missing, xpPluginName)
+// installed and returns them. Only xp gets executed; opencode is installed
+// because xp drives it to power the Assist tab.
+func ensureStudioPlugins(cmd *cobra.Command, consent bool) (xp, openCode *plugin.DiscoveredPlugin, err error) {
+	xp, err = ensurePlugin(cmd, xpPluginName, consent)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if resolveInstalled(openCodePluginName) == nil {
-		missing = append(missing, openCodePluginName)
+	openCode, err = ensurePlugin(cmd, openCodePluginName, consent)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if len(missing) == 0 {
-		return xp, nil
-	}
+	return xp, openCode, nil
+}
 
-	if err := installFromRegistry(cmd, missing); err != nil {
+// ensurePlugin resolves an installed plugin, installing it first when missing.
+func ensurePlugin(cmd *cobra.Command, name string, consent bool) (*plugin.DiscoveredPlugin, error) {
+	p, err := resolveInstalled(name)
+	if err != nil {
 		return nil, err
 	}
 
-	if xp != nil {
-		return xp, nil
+	if p != nil {
+		return p, nil
 	}
 
-	xp, err := loadManagedPlugin(xpPluginName)
+	if err := installPluginByName(cmd, name, consent); err != nil {
+		return nil, fmt.Errorf(
+			"install plugin %q: %w (if the registry is unreachable, install from an archive: dr plugin install %s --file <archive>)",
+			name, err, name)
+	}
+
+	p, err = loadManagedPlugin(name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load plugin %q after installation: %w", xpPluginName, err)
+		return nil, fmt.Errorf("failed to load plugin %q after installation: %w", name, err)
 	}
 
-	if xp == nil {
-		return nil, fmt.Errorf("plugin %q is not available after installation", xpPluginName)
+	if p == nil {
+		return nil, fmt.Errorf("plugin %q is not available after installation", name)
 	}
 
-	return xp, nil
+	return p, nil
 }
 
-// resolveInstalled returns the installed plugin with the given name, or nil
-// when it is not installed. It consults cached discovery results first (which
-// also cover PATH-based plugins) and falls back to reading the managed
-// plugins directory directly, so an installed plugin is still found when
-// discovery is disabled or timed out. A broken managed installation resolves
-// to nil: reinstalling repairs it.
-func resolveInstalled(name string) *plugin.DiscoveredPlugin {
+// installViaPluginInstall delegates to `dr plugin install <name>` in-process,
+// so Build Studio reuses the full registry flow — URL normalization, version
+// resolution, user messaging, and the dependency check — instead of
+// duplicating it.
+func installViaPluginInstall(cmd *cobra.Command, name string, consent bool) error {
+	installCmd := plugininstall.Cmd()
+	installCmd.SetContext(cmd.Context())
+
+	if consent {
+		if err := installCmd.Flags().Set(cli.YesFlagName, "true"); err != nil {
+			return err
+		}
+	}
+
+	return installCmd.RunE(installCmd, []string{name})
+}
+
+// resolveInstalled returns the installed plugin with the given name, nil when
+// it is not installed, or an error when its state cannot be determined. It
+// consults cached discovery results first (which also cover PATH-based
+// plugins) and falls back to reading the managed plugins directory directly,
+// so an installed plugin is still found when discovery is disabled or timed
+// out. A corrupt managed installation resolves to nil — reinstalling repairs
+// it — while transient failures (e.g. permission errors) abort instead of
+// triggering a reinstall that would wipe the plugin directory.
+func resolveInstalled(name string) (*plugin.DiscoveredPlugin, error) {
 	if p := findInstalled(name); p != nil {
-		return p
+		return p, nil
 	}
 
 	p, err := loadManagedPlugin(name)
 	if err != nil {
-		log.Debug("Failed to load managed plugin, will reinstall", "plugin", name, "error", err)
+		if errors.Is(err, plugin.ErrCorruptInstall) {
+			log.Debug("Managed plugin is corrupt, will reinstall", "plugin", name, "error", err)
 
-		return nil
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("failed to inspect installed plugin %q: %w", name, err)
 	}
 
-	return p
+	return p, nil
 }
 
 // findInstalled returns the discovered plugin with the given name, or nil
@@ -173,85 +271,6 @@ func findInstalled(name string) *plugin.DiscoveredPlugin {
 		if plugins[i].Manifest.Name == name {
 			return &plugins[i]
 		}
-	}
-
-	return nil
-}
-
-// installFromRegistry installs the named plugins from the remote plugin
-// registry, fetching the registry index once for all of them.
-func installFromRegistry(cmd *cobra.Command, names []string) error {
-	var (
-		registry *plugin.PluginRegistry
-		baseURL  string
-	)
-
-	err := tui.RunWithSpinner(
-		fmt.Sprintf("Fetching plugin registry from %s…", plugin.PluginRegistryURL),
-		func() error {
-			var fetchErr error
-
-			registry, baseURL, fetchErr = fetchRegistry(plugin.PluginRegistryURL)
-
-			return fetchErr
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to fetch plugin registry: %w", err)
-	}
-
-	for _, name := range names {
-		if err := installPlugin(cmd, registry, baseURL, name); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func installPlugin(cmd *cobra.Command, registry *plugin.PluginRegistry, baseURL, name string) error {
-	entry, ok := registry.Plugins[name]
-	if !ok {
-		return fmt.Errorf("plugin %q not found in the plugin registry", name)
-	}
-
-	version, err := plugin.ResolveVersion(entry.Versions, "latest")
-	if err != nil {
-		return fmt.Errorf("failed to resolve the latest version of plugin %q: %w", name, err)
-	}
-
-	if err := tui.RunWithSpinner(
-		fmt.Sprintf("Installing %s %s…", entry.Name, version.Version),
-		func() error { return installRegistryEntry(entry, *version, baseURL) },
-	); err != nil {
-		return fmt.Errorf("failed to install plugin %q: %w", name, err)
-	}
-
-	fmt.Println(tui.SuccessStyle.Render("✓ Installed " + entry.Name + " " + version.Version))
-
-	return checkAndInstallPluginDeps(cmd, name)
-}
-
-// checkAndInstallPluginDeps checks the freshly installed plugin's
-// prerequisites (its versions.yaml) and offers to install what is missing.
-// A declined prompt is not an error: the plugin itself installed fine.
-func checkAndInstallPluginDeps(cmd *cobra.Command, pluginName string) error {
-	confirm := func() bool {
-		if cli.IsNonInteractive(cmd) {
-			return true
-		}
-
-		fmt.Fprint(os.Stdout, "\nInstall missing dependencies? [Y/n]: ")
-
-		return reader.AskYesNo()
-	}
-
-	if err := checkAndInstallDeps(pluginName, confirm, os.Stdout); err != nil {
-		if errors.Is(err, plugin.ErrDepsDeclined) {
-			return nil
-		}
-
-		return err
 	}
 
 	return nil

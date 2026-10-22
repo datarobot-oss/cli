@@ -14,6 +14,14 @@
 
 package plugin
 
+import "errors"
+
+// ErrCorruptInstall marks a managed plugin installation that is broken in a
+// way a reinstall repairs: an unparsable or incomplete manifest, or a missing
+// platform script. Transient failures (e.g. permission errors) are NOT
+// wrapped with it, so callers can distinguish "reinstall" from "report".
+var ErrCorruptInstall = errors.New("corrupt managed plugin installation")
+
 // LoadManagedPlugin resolves a single managed plugin by name without running
 // full discovery (no PATH scan, no manifest subprocesses for other plugins).
 // Managed plugin directories are searched in priority order. Returns

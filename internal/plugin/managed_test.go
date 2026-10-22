@@ -77,7 +77,7 @@ func TestLoadManagedPlugin_ResolvesManifestAndExecutable(t *testing.T) {
 	assert.Equal(t, pluginDir, filepath.Dir(p.Executable), "executable should live in the plugin directory")
 }
 
-func TestLoadManagedPlugin_MissingScriptIsAnError(t *testing.T) {
+func TestLoadManagedPlugin_MissingScriptIsCorrupt(t *testing.T) {
 	tmpXDG := t.TempDir()
 
 	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
@@ -89,5 +89,21 @@ func TestLoadManagedPlugin_MissingScriptIsAnError(t *testing.T) {
 
 	_, err := LoadManagedPlugin("broken-test")
 
-	assert.Error(t, err, "an installed plugin whose script is missing should surface an error")
+	require.Error(t, err, "an installed plugin whose script is missing should surface an error")
+	assert.ErrorIs(t, err, ErrCorruptInstall, "a missing script is a corruption a reinstall repairs")
+}
+
+func TestLoadManagedPlugin_UnparsableManifestIsCorrupt(t *testing.T) {
+	tmpXDG := t.TempDir()
+
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
+
+	pluginDir := installFakeManagedPlugin(t, tmpXDG, "garbage-test")
+
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "manifest.json"), []byte("{not json"), 0o644))
+
+	_, err := LoadManagedPlugin("garbage-test")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrCorruptInstall, "an unparsable manifest is a corruption a reinstall repairs")
 }
