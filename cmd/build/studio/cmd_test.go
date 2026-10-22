@@ -166,8 +166,8 @@ func TestRunStudio_AllInstalled(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 7, exitCode, "xp's exit code should propagate")
 	assert.Equal(t, "/fake/xp.sh", gotExecutable)
-	assert.Equal(t, []string{"--enable-assist", "--port", "9000"}, gotArgs,
-		"--enable-assist must come first, passthrough args after")
+	assert.Equal(t, []string{"--port", "9000"}, gotArgs,
+		"passthrough args must reach xp unchanged")
 	assert.Zero(t, gotOptCount, "no consent option without --yes")
 	assert.Equal(t, []string{"xp", "opencode"}, updateChecked, "both plugins should get an update check")
 }

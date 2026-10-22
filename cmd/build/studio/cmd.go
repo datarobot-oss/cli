@@ -33,10 +33,6 @@ import (
 const (
 	xpPluginName       = "xp"
 	openCodePluginName = "opencode"
-
-	// enableAssistFlag keeps the Assist tab available on xp versions that do
-	// not enable it by default yet; newer versions treat it as a no-op.
-	enableAssistFlag = "--enable-assist"
 )
 
 // Test seams: unit tests swap these out so they never run plugin discovery,
@@ -145,7 +141,9 @@ func parseArgs(rawArgs []string) studioArgs {
 }
 
 // runStudio makes sure the plugins are present, offers pending updates, and
-// launches xp with the Assist tab enabled. Returns xp's exit code.
+// launches xp, whose Assist tab is enabled by default since 2.3.0 (the
+// pre-launch update prompt moves older installations forward). Returns xp's
+// exit code.
 func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 	xp, openCode, err := ensureStudioPlugins(cmd, args.consent())
 	if err != nil {
@@ -161,15 +159,13 @@ func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 	fmt.Fprintln(os.Stderr, tui.InfoStyle.Render("🔌 Running plugin: "+xpPluginName))
 	log.Debug("Executing plugin", "name", xpPluginName, "executable", xp.Executable)
 
-	pluginArgs := append([]string{enableAssistFlag}, args.passthrough...)
-
 	var execOpts []plugin.ExecOption
 
 	if args.consent() {
 		execOpts = append(execOpts, plugin.WithDepsConsent())
 	}
 
-	return executePlugin(cmd.Context(), xp.Manifest, xp.Executable, pluginArgs, cmd.Root().PersistentFlags(), execOpts...), nil
+	return executePlugin(cmd.Context(), xp.Manifest, xp.Executable, args.passthrough, cmd.Root().PersistentFlags(), execOpts...), nil
 }
 
 // ensureStudioPlugins makes sure both plugins Build Studio needs are
