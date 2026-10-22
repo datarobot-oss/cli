@@ -219,13 +219,13 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 
 > [!NOTE]
-> **Composite action changes need special testing.** Workflows like `_smoke.yaml` and
-> `_pre-release-smoke.yaml` reference `.github/actions/*` via a pinned `@main` ref, not
-> the calling ref — so a PR that edits a composite action's `action.yaml` does not
-> exercise that change in its own CI run; the fix only takes effect after merge. Either
-> temporarily point the ref at the PR branch to get a real CI run (reverting before
-> merge), or verify immediately after merge via a manual `workflow_dispatch` run. See
-> [.cursor/bugbot-ci.md](.cursor/bugbot-ci.md).
+> **Composite actions are referenced locally.** All workflows use
+> `./.github/actions/<name>` after an `actions/checkout` first step — never a
+> remote ref like `datarobot-oss/cli/.github/actions/<name>@main`, which makes
+> the runner download the whole repo tarball into a fixed 2 GiB buffer (the repo
+> now exceeds that; see the v0.15.2 release incident). With local refs, a PR's
+> own CI exercises its composite-action changes — no post-merge verification
+> step needed.
 
 ## Feature Gates
 

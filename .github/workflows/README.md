@@ -14,25 +14,26 @@ actions under [`.github/actions/`](../actions/).
 | `manual-` | **Manual entrypoint** | `workflow_dispatch` | grouped together |
 | none | **Event entrypoint** | push / schedule / tag | — |
 
-> **Important: reusable workflows must use the full repo path.**
+> **Important: reference composite actions with the local path (`./`).**
 >
-> In top-level workflows (e.g. `checks.yaml`), reference composite actions with
-> the local path: `./.github/actions/setup`. In **reusable workflows** (those
-> with `on: workflow_call`), use the full repo path instead:
-> `datarobot-oss/cli/.github/actions/setup@main`.
+> Every workflow — top-level or reusable — must reference same-repo composite
+> actions locally (`./.github/actions/setup`) and must run `actions/checkout`
+> as the **first step** of the job, before any `uses: ./.github/actions/...`.
+> Local paths only work after checkout (the workspace isn't populated before
+> it), so keep the ordering.
 >
-> GitHub resolves `uses:` paths **before** `actions/checkout` runs, so local
-> paths (`./`) don't work in reusable workflows — the `.github/actions/`
-> directory isn't populated yet. This is a known GitHub Actions limitation
-> ([community discussion #18601](https://github.com/orgs/community/discussions/18601)).
+> Do **not** use remote refs like `datarobot-oss/cli/.github/actions/setup@main`.
+> The runner materializes a remote action by downloading the **entire repository
+> tarball** from codeload into a fixed 2 GiB buffer, and this repo now exceeds
+> that: `docs/plugins/` alone tracks ~2 GiB of plugin binaries, so any such
+> step fails at job setup with
+> `Cannot write more bytes to the buffer than the configured maximum buffer
+> size: 2147483647`. See #1029 for the incident and the fix.
+> `actions/checkout` itself is unaffected (it uses `git fetch`, not the
+> tarball), which is why local refs scale with repo size and remote refs don't.
 >
-> We use `@main` rather than pinning to a SHA because these are internal
-> same-repo utility actions. SHA pinning creates a chicken-and-egg problem:
-> you can't know the new SHA until the change merges to `main`, so PR CI would
-> test against the old version. The GitHub Actions Team is developing a native
-> `$/` syntax ([discussion #26245](https://github.com/orgs/community/discussions/26245))
-> to resolve same-repo actions at the same SHA automatically, but it hasn't
-> shipped yet.
+> A side benefit: with local refs, a PR's own CI exercises that PR's composite
+> action changes — no post-merge verification step needed.
 
 One extension everywhere: **`.yaml`**.
 
