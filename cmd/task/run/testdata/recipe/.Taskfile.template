@@ -68,6 +68,7 @@ tasks:
   install:
     desc: "🛠️ Install all dependencies"
     cmds:
+      - dr dependency install
       - |
         if [ -n "$VIRTUAL_ENV" ]; then
           echo "Installing datarobot_early_access[core] into active virtualenv: $VIRTUAL_ENV"
