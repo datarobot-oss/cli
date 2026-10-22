@@ -1,0 +1,4 @@
+# Keep the plugin registry tarballs (~2 GB, served via the docs site) out of
+# repository archives, so the codeload tarball GitHub Actions downloads for
+# `uses: datarobot-oss/cli/.github/actions/...@<sha>` stays under 2 GiB.
+docs/plugins/*/*.tar.xz export-ignore
