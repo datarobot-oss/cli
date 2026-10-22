@@ -656,7 +656,7 @@ func applyLine(blocker error, advice string) string {
 // A secret stays apart because it is genuinely unanswerable: the platform
 // never returns a stored value, so nothing here can tell a rotated key from an
 // untouched one, and the run re-sends rather than guessing.
-func (o Options) compareValues(
+func (o Options) compareValues( //nolint:cyclop // ordered rule list; the case order is the logic
 	parsed *manifest.Manifest, detected Detected,
 ) (changed, unverifiable []string) {
 	local := make(map[string]manifest.EnvVar, len(detected.EnvVars))
@@ -676,6 +676,13 @@ func (o Options) compareValues(
 		// the table cannot miss an edit the write then makes.
 		case declared.Unwritten:
 			changed = append(changed, declared.Name)
+
+		// The platform's own key replaces a literal or a credential, and once
+		// declared has no value of .env's to compare or re-send.
+		case declared.APIKey != want.APIKey:
+			changed = append(changed, declared.Name)
+
+		case declared.APIKey:
 
 		// A placeholder has no stored value to compare or re-send, and the
 		// reconciliation finishes it rather than rotating it. On a dry run

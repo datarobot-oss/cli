@@ -178,6 +178,9 @@ type EnvVar struct {
 	// Secret means the value belongs in the credential store, so the entry is
 	// written as a reference rather than as a literal.
 	Secret bool
+	// APIKey means the platform supplies the value, so the entry is written as
+	// `source: api-key` with no literal and no credential. See APIKeyEnvName.
+	APIKey bool
 	// CredentialID is the credential holding the secret, when one was stored
 	// for it. Empty means none was, and the reference is written carrying
 	// CredentialPlaceholder instead: an entry that is visibly unfinished, which
@@ -200,6 +203,12 @@ func (v EnvVar) credentialID() string {
 // visibly unfinished fails at deploy naming the variable, where a commented
 // entry would deploy cleanly and leave the container without its secret.
 const CredentialPlaceholder = "PLACEHOLDER"
+
+// APIKeyEnvName is the one variable the platform fills in itself. A .env holds
+// the deploying user's token under this name, and importing it as a credential
+// would store a copy of that token the platform has no need of: the entry is
+// declared `source: api-key` instead, and the platform resolves it at start.
+const APIKeyEnvName = "DATAROBOT_API_TOKEN"
 
 // credentialKey is the field of a credential a reference reads. Every
 // placeholder names the same one, because swapping the id for a real one is
@@ -879,6 +888,9 @@ func envVarNode(v EnvVar) *yaml.Node {
 	entry := []field{{key: keyName, value: scalar(v.Name)}}
 
 	switch {
+	case v.APIKey:
+		entry = append(entry, field{key: keySource, value: scalar(sourceAPIKey)})
+
 	case v.Secret && v.CredentialID == "":
 		entry = append(entry, field{
 			key:     keyValue,

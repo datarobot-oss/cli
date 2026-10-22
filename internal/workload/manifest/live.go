@@ -370,6 +370,12 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 			continue
 		}
 
+		if v.APIKey {
+			existing = append(existing, map[string]any{keyName: v.Name, keySource: sourceAPIKey})
+
+			continue
+		}
+
 		value := v.Value
 		if v.Secret {
 			value = CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey

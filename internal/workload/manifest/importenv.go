@@ -452,6 +452,9 @@ type DeclaredEnvVar struct {
 	// reference may name any of them, and only the one this CLI writes is one
 	// it may safely rewrite.
 	CredentialKey string
+	// APIKey is set when the entry is `source: api-key`: the platform supplies
+	// the value, so there is nothing to compare with .env or to re-send.
+	APIKey bool
 	// Structured is set when the value is neither a literal nor a reference
 	// but a mapping or a list somebody wrote by hand. A reconciliation
 	// overwrites one with the string .env has, which is why it has to be
@@ -500,18 +503,30 @@ func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
 		id, key := credentialRefOf(entry)
 
 		_, hasScalar := scalarString(mapValue(entry, keyValue))
+		apiKey := isAPIKeyEntry(entry)
 
 		declared = append(declared, DeclaredEnvVar{
 			Name:          name,
 			Value:         literalOf(entry, id),
 			CredentialID:  id,
 			CredentialKey: key,
+			APIKey:        apiKey,
 			Structured:    structuredValue(entry, id),
-			Unwritten:     id == "" && !hasScalar && !structuredValue(entry, id),
+			Unwritten:     id == "" && !apiKey && !hasScalar && !structuredValue(entry, id),
 		})
 	}
 
 	return declared
+}
+
+// isAPIKeyEntry reports an entry the platform fills with the workload's own
+// key, which carries `source: api-key` and no value. An entry that also carries
+// a value is not one: which of the two the platform honours is unclear, so it
+// is rewritten to the clean form rather than trusted.
+func isAPIKeyEntry(entry *yaml.Node) bool {
+	source, _ := scalarString(mapValue(entry, keySource))
+
+	return source == sourceAPIKey && mapValue(entry, keyValue) == nil
 }
 
 // structuredValue reports an entry whose value is a mapping or a list rather
@@ -681,6 +696,15 @@ func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 		}
 
 		want, asked := wanted[name]
+
+		// The platform fills this entry and .env never supplies its value, so
+		// a .env that does not name it is not a request to drop it.
+		if !asked && isAPIKeyEntry(entry) {
+			kept = append(kept, entry)
+
+			continue
+		}
+
 		if !asked {
 			if err := checkRemovable(entry); err != nil {
 				return SyncChanges{}, err
@@ -766,6 +790,16 @@ func replaceEnvEntry(entry *yaml.Node, want EnvVar) *yaml.Node {
 // structure worth carrying across.
 func settleFor(entry *yaml.Node, want EnvVar) settlement {
 	id, _ := credentialRefOf(entry)
+
+	// The platform's own key: whatever .env holds for it is not what deploys,
+	// so an entry already declaring it is final and any other form is replaced.
+	if want.APIKey {
+		if isAPIKeyEntry(entry) {
+			return settleKeep
+		}
+
+		return settleForm
+	}
 
 	if want.Secret {
 		return settleSecret(id, want)
