@@ -40,11 +40,21 @@ import (
 //  1. -y / --yes present in args
 //  2. DATAROBOT_CLI_NON_INTERACTIVE env var set
 //  3. Interactive [Y/n] prompt
+//
+// When the user declines (or stdin closes before an answer), it says what was
+// skipped and how to proceed, instead of exiting without a word.
 func checkAndInstallPluginDeps(manifest PluginManifest, args []string) bool {
 	confirm := func() bool { return confirmPluginDepsInstall(args) }
 
 	if err := CheckAndInstallDeps(manifest.Name, confirm, os.Stderr); err != nil {
-		if !errors.Is(err, ErrDepsDeclined) {
+		if errors.Is(err, ErrDepsDeclined) {
+			// The guidance names the env var rather than -y: -y is read from
+			// the plugin's own args and is also passed on to the plugin, so a
+			// plugin that parses flags strictly rejects it (xp does).
+			fmt.Fprintf(os.Stderr,
+				"Skipped installing dependencies that %s needs to run. Re-run the command and accept the prompt, or set %s=1 to install them automatically.\n",
+				manifest.Name, reader.NonInteractiveEnv)
+		} else {
 			fmt.Fprintf(os.Stderr, "plugin dependency check failed: %v\n", err)
 		}
 
