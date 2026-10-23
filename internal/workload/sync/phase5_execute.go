@@ -53,8 +53,14 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	if len(e.plan.Uploads)+len(e.plan.Downloads)+len(e.plan.Deletes)+len(e.plan.Conflicts) > RollbackMaxFiles {
-		return fmt.Errorf("plan exceeds RollbackMaxFiles=%d; refusing to run", RollbackMaxFiles)
+	uploads, downloads := len(e.plan.Uploads), len(e.plan.Downloads)
+	deletes, conflicts := len(e.plan.Deletes), len(e.plan.Conflicts)
+
+	if total := uploads + downloads + deletes + conflicts; total > RollbackMaxFiles {
+		return fmt.Errorf(
+			"plan touches %d files (uploads=%d, downloads=%d, deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d; refusing to run",
+			total, uploads, downloads, deletes, conflicts, RollbackMaxFiles,
+		)
 	}
 
 	if err := EnsureSpaceFor(e.projectDir, e.plan.TotalDownloadBytes()); err != nil {
