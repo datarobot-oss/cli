@@ -15,11 +15,28 @@
 package telemetry
 
 import (
+	"context"
 	"testing"
 
+	"github.com/amplitude/analytics-go/amplitude"
+	"github.com/amplitude/analytics-go/amplitude/types"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// recordingAmplitude is a minimal amplitude.Client that records Track calls.
+// Embedding the interface leaves every other method nil: the code under test
+// only ever calls Track.
+type recordingAmplitude struct {
+	amplitude.Client
+
+	events []types.Event
+}
+
+func (r *recordingAmplitude) Track(event types.Event) {
+	r.events = append(r.events, event)
+}
 
 func TestTrack_AddsAnnotationAndProducesEvent(t *testing.T) {
 	root := &cobra.Command{Use: "dr"}
@@ -87,6 +104,43 @@ func TestEventFor_NilCommand(t *testing.T) {
 	assert.False(t, ok)
 	assert.Empty(t, event.EventType)
 	assert.False(t, IsPluginCommand(nil))
+}
+
+func TestTrackCommandFromContext_EnqueuesEventForTrackedCommand(t *testing.T) {
+	amp := &recordingAmplitude{}
+	ctx := context.WithValue(context.Background(), ClientContextKey{}, NewTestClient(amp, nil))
+
+	root := &cobra.Command{Use: "dr"}
+	cmd := &cobra.Command{Use: "assist"}
+
+	root.AddCommand(cmd)
+
+	TrackPlugin(cmd, "1.2.3")
+
+	TrackCommandFromContext(ctx, cmd, nil)
+
+	require.Len(t, amp.events, 1, "a tracked command should enqueue exactly one event")
+	assert.Equal(t, "dr assist", amp.events[0].EventType)
+	assert.Equal(t, "1.2.3", amp.events[0].EventProperties["plugin_version"])
+}
+
+func TestTrackCommandFromContext_SkipsUntrackedCommand(t *testing.T) {
+	amp := &recordingAmplitude{}
+	ctx := context.WithValue(context.Background(), ClientContextKey{}, NewTestClient(amp, nil))
+
+	TrackCommandFromContext(ctx, &cobra.Command{Use: "untracked"}, nil)
+
+	assert.Empty(t, amp.events, "a command without a telemetry annotation must not enqueue an event")
+}
+
+func TestTrackCommandFromContext_NoClientInContextIsNoOp(t *testing.T) {
+	cmd := &cobra.Command{Use: "assist"}
+
+	TrackPlugin(cmd, "1.2.3")
+
+	assert.NotPanics(t, func() {
+		TrackCommandFromContext(context.Background(), cmd, nil)
+	})
 }
 
 func TestFirstArg(t *testing.T) {

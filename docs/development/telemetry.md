@@ -77,15 +77,20 @@ if err := cmd.ExecuteContext(ctx); err != nil {
 
 ### `telemetry.ExitWithContext(ctx context.Context, code int)` — for cobra sub-commands
 
-Commands that must propagate a subprocess exit code (plugin dispatch, `task run --exit-code`) cannot use `return err` because Go errors carry no integer code. They call `telemetry.ExitWithContext` with the command's cobra context — the client stored there by `PersistentPreRunE` is flushed before `os.Exit`:
+Commands that must propagate a subprocess exit code (plugin dispatch, `task run --exit-code`) cannot use `return err` because Go errors carry no integer code. They call `telemetry.ExitWithContext` with the command's cobra context — the client stored there by `PersistentPreRunE` is flushed before `os.Exit`.
+
+Flushing only delivers events that are already queued, and the command's own event is queued by `cobra.OnFinalize` after `RunE` returns, which `os.Exit` never allows. So call `telemetry.TrackCommandFromContext` first to queue it:
 
 ```go
 RunE: func(cmd *cobra.Command, args []string) error {
     exitCode := runSubprocess(...)
-    telemetry.ExitWithContext(cmd.Context(), exitCode) // never returns
+    telemetry.TrackCommandFromContext(cmd.Context(), cmd, args) // queue the event os.Exit would skip
+    telemetry.ExitWithContext(cmd.Context(), exitCode)          // flush, then never returns
     return nil // unreachable
 },
 ```
+
+`TrackCommandFromContext` does nothing when the command is not tracked or the context has no client. Call it only on a path that ends in `ExitWithContext`: a path that returns normally reaches `OnFinalize`, and calling it there too would send the event twice. It is a separate call, not part of `ExitWithContext`, because building the event needs the `*cobra.Command` and `ExitWithContext` receives only the context. Plugin dispatch (`createPluginCommand` in `cmd/plugin/discovery.go`) follows this pattern.
 
 ### State ownership
 

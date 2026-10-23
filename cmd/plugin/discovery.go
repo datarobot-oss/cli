@@ -129,6 +129,10 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := internalPlugin.ExecutePlugin(pluginCmd.Context(), manifest, executable, args, pluginCmd.Root().PersistentFlags())
+
+			// Enqueue the command's telemetry event before exiting: os.Exit
+			// skips the OnFinalize hook that normally fires it.
+			telemetry.TrackCommandFromContext(pluginCmd.Context(), pluginCmd, args)
 			telemetry.ExitWithContext(pluginCmd.Context(), exitCode)
 		},
 	}
