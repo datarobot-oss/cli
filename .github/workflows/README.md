@@ -34,6 +34,15 @@ actions under [`.github/actions/`](../actions/).
 >
 > A side benefit: with local refs, a PR's own CI exercises that PR's composite
 > action changes — no post-merge verification step needed.
+>
+> **The fork exception (#1031).** Local refs resolve against whatever ref the job
+> checks out — for fork smoke tests that ref is fork-controlled, so a fork PR
+> would execute its own composite-action code. The fork lane therefore checks out
+> trusted action sources from upstream `main` into a `ci-tooling/` subdirectory
+> (`actions/checkout` with `repository:`/`path:` — a git fetch, not the tarball)
+> and resolves actions from `./ci-tooling/.github/actions/<name>` instead.
+> Reusables expose a `trusted-actions` boolean input for this; non-fork callers
+> omit it so PR CI keeps validating PR changes to the actions.
 
 One extension everywhere: **`.yaml`**.
 
@@ -43,9 +52,9 @@ One extension everywhere: **`.yaml`**.
 
 | File | Purpose |
 | --- | --- |
-| `_build.yaml` | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. |
-| `_smoke.yaml` | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. |
-| `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. |
+| `_build.yaml` | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. `trusted-actions` runs the `setup` composite from upstream main (fork lane). |
+| `_smoke.yaml` | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. `trusted-actions` runs the composites from upstream main (fork lane). |
+| `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. No trusted-actions lane — it uses no local composite actions. |
 | `_install-tests.yaml` | Installation-script tests across Linux/macOS/Windows. |
 | `_pre-release-smoke.yaml` | Heavier end-to-end smoke tests that gate release promotion. |
 | `_workload-acceptance.yaml` | Live workload/artifact acceptance scenarios. Nightly + manual only; never gates releases. |
@@ -182,6 +191,13 @@ leakage. A maintainer reviews the diff, then comments `/approve-smoke-tests` to
 run a security pre-scan plus smoke tests (results update the **Smoke Tests**
 status), or `/skip-smoke-tests` to bypass it. The `run-smoke-tests` label and
 `/trigger-smoke-test` command do not work on fork PRs.
+
+`fork-smoke-tests.yaml` passes `trusted-actions: true` to the `_build.yaml` and
+`_smoke.yaml` reusables, so the composite actions those jobs run come from
+trusted upstream `main` (checked out into `ci-tooling/`), never from the fork
+(#1031). The fork's `Taskfile.yaml`, `install.sh`, and Go source still run, as
+before — that risk is covered by the security pre-scan plus maintainer approval,
+not by the actions lane.
 
 ## Slack notifications
 
