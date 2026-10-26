@@ -16,6 +16,9 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/amplitude/analytics-go/amplitude"
@@ -141,6 +144,52 @@ func TestTrackCommandFromContext_NoClientInContextIsNoOp(t *testing.T) {
 	assert.NotPanics(t, func() {
 		TrackCommandFromContext(context.Background(), cmd, nil)
 	})
+}
+
+// printingAmplitude reports Track calls on stdout so a parent test can observe
+// events queued in a child process that then calls os.Exit. Shutdown is a
+// no-op because Client.Flush calls it.
+type printingAmplitude struct {
+	amplitude.Client
+}
+
+func (printingAmplitude) Track(event types.Event) {
+	fmt.Printf("tracked:%s plugin_version:%v\n", event.EventType, event.EventProperties["plugin_version"])
+}
+
+func (printingAmplitude) Shutdown() {}
+
+const exitCommandChildEnv = "TELEMETRY_TEST_EXIT_COMMAND_CHILD"
+
+// ExitCommand ends in os.Exit, so the test re-runs this test binary and
+// inspects its exit code and output.
+func TestExitCommand_QueuesEventThenExitsWithCode(t *testing.T) {
+	if os.Getenv(exitCommandChildEnv) == "1" {
+		root := &cobra.Command{Use: "dr"}
+		cmd := &cobra.Command{Use: "assist"}
+
+		root.AddCommand(cmd)
+		TrackPlugin(cmd, "1.2.3")
+
+		cmd.SetContext(context.WithValue(context.Background(), ClientContextKey{}, NewTestClient(printingAmplitude{}, nil)))
+
+		ExitCommand(cmd, nil, 7)
+
+		return
+	}
+
+	child := exec.Command(os.Args[0], "-test.run=^TestExitCommand_QueuesEventThenExitsWithCode$") //nolint:gosec // re-runs this test binary
+
+	child.Env = append(os.Environ(), exitCommandChildEnv+"=1")
+
+	out, err := child.Output()
+
+	var exitErr *exec.ExitError
+
+	require.ErrorAs(t, err, &exitErr, "child should exit non-zero")
+	assert.Equal(t, 7, exitErr.ExitCode())
+	assert.Equal(t, "tracked:dr assist plugin_version:1.2.3\n", string(out),
+		"the event must be queued before the process exits")
 }
 
 func TestFirstArg(t *testing.T) {
