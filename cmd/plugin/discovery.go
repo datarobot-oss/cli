@@ -143,4 +143,4 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 
 // The update-check flow (prompt, backup → install → validate) lives in
 // cmd/plugin/shared so wrapper commands that launch plugins directly
-// (e.g. dr build studio) share it. See shared.CheckAndPromptPluginUpdate.
+// (e.g. dr build-studio) share it. See shared.CheckAndPromptPluginUpdate.

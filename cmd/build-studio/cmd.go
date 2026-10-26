@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package studio
+package buildstudio
 
 import (
 	"errors"
@@ -22,6 +22,7 @@ import (
 	plugininstall "github.com/datarobot/cli/cmd/plugin/install"
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/cli"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
@@ -48,15 +49,16 @@ var (
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "studio",
-		Short: "🎨 Open Build Studio (the dr xp Assist tab)",
+		Use:     "build-studio",
+		GroupID: "core",
+		Short:   "🎨 Open Build Studio (the dr xp Assist tab)",
 		Long: `Open Build Studio — the Assist tab of the dr xp experimentation dashboard.
 
 When the xp or opencode plugin is missing, it is installed from the plugin
 registry first. All flags except -y/--yes and -h/--help are passed through
 to dr xp.`,
-		Example: `  dr build studio
-  dr build studio --port 9000`,
+		Example: `  dr build-studio
+  dr build-studio --port 9000`,
 		Args: cobra.ArbitraryArgs,
 		// Unrecognized flags belong to dr xp (e.g. --port), so cobra must not
 		// reject them; parseArgs extracts this command's own flags instead.
@@ -67,6 +69,8 @@ to dr xp.`,
 	// Registered for help output only: with flag parsing disabled, cobra
 	// never parses it — parseArgs consumes it from the raw args instead.
 	cmd.Flags().BoolP(cli.YesFlagName, "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
+
+	features.SetGate(cmd, "build-studio")
 
 	telemetry.Track(cmd)
 

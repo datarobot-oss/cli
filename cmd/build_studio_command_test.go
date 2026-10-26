@@ -21,32 +21,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuildCommandGatedByDefault verifies that `dr build` stays out of the
-// command tree until the build-studio feature gate is enabled. The env var is
-// neutralized so an ambient value (e.g. from the repo's .env) cannot leak in.
-func TestBuildCommandGatedByDefault(t *testing.T) {
+// TestBuildStudioGatedByDefault verifies that `dr build-studio` stays out of
+// the command tree until the build-studio feature gate is enabled. The env var
+// is neutralized so an ambient value (e.g. from the repo's .env) cannot leak in.
+func TestBuildStudioGatedByDefault(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_BUILD_STUDIO", "")
 
 	root := newIsolatedRootCmd()
 
-	assert.Nil(t, findCommandByPath(root.Command, "dr build"),
-		"build command should be hidden while the build-studio gate is off")
+	assert.Nil(t, findCommandByPath(root.Command, "dr build-studio"),
+		"build-studio command should be hidden while the build-studio gate is off")
 }
 
 // TestBuildStudioPresentWhenGateEnabled verifies that enabling the
-// build-studio gate registers `dr build` with its `studio` subcommand.
+// build-studio gate registers `dr build-studio` as a top-level core command,
+// and that the earlier `dr build studio` spelling is not registered.
 func TestBuildStudioPresentWhenGateEnabled(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_BUILD_STUDIO", "true")
 
 	root := newIsolatedRootCmd()
 
-	buildCmd := findCommandByPath(root.Command, "dr build")
+	studioCmd := findCommandByPath(root.Command, "dr build-studio")
 
-	require.NotNil(t, buildCmd, "build command should be present with the build-studio gate on")
-	assert.Equal(t, "core", buildCmd.GroupID)
+	require.NotNil(t, studioCmd, "build-studio command should be present with the build-studio gate on")
+	assert.Equal(t, "core", studioCmd.GroupID)
+	assert.NotNil(t, studioCmd.Flags().Lookup("yes"), "build-studio should expose the --yes flag")
 
-	studioCmd := findCommandByPath(root.Command, "dr build studio")
-
-	require.NotNil(t, studioCmd, "studio subcommand should be registered under build")
-	assert.NotNil(t, studioCmd.Flags().Lookup("yes"), "studio should expose the --yes flag")
+	assert.Nil(t, findCommandByPath(root.Command, "dr build"),
+		"there is no `dr build` parent; Build Studio is a single top-level command")
 }

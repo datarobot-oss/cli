@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package build wires up the `dr build` parent command. It hosts Build
-// Studio (`dr build studio`), which launches the xp experimentation
-// dashboard on its Assist tab, installing the required plugins on demand.
-package build
+// Package buildstudio implements `dr build-studio`: it makes sure the xp and
+// opencode plugins are installed (installing them from the plugin registry
+// on first use) and then launches the xp dashboard with the Assist tab
+// enabled. The command is behind the build-studio feature gate.
+package buildstudio

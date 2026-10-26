@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package studio
+package buildstudio
 
 import (
 	"context"
@@ -80,7 +80,8 @@ func discovered(name, executable string) plugin.DiscoveredPlugin {
 func TestCmdMetadata(t *testing.T) {
 	cmd := Cmd()
 
-	assert.Equal(t, "studio", cmd.Use)
+	assert.Equal(t, "build-studio", cmd.Use)
+	assert.Equal(t, "core", cmd.GroupID)
 	assert.NotNil(t, cmd.RunE)
 	assert.True(t, cmd.DisableFlagParsing, "unknown flags must reach dr xp, so cobra must not parse them")
 	assert.NotNil(t, cmd.Flags().Lookup("yes"), "studio should document the --yes flag")
