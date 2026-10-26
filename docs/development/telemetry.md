@@ -89,7 +89,7 @@ RunE: func(cmd *cobra.Command, args []string) error {
 
 The command's event is normally queued by `cobra.OnFinalize` after `RunE` returns, which `os.Exit` never allows. `ExitCommand` queues it itself, so a path that exits records the run. The event is skipped when the command is not tracked or the context has no client.
 
-`telemetry.ExitWithContext(ctx, code)` is the flush-and-exit half on its own. It queues nothing, so a command that leaves through it directly is not recorded. Prefer `ExitCommand` for any tracked command. Plugin dispatch (`createPluginCommand` in `cmd/plugin/discovery.go`) uses it. `dr task run` still calls `ExitWithContext` and should move to `ExitCommand`.
+`telemetry.ExitWithContext(ctx, code)` is the flush-and-exit half on its own. It queues nothing, so a command that leaves through it directly is not recorded. Prefer `ExitCommand` for any tracked command. Plugin dispatch (`createPluginCommand` in `cmd/plugin/discovery.go`) and `dr task run` (`cmd/task/run/cmd.go`) use it.
 
 ### State ownership
 
