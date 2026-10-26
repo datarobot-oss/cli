@@ -75,17 +75,21 @@ if err := cmd.ExecuteContext(ctx); err != nil {
 
 `cmd.Exit` is nil-safe: if `PersistentPreRunE` never ran (e.g. flag parse failure before any command executes) there are no queued events and it falls straight through to `os.Exit`.
 
-### `telemetry.ExitWithContext(ctx context.Context, code int)` — for cobra sub-commands
+### `telemetry.ExitCommand(cmd *cobra.Command, args []string, code int)` — for cobra sub-commands
 
-Commands that must propagate a subprocess exit code (plugin dispatch, `task run --exit-code`) cannot use `return err` because Go errors carry no integer code. They call `telemetry.ExitWithContext` with the command's cobra context — the client stored there by `PersistentPreRunE` is flushed before `os.Exit`:
+Commands that must propagate a subprocess exit code (plugin dispatch, `task run`) cannot use `return err` because Go errors carry no integer code. They exit through `telemetry.ExitCommand`. It queues the command's own event, flushes the client that `PersistentPreRunE` stored in the command's context, then calls `os.Exit`:
 
 ```go
 RunE: func(cmd *cobra.Command, args []string) error {
     exitCode := runSubprocess(...)
-    telemetry.ExitWithContext(cmd.Context(), exitCode) // never returns
+    telemetry.ExitCommand(cmd, args, exitCode) // queue event, flush, never returns
     return nil // unreachable
 },
 ```
+
+The command's event is normally queued by `cobra.OnFinalize` after `RunE` returns, which `os.Exit` never allows. `ExitCommand` queues it itself, so a path that exits records the run. The event is skipped when the command is not tracked or the context has no client.
+
+`telemetry.ExitWithContext(ctx, code)` is the flush-and-exit half on its own. It queues nothing, so a command that leaves through it directly is not recorded. Prefer `ExitCommand` for any tracked command. Plugin dispatch (`createPluginCommand` in `cmd/plugin/discovery.go`) and `dr task run` (`cmd/task/run/cmd.go`) use it.
 
 ### State ownership
 
@@ -94,7 +98,7 @@ RunE: func(cmd *cobra.Command, args []string) error {
 1. The `cmd` package (`root.go` + `exit.go`) with the `telemetryClient` variable.
 2. The cobra command context, which stores a `*telemetry.Client` under `telemetry.ClientContextKey{}`.
 
-Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitWithContext` (exit-code path).
+Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitCommand` / `telemetry.ExitWithContext` (exit-code path).
 
 ## Silent errors and `SilenceErrors`
 
