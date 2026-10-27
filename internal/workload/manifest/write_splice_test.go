@@ -80,6 +80,14 @@ func TestWriteWorkloadID_ReplaceQuotedAndCRLF(t *testing.T) {
 			in:   "name: x\n# bound by up\nworkloadId: 6ad3c5ed190d72e5948d8051\n",
 			want: "name: x\n# bound by up\nworkloadId: 6adb9de43bff6a3b37d1b9d7\n",
 		},
+		"multi-byte text before the token": {
+			in:   "{name: ééé, workloadId: 6ad3c5ed190d72e5948d8051}\n",
+			want: "{name: ééé, workloadId: 6adb9de43bff6a3b37d1b9d7}\n",
+		},
+		"same id writes nothing": {
+			in:   "workloadId: 6adb9de43bff6a3b37d1b9d7 # managed by the CLI\nname: x\n",
+			want: "workloadId: 6adb9de43bff6a3b37d1b9d7 # managed by the CLI\nname: x\n",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeManifest(t, t.TempDir(), tc.in)
@@ -89,6 +97,31 @@ func TestWriteWorkloadID_ReplaceQuotedAndCRLF(t *testing.T) {
 			got, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, string(got))
+		})
+	}
+}
+
+// A value the splice cannot model still lands in the tree edit, which
+// rebinds it and keeps the comment.
+func TestWriteWorkloadID_ReplaceFallsBackToTreeEdit(t *testing.T) {
+	for name, in := range map[string]string{
+		"spaces in quotes": "workloadId: \"a b\" # managed by the CLI\nname: x\n",
+		"block scalar":     "workloadId: |\n  6ad3c5ed190d72e5948d8051\n# bound by up\nname: x\n",
+		"alias":            "anchor: &id other\nworkloadId: *id # managed by the CLI\nname: x\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeManifest(t, t.TempDir(), in)
+
+			require.NoError(t, WriteWorkloadID(path, "6adb9de43bff6a3b37d1b9d7"))
+
+			m, err := Load(path)
+			require.NoError(t, err)
+			assert.Equal(t, "6adb9de43bff6a3b37d1b9d7", m.WorkloadID())
+
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Contains(t, string(got), "name: x")
+			assert.True(t, strings.Contains(string(got), "managed by the CLI") || strings.Contains(string(got), "bound by up"))
 		})
 	}
 }

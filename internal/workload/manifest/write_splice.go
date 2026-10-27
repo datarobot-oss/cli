@@ -16,7 +16,7 @@ package manifest
 
 import (
 	"bytes"
-	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -68,7 +68,16 @@ func spliceScalar(data []byte, node *yaml.Node, value string) ([]byte, bool) {
 		return nil, false
 	}
 
-	start += node.Column - 1
+	// Column counts runes, so step over any multi-byte text before the token.
+	for n := 1; n < node.Column; n++ {
+		if start >= len(data) || data[start] == '\n' {
+			return nil, false
+		}
+
+		_, width := utf8.DecodeRune(data[start:])
+		start += width
+	}
+
 	end := start + len(old)
 
 	if end > len(data) || string(data[start:end]) != old {
@@ -84,9 +93,10 @@ func spliceScalar(data []byte, node *yaml.Node, value string) ([]byte, bool) {
 }
 
 // plainSafe reports whether s reads back as itself in every style the splice
-// handles: no quoting, escapes, or characters YAML treats as structure.
+// handles: no quoting, escapes, or characters YAML treats as structure. A
+// lone "-" is still a sequence marker.
 func plainSafe(s string) bool {
-	if s == "" {
+	if s == "" || s == "-" {
 		return false
 	}
 
@@ -139,8 +149,9 @@ func spliceWorkloadID(data []byte, root *yaml.Node, workloadID string) ([]byte, 
 		return nil, false
 	}
 
-	// Same value, same bytes: nothing to write.
-	if strings.TrimSpace(value.Value) == workloadID {
+	// Same value, same bytes: nothing to write. An alias carries its anchor
+	// name in Value, so only a scalar can be compared.
+	if value.Kind == yaml.ScalarNode && value.Value == workloadID {
 		return data, true
 	}
 

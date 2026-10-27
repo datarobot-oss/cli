@@ -311,9 +311,10 @@ func Write(path string, data []byte) error {
 
 // WriteWorkloadID records the binding in an existing manifest, the one edit
 // the CLI makes to a file the user owns: up writes the id back the moment the
-// workload exists, so the next run finds it. Comments, unknown keys and their
-// order are preserved, because the file is re-emitted from the tree it was
-// parsed into rather than regenerated.
+// workload exists, so the next run finds it. An existing binding is replaced
+// in place, byte for byte; otherwise the file is re-emitted from the tree it
+// was parsed into rather than regenerated, so comments, unknown keys and
+// their order survive either way.
 func WriteWorkloadID(path, workloadID string) error {
 	// A binding that is already there is replaced token for token, so the
 	// rest of the file comes back byte for byte (see spliceScalar). Only a
