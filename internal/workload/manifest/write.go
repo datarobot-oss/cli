@@ -315,6 +315,23 @@ func Write(path string, data []byte) error {
 // order are preserved, because the file is re-emitted from the tree it was
 // parsed into rather than regenerated.
 func WriteWorkloadID(path, workloadID string) error {
+	// A binding that is already there is replaced token for token, so the
+	// rest of the file comes back byte for byte (see spliceScalar). Only a
+	// file without one, or one the splice cannot model, is re-encoded.
+	if data, err := os.ReadFile(path); err == nil {
+		if _, root, err := soleDocument(data, path, "record the workload id", func(format string, args ...any) error {
+			return fmt.Errorf(format, args...)
+		}); err == nil {
+			if out, ok := spliceWorkloadID(data, root, workloadID); ok {
+				if bytes.Equal(out, data) {
+					return nil
+				}
+
+				return fsutil.AtomicWriteFile(path, out)
+			}
+		}
+	}
+
 	_, err := editRoot(path, "record the workload id", false, func(root *yaml.Node) (bool, error) {
 		setWorkloadID(root, workloadID)
 
