@@ -72,6 +72,14 @@ func UpdateConfigFile(keys ...string) error {
 
 	applyAllowedKeysToNode(rootNode, keys)
 
+	return writeYAMLNode(configFile, rootNode)
+}
+
+// writeYAMLNode marshals rootNode (wrapped as a document, preserving its
+// comments and structure) back to path and re-tightens the file mode. Shared
+// by UpdateConfigFile and DeleteProfile so every persistence path keeps the
+// same safe-write behavior.
+func writeYAMLNode(path string, rootNode *yaml.Node) error {
 	docNode := &yaml.Node{
 		Kind:    yaml.DocumentNode,
 		Content: []*yaml.Node{rootNode},
@@ -82,7 +90,7 @@ func UpdateConfigFile(keys ...string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configFile, out, configFileMode); err != nil {
+	if err := os.WriteFile(path, out, configFileMode); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -93,8 +101,8 @@ func UpdateConfigFile(keys ...string) error {
 	// Best effort: on Windows os.Chmod only toggles the read-only bit, and a config
 	// owned by another user is not ours to re-permission. Neither case should fail
 	// the write, so log and carry on.
-	if err := os.Chmod(configFile, configFileMode); err != nil {
-		log.Debugf("Could not set %s to %#o: %v", configFile, configFileMode, err)
+	if err := os.Chmod(path, configFileMode); err != nil {
+		log.Debugf("Could not set %s to %#o: %v", path, configFileMode, err)
 	}
 
 	return nil
