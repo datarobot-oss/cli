@@ -56,18 +56,60 @@ var ProfileScopedKeys = map[string]struct{}{
 var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // UnknownProfileError is returned when --profile (or DATAROBOT_CLI_PROFILE)
-// names a section that does not exist in the config file.
+// names a section that does not exist in the config file, or when `auth
+// profile show <name>` is given a name that is not defined. Known holds the
+// explicitly defined profile names, sorted; it never contains an entry for
+// the root (top-level) credentials.
 type UnknownProfileError struct {
 	Name  string
 	Known []string
 }
 
+// Error renders the actionable message shared by the flag/env selection path
+// and the positional `auth profile show <name>` path: the normalized missing
+// name, the explicit candidate set (or a statement that none are defined),
+// and list/create remediation, with no wrapper noise. The normalized name
+// "default" gets extra guidance because selecting it looks like the omitted
+// selection: omission uses the root-level credentials and never activates
+// profiles.default, so the user must create the explicit section or drop the
+// selection.
 func (e *UnknownProfileError) Error() string {
+	name := NormalizeProfileName(e.Name)
+
+	var summary string
+
 	if len(e.Known) == 0 {
-		return fmt.Sprintf("unknown profile %q; no profiles are configured in drconfig.yaml", e.Name)
+		summary = fmt.Sprintf("unknown profile %q; no explicit profiles are defined in drconfig.yaml", name)
+	} else {
+		summary = fmt.Sprintf("unknown profile %q; defined profiles: %s", name, strings.Join(e.Known, ", "))
 	}
 
-	return fmt.Sprintf("unknown profile %q; known profiles: %s", e.Name, strings.Join(e.Known, ", "))
+	if name == DefaultProfileLabel {
+		return strings.Join([]string{
+			summary,
+			"",
+			`Omitting the profile selection uses the root-level credentials, which are`,
+			`separate from a profile named "default": omission never activates`,
+			`profiles.default, and this config does not define one.`,
+			"",
+			`To create the explicit "default" profile, run one of:`,
+			"  dr auth login --profile default",
+			"  dr auth set-url --profile default",
+			"Or drop the selection (remove --profile default, or unset",
+			"DATAROBOT_CLI_PROFILE) to use the root-level credentials.",
+		}, "\n")
+	}
+
+	return strings.Join([]string{
+		summary,
+		"",
+		"To list the defined profiles, run:",
+		"  dr auth profile list",
+		"",
+		"To create this profile, run one of:",
+		"  dr auth login --profile " + name,
+		"  dr auth set-url --profile " + name,
+	}, "\n")
 }
 
 // NormalizeProfileName lowercases and trims a profile name to match viper's

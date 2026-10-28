@@ -265,6 +265,18 @@ func TestShow_UnknownProfileErrors(t *testing.T) {
 
 	err := root.Execute()
 	require.Error(t, err)
+
+	// The positional path must render the same actionable message as the
+	// flag/env selection path: normalized name, explicit candidates, and
+	// list/create remediation, with no wrapper noise.
+	expected := (&config.UnknownProfileError{
+		Name:  "does-not-exist",
+		Known: []string{"eu-mtsaas", "onprem", "staging"},
+	}).Error()
+
+	assert.Equal(t, expected, err.Error())
 	assert.Contains(t, err.Error(), "does-not-exist")
-	assert.Contains(t, err.Error(), "eu-mtsaas")
+	assert.Contains(t, err.Error(), "eu-mtsaas, onprem, staging")
+	assert.Contains(t, err.Error(), "dr auth profile list")
+	assert.Contains(t, err.Error(), "dr auth login --profile does-not-exist")
 }

@@ -62,12 +62,68 @@ func TestValidateProfileName(t *testing.T) {
 
 func TestUnknownProfileError(t *testing.T) {
 	withCandidates := &UnknownProfileError{Name: "eu-mtsaa", Known: []string{"eu-mtsaas", "staging"}}
-	assert.Contains(t, withCandidates.Error(), `"eu-mtsaa"`)
-	assert.Contains(t, withCandidates.Error(), "eu-mtsaas, staging")
+
+	msg := withCandidates.Error()
+
+	assert.Contains(t, msg, `"eu-mtsaa"`)
+	assert.Contains(t, msg, "eu-mtsaas, staging")
+	assert.Contains(t, msg, "dr auth profile list", "the error must point at the list command")
+	assert.Contains(t, msg, "dr auth login --profile eu-mtsaa", "the error must offer login-based creation")
+	assert.Contains(t, msg, "dr auth set-url --profile eu-mtsaa", "the error must offer set-url-based creation")
+	assert.NotContains(t, msg, "failed to", "the error must carry no wrapper noise")
 
 	noCandidates := &UnknownProfileError{Name: "eu"}
-	assert.Contains(t, noCandidates.Error(), `"eu"`)
-	assert.Contains(t, noCandidates.Error(), "no profiles are configured")
+
+	msg = noCandidates.Error()
+
+	assert.Contains(t, msg, `"eu"`)
+	assert.Contains(t, msg, "no explicit profiles are defined")
+	assert.NotContains(t, msg, "defined profiles:", "an empty candidate set must not render as an empty list")
+	assert.Contains(t, msg, "dr auth login --profile eu", "creation remediation applies with no profiles either")
+}
+
+// TestUnknownProfileError_NormalizesName mirrors the contract that the
+// missing name is shown normalized (" Missing " as "missing"), however the
+// selection reached the error.
+func TestUnknownProfileError_NormalizesName(t *testing.T) {
+	err := &UnknownProfileError{Name: "  Missing  ", Known: []string{"east"}}
+
+	assert.Contains(t, err.Error(), `"missing"`)
+	assert.NotContains(t, err.Error(), "Missing")
+}
+
+// TestUnknownProfileError_MissingDefaultGuidance covers the default-specific
+// explanation: selecting "default" looks like the omitted (root-level)
+// selection, so the error must explain the distinction and how to create the
+// explicit section or drop the selection. This guidance must not appear for
+// any other unknown name.
+func TestUnknownProfileError_MissingDefaultGuidance(t *testing.T) {
+	err := &UnknownProfileError{Name: "default", Known: []string{"east", "west"}}
+
+	msg := err.Error()
+
+	assert.Contains(t, msg, "root-level credentials", "the guidance must explain that omission uses root")
+	assert.Contains(t, msg, "profiles.default", "the guidance must name the explicit section")
+	assert.Contains(t, msg, "dr auth login --profile default")
+	assert.Contains(t, msg, "dr auth set-url --profile default")
+	assert.Contains(t, msg, "drop the selection")
+
+	other := &UnknownProfileError{Name: "missing", Known: []string{"east", "west"}}
+
+	msg = other.Error()
+
+	assert.NotContains(t, msg, "root-level credentials", "default-specific guidance is only for the default name")
+}
+
+// TestUnknownProfileError_ParityAcrossSelectionPaths asserts that both
+// construction sites — config initialization (flag/env selection) and the
+// positional `auth profile show <name>` lookup — render the same message for
+// the same missing name and candidate set.
+func TestUnknownProfileError_ParityAcrossSelectionPaths(t *testing.T) {
+	flagPath := &UnknownProfileError{Name: "missing", Known: []string{"east", "west"}}
+	positionalPath := &UnknownProfileError{Name: "missing", Known: []string{"east", "west"}}
+
+	assert.Equal(t, flagPath.Error(), positionalPath.Error())
 }
 
 func TestProfileNames_Sorted(t *testing.T) {

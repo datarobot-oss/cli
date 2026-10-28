@@ -443,7 +443,7 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 
 	// Read drconfig.yaml and bind env vars into viper.
 	if err := f.deps.ConfigInitializer(cmd); err != nil {
-		return err
+		return f.reportConfigInitError(cmd, err)
 	}
 
 	// A format set only in drconfig.yaml is known from here on; executeRoot
@@ -530,6 +530,29 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 	f.deps.Animation()
 
 	return nil
+}
+
+// reportConfigInitError surfaces a configuration-initialization failure
+// exactly once on stderr. Cobra prints PersistentPreRunE errors itself, but
+// skips that print when the executed command silences errors (auth
+// check/logout/login/export do) — which would otherwise leave such commands
+// exiting 1 with nothing on either stream. In that case the root prints the
+// failure here in cobra's error style; in JSON mode executeRoot's envelope
+// printer is the single reporter, so nothing is printed on this path.
+func (f *RootFactory) reportConfigInitError(cmd *cobra.Command, err error) error {
+	if cmd.Root().SilenceErrors {
+		// JSON mode: executeRoot reports the failure as a JSON envelope on
+		// stderr; printing here would duplicate it.
+		return err
+	}
+
+	if cmd.SilenceErrors {
+		fmt.Fprintln(cmd.ErrOrStderr(), cmd.ErrPrefix(), err.Error())
+	}
+
+	// Commands that do not silence errors are reported by cobra as usual.
+
+	return err
 }
 
 // persistentPostRun flushes telemetry and stops the logger after a command
