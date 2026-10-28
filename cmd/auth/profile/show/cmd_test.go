@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
@@ -30,7 +31,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeTestConfig(t *testing.T) {
+// writeFixtureConfig writes raw as the test's drconfig.yaml under a fresh
+// isolated HOME, points the config layer at it, and returns the file's
+// absolute path so tests can assert on the path shown in human output.
+func writeFixtureConfig(t *testing.T, raw string) string {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -41,7 +45,15 @@ func writeTestConfig(t *testing.T) {
 	configDir := filepath.Join(tempDir, ".config", "datarobot")
 	require.NoError(t, os.MkdirAll(configDir, 0o755))
 
-	raw := `endpoint: https://app.datarobot.com/api/v2
+	configPath := filepath.Join(configDir, "drconfig.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(raw), 0o600))
+	require.NoError(t, config.ReadConfigFile(""))
+
+	return configPath
+}
+
+func writeTestConfig(t *testing.T) {
+	writeFixtureConfig(t, `endpoint: https://app.datarobot.com/api/v2
 token: default-token
 ca-cert: /etc/ssl/corp.pem
 profiles:
@@ -54,9 +66,7 @@ profiles:
     ca-cert: /etc/ssl/onprem.pem
   staging:
     endpoint: https://staging.example.com/api/v2
-`
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "drconfig.yaml"), []byte(raw), 0o600))
-	require.NoError(t, config.ReadConfigFile(""))
+`)
 }
 
 func captureStdout(t *testing.T, fn func()) string {
@@ -107,6 +117,25 @@ func runShowJSON(t *testing.T, args ...string) (profileDetail, string) {
 	return envelope.Profile, out
 }
 
+// runShowHuman runs the show command in its default (human) output mode and
+// returns its stdout, so tests can assert on human-only rendering such as
+// the config path, inheritance wording, and pairing explanations.
+func runShowHuman(t *testing.T, args ...string) string {
+	t.Helper()
+
+	root := &cobra.Command{Use: "test"}
+
+	var format outputformat.OutputFormat
+
+	outputformat.AddPersistentFlag(root, &format)
+	root.AddCommand(Cmd())
+	root.SetArgs(append([]string{"show"}, args...))
+
+	return captureStdout(t, func() {
+		require.NoError(t, root.Execute())
+	})
+}
+
 func TestShow_NamedProfile_OwnCACertNotInherited(t *testing.T) {
 	writeTestConfig(t)
 
@@ -135,7 +164,9 @@ func TestShow_NamedProfile_InheritsCACertFromDefault(t *testing.T) {
 // config.applyProfile, which merges endpoint and token atomically: a profile
 // created by `auth set-url` alone owns its endpoint and an empty token, and
 // must never be shown pairing its own endpoint with the default's token (or
-// the default's endpoint under its own name).
+// the default's endpoint under its own name). The *_own flags stay per-key:
+// an endpoint-only profile reports endpoint_own=true but has_token_own=false,
+// because it defines no token of its own.
 func TestShow_EndpointOnlyProfileDoesNotInheritCredentials(t *testing.T) {
 	writeTestConfig(t)
 
@@ -144,7 +175,207 @@ func TestShow_EndpointOnlyProfileDoesNotInheritCredentials(t *testing.T) {
 	assert.Equal(t, "https://staging.example.com/api/v2", detail.Endpoint)
 	assert.True(t, detail.EndpointOwn)
 	assert.False(t, detail.HasToken, "a profile that owns an endpoint but no token must not borrow the default's")
-	assert.True(t, detail.HasTokenOwn)
+	assert.False(t, detail.HasTokenOwn)
+}
+
+// writeTestConfigWithPairingFixtures builds a config whose root credentials
+// are complete (endpoint plus token, no ca-cert) and whose named profiles
+// cover every ownership shape the atomic endpoint/token merge can produce:
+// endpoint-only, full, and token-only.
+func writeTestConfigWithPairingFixtures(t *testing.T) {
+	writeFixtureConfig(t, `endpoint: https://root.example.com/api/v2
+token: root-secret-token
+profiles:
+  eponly:
+    endpoint: https://eponly.example.com/api/v2
+  full:
+    endpoint: https://full.example.com/api/v2
+    token: full-secret-token
+  toonly:
+    token: toonly-secret-token
+`)
+}
+
+// TestShow_JSONOwnFlagsArePerKey covers the JSON ownership contract for every
+// credential ownership shape: the *_own flags report which keys the profile's
+// own section defines, while the resolved values keep the atomic pairing (an
+// endpoint-only profile resolves its own endpoint and an empty token, never
+// the root token, and a token-only profile resolves no endpoint at all).
+func TestShow_JSONOwnFlagsArePerKey(t *testing.T) {
+	writeTestConfigWithPairingFixtures(t)
+
+	eponly, _ := runShowJSON(t, "eponly")
+
+	assert.Equal(t, "https://eponly.example.com/api/v2", eponly.Endpoint)
+	assert.True(t, eponly.EndpointOwn)
+	assert.False(t, eponly.HasToken, "an endpoint-only profile must not inherit the root token")
+	assert.False(t, eponly.HasTokenOwn)
+
+	full, _ := runShowJSON(t, "full")
+
+	assert.True(t, full.EndpointOwn)
+	assert.True(t, full.HasTokenOwn)
+	assert.True(t, full.HasToken)
+
+	toonly, _ := runShowJSON(t, "toonly")
+
+	assert.False(t, toonly.EndpointOwn)
+	assert.Empty(t, toonly.Endpoint, "a token-only profile must not inherit the root endpoint")
+	assert.True(t, toonly.HasToken)
+	assert.True(t, toonly.HasTokenOwn)
+}
+
+// assertCACertStringKey re-parses a show JSON document and asserts the
+// ca_cert key is present with a string value (never omitted or null).
+func assertCACertStringKey(t *testing.T, out string) {
+	t.Helper()
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &envelope))
+
+	profile, ok := envelope["profile"].(map[string]any)
+	require.True(t, ok, "show JSON must nest the detail under \"profile\"")
+
+	caCert, ok := profile["ca_cert"]
+	require.True(t, ok, "ca_cert must always be present in show JSON")
+
+	assert.IsType(t, "", caCert, "ca_cert must be a JSON string, never null")
+}
+
+// TestShow_JSONCACertAlwaysString covers the show-JSON compatibility change:
+// ca_cert is emitted even when unset (as the empty string), keeps its value
+// when configured, and reports ownership through the unchanged ca_cert_own.
+func TestShow_JSONCACertAlwaysString(t *testing.T) {
+	writeTestConfig(t)
+
+	// A named profile with no ca-cert of its own inherits the root value.
+	detail, out := runShowJSON(t, "eu-mtsaas")
+
+	assert.Equal(t, "/etc/ssl/corp.pem", detail.CACert)
+	assert.False(t, detail.CACertOwn)
+	assertCACertStringKey(t, out)
+
+	// A named profile with its own ca-cert reports it as owned.
+	detail, out = runShowJSON(t, "onprem")
+
+	assert.Equal(t, "/etc/ssl/onprem.pem", detail.CACert)
+	assert.True(t, detail.CACertOwn)
+	assertCACertStringKey(t, out)
+
+	// The root selection also always carries ca_cert as a string.
+	_, out = runShowJSON(t)
+	assertCACertStringKey(t, out)
+}
+
+// TestShow_JSONCACertEmptyStringWhenUnset covers the unset case on a config
+// with no ca-cert anywhere: the key must still be present with the empty
+// string, and the root profile's ca_cert_own stays true (the root profile is
+// its own fallback, an existing ownership contract this change preserves).
+func TestShow_JSONCACertEmptyStringWhenUnset(t *testing.T) {
+	writeTestConfigWithPairingFixtures(t)
+
+	detail, out := runShowJSON(t)
+
+	assert.Empty(t, detail.CACert)
+	assert.True(t, detail.CACertOwn, "root ca_cert_own stays true even when unset")
+	assertCACertStringKey(t, out)
+}
+
+// TestShow_HumanOutputShowsConfigPath covers the human-show config-path line:
+// both a named profile and the root selection name the config file actually
+// read, so the user can tell which drconfig.yaml the inspection came from.
+func TestShow_HumanOutputShowsConfigPath(t *testing.T) {
+	configPath := writeFixtureConfig(t, `endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  work:
+    endpoint: https://work.example.com/api/v2
+`)
+
+	for _, args := range [][]string{nil, {"work"}} {
+		out := runShowHuman(t, args...)
+
+		assert.Contains(t, out, configPath, "human show must name the config file actually read (args %v)", args)
+	}
+}
+
+// TestShow_HumanOutputUnambiguousInheritanceWording covers the root-source
+// wording fix: an inherited value is labeled as coming from the root-level
+// credentials, not "from default", because the displayed profile may itself
+// be called default (the explicit profiles.default section).
+func TestShow_HumanOutputUnambiguousInheritanceWording(t *testing.T) {
+	writeFixtureConfig(t, `endpoint: https://app.datarobot.com/api/v2
+token: default-token
+ca-cert: /etc/ssl/corp.pem
+profiles:
+  work:
+    endpoint: https://work.example.com/api/v2
+`)
+
+	out := runShowHuman(t, "work")
+
+	assert.Contains(t, out, "inherited from the root-level credentials")
+	assert.NotContains(t, out, "inherited from default")
+}
+
+// TestShow_HumanEndpointOnlyExplainsUnpairing covers the endpoint-only
+// explanation: the profile has its own endpoint, no token of its own, and
+// does not use the root-level token, because endpoint and token are paired.
+// Nothing is inherited here, so no inheritance suffix may appear either.
+func TestShow_HumanEndpointOnlyExplainsUnpairing(t *testing.T) {
+	writeTestConfigWithPairingFixtures(t)
+
+	out := runShowHuman(t, "eponly")
+
+	assert.Contains(t, out, "does not use the root-level token")
+	assert.Contains(t, out, "endpoint and token are always paired")
+
+	// The endpoint-only profile owns the credential pair, so its token is
+	// simply absent: the token line must not claim root inheritance.
+	assert.NotContains(t, out, "not set (inherited", "an endpoint-only profile's token is absent, not inherited")
+}
+
+// TestShow_HumanTokenOnlyExplainsUnpairing covers the token-only explanation:
+// the profile has its own token but no endpoint of its own and does not
+// inherit the root-level endpoint.
+func TestShow_HumanTokenOnlyExplainsUnpairing(t *testing.T) {
+	writeTestConfigWithPairingFixtures(t)
+
+	out := runShowHuman(t, "toonly")
+
+	assert.Contains(t, out, "does not inherit the root-level endpoint")
+	assert.Contains(t, out, "endpoint and token are always paired")
+}
+
+// TestShow_HumanFullProfileHasNoUnpairingExplanation covers the paired case:
+// a profile that owns both credentials needs no pairing explanation.
+func TestShow_HumanFullProfileHasNoUnpairingExplanation(t *testing.T) {
+	writeTestConfigWithPairingFixtures(t)
+
+	out := runShowHuman(t, "full")
+
+	assert.NotContains(t, out, "root-level token")
+	assert.NotContains(t, out, "root-level endpoint")
+}
+
+// TestShow_HumanRootTitleIsLabeled covers the distinct root labeling: the
+// root-level selection is displayed as "default (root-level)" so it cannot
+// be confused with an explicit profiles.default section.
+func TestShow_HumanRootTitleIsLabeled(t *testing.T) {
+	writeTestConfigWithExplicitDefault(t)
+
+	rootOut := runShowHuman(t)
+	assert.Contains(t, rootOut, "default (root-level)")
+
+	explicitOut := runShowHuman(t, defaultProfileLabel)
+
+	// Compare the title line specifically: later lines may legitimately name
+	// the root-level credentials (e.g. an inherited ca-cert suffix).
+	title := strings.SplitN(explicitOut, "\n", 2)[0]
+
+	assert.Equal(t, "default (explicit)", title)
+	assert.NotContains(t, strings.TrimPrefix(explicitOut, title), "(root-level)", "the explicit default must not be labeled as root")
 }
 
 func TestShow_NoArgsDefaultsToActiveProfile(t *testing.T) {
@@ -172,17 +403,7 @@ func TestShow_ExplicitDefaultLabel(t *testing.T) {
 // writeTestConfigWithExplicitDefault adds an explicit profiles.default
 // section, distinct from the root-level credentials, to the shared fixture.
 func writeTestConfigWithExplicitDefault(t *testing.T) {
-	t.Helper()
-
-	tempDir := t.TempDir()
-	testutil.SetTestHomeDir(t, tempDir)
-	viperx.Reset()
-	t.Cleanup(viperx.Reset)
-
-	configDir := filepath.Join(tempDir, ".config", "datarobot")
-	require.NoError(t, os.MkdirAll(configDir, 0o755))
-
-	raw := `endpoint: https://app.datarobot.com/api/v2
+	writeFixtureConfig(t, `endpoint: https://app.datarobot.com/api/v2
 token: default-token
 profiles:
   default:
@@ -191,9 +412,7 @@ profiles:
   eu-mtsaas:
     endpoint: https://app.eu.datarobot.com/api/v2
     token: eu-token
-`
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "drconfig.yaml"), []byte(raw), 0o600))
-	require.NoError(t, config.ReadConfigFile(""))
+`)
 }
 
 // TestShow_PositionalDefaultPrefersExplicitSection covers the positional

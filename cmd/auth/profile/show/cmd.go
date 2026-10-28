@@ -29,7 +29,9 @@ import (
 const defaultProfileLabel = config.DefaultProfileLabel
 
 // profileDetail is the JSON representation of a single profile's resolved
-// settings for --output-format json.
+// settings for --output-format json. ca_cert is always emitted (the empty
+// string when unset) so consumers can rely on the key being present; the
+// remaining fields keep their original meaning.
 type profileDetail struct {
 	Name        string `json:"name"`
 	Active      bool   `json:"active"`
@@ -37,7 +39,7 @@ type profileDetail struct {
 	EndpointOwn bool   `json:"endpoint_own"`
 	HasToken    bool   `json:"has_token"`
 	HasTokenOwn bool   `json:"has_token_own"`
-	CACert      string `json:"ca_cert,omitempty"`
+	CACert      string `json:"ca_cert"`
 	CACertOwn   bool   `json:"ca_cert_own"`
 }
 
@@ -46,7 +48,8 @@ func Cmd() *cobra.Command {
 		Use:   "show [name]",
 		Short: "🔍 Show a profile's resolved settings",
 		Long: `Show a profile's resolved settings: its own endpoint/token/ca-cert,
-falling back to the default profile's values for anything it doesn't define.
+falling back to the root-level credentials' values for anything it doesn't
+define.
 
 Defaults to the active profile (selected via --profile or
 DATAROBOT_CLI_PROFILE) when no name is given. Pass "default" to see the
@@ -100,7 +103,15 @@ func runShow(cmd *cobra.Command, args []string) error {
 		return outputformat.PrintJSONEnvelope(os.Stdout, "profile", detail)
 	}
 
-	printDetail(detail, name == "")
+	// Human output names the config file the settings were read from, so the
+	// user can tell which drconfig.yaml an inspection came from. JSON output
+	// must stay a single pure document, so the path is human-only.
+	configPath := ""
+	if path, err := config.ConfigFilePath(); err == nil {
+		configPath = path
+	}
+
+	printDetail(detail, name == "", configPath)
 
 	return nil
 }
@@ -152,11 +163,16 @@ func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active
 	detail := profileDetail{Name: name, Active: active}
 
 	// config.applyProfile merges endpoint and token atomically, so a profile
-	// that defines either one owns both and never inherits the other.
+	// that defines either one owns both and never inherits the other; the
+	// resolved values below follow that pairing. The *_own flags, however,
+	// stay per-key: an endpoint-only profile reports endpoint_own=true but
+	// has_token_own=false, because it defines no token of its own. The root
+	// profile is its own fallback and always reports ownership (an existing
+	// contract, kept for ca_cert_own below as well).
 	credOwn := isRoot || own.Endpoint != "" || own.HasToken
 
-	detail.EndpointOwn = credOwn
-	detail.HasTokenOwn = credOwn
+	detail.EndpointOwn = isRoot || own.Endpoint != ""
+	detail.HasTokenOwn = isRoot || own.HasToken
 	detail.Endpoint = own.Endpoint
 	detail.HasToken = own.HasToken
 
@@ -177,11 +193,14 @@ func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active
 
 // printDetail renders the human show output. isRoot distinguishes the
 // root-level profile (displayed as "default") from an explicit
-// profiles.default section, which gets an "(explicit)" suffix so the two
-// identities cannot be confused.
-func printDetail(d profileDetail, isRoot bool) {
+// profiles.default section, and configPath names the drconfig.yaml the
+// settings were read from (empty when it could not be resolved).
+func printDetail(d profileDetail, isRoot bool, configPath string) {
 	title := d.Name
-	if !isRoot && d.Name == defaultProfileLabel {
+
+	if isRoot {
+		title += " (root-level)"
+	} else if d.Name == defaultProfileLabel {
 		title += " (explicit)"
 	}
 
@@ -191,15 +210,51 @@ func printDetail(d profileDetail, isRoot bool) {
 
 	fmt.Println(tui.SubTitleStyle.Render(title))
 
-	printField("endpoint", valueOrDash(d.Endpoint), d.EndpointOwn)
-	printField("token", tokenStatus(d.HasToken), d.HasTokenOwn)
-	printField("ca-cert", valueOrDash(d.CACert), d.CACertOwn)
+	if configPath != "" {
+		fmt.Printf("  %s: %s\n", tui.InfoStyle.Render("config file"), configPath)
+	}
+
+	// The credential pair resolves as a unit: whenever the profile owns
+	// either key it owns both resolutions, so a missing half is absent, not
+	// inherited. Only a profile that owns neither borrows from root.
+	pairOwn := isRoot || d.EndpointOwn || d.HasTokenOwn
+
+	printField("endpoint", valueOrDash(d.Endpoint), !isRoot && !pairOwn)
+	printField("token", tokenStatus(d.HasToken), !isRoot && !pairOwn)
+	printField("ca-cert", valueOrDash(d.CACert), !d.CACertOwn)
+
+	printUnpairingExplanation(d, isRoot)
 }
 
-func printField(label, value string, own bool) {
+// printUnpairingExplanation renders the human note explaining why a profile
+// that owns only one credential never borrows the other from the root-level
+// credentials: endpoint and token are saved and resolved as an atomic pair,
+// so a half-defined profile leaves the other half empty rather than mixing
+// sources. A profile owning both or neither needs no note, and the root
+// profile is its own fallback.
+func printUnpairingExplanation(d profileDetail, isRoot bool) {
+	if isRoot || d.EndpointOwn == d.HasTokenOwn {
+		return
+	}
+
+	if d.EndpointOwn {
+		fmt.Printf("  %s\n", tui.DimStyle.Render(
+			"This profile has its own endpoint and no token of its own; it does not use the root-level token (endpoint and token are always paired)."))
+	} else {
+		fmt.Printf("  %s\n", tui.DimStyle.Render(
+			"This profile has its own token and no endpoint of its own; it does not inherit the root-level endpoint (endpoint and token are always paired)."))
+	}
+}
+
+// printField renders one "label: value" line. inherited dims an explicit
+// root-source suffix onto values that were resolved from the root-level
+// credentials rather than the inspected profile; the wording names the root
+// source unambiguously because the inspected profile may itself be called
+// "default" (the explicit profiles.default section).
+func printField(label, value string, inherited bool) {
 	source := ""
-	if !own {
-		source = tui.DimStyle.Render(" (inherited from default)")
+	if inherited {
+		source = tui.DimStyle.Render(" (inherited from the root-level credentials)")
 	}
 
 	fmt.Printf("  %s: %s%s\n", tui.InfoStyle.Render(label), value, source)

@@ -61,8 +61,15 @@ func runList(cmd *cobra.Command, _ []string) error {
 
 	active := config.ActiveProfile()
 
+	// Omitted selection resolves to the root-level credentials, but the root
+	// row may only claim the active marker when root actually holds
+	// credentials: with no root endpoint/token nothing is authenticated, and
+	// marking an empty row active would misrepresent the selection (for
+	// example a config whose only profile is an explicit profiles.default).
+	rootActive := active == "" && (def.Endpoint != "" || def.HasToken)
+
 	outputs := make([]profileOutput, 0, len(profiles)+1)
-	outputs = append(outputs, toProfileOutput(defaultProfileLabel, def, active == "", true))
+	outputs = append(outputs, toProfileOutput(defaultProfileLabel, def, rootActive, true))
 
 	for _, p := range profiles {
 		outputs = append(outputs, toProfileOutput(p.Name, p, p.Name == active, false))
@@ -74,6 +81,17 @@ func runList(cmd *cobra.Command, _ []string) error {
 	}
 
 	printProfilesTable(outputs)
+
+	// Beginner guidance: with no explicit profiles at all, point at real
+	// create commands. The hint is human-only -- JSON stdout must stay a
+	// single machine-readable document -- and goes to stderr for the same
+	// reason. An explicit profiles.default section counts as a profile, so
+	// any defined section suppresses the hint.
+	if len(profiles) == 0 {
+		fmt.Fprintln(cmd.ErrOrStderr(),
+			"No explicit profiles are defined yet. Create one with `dr auth login --profile <name>` "+
+				"or `dr auth set-url --profile <name>`.")
+	}
 
 	return nil
 }
@@ -112,9 +130,13 @@ func printProfilesTable(outputs []profileOutput) {
 
 	for _, o := range outputs {
 		// The root row and an explicit profiles.default row would otherwise
-		// render as two indistinguishable "default" rows.
+		// render as two indistinguishable "default" rows: root gets a
+		// "(root-level)" label and the explicit section "(explicit)", so a
+		// reader can always tell which credentials each row stands for.
 		name := o.Name
-		if !o.isRoot && name == defaultProfileLabel {
+		if o.isRoot {
+			name += " (root-level)"
+		} else if name == defaultProfileLabel {
 			name += " (explicit)"
 		}
 
