@@ -31,12 +31,15 @@ import (
 const defaultProfileLabel = config.DefaultProfileLabel
 
 // profileOutput is the JSON representation of one profile for
-// --output-format json.
+// --output-format json. isRoot distinguishes the root row from an explicit
+// profiles.default row in human output only; encoding/json skips it.
 type profileOutput struct {
 	Name     string `json:"name"`
 	Endpoint string `json:"endpoint"`
 	HasToken bool   `json:"has_token"`
 	Active   bool   `json:"active"`
+
+	isRoot bool
 }
 
 func Cmd() *cobra.Command {
@@ -59,10 +62,10 @@ func runList(cmd *cobra.Command, _ []string) error {
 	active := config.ActiveProfile()
 
 	outputs := make([]profileOutput, 0, len(profiles)+1)
-	outputs = append(outputs, toProfileOutput(defaultProfileLabel, def, active == ""))
+	outputs = append(outputs, toProfileOutput(defaultProfileLabel, def, active == "", true))
 
 	for _, p := range profiles {
-		outputs = append(outputs, toProfileOutput(p.Name, p, p.Name == active))
+		outputs = append(outputs, toProfileOutput(p.Name, p, p.Name == active, false))
 	}
 
 	format := outputformat.GetFormat(cmd)
@@ -75,12 +78,14 @@ func runList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func toProfileOutput(name string, info config.ProfileInfo, active bool) profileOutput {
+func toProfileOutput(name string, info config.ProfileInfo, active, isRoot bool) profileOutput {
 	return profileOutput{
 		Name:     name,
 		Endpoint: info.Endpoint,
 		HasToken: info.HasToken,
 		Active:   active,
+
+		isRoot: isRoot,
 	}
 }
 
@@ -106,6 +111,13 @@ func printProfilesTable(outputs []profileOutput) {
 		Headers("NAME", "ENDPOINT", "TOKEN", "ACTIVE")
 
 	for _, o := range outputs {
+		// The root row and an explicit profiles.default row would otherwise
+		// render as two indistinguishable "default" rows.
+		name := o.Name
+		if !o.isRoot && name == defaultProfileLabel {
+			name += " (explicit)"
+		}
+
 		endpoint := o.Endpoint
 		if endpoint == "" {
 			endpoint = "-"
@@ -121,7 +133,7 @@ func printProfilesTable(outputs []profileOutput) {
 			active = "✓"
 		}
 
-		t.Row(o.Name, endpoint, token, active)
+		t.Row(name, endpoint, token, active)
 	}
 
 	_, _ = fmt.Fprintln(os.Stdout, t.Render())

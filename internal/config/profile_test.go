@@ -45,12 +45,16 @@ func TestNormalizeProfileName(t *testing.T) {
 }
 
 func TestValidateProfileName(t *testing.T) {
-	valid := []string{"eu", "eu-mtsaas", "eu_mtsaas", "prod2"}
+	// "default" and its case spellings are legal profile names: an explicit
+	// profiles.default section may be selected and written. Only deletion
+	// reserves the name. (ValidateProfileName, like before, expects an
+	// already-normalized name; ActiveProfile normalizes flag/env values.)
+	valid := []string{"eu", "eu-mtsaas", "eu_mtsaas", "prod2", "default", "Default", "DEFAULT"}
 	for _, name := range valid {
 		require.NoError(t, ValidateProfileName(name), "expected %q to be valid", name)
 	}
 
-	invalid := []string{"", "eu.mtsaas", "eu mtsaas", "-eu", "eu/prod", "default", "Default", "DEFAULT"}
+	invalid := []string{"", "eu.mtsaas", "eu mtsaas", "-eu", "eu/prod"}
 	for _, name := range invalid {
 		assert.Error(t, ValidateProfileName(name), "expected %q to be invalid", name)
 	}
@@ -115,19 +119,135 @@ func TestApplyProfile_InvalidName(t *testing.T) {
 	assert.NotErrorAs(t, err, &unknown, "an invalid name should fail validation, not the not-found lookup")
 }
 
-// TestApplyProfile_DefaultNameReserved guards against a "profiles.default"
-// section that would be indistinguishable from, yet different than, the
-// true top-level default profile in `dr auth profile list`/`show`.
-func TestApplyProfile_DefaultNameReserved(t *testing.T) {
+// TestApplyProfile_ExplicitDefaultSection covers a defined profiles.default
+// section: selecting it merges its own credentials and never falls through
+// to the root-level profile's values.
+func TestApplyProfile_ExplicitDefaultSection(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
+
+	viper.SetConfigFile(writeExplicitDefaultConfig(t))
+	require.NoError(t, viper.ReadInConfig())
+
+	require.NoError(t, applyProfile("default"))
+
+	assert.Equal(t, "https://explicit-default.example.com/api/v2", viper.GetString(DataRobotURL))
+	assert.Equal(t, "explicit-token", viper.GetString(DataRobotAPIKey))
+}
+
+// TestApplyProfile_ExplicitDefaultEndpointOnly covers the atomic endpoint/
+// token pair for the explicit default profile: it owns its endpoint and an
+// empty token, and must not borrow the root-level profile's token.
+func TestApplyProfile_ExplicitDefaultEndpointOnly(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+
+	configFile := filepath.Join(tempDir, "drconfig.yaml")
+	rawYAML := `endpoint: https://root.example.com/api/v2
+token: root-token
+profiles:
+  default:
+    endpoint: https://explicit-default.example.com/api/v2
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(rawYAML), 0o600))
+
+	viper.SetConfigFile(configFile)
+	require.NoError(t, viper.ReadInConfig())
+
+	require.NoError(t, applyProfile(NormalizeProfileName(" default ")))
+
+	assert.Equal(t, "https://explicit-default.example.com/api/v2", viper.GetString(DataRobotURL))
+	assert.Empty(t, viper.GetString(DataRobotAPIKey), "an endpoint-only explicit default must not inherit the root token")
+}
+
+// TestApplyProfile_ExplicitDefaultMissingSection covers selecting default
+// when no profiles.default section exists: the selection is an ordinary
+// unknown-profile failure, not a silent root fallback.
+func TestApplyProfile_ExplicitDefaultMissingSection(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	viper.SetConfigFile(writeNoDefaultConfig(t))
+	require.NoError(t, viper.ReadInConfig())
 
 	err := applyProfile("default")
 	require.Error(t, err)
 
 	var unknown *UnknownProfileError
 
-	assert.NotErrorAs(t, err, &unknown, "the reserved name should fail validation, not the not-found lookup")
+	require.ErrorAs(t, err, &unknown, "an undefined explicit default must fail like any unknown profile")
+	assert.Equal(t, "default", unknown.Name)
+}
+
+// TestApplyProfile_ExplicitDefaultEmptyMapping covers a bare
+// `profiles.default: {}` section: it counts as defined (selection succeeds)
+// and owns nothing, so the root-level pair stays effective exactly as for
+// any other empty named profile.
+func TestApplyProfile_ExplicitDefaultEmptyMapping(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+
+	configFile := filepath.Join(tempDir, "drconfig.yaml")
+	rawYAML := `endpoint: https://root.example.com/api/v2
+token: root-token
+profiles:
+  default: {}
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(rawYAML), 0o600))
+
+	viper.SetConfigFile(configFile)
+	require.NoError(t, viper.ReadInConfig())
+
+	require.NoError(t, applyProfile("default"), "an empty explicit default mapping counts as a defined section")
+	assert.Equal(t, "https://root.example.com/api/v2", viper.GetString(DataRobotURL))
+	assert.Equal(t, "root-token", viper.GetString(DataRobotAPIKey))
+}
+
+// writeExplicitDefaultConfig writes a scratch config holding root-level
+// credentials plus an explicit profiles.default section, and returns its path.
+func writeExplicitDefaultConfig(t *testing.T) string {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+
+	configFile := filepath.Join(tempDir, "drconfig.yaml")
+	rawYAML := `endpoint: https://root.example.com/api/v2
+token: root-token
+profiles:
+  default:
+    endpoint: https://explicit-default.example.com/api/v2
+    token: explicit-token
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(rawYAML), 0o600))
+
+	return configFile
+}
+
+// writeNoDefaultConfig writes a scratch config with root-level credentials
+// and no profiles.default section, and returns its path.
+func writeNoDefaultConfig(t *testing.T) string {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+
+	configFile := filepath.Join(tempDir, "drconfig.yaml")
+	rawYAML := `endpoint: https://root.example.com/api/v2
+token: root-token
+profiles:
+  east:
+    endpoint: https://east.example.com/api/v2
+`
+	require.NoError(t, os.WriteFile(configFile, []byte(rawYAML), 0o600))
+
+	return configFile
 }
 
 func TestLoadProfiles_EmptySectionStillListed(t *testing.T) {
@@ -164,11 +284,11 @@ profiles:
 	assert.Equal(t, []string{"empty-profile", "eu-mtsaas"}, names)
 }
 
-// TestLoadProfiles_ReservedDefaultSectionIgnored covers a hand-edited
-// "profiles.default" section: ValidateProfileName reserves that name for the
-// top-level profile, so listing it would render an unreachable second
-// "default" row in `dr auth profile list`.
-func TestLoadProfiles_ReservedDefaultSectionIgnored(t *testing.T) {
+// TestLoadProfiles_ExplicitDefaultListed covers a hand-edited or CLI-written
+// "profiles.default" section: it is a legal defined profile now, so it must
+// be enumerated alongside the root profile and other named profiles instead
+// of being silently dropped.
+func TestLoadProfiles_ExplicitDefaultListed(t *testing.T) {
 	tempDir := t.TempDir()
 	testutil.SetTestHomeDir(t, tempDir)
 	viper.Reset()
@@ -181,23 +301,33 @@ func TestLoadProfiles_ReservedDefaultSectionIgnored(t *testing.T) {
 token: default-token
 profiles:
   default:
-    endpoint: https://impostor.example.com/api/v2
+    endpoint: https://explicit.example.com/api/v2
   eu-mtsaas:
     endpoint: https://eu.example.com/api/v2
 `
 	require.NoError(t, os.WriteFile(configFile, []byte(rawYAML), 0o600))
 	require.NoError(t, ReadConfigFile(""))
 
-	_, profiles, err := LoadProfiles()
+	def, profiles, err := LoadProfiles()
 	require.NoError(t, err)
+
+	// The root profile stays distinct from the explicit default section.
+	assert.Equal(t, "https://default.example.com/api/v2", def.Endpoint)
+	assert.Empty(t, def.Name)
 
 	names := make([]string, len(profiles))
 	for i, p := range profiles {
 		names[i] = p.Name
 	}
 
-	assert.Equal(t, []string{"eu-mtsaas"}, names)
-	assert.Equal(t, []string{"eu-mtsaas"}, ProfileNames())
+	assert.Equal(t, []string{"default", "eu-mtsaas"}, names)
+	assert.Equal(t, []string{"default", "eu-mtsaas"}, ProfileNames())
+
+	for _, p := range profiles {
+		if p.Name == "default" {
+			assert.Equal(t, "https://explicit.example.com/api/v2", p.Endpoint)
+		}
+	}
 }
 
 // TestLoadProfiles_MissingFileIsNotAnError covers a config file deleted after

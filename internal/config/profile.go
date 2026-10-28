@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 )
 
@@ -31,10 +30,11 @@ import (
 const profilesKey = "profiles"
 
 // DefaultProfileLabel is how the default (top-level, unnamed) profile is
-// addressed on the command line and in `dr auth profile` output. It is
-// reserved: ValidateProfileName rejects it as a named-profile name, since
-// drconfig.yaml would otherwise have no way to tell a literal
-// "profiles.default" section apart from the true default profile.
+// addressed on the command line and in `dr auth profile` output. The root
+// profile's internal name stays "" (see ProfileInfo), but "default" is also
+// a legal explicit profile name: a hand-edited or CLI-written
+// profiles.default section is selected only by --profile default or
+// DATAROBOT_CLI_PROFILE=default, never by omission.
 const DefaultProfileLabel = "default"
 
 // ProfileScopedKeys are the persistable keys a named profile may override.
@@ -77,14 +77,13 @@ func NormalizeProfileName(name string) string {
 }
 
 // ValidateProfileName rejects names viper cannot address as a config
-// section: empty, or containing characters outside [A-Za-z0-9_-].
+// section: empty, or containing characters outside [A-Za-z0-9_-]. The
+// normalized name "default" is legal: an explicit profiles.default section
+// may be selected and written like any other profile. (Deleting it stays
+// reserved; see the auth profile delete command.)
 func ValidateProfileName(name string) error {
 	if name == "" {
 		return errors.New("profile name must not be empty")
-	}
-
-	if NormalizeProfileName(name) == DefaultProfileLabel {
-		return fmt.Errorf("profile name %q is reserved for the default profile; omit --profile to use it", name)
 	}
 
 	if !profileNamePattern.MatchString(name) {
@@ -119,20 +118,14 @@ func ProfileNames() []string {
 }
 
 // namedProfileKeys returns the sorted, addressable section names in a raw
-// profiles map. A hand-edited "profiles.default" section is dropped:
-// ValidateProfileName reserves that name for the top-level profile, so such a
-// section can never be selected and must not be listed as if it could.
+// profiles map. An explicit "profiles.default" section is enumerated like
+// any other: it is a legal profile selected by --profile default, and error
+// guidance and completion must list it whenever it is defined. The root
+// profile is not a section here and is never part of the result.
 func namedProfileKeys(profiles map[string]any) []string {
 	names := make([]string, 0, len(profiles))
 
 	for name := range profiles {
-		if NormalizeProfileName(name) == DefaultProfileLabel {
-			log.Debugf("ignoring %s.%s section in drconfig.yaml: %q is reserved for the top-level default profile",
-				profilesKey, name, DefaultProfileLabel)
-
-			continue
-		}
-
 		names = append(names, name)
 	}
 
@@ -148,8 +141,8 @@ func namedProfileKeys(profiles map[string]any) []string {
 //
 // endpoint and token are merged atomically: if the profile section defines
 // either one, both are merged (substituting "" for the one it omits), so a
-// profile can never end up pairing its own endpoint with the default
-// profile's token or vice versa.
+// profile can never end up pairing its own endpoint with the root profile's
+// token or vice versa. This includes an explicit profiles.default section.
 func applyProfile(name string) error {
 	if err := ValidateProfileName(name); err != nil {
 		return err
@@ -198,9 +191,11 @@ func stringOrEmpty(v any) string {
 }
 
 // ProfileInfo is a read-only snapshot of one profile's own settings, exactly
-// as stored in drconfig.yaml. Name is "" for the default (top-level)
-// profile. A field is the zero value when the profile does not define it
-// (it inherits from the default profile at merge time; see applyProfile).
+// as stored in drconfig.yaml. Name is "" for the root (top-level) profile;
+// an explicit profiles.default section appears under the name "default" and
+// is distinct from the root profile. A field is the zero value when the
+// profile does not define it (it inherits from the root profile at merge
+// time; see applyProfile).
 type ProfileInfo struct {
 	Name     string
 	Endpoint string

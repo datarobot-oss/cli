@@ -273,3 +273,61 @@ func TestUpdateConfigFile_ReusesExistingMixedCaseProfileSection(t *testing.T) {
 	_, hasLowercase := profiles["eu-mtsaas"]
 	assert.False(t, hasLowercase, "a second lowercase profile section must not be created when the existing section uses a different case")
 }
+
+// TestUpdateConfigFile_ExplicitDefaultSectionWritten covers login/set-url
+// creating profiles.default: the section is a legal write target now, the
+// root-level credentials are untouched, and the root token is not copied
+// into the new section.
+func TestUpdateConfigFile_ExplicitDefaultSectionWritten(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	initial := "# my datarobot config\nendpoint: https://app.datarobot.com/api/v2\ntoken: root-token\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(initial), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+
+	viper.Set(ProfileKey, "default")
+	viper.Set(DataRobotURL, "https://explicit.example.com/api/v2")
+	viper.Set(DataRobotAPIKey, "")
+
+	require.NoError(t, UpdateConfigFile(DataRobotURL, DataRobotAPIKey))
+
+	raw := readRawYAML(t, configFile)
+
+	profiles, ok := raw["profiles"].(map[string]any)
+	require.True(t, ok, "expected a profiles: block")
+
+	def, ok := profiles["default"].(map[string]any)
+	require.True(t, ok, "expected profiles.default to be created")
+
+	assert.Equal(t, "https://explicit.example.com/api/v2", def["endpoint"])
+	assert.Empty(t, def["token"], "the root token must not be copied into profiles.default")
+
+	assert.Equal(t, "https://app.datarobot.com/api/v2", raw["endpoint"], "root endpoint must be untouched")
+	assert.Equal(t, "root-token", raw["token"], "root token must be untouched")
+}
+
+// TestUpdateConfigFile_ExplicitDefaultReusesExistingSection covers updating
+// an existing profiles.default section in place: the write must land in the
+// same section rather than creating a duplicate.
+func TestUpdateConfigFile_ExplicitDefaultReusesExistingSection(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	initial := "profiles:\n  default:\n    endpoint: https://old.example.com/api/v2\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(initial), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+
+	viper.Set(ProfileKey, " default ")
+	viper.Set(DataRobotURL, "https://new.example.com/api/v2")
+
+	require.NoError(t, UpdateConfigFile(DataRobotURL))
+
+	raw := readRawYAML(t, configFile)
+
+	profiles, ok := raw["profiles"].(map[string]any)
+	require.True(t, ok)
+	require.Len(t, profiles, 1, "the existing profiles.default section must be updated in place")
+
+	def, ok := profiles["default"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "https://new.example.com/api/v2", def["endpoint"])
+}

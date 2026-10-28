@@ -171,3 +171,90 @@ func TestList_ActiveProfileMarked(t *testing.T) {
 		assert.Equal(t, p.Name == "eu-mtsaas", p.Active, "profile %q active flag", p.Name)
 	}
 }
+
+// TestList_ExplicitDefaultDistinctFromRoot covers a config with an explicit
+// profiles.default section: root and the explicit section are distinct rows,
+// and the explicit row is labeled so it cannot be confused with root.
+func TestList_ExplicitDefaultDistinctFromRoot(t *testing.T) {
+	writeTestConfigWithExplicitDefault(t)
+
+	// Human output: two visibly distinct rows.
+	root := &cobra.Command{Use: "test"}
+
+	var format outputformat.OutputFormat
+
+	outputformat.AddPersistentFlag(root, &format)
+	root.AddCommand(Cmd())
+	root.SetArgs([]string{"list"})
+
+	humanOut := captureStdout(t, func() {
+		require.NoError(t, root.Execute())
+	})
+
+	assert.Contains(t, humanOut, "default (explicit)", "the explicit profiles.default row must be labeled apart from root")
+
+	// JSON output: both entries appear with their stored names.
+	rootJSON := &cobra.Command{Use: "test"}
+
+	outputformat.AddPersistentFlag(rootJSON, &format)
+	rootJSON.AddCommand(Cmd())
+	rootJSON.SetArgs([]string{"list", "--output-format", "json"})
+
+	jsonOut := captureStdout(t, func() {
+		require.NoError(t, rootJSON.Execute())
+	})
+
+	var envelope struct {
+		Profiles []profileOutput `json:"profiles"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(jsonOut), &envelope))
+
+	var explicitDefaults []profileOutput
+
+	for _, p := range envelope.Profiles {
+		if p.Name == defaultProfileLabel {
+			explicitDefaults = append(explicitDefaults, p)
+		}
+	}
+
+	assert.Len(t, explicitDefaults, 2, "root and the explicit profiles.default section are distinct rows")
+
+	// No selection marks root, not the explicit section, active.
+	activeCount := 0
+
+	for _, p := range envelope.Profiles {
+		if p.Active {
+			activeCount++
+		}
+	}
+
+	assert.Equal(t, 1, activeCount, "exactly one row is active with no selection, and it is root")
+}
+
+// writeTestConfigWithExplicitDefault adds root credentials plus an explicit
+// profiles.default section and one sibling profile.
+func writeTestConfigWithExplicitDefault(t *testing.T) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	configDir := filepath.Join(tempDir, ".config", "datarobot")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+
+	raw := `endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  default:
+    endpoint: https://explicit.example.com/api/v2
+    token: explicit-token
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "drconfig.yaml"), []byte(raw), 0o600))
+	require.NoError(t, config.ReadConfigFile(""))
+}

@@ -169,6 +169,87 @@ func TestShow_ExplicitDefaultLabel(t *testing.T) {
 	assert.True(t, detail.Active)
 }
 
+// writeTestConfigWithExplicitDefault adds an explicit profiles.default
+// section, distinct from the root-level credentials, to the shared fixture.
+func writeTestConfigWithExplicitDefault(t *testing.T) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	configDir := filepath.Join(tempDir, ".config", "datarobot")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+
+	raw := `endpoint: https://app.datarobot.com/api/v2
+token: default-token
+profiles:
+  default:
+    endpoint: https://explicit.example.com/api/v2
+    token: explicit-token
+  eu-mtsaas:
+    endpoint: https://app.eu.datarobot.com/api/v2
+    token: eu-token
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "drconfig.yaml"), []byte(raw), 0o600))
+	require.NoError(t, config.ReadConfigFile(""))
+}
+
+// TestShow_PositionalDefaultPrefersExplicitSection covers the positional
+// compatibility rule: `auth profile show default` shows the explicit
+// profiles.default section when one is defined, not the root credentials.
+func TestShow_PositionalDefaultPrefersExplicitSection(t *testing.T) {
+	writeTestConfigWithExplicitDefault(t)
+
+	detail, out := runShowJSON(t, defaultProfileLabel)
+
+	assert.Equal(t, defaultProfileLabel, detail.Name)
+	assert.Equal(t, "https://explicit.example.com/api/v2", detail.Endpoint, "positional show default must prefer the explicit section")
+	assert.True(t, detail.HasTokenOwn)
+	assert.NotContains(t, out, "explicit-token", "the token value itself must never be printed")
+}
+
+// TestShow_PositionalDefaultNormalizesSpellings covers normalized positional
+// spellings: " DEFAULT " resolves to the same explicit section as "default".
+func TestShow_PositionalDefaultNormalizesSpellings(t *testing.T) {
+	writeTestConfigWithExplicitDefault(t)
+
+	detail, _ := runShowJSON(t, "  DEFAULT  ")
+
+	assert.Equal(t, defaultProfileLabel, detail.Name)
+	assert.Equal(t, "https://explicit.example.com/api/v2", detail.Endpoint)
+}
+
+// TestShow_FlagDefaultSelectsExplicitSection covers --profile default /
+// DATAROBOT_CLI_PROFILE=default resolving to the explicit section, marked
+// active, with the root credentials never shown in its place.
+func TestShow_FlagDefaultSelectsExplicitSection(t *testing.T) {
+	writeTestConfigWithExplicitDefault(t)
+
+	viperx.Set(config.ProfileKey, "default")
+	require.NoError(t, config.ReadConfigFile(""))
+
+	detail, _ := runShowJSON(t)
+
+	assert.Equal(t, defaultProfileLabel, detail.Name)
+	assert.Equal(t, "https://explicit.example.com/api/v2", detail.Endpoint)
+	assert.True(t, detail.Active)
+}
+
+// TestShow_OmittedSelectionStaysRoot covers omission semantics with an
+// explicit profiles.default present: no selection resolves to the
+// root-level credentials, never to profiles.default.
+func TestShow_OmittedSelectionStaysRoot(t *testing.T) {
+	writeTestConfigWithExplicitDefault(t)
+
+	detail, _ := runShowJSON(t)
+
+	assert.Equal(t, defaultProfileLabel, detail.Name, "the root profile is displayed as %q", defaultProfileLabel)
+	assert.Equal(t, "https://app.datarobot.com/api/v2", detail.Endpoint, "omitted selection must resolve to root, not profiles.default")
+	assert.True(t, detail.Active)
+}
+
 func TestShow_UnknownProfileErrors(t *testing.T) {
 	writeTestConfig(t)
 

@@ -50,7 +50,8 @@ falling back to the default profile's values for anything it doesn't define.
 
 Defaults to the active profile (selected via --profile or
 DATAROBOT_CLI_PROFILE) when no name is given. Pass "default" to see the
-top-level profile explicitly. The token itself is never printed.`,
+explicit profiles.default section when one is defined, or the top-level
+(root) profile otherwise. The token itself is never printed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runShow,
 	}
@@ -61,20 +62,25 @@ top-level profile explicitly. The token itself is never printed.`,
 func runShow(cmd *cobra.Command, args []string) error {
 	activeProfile := config.ActiveProfile()
 
-	// name is empty-string-means-default throughout, matching
+	def, profiles, err := config.LoadProfiles()
+	if err != nil {
+		return fmt.Errorf("failed to read profiles: %w", err)
+	}
+
+	// name is empty-string-means-root throughout, matching
 	// config.ActiveProfile()'s convention; only displayName is user-facing.
 	name := activeProfile
 	if len(args) > 0 {
 		name = config.NormalizeProfileName(args[0])
-	}
 
-	if name == defaultProfileLabel {
-		name = ""
-	}
-
-	def, profiles, err := config.LoadProfiles()
-	if err != nil {
-		return fmt.Errorf("failed to read profiles: %w", err)
+		// Positional compatibility: `auth profile show default` shows the
+		// explicit profiles.default section when it is defined, and falls
+		// back to the root-level profile when it is not. Flag/env selection
+		// never falls back like this: an undefined selection is rejected by
+		// config initialization before the command runs.
+		if name == defaultProfileLabel && !profileListed(profiles, name) {
+			name = ""
+		}
 	}
 
 	own, err := resolveOwnSection(name, def, profiles)
@@ -87,16 +93,28 @@ func runShow(cmd *cobra.Command, args []string) error {
 		displayName = defaultProfileLabel
 	}
 
-	detail := resolveDetail(displayName, own, def, name == activeProfile)
+	detail := resolveDetail(displayName, name == "", own, def, name == activeProfile)
 
 	format := outputformat.GetFormat(cmd)
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(os.Stdout, "profile", detail)
 	}
 
-	printDetail(detail)
+	printDetail(detail, name == "")
 
 	return nil
+}
+
+// profileListed reports whether profiles contains a section with the given
+// normalized name. The root profile is never listed; its name is "".
+func profileListed(profiles []config.ProfileInfo, name string) bool {
+	for _, p := range profiles {
+		if p.Name == name {
+			return true
+		}
+	}
+
+	return false
 }
 
 // resolveOwnSection returns the named profile's own section, or def when
@@ -125,16 +143,17 @@ func profileNames(profiles []config.ProfileInfo) []string {
 }
 
 // resolveDetail merges own (the named profile's own settings) with def (the
-// default profile's settings) so callers can see both the effective value
-// and whether it came from the profile itself or was inherited. The default
-// profile is its own fallback, so nothing is ever "inherited" for it.
-func resolveDetail(name string, own, def config.ProfileInfo, active bool) profileDetail {
+// root profile's settings) so callers can see both the effective value and
+// whether it came from the profile itself or was inherited. The root profile
+// (isRoot) is its own fallback, so nothing is ever "inherited" for it. The
+// explicit profiles.default section is an ordinary profile here: it inherits
+// from root exactly like any other named profile.
+func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active bool) profileDetail {
 	detail := profileDetail{Name: name, Active: active}
-	isDefault := name == defaultProfileLabel
 
 	// config.applyProfile merges endpoint and token atomically, so a profile
 	// that defines either one owns both and never inherits the other.
-	credOwn := isDefault || own.Endpoint != "" || own.HasToken
+	credOwn := isRoot || own.Endpoint != "" || own.HasToken
 
 	detail.EndpointOwn = credOwn
 	detail.HasTokenOwn = credOwn
@@ -146,7 +165,7 @@ func resolveDetail(name string, own, def config.ProfileInfo, active bool) profil
 		detail.HasToken = def.HasToken
 	}
 
-	detail.CACertOwn = isDefault || own.CACert != ""
+	detail.CACertOwn = isRoot || own.CACert != ""
 	detail.CACert = own.CACert
 
 	if !detail.CACertOwn {
@@ -156,8 +175,16 @@ func resolveDetail(name string, own, def config.ProfileInfo, active bool) profil
 	return detail
 }
 
-func printDetail(d profileDetail) {
+// printDetail renders the human show output. isRoot distinguishes the
+// root-level profile (displayed as "default") from an explicit
+// profiles.default section, which gets an "(explicit)" suffix so the two
+// identities cannot be confused.
+func printDetail(d profileDetail, isRoot bool) {
 	title := d.Name
+	if !isRoot && d.Name == defaultProfileLabel {
+		title += " (explicit)"
+	}
+
 	if d.Active {
 		title += " (active)"
 	}
