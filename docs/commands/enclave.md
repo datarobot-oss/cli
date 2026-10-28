@@ -213,7 +213,7 @@ dr enclave access show <enclave-id> --user-id <datarobot-user-id>
 `dr enclave permission` governs two capabilities that target no single enclave, so these commands take no enclave id:
 
 - `create`: register new enclaves. Recipients are named by id: `--user-id`, `--group`, or `--org`.
-- `pin`: pin a workload to one chosen enclave with `dr workload create --enclave`, overriding the scheduler. **Users only** (`--user-id`). The enclave must still be linked to the workload's use case, and the user still needs deploy access to it.
+- `pin`: pin a workload to one chosen enclave with `dr workload create --enclave`, overriding the scheduler. Granted to users (`--user-id`) and groups (`--group`), not organizations. A group grant lets every member pin. The enclave must still be linked to the workload's use case, and the user still needs deploy access to it.
 
 The two are independent: holding `create` does not allow pinning, and holding `pin` does not allow creating. A system administrator may create without a grant but needs a `pin` grant to pin.
 
@@ -222,7 +222,7 @@ Who may grant, revoke and list:
 | Permission | System administrator | Org admin | Anyone else |
 | ---------- | -------------------- | --------- | ----------- |
 | `create`   | yes                  | no        | no          |
-| `pin`      | yes, any user in any organization | yes, users in their own organization only (another organization's user: 403) | no (403), including users who hold `pin` |
+| `pin`      | yes, any user or group in any organization | yes, users and groups in their own organization only (another organization's recipient: 403) | no (403), including users who hold `pin` |
 
 ### `permission grant`
 
@@ -230,7 +230,10 @@ Who may grant, revoke and list:
 dr enclave permission grant --permission create --org <org-id>
 dr enclave permission grant --permission create --user-id <datarobot-user-id>
 dr enclave permission grant --permission pin --user-id <datarobot-user-id>   # sys admin, or an org admin for a user in their org
+dr enclave permission grant --permission pin --group <group-id>              # every member of the group may pin
 ```
+
+A server that still grants pin to users only refuses `--group` with a 422; the CLI says the server needs to be upgraded. Revoking a group's grant doesn't affect a member who also holds a grant of their own.
 
 | Flag           | Description                                  |
 | -------------- | -------------------------------------------- |
@@ -244,11 +247,12 @@ dr enclave permission grant --permission pin --user-id <datarobot-user-id>   # s
 ```bash
 dr enclave permission revoke --permission create --org <org-id>
 dr enclave permission revoke --permission pin --user-id <datarobot-user-id>
+dr enclave permission revoke --permission pin --group <group-id>
 ```
 
 ### `permission list`
 
-List the recipients who have been granted the create permission, or with `--permission pin` the users in your organization who may pin. An empty result means nobody holds it; system administrators do not appear in the create list, because they bypass that permission rather than holding it.
+List the recipients who have been granted the create permission, or with `--permission pin` the users and groups in your organization that hold pin. An empty result means nobody holds it; system administrators do not appear in the create list, because they bypass that permission rather than holding it.
 
 ```bash
 dr enclave permission list

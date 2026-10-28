@@ -57,6 +57,14 @@ on:
         required: false
         type: boolean
         default: false
+      trusted-actions:
+        description: >-
+          Run composite actions from trusted upstream main (checked out into
+          ci-tooling/) instead of the checked-out ref. Fork smoke tests must
+          set this so fork PRs never execute fork-authored action code (#1031).
+        required: false
+        type: boolean
+        default: false
     secrets:
       DR_API_TOKEN:
         required: false
@@ -86,9 +94,28 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      # Trusted actions lane (#1031): when trusted-actions is set, the local
+      # composite actions come from upstream main checked out into ci-tooling/
+      # (a git fetch, not the 2 GiB codeload tarball that remote action refs
+      # download) instead of from the fork-controlled checkout. Local `uses:`
+      # paths are static, so each composite step has an if-gated twin below;
+      # keep every pair in sync.
+      - name: Checkout trusted CI tooling (upstream main)
+        if: ${{ inputs.trusted-actions }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: datarobot-oss/cli
+          ref: main
+          path: ci-tooling
+          persist-credentials: false
+
       - name: Install smoke-test dependencies
-        if: ${{ inputs.install-deps }}
-        uses: datarobot-oss/cli/.github/actions/install-deps@main
+        if: ${{ inputs.install-deps && !inputs.trusted-actions }}
+        uses: ./.github/actions/install-deps
+
+      - name: Install smoke-test dependencies (trusted)
+        if: ${{ inputs.install-deps && inputs.trusted-actions }}
+        uses: ./ci-tooling/.github/actions/install-deps
 
       - name: Debug brew environment (macOS only)
         if: ${{ runner.os == 'macOS' && inputs.debug-brew }}
@@ -121,12 +148,20 @@ jobs:
           brew info --cask dr-cli 2>&1 || true
 
       - name: Set up Go and Task
-        if: ${{ inputs.setup }}
-        uses: datarobot-oss/cli/.github/actions/setup@main
+        if: ${{ inputs.setup && !inputs.trusted-actions }}
+        uses: ./.github/actions/setup
+
+      - name: Set up Go and Task (trusted)
+        if: ${{ inputs.setup && inputs.trusted-actions }}
+        uses: ./ci-tooling/.github/actions/setup
 
       - name: Build and Install the DR CLI Binary
-        if: ${{ inputs.install-bin }}
-        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
+        if: ${{ inputs.install-bin && !inputs.trusted-actions }}
+        uses: ./.github/actions/install-dr-bin
+
+      - name: Build and Install the DR CLI Binary (trusted)
+        if: ${{ inputs.install-bin && inputs.trusted-actions }}
+        uses: ./ci-tooling/.github/actions/install-dr-bin
 
       - name: Build binary
         if: ${{ inputs.build }}

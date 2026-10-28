@@ -40,9 +40,10 @@ func Cmd() *cobra.Command {
 The permissions are:
   create   register new enclaves (users, groups, or organizations)
   pin      choose the one enclave a workload runs on, overriding the scheduler's
-           placement (users only, by --user-id). The enclave must still be
-           allowed by the workload's use case, and deploy access to it is still
-           required. Pin and create are independent: neither implies the other.
+           placement (users and groups, not organizations). The enclave must
+           still be allowed by the workload's use case, and deploy access to it
+           is still required. A group grant lets its members pin. Pin and create
+           are independent: neither implies the other.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -59,14 +60,15 @@ call succeeds but changes nothing.
 
 Who may run it:
   create   a system administrator.
-  pin      a system administrator, for any user; or an org admin, for users in
-           their own organization. A user in another organization, or any other
-           caller, is refused with 403.
+  pin      a system administrator, for any user or group; or an org admin, for
+           users and groups in their own organization. A recipient in another
+           organization, or any other caller, is refused with 403.
 
 Example:
   dr enclave permission revoke --permission create --org 656f0000000000000000abcd
   dr enclave permission revoke --permission create --user-id 656f0000000000000000abce
-  dr enclave permission revoke --permission pin --user-id 656f0000000000000000abce`,
+  dr enclave permission revoke --permission pin --user-id 656f0000000000000000abce
+  dr enclave permission revoke --permission pin --group 656f0000000000000000abcf`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,

@@ -31,6 +31,11 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      # No trusted-actions lane needed here (#1031): this workflow uses no local
+      # composite actions, only SHA-pinned third-party ones. The smoke-test step
+      # runs the fork's Taskfile, which the fork gate (security pre-scan +
+      # maintainer approval) already covers.
+
       - name: Download Windows Binary
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

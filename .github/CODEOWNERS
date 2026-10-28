@@ -2,9 +2,9 @@
 cmd/workload/ @datarobot-oss/workload-cli
 cmd/artifact/ @datarobot-oss/workload-cli
 internal/workload/ @datarobot-oss/workload-cli
-cmd/pipeline/ @datarobot-oss/compute-services
-internal/pipeline/ @datarobot-oss/compute-services
-docs/commands/pipeline*.md @datarobot-oss/compute-services
-cmd/enclave/ @datarobot-oss/compute-services
-internal/enclave/ @datarobot-oss/compute-services
-docs/commands/enclave.md @datarobot-oss/compute-services
+cmd/pipeline/ @datarobot-oss/inference-platform
+internal/pipeline/ @datarobot-oss/inference-platform
+docs/commands/pipeline*.md @datarobot-oss/inference-platform
+cmd/enclave/ @datarobot-oss/inference-platform
+internal/enclave/ @datarobot-oss/inference-platform
+docs/commands/enclave.md @datarobot-oss/inference-platform

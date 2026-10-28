@@ -14,25 +14,35 @@ actions under [`.github/actions/`](../actions/).
 | `manual-` | **Manual entrypoint** | `workflow_dispatch` | grouped together |
 | none | **Event entrypoint** | push / schedule / tag | — |
 
-> **Important: reusable workflows must use the full repo path.**
+> **Important: reference composite actions with the local path (`./`).**
 >
-> In top-level workflows (e.g. `checks.yaml`), reference composite actions with
-> the local path: `./.github/actions/setup`. In **reusable workflows** (those
-> with `on: workflow_call`), use the full repo path instead:
-> `datarobot-oss/cli/.github/actions/setup@main`.
+> Every workflow — top-level or reusable — must reference same-repo composite
+> actions locally (`./.github/actions/setup`) and must run `actions/checkout`
+> as the **first step** of the job, before any `uses: ./.github/actions/...`.
+> Local paths only work after checkout (the workspace isn't populated before
+> it), so keep the ordering.
 >
-> GitHub resolves `uses:` paths **before** `actions/checkout` runs, so local
-> paths (`./`) don't work in reusable workflows — the `.github/actions/`
-> directory isn't populated yet. This is a known GitHub Actions limitation
-> ([community discussion #18601](https://github.com/orgs/community/discussions/18601)).
+> Do **not** use remote refs like `datarobot-oss/cli/.github/actions/setup@main`.
+> The runner materializes a remote action by downloading the **entire repository
+> tarball** from codeload into a fixed 2 GiB buffer, and this repo now exceeds
+> that: `docs/plugins/` alone tracks ~2 GiB of plugin binaries, so any such
+> step fails at job setup with
+> `Cannot write more bytes to the buffer than the configured maximum buffer
+> size: 2147483647`. See #1029 for the incident and the fix.
+> `actions/checkout` itself is unaffected (it uses `git fetch`, not the
+> tarball), which is why local refs scale with repo size and remote refs don't.
 >
-> We use `@main` rather than pinning to a SHA because these are internal
-> same-repo utility actions. SHA pinning creates a chicken-and-egg problem:
-> you can't know the new SHA until the change merges to `main`, so PR CI would
-> test against the old version. The GitHub Actions Team is developing a native
-> `$/` syntax ([discussion #26245](https://github.com/orgs/community/discussions/26245))
-> to resolve same-repo actions at the same SHA automatically, but it hasn't
-> shipped yet.
+> A side benefit: with local refs, a PR's own CI exercises that PR's composite
+> action changes — no post-merge verification step needed.
+>
+> **The fork exception (#1031).** Local refs resolve against whatever ref the job
+> checks out — for fork smoke tests that ref is fork-controlled, so a fork PR
+> would execute its own composite-action code. The fork lane therefore checks out
+> trusted action sources from upstream `main` into a `ci-tooling/` subdirectory
+> (`actions/checkout` with `repository:`/`path:` — a git fetch, not the tarball)
+> and resolves actions from `./ci-tooling/.github/actions/<name>` instead.
+> Reusables expose a `trusted-actions` boolean input for this; non-fork callers
+> omit it so PR CI keeps validating PR changes to the actions.
 
 One extension everywhere: **`.yaml`**.
 
@@ -42,9 +52,9 @@ One extension everywhere: **`.yaml`**.
 
 | File | Purpose |
 | --- | --- |
-| `_build.yaml` | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. |
-| `_smoke.yaml` | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. |
-| `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. |
+| `_build.yaml` | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. `trusted-actions` runs the `setup` composite from upstream main (fork lane). |
+| `_smoke.yaml` | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. `trusted-actions` runs the composites from upstream main (fork lane). |
+| `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. No trusted-actions lane — it uses no local composite actions. |
 | `_install-tests.yaml` | Installation-script tests across Linux/macOS/Windows. |
 | `_pre-release-smoke.yaml` | Heavier end-to-end smoke tests that gate release promotion. |
 | `_workload-acceptance.yaml` | Live workload/artifact acceptance scenarios. Nightly + manual only; never gates releases. |
@@ -181,6 +191,13 @@ leakage. A maintainer reviews the diff, then comments `/approve-smoke-tests` to
 run a security pre-scan plus smoke tests (results update the **Smoke Tests**
 status), or `/skip-smoke-tests` to bypass it. The `run-smoke-tests` label and
 `/trigger-smoke-test` command do not work on fork PRs.
+
+`fork-smoke-tests.yaml` passes `trusted-actions: true` to the `_build.yaml` and
+`_smoke.yaml` reusables, so the composite actions those jobs run come from
+trusted upstream `main` (checked out into `ci-tooling/`), never from the fork
+(#1031). The fork's `Taskfile.yaml`, `install.sh`, and Go source still run, as
+before — that risk is covered by the security pre-scan plus maintainer approval,
+not by the actions lane.
 
 ## Slack notifications
 
