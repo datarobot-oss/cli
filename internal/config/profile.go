@@ -141,6 +141,31 @@ func ActiveProfile() string {
 	return NormalizeProfileName(viper.GetString(ProfileKey))
 }
 
+// SelectedCredentialsDescription names, in user-facing wording, whose
+// credentials the active selection resolves to: the root-level credentials
+// when selection is omitted, otherwise the explicitly selected profile. The
+// name is the normalized one (see ActiveProfile), so status and recovery
+// messages match what a follow-up command must spell.
+func SelectedCredentialsDescription() string {
+	if name := ActiveProfile(); name != "" {
+		return fmt.Sprintf("profile %q", name)
+	}
+
+	return "the root-level credentials"
+}
+
+// SelectedProfileFlagSuffix returns " --profile <name>" when a profile is
+// explicitly selected (flag or environment variable), or "" when selection is
+// omitted, so suggested recovery commands retrace the selection that produced
+// the problem instead of silently targeting the root credentials.
+func SelectedProfileFlagSuffix() string {
+	if name := ActiveProfile(); name != "" {
+		return " --profile " + name
+	}
+
+	return ""
+}
+
 // profileSection returns the raw sub-map for a profile as loaded from the
 // config file, and whether it exists. name must already be normalized.
 func profileSection(name string) (map[string]any, bool) {

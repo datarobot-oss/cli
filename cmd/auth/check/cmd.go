@@ -54,12 +54,20 @@ func checkCLICredentials(w io.Writer) bool {
 		return false
 	}
 
-	// Fall back to config file credentials
+	// Fall back to config file credentials. Name the selection being checked:
+	// an omitted selection evaluates the root-level credentials, an explicit
+	// one evaluates that profile's own section, and the recovery commands
+	// below must retrace it.
+	checked := config.SelectedCredentialsDescription()
+	profileFlag := config.SelectedProfileFlagSuffix()
+
+	fmt.Fprintln(w, tui.BaseTextStyle.Render("Checking "+checked+" stored in the CLI config."))
+
 	datarobotHost := config.GetBaseURL()
 	if datarobotHost == "" {
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot URL configured for "+checked+"."))
 		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
-		fmt.Fprint(w, tui.InfoStyle.Render("dr auth set-url"))
+		fmt.Fprint(w, tui.InfoStyle.Render("dr auth set-url"+profileFlag))
 		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to configure your DataRobot URL."))
 
 		allValid = false
@@ -70,9 +78,9 @@ func checkCLICredentials(w io.Writer) bool {
 		// An absent stored token is a fresh install, not a verdict, so keep the login advice (as EnsureAuthenticated does).
 		if viperx.GetString(config.DataRobotAPIKey) == "" ||
 			!auth.ReportUnjudged(w, viperx.GetString(config.DataRobotURL), auth.StoredEndpointName, err) {
-			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No valid API key found in CLI config."))
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No valid API key found in CLI config for "+checked+"."))
 			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
-			fmt.Fprint(w, tui.InfoStyle.Render("dr auth login"))
+			fmt.Fprint(w, tui.InfoStyle.Render("dr auth login"+profileFlag))
 			fmt.Fprintln(w, tui.BaseTextStyle.Render(" to authenticate."))
 		}
 
