@@ -57,8 +57,13 @@ type Result struct {
 	DownloadedCount int
 	DeletedCount    int
 	ConflictCount   int
-	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
-	Duration        time.Duration
+
+	// The two halves of DeletedCount: local files a remote deletion removed,
+	// and remote files a local deletion removed.
+	LocalDeletedCount  int
+	RemoteDeletedCount int
+	ConflictCopies     []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
+	Duration           time.Duration
 
 	// ExecutableNotice warns that image builds drop the executable bit of the
 	// files it names; "" when this sync uploaded none. Returned rather than

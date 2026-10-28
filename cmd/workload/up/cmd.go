@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/up"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
@@ -182,6 +184,7 @@ func Cmd() *cobra.Command {
 		outputFormat outputformat.OutputFormat
 		f            flags
 		poll         pollflags.Set
+		synced       sync.Size
 	)
 
 	cmd := &cobra.Command{
@@ -272,7 +275,7 @@ Examples:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			return run(cmd, f, poll, outputFormat)
+			return run(cmd, f, poll, outputFormat, &synced)
 		},
 	}
 
@@ -284,7 +287,7 @@ Examples:
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
 		nonInteractive := cli.IsNonInteractive(cmd)
 
-		return map[string]any{
+		props := map[string]any{
 			"yes":           nonInteractive,
 			"dry_run":       f.dryRun,
 			"diff":          f.diff,
@@ -294,6 +297,10 @@ Examples:
 			"force_build":   f.force,
 			"output_format": string(outputFormat),
 		}
+
+		maps.Copy(props, synced.Properties())
+
+		return props
 	})
 
 	return cmd
@@ -357,7 +364,11 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"before giving up. Giving up ends the wait, not the deploy.")
 }
 
-func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat) error {
+// run deploys and leaves the size of the code sync it ran in synced, for the
+// telemetry event.
+func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat, synced *sync.Size) error {
+	*synced = sync.Size{}
+
 	if err := checkFlags(cmd, f); err != nil {
 		return err
 	}
@@ -421,6 +432,8 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Stderr:       cmd.ErrOrStderr(),
 		Spinner:      !json && !nonInteractive,
 	})
+
+	*synced = result.Sync
 
 	return report(cmd, f, format, result, runErr)
 }

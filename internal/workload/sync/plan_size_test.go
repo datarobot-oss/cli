@@ -123,6 +123,35 @@ func TestZipPollTimeout(t *testing.T) {
 	assert.Equal(t, ceiling, zipPollTimeout(100000))
 }
 
+// The refusal survives the phase wrapping as a typed error with the counts,
+// which is what telemetry reads.
+func TestCheckPlanSize_ReportsCounts(t *testing.T) {
+	plan := &SyncPlan{
+		Uploads:   actions(4, ActUploadAdd, "up"),
+		Downloads: actions(RollbackMaxFiles, ActDownloadModify, "down"),
+		Deletes: append(
+			actions(2, ActDownloadDelete, "localdel"),
+			actions(3, ActUploadDelete, "remotedel")...,
+		),
+	}
+
+	err := runPhases(&Engine{plan: plan}, phase{name: "execute", run: func(e *Engine) error { return checkPlanSize(e.plan) }})
+
+	var tooLarge *PlanTooLargeError
+
+	require.ErrorAs(t, err, &tooLarge)
+	assert.Equal(t, PlanTooLargeError{
+		Uploads: 4, Downloads: RollbackMaxFiles, LocalDeletes: 2, RemoteDeletes: 3, OverRollback: true,
+	}, *tooLarge)
+
+	err = checkPlanSize(&SyncPlan{Deletes: actions(RemoteDeleteMaxPaths+1, ActUploadDelete, "remotedel")})
+
+	require.ErrorAs(t, err, &tooLarge)
+	assert.False(t, tooLarge.OverRollback)
+	assert.True(t, tooLarge.OverRemoteDelete)
+	assert.Equal(t, RemoteDeleteMaxPaths+1, tooLarge.RemoteDeletes)
+}
+
 // The refusal comes before anything touches the tree: no rollback dir.
 func TestPhase5Execute_RefusesOversizedPlanBeforeRollback(t *testing.T) {
 	dir := t.TempDir()

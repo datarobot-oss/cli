@@ -59,6 +59,7 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
 	result.BuildID = made.BuildID
+	result.Sync = made.Sync
 
 	// By here it is known rather than predicted: a leftover taken ahead of a
 	// copy, a platform with no copy endpoint and a tree that moved between the

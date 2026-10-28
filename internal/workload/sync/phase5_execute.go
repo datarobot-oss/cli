@@ -84,34 +84,58 @@ func phase5Execute(e *Engine) error {
 	return nil
 }
 
+// PlanTooLargeError is a sync refused for its size. It carries the plan's
+// counts so a caller can report how far over a limit real projects go.
+type PlanTooLargeError struct {
+	Uploads       int
+	Downloads     int
+	LocalDeletes  int
+	RemoteDeletes int
+	Conflicts     int
+
+	// Which limits the plan went over; at least one is set.
+	OverRollback     bool
+	OverRemoteDelete bool
+}
+
+func (e *PlanTooLargeError) Error() string {
+	var over []string
+
+	if e.OverRollback {
+		over = append(over, fmt.Sprintf(
+			"plan would back up %d local files (downloads=%d, local deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d",
+			e.Downloads+e.LocalDeletes+e.Conflicts, e.Downloads, e.LocalDeletes, e.Conflicts, RollbackMaxFiles,
+		))
+	}
+
+	if e.OverRemoteDelete {
+		over = append(over, fmt.Sprintf(
+			"plan deletes %d remote files, more than the %d the Files API accepts in one request",
+			e.RemoteDeletes, RemoteDeleteMaxPaths,
+		))
+	}
+
+	return strings.Join(over, "; ") + "; refusing to run"
+}
+
 // checkPlanSize refuses a plan that would back up more local files than the
 // rollback may hold, or delete more remote files than one request may name.
 // However many files it uploads does not matter to either.
 func checkPlanSize(plan *SyncPlan) error {
-	downloads, conflicts := len(plan.Downloads), len(plan.Conflicts)
-	localDeletes := plan.RollbackFiles() - downloads - conflicts
-
-	var over []string
-
-	if total := plan.RollbackFiles(); total > RollbackMaxFiles {
-		over = append(over, fmt.Sprintf(
-			"plan would back up %d local files (downloads=%d, local deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d",
-			total, downloads, localDeletes, conflicts, RollbackMaxFiles,
-		))
-	}
-
-	if remote := plan.RemoteDeletes(); remote > RemoteDeleteMaxPaths {
-		over = append(over, fmt.Sprintf(
-			"plan deletes %d remote files, more than the %d the Files API accepts in one request",
-			remote, RemoteDeleteMaxPaths,
-		))
-	}
-
-	if len(over) == 0 {
+	backups, remoteDeletes := plan.RollbackFiles(), plan.RemoteDeletes()
+	if backups <= RollbackMaxFiles && remoteDeletes <= RemoteDeleteMaxPaths {
 		return nil
 	}
 
-	return fmt.Errorf("%s; refusing to run", strings.Join(over, "; "))
+	return &PlanTooLargeError{
+		Uploads:          len(plan.Uploads),
+		Downloads:        len(plan.Downloads),
+		LocalDeletes:     backups - len(plan.Downloads) - len(plan.Conflicts),
+		RemoteDeletes:    remoteDeletes,
+		Conflicts:        len(plan.Conflicts),
+		OverRollback:     backups > RollbackMaxFiles,
+		OverRemoteDelete: remoteDeletes > RemoteDeleteMaxPaths,
+	}
 }
 
 func executePlan(e *Engine, rb *Rollback) error {

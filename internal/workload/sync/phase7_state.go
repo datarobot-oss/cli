@@ -235,8 +235,11 @@ func (e *Engine) populateResult(versionForState string) {
 		DownloadedCount: len(e.plan.Downloads),
 		DeletedCount:    len(e.plan.Deletes),
 		ConflictCount:   len(e.plan.Conflicts),
-		ConflictCopies:  e.localBackups,
-		Duration:        e.nowFn().Sub(e.startedAt),
+
+		LocalDeletedCount:  len(e.plan.Deletes) - e.plan.RemoteDeletes(),
+		RemoteDeletedCount: e.plan.RemoteDeletes(),
+		ConflictCopies:     e.localBackups,
+		Duration:           e.nowFn().Sub(e.startedAt),
 
 		ExecutableNotice: e.execNotice,
 	}

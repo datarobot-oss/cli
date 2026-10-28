@@ -15,12 +15,68 @@
 package codesync
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The size of an executed sync rides on the event, refused or not: pulls are
+// what the rollback cap still limits, and this command is where they happen.
+func TestTelemetry_ReportsTheSyncSize(t *testing.T) {
+	plan := &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}
+
+	for name, tc := range map[string]struct {
+		engine *fakeEngine
+		want   sync.Size
+	}{
+		"applied": {
+			engine: &fakeEngine{plan: plan, result: &sync.Result{NewVersion: "v2", UploadedCount: 1, DownloadedCount: 4}},
+			want:   sync.Size{Ran: true, Uploads: 1, Downloads: 4},
+		},
+		"refused for its size": {
+			engine: &fakeEngine{plan: plan, executeErr: &sync.PlanTooLargeError{Downloads: 1001, OverRollback: true}},
+			want:   sync.Size{Ran: true, Failed: true, Downloads: 1001, OverRollback: true},
+		},
+		"failed for another reason": {
+			engine: &fakeEngine{plan: plan, executeErr: errors.New("upload failed mid-sync")},
+			want:   sync.Size{Ran: true, Failed: true},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			linkProject(t, dir)
+
+			cmd, _, _, _ := runWithDeps(t, fakeEngineDeps(tc.engine), map[string]string{"dir": dir, "yes": "true"})
+
+			event, ok := telemetry.EventFor(cmd, nil)
+			require.True(t, ok)
+
+			for key, want := range tc.want.Properties() {
+				assert.Equal(t, want, event.EventProperties[key], key)
+			}
+		})
+	}
+}
+
+// A preview executes nothing, so it reports no sync.
+func TestTelemetry_PreviewReportsNoSync(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{Uploads: []sync.FileAction{{Path: "a.py"}}}}
+
+	cmd, _, _, err := runWithDeps(t, fakeEngineDeps(fe), map[string]string{"dir": dir, "dry-run": "true"})
+	require.NoError(t, err)
+	require.False(t, fe.executed)
+
+	event, ok := telemetry.EventFor(cmd, nil)
+	require.True(t, ok)
+	assert.Equal(t, false, event.EventProperties["sync_ran"])
+}
 
 func TestTelemetry_AnnotationSet(t *testing.T) {
 	cmd := Cmd()

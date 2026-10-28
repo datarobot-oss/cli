@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sort"
 	"strings"
 
@@ -132,7 +133,10 @@ func Cmd() *cobra.Command {
 }
 
 func cmdWithDeps(deps Deps) *cobra.Command {
-	var outputFormat outputformat.OutputFormat
+	var (
+		outputFormat outputformat.OutputFormat
+		synced       sync.Size
+	)
 
 	c := &cobra.Command{
 		Use:          "sync",
@@ -190,7 +194,7 @@ Example:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			return runSync(cmd, outputFormat, deps)
+			return runSync(cmd, outputFormat, deps, &synced)
 		},
 	}
 
@@ -218,7 +222,7 @@ Example:
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		flags := parseRunFlags(cmd)
 
-		return map[string]any{
+		props := map[string]any{
 			"dry_run":       flags.DryRun,
 			"diff":          flags.Diff,
 			"yes":           flags.Yes,
@@ -227,12 +231,33 @@ Example:
 			"verify":        flags.Verify,
 			"output_format": string(outputFormat),
 		}
+
+		maps.Copy(props, synced.Properties())
+
+		return props
 	})
 
 	return c
 }
 
-func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps Deps) error {
+// sizeRecorder notes the size of the sync an engine executes, for the
+// command's telemetry event, whichever output path executes it.
+type sizeRecorder struct {
+	engineRunner
+
+	size *sync.Size
+}
+
+func (r *sizeRecorder) Execute(plan *sync.SyncPlan) (*sync.Result, error) {
+	result, err := r.engineRunner.Execute(plan)
+	*r.size = sync.SizeOf(result, err)
+
+	return result, err
+}
+
+func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps Deps, synced *sync.Size) error {
+	*synced = sync.Size{}
+
 	flags := parseRunFlags(cmd)
 
 	dirFlag, _ := cmd.Flags().GetString("dir")
@@ -255,12 +280,14 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 
 	// Quiet: the symlink and divergence findings are summarised below, once
 	// the plan is in hand, rather than logged from the phases as well.
-	engine, err := deps.NewEngine(dir, sync.Options{
+	inner, err := deps.NewEngine(dir, sync.Options{
 		DryRun: flags.DryRun, ShowDiffs: flags.Diff, Yes: flags.Yes, PushOnly: flags.PushOnly, Verify: flags.Verify, Quiet: true,
 	})
 	if err != nil {
 		return err
 	}
+
+	engine := &sizeRecorder{engineRunner: inner, size: synced}
 
 	defer func() {
 		if cerr := engine.Close(); cerr != nil {
