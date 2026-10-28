@@ -335,7 +335,7 @@ func TestCheckAndInstallPluginPrereqs_SkipsWhenNoVersionsYaml(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "nonexistent-test-dr-cli-plugin-xyz"},
 	}
 
-	result := checkAndInstallPluginDeps(manifest, []string{})
+	result := checkAndInstallPluginDeps(manifest, []string{}, false)
 
 	assert.True(t, result)
 }
@@ -368,7 +368,7 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: pluginName},
 	}
 
-	result := checkAndInstallPluginDeps(manifest, []string{})
+	result := checkAndInstallPluginDeps(manifest, []string{}, false)
 
 	assert.True(t, result)
 }
@@ -447,7 +447,7 @@ func TestCheckAndInstallPluginDeps_DeclinedExplainsWhatWasSkipped(t *testing.T) 
 
 	var result bool
 
-	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}) })
+	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}, false) })
 
 	assert.False(t, result, "declining must stop the plugin from running")
 	assert.Contains(t, stderr, "Skipped installing dependencies that "+pluginName+" needs to run")
@@ -465,7 +465,7 @@ func TestCheckAndInstallPluginDeps_OtherFailureIsNotReportedAsDeclined(t *testin
 
 	var result bool
 
-	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}) })
+	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}, false) })
 
 	assert.False(t, result)
 	assert.Contains(t, stderr, "plugin dependency check failed")
