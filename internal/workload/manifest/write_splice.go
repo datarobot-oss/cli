@@ -16,9 +16,13 @@ package manifest
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/datarobot/cli/internal/fsutil"
 )
 
 // spliceScalar replaces the source text of one scalar node with value and
@@ -30,56 +34,17 @@ import (
 // with no tag or anchor, whose bytes at the parsed position match, is spliced;
 // anything else falls back to the tree edit.
 func spliceScalar(data []byte, node *yaml.Node, value string) ([]byte, bool) {
-	if node == nil || node.Kind != yaml.ScalarNode || node.Anchor != "" || node.Line < 1 || node.Column < 1 {
-		return nil, false
-	}
-
-	if node.Tag != "" && node.Tag != "!!str" {
-		return nil, false
-	}
-
-	var old, replacement string
-
-	switch node.Style {
-	case 0:
-		if !plainSafe(node.Value) || !plainSafe(value) {
-			return nil, false
-		}
-
-		old, replacement = node.Value, value
-	case yaml.DoubleQuotedStyle:
-		if !plainSafe(node.Value) || !plainSafe(value) {
-			return nil, false
-		}
-
-		old, replacement = `"`+node.Value+`"`, `"`+value+`"`
-	case yaml.SingleQuotedStyle:
-		if !plainSafe(node.Value) || !plainSafe(value) {
-			return nil, false
-		}
-
-		old, replacement = `'`+node.Value+`'`, `'`+value+`'`
-	default:
-		return nil, false
-	}
-
-	start, ok := lineOffset(data, node.Line)
+	old, replacement, ok := scalarSource(node, value)
 	if !ok {
 		return nil, false
 	}
 
-	// Column counts runes, so step over any multi-byte text before the token.
-	for n := 1; n < node.Column; n++ {
-		if start >= len(data) || data[start] == '\n' {
-			return nil, false
-		}
-
-		_, width := utf8.DecodeRune(data[start:])
-		start += width
+	start, ok := tokenOffset(data, node.Line, node.Column)
+	if !ok {
+		return nil, false
 	}
 
 	end := start + len(old)
-
 	if end > len(data) || string(data[start:end]) != old {
 		return nil, false
 	}
@@ -92,6 +57,31 @@ func spliceScalar(data []byte, node *yaml.Node, value string) ([]byte, bool) {
 	return out, true
 }
 
+// scalarSource is the source text node occupies and the text that value
+// takes in the same style, or false when the splice does not model the node.
+func scalarSource(node *yaml.Node, value string) (old, replacement string, ok bool) {
+	if node == nil || node.Kind != yaml.ScalarNode || node.Anchor != "" || node.Line < 1 || node.Column < 1 {
+		return "", "", false
+	}
+
+	if (node.Tag != "" && node.Tag != "!!str") || !plainSafe(node.Value) || !plainSafe(value) {
+		return "", "", false
+	}
+
+	switch node.Style {
+	case 0:
+		return node.Value, value, true
+	case yaml.DoubleQuotedStyle:
+		return `"` + node.Value + `"`, `"` + value + `"`, true
+	case yaml.SingleQuotedStyle:
+		return `'` + node.Value + `'`, `'` + value + `'`, true
+	case yaml.TaggedStyle, yaml.LiteralStyle, yaml.FoldedStyle, yaml.FlowStyle:
+		return "", "", false
+	}
+
+	return "", "", false
+}
+
 // plainSafe reports whether s reads back as itself in every style the splice
 // handles: no quoting, escapes, or characters YAML treats as structure. A
 // lone "-" is still a sequence marker.
@@ -101,15 +91,37 @@ func plainSafe(s string) bool {
 	}
 
 	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case r == '-' || r == '_' || r == '.':
-		default:
+		if !plainRune(r) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func plainRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+		r == '-' || r == '_' || r == '.'
+}
+
+// tokenOffset is the byte offset of the 1-based line and column. Column
+// counts runes, so any multi-byte text before the token is stepped over.
+func tokenOffset(data []byte, line, column int) (int, bool) {
+	offset, ok := lineOffset(data, line)
+	if !ok {
+		return 0, false
+	}
+
+	for n := 1; n < column; n++ {
+		if offset >= len(data) || data[offset] == '\n' {
+			return 0, false
+		}
+
+		_, width := utf8.DecodeRune(data[offset:])
+		offset += width
+	}
+
+	return offset, true
 }
 
 // lineOffset is the byte offset at which the 1-based line begins.
@@ -156,4 +168,31 @@ func spliceWorkloadID(data []byte, root *yaml.Node, workloadID string) ([]byte, 
 	}
 
 	return spliceScalar(data, value, workloadID)
+}
+
+// spliceExistingWorkloadID replaces a binding already in the file and reports
+// whether it did; false leaves the file untouched for the tree edit.
+func spliceExistingWorkloadID(path, workloadID string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, nil
+	}
+
+	_, root, err := soleDocument(data, path, "record the workload id", func(format string, args ...any) error {
+		return fmt.Errorf(format, args...)
+	})
+	if err != nil {
+		return false, nil
+	}
+
+	out, ok := spliceWorkloadID(data, root, workloadID)
+	if !ok {
+		return false, nil
+	}
+
+	if bytes.Equal(out, data) {
+		return true, nil
+	}
+
+	return true, fsutil.AtomicWriteFile(path, out)
 }
