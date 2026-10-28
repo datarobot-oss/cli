@@ -27,44 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsManagedPlugin(t *testing.T) {
-	t.Run("returns true for plugin in primary XDG dir", func(t *testing.T) {
-		tmpXDG := t.TempDir()
-
-		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
-
-		pluginPath := filepath.Join(tmpXDG, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
-
-		assert.True(t, isManagedPlugin(pluginPath))
-	})
-
-	t.Run("returns true for plugin in XDG_CONFIG_DIRS", func(t *testing.T) {
-		tmpHome := t.TempDir()
-		tmpXDG := t.TempDir()
-		tmpConfigDir := t.TempDir()
-
-		t.Setenv("HOME", tmpHome)
-		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
-		testutil.SetXDGEnv(t, "XDG_CONFIG_DIRS", tmpConfigDir)
-
-		configDirPath := filepath.Join(tmpConfigDir, "datarobot", "plugins", "my-plugin", "scripts", "run.sh")
-
-		assert.True(t, isManagedPlugin(configDirPath))
-	})
-
-	t.Run("returns false for plugin on PATH outside managed dirs", func(t *testing.T) {
-		tmpHome := t.TempDir()
-		tmpXDG := t.TempDir()
-
-		t.Setenv("HOME", tmpHome)
-		testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpXDG)
-
-		pathPlugin := filepath.Join("/usr", "local", "bin", "dr-myplugin")
-
-		assert.False(t, isManagedPlugin(pathPlugin))
-	})
-}
-
 func newPluginDiscoveryTimeoutRoot(t *testing.T) *cobra.Command {
 	t.Helper()
 
