@@ -15,20 +15,30 @@
 package del
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/testutil"
+	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCmd_RequiresArg(t *testing.T) {
-	cmd := Cmd()
-	cmd.PreRunE = nil
-	cmd.SetArgs([]string{})
+// boundID is the id a manifest binds, matching the fixture the idargs and stop
+// packages keep under the same name.
+const boundID = "68b0c1d2e3f4a5b6c7d8e9f0"
 
-	err := cmd.Execute()
-	require.Error(t, err)
+func TestCmd_ArgIsOptional(t *testing.T) {
+	cmd := Cmd()
+
+	require.NoError(t, cmd.Args(cmd, []string{"68b0c1d2e3f4a5b6c7d8e9f0"}))
+	require.NoError(t, cmd.Args(cmd, nil))
+	require.Error(t, cmd.Args(cmd, []string{"a", "b"}))
 }
 
 // In tests stdin is not a terminal, so without --yes the command must stop
@@ -73,7 +83,7 @@ func TestConfirmDelete_YesSources(t *testing.T) {
 				require.NoError(t, cmd.Flags().Set("yes", "true"))
 			}
 
-			confirmed, err := confirmDelete(cmd, "wl-1")
+			confirmed, err := confirmDelete(cmd, idargs.Ref{ID: "wl-1"}, false)
 
 			if c.wantErr {
 				require.Error(t, err)
@@ -85,4 +95,320 @@ func TestConfirmDelete_YesSources(t *testing.T) {
 			assert.Equal(t, c.wantConfirmed, confirmed)
 		})
 	}
+}
+
+const boundManifest = `workloadId: 68b0c1d2e3f4a5b6c7d8e9f0
+name: my-app
+artifact:
+  name: my-app-artifact
+  spec:
+    type: service
+`
+
+func writeManifest(t *testing.T, dir, body string) string {
+	t.Helper()
+
+	path := filepath.Join(dir, manifest.FileName)
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+	return path
+}
+
+// The reported bug: the id the CLI wrote is the CLI's to take back, so the
+// next deploy is not pointed at something that no longer exists.
+func TestClearStaleBinding_ClearsAMatchingID(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifest)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, parsed.WorkloadID())
+	assert.Contains(t, out, "Removed workloadId")
+
+	// The note says what the removal means for the project, not which
+	// command to run next: `dr workload up` is not generally available, and
+	// this line prints for everyone who deletes a bound workload.
+	assert.NotContains(t, out, "workload up")
+}
+
+// delete is addressed by id and can be run from any directory. A manifest
+// about some other workload is none of its business, and editing it would be
+// the CLI touching a file it was never asked about.
+func TestClearStaleBinding_LeavesAnotherWorkloadsManifestAlone(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifest)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0ffffffffffffffffffff", false)
+
+	out := buf.String()
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", parsed.WorkloadID())
+	assert.Empty(t, out)
+}
+
+// The workload is already gone by the time this runs, so nothing here may
+// turn a successful deletion into a failure.
+func TestClearStaleBinding_SilentWithNoManifest(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	assert.Empty(t, out)
+}
+
+// An unparseable manifest is stepped over rather than reported: the id cannot
+// be compared, so there is nothing to say about a file that may well be about
+// a different workload entirely.
+func TestClearStaleBinding_SilentWhenTheManifestCannotBeRead(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, "name: [unclosed\n")
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	assert.Empty(t, out)
+}
+
+// Deleting a workload leaves its artifact alone, so the local link stays
+// accurate and the next deploy reuses it. That is only surprising when it is
+// invisible, which is what this line exists to prevent. The remedy it names is
+// the state directory, which is what `up` itself tells the user to remove when
+// a locked artifact blocks a deploy; deleting the artifact instead is refused
+// while it is locked and dead-ends the next deploy while it is not.
+func TestClearStaleBinding_NamesTheStillLinkedArtifact(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "68b0aaaa0000000000000001"}))
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	assert.Contains(t, out, "68b0aaaa0000000000000001")
+	assert.Contains(t, out, "was not deleted with the workload")
+	assert.Contains(t, out, "dr artifact delete 68b0aaaa0000000000000001", "the remedy names what removes the artifact")
+	assert.Contains(t, out, "doctor --relink", "and what repoints it")
+	assert.NotContains(t, out, "--dir", "a project in the current directory needs no --dir")
+}
+
+// A delete given --dir for a project elsewhere names that directory in the
+// relink hint, so the command it suggests runs against the same project.
+func TestClearStaleBinding_RelinkHintCarriesDir(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "68b0aaaa0000000000000001"}))
+	t.Chdir(t.TempDir())
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, dir, "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	// The flag is spelled the way every other hint spells it, which quotes
+	// and slashes a Windows path, so the expectation is built the same way.
+	flag := manifest.DirFlag(dir)
+
+	require.NotEmpty(t, flag, "the project is not the current directory, so the hint must carry --dir")
+	assert.Contains(t, buf.String(), "doctor --relink <artifact-id>"+flag)
+}
+
+// A project that never linked to an artifact has nothing to say about one.
+func TestClearStaleBinding_NoArtifactNoteWithoutAStateDir(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, boundManifest)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	assert.Contains(t, out, "Removed workloadId")
+	assert.NotContains(t, out, "still linked to artifact")
+}
+
+// The reporter's own reproduction deploys with --dir site and then deletes
+// from the repository root. Locate walks upward, so a manifest in a
+// subdirectory is invisible from there and the binding it holds would survive
+// the cleanup that exists to remove it.
+func TestClearStaleBinding_FindsAManifestUnderDir(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "site")
+	require.NoError(t, os.Mkdir(project, 0o750))
+
+	path := writeManifest(t, project, boundManifest)
+	t.Chdir(root)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, "site", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, parsed.WorkloadID())
+	assert.Contains(t, out, "Removed workloadId")
+}
+
+// The workload is gone by the time the manifest is touched, so a write that
+// fails must not fail the command. It does have to say so, because the user is
+// the one who has to finish the job.
+func TestClearStaleBinding_WarnsWhenTheManifestCannotBeWritten(t *testing.T) {
+	testutil.SkipIfWindows(t, "directory permission bits do not block rename the same way on Windows")
+
+	testutil.SkipIfRoot(t)
+
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifest)
+	t.Chdir(dir)
+
+	// The write is atomic, so it needs to create a temporary file alongside
+	// the target; a directory that refuses new entries is what breaks it.
+	require.NoError(t, os.Chmod(dir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o750) })
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	out := buf.String()
+
+	assert.Contains(t, out, "Could not remove workloadId")
+
+	// The binding is still there, so the message is telling the truth.
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", parsed.WorkloadID())
+}
+
+// A --dir that is not a directory would otherwise be walked straight past, and
+// Locate would edit an ancestor's manifest instead of the one the flag named.
+// The wording covers both shapes it can take: absent, and a path that exists
+// but is a file.
+func TestClearStaleBinding_NamesADirThatIsNotADirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifest)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, "sight", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	assert.Contains(t, buf.String(), "No manifest was checked")
+	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
+	assert.Contains(t, buf.String(), "sight", "the path that was refused")
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", parsed.WorkloadID(),
+		"a typo must not fall back to editing whatever manifest is nearby")
+}
+
+// A manifest that cannot be walked safely is stepped over in silence, the same
+// as one that cannot be parsed: nothing can say whether it is even about the
+// workload just deleted, and `up` reports such a file in its own words.
+func TestClearStaleBinding_SilentOnAnUnwalkableManifest(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, "a: &a [1,1]\nb: &b [*a,*a]\nc: &c [*b,*b]\nworkloadId: *c\n")
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, ".", "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	assert.Empty(t, buf.String())
+}
+
+// The manifest path itself is the likeliest typo for --dir, and it exists, so
+// a check that only asked whether the path was there would walk past it.
+func TestClearStaleBinding_RejectsAFileAsDir(t *testing.T) {
+	dir := t.TempDir()
+	path := writeManifest(t, dir, boundManifest)
+	t.Chdir(dir)
+
+	var buf bytes.Buffer
+
+	clearStaleBinding(&buf, path, "68b0c1d2e3f4a5b6c7d8e9f0", false)
+
+	assert.Contains(t, buf.String(), manifest.ErrNotADirectory.Error())
+
+	parsed, err := manifest.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", parsed.WorkloadID())
+}
+
+// The flag is registered here and read by name in RunE, so nothing in the
+// package fails if it is renamed or dropped: GetString would return "" and the
+// command would quietly go back to searching upward from the working
+// directory, which is the behaviour --dir exists to replace.
+func TestCmd_RegistersDirFlag(t *testing.T) {
+	flag := Cmd().Flags().Lookup("dir")
+
+	require.NotNil(t, flag, "RunE reads --dir by name; renaming it here fails nothing else")
+	assert.Equal(t, "string", flag.Value.Type())
+}
+
+// The rule this PR adds to the one irreversible verb: a workload the manifest
+// named takes the explicit --yes, and the environment variable that suppresses
+// wizards across a pipeline is not consent to remove it. Deleting the
+// FromManifest branch in confirmDelete makes the second case pass.
+func TestConfirmDelete_AmbientNeedsTheFlag(t *testing.T) {
+	t.Setenv(reader.NonInteractiveEnv, "1")
+
+	typed := idargs.Ref{ID: "wl-1", Source: idargs.WorkloadIDSourceExplicit}
+
+	confirmed, err := confirmDelete(Cmd(), typed, false)
+	require.NoError(t, err)
+	assert.True(t, confirmed, "an id the user typed is still answered by the env var")
+
+	ambient := idargs.Ref{ID: "wl-1", Source: idargs.WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
+
+	_, err = confirmDelete(Cmd(), ambient, false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pass --yes to run")
+	assert.NotContains(t, err.Error(), reader.NonInteractiveEnv,
+		"the remedy must not name the variable it just refused")
+}
+
+// Delete asks in the shape stop and start use, and adds the one thing they have
+// no equivalent of: what agreeing costs. The shared skeleton is covered in
+// idargs; this pins the verb and the consequence delete supplies to it.
+func TestDeleteQuestion_AsksInTheSharedShapeWithItsOwnConsequence(t *testing.T) {
+	ambient := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceManifest, Path: "/p/.datarobot.yaml"}
+
+	assert.Equal(t,
+		"Delete workload "+boundID+"? The id is specified in /p/.datarobot.yaml "+
+			"rather than on the command line. This stops and removes a running workload. [y/N] ",
+		deleteQuestion(ambient, false))
+
+	typed := idargs.Ref{ID: boundID, Source: idargs.WorkloadIDSourceExplicit}
+
+	assert.Equal(t,
+		"Delete workload "+boundID+"? This stops and removes a running workload. [y/N] ",
+		deleteQuestion(typed, false),
+		"a typed id has no manifest to attribute it to")
 }

@@ -26,6 +26,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// getLogsFn is the fetch, a variable so tests can stand in for it.
+var getLogsFn = workload.GetArtifactBuildLogs
+
 var validLevels = map[string]bool{
 	"debug":   true,
 	"info":    true,
@@ -49,8 +52,10 @@ When invoked with one positional argument the artifact-id is read from
 .datarobot/workload/config.json in the current directory. When invoked with two, the
 first argument is the artifact-id and the second is the build-id.
 
-The server emits one structured JSON record per line; the default
-output drops records below INFO. Use --level debug to keep everything.
+Logs are read from the artifact's OTEL stream, narrowed to the one
+build — they outlive the build itself, unlike the deprecated per-build
+proxy this command used to call. The default output drops records
+below INFO. Use --level debug to keep everything.
 
 JSON output emits a single array document so the result can be piped
 to jq directly.
@@ -76,14 +81,22 @@ Examples:
 				return err
 			}
 
-			entries, err := workload.GetArtifactBuildLogs(artifactID, buildID)
+			entries, err := getLogsFn(artifactID, buildID)
 			if err != nil {
 				return err
 			}
 
-			entries = workload.FilterLogsByLevel(entries, lower)
+			kept := workload.FilterLogsByLevel(entries, lower)
 
-			return workload.RenderBuildLogs(outputFormat, entries)
+			// Lines that exist but sit below --level are not "no logs".
+			if len(kept) == 0 && len(entries) > 0 && outputFormat != outputformat.OutputFormatJSON {
+				fmt.Fprintf(cmd.ErrOrStderr(), "No logs at level %s or above; %d below it. Use --level debug to see them.\n",
+					lower, len(entries))
+
+				return nil
+			}
+
+			return workload.RenderBuildLogs(outputFormat, kept)
 		},
 	}
 

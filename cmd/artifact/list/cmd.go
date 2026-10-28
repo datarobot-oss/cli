@@ -15,9 +15,8 @@
 package list
 
 import (
-	"fmt"
-
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
@@ -29,6 +28,7 @@ func Cmd() *cobra.Command {
 		outputFormat outputformat.OutputFormat
 		status       workload.Status
 		limit        int
+		offset       int
 	)
 
 	cmd := &cobra.Command{
@@ -46,6 +46,8 @@ By default, output is a human-readable table. Use --output-format json for machi
 Example:
   dr artifact list
   dr artifact list --limit 10
+  dr artifact list --offset 100
+  dr artifact list --offset 100 --limit 50
   dr artifact list --status draft
   dr artifact list --output-format json`,
 		Args:    cobra.NoArgs,
@@ -53,11 +55,7 @@ Example:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			if limit <= 0 {
-				return fmt.Errorf("invalid --limit %d: must be positive", limit)
-			}
-
-			artifacts, err := workload.ListArtifacts(limit, status)
+			artifacts, err := workload.ListArtifacts(limit, offset, status)
 			if err != nil {
 				return err
 			}
@@ -69,13 +67,16 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	workload.AddStatusFlag(cmd, &status)
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of artifacts to return")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of artifacts to return")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Number of artifacts to skip before returning results")
 
 	telemetry.TrackWith(cmd, func(c *cobra.Command, _ []string) map[string]any {
 		limit, _ := c.Flags().GetInt("limit")
+		offset, _ := c.Flags().GetInt("offset")
 
 		return map[string]any{
 			"limit":         limit,
+			"offset":        offset,
 			"output_format": string(outputFormat),
 			"status":        string(status),
 		}

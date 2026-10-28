@@ -76,6 +76,18 @@ func shouldDiff(fa sync.FileAction) bool {
 func printOneDiff(w io.Writer, fa sync.FileAction, fetcher ContentFetcher, dmp *diffmatchpatch.DiffMatchPatch) error {
 	aHeader, bHeader := headerFor(fa)
 
+	if fa.ExecOnly() {
+		from, to := fa.RemoteExec, fa.LocalExec
+		if fa.Classification == sync.ClsRemoteModified {
+			from, to = to, from
+		}
+
+		_, err := fmt.Fprintf(w, "--- %s\n+++ %s\nexecutable bit: %s → %s\n",
+			aHeader, bHeader, execLabel(from), execLabel(to))
+
+		return err
+	}
+
 	a, b, err := loadDiffPair(fa, fetcher)
 	if err != nil {
 		_, _ = fmt.Fprintf(w, "--- %s\n*** %s ***\n", fa.Path, err.Error())
@@ -124,6 +136,17 @@ func headerFor(fa sync.FileAction) (string, string) {
 	}
 
 	return h.left(fa.Path), h.right(fa.Path)
+}
+
+func execLabel(exec *bool) string {
+	switch {
+	case exec == nil:
+		return "unknown"
+	case *exec:
+		return "set"
+	}
+
+	return "unset"
 }
 
 func staticLabel(s string) func(string) string { return func(string) string { return s } }

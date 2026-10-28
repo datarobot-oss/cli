@@ -15,8 +15,10 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -36,17 +38,27 @@ func retuned(from, to string) string {
 
 // wiredRetune answers the settings call and the two waits that follow it: the
 // replacement the platform starts to apply the sizing, then the workload.
+//
+// The guard is recorded rather than left to install's silent no-op, the way
+// the roll fixture records it. Otherwise the sequence assertions below read as
+// the whole of a resize while saying nothing about the one call that has to
+// come before the PATCH, and deleting it would leave them green.
 func wiredRetune(tr *track, sent *json.RawMessage) fakes {
 	return fakes{
 		workloadD: func(string) (workload.Document, error) { return docOf(liveWorkloadJSON), nil },
 		artifactD: func(string) (workload.Document, error) { return docOf(liveArtifactJSON), nil },
+		guard: func(workloadID string) error {
+			tr.steps = append(tr.steps, "guard:"+workloadID)
+
+			return nil
+		},
 		settings: func(workloadID string, runtime json.RawMessage) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "settings:"+workloadID)
 			*sent = runtime
 
 			return &workload.Replacement{ID: "rep-1", WorkloadID: workloadID}, nil
 		},
-		waitReplace: func(_ string, started *workload.Replacement, _, _ time.Duration,
+		waitReplace: func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 			_ func(*workload.Replacement),
 		) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "await-resize")
@@ -54,8 +66,10 @@ func wiredRetune(tr *track, sent *json.RawMessage) fakes {
 
 			return started, nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
-			tr.steps = append(tr.steps, "settle")
+		// A resize changes no version, so it must not tell the wait to expect
+		// one: a wait on an artifact that never moves runs to its timeout.
+		wait: func(_ context.Context, id string, want workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, servingLabel(want))
 
 			return &workload.Workload{
 				ID: id, Name: "gpt-oss-20b-vllm", Status: workload.WorkloadStatusRunning,
@@ -65,9 +79,10 @@ func wiredRetune(tr *track, sent *json.RawMessage) fakes {
 	}
 }
 
-// A resize costs one call. Nothing is built, nothing is minted and nothing is
+// A resize mutates once. Nothing is built, nothing is minted and nothing is
 // swapped, which is the entire reason this path exists rather than being
-// folded into a roll.
+// folded into a roll. The guard ahead of it is a read, and it is in the
+// sequence because a resize is a replacement like any other.
 func TestRun_RuntimeOnlyChangeIsAppliedInPlace(t *testing.T) {
 	var (
 		tr   track
@@ -92,8 +107,11 @@ func TestRun_RuntimeOnlyChangeIsAppliedInPlace(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"settings:68b0c1d2e3f4a5b6c7d8e9f0", "await-resize", "settle"}, tr.steps,
-		"the platform resizes by rolling a replacement, so that is what has to be followed")
+		[]string{
+			"guard:68b0c1d2e3f4a5b6c7d8e9f0", "settings:68b0c1d2e3f4a5b6c7d8e9f0",
+			"await-resize", "settle:+drain",
+		}, tr.steps,
+		"the platform resizes by rolling a replacement, so that is what has to be guarded and followed")
 	assert.Equal(t, ActionUpdated, result.Action)
 	assert.Equal(t, workload.WorkloadStatusRunning, result.Status, "the wait has the last word on status")
 	assert.Equal(t, "68a0000000000000000000a1", result.ArtifactID, "the version serving does not change")
@@ -149,6 +167,67 @@ func TestRun_RetuneDoesNotVerifyCredentials(t *testing.T) {
 	assert.Contains(t, tr.steps, "settings:68b0c1d2e3f4a5b6c7d8e9f0")
 }
 
+// A resize is a replacement like any other, so it has to ask the question a
+// roll asks before the PATCH goes out.
+func TestRun_RetuneRefusesWhileAReplacementIsInFlight(t *testing.T) {
+	var (
+		tr   track
+		sent json.RawMessage
+	)
+
+	f := wiredRetune(&tr, &sent)
+	f.guard = func(workloadID string) error {
+		tr.steps = append(tr.steps, "guard:"+workloadID)
+
+		return fmt.Errorf("workload %s: %w (status switching); wait for it to settle before starting another",
+			workloadID, workload.ErrReplacementInFlight)
+	}
+	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("the sizing may not ride in behind a rollout that is still deciding")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+	assert.NotContains(t, err.Error(), "cannot tell whether",
+		"a refusal already names the workload and the remedy, so it travels in its own words")
+	assert.Equal(t, []string{"guard:68b0c1d2e3f4a5b6c7d8e9f0"}, tr.steps,
+		"the workload the file is bound to is the one that has to be clear")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"a run refused before it touched anything did not update anything")
+}
+
+// The guard has two failure modes and they read differently. A route that
+// cannot answer says nothing about the resize it stopped, so the operation is
+// named for it.
+func TestRun_RetuneNamesTheResizeWhenTheGuardCannotAnswer(t *testing.T) {
+	var (
+		tr   track
+		sent json.RawMessage
+	)
+
+	f := wiredRetune(&tr, &sent)
+	f.guard = func(string) error { return errors.New("HTTP error: 500 Internal Server Error") }
+	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a guard that could not answer is not permission to proceed")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, retuned("cpu: 3", "cpu: 6"), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(),
+		"cannot tell whether workload 68b0c1d2e3f4a5b6c7d8e9f0 already has a rollout in progress, "+
+			"so its runtime settings were left alone")
+	assert.Contains(t, err.Error(), "500 Internal Server Error", "the reason survives the wrapping")
+}
+
 func TestRun_RetuneFailureNamesTheWorkload(t *testing.T) {
 	var (
 		tr   track
@@ -159,7 +238,7 @@ func TestRun_RetuneFailureNamesTheWorkload(t *testing.T) {
 	f.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
 		return nil, errors.New("replicaCount and autoscaling are mutually exclusive")
 	}
-	f.wait = func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a settings call that failed changed nothing to wait for")
 
 		return nil, nil
@@ -184,14 +263,14 @@ func TestRun_RetuneReportsAReplacementThatFailed(t *testing.T) {
 	)
 
 	f := wiredRetune(&tr, &sent)
-	f.waitReplace = func(_ string, started *workload.Replacement, _, _ time.Duration,
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
 		_ func(*workload.Replacement),
 	) (*workload.Replacement, error) {
 		started.Status = workload.ReplacementStatusFailed
 
 		return started, errors.New("replacement ended as FAILED")
 	}
-	f.wait = func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("a resize that failed leaves nothing to settle")
 
 		return nil, nil
@@ -217,7 +296,7 @@ func TestRun_DetachedRetuneDoesNotWait(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotContains(t, tr.steps, "await-resize")
-	assert.NotContains(t, tr.steps, "settle")
+	assert.NotContains(t, tr.steps, "settle:")
 	assert.Equal(t, ActionUpdated, result.Action)
 	// The status is the live one, because nobody looked again. A settings
 	// change leaves the workload running while the replacement swaps under
@@ -274,10 +353,11 @@ func TestRun_RollWithoutARuntimeChangeSendsNoRuntime(t *testing.T) {
 	assert.Nil(t, tr.rolledRuntime)
 }
 
-// --lock is about the artifact that ends up live, not about one this run
+// --promote is about the artifact that ends up live, not about one this run
 // minted. A resize mints nothing, so the artifact already serving is the one
-// that ends up live, and it is what gets locked. A start does the same.
-func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
+// that ends up live, and the workload is promoted in place. A start does the
+// same.
+func TestRun_RetuneWithPromoteLocksTheServingArtifact(t *testing.T) {
 	var (
 		tr   track
 		sent json.RawMessage
@@ -287,10 +367,11 @@ func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
 	// The shared fixture is already locked, which is the other branch: an
 	// artifact cannot be locked twice.
 	f.artifactD = func(string) (workload.Document, error) { return unlockedArtifact(t), nil }
-	f.lock = func(id string) (*workload.Artifact, error) {
-		tr.steps = append(tr.steps, "lock:"+id)
+	f.lock = neverLocks(t)
+	f.promote = func(id string) (*workload.Workload, error) {
+		tr.steps = append(tr.steps, "promote:"+id)
 
-		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		return &workload.Workload{ID: id}, nil
 	}
 
 	install(t, f)
@@ -299,7 +380,8 @@ func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"settings:68b0c1d2e3f4a5b6c7d8e9f0", "await-resize", "settle", "lock:68a0000000000000000000a1",
-	}, tr.steps, "the lock comes last, once the workload is serving again")
+		"guard:68b0c1d2e3f4a5b6c7d8e9f0", "settings:68b0c1d2e3f4a5b6c7d8e9f0",
+		"await-resize", "settle:+drain", "promote:68b0c1d2e3f4a5b6c7d8e9f0",
+	}, tr.steps, "the promotion comes last, once the workload is serving again")
 	assert.True(t, result.Locked)
 }

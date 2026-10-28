@@ -16,16 +16,17 @@ package sync
 
 import (
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
-	stdsync "sync"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
+	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,92 +56,10 @@ func (f *fakeArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionID
 	return f.PatchFn(artifactID, catalogID, catalogVersionID)
 }
 
-// fakeFilesClient is the in-memory FilesAPI fake used by engine tests.
-// Unexpected methods return errors so off-happy-path drift fails loudly.
-type fakeFilesClient struct {
-	allFiles      map[string]filesapi.FileMeta
-	catalogID     string
-	versionID     string
-	stageID       string
-	uploadedFiles map[string][]byte
-	deletedPaths  []string
-	mu            stdsync.Mutex
-}
-
-func (f *fakeFilesClient) CreateCatalog() (*filesapi.CatalogResp, error) {
-	if f.catalogID == "" {
-		return nil, errors.New("fakeFilesClient.CreateCatalog: no catalogID configured")
-	}
-
-	return &filesapi.CatalogResp{CatalogID: f.catalogID, CatalogVersionID: ""}, nil
-}
-
-func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
-	if f.stageID == "" {
-		return nil, errors.New("fakeFilesClient.CreateStage: no stageID configured")
-	}
-
-	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil
-}
-
-func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Reader) error {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.uploadedFiles == nil {
-		f.uploadedFiles = map[string][]byte{}
-	}
-
-	f.uploadedFiles[name] = data
-
-	return nil
-}
-
-func (f *fakeFilesClient) ApplyStage(_, _, _ string) (*filesapi.ApplyStageResp, error) {
-	if f.versionID == "" {
-		return nil, errors.New("fakeFilesClient.ApplyStage: no versionID configured")
-	}
-
-	return &filesapi.ApplyStageResp{
-		CatalogID:        f.catalogID,
-		CatalogVersionID: f.versionID,
-		NumFiles:         len(f.uploadedFiles),
-	}, nil
-}
-
-func (f *fakeFilesClient) UploadFromZipNew(_ string, _ int64, _ io.Reader) (*filesapi.FromFileResp, error) {
-	return nil, errors.New("fakeFilesClient: UploadFromZipNew not expected")
-}
-
-func (f *fakeFilesClient) UploadFromZipExisting(_, _, _ string, _ int64, _ io.Reader) (*filesapi.FromFileResp, error) {
-	return nil, errors.New("fakeFilesClient: UploadFromZipExisting not expected")
-}
-
-func (f *fakeFilesClient) PollStatus(_ string) (*filesapi.StatusResp, error) {
-	return nil, errors.New("fakeFilesClient: PollStatus not expected")
-}
-
-func (f *fakeFilesClient) AllFiles(_, _ string) (map[string]filesapi.FileMeta, error) {
-	return f.allFiles, nil
-}
-
-func (f *fakeFilesClient) DownloadFile(_, _, _ string, _ io.Writer) (string, int64, error) {
-	return "", 0, errors.New("fakeFilesClient: DownloadFile not expected")
-}
-
-func (f *fakeFilesClient) DeleteFiles(_ string, paths []string) (*filesapi.DeleteFilesResp, error) {
-	f.deletedPaths = append(f.deletedPaths, paths...)
-	return &filesapi.DeleteFilesResp{}, nil
-}
-
-func (f *fakeFilesClient) ListVersions(_ string, _ int) ([]filesapi.CatalogVersion, error) {
-	return nil, errors.New("fakeFilesClient: ListVersions not expected")
-}
+// testRepoID is the artifact repository the test artifacts belong to. The
+// catalog name must not carry it, so it has to be something an assertion
+// can look for and fail on.
+const testRepoID = "repo-xyz-789"
 
 func initProject(t *testing.T, files map[string]string) string {
 	t.Helper()
@@ -158,7 +77,7 @@ func initProject(t *testing.T, files map[string]string) string {
 }
 
 func draftArtifact(id, catalogID, versionID string) *workload.Artifact {
-	a := &workload.Artifact{ID: id, Name: id, Status: "DRAFT"}
+	a := &workload.Artifact{ID: id, Name: id, Status: "DRAFT", ArtifactRepositoryID: testRepoID}
 
 	if catalogID == "" {
 		return a
@@ -207,7 +126,7 @@ func TestEngine_Plan_FirstSyncEmptyArtifact(t *testing.T) {
 		uploadPaths = append(uploadPaths, fa.Path)
 	}
 
-	assert.ElementsMatch(t, []string{".wapiignore", "agent.py", "utils/helper.py"}, uploadPaths)
+	assert.ElementsMatch(t, []string{".drignore", "agent.py", "utils/helper.py"}, uploadPaths)
 	assert.Empty(t, plan.Downloads)
 	assert.Empty(t, plan.Deletes)
 	assert.Empty(t, plan.Conflicts)
@@ -229,12 +148,13 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 	require.NoError(t, wapi.SaveConfig(dir, cfg))
 
 	manifest := wapi.Manifest{Version: wapi.ManifestVersion, Files: map[string]wapi.FileMeta{}}
+	notExec := false
 
-	for _, rel := range []string{"agent.py", ".wapiignore"} {
+	for _, rel := range []string{"agent.py", ".drignore"} {
 		hash, size, err := hashLocal(t, dir, rel)
 		require.NoError(t, err)
 
-		manifest.Files[rel] = wapi.FileMeta{Hash: hash, Size: size}
+		manifest.Files[rel] = wapi.FileMeta{Hash: hash, Size: size, Executable: &notExec}
 	}
 
 	require.NoError(t, wapi.SaveManifest(dir, manifest))
@@ -263,10 +183,13 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 	assert.False(t, calledAllFiles, "AllFiles must not be called when not drifted")
 }
 
-func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
-	dir := initProject(t, nil)
+// lockedEngine is an engine bound to dir whose artifact is immutable. The
+// casing is the platform's own inconsistency, and reading it as a draft is the
+// failure the fixture exists to catch.
+func lockedEngine(t *testing.T, dir string, opts Options) *Engine {
+	t.Helper()
 
-	e, err := newWithDeps(dir, Options{}, Deps{
+	e, err := newWithDeps(dir, opts, Deps{
 		Files: &fakeFilesClient{},
 		Artifacts: &fakeArtifactStore{
 			GetFn: func(id string) (*workload.Artifact, error) {
@@ -279,7 +202,66 @@ func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
 
 	t.Cleanup(func() { _ = e.Close() })
 
-	_, err = e.Plan()
+	return e
+}
+
+func TestEngine_Plan_LockedArtifactRejected(t *testing.T) {
+	dir := initProject(t, nil)
+
+	e := lockedEngine(t, dir, Options{})
+
+	_, err := e.Plan()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "locked")
+
+	// The remedy is reachable by whoever hit this. A deploy mints a new
+	// version and gets past the lock, but the command that does it is behind
+	// a feature gate, and `dr artifact code sync` is not.
+	assert.NotContains(t, err.Error(), "workload up")
+	assert.Contains(t, err.Error(), "dr artifact create")
+}
+
+// A preview writes nothing, so the one reason to refuse a locked artifact
+// does not apply to it. `dr workload up` asks for exactly this plan before it
+// decides what to do with the code, and on a locked version what it decides is
+// to mint a new one: refusing the count refuses the deploy that gets past the
+// lock.
+func TestEngine_Plan_LockedArtifactAllowedForPreviews(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts Options
+	}{
+		{"dry run", Options{DryRun: true}},
+		{"diff", Options{ShowDiffs: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := initProject(t, map[string]string{"app.py": "print('hi')\n"})
+
+			e := lockedEngine(t, dir, tc.opts)
+
+			plan, err := e.Plan()
+			require.NoError(t, err)
+			require.NotNil(t, plan)
+
+			assert.Contains(t, e.LockedNotice(), "locked",
+				"a preview that printed a plan without saying so reads as a sync that is going to work")
+		})
+	}
+}
+
+// The exemption above is for the plan only. Nothing stops a caller planning
+// and then executing anyway, and an upload reaching something immutable is
+// the one outcome it must never produce.
+func TestEngine_Execute_RefusesALockedArtifact(t *testing.T) {
+	dir := initProject(t, map[string]string{"app.py": "print('hi')\n"})
+
+	e := lockedEngine(t, dir, Options{DryRun: true})
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+	require.False(t, plan.IsEmpty(), "the fixture has to give phase 5 something to refuse")
+
+	_, err = e.Execute(plan)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "locked")
 }
@@ -330,7 +312,7 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 	require.NotNil(t, result)
 
 	assert.Equal(t, "ver-1", result.NewVersion)
-	assert.Equal(t, 3, result.UploadedCount, "expect agent.py + utils/helper.py + .wapiignore")
+	assert.Equal(t, 3, result.UploadedCount, "expect agent.py + utils/helper.py + .drignore")
 
 	assert.Len(t, fake.uploadedFiles, 3)
 	assert.Equal(t, []byte("print('hi')\n"), fake.uploadedFiles["agent.py"])
@@ -352,6 +334,126 @@ func TestEngine_Run_FirstSyncStagePath(t *testing.T) {
 	assert.NotEmpty(t, patchedArtifactID, "PatchArtifactCodeRef must be called after upload")
 	assert.Equal(t, "cid-new", patchedCatalogID)
 	assert.Equal(t, "ver-1", patchedVersionID)
+
+	// The catalog this sync created is labelled with the artifact's id, so
+	// the File Registry row identifies its project instead of showing
+	// "Untitled Dataset". The id and not the name: see newCatalogName.
+	assert.Equal(t, catalogNameLabel+"art-abc-123", fake.createdCatalogName)
+}
+
+// TestEngine_Run_FirstSyncZipPathNamesTheCatalog is the large-change-set
+// half of the same guarantee. The two upload paths create a catalog
+// through different endpoints, so a name wired into only one of them
+// leaves every project over the file threshold on "Untitled Dataset".
+func TestEngine_Run_FirstSyncZipPathNamesTheCatalog(t *testing.T) {
+	files := make(map[string]string, StageVsZipFileThreshold+1)
+	for i := range StageVsZipFileThreshold + 1 {
+		files[fmt.Sprintf("mod%02d.py", i)] = fmt.Sprintf("x = %d\n", i)
+	}
+
+	dir := initProject(t, files)
+
+	fake := &fakeFilesClient{
+		catalogID: "cid-zip",
+		versionID: "ver-zip",
+	}
+
+	e, err := newWithDeps(dir, Options{Yes: true}, Deps{
+		Files: fake,
+		Artifacts: &fakeArtifactStore{
+			GetFn: func(id string) (*workload.Artifact, error) {
+				return draftArtifact(id, "", ""), nil
+			},
+		},
+		Now: time.Now,
+	})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = e.Close() })
+
+	result, err := e.Run()
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	assert.Equal(t, "ver-zip", result.NewVersion)
+	assert.Empty(t, fake.uploadedFiles, "over the threshold the stage path must not run")
+
+	// The zip path names its catalog on the JSON create and then adds the
+	// archive to it, rather than naming it on the upload: the upload route
+	// rejects a form field it does not know, so a name there would fail the
+	// whole sync against a server that predates the parameter.
+	assert.Equal(t, catalogNameLabel+"art-abc-123", fake.createdCatalogName)
+	assert.Equal(t, "cid-zip", fake.zippedIntoCatalog)
+}
+
+// The engine is where the deprecation note is picked up, so this is the level
+// that decides whether a command has anything to print. Each case asserts the
+// patterns actually took effect as well as what was said: "nothing to report"
+// is also what a project with no ignore file at all looks like, so on its own
+// it would pass even if the file were never read.
+func TestEngine_Plan_IgnoreFileNotice(t *testing.T) {
+	t.Run("legacy name is used and reported", func(t *testing.T) {
+		dir := legacyProject(t, map[string]string{
+			ignore.LegacyFileName: "*.tmp\n",
+			"scratch.tmp":         "x",
+		})
+
+		e := lockfileEngine(t, dir, noLockfileRunner)
+
+		plan, err := e.Plan()
+		require.NoError(t, err)
+
+		assert.NotContains(t, uploadPathsOf(plan), "scratch.tmp", "legacy patterns must still filter")
+		assert.Contains(t, e.IgnoreFileNotice(), ignore.LegacyFileName)
+	})
+
+	t.Run("current name is used and not reported", func(t *testing.T) {
+		// initProject links the project, which writes the current name.
+		dir := initProject(t, map[string]string{
+			ignore.FileName: "*.tmp\n",
+			"scratch.tmp":   "x",
+		})
+
+		e := lockfileEngine(t, dir, noLockfileRunner)
+
+		plan, err := e.Plan()
+		require.NoError(t, err)
+
+		assert.NotContains(t, uploadPathsOf(plan), "scratch.tmp", "current patterns must filter")
+		assert.Empty(t, e.IgnoreFileNotice(), "the current name is not worth a word")
+	})
+}
+
+// An unreadable ignore file in effect fails the sync rather than falling
+// through to the other name. The wrap is what this asserts; the fallback
+// behaviour itself is pinned in the ignore package, where it lives.
+func TestEngine_Plan_UnreadableIgnoreFileFailsTheSync(t *testing.T) {
+	dir := initProject(t, nil)
+
+	// A directory under the current name is unreadable as a file on every
+	// platform, unlike a chmod that root and Windows both ignore.
+	require.NoError(t, os.Remove(filepath.Join(dir, ignore.FileName)))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ignore.FileName), 0o755))
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	_, err := e.Plan()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "load ignore patterns")
+	assert.Contains(t, err.Error(), ignore.FileName)
+}
+
+// legacyProject is a project as it stood before the rename: linked, with the
+// old ignore filename and no new one. initProject writes the current-name
+// template as part of linking, so the removal is what makes it legacy, and it
+// lives here rather than at each call site so that coupling is stated once.
+func legacyProject(t *testing.T, files map[string]string) string {
+	t.Helper()
+
+	dir := initProject(t, files)
+	require.NoError(t, os.Remove(filepath.Join(dir, ignore.FileName)))
+
+	return dir
 }
 
 type trackingFilesClient struct {
@@ -370,4 +472,50 @@ func hashLocal(t *testing.T, dir, rel string) (string, int64, error) {
 	abs := filepath.Join(dir, filepath.FromSlash(rel))
 
 	return fileops.HashFile(abs)
+}
+
+// TestNewCatalogName_LabelsTheArtifact pins both halves of the name: a
+// label saying what the id is, and the artifact's own id rather than its
+// name (which the project may change under an entry that cannot follow) or
+// its repository (a separate kind of object in the Workload API).
+func TestNewCatalogName_LabelsTheArtifact(t *testing.T) {
+	e := &Engine{
+		artifact: &workload.Artifact{
+			ID:                   "art-abc-123",
+			Name:                 "name-should-not-appear",
+			ArtifactRepositoryID: testRepoID,
+		},
+	}
+
+	got := newCatalogName(e)
+
+	assert.Equal(t, "Artifact: art-abc-123", got)
+	assert.NotContains(t, got, "name-should-not-appear",
+		"naming is create-time only, so a renamable name would go stale in place")
+	assert.NotContains(t, got, testRepoID,
+		"a repository is a different entity; its id here would name the wrong thing")
+}
+
+// TestNewCatalogName_NoID covers an artifact the platform gave no id.
+// The name is still worth sending; a label with nothing after it is not.
+func TestNewCatalogName_NoID(t *testing.T) {
+	e := &Engine{artifact: &workload.Artifact{Name: "bare-artifact"}}
+
+	assert.Equal(t, "bare-artifact", newCatalogName(e))
+}
+
+// TestNewCatalogName_NoIDClampsTheFallback keeps the fallback inside what
+// the Files API accepts, since an artifact name may run to twenty times
+// the limit.
+func TestNewCatalogName_NoIDClampsTheFallback(t *testing.T) {
+	e := &Engine{artifact: &workload.Artifact{Name: strings.Repeat("a", 400)}}
+
+	assert.Len(t, []rune(newCatalogName(e)), filesapi.CatalogNameMaxLen)
+}
+
+// TestNewCatalogName_NoArtifact pins the guard that leaves the name off
+// the request entirely rather than sending a label with no id, which would
+// name the entry after nothing at all.
+func TestNewCatalogName_NoArtifact(t *testing.T) {
+	assert.Empty(t, newCatalogName(&Engine{}))
 }

@@ -7,6 +7,7 @@ This guide covers best practices for defining and managing **command-line flags*
 ## Table of contents
 
 - [Define flags clearly](#define-flags-clearly)
+- [Count flags (parse-time validation)](#count-flags-parse-time-validation)
 - [Global output-format pattern](#global-output-format-pattern)
 - [Universal flags (forwarded to plugins)](#universal-flags-forwarded-to-plugins)
 - [Mark flag groups](#mark-flag-groups)
@@ -41,6 +42,40 @@ func Cmd() *cobra.Command {
     return cmd
 }
 ```
+
+## Count flags (parse-time validation)
+
+Flags that carry a count — `--limit`, `--offset`, `--tail`, `--concurrency` —
+register through `internal/countflags` so out-of-range values are rejected
+while the flags are parsed, before the command runs:
+
+```go
+import "github.com/datarobot/cli/internal/countflags"
+
+cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of workloads to return")
+cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Number of workloads to skip before returning results")
+```
+
+- `PositiveInt` rejects zero and negative values. Use it for page sizes: a
+  limit of 0 would fetch nothing and read as an empty result instead of an
+  error.
+- `NonNegativeInt` allows zero (meaningful as "from the start" or "no limit")
+  and rejects negatives.
+- Both bind a caller-owned `int`; read the resolved value from your variable
+  as with `IntVar`, and `Flags().GetInt(...)` (used by telemetry closures)
+  keeps working.
+- Do **not** use them where 0 means "unset, use a default" (for example
+  `workload config --port`), or for selectors like `--node-id`.
+
+Invalid input fails at parse time with cobra's standard wrapping:
+
+```
+Error: invalid argument "0" for "--limit" flag: must be a positive integer
+```
+
+so `RunE` stays free of flag-shape checks. Keep library-level argument
+validation in `internal/...` as defense in depth for non-CLI callers. The
+pattern follows `cmd/internal/pollflags`, which does the same for durations.
 
 ## Global output-format pattern
 
@@ -119,9 +154,33 @@ Concretely:
 - Return errors from `RunE` so cobra routes them to stderr; do not print errors to stdout.
 - If you need to emit a deprecation/notice alongside JSON output, write it to `cmd.ErrOrStderr()`.
 
+### JSON errors
+
+When a command fails in JSON mode, the root execution path (`executeRoot` in `cmd/root_errors.go`) suppresses cobra's plaintext `Error:` line and the usage text, and writes one JSON object on a single line to **stderr** instead:
+
+```json
+{"error":{"message":"create workload: HTTP 422 Unprocessable Entity: name is required (url: https://app.datarobot.com/api/v2/workloads/)","statusCode":422,"url":"https://app.datarobot.com/api/v2/workloads/","detail":"name is required"}}
+```
+
+| Field        | Present                                    | Source                                  |
+|--------------|--------------------------------------------|-----------------------------------------|
+| `message`    | Always                                     | The error's text, without `Error: `     |
+| `statusCode` | When the error chain has a `drapi.HTTPError` | `HTTPError.StatusCode`                |
+| `url`        | When the error chain has a `drapi.HTTPError` | `HTTPError.URL`                       |
+| `detail`     | When that `HTTPError` has a `Detail`       | `HTTPError.Detail`                      |
+
+stdout gets nothing new and the exit code stays non-zero, so the exit code is still how a caller tells failure from success. Text mode is unchanged.
+
+- JSON mode is read from `--output-format` in the arguments, then `DATAROBOT_CLI_OUTPUT_FORMAT`, before cobra parses anything, so flag and argument errors get the envelope too. An `output-format` set only in `drconfig.yaml` is picked up once the config is read, so it covers runtime errors but not flag errors.
+- Return a wrapped error rather than a formatted string when the failure came from the API, so `errors.As` can still find the `HTTPError` and fill the HTTP fields.
+- A command that renders its own failure and returns `cli.ErrSilent` gets no envelope.
+- `dr task run` (and `dr run`) and plugin commands leave through `telemetry.ExitWithContext` to pass on the subprocess's exit code, so they never return to `executeRoot` and get no envelope either.
+
 ## Universal flags (forwarded to plugins)
 
 Some root flags must be forwarded to plugin subprocesses as `DATAROBOT_CLI_*` environment variables so plugins can honour them (e.g. `--debug` → `DATAROBOT_CLI_DEBUG=1`). These are called **universal flags**.
+
+Current universal flags: `debug`, `disable-telemetry`, `verbose`, `skip-certificate-check`, `ca-cert`, `profile` (bound in `bindViperFlags`, `cmd/root_factory.go`).
 
 ### How it works
 
@@ -350,14 +409,15 @@ Outside `internal/config/...`, all viper interaction goes through the
 Quick rules for new flags:
 
 - **Transient flags** (per-invocation): read directly via
-  `cmd.Flags().GetBool(...)`. Do not bind to viper.
+  `cmd.Flags().GetBool(...)` (for example `cli.YesFlagName`). Do not bind to viper.
 - **Env-var override needed?** Register only the env var with
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources in your
-  handler:
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with the shared
+  helper:
 
   ```go
-  yesFlag, _ := cmd.Flags().GetBool("yes")
-  yes := yesFlag || viperx.GetBool("yes")
+  _ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
+
+  nonInteractive := cli.IsNonInteractive(cmd)
   ```
 
 - **Sticky CLI preferences** (rare): bind via `viperx.BindPFlag` *and*

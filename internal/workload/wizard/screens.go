@@ -19,6 +19,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -42,6 +44,13 @@ const createNewID = "\x00create-new"
 // the same thing whether or not that registration has run.
 const defaultEditor = "vi"
 
+// healthPlaceholder says what an empty health path means rather than showing
+// the default, which is what every other placeholder on that screen does.
+// Ghosting the default path there would advertise the opposite of what
+// accepting the empty field does, and the field is only ever empty when a probe
+// has been declined or the bound workload runs without one.
+const healthPlaceholder = "none: no readiness probe"
+
 // namePlaceholder shows the shape of a workload name without proposing one.
 // The directory is a poor suggestion often enough (src, app, cli, tmp) that
 // offering it invites a name nobody chose, and this name ends up on a
@@ -51,24 +60,37 @@ const namePlaceholder = "my-app-name"
 // runInteractiveFlow asks the questions and returns the manifest the user
 // agreed to. The workload list is fetched up front because the first screen
 // depends on it: with nothing to bind to, there is no binding question.
-func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft, error) {
-	// No screen can settle this one, so it is not a question the wizard gets
-	// to ask. Started anyway, the error would sit behind the loading view
-	// while the fetch ran, and arriving at the first screen would clear it
-	// and drop --name without saying so.
-	if err := opts.Answers.checkBinding(); err != nil {
-		return nil, manifest.Draft{}, err
+func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft, string, error) {
+	// No screen can settle these, so they are not questions the wizard gets to
+	// ask. Started anyway, the error would sit behind the loading view while
+	// the fetch ran, and arriving at the first screen would clear it and drop
+	// the flag without saying so.
+	//
+	// Only these. A bad --port, a path missing its slash and an importance
+	// outside the enum are all values a screen shows and the user can correct,
+	// and refusing them here would turn a recoverable typo into a run that
+	// never starts. The kind joins them while its screen is not asked, since
+	// nothing else could correct a bad --type, and a spec file brings every
+	// check headless applies, since it skips the screens that would show a
+	// bad value.
+	checks := []func() error{opts.Answers.checkBinding, opts.Answers.checkProbeExclusive}
+	if !askKind {
+		checks = append(checks, opts.Answers.checkKind)
 	}
 
-	var workloads []workload.Workload
+	if opts.SpecFile != "" {
+		checks = append(checks, opts.Answers.check)
+	}
 
-	if opts.Answers.WorkloadID == "" && opts.Answers.Name == "" {
-		fetched, err := listWorkloadsFn(workloadPickLimit, nil)
-		if err != nil {
-			return nil, manifest.Draft{}, err
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return nil, manifest.Draft{}, "", err
 		}
+	}
 
-		workloads = fetched
+	prepared, workloads, err := preparedAndWorkloads(opts)
+	if err != nil {
+		return nil, manifest.Draft{}, "", err
 	}
 
 	// The wizard draws on stderr, not stdout. stdout is this command's
@@ -77,6 +99,9 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	// substitution would capture escape sequences ahead of the path.
 	//
 	started := newFlow(detected, workloads, opts.Answers)
+	if prepared != nil {
+		started = started.withPrepared(*prepared)
+	}
 	// Carried into the flow because the confirm screen is where secrets would
 	// be stored, and --dry-run has to mean the same thing on a terminal as it
 	// does headless: nothing created, here or on the platform.
@@ -86,20 +111,49 @@ func runInteractiveFlow(opts Options, detected Detected) ([]byte, manifest.Draft
 	final, err := tui.Run(started,
 		tea.WithAltScreen(), tea.WithOutput(interactiveOutput(opts.Stderr)))
 	if err != nil {
-		return nil, manifest.Draft{}, err
+		return nil, manifest.Draft{}, "", err
 	}
 
 	finished, ok := tui.Unwrap(final).(flow)
 	if !ok {
-		return nil, manifest.Draft{}, ErrCancelled
+		return nil, manifest.Draft{}, "", ErrCancelled
 	}
 
 	// Printed here rather than from inside the flow: until tui.Run returns,
 	// the alt screen owns the terminal and anything written to stderr lands
 	// underneath a full-screen redraw.
-	reportImport(opts.Stderr, finished.imports)
+	reportImport(opts.Stderr, finished.imports, nil)
 
-	return finished.result()
+	content, draft, err := finished.result()
+
+	// The directory screen may have moved the project; the caller writes the
+	// manifest where the flow ended up, not where setup was started.
+	return content, draft, finished.detected.Dir, err
+}
+
+// preparedAndWorkloads reads the spec file when one was given, and lists the
+// workloads to bind to when none was: a prepared spec is a workload to
+// create, so it gets no binding question and no list.
+func preparedAndWorkloads(opts Options) (*Prepared, []workload.Workload, error) {
+	if opts.SpecFile != "" {
+		loaded, err := LoadSpec(opts.SpecFile)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return &loaded, nil, nil
+	}
+
+	if opts.Answers.WorkloadID != "" || opts.Answers.Name != "" {
+		return nil, nil, nil
+	}
+
+	workloads, err := listWorkloadsFn(workloadPickLimit, 0, nil, "")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return nil, workloads, nil
 }
 
 // interactiveOutput is where the wizard draws. bubbletea needs the real
@@ -124,7 +178,7 @@ func (f *flow) enter(at screen) {
 	case screenBinding, screenExecEnv:
 		f.enterPicker(at)
 
-	case screenKind, screenA2A, screenSource:
+	case screenKind, screenA2A, screenSource, screenDirectory:
 		f.enterChoice(at)
 		f.choice.liveValue = f.liveChoice(at)
 
@@ -163,7 +217,7 @@ func (f *flow) enterPicker(at screen) {
 		// the list again. On a first visit there is nothing yet, and emptying
 		// the shared table means a failed load cannot leave the previous
 		// screen's workload rows on display under a base-image heading.
-		f.picker = newExecEnvPicker(f.execEnvs, f.width, f.height)
+		f.picker = newExecEnvPicker(f.execEnvs, f.liveExecEnvID(), f.width, f.height)
 
 		if id := f.draft.Build.ExecutionEnvironmentID; id != "" {
 			f.picker.selectValue(func(v any) bool {
@@ -174,14 +228,47 @@ func (f *flow) enterPicker(at screen) {
 		}
 
 	case screenName, screenKind, screenA2A, screenSource, screenEntrypoint,
-		screenImage, screenSettings, screenEnv, screenConfirm:
+		screenImage, screenSettings, screenEnv, screenConfirm, screenDirectory:
 		// Not lists.
 	}
+}
+
+// directoryOptions is the directory question's offer: the subdirectories
+// that look like project roots first — the likely intent, so the cursor
+// opens on the fix — and staying put last, because the check is a suspicion
+// and being wrong about it has to cost one keystroke.
+func (f flow) directoryOptions() []option {
+	// Built from the frozen offer, never from f.detected: accepting a
+	// candidate re-points detected at the chosen tree, and Escape has to
+	// find the original question, not the choice's own view of itself.
+	options := make([]option, 0, len(f.offer.Candidates)+1)
+
+	for _, candidate := range f.offer.Candidates {
+		options = append(options, option{
+			value: filepath.Join(f.offer.Dir, candidate.Rel),
+			label: "./" + candidate.Rel,
+			note:  "has " + strings.Join(candidate.Markers, ", "),
+		})
+	}
+
+	stayNote := "everything under it is uploaded on deploy"
+	if f.offer.MoreCandidates {
+		stayNote += " · more candidates exist — pass --dir to name one"
+	}
+
+	return append(options, option{
+		value: f.offer.Dir,
+		label: "Use this directory anyway",
+		note:  stayNote,
+	})
 }
 
 // enterChoice prepares the menu screens.
 func (f *flow) enterChoice(at screen) {
 	switch at {
+	case screenDirectory:
+		f.choice = newChoice(f.directoryOptions(), "", "")
+
 	case screenKind:
 		f.choice = newChoice([]option{
 			{value: manifest.TypeService, label: "Service", note: "standard HTTP workload"},
@@ -225,7 +312,7 @@ func (f *flow) enterInputs(at screen) {
 	case screenSettings:
 		inputs := make([]textinput.Model, settingsFieldCount)
 		inputs[fieldPort] = newInput(strconv.Itoa(f.draft.Port), "8080")
-		inputs[fieldHealthPath] = newInput(f.draft.HealthPath, manifest.DefaultHealthPath)
+		inputs[fieldHealthPath] = newInput(f.draft.HealthPath, healthPlaceholder)
 		inputs[fieldReplicas] = newInput(replicaValue(f.draft.Runtime.Replicas), replicaPlaceholder(f.autoscaled()))
 		inputs[fieldCPU] = newInput(formatCPU(f.draft.Runtime.CPU), "0.5")
 		inputs[fieldMemory] = newInput(f.draft.Runtime.Memory, manifest.DefaultMemory)
@@ -233,11 +320,15 @@ func (f *flow) enterInputs(at screen) {
 
 		f.inputs = inputs
 
-		for i := range f.inputs[1:] {
-			f.inputs[i+1].Blur()
-		}
+		// newInput focuses everything it builds, so exactly one is left
+		// focused here. Through applyFocus rather than a hardcoded index, so
+		// arrival and movement agree on where the cursor is by construction.
+		// The blink command is parked for onEnter to hand on: arriving at a
+		// screen has no tea.Cmd of its own to return it through.
+		f.focusCmd = f.applyFocus()
 
-	case screenBinding, screenExecEnv, screenKind, screenA2A, screenSource, screenEnv, screenConfirm:
+	case screenBinding, screenExecEnv, screenKind, screenA2A, screenSource, screenEnv,
+		screenConfirm, screenDirectory:
 		// No text entry.
 	}
 }
@@ -253,6 +344,20 @@ func (f flow) sourceOptions() []option {
 		dockerfileNote, missing = "no "+DockerfileName+" detected", true
 	}
 
+	generatedNote, generatedMissing := "", false
+
+	switch check := f.detected.generatedBuild(); {
+	case f.keepsLiveCode():
+		// The bound workload's own build is kept, not chosen: up pulls its
+		// code into this empty directory, so the missing files are no problem.
+		generatedNote = "built from the workload's current code"
+	case check.problem != "":
+		generatedNote = "needs pyproject.toml + uv.lock or package.json + package-lock.json"
+		generatedMissing = true
+	case check.note != "":
+		generatedNote = "uv.lock is generated at deploy if uv is installed; commit it"
+	}
+
 	return []option{
 		{
 			value: manifest.BuildModeDockerfile,
@@ -260,7 +365,12 @@ func (f flow) sourceOptions() []option {
 			note:  dockerfileNote,
 			warn:  missing,
 		},
-		{value: manifest.BuildModeGenerated, label: "Build from a managed execution environment"},
+		{
+			value: manifest.BuildModeGenerated,
+			label: "Build from a managed execution environment",
+			note:  generatedNote,
+			warn:  generatedMissing,
+		},
 		{value: manifest.BuildModeImage, label: "Use an already published image"},
 	}
 }
@@ -322,7 +432,7 @@ func (f flow) liveChoice(at screen) string {
 	case screenSource:
 		return live.Build.Mode
 	case screenBinding, screenName, screenExecEnv, screenEntrypoint,
-		screenImage, screenSettings, screenEnv, screenConfirm:
+		screenImage, screenSettings, screenEnv, screenConfirm, screenDirectory:
 		return ""
 	}
 
@@ -333,7 +443,7 @@ func (f flow) liveChoice(at screen) string {
 // is not mistaken for a fresh one and the preselected row is not mistaken for
 // the wizard's own guess.
 func (f flow) liveDefaultsNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
@@ -344,12 +454,21 @@ func (f flow) liveDefaultsNote() string {
 // liveValuesNote is the same idea for the screens made of fields rather than
 // options, where there is no row to tag.
 func (f flow) liveValuesNote() string {
-	if f.live == nil {
+	if !f.bound() {
 		return ""
 	}
 
-	return "These are " + liveStyle.Render(f.live.Name) +
+	values := "These are " + liveStyle.Render(f.live.Name) +
 		"'s current values. Changing one changes the workload."
+
+	// On the settings screen most of those values are behind the advanced row,
+	// so the sentence would otherwise promise a review of things that are not
+	// on screen.
+	if f.at == screenSettings && !f.advancedOpen {
+		return values + " The rest are under advanced options."
+	}
+
+	return values
 }
 
 // sourceConflictNote warns when the workload builds a Dockerfile that this
@@ -372,6 +491,11 @@ func (f flow) sourceConflictNote() string {
 // screen is shown, read before anything is answered.
 func (f flow) screenIntro() string {
 	switch f.at {
+	case screenDirectory:
+		return "Deploying uploads everything under the project directory and builds from it, so " +
+			"running setup from the wrong place — the app's parent, most often — fails minutes later, " +
+			"after the questions are answered. This is a suspicion, not a verdict: staying put is fine " +
+			"if this really is the project."
 	case screenName:
 		return ""
 	case screenKind:
@@ -407,7 +531,7 @@ func (f flow) screenNote() string {
 		return f.confirmNote()
 	case screenKind, screenSource, screenImage, screenExecEnv:
 		return f.boundScreenNote()
-	case screenName, screenA2A, screenEntrypoint:
+	case screenName, screenA2A, screenEntrypoint, screenDirectory:
 		return ""
 	}
 
@@ -428,7 +552,7 @@ func (f flow) boundScreenNote() string {
 	case screenImage:
 		return f.liveValuesNote()
 	case screenBinding, screenName, screenA2A, screenExecEnv,
-		screenEntrypoint, screenSettings, screenEnv, screenConfirm:
+		screenEntrypoint, screenSettings, screenEnv, screenConfirm, screenDirectory:
 		return ""
 	}
 
@@ -438,6 +562,7 @@ func (f flow) boundScreenNote() string {
 // questions is what each screen asks. Phrasing them in one place keeps the
 // wizard sounding like one voice rather than ten.
 var questions = map[screen]string{
+	screenDirectory:  "This directory has none of the usual project files. Deploy which one?",
 	screenBinding:    "Which workload should this repository deploy to?",
 	screenName:       "Name of your workload",
 	screenKind:       "What kind of workload is this?",
@@ -446,12 +571,19 @@ var questions = map[screen]string{
 	screenExecEnv:    "Which execution environment should the build use?",
 	screenEntrypoint: "What is your app's entrypoint?",
 	screenImage:      "Which image should it run?",
-	screenSettings:   "How should this workload run?",
+	screenSettings:   "Which port does your app listen on?",
 	screenEnv:        "Which variables should the manifest declare?",
 	screenConfirm:    "Ready to write " + manifest.FileName,
 }
 
 func (f flow) question() string {
+	// The settings screen asks about the port until the advanced row is
+	// opened, at which point five more fields are on screen and naming one of
+	// them stops describing what is being answered.
+	if f.at == screenSettings && f.advancedOpen {
+		return "How should this workload run?"
+	}
+
 	return questions[f.at]
 }
 
@@ -460,7 +592,7 @@ func (f flow) body() string {
 	case screenBinding, screenExecEnv:
 		return f.picker.view(f.width)
 
-	case screenKind, screenSource:
+	case screenKind, screenSource, screenDirectory:
 		return f.choice.view()
 
 	case screenEnv:
@@ -504,6 +636,24 @@ const (
 	settingsFieldCount
 )
 
+// The two positions that are not fields. They live outside the block above
+// because a constant with an explicit value ends its iota run: written there,
+// the next field appended with no value of its own would silently repeat -1
+// instead of continuing the count, which is the opposite of what that block
+// promises.
+const (
+	// firstAdvancedField is where the shown-by-default part of the screen
+	// ends. Everything from here on is behind the advanced row, which is why
+	// the field order puts the port first: the advanced set is a suffix of one
+	// list rather than a second list that could fall out of step with it.
+	firstAdvancedField = fieldHealthPath
+
+	// advancedStop is where the cursor sits when the advanced row itself is
+	// focused. It is not a field, so it indexes nothing; every place that
+	// reads f.focus as a field has to allow for it.
+	advancedStop = -1
+)
+
 // settingsLabels name the fields. Everything here has a working default, so
 // the screen is a review as much as a question.
 var settingsLabels = [settingsFieldCount]string{
@@ -521,42 +671,140 @@ var settingsLabels = [settingsFieldCount]string{
 // explaining anyway.
 var settingsNotes = [settingsFieldCount]string{
 	fieldPort:       "Port the container listens on. Must be 1024 or above: containers run unprivileged.",
-	fieldHealthPath: "Readiness probe path. Traffic is withheld until this endpoint reports success.",
+	fieldHealthPath: "Readiness probe path. While it is set, traffic is withheld until this endpoint reports success. Leave it empty to run without a probe.",
 	fieldReplicas:   "Container instances to run. Reported as protons in status output and logs.",
 	fieldCPU:        "CPU cores per replica. Fractional values are allowed.",
 	fieldMemory:     "Memory per replica. A byte count or a 1000-based unit (" + strings.Join(manifest.MemoryUnits(), ", ") + "). Binary units such as Gi are rejected: they would be read as their decimal equivalents.",
 	fieldImportance: "Scheduling priority when capacity is constrained: " + strings.Join(manifest.ImportanceLevels, ", ") + ".",
 }
 
+// settingsView shows the one field that decides whether the container is
+// reachable, and offers the rest behind a row that opens.
+//
+// The hidden fields all have a working default and are all settable by flag,
+// and the confirm screen states every one of them before anything is written,
+// so a user who never opens the row still sees what they are agreeing to.
 func (f flow) settingsView() string {
 	var b strings.Builder
 
-	width := 0
-	for _, label := range settingsLabels {
-		width = max(width, len(label))
+	fmt.Fprintf(&b, "  %s  %s\n\n",
+		labelStyle.Render(settingsLabels[fieldPort]), f.inputs[fieldPort].View())
+	fmt.Fprintf(&b, "  %s\n", f.advancedRow())
+
+	if !f.advancedOpen {
+		return strings.TrimRight(b.String(), "\n")
 	}
 
-	for i, label := range settingsLabels {
-		padded := label + strings.Repeat(" ", width-len(label))
-		fmt.Fprintf(&b, "  %s  %s\n", labelStyle.Render(padded), f.inputs[i].View())
+	width := 0
+	for field := firstAdvancedField; field < settingsFieldCount; field++ {
+		width = max(width, len(settingsLabels[field]))
+	}
+
+	// Indented under the row that revealed them, so the screen reads as one
+	// field and a drawer rather than as six fields again.
+	for field := firstAdvancedField; field < settingsFieldCount; field++ {
+		padded := settingsLabels[field] + strings.Repeat(" ", width-len(settingsLabels[field]))
+		fmt.Fprintf(&b, "    %s  %s\n", labelStyle.Render(padded), f.inputs[field].View())
 	}
 
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// settingsNote explains the field the cursor is on. The port's note carries
-// its provenance too, since that is the one value detection can vouch for.
+// advancedRow is the control that shows and hides the rest of the screen. The
+// arrow points the way pressing it goes, and the row highlights like any other
+// answer under the cursor, because that is what it is.
+func (f flow) advancedRow() string {
+	label := "▸ Advanced options"
+	if f.advancedOpen {
+		label = "▾ Advanced options"
+	}
+
+	if f.focus == advancedStop {
+		return selectedStyle.Render(label)
+	}
+
+	return labelStyle.Render(label)
+}
+
+// onAdvancedRow is the one place that says what the advanced row being focused
+// looks like, so the sentinel is read the same way everywhere rather than
+// spelled out with and without the screen check depending on the call site.
+func (f flow) onAdvancedRow() bool {
+	return f.at == screenSettings && f.focus == advancedStop
+}
+
+// advancedKey opens and closes the advanced row from anywhere on the settings
+// screen, so the fields behind it are reachable without first discovering that
+// tab lands on a row.
+//
+// A chord rather than a letter, because every stop on this screen but the row
+// itself is a text input and a bare key is text there. ctrl+a would have been
+// the mnemonic; the input already binds it to line-start, along with b, d, e,
+// f, h, k, n, p, u, v and w, and taking a standard editing key away from a
+// field to save one keystroke elsewhere is a poor trade.
+const advancedKey = "ctrl+o"
+
+// advancedLabel is what both keys that toggle the row are called in the
+// legend. One word in either state, because the row's own arrow already says
+// which way it will go and a label that changes width wraps the legend onto a
+// second line at eighty columns, pushing [esc] back off the end of the first.
+const advancedLabel = "advanced"
+
+// settingsNote explains whatever the cursor is on. The port's note carries its
+// provenance too, since that is the one value detection can vouch for.
 func (f flow) settingsNote() string {
+	if f.onAdvancedRow() {
+		return "Readiness probe, sizing and scheduling. Every one has a working default, " +
+			"and the confirm screen shows what will be written whether or not you open this."
+	}
+
 	if f.focus < 0 || f.focus >= len(settingsNotes) {
 		return ""
 	}
 
 	note := settingsNotes[f.focus]
-	if f.focus == 0 {
-		note += " " + capitalize(f.detected.PortSource) + "."
+
+	switch f.focus {
+	case fieldPort:
+		// Provenance is about what this checkout showed. A bound workload's
+		// port came from the workload, so quoting the Dockerfile there would
+		// credit a source the value on screen did not come from.
+		if f.live == nil {
+			note += " " + capitalize(f.detected.PortSource) + "."
+		}
+	case fieldHealthPath:
+		note = joinNotes(note, f.liveProbeNote())
 	}
 
 	return note
+}
+
+// liveProbeNote explains an empty field on a bound workload, which has two
+// quite different causes. The workload may genuinely run without a probe, in
+// which case the empty field is its own configuration rather than something
+// the wizard failed to fill in. Or it may run a probe shaped in a way this
+// release cannot read, in which case the field is not about that probe at all
+// and nothing typed here will touch it.
+func (f flow) liveProbeNote() string {
+	if !f.bound() {
+		return ""
+	}
+
+	present, readable := f.liveReadinessProbe()
+
+	switch {
+	case readable:
+		return ""
+
+	case present:
+		return liveStyle.Render(f.live.Name) + " runs a readiness probe with no path, so this field does not " +
+			"apply to it. Its shape is kept as it is; only its port follows the container's, the way the " +
+			"startup and liveness probes do."
+
+	default:
+		return liveStyle.Render(f.live.Name) + " runs without a readiness probe. Leaving this empty keeps it that way; " +
+			"a path adds one, and the container has to serve it."
+	}
 }
 
 // capitalize raises the first letter so a detection phrase reads as a
@@ -635,7 +883,7 @@ func (f flow) previewText() string {
 		return f.diff
 	}
 
-	if f.live != nil {
+	if f.bound() {
 		return string(f.content) + "\n" + tui.HintStyle.Render("no change to the running workload")
 	}
 
@@ -651,7 +899,7 @@ func (f *flow) buildPreview() {
 
 	// A short manifest keeps its own height: padding it out to a fixed window
 	// would put the key legend below the fold for no reason.
-	f.preview = viewport.New(contentWidth(f.width), min(previewHeight(f.height), lines))
+	f.preview = viewport.New(contentWidth(f.width), min(f.previewHeight(), lines))
 	f.preview.SetContent(text)
 }
 
@@ -669,15 +917,23 @@ func (f flow) scrollablePreview() bool {
 const (
 	defaultPreviewHeight = 20
 	minPreviewHeight     = 6
-	previewChrome        = 12
+	// What the screen spends on everything that is not the note: the question,
+	// the key legend and the blank lines between the blocks. The note is
+	// measured rather than budgeted for, because its height moves with the
+	// terminal's width and with how much there is to say.
+	previewChrome = 9
 )
 
-func previewHeight(terminalHeight int) int {
-	if terminalHeight <= 0 {
+// previewHeight is what the terminal has left for the file itself. Measuring
+// the note beats reserving a constant for it: a fixed budget large enough for
+// a wrapped four-line note steals a line from every screen that has three, and
+// one tuned to three pushes the key legend off the bottom on a narrow terminal.
+func (f flow) previewHeight() int {
+	if f.height <= 0 {
 		return defaultPreviewHeight
 	}
 
-	return max(terminalHeight-previewChrome, minPreviewHeight)
+	return max(f.height-previewChrome-lipgloss.Height(f.note(f.confirmNote())), minPreviewHeight)
 }
 
 // confirmNote is what the user is agreeing to, beyond the file itself: where
@@ -687,16 +943,20 @@ func (f flow) confirmNote() string {
 		return ""
 	}
 
-	return strings.Join([]string{
-		"Writing to " + ShortPath(manifest.Path(f.detected.Dir)),
+	// joinNotes rather than strings.Join: readinessLine says nothing about a
+	// hand-edited file, and an empty entry would leave a blank line mid-note.
+	return joinNotes(
+		"Writing to "+ShortPath(manifest.Path(f.detected.Dir)),
 		f.runtimeLine(),
+		f.readinessLine(),
 		f.nextStep(),
-	}, "\n")
+	)
 }
 
-// runtimeLine summarises the sizing the file will carry. A bound workload
-// reports its own, not the documented defaults, because this is the line the
-// user is consenting to.
+// runtimeLine summarises the sizing and scheduling the file will carry. A
+// bound workload reports its own, not the documented defaults, because this is
+// the line the user is consenting to. The settings screen keeps all of it
+// behind the advanced row, so this line is where most users see it at all.
 func (f flow) runtimeLine() string {
 	sizing := fmt.Sprintf("%s cpu · %s",
 		strconv.FormatFloat(f.draft.Runtime.CPU, 'g', -1, 64), f.draft.Runtime.Memory)
@@ -709,11 +969,59 @@ func (f flow) runtimeLine() string {
 		}
 	}
 
-	return "Runtime: " + replicas + " · " + sizing + "    (edit the file for GPU/autoscaling)"
+	importance := orDefault(f.draft.Importance, manifest.DefaultImportance)
+
+	return "Runtime: " + replicas + " · " + sizing + " · importance " + importance +
+		"    (edit the file for GPU/autoscaling)"
+}
+
+// readinessLine says what the file will carry for the probe, the other value
+// the advanced row hides. An absent probe is stated rather than left out, so
+// the two cases cannot be told apart only by what is missing.
+//
+// It describes the answers, so it says nothing once the file has been edited
+// by hand: the bytes on screen are then the truth, and a summary derived from
+// the draft would contradict the preview directly above it.
+func (f flow) readinessLine() string {
+	if f.handEdited {
+		return ""
+	}
+
+	// A probe shape this release does not model is carried over untouched, so
+	// the answers do not describe it and neither should this line.
+	if present, readable := f.liveReadinessProbe(); present && !readable {
+		return "Readiness: " + f.probeOwner() + "'s own probe, kept as it is apart from the port it watches."
+	}
+
+	if !f.draft.WantsReadinessProbe() {
+		return "Readiness: no probe, so traffic is not held back for a health check."
+	}
+
+	return fmt.Sprintf("Readiness: %s on port %d", f.draft.HealthPath, f.draft.Port)
+}
+
+// liveReadinessProbe is what the bound workload does about readiness, and
+// false for an unbound run, so callers can ask without repeating the nil check.
+func (f flow) liveReadinessProbe() (present, readable bool) {
+	if f.live == nil {
+		return false, false
+	}
+
+	return f.live.ReadinessProbe()
+}
+
+// probeOwner names whose probe a line is about: the bound workload, or the
+// spec file, which has no name to print.
+func (f flow) probeOwner() string {
+	if f.bound() {
+		return f.live.Name
+	}
+
+	return "the spec file"
 }
 
 func (f flow) nextStep() string {
-	if f.live != nil {
+	if f.bound() {
 		return "On `up`: deploys this repo to " + f.live.Name + "."
 	}
 
@@ -742,6 +1050,7 @@ var screenKeys = map[screen][]keyBinding{
 	},
 	screenSettings: {
 		{Key: "tab", Does: "next field"},
+		{Key: advancedKey, Does: "advanced"},
 		{Key: "enter", Does: "continue"},
 		{Key: "esc", Does: "back"},
 	},
@@ -758,6 +1067,33 @@ var defaultKeys = []keyBinding{
 	{Key: "esc", Does: "back"},
 }
 
+// withKey re-labels one key in a screen's legend, copying first because
+// screenKeys is a package-level map and the slices in it are shared by every
+// render. A key the screen does not list is left alone: every caller relabels a
+// binding the screen already has, and appending one instead would put a key in
+// the legend that nothing on that screen answers.
+func withKey(bindings []keyBinding, key, does string) []keyBinding {
+	out := slices.Clone(bindings)
+
+	for i := range out {
+		if out[i].Key == key {
+			out[i].Does = does
+
+			break
+		}
+	}
+
+	return out
+}
+
+// withoutKey drops a binding, for the states where a key the screen normally
+// offers is not the way to do the thing any more.
+func withoutKey(bindings []keyBinding, key string) []keyBinding {
+	return slices.DeleteFunc(slices.Clone(bindings), func(b keyBinding) bool {
+		return b.Key == key
+	})
+}
+
 func (f flow) keys() string {
 	bindings, ok := screenKeys[f.at]
 	if !ok {
@@ -768,6 +1104,15 @@ func (f flow) keys() string {
 	// never advertises a key that does nothing.
 	if f.at == screenConfirm && f.scrollablePreview() {
 		bindings = append([]keyBinding{{Key: "↑/↓", Does: "scroll"}}, bindings...)
+	}
+
+	// On the row itself enter is the row's own action, so it is labelled for
+	// that and the chord drops out: two entries reading "advanced" say the
+	// screen has two ways to do one thing, in the one place that is not worth
+	// the width. Derived from the table rather than rewritten, so a key the
+	// screen gains later still appears here.
+	if f.onAdvancedRow() {
+		bindings = withoutKey(withKey(bindings, "enter", advancedLabel), advancedKey)
 	}
 
 	// With a filter in place, esc undoes that first. Saying "back" would be a
@@ -869,6 +1214,8 @@ type pickedWorkload struct {
 type pickedEnv struct {
 	id        string
 	versionID string
+	name      string
+	language  string
 }
 
 // createNewLabel is the pinned row. It says what choosing it does, because
@@ -893,8 +1240,17 @@ func newWorkloadPicker(workloads []workload.Workload, width, height int) rowTabl
 	return newRowTable([]string{"WORKLOAD", "STATUS", "UPDATED"}, rows, true, width, height)
 }
 
-func newExecEnvPicker(environments []workload.ExecutionEnvironment, width, height int) rowTable {
+// inUseSuffix tags the option a bound workload already uses, the same phrase
+// the menu screens append to their live option.
+const inUseSuffix = "  · in use"
+
+func newExecEnvPicker(environments []workload.ExecutionEnvironment, liveID string, width, height int) rowTable {
 	rows := make([]tableRow, 0, len(environments))
+
+	var (
+		inUse     tableRow
+		haveInUse bool
+	)
 
 	for _, ee := range environments {
 		// An environment with nothing built is not offered: picking it would
@@ -905,13 +1261,59 @@ func newExecEnvPicker(environments []workload.ExecutionEnvironment, width, heigh
 			continue
 		}
 
-		rows = append(rows, tableRow{
-			cells: []string{ee.Name, ee.ID},
-			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID},
-		})
+		row := tableRow{
+			cells: []string{ee.Name, languageLabel(ee.ProgrammingLanguage), ee.ID},
+			value: pickedEnv{id: ee.ID, versionID: ee.LatestSuccessfulVersion.ID, name: ee.Name, language: ee.ProgrammingLanguage},
+		}
+
+		// The one a bound workload is already built on is tagged and lifted to
+		// the top: the list runs long, and the option most likely to be kept
+		// should not have to be scrolled for.
+		//
+		// The tag is plain text, not styled. It rides a table cell, and
+		// bubbles/table sizes columns and truncates cells by display width with
+		// no awareness of ANSI: a styled tag's escape bytes would inflate the
+		// column's measured width and, on a narrow terminal, be cut mid-escape,
+		// bleeding colour across the row. The green live-value tag stays on the
+		// menu screens, which render their own lines and never truncate.
+		if liveID != "" && ee.ID == liveID {
+			last := len(row.cells) - 1
+			row.cells[last] += inUseSuffix
+			inUse, haveInUse = row, true
+
+			continue
+		}
+
+		rows = append(rows, row)
 	}
 
-	return newRowTable([]string{"BASE IMAGE", "ID"}, rows, true, width, height)
+	if haveInUse {
+		rows = append([]tableRow{inUse}, rows...)
+	}
+
+	return newRowTable([]string{"BASE IMAGE", "LANGUAGE", "ID"}, rows, true, width, height)
+}
+
+// liveExecEnvID is the execution environment the bound workload is built on,
+// "" for a fresh setup. It marks the "in use" row in the base-image picker.
+func (f flow) liveExecEnvID() string {
+	if f.live == nil {
+		return ""
+	}
+
+	return f.live.Defaults().Build.ExecutionEnvironmentID
+}
+
+// languageLabel renders the language column: the platform's value as it came
+// (a server that says "R" is shown saying "R"), and a dash where it names no
+// language — a word that means "unlabeled" reads better as absence than as a
+// category.
+func languageLabel(language string) string {
+	if workload.EnvironmentLanguage(language) == "" {
+		return "—"
+	}
+
+	return strings.TrimSpace(language)
 }
 
 // replicaValue leaves the field empty rather than showing a zero, which is

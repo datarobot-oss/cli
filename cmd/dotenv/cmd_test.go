@@ -38,11 +38,17 @@ func setupTestRepo(t *testing.T) string {
 	err := cmd.Run()
 	require.NoError(t, err, "Failed to initialize git repository")
 
-	// Create .datarobot directory
-	datarobotDir := filepath.Join(repoDir, ".datarobot")
+	// Create .datarobot/answers directory to make IsTemplateDir return true
+	answersDir := filepath.Join(repoDir, ".datarobot", "answers")
 
-	err = os.MkdirAll(datarobotDir, 0o755)
-	require.NoError(t, err, "Failed to create .datarobot directory")
+	err = os.MkdirAll(answersDir, 0o755)
+	require.NoError(t, err, "Failed to create .datarobot/answers directory")
+
+	// Create .datarobot/cli directory for parakeet.yaml
+	cliDir := filepath.Join(repoDir, ".datarobot", "cli")
+
+	err = os.MkdirAll(cliDir, 0o755)
+	require.NoError(t, err, "Failed to create .datarobot/cli directory")
 
 	// Create parakeet.yaml with basic configuration
 	parakeetYaml := `root:
@@ -52,7 +58,7 @@ func setupTestRepo(t *testing.T) string {
     optional: true
     help: "A test variable"
 `
-	parakeetPath := filepath.Join(datarobotDir, "parakeet.yaml")
+	parakeetPath := filepath.Join(cliDir, "parakeet.yaml")
 
 	err = os.WriteFile(parakeetPath, []byte(parakeetYaml), 0o600)
 	require.NoError(t, err, "Failed to create parakeet.yaml")

@@ -18,9 +18,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,6 +38,25 @@ const (
 	TypeService = "service"
 	TypeAgent   = "agent"
 )
+
+// ArtifactTypeOrDefault applies the platform's default for an artifact block
+// that names no type: it is created as a service. Every reader that has to
+// predict what kind of thing the platform is about to make has to say so the
+// same way, or two of them answer differently about one file.
+func ArtifactTypeOrDefault(artifactType string) string {
+	return orDefaultString(artifactType, TypeService)
+}
+
+// SameArtifactType reports whether two artifact types name the same kind.
+//
+// Folded because the platform's own documents disagree about the casing of
+// their enums. Comparing them exactly is what turns a hand-written "Service"
+// into drift that can never be satisfied: nothing about the file changes it,
+// so every run mints a version and rolls it, for ever, against a workload
+// nobody touched.
+func SameArtifactType(a, b string) bool {
+	return strings.EqualFold(a, b)
+}
 
 // Build modes, named the way the user chooses them rather than the way the
 // spec spells them: BuildModeDockerfile writes source: provided.
@@ -65,10 +86,15 @@ func ValidImportance(value string) bool {
 const (
 	DefaultImportance = "low"
 	DefaultPort       = 8080
-	DefaultHealthPath = "/health"
-	DefaultReplicas   = 1
-	DefaultCPU        = 0.5
-	DefaultMemory     = "512MB"
+	// There is no default health path. A probe has to be written for the app
+	// it probes: any guessed path — / very much included — kills a healthy
+	// deploy whose framework answers 404 there, minutes after the green tick
+	// and with nothing saying why. No probe by default, and the deploy's own
+	// endpoint check catches a container that answers nothing.
+
+	DefaultReplicas = 1
+	DefaultCPU      = 0.5
+	DefaultMemory   = "512MB"
 
 	// GroupName and PrimaryContainerName appear in both halves of the file,
 	// which is how the sizing block is joined to the artifact block.
@@ -83,6 +109,13 @@ const (
 // atomicWrite is the durable write, a variable so a test can make it fail and
 // check that the reservation is taken back.
 var atomicWrite = fsutil.AtomicWriteFile
+
+// ErrUnreadable reports that a manifest could not be read or parsed at all, as
+// distinct from an edit that failed after the file was understood. A caller
+// editing a file it merely found, rather than one it was handed, needs to tell
+// those apart: an unparseable file may not be about its business, while a
+// write that fails on a file whose contents it matched certainly is.
+var ErrUnreadable = errors.New("manifest could not be read")
 
 // ErrExists reports that a manifest is already present at the target path.
 // Setup never rewrites one: the file is the interface after the first write,
@@ -106,7 +139,11 @@ type Draft struct {
 	A2AEnabled bool
 	Build      Build
 	// Port is the primary container's port, and the readiness probe's.
-	Port       int
+	Port int
+	// HealthPath is the readiness probe's path, and empty means the workload
+	// runs without a probe: the platform does not require one, and a probe
+	// aimed at an endpoint the container does not serve never passes. Read it
+	// through WantsReadinessProbe rather than comparing it here and there.
 	HealthPath string
 	Runtime    Runtime
 	// EnvVars are the variables a local .env defines, already classified by
@@ -115,6 +152,20 @@ type Draft struct {
 	// CredentialPlaceholder, because no credential exists for it yet. An
 	// empty slice writes nothing.
 	EnvVars []EnvVar
+}
+
+// WantsReadinessProbe reports whether the answers ask for a probe at all. It
+// is the one place the empty-path convention is spelled out, so the write, the
+// live merge and the screens cannot drift about what an empty path means.
+func (d Draft) WantsReadinessProbe() bool {
+	return d.healthPath() != ""
+}
+
+// healthPath is the path as it should be written, which is the trimmed one:
+// WantsReadinessProbe already ignores surrounding space, so writing the raw
+// field would let " /ready " through as a path no router matches.
+func (d Draft) healthPath() string {
+	return strings.TrimSpace(d.HealthPath)
 }
 
 // EnvVar is one .env variable as the manifest will carry it. Deciding which
@@ -260,52 +311,243 @@ func Write(path string, data []byte) error {
 
 // WriteWorkloadID records the binding in an existing manifest, the one edit
 // the CLI makes to a file the user owns: up writes the id back the moment the
-// workload exists, so the next run finds it. Comments, unknown keys and their
-// order are preserved, because the file is re-emitted from the tree it was
-// parsed into rather than regenerated.
+// workload exists, so the next run finds it. An existing binding is replaced
+// in place, byte for byte; otherwise the file is re-emitted from the tree it
+// was parsed into rather than regenerated, so comments, unknown keys and
+// their order survive either way.
+func WriteWorkloadID(path, workloadID string) error {
+	// A binding that is already there is replaced token for token, so the
+	// rest of the file comes back byte for byte (see spliceScalar). Only a
+	// file without one, or one the splice cannot model, is re-encoded.
+	if done, err := spliceExistingWorkloadID(path, workloadID); done {
+		return err
+	}
+
+	_, err := editRoot(path, "record the workload id", false, func(root *yaml.Node) (bool, error) {
+		setWorkloadID(root, workloadID)
+
+		return true, nil
+	})
+
+	return err
+}
+
+// ClearWorkloadID removes the binding, but only when it is the one the caller
+// expects, and reports whether it did. It is what `dr workload delete` calls
+// once the workload it names is gone: the id the CLI wrote is the CLI's to
+// take back, and leaving it behind points the next deploy at something that no
+// longer exists.
+//
+// The id is compared inside the same parse that performs the removal. Checking
+// it against a separate read would leave a window in which a concurrent `up`
+// writes a fresh binding, and this call then deletes a live id it never
+// looked at.
+//
+// A manifest with no binding, or a different one, is not an error: both report
+// false and write nothing. A file this cannot edit without damaging it is an
+// error carrying its own remedy, because the caller prints what it is given.
+func ClearWorkloadID(path, wantWorkloadID string) (bool, error) {
+	changed, err := editRoot(path, "clear the workload id", true, func(root *yaml.Node) (bool, error) {
+		return clearWorkloadID(root, wantWorkloadID)
+	})
+
+	return changed, err
+}
+
+// editRoot is renderEdit plus the write, and is what the binding edits use.
+func editRoot(path, action string, markUnreadable bool, mutate func(root *yaml.Node) (bool, error)) (bool, error) {
+	changed, rendered, err := renderEdit(path, action, markUnreadable, mutate)
+	if err != nil || !changed {
+		return false, err
+	}
+
+	// Reported as unchanged when the write fails: the caller's question is
+	// whether the file on disk now lacks the binding, and it does not.
+	if err := fsutil.AtomicWriteFile(path, rendered); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// renderEdit is the read-modify-write every in-place edit shares: parse to a
+// node tree, hand the root mapping to mutate, and re-emit only if something
+// changed. Re-emitting preserves comments, unknown keys and their order, which
+// regenerating from a struct would not.
+//
+// It stops short of the write, so a preview can run the edit it is previewing
+// rather than a second rendering that agrees with the first only until one of
+// them changes. The returned bytes are meaningless unless changed is true,
+// which matches what the mutators report: an edit that found nothing to do has
+// no content to show for it.
+//
+// action names the edit for the errors that mention it, so a failure says what
+// the CLI was trying to do rather than only where it stopped.
+//
+// markUnreadable wraps the read and parse failures in ErrUnreadable. Only the
+// caller that edits a file it merely found wants that: it stays quiet about a
+// file it cannot judge relevant. The write-back knows its file, and tagging its
+// failures as unreadable makes its own caller report "could not be written:
+// manifest could not be read".
 //
 // This is the one way into the package that does not go through Parse, so it
 // runs the alias guard itself. Reaching here means the file already parsed
-// once, and neither the top-level walk below nor the encoder expands an alias,
-// so nothing known today needs the check. It is here because that reasoning is
-// about the current implementation of two other functions, and a guard that
-// holds only while nobody edits them is not one.
-func WriteWorkloadID(path, workloadID string) error {
+// once, and neither the walks below nor the encoder expands an alias, so
+// nothing known today needs the check. It is here because that reasoning is
+// about the current implementation of other functions, and a guard that holds
+// only while nobody edits them is not one.
+func renderEdit(
+	path, action string, markUnreadable bool, mutate func(root *yaml.Node) (bool, error),
+) (bool, []byte, error) {
+	unreadable := func(format string, args ...any) error {
+		err := fmt.Errorf(format, args...)
+		if markUnreadable {
+			return fmt.Errorf("%w: %w", ErrUnreadable, err)
+		}
+
+		return err
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("cannot read %s: %w", path, err)
+		return false, nil, unreadable("cannot read %s: %w", path, err)
 	}
 
-	var doc yaml.Node
-
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("cannot parse %s: %w", path, err)
+	doc, root, err := soleDocument(data, path, action, unreadable)
+	if err != nil {
+		return false, nil, err
 	}
 
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return fmt.Errorf("cannot record the workload id in %s: root must be a YAML mapping", path)
+	// The mutator's own message says what it refused and why, and every caller
+	// already has the path it passed in.
+	changed, err := mutate(root)
+	if err != nil || !changed {
+		return false, nil, err
 	}
 
-	if err := checkAliases(doc.Content[0]); err != nil {
-		return fmt.Errorf("cannot record the workload id in %s: %w", path, err)
+	rendered, err := encodeDoc(doc)
+	if err != nil {
+		return false, nil, fmt.Errorf("cannot render %s: %w", path, err)
 	}
 
-	setWorkloadID(doc.Content[0], workloadID)
+	// The encoder drops blank lines, so a file the create path spaced comes
+	// back closed up. Re-spacing here is not the fix: spaceTopLevelBlocks
+	// imposes the gaps rather than restoring them, so it would reflow a
+	// compact hand-written file instead, and this path exists to leave a
+	// user's formatting alone.
+	return true, matchLineEndings(data, rendered), nil
+}
 
+// soleDocument reads the one document a manifest is, and hands back its root
+// mapping. Everything it refuses is a file this edit cannot put back the way
+// it found it.
+func soleDocument(
+	data []byte, path, action string, unreadable func(string, ...any) error,
+) (*yaml.Node, *yaml.Node, error) {
+	docs, err := decodeAll(data)
+	if err != nil {
+		return nil, nil, unreadable("cannot parse %s: %w", path, err)
+	}
+
+	// The reader never looks past the first document. Editing a file that
+	// carries more would have to put the rest back byte for byte, and it
+	// cannot: yaml.v3 hangs a comment that opens the second document off the
+	// end of the first, so re-emitting moves the user's text between them.
+	// Not marked unreadable: the file parsed, so a caller can tell it is a
+	// manifest and that this is a refusal to edit rather than an inability to
+	// judge it. Swallowing it would leave `dr workload delete` reporting
+	// nothing at all about a binding it declined to take back.
+	if len(docs) > 1 {
+		return nil, nil, fmt.Errorf(
+			"the file holds %d YAML documents, and this edit would not put them back as it found them. "+
+				"Edit it by hand", len(docs))
+	}
+
+	// An empty file is its own diagnosis with its own remedy, and it is the
+	// same file Parse would refuse in the same words. A generic "root must be a
+	// YAML mapping" here would explain one state two ways depending on which
+	// function reached the file first.
+	if len(docs) == 0 || len(docs[0].Content) == 0 {
+		return nil, nil, unreadable("cannot %s in %s: %w", action, path, ErrEmptyFile)
+	}
+
+	if docs[0].Content[0].Kind != yaml.MappingNode {
+		return nil, nil, unreadable("cannot %s in %s: root must be a YAML mapping", action, path)
+	}
+
+	root := docs[0].Content[0]
+
+	// An alias bomb is unreadable in the sense that matters here: the file
+	// cannot be walked safely, so nothing can say whether it is even about the
+	// caller's business.
+	if err := checkAliases(root); err != nil {
+		return nil, nil, unreadable("cannot %s in %s: %w", action, path, err)
+	}
+
+	return docs[0], root, nil
+}
+
+// decodeAll reads every document in the file, so a caller can tell a manifest
+// from a stream that merely starts like one.
+func decodeAll(data []byte) ([]*yaml.Node, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+
+	var docs []*yaml.Node
+
+	for {
+		var doc yaml.Node
+
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		docs = append(docs, &doc)
+	}
+
+	return docs, nil
+}
+
+// encodeDoc renders one document back to bytes.
+func encodeDoc(doc *yaml.Node) ([]byte, error) {
 	var buf bytes.Buffer
 
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 
-	if err := enc.Encode(&doc); err != nil {
-		return fmt.Errorf("cannot render %s: %w", path, err)
+	if err := enc.Encode(doc); err != nil {
+		return nil, err
 	}
 
 	if err := enc.Close(); err != nil {
-		return fmt.Errorf("cannot render %s: %w", path, err)
+		return nil, err
 	}
 
-	return fsutil.AtomicWriteFile(path, buf.Bytes())
+	return buf.Bytes(), nil
+}
+
+// matchLineEndings gives the rewritten file back the line endings it came
+// with. The YAML encoder only ever emits LF, so re-emitting a CRLF file would
+// convert every line in it: a one-key edit would land in review as a
+// whole-file diff.
+//
+// Only a file that is wholly CRLF is converted back. A mixed file is left as
+// the encoder produced it, because guessing from one stray terminator is how
+// a single CRLF line, or a CRLF sitting inside a block scalar where it is
+// content rather than a line ending, converts everything around it.
+func matchLineEndings(original, rendered []byte) []byte {
+	crlf := bytes.Count(original, []byte("\r\n"))
+	if crlf == 0 || crlf != bytes.Count(original, []byte("\n")) {
+		return rendered
+	}
+
+	rendered = bytes.ReplaceAll(rendered, []byte("\r\n"), []byte("\n"))
+
+	return bytes.ReplaceAll(rendered, []byte("\n"), []byte("\r\n"))
 }
 
 // setWorkloadID replaces the binding in place when the key is there, and
@@ -332,28 +574,222 @@ func setWorkloadID(root *yaml.Node, workloadID string) {
 	root.Content = append([]*yaml.Node{key, scalar(workloadID)}, root.Content...)
 }
 
+// clearWorkloadID drops the binding when it is the one the caller named, and
+// reports whether it found it. It is the inverse of setWorkloadID, and the file
+// it edits belongs to the user, so it gives back everything that function moved
+// and takes nothing that was not the binding's.
+//
+// Every occurrence goes, not just the first. YAML calls a repeated key invalid
+// and this reader does not: it returns the first match and never looks further,
+// so a hand-edited file can hold a second binding nothing reports. Repeated
+// keys that disagree are refused outright rather than half-removed, because
+// removing the one the reader reports would promote the other to the binding
+// without anyone asking.
+//
+// Three refusals carry their own remedy, because the caller prints what it is
+// given and each needs a different answer:
+//
+//   - the binding is the file's only recognized key, so removing it leaves a
+//     document Parse rejects as not a manifest, and because the file still
+//     exists nothing falls back to the wizard;
+//   - the binding carries a YAML anchor something else aliases, so removing it
+//     strands the alias and the file never loads again;
+//   - repeated keys disagree.
+func clearWorkloadID(root *yaml.Node, wantWorkloadID string) (bool, error) {
+	// Gathered first, because what to do about a value that does not match
+	// depends on how many bindings there are. One is simply another project's
+	// file and none of this command's business; two that disagree cannot be
+	// resolved by removing either.
+	var at []int
+
+	matches := 0
+
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != keyWorkloadID {
+			continue
+		}
+
+		at = append(at, i)
+
+		// Through the alias, because the reader is: WorkloadID resolves one
+		// before answering, so a binding written as an alias is the binding
+		// this project deploys to. Comparing the raw node would read the
+		// anchor's name, match nothing, and leave the file exactly as stale as
+		// before while reporting success on the delete.
+		if resolveAlias(root.Content[i+1]).Value == wantWorkloadID {
+			matches++
+		}
+	}
+
+	if len(at) == 0 || matches == 0 {
+		return false, nil
+	}
+
+	if err := removable(root, at, matches); err != nil {
+		return false, err
+	}
+
+	kept, banner, trailing := partition(root)
+
+	// Reuses the reader's own notion of what makes a file a manifest, so the
+	// two cannot drift apart and start disagreeing about one file.
+	if !hasRecognizedKey(&yaml.Node{Kind: yaml.MappingNode, Content: kept}) {
+		return false, fmt.Errorf(
+			"%s is the only key this file is recognized by, and a manifest without it is not one. "+
+				"Delete the file instead", keyWorkloadID)
+	}
+
+	kept[0].HeadComment = joinComments(banner, kept[0].HeadComment)
+
+	// A comment that sat under the binding belongs where it sat. Hoisting a
+	// bottom-of-file note to the first key moves the user's text somewhere
+	// they never put it.
+	if trailing != "" {
+		if at[len(at)-1]+2 >= len(root.Content) {
+			last := kept[len(kept)-1]
+			last.FootComment = joinComments(trailing, last.FootComment)
+		} else {
+			kept[0].HeadComment = joinComments(kept[0].HeadComment, trailing)
+		}
+	}
+
+	root.Content = kept
+
+	return true, nil
+}
+
+// partition splits the root into what survives and the comments the removed
+// pairs were carrying: the file's banner, when the binding held the first key,
+// and whatever sat underneath the binding.
+func partition(root *yaml.Node) (kept []*yaml.Node, banner, trailing string) {
+	kept = make([]*yaml.Node, 0, len(root.Content))
+
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key, value := root.Content[i], root.Content[i+1]
+
+		if key.Value != keyWorkloadID {
+			kept = append(kept, key, value)
+
+			continue
+		}
+
+		if i == 0 {
+			banner = joinComments(banner, key.HeadComment)
+		}
+
+		trailing = joinComments(trailing, joinComments(key.FootComment, value.FootComment))
+	}
+
+	return kept, banner, trailing
+}
+
+// removable refuses the two shapes that cannot be edited into a sound file:
+// repeated keys that disagree, and a binding whose anchor something else
+// aliases.
+func removable(root *yaml.Node, at []int, matches int) error {
+	if matches != len(at) {
+		return fmt.Errorf(
+			"%s appears %d times with different values, so removing one would make another the binding "+
+				"without anyone choosing it. Edit the file by hand", keyWorkloadID, len(at))
+	}
+
+	for _, i := range at {
+		if anchor := anchorOn(root.Content[i], root.Content[i+1]); anchor != "" && aliasesAnchor(root, anchor, i) {
+			return fmt.Errorf(
+				"the %s value carries the anchor %q, which the rest of the file refers to. Removing it would "+
+					"leave that reference pointing at nothing. Edit the file by hand", keyWorkloadID, anchor)
+		}
+	}
+
+	return nil
+}
+
+// anchorOn reports the anchor a binding carries, on either node of the pair.
+func anchorOn(key, value *yaml.Node) string {
+	if value.Anchor != "" {
+		return value.Anchor
+	}
+
+	return key.Anchor
+}
+
+// aliasesAnchor reports whether anything outside the pair at skip refers to
+// the anchor. yaml.v3 resolves aliases at decode time, so the alias nodes are
+// still in the tree and the encoder writes them back as aliases; dropping what
+// they point at leaves a file that never loads again.
+func aliasesAnchor(root *yaml.Node, anchor string, skip int) bool {
+	found := false
+
+	var walk func(n *yaml.Node)
+
+	walk = func(n *yaml.Node) {
+		if n == nil || found {
+			return
+		}
+
+		if n.Kind == yaml.AliasNode && n.Value == anchor {
+			found = true
+
+			return
+		}
+
+		for _, child := range n.Content {
+			walk(child)
+		}
+	}
+
+	for i, node := range root.Content {
+		if i == skip || i == skip+1 {
+			continue
+		}
+
+		walk(node)
+	}
+
+	return found
+}
+
+// joinComments stacks two comment blocks, keeping either when the other is
+// empty. yaml.Node comments are newline-separated blocks already, so this is
+// the whole of it.
+func joinComments(above, below string) string {
+	switch {
+	case above == "":
+		return below
+	case below == "":
+		return above
+	}
+
+	return above + "\n" + below
+}
+
 const workloadIDComment = "managed by the CLI"
 
 func (d Draft) topLevelFields(build field) []field {
-	fields := make([]field, 0, 5)
-
-	if d.WorkloadID != "" {
-		fields = append(fields, field{key: keyWorkloadID, value: scalar(d.WorkloadID), comment: workloadIDComment})
-	}
-
 	importance := d.Importance
 	if importance == "" {
 		importance = DefaultImportance
 	}
 
-	fields = append(fields,
-		field{key: keyName, value: scalar(d.Name)},
-		field{key: keyImportance, value: scalar(importance), comment: strings.Join(ImportanceLevels, " | ")},
-		field{key: keyArtifact, value: d.artifact(build)},
-		field{key: keyRuntime, value: d.runtime()},
-	)
+	// The top-level field order is defined by the field rule table
+	// (schema.go) and shared with Live.Render so both renderers emit the
+	// same key sequence. workloadId is omitted when empty by leaving it
+	// absent from the values map; orderedFields skips keys that are missing.
+	values := map[string]*yaml.Node{
+		keyName:       scalar(d.Name),
+		keyImportance: scalar(importance),
+		keyArtifact:   d.artifact(build),
+		keyRuntime:    d.runtime(),
+	}
 
-	return fields
+	if d.WorkloadID != "" {
+		values[keyWorkloadID] = scalar(d.WorkloadID)
+	}
+
+	return orderedFields(values, map[string]string{
+		keyWorkloadID: workloadIDComment,
+		keyImportance: strings.Join(ImportanceLevels, " | "),
+	})
 }
 
 // artifact renders the half that says what runs: the versioned, lockable
@@ -375,17 +811,18 @@ func (d Draft) artifact(build field) *yaml.Node {
 		})
 	}
 
-	probe := mapping(
-		field{key: keyPath, value: scalar(d.HealthPath)},
-		field{key: keyPort, value: number(d.Port)},
-	)
-
 	container := []field{
 		{key: keyName, value: scalar(PrimaryContainerName)},
 		{key: keyPrimary, value: boolean(true)},
 		{key: keyPort, value: number(d.Port), comment: "must be 1024 or above"},
 		build,
-		{key: keyReadinessProbe, value: probe},
+	}
+
+	if d.WantsReadinessProbe() {
+		container = append(container, field{key: keyReadinessProbe, value: mapping(
+			field{key: keyPath, value: scalar(d.healthPath())},
+			field{key: keyPort, value: number(d.Port)},
+		)})
 	}
 
 	if vars := d.environmentVars(); vars != nil {
@@ -412,8 +849,9 @@ func (d Draft) runtime() *yaml.Node {
 	)
 	allocation.Style = yaml.FlowStyle
 
+	// No group name: the platform assigns it, and the Terraform and Pulumi
+	// providers refuse the field, so a file without it ports unchanged.
 	return mapping(field{key: keyContainerGroups, value: sequence(mapping(
-		field{key: keyName, value: scalar(GroupName), comment: "matches the artifact group"},
 		field{key: keyReplicaCount, value: number(d.Runtime.Replicas)},
 		field{key: keyContainers, value: sequence(mapping(
 			field{key: keyName, value: scalar(PrimaryContainerName)},
@@ -431,27 +869,7 @@ func (d Draft) environmentVars() *yaml.Node {
 	entries := sequence()
 
 	for _, v := range d.EnvVars {
-		value := scalar(v.Value)
-		entry := []field{{key: keyName, value: scalar(v.Name)}}
-
-		switch {
-		case v.Secret && v.CredentialID == "":
-			value = scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey)
-			entry = append(entry, field{
-				key:     keyValue,
-				value:   value,
-				comment: "replace " + CredentialPlaceholder + " with the credential id",
-			})
-
-		case v.Secret:
-			value = scalar(CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey)
-			entry = append(entry, field{key: keyValue, value: value})
-
-		default:
-			entry = append(entry, field{key: keyValue, value: value})
-		}
-
-		entries.Content = append(entries.Content, mapping(entry...))
+		entries.Content = append(entries.Content, envVarNode(v))
 	}
 
 	if len(entries.Content) == 0 {
@@ -459,6 +877,34 @@ func (d Draft) environmentVars() *yaml.Node {
 	}
 
 	return entries
+}
+
+// envVarNode renders one entry. Setup builds a whole list of these and
+// --sync-env appends single ones to a list already on disk, and the two must
+// agree: they describe the same variable, and a reader should not be able to
+// tell which command produced it.
+func envVarNode(v EnvVar) *yaml.Node {
+	entry := []field{{key: keyName, value: scalar(v.Name)}}
+
+	switch {
+	case v.Secret && v.CredentialID == "":
+		entry = append(entry, field{
+			key:     keyValue,
+			value:   scalar(CredentialShorthandPrefix + CredentialPlaceholder + "/" + credentialKey),
+			comment: "replace " + CredentialPlaceholder + " with the credential id",
+		})
+
+	case v.Secret:
+		entry = append(entry, field{
+			key:   keyValue,
+			value: scalar(CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey),
+		})
+
+	default:
+		entry = append(entry, field{key: keyValue, value: scalar(v.Value)})
+	}
+
+	return mapping(entry...)
 }
 
 // buildFields renders the one key that says where the image comes from.
@@ -546,13 +992,21 @@ func sequence(items ...*yaml.Node) *yaml.Node {
 // a workload named "no" must not arrive at the platform as false.
 var yaml11Booleans = map[string]bool{"y": true, "yes": true, "n": true, "no": true, "on": true, "off": true}
 
+// yaml11Sexagesimal is the base-60 number form YAML 1.1 resolves and YAML 1.2
+// dropped. It is why a CRON_WINDOW of 12:30 must not be written bare: yaml.v3
+// reads it back as the string it is, and the older parsers that also read this
+// file make it the number 750. The pattern is yaml.v3's own base-60 test,
+// borrowed rather than invented so the two cannot disagree about which values
+// need the quotes.
+var yaml11Sexagesimal = regexp.MustCompile(`^[-+]?[0-9][0-9_]*(:[0-5]?[0-9])+(\.[0-9_]*)?$`)
+
 // scalar renders a string, quoting it when a plain scalar would read back as
 // something other than this string. The encoder already handles the YAML 1.2
 // cases (a name of "8080" or "null" comes back quoted); the map above covers
 // what only older readers would misread. "my-app" stays bare.
 func scalar(value string) *yaml.Node {
 	node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
-	if yaml11Booleans[strings.ToLower(value)] {
+	if yaml11Booleans[strings.ToLower(value)] || yaml11Sexagesimal.MatchString(value) {
 		node.Style = yaml.DoubleQuotedStyle
 	}
 
@@ -729,4 +1183,79 @@ func fillPlaceholders(vars *yaml.Node, ids map[string]string) {
 		// now happened.
 		value.LineComment = ""
 	}
+}
+
+// ResetCredentialReferences puts CredentialPlaceholder back into every
+// environment variable that references one of ids, in the shorthand or the
+// object form, and reports how many it changed. The entries read as
+// unfinished again, which the next --sync-env finishes; for a purge that
+// deleted the credentials, a manifest naming ids that no longer exist would
+// have the next deploy refuse instead.
+func ResetCredentialReferences(path string, ids map[string]bool) (int, error) {
+	reset := 0
+
+	_, err := editRoot(path, "reset the credential references", false, func(root *yaml.Node) (bool, error) {
+		reset = resetCredentialRefs(root, ids)
+
+		return reset > 0, nil
+	})
+
+	return reset, err
+}
+
+// resetCredentialRefs walks every environmentVars sequence, the way
+// setCredentialIDs does, and resets the references it finds.
+func resetCredentialRefs(node *yaml.Node, ids map[string]bool) int {
+	node = resolveAlias(node)
+	if node == nil {
+		return 0
+	}
+
+	reset := 0
+
+	switch node.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == keyEnvironmentVars {
+				reset += resetReferencesIn(node.Content[i+1], ids)
+			}
+
+			reset += resetCredentialRefs(node.Content[i+1], ids)
+		}
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			reset += resetCredentialRefs(item, ids)
+		}
+	case yaml.DocumentNode, yaml.ScalarNode, yaml.AliasNode:
+		// Leaves. AliasNode is unreachable: resolveAlias replaced it above.
+	}
+
+	return reset
+}
+
+// resetReferencesIn rewrites one environmentVars sequence.
+func resetReferencesIn(vars *yaml.Node, ids map[string]bool) int {
+	reset := 0
+
+	for _, entry := range seqItems(vars) {
+		if value := mapValue(entry, keyValue); value != nil {
+			if current, ok := scalarString(value); ok && strings.HasPrefix(current, CredentialShorthandPrefix) {
+				if id, key, ok := parseCredentialShorthand(current); ok && ids[id] {
+					value.SetString(CredentialShorthandPrefix + CredentialPlaceholder + "/" + key)
+					value.LineComment = "replace " + CredentialPlaceholder + " with the credential id"
+					reset++
+				}
+			}
+		}
+
+		if idNode := mapValue(entry, keyDRCredentialID); idNode != nil {
+			if id, ok := scalarString(idNode); ok && ids[id] {
+				idNode.SetString(CredentialPlaceholder)
+
+				reset++
+			}
+		}
+	}
+
+	return reset
 }

@@ -17,16 +17,20 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -198,12 +202,17 @@ func TestExecutePluginContextCancellation(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that traps SIGTERM, writes a marker, and exits cleanly
+	// A script that traps SIGTERM, writes a marker, and exits cleanly. It
+	// also announces readiness: the trap has to be installed before the
+	// cancel fires, or the default handler kills the shell and the exit code
+	// asserts on the race rather than on the graceful path.
 	markerFile := filepath.Join(t.TempDir(), "sigterm-received")
+	readyFile := filepath.Join(t.TempDir(), "ready")
 	script := fmt.Sprintf(`#!/bin/sh
 trap 'touch %s; exit 55' TERM
+touch %s
 while true; do sleep 0.1; done
-`, markerFile)
+`, markerFile, readyFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "trap-term.sh")
 	createScript(t, scriptPath, script)
@@ -216,8 +225,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
-	// Give the subprocess time to start and install its signal handler
-	time.Sleep(500 * time.Millisecond)
+	waitForFile(t, readyFile)
 
 	cancel()
 
@@ -240,11 +248,14 @@ func TestExecutePluginContextCancellationKillsUnresponsive(t *testing.T) {
 		t.Skip("SIGTERM handling is Unix-specific")
 	}
 
-	// Create a script that ignores SIGTERM entirely
-	script := `#!/bin/sh
+	// A script that ignores SIGTERM entirely, announcing readiness once the
+	// trap is installed so the cancel cannot race the shell's startup.
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
 trap '' TERM
+touch %s
 while true; do sleep 0.1; done
-`
+`, readyFile)
 
 	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
 	createScript(t, scriptPath, script)
@@ -257,8 +268,7 @@ while true; do sleep 0.1; done
 		done <- ExecutePlugin(ctx, PluginManifest{}, scriptPath, []string{}, nil)
 	}()
 
-	// Give the subprocess time to start
-	time.Sleep(500 * time.Millisecond)
+	waitForFile(t, readyFile)
 
 	cancel()
 
@@ -363,6 +373,105 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 	assert.True(t, result)
 }
 
+// unsatisfiableDepYAML declares one dependency that cannot be found, so
+// CheckAndInstallDeps always reaches the confirmation step.
+const unsatisfiableDepYAML = `missing-tool:
+  name: Missing tool
+  minimum-version: "1.0.0"
+  command: "dr-cli-test-no-such-tool --version"
+  url: https://example.invalid
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+// setupPluginWithVersions installs a managed plugin directory holding the given
+// versions.yaml into an isolated config home, so no test touches the real one.
+func setupPluginWithVersions(t *testing.T, pluginName, versionsYAML string) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
+
+	managedDir, err := ManagedPluginsDir()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(tmpDir, "datarobot", "plugins"), managedDir, "managed plugins dir must be isolated")
+
+	pluginDir := filepath.Join(managedDir, pluginName)
+
+	require.NoError(t, os.MkdirAll(pluginDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "versions.yaml"), []byte(versionsYAML), 0o644))
+}
+
+// captureStderr redirects os.Stderr to a pipe while fn runs and returns what
+// was written to it.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	fn()
+
+	require.NoError(t, w.Close())
+
+	os.Stderr = origStderr
+
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+
+	return string(out)
+}
+
+func TestCheckAndInstallPluginDeps_DeclinedExplainsWhatWasSkipped(t *testing.T) {
+	const pluginName = "test-dr-cli-decline-plugin"
+
+	setupPluginWithVersions(t, pluginName, unsatisfiableDepYAML)
+
+	// Not set, so the prompt is reached; the canned answer declines it.
+	t.Setenv(reader.NonInteractiveEnv, "")
+
+	origStdin := reader.Stdin
+	reader.Stdin = strings.NewReader("n\n")
+
+	t.Cleanup(func() { reader.Stdin = origStdin })
+
+	manifest := PluginManifest{BasicPluginManifest: BasicPluginManifest{Name: pluginName}}
+
+	var result bool
+
+	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}) })
+
+	assert.False(t, result, "declining must stop the plugin from running")
+	assert.Contains(t, stderr, "Skipped installing dependencies that "+pluginName+" needs to run")
+	assert.Contains(t, stderr, reader.NonInteractiveEnv+"=1", "should name the setting that installs them automatically")
+	assert.NotContains(t, stderr, "pass -y", "-y reaches the plugin's own args and strict plugins reject it")
+	assert.NotContains(t, stderr, "plugin dependency check failed")
+}
+
+func TestCheckAndInstallPluginDeps_OtherFailureIsNotReportedAsDeclined(t *testing.T) {
+	const pluginName = "test-dr-cli-broken-versions-plugin"
+
+	setupPluginWithVersions(t, pluginName, "this: is: not: valid: yaml: [")
+
+	manifest := PluginManifest{BasicPluginManifest: BasicPluginManifest{Name: pluginName}}
+
+	var result bool
+
+	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}) })
+
+	assert.False(t, result)
+	assert.Contains(t, stderr, "plugin dependency check failed")
+	assert.NotContains(t, stderr, "Skipped installing dependencies")
+}
+
 // --- universalFlagEnv unit tests ---
 
 // setupUniversalTestFlags creates an isolated flagset with the standard
@@ -375,10 +484,12 @@ func setupUniversalTestFlags(t *testing.T) *pflag.FlagSet {
 	fs.Bool("disable-telemetry", false, "")
 	fs.Bool("skip-certificate-check", false, "")
 	fs.String("ca-cert", "", "")
+	fs.String(config.ProfileKey, "", "")
 	fs.Lookup("debug").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DEBUG"}}
 	fs.Lookup("disable-telemetry").Annotations = map[string][]string{config.UniversalAnnotationKey: {"DISABLE_TELEMETRY"}}
 	fs.Lookup("skip-certificate-check").Annotations = map[string][]string{config.UniversalAnnotationKey: {"SKIP_CERTIFICATE_CHECK"}}
 	fs.Lookup("ca-cert").Annotations = map[string][]string{config.UniversalAnnotationKey: {"CA_CERT"}}
+	fs.Lookup(config.ProfileKey).Annotations = map[string][]string{config.UniversalAnnotationKey: {"PROFILE"}}
 
 	return fs
 }
@@ -481,6 +592,36 @@ func TestUniversalFlagEnv_StringEmptyOmitted(t *testing.T) {
 
 	assert.NotContains(t, result, config.EnvPrefix+"CA_CERT=",
 		"empty string flags must not be emitted")
+}
+
+func TestUniversalFlagEnv_ProfileSet(t *testing.T) {
+	viperx.Reset()
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set(config.ProfileKey, "eu-mtsaas")
+
+	result := universalFlagEnv(fs)
+
+	assert.Contains(t, result, config.EnvPrefix+"PROFILE=eu-mtsaas",
+		"the active profile must be forwarded to plugin subprocesses")
+}
+
+func TestBuildPluginEnv_ForwardsActiveProfileCredentials(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	fs := setupUniversalTestFlags(t)
+
+	viperx.Set(config.ProfileKey, "eu-mtsaas")
+	viperx.Set(config.DataRobotURL, "https://app.eu.datarobot.com/api/v2")
+	viperx.Set(config.DataRobotAPIKey, "eu-token")
+
+	env := buildPluginEnv("", true, fs)
+
+	assert.Contains(t, env, config.EnvPrefix+"PROFILE=eu-mtsaas")
+	assert.Contains(t, env, "DATAROBOT_ENDPOINT=https://app.eu.datarobot.com/api/v2")
+	assert.Contains(t, env, "DATAROBOT_API_TOKEN=eu-token")
 }
 
 // --- TraverseChildren / core-blind invariant tests ---

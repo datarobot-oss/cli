@@ -73,12 +73,12 @@ func TestReportError(t *testing.T) {
 }
 
 // TestRootSilencesErrorsForSingleReporting locks in the contract that makes
-// ReportError the only error reporter. If cobra were allowed to print too, errors
+// executeRoot the only error reporter. If cobra were allowed to print too, errors
 // raised by the root PersistentPreRunE would either double-print or, for commands
 // setting SilenceErrors: true, disappear entirely (CFX-6924).
 func TestRootSilencesErrorsForSingleReporting(t *testing.T) {
 	t.Parallel()
 
 	assert.True(t, RootCmd.SilenceErrors,
-		"RootCmd.SilenceErrors must stay true so cmd.ReportError is the single error reporter")
+		"RootCmd.SilenceErrors must stay true so executeRoot is the single error reporter")
 }

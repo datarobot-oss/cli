@@ -357,7 +357,7 @@ if you want the credentials validated.
 
 The syntax matches the detected parent shell; override it with --shell.
 
-⚠️  The output contains your API token in plain text. Avoid piping it into a
+❗ The output contains your API token in plain text. Avoid piping it into a
     shared terminal, a log, or a file that is checked into version control.`,
 		Example: `  # bash / zsh
   eval "$(` + version.CliName + ` auth export)"

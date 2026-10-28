@@ -48,8 +48,29 @@ func phase1Gather(e *Engine) error {
 		return fmt.Errorf("fetch artifact %s: %w", cfg.ArtifactID, err)
 	}
 
+	// A locked artifact is immutable, so nothing can be pushed into it. That
+	// refuses a sync, but it must not refuse a plan: `dr workload up` asks for
+	// this diff before it decides what to do with the code, and on a locked
+	// version what it decides is to mint a new one and roll onto it. Refusing
+	// to count the files refuses the very deploy that gets past the lock, which
+	// is how a locked artifact became a one-way door. Phase 5 checks again, so
+	// the exemption cannot let a write through.
 	if art.IsLocked() {
-		return errors.New("artifact is locked (immutable); cannot sync. Create a new draft with 'dr artifact create' (or in the DataRobot UI) to continue")
+		if !e.previewOnly() {
+			// The remedy names only commands the reader can run. A deploy
+			// gets past a lock by minting a new version, but the command
+			// that does it is not generally available, and a project
+			// holding a committed manifest is no evidence that this user
+			// has it.
+			return fmt.Errorf(
+				"artifact %s is locked (immutable); cannot sync.\n"+
+					"  Syncing needs an unlocked artifact: make one with 'dr artifact create' (or in the "+
+					"DataRobot UI), then delete %s and re-link with 'dr artifact code init <new-id>'",
+				art.ID, wapi.Dir(e.projectDir))
+		}
+
+		e.lockedNote = fmt.Sprintf(
+			"Artifact %s is locked, so this is a preview only: syncing into it needs a new version.", art.ID)
 	}
 
 	e.artifact = art
@@ -58,15 +79,26 @@ func phase1Gather(e *Engine) error {
 		e.remoteVer = codeRef.CatalogVersionID
 	}
 
-	e.drifted = e.remoteVer != "" && e.remoteVer != ptrOrEmpty(cfg.LastSyncedVersionID)
+	e.drifted = drifted(e.remoteVer, cfg)
 
 	return nil
+}
+
+// drifted reports whether the remote has to be listed rather than copied from
+// the base: the artifact moved past the last synced version, or the last
+// sync was push-only and left remote changes the base does not reflect.
+func drifted(remoteVer string, cfg wapi.Config) bool {
+	if remoteVer == "" {
+		return false
+	}
+
+	return remoteVer != ptrOrEmpty(cfg.LastSyncedVersionID) || cfg.RemoteChangesSkipped
 }
 
 func baseFromManifest(m wapi.Manifest) BaseManifest {
 	out := make(BaseManifest, len(m.Files))
 	for k, v := range m.Files {
-		out[k] = FileEntry{Hash: v.Hash, Size: v.Size}
+		out[k] = FileEntry{Hash: v.Hash, Size: v.Size, Executable: v.Executable}
 	}
 
 	return out

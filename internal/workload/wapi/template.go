@@ -16,8 +16,8 @@ package wapi
 
 import _ "embed"
 
-// wapiignoreTemplate is the .wapiignore content dropped at the project root
-// on first init. Embedded so we don't depend on file lookups at runtime.
+// ignoreTemplate is the starter ignore-file content dropped at the project
+// root on first init. Embedded so we don't depend on file lookups at runtime.
 //
-//go:embed wapiignore.tmpl
-var wapiignoreTemplate []byte
+//go:embed drignore.tmpl
+var ignoreTemplate []byte

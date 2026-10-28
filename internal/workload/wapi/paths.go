@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
 // Exported names used by external callers (tests, sync commands).
@@ -51,7 +52,6 @@ const (
 	manifestFile      = "manifest.json"
 	historyBackupFile = "history.log.1"
 	gitignoreFile     = ".gitignore"
-	wapiignoreFile    = ".wapiignore"
 
 	gitignoreContents = "*\n"
 
@@ -108,6 +108,12 @@ func ConfigPath(projectDir string) string {
 	return configPath(projectDir)
 }
 
+// ManifestPath is the project's manifest.json, exported for the same reason
+// as ConfigPath: diagnostics should name the real file, not re-derive it.
+func ManifestPath(projectDir string) string {
+	return manifestPath(projectDir)
+}
+
 func configPath(projectDir string) string {
 	return filepath.Join(Dir(projectDir), configFile)
 }
@@ -128,16 +134,33 @@ func gitignorePath(projectDir string) string {
 	return filepath.Join(Dir(projectDir), gitignoreFile)
 }
 
-// .wapiignore lives at the project root, not inside the state directory: it is
-// authored and committed by the user, the same convention as .gitignore.
-func wapiignorePath(projectDir string) string {
-	return filepath.Join(projectDir, wapiignoreFile)
+// The ignore file lives at the project root, not inside the state directory:
+// it is authored and committed by the user, the same convention as .gitignore.
+// The name comes from the package that reads it so the two cannot drift.
+func ignorePath(projectDir string) string {
+	return filepath.Join(projectDir, ignore.FileName)
 }
 
 // Exists reports whether the project is linked, at either the current or the
 // legacy location. False if the path is a file rather than a directory.
 func Exists(projectDir string) bool {
 	return fsutil.DirExists(Dir(projectDir))
+}
+
+// StateDirs is every state directory the project has, current and legacy,
+// for a caller removing the project's state rather than reading it: Dir
+// prefers the current one, and a legacy tree left beside it would be found
+// again once the current one is gone.
+func StateDirs(projectDir string) []string {
+	var dirs []string
+
+	for _, dir := range []string{filepath.Join(projectDir, RootDirName, StateDirName), legacyDir(projectDir)} {
+		if fsutil.DirExists(dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+
+	return dirs
 }
 
 // CheckoutsDir is the parent directory holding read-only version snapshots

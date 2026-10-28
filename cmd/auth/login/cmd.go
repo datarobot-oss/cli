@@ -17,6 +17,7 @@ package login
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
@@ -37,15 +38,23 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 		return cli.ErrSilent
 	}
 
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	if timeout < 0 {
+		log.Errorf("--timeout must be zero or positive, got %s", timeout)
+
+		return cli.ErrSilent
+	}
+
 	var url string
 	if len(args) > 0 {
 		url = args[0]
 	}
 
 	if url != "" {
-		err := config.SetURLToConfig(url)
-		if err != nil {
+		if err := config.SetURLToConfig(url); err != nil {
 			log.Error(err.Error())
+
+			return cli.ErrSilent
 		}
 	}
 
@@ -79,12 +88,20 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
 		NoBrowser: noBrowser,
+		Timeout:   timeout,
 	})
 	if err != nil {
-		log.Error(err)
-
 		cmd.SilenceUsage = true
 
+		if errors.Is(err, auth.ErrLoginTimedOut) {
+			auth.FprintLoginTimeoutHelp(os.Stderr)
+
+			return cli.ErrSilent
+		}
+
+		log.Error(err)
+
+		// The login flow already reported the failure; do not print it again.
 		return cli.ErrSilent
 	}
 
@@ -122,11 +139,16 @@ If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE:          RunE,
+		Annotations: map[string]string{
+			// login is expected to create a not-yet-existing --profile.
+			config.ProfileCreateAnnotationKey: "true",
+		},
 	}
 
 	// Read directly from cobra rather than binding to viper: this is a transient
 	// per-invocation flag and must never be persisted to drconfig.yaml.
 	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
+	cmd.Flags().Duration("timeout", 0, "how long to wait for the browser callback (default 5m)")
 
 	return cmd
 }

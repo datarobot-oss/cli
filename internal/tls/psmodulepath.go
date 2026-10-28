@@ -18,7 +18,7 @@ import "strings"
 
 // psModulePathKey is the environment variable telling PowerShell where to look for
 // modules. Matched case-insensitively, since Windows environment variable names are.
-const psModulePathKey = "PSMODULEPATH"
+const psModulePathKey = "PSModulePath"
 
 // defaultSystemRoot is the fallback when SystemRoot is absent from the environment.
 const defaultSystemRoot = `C:\Windows`
@@ -69,5 +69,5 @@ func withPSModulePath(env []string, modulePath string) []string {
 		out = append(out, entry)
 	}
 
-	return append(out, "PSModulePath="+modulePath)
+	return append(out, psModulePathKey+"="+modulePath)
 }

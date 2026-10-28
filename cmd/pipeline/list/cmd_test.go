@@ -144,3 +144,28 @@ func TestCmd_HasExpectedFlags(t *testing.T) {
 		assert.NotNilf(t, flag, "expected --%s flag to be registered", name)
 	}
 }
+
+func TestCmd_RejectsInvalidLimit(t *testing.T) {
+	// Rejected at parse time by countflags.PositiveInt, before any request.
+	cmd := Cmd()
+	cmd.SetArgs([]string{"--limit", "0"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a positive integer")
+}
+
+func TestCmd_RejectsInvalidOffset(t *testing.T) {
+	cmd := Cmd()
+	cmd.SetArgs([]string{"--offset", "-1"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.PreRunE = nil
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a non-negative integer")
+}

@@ -23,15 +23,27 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
-// downloadFiles pulls files in parallel up to DownloadConcurrency. Each
-// download streams to disk and computes SHA-256 in the same pass so
-// post-download verification is free. The first error closes done to
-// stop other workers from picking up the next file.
+// downloadFiles is the Engine-bound entry the sync pipeline uses; the reusable
+// work lives in DownloadFiles, which needs only a client and a destination.
 func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) error {
+	return DownloadFiles(e.files, e.projectDir, catalogID, versionID, files)
+}
+
+// DownloadFiles pulls files into dir in parallel up to DownloadConcurrency.
+// Each download streams to disk and computes SHA-256 in the same pass so
+// post-download verification is free. The first error closes done to stop
+// other workers from picking up the next file.
+//
+// It takes a client and a destination rather than an *Engine so callers
+// outside the sync pipeline can reuse it: the first-bind seed in
+// internal/workload/up pulls a workload's current code with the same
+// verified, partial-safe download the pipeline uses.
+func DownloadFiles(client filesapi.Client, dir, catalogID, versionID string, files []FileAction) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -65,7 +77,7 @@ func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) e
 
 			defer func() { <-sem }()
 
-			if err := downloadOne(e, catalogID, versionID, fa); err != nil {
+			if err := DownloadOne(client, dir, catalogID, versionID, fa); err != nil {
 				select {
 				case errCh <- err:
 					cancel()
@@ -85,9 +97,16 @@ func downloadFiles(e *Engine, catalogID, versionID string, files []FileAction) e
 	return nil
 }
 
-// downloadOne streams the remote file to disk, hashing as it writes.
-// Empty RemoteHash skips verification (e.g. synthesized EDIT_DEL_CONFLICT).
+// downloadOne is the Engine-bound entry; the reusable work lives in DownloadOne.
 func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
+	return DownloadOne(e.files, e.projectDir, catalogID, versionID, fa)
+}
+
+// DownloadOne streams the remote file into dir, hashing as it writes, and
+// removes the partial file on any failure so a half-written file is never left
+// on disk. Empty RemoteHash skips checksum verification (e.g. a synthesized
+// EDIT_DEL_CONFLICT, or a caller whose listing carries no hash).
+func DownloadOne(client filesapi.Client, dir, catalogID, versionID string, fa FileAction) error {
 	// phase5Execute already rejected unsafe server paths up front via
 	// validateServerPaths; re-check here so the per-call-site invariant
 	// survives future refactors that might bypass the phase entry point.
@@ -95,7 +114,12 @@ func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
 		return fmt.Errorf("server returned unsafe download path %q: %w", fa.Path, err)
 	}
 
-	dst := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
+	dst := filepath.Join(dir, filepath.FromSlash(fa.Path))
+
+	// The bytes on disk are already the remote's; only the bit moved.
+	if fa.Action == ActDownloadModify && fa.ExecOnly() {
+		return applyMergedExecutable(dst, fa)
+	}
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("mkdir parent for %s: %w", fa.Path, err)
@@ -109,7 +133,7 @@ func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
 	h := sha256.New()
 	mw := io.MultiWriter(out, h)
 
-	_, n, err := e.files.DownloadFile(catalogID, versionID, fa.Path, mw)
+	_, n, err := client.DownloadFile(catalogID, versionID, fa.Path, mw)
 
 	closeErr := out.Close()
 
@@ -123,17 +147,33 @@ func downloadOne(e *Engine, catalogID, versionID string, fa FileAction) error {
 		return fmt.Errorf("close %s: %w", fa.Path, closeErr)
 	}
 
-	if fa.RemoteSize > 0 && n != fa.RemoteSize {
+	if err := verifyDownload(fa, n, hex.EncodeToString(h.Sum(nil))); err != nil {
 		_ = os.Remove(dst)
+		return err
+	}
+
+	// os.Create keeps an existing file's mode, so the bit is set or cleared explicitly.
+	return applyMergedExecutable(dst, fa)
+}
+
+// applyMergedExecutable sets the bit merged apart from the bytes, so a local
+// chmod survives a teammate's edit to the same file.
+func applyMergedExecutable(dst string, fa FileAction) error {
+	if err := fileops.ApplyExecutable(dst, fa.MergedExec()); err != nil {
+		return fmt.Errorf("set executable bit on %s: %w", fa.Path, err)
+	}
+
+	return nil
+}
+
+// verifyDownload checks the streamed size and hash against what the plan expects.
+func verifyDownload(fa FileAction, n int64, got string) error {
+	if fa.RemoteSize > 0 && n != fa.RemoteSize {
 		return fmt.Errorf("download size mismatch on %s: expected %d, got %d", fa.Path, fa.RemoteSize, n)
 	}
 
-	if fa.RemoteHash != "" {
-		got := hex.EncodeToString(h.Sum(nil))
-		if got != fa.RemoteHash {
-			_ = os.Remove(dst)
-			return fmt.Errorf("checksum mismatch on %s: expected %s, got %s", fa.Path, fa.RemoteHash, got)
-		}
+	if fa.RemoteHash != "" && got != fa.RemoteHash {
+		return fmt.Errorf("checksum mismatch on %s: expected %s, got %s", fa.Path, fa.RemoteHash, got)
 	}
 
 	return nil

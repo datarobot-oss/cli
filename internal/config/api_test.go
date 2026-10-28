@@ -15,14 +15,18 @@
 package config
 
 import (
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -95,6 +99,16 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			input:       "not a url",
 			expectError: true,
 		},
+		{
+			name:        "http scheme is accepted",
+			input:       "http://localhost:8080",
+			expectedURL: "http://localhost:8080/api/v2",
+		},
+		{
+			name:        "ftp scheme is rejected",
+			input:       "ftp://app.datarobot.com",
+			expectError: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -119,6 +133,15 @@ func (suite *APITestSuite) TestSetURLToConfigDoesNotWriteFile() {
 
 	configFile := filepath.Join(suite.tempDir, ".config/datarobot/drconfig.yaml")
 	suite.NoFileExists(configFile, "SetURLToConfig must not write the config file to disk")
+}
+
+// SaveURLToConfig is the template-setup write path; it must reject a bad scheme
+// too, or the custom-host picker persists an endpoint the CLI cannot use.
+func (suite *APITestSuite) TestSaveURLToConfigRejectsNonHTTPScheme() {
+	err := SaveURLToConfig("ftp://app.datarobot.com")
+
+	suite.Require().Error(err)
+	suite.Empty(viper.GetString(DataRobotURL), "a rejected scheme must not be persisted")
 }
 
 func (suite *APITestSuite) TestCommandPathToTrace() {
@@ -231,9 +254,9 @@ func (suite *APITestSuite) TestCommandPathToTraceWithAliases() {
 	}
 }
 
-// A credential POST sends a secret in its body, and the debug dump includes
-// bodies. Without redaction `dr --debug` writes the user's token into the log
-// file it leaves in their home directory.
+// RedactSecretFields is defence in depth since RedactedReqInfo stopped dumping
+// bodies (see TestRedactedReqInfo_OmitsRequestBody). It is still exercised
+// directly because it is exported and applied to the header dump.
 func TestRedactSecretFields(t *testing.T) {
 	const body = `{"name":"my-app/OPENAI_API_KEY","credentialType":"api_token","apiToken":"sk-live-abc123"}`
 
@@ -249,5 +272,94 @@ func TestRedactSecretFields_CoversTheOtherNames(t *testing.T) {
 	for _, field := range []string{"password", "secret", "privateKey", "clientSecret", "refreshToken", "token"} {
 		out := RedactSecretFields(`{"` + field + `":"hunter2"}`)
 		assert.NotContains(t, out, "hunter2", "field %q", field)
+	}
+}
+
+// TestRedactedReqInfo_OmitsRequestBody is the regression guard for the pre-GA
+// security review finding: `dr pipeline input create --debug` must not write
+// the user's payload to the debug log.
+//
+// The body is arbitrary user-authored JSON -- the natural home for data-source
+// credentials -- so a name-keyed redactor cannot be trusted to catch every
+// secret in it (api_key, credentials, db_password are all plausible and none
+// are in secretBodyFields). The guarantee is therefore that the body is not
+// logged at all.
+func TestRedactedReqInfo_OmitsRequestBody(t *testing.T) {
+	const payload = `{"api_key":"sk-live-NOTREDACTED","db_password":"hunter2","region":"north"}`
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		"https://app.datarobot.com/api/v2/pipelines/p-1/inputs",
+		strings.NewReader(payload),
+	)
+	require.NoError(t, err)
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer sk-live-TOKEN")
+
+	out := RedactedReqInfo(req)
+
+	// None of the body reaches the log -- not the secrets, and not even the
+	// non-secret field, because the body is omitted wholesale rather than
+	// filtered.
+	assert.NotContains(t, out, "sk-live-NOTREDACTED", "an unlisted secret key must not reach the log")
+	assert.NotContains(t, out, "hunter2", "an unlisted secret key must not reach the log")
+	assert.NotContains(t, out, "region", "the body is omitted entirely, not filtered")
+
+	// The Authorization header is masked, not dropped.
+	assert.NotContains(t, out, "sk-live-TOKEN")
+	assert.Contains(t, out, "[REDACTED]")
+
+	// What a debug log is actually for is still there.
+	assert.Contains(t, out, "POST")
+	assert.Contains(t, out, "/api/v2/pipelines/p-1/inputs")
+	assert.Contains(t, out, "Content-Type")
+}
+
+// TestRedactedReqInfo_DoesNotDrainBody pins the second half of the fix: a
+// headers-only dump leaves req.Body readable, which is what let the
+// restoreRequestBody re-arming workaround be deleted from drapi.
+func TestRedactedReqInfo_DoesNotDrainBody(t *testing.T) {
+	// Deliberately not JSON: this asserts byte-for-byte survival of the body,
+	// not JSON equivalence, and a JSON literal makes testifylint push toward
+	// assert.JSONEq, which would weaken exactly the property under test.
+	const payload = "region=north&limit=10"
+
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/x", strings.NewReader(payload))
+	require.NoError(t, err)
+
+	_ = RedactedReqInfo(req)
+
+	body, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	assert.Equal(t, payload, string(body), "the request body must survive being logged")
+}
+
+// RequireHTTPScheme expects an already-normalized base URL (SchemeHostOnly runs
+// first), so a scheme-less string is rejected, not defaulted.
+func TestRequireHTTPScheme(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		wantErr string
+	}{
+		{"https accepted", "https://app.datarobot.com", ""},
+		{"http accepted", "http://localhost:8080", ""},
+		{"ftp rejected", "ftp://app.datarobot.com", `unsupported URL scheme "ftp"`},
+		{"file rejected", "file://host", `unsupported URL scheme "file"`},
+		{"scheme-less rejected", "app.datarobot.com", "unsupported URL scheme"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RequireHTTPScheme(tc.baseURL)
+
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.ErrorIs(t, err, ErrInvalidURL, "picker re-asks on ErrInvalidURL")
+			}
+		})
 	}
 }

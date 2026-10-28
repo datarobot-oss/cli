@@ -34,12 +34,13 @@ func TestBytes_Range(t *testing.T) {
 		{"zero", 0, "0 B"},
 		{"sub-unit", 512, "512 B"},
 		{"unit-edge", 1023, "1023 B"},
-		{"one-kb", 1024, "1.0 KB"},
-		{"one-and-half-kb", 1024 + 512, "1.5 KB"},
-		{"one-mb", 1024 * 1024, "1.0 MB"},
-		{"one-gb", 1024 * 1024 * 1024, "1.0 GB"},
-		{"one-tb", int64(1024) * 1024 * 1024 * 1024, "1.0 TB"},
-		{"one-pb", int64(1024) * 1024 * 1024 * 1024 * 1024, "1.0 PB"},
+		{"one-kib", 1024, "1.0 KiB"},
+		{"one-and-half-kib", 1024 + 512, "1.5 KiB"},
+		{"just-under-one-mib", 1024*1024 - 1, "1024.0 KiB"},
+		{"one-mib", 1024 * 1024, "1.0 MiB"},
+		{"one-gib", 1024 * 1024 * 1024, "1.0 GiB"},
+		{"one-tib", int64(1024) * 1024 * 1024 * 1024, "1.0 TiB"},
+		{"one-pib", int64(1024) * 1024 * 1024 * 1024 * 1024, "1.0 PiB"},
 	}
 
 	for _, tc := range cases {
@@ -56,10 +57,10 @@ func TestBytes_NoPanicAtExtreme(t *testing.T) {
 	t.Parallel()
 
 	got := Bytes(int64(1) << 60)
-	assert.True(t, strings.HasSuffix(got, " PB"), "expected PB suffix, got %q", got)
+	assert.True(t, strings.HasSuffix(got, " PiB"), "expected PiB suffix, got %q", got)
 
 	got = Bytes(math.MaxInt64)
-	assert.True(t, strings.HasSuffix(got, " PB"), "expected PB suffix at MaxInt64, got %q", got)
+	assert.True(t, strings.HasSuffix(got, " PiB"), "expected PiB suffix at MaxInt64, got %q", got)
 }
 
 // An empty notice must print nothing at all, not a blank line: callers pass

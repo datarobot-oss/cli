@@ -24,6 +24,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/helpers"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/misc/reader"
@@ -69,19 +70,17 @@ Example:
 		},
 	}
 
-	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt.")
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip the confirmation prompt.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() so an explicit --yes does
 	// not leak into viper.AllSettings() and persist to drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
-		yesFlag, _ := cmd.Flags().GetBool("yes")
-
 		return map[string]any{
 			"artifact_id": telemetry.FirstArg(args),
-			"yes":         yesFlag || viperx.GetBool("yes"),
+			"yes":         cli.IsNonInteractive(cmd),
 		}
 	})
 
@@ -89,8 +88,7 @@ Example:
 }
 
 func confirmDelete(cmd *cobra.Command, artifactID string) (bool, error) {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	if yesFlag || viperx.GetBool("yes") {
+	if cli.IsNonInteractive(cmd) {
 		return true, nil
 	}
 

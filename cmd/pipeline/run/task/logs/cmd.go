@@ -21,6 +21,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -100,7 +101,7 @@ Example:
 	cmd.Flags().StringVar(&runID, "run", "", "Run (dispatch) ID")
 	_ = cmd.MarkFlagRequired("run")
 	cmd.Flags().StringVar(&stream, "stream", "", "Read durable S3 log: stdout or stderr")
-	cmd.Flags().IntVar(&tailLines, "tail", 0, "Limit to last N lines (live logs only)")
+	cmd.Flags().Var(countflags.NonNegativeInt(&tailLines, 0), "tail", "Limit to last N lines (live logs only)")
 	cmd.Flags().IntVar(&nodeID, "node-id", 0, "Select a specific fan-out invocation by its nodeId (from `task list`)")
 	cmd.Flags().StringVar(&verbosity, "verbosity", "", "Log verbosity: user (default) or all")
 

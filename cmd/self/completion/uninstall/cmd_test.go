@@ -24,6 +24,7 @@ import (
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/datarobot/cli/internal/version"
 )
 
 func TestFindExistingCompletions(t *testing.T) {
@@ -128,6 +129,21 @@ func TestUninstallCmd(t *testing.T) {
 
 	if cmd.Flags().Lookup("dry-run") == nil {
 		t.Error("dry-run flag not found")
+	}
+}
+
+// TestShowUninstallDryRunMessage guards against CFX-7958 command path drift.
+func TestShowUninstallDryRunMessage(t *testing.T) {
+	cmd := Cmd()
+	testutil.WireCompletionCommandPath(cmd)
+
+	out := testutil.CaptureStdout(t, func() {
+		showUninstallDryRunMessage(cmd, "zsh")
+	})
+
+	wantHint := version.CliName + " self completion uninstall zsh --yes"
+	if !strings.Contains(out, wantHint) {
+		t.Errorf("output %q does not contain expected dry-run hint %q", out, wantHint)
 	}
 }
 

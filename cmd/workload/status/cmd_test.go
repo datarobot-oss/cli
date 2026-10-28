@@ -21,12 +21,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCmd_RequiresArg(t *testing.T) {
+func TestCmd_ArgIsOptional(t *testing.T) {
+	// Args is called directly: with the id optional, cmd.Execute() would run
+	// PreRunE and start a real authentication flow.
 	cmd := Cmd()
-	cmd.SetArgs([]string{})
 
-	err := cmd.Execute()
-	require.Error(t, err)
+	require.NoError(t, cmd.Args(cmd, []string{"68b0c1d2e3f4a5b6c7d8e9f0"}))
+	require.NoError(t, cmd.Args(cmd, nil))
+	require.Error(t, cmd.Args(cmd, []string{"a", "b"}))
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {

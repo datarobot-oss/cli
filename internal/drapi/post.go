@@ -18,12 +18,23 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 )
 
-func Post(url, info string, body any) (*http.Response, error) {
+// Post sends body as JSON. timeout optionally overrides DefaultClientTimeout,
+// the same seam Get has: a caller whose endpoint does slow synchronous work
+// server-side (e.g. triggering an image build) must outlive the server's own
+// internal budget or it abandons answers already on the way. Omitted, or ≤0,
+// falls back to DefaultClientTimeout (see NewHTTPClient).
+func Post(url, info string, body any, timeout ...time.Duration) (*http.Response, error) {
+	var t time.Duration
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -46,13 +57,7 @@ func Post(url, info string, body any) (*http.Response, error) {
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	// RedactedReqInfo above drains req.Body for logging, so re-arm it before client.Do
-	// or the server receives an empty payload.
-	if err := restoreRequestBody(req); err != nil {
-		return nil, err
-	}
-
-	resp, err := NewHTTPClient(DefaultClientTimeout).Do(req)
+	resp, err := NewHTTPClient(t).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -77,27 +82,9 @@ func isCreateSuccess(code int) bool {
 	return false
 }
 
-// restoreRequestBody re-arms req.Body after RedactedReqInfo (which dumps and
-// consumes it). For *bytes.Reader payloads, http.NewRequest sets req.GetBody
-// automatically; for other body kinds we leave Body alone and rely on the
-// transport reading whatever is left.
-func restoreRequestBody(req *http.Request) error {
-	if req.GetBody == nil {
-		return nil
-	}
-
-	body, err := req.GetBody()
-	if err != nil {
-		return err
-	}
-
-	req.Body = body
-
-	return nil
-}
-
-func PostJSON(url, info string, body, v any) error {
-	resp, err := Post(url, info, body)
+// PostJSON is Post with the response body decoded into v. timeout forwards to Post.
+func PostJSON(url, info string, body, v any, timeout ...time.Duration) error {
+	resp, err := Post(url, info, body, timeout...)
 	if err != nil {
 		return err
 	}

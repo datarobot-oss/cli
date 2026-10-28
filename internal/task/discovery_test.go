@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/repo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
@@ -179,4 +180,40 @@ func (suite *DiscoveryTestSuite) TestFindComponentsSkipsHiddenDirs() {
 	suite.Require().NoError(err)
 	suite.Len(includes, 1)
 	suite.Equal("visible", includes[0].Name)
+}
+
+// TestFormatDiscoveryErrorNamesRealTemplateMarkers guards the ErrNotInTemplate text
+// against drifting away from repo.IsTemplateDir, which is what actually gates the
+// command. The previous message promised a bare '.datarobot' folder was enough.
+func (suite *DiscoveryTestSuite) TestFormatDiscoveryErrorNamesRealTemplateMarkers() {
+	msg := FormatDiscoveryError(ErrNotInTemplate).Error()
+
+	suite.Contains(msg, repo.DataRobotTemplateDetectAnswersPath)
+	suite.Contains(msg, repo.DataRobotTemplateDetectCliPath)
+	suite.Contains(msg, repo.TemplateDetectStateFileName)
+}
+
+// TestTemplateMarkersMatchAdvertisedRequirement pins the predicate to what the
+// message tells the user to do: the advertised markers must pass, and the two
+// shapes the message excludes must fail.
+func (suite *DiscoveryTestSuite) TestTemplateMarkersMatchAdvertisedRequirement() {
+	bare := filepath.Join(suite.tempDir, "bare")
+	suite.Require().NoError(os.MkdirAll(filepath.Join(bare, ".datarobot"), 0o755))
+	suite.False(repo.IsTemplateDir(bare), "a bare .datarobot folder must not satisfy the gate")
+
+	answers := filepath.Join(suite.tempDir, "answers")
+	suite.Require().NoError(os.MkdirAll(filepath.Join(answers, repo.DataRobotTemplateDetectAnswersPath), 0o755))
+	suite.True(repo.IsTemplateDir(answers), "the advertised answers folder must satisfy the gate")
+
+	stateOnly := filepath.Join(suite.tempDir, "state-only")
+	stateCli := filepath.Join(stateOnly, repo.DataRobotTemplateDetectCliPath)
+	suite.Require().NoError(os.MkdirAll(stateCli, 0o755))
+	suite.Require().NoError(os.WriteFile(filepath.Join(stateCli, repo.TemplateDetectStateFileName), []byte("{}"), 0o644))
+	suite.False(repo.IsTemplateDir(stateOnly), "state.yaml alone must not satisfy the gate")
+
+	withConfig := filepath.Join(suite.tempDir, "with-config")
+	configCli := filepath.Join(withConfig, repo.DataRobotTemplateDetectCliPath)
+	suite.Require().NoError(os.MkdirAll(configCli, 0o755))
+	suite.Require().NoError(os.WriteFile(filepath.Join(configCli, "config.yaml"), []byte("{}"), 0o644))
+	suite.True(repo.IsTemplateDir(withConfig), "cli config beyond state.yaml must satisfy the gate")
 }

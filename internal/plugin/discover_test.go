@@ -393,8 +393,13 @@ func (s *ManifestTestSuite) SetupTest() {
 	s.tempDir, err = os.MkdirTemp("", "plugin-manifest-test")
 	s.Require().NoError(err)
 
-	// Reset viper state for each test
+	// Reset viper state for each test, then raise the manifest timeout the
+	// way the other suites in this file do: these tests are about parsing
+	// and error paths, not about the deadline, and under a loaded full-suite
+	// run (or Windows CI) merely spawning the mock script can take longer
+	// than the 500ms production default.
 	viperx.Reset()
+	viperx.Set("plugin.manifest_timeout_ms", 5000)
 }
 
 func (s *ManifestTestSuite) TearDownTest() {
@@ -431,8 +436,10 @@ func (s *ManifestTestSuite) TestGetManifestNonExistent() {
 }
 
 func (s *ManifestTestSuite) TestGetManifestWithConfiguredTimeout() {
-	// Set a custom timeout via viper
-	viperx.Set("plugin.manifest_timeout_ms", 1000)
+	// A custom timeout via viper. The value only has to prove the configured
+	// branch is honored, so it is generous: a tight one races the process
+	// spawn under load, which is not what this test is about.
+	viperx.Set("plugin.manifest_timeout_ms", 15000)
 
 	path := createMockPlugin(s.T(), s.tempDir, "dr-test", validManifest)
 
@@ -708,4 +715,61 @@ func TestConflictsForName(t *testing.T) {
 
 	assert.Empty(t, ConflictsForName(conflicts, "turnip"))
 	assert.Empty(t, ConflictsForName(nil, "potato"))
+}
+
+func TestDiscoveryTimeout_EnvBeatsViper(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	viperx.Set(DiscoveryTimeoutKey, "5s")
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "10ms")
+
+	assert.Equal(t, 10*time.Millisecond, DiscoveryTimeout())
+}
+
+func TestGetPlugins_ZeroTimeoutSkipsDiscovery(t *testing.T) {
+	oldRegistry := registry
+
+	registry = &DiscoveredPluginsRegistry{}
+
+	t.Cleanup(func() { registry = oldRegistry })
+
+	tempDir := t.TempDir()
+	createMockPlugin(t, tempDir, "dr-skipped", `{"name":"skipped","version":"1.0.0"}`)
+	setDiscoveryPath(t, tempDir)
+	t.Setenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT", "0s")
+
+	plugins, conflicts := GetPlugins()
+
+	assert.Empty(t, plugins)
+	assert.Empty(t, conflicts)
+}
+
+func TestGetManifest_OrphanedChildDoesNotBlockPastTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script plugin reproduction is Unix-specific")
+	}
+
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+	// Plain int on purpose: viperx.GetInt reads this key as milliseconds.
+	viperx.Set("plugin.manifest_timeout_ms", 2000)
+
+	// The script forks a background child that inherits stdout, prints its
+	// manifest, then blocks until the timeout kills the shell. The orphaned
+	// child keeps the stdout pipe open, so without cmd.WaitDelay Output()
+	// blocks until the orphan exits, defeating the timeout in wall-clock
+	// terms.
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "dr-orphan")
+	script := "#!/bin/sh\nsleep 30 &\necho '{\"name\":\"orphan\",\"version\":\"1.0.0\"}'\nsleep 30\n"
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+
+	start := time.Now()
+	_, err := getManifest(context.Background(), scriptPath)
+	elapsed := time.Since(start)
+
+	require.Error(t, err, "manifest fetch should be killed by the timeout")
+	assert.Less(t, elapsed, 10*time.Second,
+		"an orphaned child holding the stdout pipe must not block past the manifest timeout")
 }

@@ -20,10 +20,15 @@
 // It exposes plain functions that read and write the files inside it:
 // config.json (identity + sync state), manifest.json (the BASE manifest from
 // the last successful sync), .gitignore, and history.log (append-only JSONL
-// with 1 MB rotation). It also drops a .wapiignore template at the project
+// with 1 MB rotation). It also drops a .drignore template at the project
 // root on Initialize.
 //
-// This package is pure state management: no HTTP, no sync logic, no ignore
-// parsing, no file locking. Consumers (the workload code CLI commands, the
-// sync engine) layer those concerns on top.
+// This package is pure state management: no HTTP, no sync logic, no file
+// locking. Consumers (the workload code CLI commands, the sync engine) layer
+// those concerns on top.
+//
+// The one exception is the ignore file, which Initialize seeds. It reads no
+// patterns; it asks the ignore package whether the project already has such a
+// file and what to call a new one, so the name a project is given and the name
+// a sync looks for cannot drift apart.
 package wapi

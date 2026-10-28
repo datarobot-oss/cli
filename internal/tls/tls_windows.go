@@ -71,7 +71,8 @@ func ExportWindowsCerts(dest string) error {
 		`    }`,
 		`  }`,
 		`}`,
-		`"CERTCOUNT=$total"`,
+		// Use the parser's marker so both ends share the export protocol.
+		`"` + certCountPrefix + `$total"`,
 		`$out -join [Environment]::NewLine`,
 	}, "; ")
 

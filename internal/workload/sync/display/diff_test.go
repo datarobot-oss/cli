@@ -199,6 +199,29 @@ func TestPrintDiffs(t *testing.T) {
 	}
 }
 
+func TestPrintDiffs_ExecutableOnly(t *testing.T) {
+	yes, no := true, false
+
+	plan := &sync.SyncPlan{
+		Uploads: []sync.FileAction{{
+			Path: "run.sh", Classification: sync.ClsLocalModified, Action: sync.ActUploadModify,
+			LocalHash: "h", RemoteHash: "h", LocalExec: &yes, RemoteExec: &no,
+		}},
+		Downloads: []sync.FileAction{{
+			Path: "tool.sh", Classification: sync.ClsRemoteModified, Action: sync.ActDownloadModify,
+			LocalHash: "h", RemoteHash: "h", LocalExec: &yes, RemoteExec: &no,
+		}},
+	}
+
+	var buf bytes.Buffer
+
+	// The fetcher has nothing: an executable-only change must not read file contents.
+	require.NoError(t, PrintDiffs(&buf, plan, &fakeFetcher{}))
+
+	assert.Contains(t, buf.String(), "+++ run.sh (local)\nexecutable bit: unset → set\n")
+	assert.Contains(t, buf.String(), "+++ tool.sh (remote)\nexecutable bit: set → unset\n")
+}
+
 func TestPrintDiffs_NilPlan_NoOp(t *testing.T) {
 	var buf bytes.Buffer
 

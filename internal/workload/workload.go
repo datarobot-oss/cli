@@ -16,6 +16,7 @@ package workload
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
 // Workload statuses as serialized by the server (lowercase StrEnum).
@@ -104,25 +106,87 @@ func knownWorkloadStatuses() []string {
 // reason to bail. A workload that never leaves them surfaces via the timeout
 // rather than a spurious "settled" error on the first, still-stale poll.
 func IsTerminalWorkloadStatus(s string) bool {
-	switch s {
-	case WorkloadStatusRunning,
-		WorkloadStatusErrored,
-		WorkloadStatusTerminated:
-		return true
-	}
+	return IsWorkloadErrorStatus(s) || strings.EqualFold(s, WorkloadStatusRunning)
+}
 
-	return false
+// IsSteadyWorkloadStatus reports whether s is a status the platform will not
+// move away from on its own. It is the opposite question to
+// IsTerminalWorkloadStatus, which asks whether a workload on its way up has
+// arrived: this one asks whether it has stopped moving at all, so the states
+// that one deliberately keeps polling through (stopped, suspended,
+// interrupted) are answers here rather than steps on the way to one.
+//
+// Everything left over is the platform moving under its own power: submitted,
+// provisioning, launching, stopping, unknown, and whatever it adds later. An
+// unrecognised status therefore reads as still moving, which costs a wait and
+// never mistakes a transition for a destination.
+func IsSteadyWorkloadStatus(s string) bool {
+	return IsTerminalWorkloadStatus(s) || IsStoppedWorkloadStatus(s)
+}
+
+// IsSuspendedWorkloadStatus reports the one switched-off status a start cannot
+// undo. The platform ignores a start while a workload is suspended, so both the
+// plan that says what a deploy will do and the apply that refuses to do it have
+// to single this status out, and they must not spell it differently.
+func IsSuspendedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusSuspended)
+}
+
+// IsTerminatedWorkloadStatus reports the one status a workload never comes back
+// from. It is named here for the same reason IsSuspendedWorkloadStatus is: the
+// deploy and the shell that prints its result both have to single this status
+// out, they must not spell it differently, and the shell would otherwise be
+// comparing against a constant it reaches only through State.String().
+func IsTerminatedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusTerminated)
+}
+
+// IsErroredWorkloadStatus reports the one failed status a workload can be
+// deployed onto, apart from IsWorkloadErrorStatus, which also covers terminated,
+// and a terminated workload is never coming back.
+func IsErroredWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusErrored)
+}
+
+// IsRunningWorkloadStatus reports whether the platform says the workload is
+// running. Named for the same reason as IsTerminatedWorkloadStatus: the shell
+// asks it of a deploy's result, where the status arrives either from the
+// platform or through State.String(), and the two must not be spelled apart.
+func IsRunningWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusRunning)
+}
+
+// IsStartingWorkloadStatus reports whether the platform says the workload is on
+// its way up: accepted, being provisioned, or being launched. Narrower than
+// "not steady", which also covers stopping and unknown, neither of which says
+// the workload is coming up.
+func IsStartingWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusSubmitted) ||
+		strings.EqualFold(s, WorkloadStatusProvisioning) ||
+		strings.EqualFold(s, WorkloadStatusLaunching)
+}
+
+// IsStoppedWorkloadStatus reports whether s is one of the three ways a
+// workload can be switched off. They are grouped because a deploy treats them
+// alike, and named here because three files ask the same question: this one,
+// the deploy's own state reduction, and the status a detached start reports.
+//
+// Grouped, not equivalent. Only some of them can be started again, which is a
+// question for whoever is about to try rather than for this classification.
+func IsStoppedWorkloadStatus(s string) bool {
+	return strings.EqualFold(s, WorkloadStatusStopped) ||
+		strings.EqualFold(s, WorkloadStatusSuspended) ||
+		strings.EqualFold(s, WorkloadStatusInterrupted)
 }
 
 // IsWorkloadErrorStatus reports whether s is a terminal failure a caller should
 // surface as an error rather than a settled state.
+//
+// Folded, like every other status comparison in this package: the platform
+// does not agree with itself about the casing of its enums, and a terminal
+// status read as non-terminal is a poll loop that runs to its timeout.
 func IsWorkloadErrorStatus(s string) bool {
-	switch s {
-	case WorkloadStatusErrored, WorkloadStatusTerminated:
-		return true
-	}
-
-	return false
+	return strings.EqualFold(s, WorkloadStatusErrored) || strings.EqualFold(s, WorkloadStatusTerminated)
 }
 
 // Workload is the projection of the server's workload document the CLI
@@ -319,7 +383,7 @@ func CreateWorkload(payload any) (*Workload, error) {
 
 	var workload Workload
 
-	err = drapi.PostJSON(url, "workload", payload, &workload)
+	err = apiclient.PostJSON(url, "workload", payload, &workload)
 	if err != nil {
 		return nil, err
 	}
@@ -349,49 +413,347 @@ func GetWorkload(workloadID string) (*Workload, error) {
 	return &workload, nil
 }
 
-// WaitForWorkload polls GetWorkload on interval until the workload reaches a
-// terminal status (see IsTerminalWorkloadStatus) or deadline expires. It
-// returns the final Workload in every non-poll-error case so callers can render
-// it:
-//   - running: success, nil error.
-//   - errored/terminated: the final workload alongside a failure error.
-//   - timeout: the last-seen workload alongside a timeout error (this covers a
-//     workload stuck in a non-running steady state such as stopped).
+// Serving is what a wait must see before it settles. The zero value asks only
+// that the workload be running, which is what a create and a start want: both
+// leave the running artifact where it was and neither replaces a generation.
 //
-// onTick may be nil and is invoked after each poll for debug-only observation,
-// mirroring WaitForBuild.
+// It is a struct rather than two arguments because the difference between the
+// three cases is not expressible in one string. A resize confirms no artifact
+// and still has to wait out a drain; a create confirms no artifact and must
+// not. Spelling that as an empty id made the two indistinguishable at the call
+// site and put a drain wait in front of every create.
+type Serving struct {
+	// ArtifactID is the version that must be the one answering, empty when
+	// the run changed none.
+	ArtifactID string
+
+	// AwaitDrain requires the generation being replaced to have stopped
+	// taking requests. A roll and a resize both replace one; a create and a
+	// start do not.
+	AwaitDrain bool
+
+	// OnUnconfirmed, if set, is called once with a short reason when the
+	// proton list cannot be read and the wait falls back to the artifact
+	// alone. A caller that reports on the endpoint afterwards should say so,
+	// because on that path the endpoint may still be answering from the
+	// version being replaced.
+	OnUnconfirmed func(reason string)
+}
+
+// WaitForWorkload polls GetWorkload on interval until the workload reaches a
+// terminal status (see IsTerminalWorkloadStatus) and satisfies want, or the
+// deadline expires. A timeout returns the last-seen workload so a caller can
+// say where it got to; errored and terminated come back as failures.
+//
+// A roll names its candidate, and needs to, because the platform rolls by
+// replacing the workload with itself and so reports "running" from before the
+// swap until after it, leaving a status-only wait to return on the first poll
+// having proved nothing. The artifact is not sufficient on its own either,
+// which is what protonsServing covers.
+//
+// The proton list is corroboration, never the rollout itself, so no failure to
+// read it fails a deploy. A refusal falls back at once; anything else is given
+// a few polls to recover and then falls back too, because a deploy that has
+// built, promoted and started serving must not be reported as failed on
+// account of the second request that was only checking.
+//
+// onTick may be nil and is invoked after each poll, mirroring WaitForBuild.
 func WaitForWorkload(
+	ctx context.Context,
+	workloadID string,
+	want Serving,
+	interval, timeout time.Duration,
+	onTick func(*Workload),
+) (*Workload, error) {
+	var unreadable, empty int
+
+	// The error term is first and unguarded: an errored workload still reports
+	// whatever it was running, so requiring the artifact too would poll a dead
+	// workload to its timeout instead of failing on first sight.
+	stop := func(wl *Workload) bool { //nolint:contextcheck // drapi takes no context; see abandoned below
+		if IsWorkloadErrorStatus(wl.Status) {
+			return true
+		}
+
+		// Only running reaches here, the error statuses having returned above.
+		if !IsTerminalWorkloadStatus(wl.Status) || !onWantedArtifact(wl, want.ArtifactID) {
+			return false
+		}
+
+		verdict, err := servingWanted(workloadID, want)
+		if err != nil {
+			unreadable++
+			if unreadable <= maxTransientPollErrors {
+				return false
+			}
+
+			degrade(want, "the container generations could not be read: "+err.Error())
+
+			return true
+		}
+
+		unreadable = 0
+
+		if !verdict.Empty {
+			empty = 0
+
+			return verdict.Serving
+		}
+
+		// An empty list that keeps coming back is a route with nothing to say
+		// rather than a handover in progress. Bounded the same way an
+		// unwatched replacement 404 is, and for the same reason: waiting
+		// forever on an absence turns a finished deploy into a timeout.
+		empty++
+		if empty < uncorroboratedAbsences {
+			return false
+		}
+
+		degrade(want, "this workload lists no container generations")
+
+		return true
+	}
+
+	wl, err := pollWorkload(ctx, workloadID, interval, timeout, stop, onTick)
+	if err != nil {
+		return wl, unpromoted(workloadID, wl, want, err) //nolint:contextcheck // drapi takes no context; see abandoned below
+	}
+
+	if IsWorkloadErrorStatus(wl.Status) {
+		return wl, fmt.Errorf("workload %s ended with status %s; run 'dr workload logs %s' to inspect",
+			workloadID, wl.Status, workloadID)
+	}
+
+	return wl, nil
+}
+
+// degrade tells the caller the handover went unconfirmed, once.
+func degrade(want Serving, reason string) {
+	if want.OnUnconfirmed != nil {
+		want.OnUnconfirmed(reason)
+	}
+}
+
+// onWantedArtifact reports whether wl names the artifact the caller named; an
+// empty want is a caller that changed none.
+func onWantedArtifact(wl *Workload, wantArtifactID string) bool {
+	return wantArtifactID == "" || wl.ArtifactID == wantArtifactID
+}
+
+// servingWanted asks the proton list whether the previous generation has
+// stopped answering.
+//
+// A refusal is not a failure of the rollout. The route is absent on some
+// installs (404), a token that may deploy is not guaranteed to be allowed to
+// list protons (403), and a gateway that does not know the path can answer 405
+// or 422. None of those say anything went wrong, so they fall back to the
+// artifact check immediately. Everything else, including a body this code
+// cannot read, is returned for the caller to retry and then forgive.
+func servingWanted(workloadID string, want Serving) (protonVerdict, error) {
+	// A create and a start replace no generation and confirm no artifact, so
+	// there is nothing here for them to ask about and no reason to spend a
+	// request finding that out.
+	if want.ArtifactID == "" && !want.AwaitDrain {
+		return protonVerdict{Serving: true}, nil
+	}
+
+	protons, err := ListProtons(workloadID)
+	if err != nil {
+		if refusedRoute(err) {
+			degrade(want, "this install did not answer for container generations ("+err.Error()+")")
+
+			return protonVerdict{Serving: true}, nil
+		}
+
+		return protonVerdict{}, err
+	}
+
+	return protonsServing(protons, want), nil
+}
+
+// refusedRoute reports whether err is the route saying no in a way that will
+// not change on the next poll.
+func refusedRoute(err error) bool {
+	var httpErr *drapi.HTTPError
+
+	return errors.As(err, &httpErr) && httpErr.StatusCode >= 400 && httpErr.StatusCode < 500
+}
+
+// unpromoted says which way a rollout stalled, since a bare timeout sends the
+// reader looking for something that is not stuck.
+//
+// Only a deadline is decorated. A wait whose polls failed already carries the
+// failure, and inferring anything about a rollout from a workload read taken
+// seconds into it would be a guess dressed as a diagnosis.
+func unpromoted(workloadID string, wl *Workload, want Serving, err error) error {
+	var timedOut *waitTimeoutError
+
+	if wl == nil || !errors.As(err, &timedOut) {
+		return err
+	}
+
+	if !onWantedArtifact(wl, want.ArtifactID) {
+		return fmt.Errorf(
+			"workload %s is %s but still serving artifact %s, not %s, so the rollout has not promoted "+
+				"the new version; check 'dr workload status %s': %w",
+			workloadID, wl.Status, wl.ArtifactID, want.ArtifactID, workloadID, err)
+	}
+
+	if reason := stalledOn(workloadID, want); reason != "" {
+		return fmt.Errorf("workload %s reports artifact %s, but %s; check 'dr workload status %s': %w",
+			workloadID, wl.ArtifactID, reason, workloadID, err)
+	}
+
+	return err
+}
+
+// stalledOn names what the proton list was still showing when the wait ran out,
+// or "" when it cannot say. The read is on the error path only and its own
+// failure is swallowed: this decorates a timeout already decided.
+func stalledOn(workloadID string, want Serving) string {
+	protons, err := ListProtons(workloadID)
+	if err != nil {
+		return ""
+	}
+
+	if len(protons) == 0 {
+		return "no container generations are listed for it"
+	}
+
+	if want.AwaitDrain && anyServingPredecessor(protons, want.ArtifactID) {
+		return "a previous version is still answering its endpoint, so the rollout has not finished"
+	}
+
+	if want.ArtifactID != "" && !anyRunning(protons, want.ArtifactID) {
+		return "nothing is running that version yet"
+	}
+
+	return ""
+}
+
+// WaitForSteadyWorkload polls until the workload stops moving under its own
+// power (see IsSteadyWorkloadStatus) or deadline expires. It is for a caller
+// that has to know where a transition landed before it can decide anything,
+// rather than one waiting for a workload it just started to come up.
+//
+// The difference from WaitForWorkload is the whole reason both exist. That one
+// polls through stopped, suspended and interrupted, because for a workload on
+// its way up they are steps rather than destinations; this one returns at them.
+// A `stopping` workload handed to WaitForWorkload runs to its timeout.
+//
+// Errored and terminated come back with a nil error. They are legitimate
+// answers to "has it stopped moving", so the verdict belongs to the caller
+// rather than here: the same "errored" is a destination to a caller asking
+// where a transition landed and a failure to one waiting for a workload it
+// just started. A caller that treats a nil error as "healthy" is reading this
+// as the wrong function; that is what WaitForWorkload is for.
+func WaitForSteadyWorkload(
+	ctx context.Context,
 	workloadID string,
 	interval, timeout time.Duration,
 	onTick func(*Workload),
 ) (*Workload, error) {
+	return pollWorkload(ctx, workloadID, interval, timeout, func(wl *Workload) bool {
+		return IsSteadyWorkloadStatus(wl.Status)
+	}, onTick)
+}
+
+// waitTimeoutError marks a wait that ran out of time, so a caller can tell it
+// from one whose polls failed and decorate only the first.
+type waitTimeoutError struct {
+	workloadID string
+	timeout    time.Duration
+}
+
+func (e *waitTimeoutError) Error() string {
+	return fmt.Sprintf("timeout waiting for workload %s after %s", e.workloadID, e.timeout)
+}
+
+// pollWorkload is the loop both waits share. It errors only on a failed poll
+// and on the deadline, leaving the verdict on where it stopped to the caller.
+//
+// stop takes the whole workload because "has it arrived" is not always about
+// the status: a roll leaves the status reading "running" throughout. It cannot
+// fail: confirming a rollout takes a second request, but a failure there is the
+// corroboration falling over rather than the deploy, so stop absorbs it and
+// this loop only ever reports on the workload read it names.
+//
+// The last-seen workload comes back with every error that has one, so a caller
+// can still say what the workload was doing when the wait gave up.
+func pollWorkload(
+	ctx context.Context,
+	workloadID string,
+	interval, timeout time.Duration,
+	stop func(*Workload) bool,
+	onTick func(*Workload),
+) (*Workload, error) {
+	if interval <= 0 {
+		interval = defaultWorkloadPollInterval
+	}
+
 	deadline := time.Now().Add(timeout)
+	budget := transientBudget{}
+
+	var last *Workload
 
 	for {
-		wl, err := GetWorkload(workloadID)
+		if err := ctx.Err(); err != nil {
+			return last, abandoned(workloadID, err)
+		}
+
+		wl, err := GetWorkload(workloadID) //nolint:contextcheck // drapi takes no context; see abandoned below
 		if err != nil {
-			return nil, fmt.Errorf("poll workload %s: %w", workloadID, err)
-		}
+			if !budget.forgive(err) {
+				return last, fmt.Errorf("poll workload %s: %w", workloadID, err)
+			}
+		} else {
+			last = wl
 
-		if onTick != nil {
-			onTick(wl)
-		}
-
-		if IsTerminalWorkloadStatus(wl.Status) {
-			if IsWorkloadErrorStatus(wl.Status) {
-				return wl, fmt.Errorf("workload %s ended with status %s; run 'dr workload logs %s' to inspect", workloadID, wl.Status, workloadID)
+			if onTick != nil {
+				onTick(wl)
 			}
 
-			return wl, nil
+			if stop(wl) {
+				return wl, nil
+			}
+
+			budget.reset()
 		}
 
 		if time.Now().After(deadline) {
-			return wl, fmt.Errorf("timeout waiting for workload %s after %s", workloadID, timeout)
+			return last, &waitTimeoutError{workloadID: workloadID, timeout: timeout}
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return last, abandoned(workloadID, ctx.Err())
+		}
 	}
 }
+
+// abandoned reports a wait that stopped because its context ended rather than
+// because the workload arrived anywhere. The last-seen workload still comes
+// back with it, so a caller can say where it had got to; what must not happen
+// is a nil error, which every caller reads as "it is up".
+//
+// It is also where the //nolint:contextcheck directives in this package's poll
+// loops point, because this is the function that says how far the context
+// reaches. The loops honour it; the requests they make do not. drapi takes no
+// context — GetJSON and roughly fifty call sites across the CLI would have to
+// change to give it one — so contextcheck is right that a request cannot be
+// cancelled and wrong that this makes the context pointless. What it buys is
+// that the loop stops: an interrupt lands at the next poll boundary instead of
+// mid request, which for a wait that polls every few seconds is the difference
+// between stopping and running until the process exits. Threading a context
+// through drapi is worth doing and is not this change.
+func abandoned(workloadID string, err error) error {
+	return fmt.Errorf("stopped waiting for workload %s: %w", workloadID, err)
+}
+
+// defaultWorkloadPollInterval keeps an exported poller from busy-spinning when
+// handed a non-positive interval, matching defaultReplacementPollInterval. The
+// CLI's own flags cannot produce one, but nothing in the signature says so, and
+// this loop now runs for as long as a rollout takes rather than a few polls.
+const defaultWorkloadPollInterval = 2 * time.Second
 
 type WorkloadList struct {
 	Data       []Workload `json:"data"`
@@ -401,21 +763,36 @@ type WorkloadList struct {
 	Previous   string     `json:"previous"`
 }
 
-// maxWorkloadPageSize is the server-enforced ceiling on the list endpoint's
-// limit query param (1..100); larger values are rejected with a 422, so the
-// page size is clamped and larger totals are satisfied via next-links.
-const maxWorkloadPageSize = 100
+// maxPageSize is the server-enforced ceiling on the list endpoints' limit query
+// param (1..100); larger values are rejected with a 422, so the page size is
+// clamped and larger totals are satisfied via next-links. Shared by the
+// workload and artifact list endpoints, which enforce the same ceiling.
+const maxPageSize = 100
 
-func ListWorkloads(limit int, statuses []string) ([]Workload, error) {
+// ListWorkloads fetches up to limit workloads starting at offset, optionally
+// filtered by status and by the name of the Enclave they actually run on.
+func ListWorkloads(limit, offset int, statuses []string, enclave string) ([]Workload, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
+	if offset < 0 {
+		return nil, fmt.Errorf("invalid offset %d: must be non-negative", offset)
+	}
+
+	// Trim so a copied name with stray spaces matches, same as the pin side.
+	enclave = strings.TrimSpace(enclave)
+
 	query := url.Values{}
-	query.Set("limit", strconv.Itoa(min(limit, maxWorkloadPageSize)))
+	query.Set("limit", strconv.Itoa(min(limit, maxPageSize)))
+	query.Set("offset", strconv.Itoa(offset))
 
 	for _, s := range statuses {
 		query.Add("status", s)
+	}
+
+	if enclave != "" {
+		query.Set("enclave", enclave)
 	}
 
 	pageURL, err := drapi.EndpointURL("/workloads/", query)
@@ -423,6 +800,13 @@ func ListWorkloads(limit int, statuses []string) ([]Workload, error) {
 		return nil, err
 	}
 
+	return paginateWorkloads(pageURL, limit)
+}
+
+// paginateWorkloads follows next-links from pageURL, accumulating workloads
+// until limit is reached or the pages run out. It is split from ListWorkloads
+// to keep that function's cyclomatic complexity under the linter threshold.
+func paginateWorkloads(pageURL string, limit int) ([]Workload, error) {
 	var all []Workload
 
 	for pageURL != "" {

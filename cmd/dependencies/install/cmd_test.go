@@ -69,7 +69,7 @@ func TestInstallCmd_PropExtractor_AllSatisfied(t *testing.T) {
 
 // TestInstallCmd_YesFlag_SkipsPromptAndInstalls verifies that --yes bypasses the
 // interactive prompt, that the install succeeds, and that the PropExtractor records
-// yes_flag=true / non_interactive=false.
+// yes_flag=true / non_interactive=true.
 func TestInstallCmd_YesFlag_SkipsPromptAndInstalls(t *testing.T) {
 	orig := tools.RequiredTools
 
@@ -94,7 +94,7 @@ func TestInstallCmd_YesFlag_SkipsPromptAndInstalls(t *testing.T) {
 	assert.Contains(t, installSuccess, "FakeTool")
 	assert.Empty(t, event.EventProperties["install_error"])
 	assert.Equal(t, true, event.EventProperties["yes_flag"])
-	assert.Equal(t, false, event.EventProperties["non_interactive"])
+	assert.Equal(t, true, event.EventProperties["non_interactive"])
 }
 
 // TestInstallCmd_NonInteractive_SkipsPromptAndInstalls verifies that

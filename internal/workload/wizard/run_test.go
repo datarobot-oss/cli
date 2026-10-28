@@ -63,6 +63,42 @@ func swapLiveFns(t *testing.T, getWorkload, getArtifact func(string) (workload.D
 	t.Cleanup(func() { getWorkloadFn, getArtifactFn = originalWorkload, originalArtifact })
 }
 
+// Headless there is no screen to explain that a probe is being preserved, so a
+// flag that cannot be carried out is an error rather than a run that reports
+// success having ignored the one thing it was asked to change.
+func TestRun_ProbeFlagOnAnUnmodelledProbeIsRefused(t *testing.T) {
+	stubLive(t, documentFrom(t, `{"name": "tcp-app", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "tcp-app-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 9100, "imageUri": "registry/tcp:v1",
+				 "readinessProbe": {"tcpSocket": {"port": 9100}, "periodSeconds": 10}}]}]}}`))
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+
+	for name, answers := range map[string]Answers{
+		"declined": {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", NoProbe: true},
+		"a path":   {WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", HealthPath: "/ready"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Run(Options{Dir: dir, NonInteractive: true, Answers: answers})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "readiness probe with no path")
+			assert.NoFileExists(t, manifest.Path(dir))
+		})
+	}
+
+	// Binding without saying anything about the probe still works, and keeps it.
+	result, err := Run(Options{
+		Dir: dir, NonInteractive: true,
+		Answers: Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
+		DryRun:  true,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(result.Content), "tcpSocket")
+}
+
 func documentFrom(t *testing.T, raw string) workload.Document {
 	t.Helper()
 
@@ -203,6 +239,18 @@ func TestRun_WarnsAboutAManifestAbove(t *testing.T) {
 	assert.Contains(t, stderr.String(), "reads a different file")
 }
 
+// A parent that is not a directory has no manifest in it, so there is nothing
+// to warn about. Locate refuses to start the walk and names the ancestor it was
+// handed, so the warning this used to print ended with a path the reader never
+// typed while opening with the one they did.
+func TestWarnShadowedManifest_SaysNothingWhenTheWalkCannotStart(t *testing.T) {
+	stderr := &bytes.Buffer{}
+
+	warnShadowedManifest(stderr, filepath.Join(t.TempDir(), "missing", "project"))
+
+	assert.Empty(t, stderr.String())
+}
+
 func TestRun_NoWarningWithoutAManifestAbove(t *testing.T) {
 	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
 
@@ -254,6 +302,91 @@ func TestRun_BindsToALiveWorkload(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, parsed.Validate())
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", parsed.WorkloadID())
+}
+
+// Binding keeps a generated build from an empty directory, which up seeds
+// from the artifact; a directory with files of its own is judged on them.
+func TestRun_HeadlessBindJudgesAGeneratedBuildOnADirectoryWithFiles(t *testing.T) {
+	bindGenerated := func(t *testing.T) {
+		t.Helper()
+
+		stubLive(t,
+			documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+				"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+					"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+			documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+					{"name": "primary", "primary": true, "port": 8000,
+					 "imageBuildConfig": {"dockerfile": {"source": "generated", "entrypoint": ["python", "old.py"],
+					   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+	}
+
+	t.Run("an empty directory keeps it", func(t *testing.T) {
+		bindGenerated(t)
+
+		_, err := Run(headless(t.TempDir(), Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}))
+		require.NoError(t, err)
+	})
+
+	t.Run("requirements.txt alone is refused", func(t *testing.T) {
+		bindGenerated(t)
+
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("fastapi\n"), 0o600))
+
+		_, err := Run(headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"}))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot be kept from here")
+		assert.Contains(t, err.Error(), "neither pyproject.toml with uv.lock")
+		assert.Contains(t, err.Error(), "--build-mode")
+	})
+
+	t.Run("pyproject.toml alone is kept with the lock warning", func(t *testing.T) {
+		bindGenerated(t)
+
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0o600))
+
+		stderr := &bytes.Buffer{}
+		opts := headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+		opts.Stderr = stderr
+
+		_, err := Run(opts)
+		require.NoError(t, err)
+		assert.Contains(t, stderr.String(), "if uv is installed")
+	})
+}
+
+// Changing a bound generated build's environment with the flag goes through
+// the same language check as a fresh one.
+func TestRun_HeadlessBindRefusesAMismatchedEnvironmentOnTheLiveBuild(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000,
+				 "imageBuildConfig": {"dockerfile": {"source": "generated", "entrypoint": ["node", "app.js"],
+				   "executionEnvironmentId": "68b1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+	original := findExecEnvFn
+	findExecEnvFn = func(string) (workload.ExecutionEnvironment, error) {
+		return workload.ExecutionEnvironment{
+			ID: "68a1", Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python",
+			LatestSuccessfulVersion: &workload.EEVersion{ID: "68a2"},
+		}, nil
+	}
+
+	t.Cleanup(func() { findExecEnvFn = original })
+
+	dir := t.TempDir()
+	for _, f := range []string{"package.json", "package-lock.json"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("{}\n"), 0o600))
+	}
+
+	_, err := Run(headless(dir, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", ExecutionEnvironment: "[DataRobot] Python 3.12"}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is labelled python")
+	assert.Contains(t, err.Error(), "node project")
 }
 
 // A workload id that does not resolve fails at setup, which is the whole
@@ -336,7 +469,7 @@ func TestRun_BoundWorkloadDoesNotGuessAtLiveValues(t *testing.T) {
 // clear, in either spelling, so neither is a finding.
 func TestRun_BoundWorkloadIgnoresCredentialReferences(t *testing.T) {
 	boundWithLiveEnv(t, `[{"name": "SHORTHAND_KEY", "value": "dr-credential:68f0cccc0000000000000003/apiToken"},
-		{"name": "OBJECT_KEY", "source": "credential",
+		{"name": "OBJECT_KEY", "source": "dr-credential",
 		 "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"}]`)
 
 	assert.NotContains(t, boundRun(t), "looks like a secret")
@@ -354,8 +487,8 @@ func TestRun_BoundWorkloadWithoutAnArtifact(t *testing.T) {
 // Cancelling writes nothing and says so, so `config && up` stops here.
 func TestRun_CancelledWritesNothing(t *testing.T) {
 	original := runInteractiveFlowFn
-	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, error) {
-		return nil, manifest.Draft{}, ErrCancelled
+	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, string, error) {
+		return nil, manifest.Draft{}, "", ErrCancelled
 	}
 
 	t.Cleanup(func() { runInteractiveFlowFn = original })
@@ -376,10 +509,10 @@ func TestRun_CancelledWritesNothing(t *testing.T) {
 // Without a terminal nothing prompts, even when --yes was not passed.
 func TestRun_NoTerminalNeverPrompts(t *testing.T) {
 	originalFlow := runInteractiveFlowFn
-	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, error) {
+	runInteractiveFlowFn = func(Options, Detected) ([]byte, manifest.Draft, string, error) {
 		t.Fatal("the wizard must not run without a terminal")
 
-		return nil, manifest.Draft{}, nil
+		return nil, manifest.Draft{}, "", nil
 	}
 
 	t.Cleanup(func() { runInteractiveFlowFn = originalFlow })
@@ -581,4 +714,131 @@ func TestRun_SkipEnvSilencesTheUnreadableEnvWarning(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Empty(t, stderr.String())
+}
+
+// Headless can warn but not offer: the directory check becomes a stderr line
+// naming the subdirectories that look right, and never a refusal — a valid
+// project cannot be reliably recognized, so a wrong guess must cost nothing.
+func TestRun_HeadlessWarnsAboutASuspectDirectory(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	// Dockerfile mode syncs local code, which is what the warning is about —
+	// and a suspect directory genuinely has no Dockerfile, so the run then
+	// fails on its own terms. The warning must land first: it names the fix
+	// (--dir web) for the failure that follows.
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeDockerfile},
+	})
+	require.Error(t, err, "no Dockerfile here; the warning explains why")
+
+	warning := stderr.String()
+	assert.Contains(t, warning, "none of the usual project files")
+	assert.Contains(t, warning, "web", "the offer names what looks right")
+	assert.Contains(t, warning, "--dir", "and the flag that takes it")
+}
+
+// A headless generated build on a pyproject.toml with no uv.lock goes
+// through, and stderr says the deploy will generate the lock and that it
+// should be committed. A project with its lock gets no such line.
+func TestRun_HeadlessWarnsWhenTheDeployWillGenerateTheLock(t *testing.T) {
+	stubExecEnv(t, "68a1", "68a2", nil)
+
+	answers := Answers{
+		Name: "my-app", BuildMode: manifest.BuildModeGenerated,
+		ExecutionEnvironment: "[DataRobot] Python 3.12 Applications Base", Entrypoint: "python app.py",
+	}
+
+	unlocked := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(unlocked, "pyproject.toml"), []byte("[project]\n"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{Dir: unlocked, NonInteractive: true, Stderr: &stderr, Answers: answers})
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "Warning: pyproject.toml has no uv.lock")
+	assert.Contains(t, stderr.String(), "commit it")
+
+	locked := t.TempDir()
+	for _, f := range []string{"pyproject.toml", "uv.lock"} {
+		require.NoError(t, os.WriteFile(filepath.Join(locked, f), []byte("# x\n"), 0o644))
+	}
+
+	stderr.Reset()
+
+	_, err = Run(Options{Dir: locked, NonInteractive: true, Stderr: &stderr, Answers: answers})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "uv.lock")
+}
+
+// An image-mode run never syncs local directory contents, so the suspect-dir
+// warning would describe a risk that cannot happen — it stays quiet.
+func TestRun_HeadlessImageModeSkipsTheSuspectDirWarning(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(app, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeImage, Image: "registry/team/app:v1"},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "none of the usual project files")
+}
+
+// A directory that carries a project file gets no warning: the check is about
+// the parent-of-the-app mistake, not about lecturing every project.
+func TestRun_HeadlessStaysQuietAboutAProjectRoot(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o644))
+
+	var stderr bytes.Buffer
+
+	_, err := Run(Options{
+		Dir: dir, NonInteractive: true, Stderr: &stderr,
+		Answers: Answers{Name: "my-app", BuildMode: manifest.BuildModeImage, Image: "registry/team/app:v1"},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "usual project files")
+}
+
+// The manifest lands where the flow ended up. The interactive directory
+// question can move the project, and writing to the directory setup was
+// started from would put the file beside the app instead of inside it.
+func TestRun_WritesWhereTheFlowEndedUp(t *testing.T) {
+	parent := t.TempDir()
+	app := filepath.Join(parent, "app")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+
+	restoreFlow := SetInteractiveFlowForTest(
+		func(Options, Detected) ([]byte, manifest.Draft, string, error) {
+			draft := defaultDraft(Detect(app))
+			draft.Name = "moved"
+			draft.Build = manifest.Build{Mode: manifest.BuildModeImage, ImageURI: "registry/team/app:v1"}
+
+			content, err := draft.Render()
+
+			return content, draft, app, err
+		})
+	defer restoreFlow()
+
+	restoreTerminal := SetStdinTerminalForTest(true)
+	defer restoreTerminal()
+
+	var stderr bytes.Buffer
+
+	result, err := Run(Options{Dir: parent, Stderr: &stderr})
+	require.NoError(t, err)
+
+	assert.Equal(t, manifest.Path(app), result.Path)
+	assert.FileExists(t, manifest.Path(app), "written where the flow chose")
+	assert.NoFileExists(t, manifest.Path(parent), "not where setup was started")
 }

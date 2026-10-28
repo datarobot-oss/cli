@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -47,9 +48,28 @@ func ParseArtifactStatus(s string) (string, error) {
 }
 
 type Artifact struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+
+	// Type is what kind of thing this is: a service, an agent. It sits beside
+	// the spec rather than in it, because the platform reads the discriminator
+	// from the artifact and pops any type sent inside the spec. An artifact
+	// repository takes its own type from whichever artifact opened it, so this
+	// is what says whether a later version can still join that lineage.
+	Type string `json:"type"`
+
+	// ArtifactRepositoryID is the lineage this artifact belongs to. Successive
+	// versions of one thing share it, which is the only way to tell them from
+	// unrelated artifacts that happen to carry the same name.
+	ArtifactRepositoryID string `json:"artifactRepositoryId"`
+
+	// Version numbers this artifact within its repository. A pointer because
+	// the platform sends null for a draft and assigns a number only on
+	// locking, and an unnumbered draft is a different thing from a version 0
+	// that no repository ever issues.
+	Version *int `json:"version"`
+
 	Spec      Spec      `json:"spec"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -129,9 +149,18 @@ type DatarobotCodeRef struct {
 }
 
 type ArtifactOutput struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+
+	// ArtifactRepositoryID and Version place the artifact in its lineage.
+	// Neither is omitempty: the text and JSON forms of a command have to carry
+	// the same fields, and a key that comes and goes with the artifact's status
+	// is one a script cannot rely on. A draft's version is null rather than 0,
+	// which says unnumbered instead of naming a version no repository issues.
+	ArtifactRepositoryID string `json:"artifactRepositoryId"`
+	Version              *int   `json:"version"`
+
 	CatalogID string `json:"catalogId"`
 	VersionID string `json:"versionId"`
 	CreatedAt string `json:"createdAt"`
@@ -140,11 +169,13 @@ type ArtifactOutput struct {
 
 func NewArtifactOutput(a Artifact) ArtifactOutput {
 	out := ArtifactOutput{
-		ID:        a.ID,
-		Name:      a.Name,
-		Status:    a.Status,
-		CreatedAt: a.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: a.UpdatedAt.Format(time.RFC3339),
+		ID:                   a.ID,
+		Name:                 a.Name,
+		Status:               a.Status,
+		ArtifactRepositoryID: a.ArtifactRepositoryID,
+		Version:              a.Version,
+		CreatedAt:            a.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:            a.UpdatedAt.Format(time.RFC3339),
 	}
 
 	if codeRef := ExtractCodeRef(a); codeRef != nil {
@@ -156,7 +187,14 @@ func NewArtifactOutput(a Artifact) ArtifactOutput {
 }
 
 func (a *Artifact) IsLocked() bool {
-	return strings.EqualFold(a.Status, ArtifactStatusLocked)
+	return IsLockedStatus(a.Status)
+}
+
+// IsLockedStatus is the same question asked of a status read off a raw
+// document, for a caller that already has the artifact as the server sent it
+// and should not fetch it again to get a typed struct to ask.
+func IsLockedStatus(status string) bool {
+	return strings.EqualFold(status, ArtifactStatusLocked)
 }
 
 // primaryContainer is the single definition of which container the CLI reads
@@ -179,6 +217,17 @@ func primaryContainer(artifact Artifact) *Container {
 	}
 
 	return &artifact.Spec.ContainerGroups[0].Containers[0]
+}
+
+// GeneratesDockerfile reports whether the platform writes the artifact's
+// Dockerfile (source "generated") rather than reading one from the code.
+func GeneratesDockerfile(artifact Artifact) bool {
+	container := primaryContainer(artifact)
+	if container == nil || container.ImageBuildConfig == nil || container.ImageBuildConfig.Dockerfile == nil {
+		return false
+	}
+
+	return container.ImageBuildConfig.Dockerfile.Source == "generated"
 }
 
 // ExtractCodeRef returns the primary container's codeRef, or nil when the
@@ -335,6 +384,45 @@ func CreateArtifact(payload any) (*Artifact, error) {
 	return &artifact, nil
 }
 
+// CloneArtifact copies an artifact into a new draft named name.
+func CloneArtifact(artifactID, name string) (*Artifact, error) {
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/clone")
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]string{"name": name}
+
+	var artifact Artifact
+
+	if err := drapi.PostJSON(url, "artifact clone", body, &artifact); err != nil {
+		return nil, err
+	}
+
+	return &artifact, nil
+}
+
+// UpdateArtifactSpec writes a draft artifact's spec.
+//
+// containerGroups is replaced wholesale rather than merged key by key. The
+// platform re-injects what it owns on a build-from-source container, so a spec
+// that omits imageUri keeps the running image; codeRef is not re-injected,
+// which is why the copy path puts it back before writing.
+func UpdateArtifactSpec(artifactID string, spec json.RawMessage) error {
+	if len(spec) == 0 {
+		return errors.New("no artifact spec to update")
+	}
+
+	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
+	if err != nil {
+		return err
+	}
+
+	body := map[string]json.RawMessage{"spec": spec}
+
+	return drapi.PatchJSON(url, "artifact", body, nil)
+}
+
 func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/")
 	if err != nil {
@@ -356,6 +444,29 @@ func PatchArtifactCodeRef(artifactID, catalogID, catalogVersionID string) error 
 	return drapi.PatchJSON(url, "artifact", body, nil)
 }
 
+// SpecWithPrimaryCodeRef returns spec with the primary container pointed at the
+// catalog pair given. An update replaces a container wholesale, so the file's
+// spec alone would erase the reference.
+func SpecWithPrimaryCodeRef(spec json.RawMessage, catalogID, catalogVersionID string) (json.RawMessage, error) {
+	var decoded map[string]any
+
+	if err := json.Unmarshal(spec, &decoded); err != nil {
+		return nil, fmt.Errorf("cannot read the artifact spec: %w", err)
+	}
+
+	// The map is shared rather than copied, so its edits are marshalled back.
+	if err := setPrimaryCodeRefInRawArtifact(map[string]any{"spec": decoded}, catalogID, catalogVersionID); err != nil {
+		return nil, err
+	}
+
+	updated, err := json.Marshal(decoded)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the artifact spec to JSON: %w", err)
+	}
+
+	return updated, nil
+}
+
 func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersionID string) error {
 	spec, ok := raw["spec"].(map[string]any)
 	if !ok {
@@ -367,76 +478,174 @@ func setPrimaryCodeRefInRawArtifact(raw map[string]any, catalogID, catalogVersio
 		return errors.New("artifact: spec.containerGroups missing or empty")
 	}
 
-	codeRef := map[string]any{
-		"datarobot": map[string]any{
-			"catalogId":        catalogID,
-			"catalogVersionId": catalogVersionID,
-		},
+	container := primaryContainerInGroups(groups)
+	if container == nil {
+		return noPrimaryContainer(groups)
 	}
 
-	if found := assignToPrimaryContainer(groups, codeRef); found {
+	setImageBuildConfigCodeRef(container, map[string]any{
+		keyRawDatarobot: map[string]any{
+			keyRawCatalogID:        catalogID,
+			keyRawCatalogVersionID: catalogVersionID,
+		},
+	})
+
+	return nil
+}
+
+// noPrimaryContainer says why the search came back empty. Asked only after it
+// has failed: checking groups[0] first would refuse an artifact whose flagged
+// primary sits in a later group.
+func noPrimaryContainer(groups []any) error {
+	group, ok := groups[0].(map[string]any)
+	if !ok {
+		return errors.New("artifact: spec.containerGroups[0] missing or wrong type")
+	}
+
+	if len(containersOfGroup(group)) == 0 {
+		return errors.New("artifact: spec.containerGroups[0].containers missing or empty")
+	}
+
+	return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
+}
+
+// Keys along the code reference inside a decoded container, spelled once so
+// the reader and the writer below cannot drift apart.
+const (
+	keyRawImageBuildConfig = "imageBuildConfig"
+	keyRawCodeRef          = "codeRef"
+	keyRawDatarobot        = "datarobot"
+	keyRawCatalogID        = "catalogId"
+	keyRawCatalogVersionID = "catalogVersionId"
+
+	// The platform's record of a container's last build, which it drops when
+	// the code reference moves.
+	keyRawBuild       = "build"
+	keyRawBuildStatus = "status"
+	keyRawBuiltFrom   = "builtFrom"
+)
+
+// CodeRefInContainer reads the catalog pair a decoded container points at, nil
+// when it names none. The read half of setPrimaryCodeRefInRawArtifact.
+func CodeRefInContainer(container map[string]any) *DatarobotCodeRef {
+	build, _ := container[keyRawImageBuildConfig].(map[string]any)
+
+	return codeRefIn(build)
+}
+
+// ImageBuiltFromItsCode reports whether the platform says a decoded
+// container's image was built from the code the container points at now: its
+// last build completed, from that same catalog version.
+//
+// The build history cannot answer this. A completed build from older code
+// stays in it after the code moves on, while the platform drops the
+// container's build record the moment the code reference changes. Anything
+// missing answers no.
+func ImageBuiltFromItsCode(container map[string]any) bool {
+	build, _ := container[keyRawBuild].(map[string]any)
+
+	status, _ := build[keyRawBuildStatus].(string)
+	if !IsBuildCompleted(status) {
+		return false
+	}
+
+	builtFrom, _ := build[keyRawBuiltFrom].(map[string]any)
+	from, now := codeRefIn(builtFrom), CodeRefInContainer(container)
+
+	return from != nil && now != nil && from.CatalogVersionID != "" && *from == *now
+}
+
+// codeRefIn reads the catalog pair under a codeRef key, nil when there is none.
+func codeRefIn(holder map[string]any) *DatarobotCodeRef {
+	ref, _ := holder[keyRawCodeRef].(map[string]any)
+
+	datarobot, ok := ref[keyRawDatarobot].(map[string]any)
+	if !ok {
 		return nil
 	}
 
-	// Mirror ExtractCodeRef's [0][0] fallback when no container is flagged primary.
-	return assignToFirstContainer(groups, codeRef)
+	catalogID, _ := datarobot[keyRawCatalogID].(string)
+	catalogVersionID, _ := datarobot[keyRawCatalogVersionID].(string)
+
+	return &DatarobotCodeRef{CatalogID: catalogID, CatalogVersionID: catalogVersionID}
 }
 
-func assignToPrimaryContainer(groups []any, codeRef map[string]any) bool {
+// PrimaryContainerInDocument is primaryContainer for an artifact still in the
+// shape the server sent it. Two readings of which container is primary
+// disagreeing is how a plan promises an image the run cannot find.
+func PrimaryContainerInDocument(raw map[string]any) map[string]any {
+	spec, ok := raw["spec"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	groups, ok := spec["containerGroups"].([]any)
+	if !ok {
+		return nil
+	}
+
+	return primaryContainerInGroups(groups)
+}
+
+// primaryContainerInGroups is primaryContainer's rule for a decoded document:
+// the container flagged "primary", else the first.
+func primaryContainerInGroups(groups []any) map[string]any {
+	if flagged := flaggedPrimaryContainer(groups); flagged != nil {
+		return flagged
+	}
+
+	return firstContainerInGroups(groups)
+}
+
+// flaggedPrimaryContainer is the container that claims to be primary, if any.
+func flaggedPrimaryContainer(groups []any) map[string]any {
 	for _, g := range groups {
 		group, ok := g.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		containers, ok := group["containers"].([]any)
-		if !ok {
-			continue
-		}
-
-		for _, c := range containers {
-			container, ok := c.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			if isPrimaryContainer(container) {
-				setImageBuildConfigCodeRef(container, codeRef)
-
-				return true
+		for _, c := range containersOfGroup(group) {
+			if container, ok := c.(map[string]any); ok && isPrimaryContainer(container) {
+				return container
 			}
 		}
 	}
-
-	return false
-}
-
-func assignToFirstContainer(groups []any, codeRef map[string]any) error {
-	firstGroup, ok := groups[0].(map[string]any)
-	if !ok {
-		return errors.New("artifact: spec.containerGroups[0] missing or wrong type")
-	}
-
-	containers, ok := firstGroup["containers"].([]any)
-	if !ok || len(containers) == 0 {
-		return errors.New("artifact: spec.containerGroups[0].containers missing or empty")
-	}
-
-	firstContainer, ok := containers[0].(map[string]any)
-	if !ok {
-		return errors.New("artifact: spec.containerGroups[0].containers[0] missing or wrong type")
-	}
-
-	setImageBuildConfigCodeRef(firstContainer, codeRef)
 
 	return nil
+}
+
+func firstContainerInGroups(groups []any) map[string]any {
+	if len(groups) == 0 {
+		return nil
+	}
+
+	group, ok := groups[0].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	containers := containersOfGroup(group)
+	if len(containers) == 0 {
+		return nil
+	}
+
+	first, _ := containers[0].(map[string]any)
+
+	return first
+}
+
+func containersOfGroup(group map[string]any) []any {
+	containers, _ := group["containers"].([]any)
+
+	return containers
 }
 
 // setImageBuildConfigCodeRef preserves any existing dockerfile config and
 // seeds a "provided" Dockerfile default when imageBuildConfig is absent
 // (server requires a dockerfile on the imageBuildConfig).
 func setImageBuildConfigCodeRef(container map[string]any, codeRef map[string]any) {
-	ibc, ok := container["imageBuildConfig"].(map[string]any)
+	ibc, ok := container[keyRawImageBuildConfig].(map[string]any)
 	if !ok || ibc == nil {
 		ibc = map[string]any{
 			"dockerfile": map[string]any{
@@ -445,8 +654,8 @@ func setImageBuildConfigCodeRef(container map[string]any, codeRef map[string]any
 		}
 	}
 
-	ibc["codeRef"] = codeRef
-	container["imageBuildConfig"] = ibc
+	ibc[keyRawCodeRef] = codeRef
+	container[keyRawImageBuildConfig] = ibc
 }
 
 func isPrimaryContainer(container map[string]any) bool {
@@ -491,18 +700,38 @@ func DeleteArtifact(artifactID string) error {
 	return drapi.DeleteJSON(url, "artifact", nil, nil)
 }
 
-func ListArtifacts(limit int, status Status) ([]Artifact, error) {
-	endpoint := "/api/v2/artifacts/?limit=" + strconv.Itoa(limit)
-
-	if status != "" {
-		endpoint += "&status=" + string(status)
+// ListArtifacts fetches up to limit artifacts starting at offset, optionally
+// filtered by status. It validates its arguments and clamps the page size to
+// the server-enforced ceiling, mirroring ListWorkloads.
+func ListArtifacts(limit, offset int, status Status) ([]Artifact, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("invalid limit %d: must be positive", limit)
 	}
 
-	pageURL, err := config.GetEndpointURL(endpoint)
+	if offset < 0 {
+		return nil, fmt.Errorf("invalid offset %d: must be non-negative", offset)
+	}
+
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(min(limit, maxPageSize)))
+	query.Set("offset", strconv.Itoa(offset))
+
+	if status != "" {
+		query.Set("status", string(status))
+	}
+
+	pageURL, err := drapi.EndpointURL("/artifacts/", query)
 	if err != nil {
 		return nil, err
 	}
 
+	return paginateArtifacts(pageURL, limit)
+}
+
+// paginateArtifacts follows next-links from pageURL, accumulating artifacts
+// until limit is reached or the pages run out. Split from ListArtifacts to
+// keep that function's cyclomatic complexity under the linter threshold.
+func paginateArtifacts(pageURL string, limit int) ([]Artifact, error) {
 	var all []Artifact
 
 	for pageURL != "" {

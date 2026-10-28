@@ -111,6 +111,13 @@ func NewClient(props *CommonProperties) *Client {
 	}
 }
 
+// NewTestClient returns a Client backed by the given amplitude.Client, for
+// tests that need to capture tracked events. Production code uses NewClient.
+// Passing a nil amp yields the same safe no-op behavior as a disabled client.
+func NewTestClient(amp amplitude.Client, props *CommonProperties) *Client {
+	return &Client{amp: amp, props: props}
+}
+
 // Track queues an event for delivery to Amplitude. Common properties from the
 // client's CommonProperties are merged into the event's EventProperties before
 // sending. UserID is set as a top-level event field (required by Amplitude).

@@ -38,6 +38,46 @@ artifactId: 68b0bbbb0000000000000002
 	assert.JSONEq(t, `{"name": "my-app", "artifactId": "68b0bbbb0000000000000002"}`, string(compiled.Payload))
 }
 
+// The file leaves the runtime group's name out; the payload carries the
+// artifact group's, which is what the API joins the two lists by. Bound by
+// id, there is no artifact group to copy from, so the platform's default goes.
+func TestCompile_NamesTheRuntimeGroupAfterTheArtifactGroup(t *testing.T) {
+	m, err := Parse([]byte(`name: my-app
+artifact:
+  spec:
+    containerGroups:
+      - name: web
+        containers:
+          - name: primary
+            imageUri: a:1
+runtime:
+  containerGroups:
+    - replicaCount: 2
+`), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	var payload map[string]any
+
+	require.NoError(t, json.Unmarshal(compiled.Payload, &payload))
+	assert.Equal(t, "web", stringAt(slicesAt(mapAt(payload, keyRuntime), keyContainerGroups)[0], keyName))
+
+	bound, err := Parse([]byte(`name: my-app
+artifactId: 68b0bbbb0000000000000002
+runtime:
+  containerGroups:
+    - replicaCount: 2
+`), "")
+	require.NoError(t, err)
+
+	compiled, err = bound.Compile()
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(compiled.Payload, &payload))
+	assert.Equal(t, GroupName, stringAt(slicesAt(mapAt(payload, keyRuntime), keyContainerGroups)[0], keyName))
+}
+
 // The shorthand must compile to exactly the object the workload package's
 // EnvironmentVar marshals to: the expected JSON is built from that struct, so
 // a drifted field tag fails here instead of at the API.
@@ -325,6 +365,41 @@ func TestArtifactPayload_NoBlockToCreate(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = compiled.ArtifactPayload()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no artifact block")
+}
+
+// The spec on its own is what an update takes: the artifact already has a name
+// and a type, and the platform owns the type once it exists.
+func TestArtifactSpecPayload_IsTheSpecAlone(t *testing.T) {
+	m, err := Parse([]byte(buildManifest), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	payload, err := compiled.ArtifactSpecPayload()
+	require.NoError(t, err)
+
+	var spec map[string]any
+
+	require.NoError(t, json.Unmarshal(payload, &spec))
+	assert.Contains(t, spec, "containerGroups")
+	assert.NotContains(t, spec, "name", "the name is the artifact's, not its spec's")
+	assert.Equal(t, "my-app-artifact", compiled.ArtifactName, "which is lifted out for the copy to be named")
+}
+
+// A manifest bound by id describes no block, so there is nothing to lift.
+func TestCompile_ArtifactBoundByIDHasNoBlockToRead(t *testing.T) {
+	m, err := Parse([]byte("name: my-app\nartifactId: 68b0bbbb0000000000000002\n"), "")
+	require.NoError(t, err)
+
+	compiled, err := m.Compile()
+	require.NoError(t, err)
+
+	assert.Empty(t, compiled.ArtifactName)
+
+	_, err = compiled.ArtifactSpecPayload()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no artifact block")
 }

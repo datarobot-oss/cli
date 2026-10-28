@@ -39,12 +39,12 @@ You can also use the 'install' subcommand to install completions interactively.`
 
 Bash:
 
-  $ source <(` + version.CliName + ` completion bash)
+  $ source <(` + version.CliName + ` self completion bash)
 
   # To load completions for each session, execute once:
 
   # Linux:
-  $ ` + version.CliName + ` completion bash > /etc/bash_completion.d/` + version.CliName + `
+  $ ` + version.CliName + ` self completion bash > /etc/bash_completion.d/` + version.CliName + `
 
 Zsh:
 
@@ -53,21 +53,21 @@ Zsh:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
   # Linux or MacOS:
-  $ ` + version.CliName + ` completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_dr` + version.CliName + `
+  $ ` + version.CliName + ` self completion zsh > ${ZDOTDIR:-$HOME}/.zsh/completions/_` + version.CliName + `
 
 Fish:
 
-  $ ` + version.CliName + ` completion fish | source
+  $ ` + version.CliName + ` self completion fish | source
 
   # To load completions for each session, execute once:
-  $ ` + version.CliName + ` completion fish > ~/.config/fish/completions/` + version.CliName + `.fish
+  $ ` + version.CliName + ` self completion fish > ~/.config/fish/completions/` + version.CliName + `.fish
 
 PowerShell:
 
-  PS> ` + version.CliName + ` completion powershell | Out-String | Invoke-Expression
+  PS> ` + version.CliName + ` self completion powershell | Out-String | Invoke-Expression
 
   # To load completions for every new session, run:
-  PS> ` + version.CliName + ` completion powershell > ` + version.CliName + `.ps1
+  PS> ` + version.CliName + ` self completion powershell > ` + version.CliName + `.ps1
   # and source it from your PowerShell profile.
 `,
 		DisableFlagsInUseLine: true,

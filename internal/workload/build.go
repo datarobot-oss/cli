@@ -15,11 +15,13 @@
 package workload
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"net/http"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
 // Build statuses are server-side enum values (UPPERCASE). All five were
@@ -37,12 +40,24 @@ const (
 	BuildStatusCompleted  = "COMPLETED"
 	BuildStatusFailed     = "FAILED"
 	BuildStatusCancelled  = "CANCELLED"
+
+	// BuildStatusBuilt is the image built and being pushed to the registry,
+	// which is a stage before COMPLETED rather than after it. BuildStatusLine
+	// has narrated it all along; the constant only gives the string a name so
+	// the classifiers below stop relying on it falling through their
+	// unknown-status default.
+	BuildStatusBuilt = "BUILT"
 )
 
 // BuildStatusCLIUnknown is a CLI-side sentinel for "the server never gave
-// us a Build object" (e.g. the very first poll errored out). It is never
-// emitted by the server and intentionally lives outside the server-status
-// const block so it cannot be confused for a real enum value.
+// us a Build object" (e.g. the very first poll errored out).
+//
+// It is no longer only ours: UNKNOWN is in the server's own enum, and is
+// what the status field defaults to when the platform did not determine
+// one. The two cases are indistinguishable on the wire and both mean "no
+// answer yet", so nothing reads them apart — but they are not the same
+// fact, and a reader of this constant should not assume the value came
+// from here.
 const BuildStatusCLIUnknown = "UNKNOWN"
 
 // Default tail length used by BuildSummaryFor when a build ends in an error
@@ -65,6 +80,92 @@ type Build struct {
 	Status     string    `json:"status"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+
+	// ImageURI is the image this build produced, on the build's own record.
+	// The summary reads it from here rather than from the parent artifact:
+	// the artifact points at whatever build was applied last, which during
+	// the window ImageApplied describes is the previous one.
+	ImageURI string `json:"imageUri"`
+
+	// ImageApplied is whether the artifact now points at this build's
+	// image. COMPLETED means the image exists; this means it is the one a
+	// deploy would get. A pointer because the server sends null for "not
+	// determined", which is not the same as false and must not be read as
+	// "applied".
+	ImageApplied *bool `json:"imageApplied"`
+
+	// FailureReason is the platform's own account of a failed build, which
+	// is shorter and more direct than the log tail the summary falls back
+	// to. Empty on success and whenever the platform gave none.
+	FailureReason string `json:"failureReason,omitempty"`
+}
+
+// ImageIsApplied reports whether the artifact points at this build's image,
+// reading a null as "not yet" rather than as a verdict.
+func (b Build) ImageIsApplied() bool {
+	return b.ImageApplied != nil && *b.ImageApplied
+}
+
+// IsDeployable reports whether the build finished and the server said its
+// image is the one a deploy would now get. This, not the status alone, is
+// what --wait waits for: COMPLETED lands a moment before the artifact is
+// repointed, and a script that deploys in that window gets the previous
+// build's image, or none at all.
+//
+// False when the server said nothing, which is not the same as "no". Use
+// buildIsDeployable for the question a caller actually has, since it can
+// answer it for a server that does not publish the field.
+func (b Build) IsDeployable() bool {
+	return IsBuildCompleted(b.Status) && b.ImageIsApplied()
+}
+
+// buildIsDeployable answers "would deploying now use this build's image",
+// including on a platform that does not send imageApplied.
+//
+// No tagged workload-api release publishes the field: v11.12.0, the latest,
+// carries none of imageApplied, imageUri or failureReason. Gating purely on
+// it would leave every successful build on every released server polling to
+// the timeout and then failing, which is a far worse bug than the race this
+// fixes.
+//
+// So a nil imageApplied — the server never sent one, or sent null for "not
+// determined" — falls back to the check the server itself performs: the
+// image tag is the build's own id, so an artifact whose primary container
+// ends in :{buildID} is running this build's image. An explicit false is
+// the server answering "not yet" and is believed as-is.
+func buildIsDeployable(b *Build) bool {
+	if !IsBuildCompleted(b.Status) {
+		return false
+	}
+
+	if b.ImageApplied != nil {
+		return *b.ImageApplied
+	}
+
+	return artifactRunsBuildImage(b.ArtifactID, b.ID)
+}
+
+// artifactRunsBuildImage reports whether artifactID's primary container is
+// running the image buildID produced. A fetch that fails answers no: the
+// caller polls again, and a wait that ends on an unanswered question is the
+// thing being fixed.
+func artifactRunsBuildImage(artifactID, buildID string) bool {
+	uri := primaryImageURI(artifactID)
+
+	return uri != "" && strings.HasSuffix(uri, ":"+buildID)
+}
+
+// primaryImageURI is the artifact's primary container image, or "" when the
+// artifact cannot be read.
+func primaryImageURI(artifactID string) string {
+	artifact, err := GetArtifact(artifactID)
+	if err != nil {
+		log.Debug("read artifact for image URI", "artifact_id", artifactID, "err", err)
+
+		return ""
+	}
+
+	return GetPrimaryContainerImageURI(*artifact)
 }
 
 // BuildList is the paginated envelope returned by GET /artifacts/{id}/builds/.
@@ -135,52 +236,169 @@ type BuildSummary struct {
 	DurationSeconds int64           `json:"durationSeconds"`
 	ImageURI        string          `json:"imageUri"`
 	LogTail         []BuildLogEntry `json:"logTail"`
+
+	// FailureReason is the platform's own account of a failure, when it
+	// gave one. Unlike LogTail it is omitted when empty: the log tail has a
+	// stable shape so consumers can jq it either way, while a reason that
+	// was never given is better absent than present and blank.
+	FailureReason string `json:"failureReason,omitempty"`
+
+	// LogTailErr is why LogTail is empty when the fetch failed, so an empty
+	// tail is not read as "no logs". Not rendered.
+	LogTailErr error `json:"-"`
+
+	// LogTailShown is set when the stream already printed the whole log,
+	// closing line included, so text output does not print the same lines a
+	// second time. JSON still carries LogTail. Not rendered.
+	LogTailShown bool `json:"-"`
+}
+
+// LogEvidence is what the summary can say about the build's logs.
+func (s BuildSummary) LogEvidence() LogEvidence {
+	switch {
+	case len(s.LogTail) > 0:
+		return LogsCaptured
+	case s.LogTailErr != nil:
+		return LogsUnknown
+	default:
+		return LogsAbsent
+	}
 }
 
 // IsTerminalBuildStatus reports whether s is a state from which the build
 // will not progress further (COMPLETED, FAILED, CANCELLED). Unknown statuses
 // are treated as non-terminal so polling keeps going rather than declaring
 // success on a status the server added without telling us.
+//
+// The comparison folds case, as the replacement and artifact classifiers do.
+// These constants are upper case where the workload's are lower, which is the
+// platform disagreeing with itself about the casing of its own status enums;
+// read exactly, a build answering "completed" would be polled until the
+// timeout and then fail a deploy whose image was already built.
 func IsTerminalBuildStatus(s string) bool {
-	switch s {
-	case BuildStatusCompleted, BuildStatusFailed, BuildStatusCancelled:
-		return true
-	}
+	return IsBuildErrorStatus(s) || IsBuildCompleted(s)
+}
 
-	return false
+// IsBuildCompleted reports whether s is the one terminal status that produced
+// an image.
+//
+// It exists so the question is asked the same way everywhere. Folding the
+// terminal check while a consumer went on comparing exactly was worse than not
+// folding at all: the wait would accept a lowercase "completed" and the code
+// reading the result would call the same build unfinished, so a deploy would
+// succeed its wait and then have no image to ship.
+func IsBuildCompleted(s string) bool {
+	return strings.EqualFold(s, BuildStatusCompleted)
+}
+
+// IsBuildFailed reports whether s is FAILED alone, without the CANCELLED that
+// IsBuildErrorStatus also counts.
+func IsBuildFailed(s string) bool {
+	return strings.EqualFold(s, BuildStatusFailed)
 }
 
 // IsBuildErrorStatus reports whether s is a terminal failure.
 func IsBuildErrorStatus(s string) bool {
-	switch s {
-	case BuildStatusFailed, BuildStatusCancelled:
+	return strings.EqualFold(s, BuildStatusFailed) || strings.EqualFold(s, BuildStatusCancelled)
+}
+
+// Trigger retries are keyed on exactly the two statuses the platform answers
+// with explicit safe-to-retry semantics: 503 (a dependency it needs is
+// temporarily down) and 504 (the build service did not confirm the submission
+// and nothing was recorded on the artifact). Any other status fails fast —
+// a plain 500 from an older server may have half-succeeded, where re-POSTing
+// risks a duplicate build.
+var triggerRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second}
+
+// triggerRetrySleep is time.Sleep, replaced by tests so retry coverage does
+// not spend wall-clock time.
+var triggerRetrySleep = time.Sleep
+
+// triggerTimeout must comfortably exceed the platform's own budget for
+// the trigger: workload-api waits up to 30s for its image build service to
+// accept the submission before answering. A client that hangs up at or under
+// that budget abandons an answer already on the way — including the 504 that
+// says a retry is safe. A var so tests can shrink it. Observed live on
+// staging: the default 30s client timeout expired mid-trigger and the deploy
+// died on "context deadline exceeded" with no way to tell what happened.
+var triggerTimeout = 60 * time.Second
+
+// explainTriggerTimeout wraps a client-side timeout — the one failure where
+// the CLI hung up rather than the platform answering — with what the user
+// needs to know: the outcome is unknown, and re-running is safe because a new
+// trigger supersedes any build the lost request may have started. Every other
+// error passes through untouched.
+func explainTriggerTimeout(err error) error {
+	if !os.IsTimeout(err) {
+		return err
+	}
+
+	return fmt.Errorf(
+		"the build trigger got no response within %s; the platform may still have started the build. "+
+			"Re-running the command is safe: a new trigger supersedes any build this one started: %w",
+		triggerTimeout, err)
+}
+
+func isRetryableTriggerStatus(err error) bool {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+
+	// A 503 is safe to retry wherever it was minted: a gateway answers it
+	// before the request reaches the platform. A 504 is only safe when the
+	// PLATFORM answered it — its "nothing was recorded" guarantee comes with
+	// a JSON detail body. A proxy's own 504 (HTML/plain body, no envelope)
+	// means the platform may still be processing and might yet record the
+	// build, so retrying risks a duplicate. The check reads the raw body
+	// rather than Detail, so it holds whatever layer shaped the error.
+	switch httpErr.StatusCode {
+	case http.StatusServiceUnavailable:
 		return true
+	case http.StatusGatewayTimeout:
+		return apiclient.ErrorDetail(httpErr.Body) != ""
 	}
 
 	return false
 }
 
 // TriggerArtifactBuild POSTs an empty body to /artifacts/{id}/builds/ and
-// returns the trigger response. The defensive empty-slice check is in the
-// caller so the service layer remains a thin pass-through of the server
-// shape.
+// returns the trigger response, retrying the statuses the platform declares
+// safe to retry. The defensive empty-slice check is in the caller so the
+// service layer remains a thin pass-through of the server shape.
 func TriggerArtifactBuild(artifactID string) (*BuildTriggerResponse, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/")
 	if err != nil {
 		return nil, err
 	}
 
-	var resp BuildTriggerResponse
+	for attempt := 0; ; attempt++ {
+		var resp BuildTriggerResponse
 
-	if err := drapi.PostJSON(url, "build", map[string]any{}, &resp); err != nil {
-		return nil, err
+		err := apiclient.PostJSON(url, "build", map[string]any{}, &resp, triggerTimeout)
+		if err == nil {
+			return &resp, nil
+		}
+
+		if attempt >= len(triggerRetryDelays) || !isRetryableTriggerStatus(err) {
+			return nil, explainTriggerTimeout(err)
+		}
+
+		log.Debug("build trigger got a retryable status; retrying",
+			"artifact_id", artifactID, "attempt", attempt+1, "err", err)
+		triggerRetrySleep(triggerRetryDelays[attempt])
 	}
-
-	return &resp, nil
 }
 
 // GetArtifactBuild fetches a single Build by id.
 func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
+	return fetchArtifactBuild(artifactID, buildID, "build")
+}
+
+// fetchArtifactBuild is GetArtifactBuild with the caller choosing drapi's
+// per-request log label; the poll loop passes "" so its every-five-seconds
+// fetch line cannot interleave with a streamed build log.
+func fetchArtifactBuild(artifactID, buildID, reqInfo string) (*Build, error) {
 	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID))
 	if err != nil {
 		return nil, err
@@ -188,7 +406,7 @@ func GetArtifactBuild(artifactID, buildID string) (*Build, error) {
 
 	var build Build
 
-	if err := drapi.GetJSON(url, "build", &build); err != nil {
+	if err := drapi.GetJSON(url, reqInfo, &build); err != nil {
 		return nil, err
 	}
 
@@ -238,54 +456,39 @@ func ListArtifactBuilds(artifactID string, limit int) ([]Build, error) {
 	return all, nil
 }
 
-// GetArtifactBuildLogs returns parsed log entries for a build. The endpoint
-// emits newline-delimited JSON; we tolerate malformed lines so a single bad
-// record cannot blank the whole tail. The original bytes for each line are
-// preserved in Raw so JSON output can pass them through unchanged.
+// GetArtifactBuildLogs returns a build's log lines, oldest first, read from
+// the artifact's OTEL stream filtered by external_build_id — the replacement
+// for the deprecated GET /artifacts/{id}/builds/{id}/logs proxy, whose
+// records only existed for as long as IBS retained the build. The OTEL
+// records are mapped onto the legacy BuildLogEntry shape so level filtering
+// and both renderers carry over; Raw holds the OTEL record itself, which is
+// what JSON output now passes through.
 func GetArtifactBuildLogs(artifactID, buildID string) ([]BuildLogEntry, error) {
-	url, err := config.GetEndpointURL("/api/v2/artifacts/" + escapeID(artifactID) + "/builds/" + escapeID(buildID) + "/logs")
+	otel, err := fetchArtifactBuildLogs(artifactID, buildID, 0, "", "", "build logs")
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := drapi.Get(url, "build logs")
-	if err != nil {
-		return nil, err
-	}
+	// Newest first from the server; chronological for display, with the sort
+	// settling lines the collector ingested out of event order.
+	slices.Reverse(otel)
+	sortChronological(otel)
 
-	defer resp.Body.Close()
+	entries := make([]BuildLogEntry, 0, len(otel))
 
-	return parseBuildLogs(resp.Body)
-}
-
-func parseBuildLogs(r io.Reader) ([]BuildLogEntry, error) {
-	scanner := bufio.NewScanner(r)
-	// Each line can be a multi-KB structured log; bump the buffer past the
-	// 64KiB default to accommodate verbose entries without truncation.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-	var entries []BuildLogEntry
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
+	for _, e := range otel {
+		raw, err := json.Marshal(e)
+		if err != nil {
+			raw = nil // the named fields still render; only passthrough is lost
 		}
 
-		var entry BuildLogEntry
-		if err := json.Unmarshal(line, &entry); err != nil {
-			// Skip malformed lines rather than fail the whole fetch;
-			// log payloads regularly include non-JSON tail lines from
-			// the underlying buildkit pipe.
-			continue
-		}
-
-		entry.Raw = append(json.RawMessage(nil), line...)
-		entries = append(entries, entry)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("read build logs: %w", err)
+		entries = append(entries, BuildLogEntry{
+			Asctime:   e.Timestamp,
+			Levelname: strings.ToUpper(e.Level),
+			Message:   e.Message,
+			BuildID:   buildID,
+			Raw:       raw,
+		})
 	}
 
 	return entries, nil
@@ -298,36 +501,118 @@ func parseBuildLogs(r io.Reader) ([]BuildLogEntry, error) {
 // cannot redraw the spinner label from inside fn(), so this is a passive
 // seam in PR 1).
 func WaitForBuild(
+	ctx context.Context,
 	artifactID, buildID string,
 	interval, timeout time.Duration,
 	onTick func(*Build),
 ) (*Build, error) {
 	deadline := time.Now().Add(timeout)
 
+	// The last successful read travels with a cancellation, as it does from
+	// every other waiter: a caller saying where the build got to has nothing
+	// else to say it from, and buildImage reads a nil build as "never ran".
+	var last *Build
+
 	for {
-		build, err := GetArtifactBuild(artifactID, buildID)
+		if err := ctx.Err(); err != nil {
+			return last, abandonedBuild(buildID, err)
+		}
+
+		// The reads below carry no context; see abandoned in workload.go for
+		// how far it reaches and why the loop is still worth gating.
+		build, err := fetchArtifactBuild(artifactID, buildID, "") //nolint:contextcheck // drapi takes no context
 		if err != nil {
 			return nil, fmt.Errorf("poll build %s: %w", buildID, err)
 		}
+
+		last = build
 
 		if onTick != nil {
 			onTick(build)
 		}
 
-		if IsTerminalBuildStatus(build.Status) {
-			if IsBuildErrorStatus(build.Status) {
-				return build, fmt.Errorf("build %s ended with status %s; run 'dr artifact build logs %s' to inspect", buildID, build.Status, buildID)
-			}
+		if IsBuildErrorStatus(build.Status) {
+			// No logs hint here: only callers know whether any exist. They
+			// word the final error with BuildFailureMessage.
+			return build, fmt.Errorf("build %s ended with status %s", buildID, build.Status)
+		}
 
+		// COMPLETED is not the end of the wait. It means the image exists;
+		// the artifact is repointed at it a moment later, and a caller that
+		// deploys in between gets the build before this one, or an artifact
+		// with no runtime image at all. Waiting for the artifact to catch up
+		// is the whole point of --wait.
+		if buildIsDeployable(build) { //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
 			return build, nil
 		}
 
 		if time.Now().After(deadline) {
+			if IsBuildCompleted(build.Status) {
+				return build, fmt.Errorf(
+					"build %s finished but the artifact is still not using its image after %s; "+
+						"deploying now would use the previous image",
+					buildID, timeout)
+			}
+
 			return build, fmt.Errorf("timeout waiting for build %s after %s", buildID, timeout)
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return build, abandonedBuild(buildID, ctx.Err())
+		}
 	}
+}
+
+// abandonedBuild is abandoned's counterpart for a build wait: the build is
+// still running server-side, so the last read comes back with the error.
+func abandonedBuild(buildID string, err error) error {
+	return fmt.Errorf("stopped waiting for build %s: %w", buildID, err)
+}
+
+// LogEvidence is what a failed build's error can say about its logs.
+type LogEvidence int
+
+const (
+	// LogsUnknown means the logs could not be read.
+	LogsUnknown LogEvidence = iota
+	// LogsCaptured means at least one line exists.
+	LogsCaptured
+	// LogsAbsent means the stream has nothing for the build so far.
+	LogsAbsent
+)
+
+// BuildLogsAvailable asks for one log line of the build, which is all a hint
+// needs. A fetch error is reported as unknown rather than read as "none".
+func BuildLogsAvailable(artifactID, buildID string) LogEvidence {
+	entries, err := fetchArtifactBuildLogs(artifactID, buildID, 1, "", "", "build logs")
+
+	switch {
+	case err != nil:
+		return LogsUnknown
+	case len(entries) == 0:
+		return LogsAbsent
+	default:
+		return LogsCaptured
+	}
+}
+
+// BuildFailureMessage words the error for a build that ended badly. The logs
+// command is named as the place to read when lines exist, and as the place
+// to check later when none have arrived yet, since ingestion lags the build.
+func BuildFailureMessage(artifactID, buildID, status string, logs LogEvidence) error {
+	head := fmt.Sprintf("build %s ended with status %s", buildID, status)
+	command := fmt.Sprintf("dr artifact build logs %s %s", artifactID, buildID)
+
+	switch logs {
+	case LogsCaptured:
+		return fmt.Errorf("%s; see '%s'", head, command)
+	case LogsAbsent:
+		return fmt.Errorf("%s; no log lines have been captured for it yet, '%s' shows any that arrive", head, command)
+	case LogsUnknown:
+		return fmt.Errorf("%s; its logs could not be read just now, try '%s'", head, command)
+	}
+
+	return errors.New(head)
 }
 
 // BuildSummaryFor composes the terminal-state summary RenderBuildSummary
@@ -350,16 +635,16 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		DurationSeconds: buildDurationSeconds(*build),
 	}
 
-	if build.Status != BuildStatusCompleted {
+	summary.FailureReason = build.FailureReason
+
+	if !IsBuildCompleted(build.Status) {
 		if IsBuildErrorStatus(build.Status) {
 			logs, lerr := GetArtifactBuildLogs(build.ArtifactID, build.ID)
 			if lerr != nil {
-				// Surface the fetch error via debug logging rather than
-				// failing the whole summary -- the user still benefits
-				// from seeing the build's terminal state even when the
-				// build-service logs endpoint is unavailable (which is
-				// common right after a CANCELLED build, when the logs
-				// have been garbage-collected).
+				// Kept on the summary rather than failing it: the terminal
+				// state is still worth showing when the logs are gone.
+				summary.LogTailErr = lerr
+
 				log.Debug("BuildSummaryFor: log tail fetch failed", "build_id", build.ID, "err", lerr)
 			} else {
 				summary.LogTail = lastN(logs, tailLen)
@@ -369,15 +654,22 @@ func BuildSummaryFor(build *Build, tailLen int) (BuildSummary, error) {
 		return summary, nil
 	}
 
-	artifact, err := GetArtifact(build.ArtifactID)
-	if err != nil {
-		// Surface the partial summary so callers can still render
-		// duration and status even when the artifact fetch fails.
-		// ImageURI stays empty in that case.
-		return summary, fmt.Errorf("fetch parent artifact for build %s: %w", build.ID, err)
+	// From the build where the platform provides it. The artifact points at
+	// whichever build was applied last, so reading it there reported the
+	// previous build's image whenever the summary was composed before the
+	// artifact caught up — the same window --wait now waits through. The
+	// build's own record cannot be wrong about what the build produced, and
+	// costs no second request.
+	//
+	// No tagged workload-api release sends it yet, though, and both commands
+	// promise the resulting image in their help. So an absent one falls back
+	// to the artifact, which is where this always read from: by the time a
+	// summary is composed the wait has established that the artifact runs
+	// this build's image, so on those servers the two name the same thing.
+	summary.ImageURI = build.ImageURI
+	if summary.ImageURI == "" {
+		summary.ImageURI = primaryImageURI(build.ArtifactID)
 	}
-
-	summary.ImageURI = GetPrimaryContainerImageURI(*artifact)
 
 	return summary, nil
 }

@@ -15,12 +15,16 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/tui"
 )
 
 // roll moves a live workload onto a new version of what the file describes.
@@ -31,9 +35,11 @@ import (
 // The order is not a preference. The guard comes first because a second
 // replacement POSTed while one is in flight queues another swap rather than
 // being refused, so the check that matters is the one immediately before the
-// call, and an early one saves a doomed run from creating anything. The
-// candidate is minted next, and the question of locking is put then, while
-// the answer still costs nothing.
+// call, and an early one saves a doomed run from creating anything.
+//
+// Whether a locked version may be rolled at all is settled by the caller,
+// before it. This can be reached with the workload already started, and a
+// question asked after that is one whose "no" has already changed something.
 //
 // The lock itself is last, inside replace, between the final guard and the
 // POST. The platform will not replace a locked artifact with a draft, so the
@@ -41,42 +47,43 @@ import (
 // locked for a rollout that is then refused can be neither unlocked nor
 // deleted. Taking the lock only once nothing is left that can say no is what
 // keeps a lost race from leaving one behind.
-func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
-	if err := guardReplacementFn(live.WorkloadID); err != nil {
+func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
+	if err := guardRollout(live.WorkloadID, "nothing was built or rolled out"); err != nil {
 		return result, err
 	}
 
-	made, err := candidateArtifact(loaded, live, plan.Code, opts, report)
+	made, err := candidateArtifact(ctx, loaded, live, plan, opts, report)
 
 	// Recorded before the error check: a failed build is still a build, and
 	// the caller's envelope should be able to name the one to go and read.
 	result.BuildID = made.BuildID
 
+	// By here it is known rather than predicted: a leftover taken ahead of a
+	// copy, a platform with no copy endpoint and a tree that moved between the
+	// plan and the sync all reach this line having built anyway.
+	result.Plan.InheritsImage = plan.InheritsImage && err == nil && made.BuildID == ""
+	result.Plan.InPlace = plan.InPlace
+
 	if err != nil {
 		return result, err
 	}
 
-	// result.ArtifactID stays on the version that is serving, and settle
-	// moves it when the rollout has actually promoted the new one. A failed
-	// swap leaves the old version running, so an envelope naming the
-	// candidate would send someone to read the wrong artifact.
-
-	// Asked now, locked later. Agreeing costs nothing that cannot be undone;
-	// the lock is taken inside replace, once the last guard has passed.
-	lock, err := confirmLock(live, result.Name, opts)
-	if err != nil {
-		return result, err
-	}
+	// result.ArtifactID stays on the version that is serving, and settle moves
+	// it once the rollout has promoted the new one, which it now waits to see
+	// rather than assuming. A failed swap leaves the old version running, so an
+	// envelope naming the candidate would point at the wrong artifact.
 
 	// A file that moved the sizing as well as the version rides both in on the
 	// same swap: the platform takes runtime alongside the artifact, so there is
 	// no second call and no window where one half is live and the other is not.
-	runtime, err := rollRuntime(loaded, plan)
+	sizing, err := rollRuntime(loaded, plan)
 	if err != nil {
 		return result, err
 	}
 
-	return replace(live.WorkloadID, made, lock, runtime, result, opts, report)
+	return replace(ctx, live.WorkloadID, made, lock, sizing, plan.InPlace, result, opts, report)
 }
 
 // candidateArtifact is the version to roll onto.
@@ -86,22 +93,91 @@ func roll(loaded Loaded, live Live, plan Plan, result Result, opts Options, repo
 // every deploy. A file the platform builds from needs the working tree and an
 // image before it is worth promoting. A published image needs neither, and is
 // one call.
+//
+// Whatever is minted joins the repository the running version belongs to, so a
+// workload deployed ten times reads as ten versions of one thing rather than
+// ten artifacts that happen to share a name.
 func candidateArtifact(
+	ctx context.Context,
 	loaded Loaded,
 	live Live,
-	code CodeChange,
+	plan Plan,
 	opts Options,
 	report *reporter,
 ) (version, error) {
 	if id := loaded.Compiled.ArtifactID; id != "" {
-		return version{ID: id}, nil
+		return version{ID: id, StatusRead: plan.BoundRead, Locked: plan.BoundLocked}, nil
 	}
 
-	if mode := loaded.Manifest.BuildMode(); mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated {
-		return buildVersion(loaded, live, code, opts, report)
+	if plan.InPlace {
+		made, err := patchedVersion(loaded, live, plan, report)
+		if err != nil || made.ImageURI != "" || !plan.Code.Applies {
+			return made, err
+		}
+
+		// The platform keeps the image on a write that omits it; a readback
+		// without one is not promoted on trust.
+		report.say("  The write left artifact %s without an image, so one is built.\n", made.ID)
+
+		made.BuildID, err = buildAndRecord(ctx, loaded.ProjectDir, made.ID, "", opts, report)
+
+		return made, err
 	}
 
-	return createVersion(loaded, report)
+	repository := sameRepository(loaded, live)
+
+	// The same reading the plan used, rather than a second one off the parse
+	// tree: two answers to "does the platform build this image" coming apart is
+	// how a plan describes a deploy that does not happen.
+	if plan.Code.Applies {
+		return buildVersion(ctx, loaded, live, plan, repository, opts, report)
+	}
+
+	return createVersion(loaded, repository, labelNewVersion, report)
+}
+
+// sameRepository is the repository the new version joins, "" when it should
+// start one of its own.
+//
+// The one case that has to start fresh is a file that changed the artifact's
+// kind. A repository carries a type, taken from the artifact that opened it,
+// and the platform refuses an artifact whose own type disagrees. A service
+// that became an agent is a new lineage rather than the next version of the
+// old one, so asking for the old repository would earn a 422 saying exactly
+// that. Cheaper and clearer to notice it here, where both types are already in
+// hand.
+func sameRepository(loaded Loaded, live Live) string {
+	if live.ArtifactRepositoryID == "" || !sameArtifactType(loaded, live) {
+		return ""
+	}
+
+	return live.ArtifactRepositoryID
+}
+
+// sameArtifactType reports whether the file still asks for the kind of thing
+// the workload is running.
+//
+// Both sides are defaulted, which is deliberately not what the plan does with
+// the same two values. The plan treats an unstated type as the file having no
+// opinion, because it never reverts what the file leaves out. The question
+// here is a different one: what kind of thing is the artifact about to be
+// created. The platform answers service for a block that names none, so that
+// is what the repository will be compared against, whatever the file meant by
+// saying nothing. The comparison itself is shared with the plan's, so the two
+// cannot come to disagree about what a type change is.
+//
+// A file that cannot be read answers no, which starts a new repository. That
+// costs a row in the Registry; joining the wrong one costs a round trip.
+func sameArtifactType(loaded Loaded, live Live) bool {
+	wanted, err := loaded.ArtifactType()
+	if err != nil {
+		return false
+	}
+
+	return manifest.SameArtifactType(
+		manifest.ArtifactTypeOrDefault(wanted),
+		manifest.ArtifactTypeOrDefault(live.ArtifactType),
+	)
 }
 
 // confirmLock asks whether to roll a locked version, and reports whether the
@@ -111,18 +187,26 @@ func candidateArtifact(
 // Only the question is asked here. The lock itself waits until immediately
 // before the swap, because locking is one-way and an artifact locked for a
 // rollout that never starts can be neither unlocked nor deleted.
+//
+// It is asked before the deploy touches anything, which is what lets the
+// refusal below tell the truth: nothing has happened yet, so the workload
+// really is still running what it was, and a stopped one is still stopped.
 func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 	if !live.Locked {
 		return false, nil
 	}
 
-	agreed, err := confirmRoll(workloadName, opts)
+	agreed, err := confirmRoll(live, workloadName, opts)
 	if err != nil {
 		return false, err
 	}
 
 	if !agreed {
-		return false, fmt.Errorf("cancelled: workload %s is still running the version it was", workloadName)
+		// Not "still running the version it was": the same question is asked of
+		// a stopped workload, which this run would have started, and telling
+		// someone their switched-off workload is still running is worse than
+		// saying less.
+		return false, fmt.Errorf("cancelled: nothing was deployed and workload %s is as it was", workloadName)
 	}
 
 	return true, nil
@@ -136,17 +220,22 @@ func confirmLock(live Live, workloadName string, opts Options) (bool, error) {
 // its say, so a lock taken here is one the run is committed to using.
 func matchLock(made version, report *reporter) (bool, error) {
 	// A candidate the file named, or one left by an earlier attempt, may
-	// already be locked, and locking twice is not a no-op at the platform.
-	// One created by this run is always a draft.
-	if !made.Fresh {
-		already, lockedErr := lockedAlready(made.ID)
+	// already be locked, and locking twice answers 403. A create and a copy are
+	// both drafts, and a named artifact the plan read is known, so only a
+	// leftover has to be asked about.
+	already := made.Locked
+
+	if !made.Fresh && !made.StatusRead {
+		var lockedErr error
+
+		already, lockedErr = lockedAlready(made.ID)
 		if lockedErr != nil {
 			return false, lockedErr
 		}
+	}
 
-		if already {
-			return true, nil
-		}
+	if already {
+		return true, nil
 	}
 
 	err := report.run("Locking the new version", func() error {
@@ -181,7 +270,7 @@ func lockedAlready(artifactID string) (bool, error) {
 // A run that cannot ask is refused rather than waved through. Being unable to
 // prompt is not the same as having been told to go ahead, and the difference
 // matters exactly once.
-func confirmRoll(workloadName string, opts Options) (bool, error) {
+func confirmRoll(live Live, workloadName string, opts Options) (bool, error) {
 	// Being able to ask settles it, ahead of any inference about whether
 	// anyone is there. NonInteractive is also true for --output json, which
 	// says how to format stdout rather than that production may be rolled
@@ -189,9 +278,10 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 	// already in.
 	if opts.Confirm != nil {
 		return opts.Confirm(fmt.Sprintf(
-			"Workload %s is running a locked version, which means production.\n"+
-				"The new version will be locked too, and locking cannot be undone.\n"+
-				"Type the workload name to roll it, anything else to stop: ", workloadName), workloadName)
+			"Workload %s is on a locked version.%s\n"+
+				"The new version will be locked too, permanently.\n"+
+				"Type the workload name to roll it, anything else to stop: ",
+			tui.WarnStyle.Render("`"+workloadName+"`"), stateClause(live)), workloadName)
 	}
 
 	if opts.NonInteractive {
@@ -199,25 +289,61 @@ func confirmRoll(workloadName string, opts Options) (bool, error) {
 	}
 
 	return false, errors.New(
-		"this rolls a locked, production version and there is no terminal to confirm on. " +
+		"this rolls a locked version and there is no terminal to confirm on. " +
 			"Re-run with --yes to say so explicitly")
 }
 
-// replace starts the rollout and follows it to the end. runtime is nil unless
-// the sizing changed too, in which case it travels with the swap.
+// stateClause is the clause the question needs when the workload is not
+// simply running, and empty when it is.
+//
+// The prompt used to open "is running a locked version", which was safe while a
+// stopped workload with drift was refused long before anyone was asked. It is
+// asked of one now, and telling somebody their switched-off workload is running
+// is exactly the wrong thing to say in the one prompt that guards production.
+// The version being locked is the fact that holds either way; that the run will
+// also switch the workload on, or replace a generation that has failed, is
+// material to the answer, so it is said rather than left to be discovered.
+func stateClause(live Live) string {
+	if live.State == StateStopped {
+		return " It is not running, and this deploy starts it."
+	}
+
+	if live.State == StateErrored {
+		return " It is errored, and this deploy replaces what it is running."
+	}
+
+	return ""
+}
+
+// replace starts the rollout and follows it to the end. sizing is nil unless
+// the runtime block changed too, in which case it travels with the swap.
+//
+// The candidate travels into settle as well as into the POST: the workload says
+// "running" throughout a swap, so naming the artifact is what makes the wait
+// that follows wait for this rollout rather than the state it was already in.
 func replace(
+	ctx context.Context,
 	workloadID string,
 	made version,
 	lock bool,
-	runtime json.RawMessage,
+	sizing json.RawMessage,
+	inPlace bool,
 	result Result,
 	opts Options,
 	report *reporter,
 ) (Result, error) {
+	label := "Rolling out the new version"
+	consequence := "the version serving keeps serving and the one just minted is left unpromoted"
+
+	if inPlace {
+		label = "Rolling out the change"
+		consequence = "the version serving keeps serving, and the change written to it rolls out with the next deploy or settings change"
+	}
+
 	// The guard that actually holds. The live state can have changed since
 	// the one at the top, and this is the last moment before a swap that
 	// cannot be taken back by refusing it.
-	if err := guardReplacementFn(workloadID); err != nil {
+	if err := guardRollout(workloadID, consequence); err != nil {
 		return result, err
 	}
 
@@ -232,8 +358,8 @@ func replace(
 
 	var started *workload.Replacement
 
-	err := report.run("Rolling out the new version", func() error {
-		replacement, startErr := startReplacementFn(workloadID, made.ID, runtime)
+	err := report.run(label, func() error {
+		replacement, startErr := startReplacementFn(workloadID, made.ID, sizing)
 		started = replacement
 
 		return startErr
@@ -242,39 +368,65 @@ func replace(
 		return result, fmt.Errorf("cannot roll workload %s onto artifact %s: %w", workloadID, made.ID, err)
 	}
 
-	result.Action = ActionRolled
-
 	if opts.Detach {
+		// Nobody is waiting, so the request is the whole of what this run did.
+		result.Action = ActionRolled
+
 		report.say("  Rollout of %s onto artifact %s requested; not waiting.\n", workloadID, made.ID)
 
 		return result, nil
 	}
 
-	if err := awaitRollout(workloadID, started, opts, report); err != nil {
+	// Recorded after the wait rather than after the POST. A rollout that ends
+	// failed never promotes and leaves the previous version serving, so a run
+	// that reported "rolled" would be naming an outcome the workload did not
+	// reach. What was attempted is still legible: the plan says what was
+	// wanted and the artifact and build ids say what was made.
+	// The two waits share one budget. Both can now run for minutes, and a
+	// --poll-timeout the user set is a bound on the deploy, not on each half.
+	waitFrom := time.Now()
+
+	if err := awaitRollout(ctx, workloadID, started, opts, report); err != nil {
 		return result, err
 	}
 
-	return settle(workloadID, result, opts, report)
+	result.Action = ActionRolled
+
+	// Both generations of an in-place roll run the same artifact, so naming
+	// it would read the outgoing one as the new one; the drain is what tells
+	// them apart, as for a resize.
+	want := workload.Serving{ArtifactID: made.ID, AwaitDrain: true}
+	if inPlace {
+		want = workload.Serving{AwaitDrain: true}
+	}
+
+	return settle(ctx, workloadID, want, result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitRollout waits for the swap itself, before the wait for the workload.
 // They are two questions: the rollout says whether the new version was
 // promoted, and a failed one leaves the old version serving, so reporting the
 // workload as healthy afterwards would be true and completely misleading.
-func awaitRollout(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
-	var settled *workload.Replacement
+func awaitRollout(ctx context.Context, workloadID string, started *workload.Replacement, opts Options,
+	report *reporter,
+) error {
+	var last held[workload.Replacement]
 
-	err := report.run("Waiting for the rollout", func() error {
-		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
-		settled = replacement
+	const label = "Waiting for the rollout"
 
-		return waitErr
-	})
+	err := report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout,
+				rolloutProgress(strings.ToLower(label), opts, report, note))
+			last.set(replacement)
+
+			return waitErr
+		})
 	if err == nil {
 		return nil
 	}
 
-	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+	if settled := last.get(); settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return fmt.Errorf(
 			"the rollout of workload %s ended as %s, so it is still running the version it was; "+
 				"check 'dr workload logs %s': %w",

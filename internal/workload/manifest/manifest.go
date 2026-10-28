@@ -32,6 +32,25 @@ const FileName = ".datarobot.yaml"
 // with errors.Is, e.g. to fall into the setup wizard instead of failing.
 var ErrNotFound = errors.New("no " + FileName + " manifest found")
 
+// ErrEmptyFile reports a manifest with nothing in it. Named with its remedy
+// because the likeliest way to get here is a write that was killed between
+// reserving the path and filling it. The reservation is what stops two setups
+// racing, so it is kept, and what it can leave behind is a file the user has to
+// be told to delete rather than one they are left guessing at.
+//
+// Shared rather than phrased at each site: the same file reaches the reader
+// through Parse and the write-back through editRoot, and two explanations of
+// one state, differing by which function happened to touch the file first, is
+// one explanation too many.
+var ErrEmptyFile = errors.New(
+	"file is empty, which an interrupted write can leave behind: delete it and run the command again")
+
+// ErrNotADirectory reports that the path a search was told to start from is
+// not a directory. It is deliberately not ErrNotFound: nothing was searched,
+// so falling back to whatever a missing manifest triggers would act on a
+// directory the caller never named.
+var ErrNotADirectory = errors.New("not a directory")
+
 // recognizedKeys are the top-level keys that identify a workload manifest. A
 // file with none of them is rejected as foreign rather than deployed as an
 // all-defaults workload.
@@ -95,12 +114,7 @@ func Parse(data []byte, dir string) (*Manifest, error) {
 	}
 
 	if root.Kind == 0 {
-		// Named with its remedy because the likeliest way to get here is a
-		// write that was killed between reserving the path and filling it.
-		// The reservation is what stops two setups racing, so it is kept, and
-		// what it can leave behind is a file the user has to be told to
-		// delete rather than one they are left guessing at.
-		return nil, errors.New("file is empty, which an interrupted write can leave behind: delete it and run the command again")
+		return nil, ErrEmptyFile
 	}
 
 	if root.Kind != yaml.MappingNode {
@@ -120,6 +134,92 @@ func Parse(data []byte, dir string) (*Manifest, error) {
 	return &Manifest{Dir: dir, root: root}, nil
 }
 
+// DirFlag is the " --dir <path>" a remedy has to carry to reach the project in
+// dir, and empty when the working directory already does.
+//
+// One implementation, because two commands print this suffix at each other: a
+// message that names 'dr workload delete <id>' without it is false in exactly
+// the layout --dir was added for, and a message that adds it when the shell is
+// already standing in the project tells the reader to type something that does
+// nothing. Two notions of "already there" would eventually disagree about one
+// directory, and the disagreement would be between the two commands this
+// binding is passed between.
+//
+// The path is resolved rather than compared as text, so "." , "./." and a
+// trailing slash all answer the same way. A directory that cannot be resolved
+// answers empty: a suffix guessed from a path the OS would not confirm is worse
+// than none.
+func DirFlag(dir string) string {
+	if dir == "" {
+		return ""
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	project, err := filepath.Abs(dir)
+	if err != nil || project == cwd {
+		return ""
+	}
+
+	// Relative when it is shorter to read and still lands in the same place;
+	// absolute otherwise, which is what a project on another branch of the tree
+	// gets rather than a ../../.. chain.
+	//
+	// Forward slashes on every platform. The CLI accepts them on Windows too,
+	// since resolving --dir goes through filepath.Abs, which normalizes them;
+	// what it would not survive is a backslash pasted into a POSIX shell, where
+	// it is an escape rather than a separator, and quoting it away would take
+	// quotes cmd.exe does not read.
+	if rel, err := filepath.Rel(cwd, project); err == nil && rel != "" && !strings.HasPrefix(rel, "..") {
+		return " --dir " + shellArg(filepath.ToSlash(rel))
+	}
+
+	return " --dir " + shellArg(filepath.ToSlash(project))
+}
+
+// shellArg quotes a path that would not survive being pasted into a shell.
+//
+// These suffixes are printed inside commands the reader is meant to copy and
+// run, and a path is not a word: `/tmp/a&b` backgrounds the command at the
+// ampersand, `$HOME` and a backtick are expanded before the command ever sees
+// them, and a space simply ends the argument.
+//
+// An allowlist rather than a list of the characters that bite, because the
+// list of what a shell does something with is long, differs between shells,
+// and grows. Anything outside the set below is quoted; a path that is only
+// letters, digits and the handful of punctuation marks a path normally
+// carries is left bare, so the ordinary message is not littered with quotes.
+//
+// Double quotes rather than single. The notices carrying these wrap the whole
+// command in single quotes, which a single-quoted path would close early, and
+// cmd.exe reads double quotes and nothing else. Inside double quotes a POSIX
+// shell still acts on four characters, so those are escaped: the quote
+// itself, a backslash, a dollar and a backtick.
+func shellArg(path string) string {
+	if path != "" && !strings.ContainsFunc(path, needsQuoting) {
+		return path
+	}
+
+	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(path)
+
+	return `"` + escaped + `"`
+}
+
+// needsQuoting reports a character a shell would not hand over as itself.
+func needsQuoting(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return false
+	case strings.ContainsRune("._-+/:@,=", r):
+		return false
+	default:
+		return true
+	}
+}
+
 // Locate searches for the manifest in startDir and each ancestor, the way
 // git finds its repository root. The walk is lexical: symlinks are not
 // resolved, and it stops after checking the user's home directory or the
@@ -129,6 +229,16 @@ func Locate(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve %s: %w", startDir, err)
+	}
+
+	// Checked here rather than at each caller, because the hazard belongs to
+	// the walk: a directory that is not there has no manifest of its own, so
+	// the loop below sails past it to an ancestor and answers with a different
+	// project's file. That is a wrong answer, not a missing one, so it is not
+	// ErrNotFound: a caller that falls back to the setup wizard on ErrNotFound
+	// would otherwise configure the parent of the directory it was pointed at.
+	if !fsutil.DirExists(dir) {
+		return "", fmt.Errorf("%w: %s", ErrNotADirectory, startDir)
 	}
 
 	home, _ := os.UserHomeDir()

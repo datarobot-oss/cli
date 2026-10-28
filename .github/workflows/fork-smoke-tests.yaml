@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload Trivy results
         id: trivy_upload
-        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v3
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -205,6 +205,8 @@ jobs:
     with:
       artifact-name: 'dr-windows-fork'
       ref: ${{ needs.resolve-pr.outputs.sha }}
+      # #1031: fork PRs must never execute fork-authored composite-action code.
+      trusted-actions: true
     # S1: _build.yaml declares no secrets — omit secrets entirely.
 
   notify-start:
@@ -266,6 +268,8 @@ jobs:
       install-bin: true
       needs-token: true
       test-script: 'task smoke-test DR_API_TOKEN="$DR_API_TOKEN"'
+      # #1031: fork PRs must never execute fork-authored composite-action code.
+      trusted-actions: true
     # S1: pass only the one secret that smoke tests actually require.
     secrets:
       DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}

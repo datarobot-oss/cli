@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ import (
 const (
 	// notActiveBody is what the platform answers when nothing is in flight.
 	// The same 404 also means "no such workload", which is the ambiguity
-	// GuardNoActiveReplacement and CancelReplacement have to resolve.
+	// RefuseActiveReplacement and CancelReplacement have to resolve.
 	notActiveBody = `{"detail":"There is no active replacement for this workload."}`
 
 	replacementPath = "/api/v2/workloads/wl-1/replacement/"
@@ -73,6 +74,15 @@ func TestIsTerminalReplacementStatus(t *testing.T) {
 		{"candidate-warming", false},
 		{"switching", false},
 		{"", false},
+
+		// The platform's own docs disagree with themselves about the casing of
+		// status enums. Read case-sensitively, a settled "COMPLETED" counts as
+		// still in progress, which makes the rollout guard refuse every deploy
+		// for as long as the record lingers.
+		{"COMPLETED", true},
+		{"Failed", true},
+		{"ERRORED", true},
+		{"SWITCHING", false},
 	}
 
 	for _, c := range cases {
@@ -90,6 +100,9 @@ func TestIsFailedReplacementStatus(t *testing.T) {
 		{ReplacementStatusCompleted, false},
 		{"submitted", false},
 		{"", false},
+		{"FAILED", true},
+		{"Errored", true},
+		{"COMPLETED", false},
 	}
 
 	for _, c := range cases {
@@ -299,32 +312,28 @@ func TestCancelReplacement_OtherErrorPropagates(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 }
 
-func TestGuardNoActiveReplacement_PassesWhenNoneActive(t *testing.T) {
+func TestRefuseActiveReplacement_PassesWhenNoneActive(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		notFound(w)
 	})
 
-	assert.NoError(t, GuardNoActiveReplacement("wl-1"))
+	require.NoError(t, RefuseActiveReplacement("wl-1"))
 }
 
-// TestGuardNoActiveReplacement_MissingWorkloadFailsFast is the whole reason
-// the guard pays for a second request. Without it the mistyped id sails
-// through the up-front check, and the command goes on to create and possibly
-// lock an artifact, which cannot be undone, before finding out the target was
-// never real.
-func TestGuardNoActiveReplacement_MissingWorkloadFailsFast(t *testing.T) {
+// An empty answer is read as "nothing in flight" rather than disambiguated,
+// which is only correct because every caller has established the workload
+// exists before asking. `up` settles it in Look, and refuses the states where
+// it is gone before the plan is built.
+func TestRefuseActiveReplacement_ReadsAnEmptyAnswerAsNothingInFlight(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		notFound(w)
 	}))
 
-	err := GuardNoActiveReplacement("wl-1")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not exist")
+	require.NoError(t, RefuseActiveReplacement("wl-1"))
 }
 
-// TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive: a
-// replacement in flight is proof enough that the workload is there.
-func TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive(t *testing.T) {
+// A refusal names the candidate and the status, and costs one request.
+func TestRefuseActiveReplacement_NamesTheCandidateAndTheStatus(t *testing.T) {
 	var workloadFetches int32
 
 	mux := http.NewServeMux()
@@ -338,20 +347,20 @@ func TestGuardNoActiveReplacement_SkipsTheExistenceCheckWhenOneIsActive(t *testi
 
 	serveAPI(t, mux)
 
-	err := GuardNoActiveReplacement("wl-1")
+	err := RefuseActiveReplacement("wl-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "art-9")
 	assert.Contains(t, err.Error(), "switching")
 	assert.Zero(t, atomic.LoadInt32(&workloadFetches))
 }
 
-// TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock covers the gap
+// TestRefuseActiveReplacement_SettledReplacementDoesNotBlock covers the gap
 // between a rollout ending and the platform collecting its record.
 // WaitForReplacement returns the instant it sees a terminal status, so that
 // record is usually still readable when the next command looks. Treating it
 // as in-flight would refuse a retry, and would say so with a message naming
 // the status as "completed" while calling it in progress.
-func TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
+func TestRefuseActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
 	for _, status := range []string{
 		ReplacementStatusCompleted,
 		ReplacementStatusFailed,
@@ -362,23 +371,77 @@ func TestGuardNoActiveReplacement_SettledReplacementDoesNotBlock(t *testing.T) {
 				fmt.Fprintf(w, `{"candidateArtifactId":"art-2","status":"%s"}`, status)
 			})
 
-			assert.NoError(t, GuardNoActiveReplacement("wl-1"))
+			assert.NoError(t, RefuseActiveReplacement("wl-1"))
 		})
 	}
 }
 
-func TestGuardNoActiveReplacement_PropagatesLookupFailure(t *testing.T) {
+// TestRefuseActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn covers
+// the settings-initiated replacement. A resize rolls the workload onto the
+// artifact it is already running, so the platform returns no candidate, and a
+// message that named one unconditionally printed an empty field mid-sentence.
+func TestRefuseActiveReplacement_RefusalNamesOnlyWhatThePlatformFilledIn(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"id":"rep-9","workloadId":"wl-1","status":"pending"}`)
+	})
+
+	err := RefuseActiveReplacement("wl-1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReplacementInFlight,
+		"a refusal is a state to wait out, not a failure to find out, and callers branch on the difference")
+	assert.Contains(t, err.Error(), "workload wl-1: a replacement is already in progress (status pending)")
+	assert.NotContains(t, err.Error(), "to artifact", "there is no candidate artifact to name")
+}
+
+func TestRefuseActiveReplacement_PropagatesLookupFailure(t *testing.T) {
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	err := GuardNoActiveReplacement("wl-1")
+	err := RefuseActiveReplacement("wl-1")
 	require.Error(t, err)
 
 	var httpErr *drapi.HTTPError
 
 	require.ErrorAs(t, err, &httpErr, "a transport failure must not be reported as an in-flight replacement")
 	assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
+	assert.NotErrorIs(t, err, ErrReplacementInFlight,
+		"callers wrap a failure to find out and pass a refusal through, so the two must not carry the same mark")
+}
+
+// TestRefuseActiveReplacement_AsksOnceForAKnownWorkload is the difference
+// between the two entry points: a caller that has already read the workload
+// does not pay for the 404 disambiguation, which is a second GET of a document
+// it is holding.
+func TestRefuseActiveReplacement_AsksOnceForAKnownWorkload(t *testing.T) {
+	var workloadFetches int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(replacementPath, func(w http.ResponseWriter, _ *http.Request) {
+		notFound(w)
+	})
+	mux.HandleFunc(workloadPath, func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&workloadFetches, 1)
+		fmt.Fprint(w, `{"id":"wl-1"}`)
+	})
+
+	serveAPI(t, mux)
+
+	require.NoError(t, RefuseActiveReplacement("wl-1"))
+	assert.Zero(t, atomic.LoadInt32(&workloadFetches),
+		"the caller established the workload exists before asking")
+}
+
+func TestRefuseActiveReplacement_RefusesWithTheSentinel(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"candidateArtifactId":"art-9","status":"switching"}`)
+	})
+
+	err := RefuseActiveReplacement("wl-1")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReplacementInFlight)
+	assert.Contains(t, err.Error(), "art-9")
+	assert.Contains(t, err.Error(), "switching")
 }
 
 func TestWaitForReplacement_TerminalCompletedReturnsNoError(t *testing.T) {
@@ -393,7 +456,7 @@ func TestWaitForReplacement_TerminalCompletedReturnsNoError(t *testing.T) {
 		fmt.Fprintf(w, `{"candidateArtifactId":"art-2","status":"%s"}`, status)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ReplacementStatusCompleted, replacement.Status)
 }
@@ -403,11 +466,27 @@ func TestWaitForReplacement_FailedReturnsError(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"failed"}`)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, replacement, "a failure returns the final replacement alongside the error")
 	assert.Equal(t, ReplacementStatusFailed, replacement.Status)
-	assert.Contains(t, err.Error(), "reverted")
+	assert.Contains(t, err.Error(), "still on the generation it was running")
+}
+
+// A failed rollout's message is the platform's own account of why, and the
+// one place it says so: a candidate that never became healthy has its
+// container's reason folded into the record, and without it the caller is
+// told that a swap failed and left to find out from the logs that the image
+// could not be pulled.
+func TestWaitForReplacement_FailedCarriesThePlatformsReason(t *testing.T) {
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"errored",`+
+			`"message":"Candidate proton failed: ErrImagePull: not found"}`)
+	})
+
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "errored (Candidate proton failed: ErrImagePull: not found)")
 }
 
 // TestWaitForReplacement_ErroredClearedViaNotFound guards the exact bug found
@@ -428,10 +507,86 @@ func TestWaitForReplacement_ErroredClearedViaNotFound(t *testing.T) {
 		notFound(w)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err, "an errored candidate must not read as success just because it was later cleared")
 	require.NotNil(t, replacement)
 	assert.Equal(t, ReplacementStatusErrored, replacement.Status)
+}
+
+// A record that vanished between two polls used to read as success. Seen on
+// staging: a rollout errored and was cleared two seconds later.
+func TestWaitForReplacement_VanishedRecordIsReadFromTheTrail(t *testing.T) {
+	const eventsPath = "/api/v2/workloads/wl-1/events/"
+
+	trail := func(body string, status int) func(*testing.T) {
+		return func(t *testing.T) {
+			t.Helper()
+
+			var hits int32
+
+			mux := http.NewServeMux()
+			mux.HandleFunc(replacementPath, func(w http.ResponseWriter, _ *http.Request) {
+				if atomic.AddInt32(&hits, 1) == 1 {
+					fmt.Fprint(w, `{"id":"rep-9","candidateArtifactId":"art-2","status":"switching",`+
+						`"candidateProtonIds":["gen-9"],"createdAt":"2026-10-02T13:05:43Z"}`)
+
+					return
+				}
+
+				notFound(w)
+			})
+			mux.HandleFunc(eventsPath, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				fmt.Fprint(w, body)
+			})
+
+			serveAPI(t, mux)
+		}
+	}
+
+	// The trail writes the finished record under a new id, so none of these
+	// carry rep-9; the generation it launched is what names it.
+	errored := `{"data":[{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"art-2","candidateProtonIds":["gen-9"],"message":"candidate gen-9 is stuck in launching"}}],"next":""}`
+	completed := `{"data":[{"id":"6abfacc806bc8e5874e02dec","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Completed",
+		"details":{"replacementId":"6abfacc806bc8e5874e02dec","artifactId":"art-2","candidateProtonIds":["gen-9"]}}],"next":""}`
+	another := `{"data":[{"id":"6abfac1a06bc8e5874e02dea","workloadId":"wl-1","timestamp":"2026-10-02T13:15:10Z","eventType":"Replacement Errored",
+		"details":{"replacementId":"6abfac1a06bc8e5874e02dea","artifactId":"art-2","candidateProtonIds":["gen-8"]}}],"next":""}`
+
+	for _, c := range []struct {
+		name       string
+		serve      func(*testing.T)
+		wantErr    string
+		wantStatus string
+	}{
+		{"the trail says it errored", trail(errored, http.StatusOK), "is stuck in launching", ReplacementStatusErrored},
+		{
+			"the trail says it was cancelled",
+			trail(strings.Replace(completed, "Replacement Completed", "Replacement Cancelled", 1), http.StatusOK),
+			"ended with status cancelled", ReplacementStatusCancelled,
+		},
+		{"the trail says it completed", trail(completed, http.StatusOK), "", ReplacementStatusCompleted},
+		{"the trail has no record for it yet", trail(another, http.StatusOK), "", "switching"},
+		{"the trail cannot be read", trail(`{"detail":"boom"}`, http.StatusBadGateway), "", "switching"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.serve(t)
+
+			replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
+			require.NotNil(t, replacement)
+			assert.Equal(t, c.wantStatus, replacement.Status)
+
+			if c.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantErr)
+			assert.Contains(t, err.Error(), "still on the generation it was running")
+		})
+	}
 }
 
 // TestWaitForReplacement_NotFoundOnFirstPollIsError still holds when the
@@ -441,7 +596,7 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 		notFound(w)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	assert.Nil(t, replacement)
 	assert.Contains(t, err.Error(), "no replacement is in flight")
@@ -461,14 +616,20 @@ func TestWaitForReplacement_NotFoundOnFirstPollIsError(t *testing.T) {
 // before rendering it. And onTick stays silent, because it reports poll
 // results and this wait had none, rather than replaying the seed as if it
 // were an observation.
+//
+// The absence has to hold across several polls, so this also pins that a
+// rollout which really is over still settles the wait.
 func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
+	var hits int32
+
 	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
 		notFound(w)
 	})
 
 	started := &Replacement{ArtifactID: "art-2", Status: "submitted"}
 
-	replacement, err := WaitForReplacement("wl-1", started, time.Millisecond, time.Second, func(*Replacement) {
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", started, time.Millisecond, time.Second, func(*Replacement) {
 		t.Error("onTick must not fire when the seed carries the wait")
 	})
 	require.NoError(t, err)
@@ -476,6 +637,36 @@ func TestWaitForReplacement_StartedSeedsTheWait(t *testing.T) {
 	assert.Equal(t, "art-2", replacement.ArtifactID)
 	assert.Equal(t, "submitted", replacement.Status,
 		"the seed comes back as it was; a nil error here does not mean the status is terminal")
+	assert.Equal(t, int32(uncorroboratedAbsences), atomic.LoadInt32(&hits),
+		"one 404 is not enough to conclude a rollout finished before the wait could see it")
+}
+
+// TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord is the cost of
+// the seed above. The first poll fires immediately after the POST, so a 404
+// there says equally "the rollout is over" and "the route has not caught up",
+// and taking it at face value ended the wait before the swap had begun.
+func TestWaitForReplacement_UncorroboratedAbsenceWaitsForTheRecord(t *testing.T) {
+	var hits int32
+
+	serveReplacement(t, func(w http.ResponseWriter, _ *http.Request) {
+		switch atomic.AddInt32(&hits, 1) {
+		case 1:
+			notFound(w)
+		case 2:
+			fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"switching"}`)
+		default:
+			fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"completed"}`)
+		}
+	})
+
+	started := &Replacement{ArtifactID: "art-2", Status: "submitted"}
+
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", started, time.Millisecond, time.Second, nil)
+	require.NoError(t, err)
+	require.NotNil(t, replacement)
+	assert.Equal(t, ReplacementStatusCompleted, replacement.Status,
+		"a 404 one poll after the POST must not settle the wait before the record has appeared")
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&hits), int32(3))
 }
 
 // TestWaitForReplacement_NonTerminalClearedViaNotFoundIsSuccess is the other
@@ -494,7 +685,7 @@ func TestWaitForReplacement_NonTerminalClearedViaNotFoundIsSuccess(t *testing.T)
 		notFound(w)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.NoError(t, err)
 	require.NotNil(t, replacement)
 	assert.Equal(t, "switching", replacement.Status)
@@ -509,7 +700,7 @@ func TestWaitForReplacement_TimeoutReturnsTheLastSeen(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"candidate-warming"}`)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, 5*time.Millisecond, 25*time.Millisecond, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 	require.NotNil(t, replacement, "a timeout must still say what the rollout was doing")
@@ -527,7 +718,7 @@ func TestWaitForReplacement_PollsAtLeastOnce(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"completed"}`)
 	})
 
-	replacement, err := WaitForReplacement("wl-1", nil, time.Millisecond, 0, nil)
+	replacement, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, 0, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ReplacementStatusCompleted, replacement.Status)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&hits), "a zero budget still buys one look")
@@ -544,7 +735,7 @@ func TestWaitForReplacement_NonPositiveIntervalDoesNotSpin(t *testing.T) {
 		fmt.Fprint(w, `{"candidateArtifactId":"art-2","status":"switching"}`)
 	})
 
-	_, err := WaitForReplacement("wl-1", nil, 0, 10*time.Millisecond, nil)
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, 0, 10*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.LessOrEqual(t, atomic.LoadInt32(&hits), int32(2),
 		"a non-positive interval must fall back to the default, not busy-spin")
@@ -564,7 +755,7 @@ func TestWaitForReplacement_OnTickSeesEveryPoll(t *testing.T) {
 
 	var seen []string
 
-	_, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, func(r *Replacement) {
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, func(r *Replacement) {
 		require.NotNil(t, r, "onTick is never handed a nil")
 
 		seen = append(seen, r.Status)
@@ -579,7 +770,7 @@ func TestWaitForReplacement_PropagatesPollFailure(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 	})
 
-	_, err := WaitForReplacement("wl-1", nil, time.Millisecond, time.Second, nil)
+	_, err := WaitForReplacement(t.Context(), "wl-1", nil, time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "poll replacement")
 }

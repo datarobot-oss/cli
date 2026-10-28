@@ -19,17 +19,19 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
-// Test seams for the two reads, replaced by this package's tests to keep the
-// plan off the network.
+// Test seams for the reads, replaced by this package's tests to keep the plan
+// off the network.
 var (
 	getWorkloadDocFn = workload.GetWorkloadDocument
 	getArtifactDocFn = workload.GetArtifactDocument
+	failureReasonFn  = workload.FailureReason
 )
 
 // Keys read off the raw documents. They are read before manifest.NewLive
@@ -39,7 +41,31 @@ const (
 	keyStatus     = "status"
 	keyEndpoint   = "endpoint"
 	keyArtifactID = "artifactId"
+	keySpec       = "spec"
 	keyType       = "type"
+
+	// Keys inside the artifact spec: the running image, and how the plan
+	// recognizes a changed field as one container's.
+	keyContainerGroups = "containerGroups"
+	keyContainers      = "containers"
+	keyImageURI        = "imageUri"
+
+	// The fields a container reads when it starts, which the plan's runtime
+	// allow-list is made of. manifest/keys.go spells the ones it renders; the
+	// duplication is deliberate, since this side reads the platform's spec.
+	keyA2AEnabled      = "a2aEnabled"
+	keyEnvironmentVars = "environmentVars"
+	keyLivenessProbe   = "livenessProbe"
+	keyPort            = "port"
+	keyReadinessProbe  = "readinessProbe"
+	keyRoutes          = "routes"
+	keyStartupProbe    = "startupProbe"
+
+	// keyArtifactRepositoryID is the repository an artifact belongs to. The
+	// platform assigns it, so it is read here and never written to the file;
+	// a create that sends it back is what makes successive versions land in
+	// one repository instead of each opening its own.
+	keyArtifactRepositoryID = "artifactRepositoryId"
 )
 
 // keyArtifactType is what the plan calls a change of artifact kind. It is
@@ -68,6 +94,10 @@ type Live struct {
 	// StateStopped and only some of them can be started.
 	Status string
 
+	// Reason is why the workload is errored, in the platform's words, and ""
+	// for every other state: the difference between a rebuild and a code fix.
+	Reason string
+
 	// ArtifactID is the artifact currently running, "" when there is none.
 	ArtifactID string
 
@@ -76,6 +106,12 @@ type Live struct {
 	// reads the discriminator from the artifact and pops any type sent inside
 	// the spec, so the spec walk never sees it.
 	ArtifactType string
+
+	// ArtifactRepositoryID is the lineage the running version belongs to, ""
+	// when there is no artifact to read it from. A roll hands it to the
+	// version it mints, which is what makes the two successive versions of one
+	// thing rather than two unrelated artifacts sharing a name.
+	ArtifactRepositoryID string
 
 	// Endpoint is the workload's stable URL. The platform assigns it at
 	// creation and it survives every rollout, so it is safe to print before
@@ -86,6 +122,42 @@ type Live struct {
 	// artifact means production, and its successor has to be locked too
 	// before the platform will accept a replacement.
 	Locked bool
+
+	// ImageURI is the image the running version was built into, read off the
+	// raw document because Spec has it stripped as a build output.
+	ImageURI string
+
+	CodeVersionID string
+
+	// SwapInFlight marks a preview taken while a rollout was in progress: the
+	// state above is what the swap will change, so a dry run reports it but
+	// does not refuse on it.
+	SwapInFlight bool
+
+	// ArtifactUpdatedAt is when the running artifact was last changed, zero
+	// when the platform did not say.
+	ArtifactUpdatedAt time.Time
+}
+
+// liveArtifactType reads the discriminator off the artifact document, falling
+// back to the spec.
+//
+// The platform hoists a type sent inside the spec and answers with it beside
+// the spec, which is what the fallback is for: the file's side is read from
+// both placements, and a live side that read only one would leave the two
+// halves of the same comparison enforcing different invariants. If a route
+// ever answered without hoisting, an agent would read as having no type, be
+// defaulted to a service, and drift against a file correctly calling it an
+// agent on every run.
+func liveArtifactType(artifactDoc workload.Document) string {
+	if beside := artifactDoc.String(keyType); beside != "" {
+		return beside
+	}
+
+	spec, _ := artifactDoc[keySpec].(map[string]any)
+	within, _ := spec[keyType].(string)
+
+	return within
 }
 
 // Look fetches the live workload and the artifact it runs.
@@ -104,7 +176,11 @@ func Look(workloadID string) (Live, error) {
 	workloadDoc, err := getWorkloadDocFn(workloadID)
 	if err != nil {
 		if isNotFound(err) {
-			return Live{State: StateMissing}, nil
+			// The id travels on even though nothing answers to it. What the
+			// file was bound to is the whole difference between "this creates a
+			// workload" and "the thing you were pointing at is gone", and the
+			// plan is the only place that gets said.
+			return Live{Live: manifest.Live{WorkloadID: workloadID}, State: StateMissing}, nil
 		}
 
 		return Live{}, fmt.Errorf("cannot read workload %s: %w", workloadID, err)
@@ -119,15 +195,83 @@ func Look(workloadID string) (Live, error) {
 
 	status := workloadDoc.String(keyStatus)
 
+	live, err := manifest.NewLive(workloadID, workloadDoc, artifactDoc)
+	// A missing artifact (nil doc) is a valid state for the up path: a
+	// workload in the moments around creation has no artifact to read, and
+	// the spec comparing as absent is the right answer for something not
+	// yet built.
+	//
+	// Propagating the error when the artifact doc IS present but carries no
+	// usable spec is a DELIBERATE hard failure: a spec-less artifact means
+	// the manifest cannot be reconstructed, and failing loudly mirrors
+	// Apply's own "edit by hand" contract — the right answer is to stop and
+	// let the user edit the file, not to write something Validate would
+	// then refuse to read.
+	if err != nil && artifactDoc != nil {
+		return Live{}, err
+	}
+
+	// Walked once for both fields below: two walks that could disagree about
+	// which container is primary is how a plan promises a missing image.
+	primary := workload.PrimaryContainerInDocument(artifactDoc)
+
+	state := stateFor(status)
+
 	return Live{
-		Live:         manifest.NewLive(workloadID, workloadDoc, artifactDoc),
-		State:        stateFor(status),
-		Status:       status,
-		ArtifactID:   artifactID,
-		ArtifactType: artifactDoc.String(keyType),
-		Endpoint:     workloadDoc.String(keyEndpoint),
-		Locked:       isLocked(artifactDoc.String(keyStatus)),
+		Live:                 live,
+		State:                state,
+		Status:               status,
+		Reason:               failureReason(workloadID, state),
+		ArtifactID:           artifactID,
+		ArtifactType:         liveArtifactType(artifactDoc),
+		ArtifactRepositoryID: artifactDoc.String(keyArtifactRepositoryID),
+		Endpoint:             workloadDoc.String(keyEndpoint),
+		Locked:               isLocked(artifactDoc.String(keyStatus)),
+		ImageURI:             containerImageURI(primary),
+		CodeVersionID:        containerCodeVersionID(primary),
+		ArtifactUpdatedAt:    timeOf(artifactDoc.String(keyUpdatedAt)),
 	}, nil
+}
+
+// keyUpdatedAt is the platform's last-change stamp on an artifact.
+const keyUpdatedAt = "updatedAt"
+
+// timeOf parses a platform timestamp, zero for anything it cannot read.
+func timeOf(s string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}
+	}
+
+	return parsed
+}
+
+// failureReason asks the platform why the workload is errored, and nothing of
+// any other state: it costs two more requests, and it is best effort, since
+// the state is what the deploy acts on and the reason only what it says.
+func failureReason(workloadID string, state State) string {
+	if state != StateErrored {
+		return ""
+	}
+
+	return failureReasonFn(workloadID)
+}
+
+// containerCodeVersionID reads the catalog version a container points at,
+// which is what an inherited image is measured against.
+func containerCodeVersionID(container map[string]any) string {
+	ref := workload.CodeRefInContainer(container)
+	if ref == nil {
+		return ""
+	}
+
+	return ref.CatalogVersionID
+}
+
+func containerImageURI(container map[string]any) string {
+	uri, _ := container[keyImageURI].(string)
+
+	return uri
 }
 
 // artifactFor reads the artifact a workload runs. A workload without one is

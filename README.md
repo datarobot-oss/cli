@@ -40,6 +40,7 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - 📦 **Template management**&mdash;clone and configure application templates interactively.
 - ⚙️ **Interactive configuration**&mdash;smart wizard for environment setup with validation.
 - 🚀 **Task runner**&mdash;execute application tasks with built-in Taskfile integration.
+- 🛳️ **Workload deployment**&mdash;build container artifacts from your code and run them on DataRobot infrastructure.
 - 🐚 **Shell completions**&mdash;support for Bash, Zsh, Fish, and PowerShell.
 - 🔄 **Self-update capability**&mdash;easily update to the latest version with a single command.
 
@@ -48,6 +49,7 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Telemetry](#telemetry)
 - [Next steps](#next-steps)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -149,7 +151,7 @@ If you would like to build and install from source, you can do so by following t
 
 #### Prerequisites
 
-- Go 1.26.6 or later (for building from source)
+- Go 1.27.1 or later (for building from source)
 - Git
 - [Task](https://taskfile.dev/) (for development and task running)
 
@@ -221,9 +223,17 @@ This command will automatically:
 
 The update process supports:
 
-- **Homebrew (macOS)**&mdash;automatically upgrades via `brew upgrade --cask dr-cli`
+- **Homebrew (macOS/Linux)**&mdash;automatically upgrades via `brew upgrade --cask dr-cli`
 - **Windows**&mdash;runs the latest PowerShell installation script
 - **macOS/Linux**&mdash;runs the latest shell installation script
+
+To install a specific released version instead of the latest, pass `--version`:
+
+```bash
+dr self update --version v0.12.3
+```
+
+`--version` accepts `vX.Y.Z` or `X.Y.Z` and refuses to install a version older than the one currently running, unless `--force`/`-f` is also passed. It is not supported when `dr` was installed via the Homebrew cask; Homebrew always installs the latest release and cannot pin versions&mdash;uninstall the cask and use the manual install script instead.
 
 After updating, verify the new version:
 
@@ -398,6 +408,23 @@ dr run test
 > [!TIP]
 > **What's next?** Your application is now running! Explore the [Template system](docs/template-system/) documentation, set up [shell completions](docs/user-guide/shell-completions.md), or review the [Command reference](docs/commands/) for detailed command documentation.
 
+## Telemetry
+
+The CLI collects usage analytics linked to your DataRobot user ID to help the DataRobot team improve the tool. Telemetry is enabled by default, and all telemetry data is stored in the USA. To opt out, use any one of the following:
+
+```bash
+# Per-invocation
+dr --disable-telemetry templates list
+
+# Per-session (environment variable)
+export DATAROBOT_CLI_DISABLE_TELEMETRY=true
+
+# Permanently (add to ~/.config/datarobot/drconfig.yaml)
+disable-telemetry: true
+```
+
+When telemetry is disabled, no data is sent over the network. See [Telemetry](docs/user-guide/telemetry.md) for what is collected, where it is sent, and the hosts to allowlist.
+
 ## Next steps
 
 From here, refer to the repository of the template you selected to start customizing it.
@@ -409,6 +436,7 @@ See the links below for specific details:
 - **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
 - **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
 - **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
+- **[Deploying workloads](docs/commands/workload-spec.md)**&mdash;take your own code from an artifact to a running URL with [`dr artifact`](docs/commands/artifact.md) and [`dr workload`](docs/commands/workload.md), including the spec files both commands read.
 - **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 
 ## Common issues
@@ -519,3 +547,11 @@ Built with:
 - [Bubble Tea](https://github.com/charmbracelet/bubbletea)&mdash;terminal UI framework.
 - [Viper](https://github.com/spf13/viper)&mdash;configuration management.
 - [Task](https://taskfile.dev/)&mdash;task runner.
+
+## Contributors
+
+<a href="https://github.com/datarobot-oss/cli/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=datarobot-oss/cli&max=48" alt="Contributors"/>
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).

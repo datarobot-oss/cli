@@ -70,7 +70,7 @@ func TestGetWorkloadLogs_SinglePageReversedToChronological(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 25, "")
+	entries, err := GetWorkloadLogs("wl-1", 25, LogFilter{})
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	// Reversed for display: oldest first, newest last.
@@ -91,7 +91,7 @@ func TestGetWorkloadLogs_LevelLowercased(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 25, "ERROR")
+	_, err := GetWorkloadLogs("wl-1", 25, LogFilter{Level: "ERROR"})
 	require.NoError(t, err)
 }
 
@@ -112,7 +112,7 @@ func TestGetWorkloadLogs_OmitsLevelWhenEmpty(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 25, "")
+	_, err := GetWorkloadLogs("wl-1", 25, LogFilter{})
 	require.NoError(t, err)
 }
 
@@ -141,7 +141,7 @@ func TestGetWorkloadLogs_FollowsNextAndTruncatesToLimit(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 3, "")
+	entries, err := GetWorkloadLogs("wl-1", 3, LogFilter{})
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls)
 	require.Len(t, entries, 3)
@@ -163,7 +163,7 @@ func TestGetWorkloadLogs_ClampsPageSizeToServerMax(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 2500, "")
+	_, err := GetWorkloadLogs("wl-1", 2500, LogFilter{})
 	require.NoError(t, err)
 }
 
@@ -189,7 +189,7 @@ func TestGetWorkloadLogs_StopsOnEmptyPageWithNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 5, "")
+	entries, err := GetWorkloadLogs("wl-1", 5, LogFilter{})
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 	assert.Equal(t, 1, calls)
@@ -228,7 +228,7 @@ func TestGetWorkloadLogs_DropsCrossPageDuplicates(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 10, "")
+	entries, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.NoError(t, err)
 	require.Len(t, entries, 3)
 	assert.Equal(t, "n2", entries[0].Message)
@@ -253,9 +253,9 @@ func TestGetWorkloadLogs_RejectsOffHostNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 10, "")
+	_, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match API base host")
+	assert.Contains(t, err.Error(), "does not match API base")
 }
 
 func TestGetWorkloadLogs_RejectsMalformedNext(t *testing.T) {
@@ -272,7 +272,7 @@ func TestGetWorkloadLogs_RejectsMalformedNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 10, "")
+	_, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse Next URL")
 }
@@ -293,14 +293,14 @@ func TestGetWorkloadLogs_KeepsSamePageDuplicates(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 10, "")
+	entries, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.NoError(t, err)
 	assert.Len(t, entries, 2)
 }
 
 func TestGetWorkloadLogs_RejectsNonPositiveLimit(t *testing.T) {
 	for _, limit := range []int{0, -1} {
-		_, err := GetWorkloadLogs("wl-1", limit, "")
+		_, err := GetWorkloadLogs("wl-1", limit, LogFilter{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be positive")
 	}
@@ -318,7 +318,7 @@ func TestGetWorkloadLogs_EscapesIDInPath(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1?x=1", 25, "")
+	_, err := GetWorkloadLogs("wl-1?x=1", 25, LogFilter{})
 	require.NoError(t, err)
 }
 
@@ -333,7 +333,7 @@ func TestGetWorkloadLogs_404PropagatesAsHTTPError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("missing", 25, "")
+	_, err := GetWorkloadLogs("missing", 25, LogFilter{})
 	require.Error(t, err)
 
 	var httpErr *drapi.HTTPError
@@ -439,6 +439,112 @@ func TestLogDedup_RotationKeepsRecentMemory(t *testing.T) {
 	}
 }
 
+// Pruning forgets exactly what the next fetch can no longer return, and
+// nothing else: a key inside the overlap must survive however many lines
+// arrived after it, and one outside it is memory spent on nothing.
+func TestLogDedup_PruneForgetsWhatLeftTheOverlap(t *testing.T) {
+	at := func(offset time.Duration) string {
+		return time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC).Add(offset).Format(time.RFC3339Nano)
+	}
+
+	dedup := newLogDedup(100)
+
+	old := WorkloadLogEntry{Timestamp: at(0), Level: "INFO", Message: "old"}
+	recent := WorkloadLogEntry{Timestamp: at(90 * time.Second), Level: "INFO", Message: "recent"}
+
+	require.Len(t, dedup.filterUnseen([]WorkloadLogEntry{old, recent}), 2)
+
+	// The floor a 60s-lag fetch would use after the cursor reached "recent".
+	dedup.prune(mustParseLogTime(t, recent.Timestamp).Add(-60 * time.Second))
+
+	assert.Empty(t, dedup.filterUnseen([]WorkloadLogEntry{recent}),
+		"a key inside the overlap stays known")
+	assert.Len(t, dedup.filterUnseen([]WorkloadLogEntry{old}), 1,
+		"a key no fetch can re-offer is forgotten, which is the memory bound")
+}
+
+// The follower prunes its dedup to its own fetch floor after every emit, so
+// the generation cap is a ceiling for pathological rates rather than a
+// horizon an ordinary fast builder outruns.
+func TestFollower_PrunesTheDedupToItsFetchFloor(t *testing.T) {
+	at := func(offset time.Duration) string {
+		return time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC).Add(offset).Format(time.RFC3339Nano)
+	}
+
+	f, err := newLogFollower(
+		func(int, string, string, string) ([]WorkloadLogEntry, error) { return nil, nil },
+		10, "", time.Second,
+		func(WorkloadLogEntry) error { return nil },
+		func(string) {},
+	)
+	require.NoError(t, err)
+
+	f.lag = 60 * time.Second
+
+	old := WorkloadLogEntry{Timestamp: at(0), Level: "INFO", Message: "old"}
+	require.NoError(t, f.emit([]WorkloadLogEntry{old}, false))
+
+	// The cursor advances past this entry, putting "old" outside cursor-lag.
+	newest := WorkloadLogEntry{Timestamp: at(5 * time.Minute), Level: "INFO", Message: "new"}
+	require.NoError(t, f.emit([]WorkloadLogEntry{newest}, true))
+
+	assert.Len(t, f.dedup.filterUnseen([]WorkloadLogEntry{old}), 1,
+		"emit pruned the key that left the fetch overlap")
+	assert.Empty(t, f.dedup.filterUnseen([]WorkloadLogEntry{newest}),
+		"the key inside the overlap is still known")
+}
+
+// A leading empty poll must not arm the gap warning: the first real batch
+// filling the window is the seed being as big as it was asked to be, not
+// lines lost.
+func TestFollower_LeadingEmptyPollDoesNotArmTheGapWarning(t *testing.T) {
+	at := func(n int) string {
+		return time.Date(2026, 8, 26, 10, 0, n, 0, time.UTC).Format(time.RFC3339Nano)
+	}
+
+	var warns []string
+
+	f, err := newLogFollower(
+		func(int, string, string, string) ([]WorkloadLogEntry, error) { return nil, nil },
+		2, "", time.Second,
+		func(WorkloadLogEntry) error { return nil },
+		func(w string) { warns = append(warns, w) },
+	)
+	require.NoError(t, err)
+
+	// The empty first poll: seeds nothing, warns about nothing.
+	require.NoError(t, f.emit(nil, false))
+	assert.Empty(t, warns)
+
+	// The first real batch fills the whole window and is entirely fresh —
+	// the exact shape the gap warning looks for, and exactly what a seed is.
+	seed := []WorkloadLogEntry{
+		{Timestamp: at(1), Level: "INFO", Message: "a"},
+		{Timestamp: at(2), Level: "INFO", Message: "b"},
+	}
+	require.NoError(t, f.emit(seed, false))
+	assert.Empty(t, warns, "the seed batch is not a gap")
+
+	// The control: the same full-fresh window after the seed is a real gap.
+	burst := []WorkloadLogEntry{
+		{Timestamp: at(3), Level: "INFO", Message: "c"},
+		{Timestamp: at(4), Level: "INFO", Message: "d"},
+	}
+	require.NoError(t, f.emit(burst, false))
+	require.Len(t, warns, 1)
+	assert.Contains(t, warns[0], "possible gap")
+}
+
+// mustParseLogTime is parseLogTimestamp for fixtures the test itself wrote.
+func mustParseLogTime(t *testing.T, value string) time.Time {
+	t.Helper()
+
+	at, ok := parseLogTimestamp(value)
+	require.True(t, ok)
+
+	return at
+}
+
 func TestFollowWorkloadLogs_StreamsWithTimeCursor(t *testing.T) {
 	installSkipAuth(t)
 
@@ -483,7 +589,7 @@ func TestFollowWorkloadLogs_StreamsWithTimeCursor(t *testing.T) {
 
 	var lines []string
 
-	err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Millisecond,
 		func(e WorkloadLogEntry) error {
 			lines = append(lines, e.Message)
 
@@ -512,7 +618,7 @@ func TestFollowWorkloadLogs_CancelledContextEndsCleanly(t *testing.T) {
 
 	// Ctrl-C cancels the CLI's root context; the follow must end with nil
 	// (a stopped tail is a normal exit, not a failure) instead of looping.
-	err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Minute, func(WorkloadLogEntry) error { return nil }, nil)
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Minute, func(WorkloadLogEntry) error { return nil }, nil)
 	require.NoError(t, err)
 }
 
@@ -531,7 +637,7 @@ func TestFollowWorkloadLogs_TerminalErrorStops(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	err := FollowWorkloadLogs(context.Background(), "missing", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(context.Background(), "missing", 5, LogFilter{}, time.Millisecond,
 		func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 
@@ -559,7 +665,7 @@ func TestFollowWorkloadLogs_GivesUpAfterSustainedTransientErrors(t *testing.T) {
 
 	var warnings []string
 
-	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, time.Millisecond,
 		func(WorkloadLogEntry) error { return nil },
 		func(msg string) { warnings = append(warnings, msg) })
 	require.Error(t, err)
@@ -604,7 +710,7 @@ func TestFollowWorkloadLogs_RecoversFromTransientErrors(t *testing.T) {
 
 	var warnings []string
 
-	err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Millisecond,
 		func(e WorkloadLogEntry) error {
 			lines = append(lines, e.Message)
 
@@ -656,7 +762,7 @@ func TestFollowWorkloadLogs_FallsBackWhenTimeFilterRejected(t *testing.T) {
 
 			var warnings []string
 
-			err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+			err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Millisecond,
 				func(e WorkloadLogEntry) error {
 					lines = append(lines, e.Message)
 
@@ -713,7 +819,7 @@ func TestFollowWorkloadLogs_WarnsOnWindowGap(t *testing.T) {
 
 	var warnings []string
 
-	err := FollowWorkloadLogs(ctx, "wl-1", 2, "", time.Millisecond,
+	err := FollowWorkloadLogs(ctx, "wl-1", 2, LogFilter{}, time.Millisecond,
 		func(WorkloadLogEntry) error { return nil },
 		func(msg string) { warnings = append(warnings, msg) })
 	require.NoError(t, err)
@@ -734,22 +840,22 @@ func TestFollowWorkloadLogs_OnLineErrorStops(t *testing.T) {
 
 	wantErr := errors.New("broken pipe")
 
-	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Minute,
+	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, time.Minute,
 		func(WorkloadLogEntry) error { return wantErr }, nil)
 	require.ErrorIs(t, err, wantErr)
 }
 
 func TestFollowWorkloadLogs_RejectsBadArguments(t *testing.T) {
-	err := FollowWorkloadLogs(context.Background(), "wl-1", 0, "", time.Second, func(WorkloadLogEntry) error { return nil }, nil)
+	err := FollowWorkloadLogs(context.Background(), "wl-1", 0, LogFilter{}, time.Second, func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid limit")
 
-	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, "", 0, func(WorkloadLogEntry) error { return nil }, nil)
+	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, 0, func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid interval")
 
 	// A nil onLine would panic in emit(); reject it up front instead.
-	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Second, nil, nil)
+	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, time.Second, nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "onLine callback is required")
 }

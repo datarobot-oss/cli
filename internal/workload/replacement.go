@@ -15,14 +15,17 @@
 package workload
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // Replacement statuses observed to be terminal. The platform's own docs name
@@ -36,20 +39,22 @@ import (
 // IsTerminalReplacementStatus treats an unrecognised status as still in
 // progress rather than guessing, the same stance IsTerminalBuildStatus takes.
 //
-// Known limitation, and the reason that stance is not free. A failure status
-// the platform adds later would be classified as still in progress, and if
-// the record is then cleared, WaitForReplacement reports the rollout as a
-// success. That "errored" had to be added at all is proof the vocabulary was
-// incomplete once already. Closing the hole properly means confirming after
-// the fact which artifact the workload ended up running, which needs a
-// verified answer about how quickly the workload reflects a completed
-// replacement; guessing at that would trade a rare false success for a
-// routine false failure. Worth settling the first time a rollout is driven
-// against a live instance.
+// That stance is not free: a failure status the platform adds later would be
+// classified as still in progress, and if the record is then cleared,
+// WaitForReplacement reports the rollout as a success. That "errored" had to be
+// added at all is proof the vocabulary was incomplete once already.
+//
+// A roll no longer rests on this: the deploy confirms afterwards which artifact
+// the workload ended up running (see WaitForWorkload). A resize has no artifact
+// change to confirm, and is covered instead by that same wait refusing to
+// settle while a generation is still draining.
+//
+// "cancelled" leaves the workload where it was, like a failed rollout.
 const (
 	ReplacementStatusCompleted = "completed"
 	ReplacementStatusFailed    = "failed"
 	ReplacementStatusErrored   = "errored"
+	ReplacementStatusCancelled = "cancelled"
 )
 
 // rollingStrategy is the only strategy the platform ships. Blue-green and
@@ -62,31 +67,48 @@ const rollingStrategy = "rolling"
 // which is what the platform's own example code implies. ArtifactID and
 // Status carry the polling and rollout logic; the rest are display fields.
 type Replacement struct {
-	ID         string    `json:"id"`
-	WorkloadID string    `json:"workloadId"`
-	ArtifactID string    `json:"candidateArtifactId"`
-	Status     string    `json:"status"`
-	Strategy   string    `json:"strategy,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID         string `json:"id"`
+	WorkloadID string `json:"workloadId"`
+	ArtifactID string `json:"candidateArtifactId"`
+	Status     string `json:"status"`
+	Strategy   string `json:"strategy,omitempty"`
+
+	// CandidateProtonIDs are the generations the replacement launched, set
+	// once it has. They are what identifies the replacement in the trail
+	// afterwards: the finished record there is written under a new id.
+	CandidateProtonIDs []string `json:"candidateProtonIds,omitempty"`
+
+	// Message is the platform's account of how a failed rollout ended, which
+	// for a candidate that never became healthy carries the container's reason.
+	Message string `json:"message,omitempty"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // IsTerminalReplacementStatus reports whether s is a status the replacement
 // will not progress from.
+//
+// The comparison is case-insensitive. To be plain about why: this route has
+// only ever been seen answering in lower case, so the fold is hardening rather
+// than a fix for something observed. What justifies it is that the platform is
+// not consistent across resources, its build statuses being upper case where
+// these and the workload's are lower, and that the artifact's lock check
+// already folds for the same reason. The cost of being wrong is one-sided:
+// reading a settled "COMPLETED" as still in progress would refuse every deploy
+// for as long as the record lingers, with a message calling a finished
+// replacement one in progress.
 func IsTerminalReplacementStatus(s string) bool {
-	switch s {
-	case ReplacementStatusCompleted, ReplacementStatusFailed, ReplacementStatusErrored:
-		return true
-	}
-
-	return false
+	return IsFailedReplacementStatus(s) || strings.EqualFold(s, ReplacementStatusCompleted)
 }
 
-// IsFailedReplacementStatus reports whether s is a terminal failure. On
-// failure the workload reverts to the artifact it was running before the
-// replacement started, so a failed rollout never promotes.
+// IsFailedReplacementStatus reports whether s is a terminal status under
+// which nothing was promoted: failed, errored or cancelled. The workload stays
+// on the artifact it was running before the replacement started.
 func IsFailedReplacementStatus(s string) bool {
-	return s == ReplacementStatusFailed || s == ReplacementStatusErrored
+	return strings.EqualFold(s, ReplacementStatusFailed) ||
+		strings.EqualFold(s, ReplacementStatusErrored) ||
+		strings.EqualFold(s, ReplacementStatusCancelled)
 }
 
 // replacementURL builds the single route all three verbs share.
@@ -103,7 +125,7 @@ func replacementURL(workloadID string) (string, error) {
 // answers the same way for a workload that does not exist, and the body
 // saying which never reaches this layer, because drapi.Get discards it. A
 // caller that has not already established the workload exists should use
-// GuardNoActiveReplacement, which pays for one extra request to tell the two
+// RefuseActiveReplacement, which asks the same question with the ambiguity
 // apart, rather than reading (nil, nil) as proof of anything.
 func GetActiveReplacement(workloadID string) (*Replacement, error) {
 	url, err := replacementURL(workloadID)
@@ -130,7 +152,7 @@ func GetActiveReplacement(workloadID string) (*Replacement, error) {
 //
 // It is not idempotent: called while a replacement is already in flight it
 // queues a second swap rather than rejecting, so callers guard with
-// GuardNoActiveReplacement first.
+// RefuseActiveReplacement first.
 //
 // Both artifacts must share draft or locked status; the platform rejects a
 // mismatch, which is why a locked workload has to have its successor locked
@@ -203,30 +225,43 @@ func CancelReplacement(workloadID string) error {
 	return nil
 }
 
-// GuardNoActiveReplacement refuses to proceed when workloadID already has a
-// replacement in flight, because POSTing another queues a second swap instead
-// of erroring. Callers should run it twice: once up front, so a doomed
-// command fails before it mutates anything, and once immediately before
-// StartReplacement, which is the guard that actually holds, since the live
-// state can change in between.
+// RefuseActiveReplacement refuses to proceed when workloadID already has a
+// replacement in flight, because starting another queues a second swap instead
+// of erroring.
 //
-// Being the up-front check is why it does not simply trust an empty answer.
-// The replacement route returns the same 404 for "nothing in flight" and for
-// "no such workload", so an unchecked guard would wave through exactly the
-// mistyped id it exists to catch, and the command would go on to create and
-// possibly lock an artifact before discovering the target was never real.
-// One extra request on the quiet path buys that, and the quiet path is about
-// to spend minutes rolling a workload.
-func GuardNoActiveReplacement(workloadID string) error {
+// How many times to call it follows from what sits between the check and the
+// call it protects. A roll mints and may lock an artifact in between, so it
+// runs this twice: once up front, so a doomed command fails before it makes
+// anything, and once immediately before the swap, which is the check that
+// actually holds, since the live state can change in between. A caller with
+// nothing in between runs it once, because there the two are the same moment.
+//
+// A refusal wraps ErrReplacementInFlight; everything else it returns is a
+// failure to find out. Callers that want to say which operation was stopped
+// should wrap the second kind and leave the first alone, since the refusal
+// already names the workload and the remedy.
+//
+// It reads an empty answer as "nothing in flight", which is only safe because
+// every caller has already established the workload exists. The replacement
+// route answers the same 404 for "nothing in flight" and for "no such
+// workload", so a caller that has not settled that first would wave through
+// exactly the mistyped id it means to catch. `up` settles it in Look, before
+// the plan is even built.
+func RefuseActiveReplacement(workloadID string) error {
 	active, err := GetActiveReplacement(workloadID)
 	if err != nil {
 		return err
 	}
 
 	if active == nil {
-		return confirmWorkloadExists(workloadID)
+		return nil
 	}
 
+	return refuseActive(workloadID, active)
+}
+
+// refuseActive is the verdict both entry points share once a record is in hand.
+func refuseActive(workloadID string, active *Replacement) error {
 	// A settled replacement stays readable for a while after it ends, and
 	// WaitForReplacement returns the moment it sees a terminal status, so the
 	// record is usually still there when the next command looks. Refusing on
@@ -238,9 +273,45 @@ func GuardNoActiveReplacement(workloadID string) error {
 	}
 
 	return fmt.Errorf(
-		"workload %s already has a replacement in progress (to artifact %s, status %s); wait for it to settle before starting another",
-		workloadID, active.ArtifactID, active.Status,
+		"workload %s: %w%s; wait for it to settle before starting another",
+		workloadID, ErrReplacementInFlight, describeActive(active),
 	)
+}
+
+// ErrReplacementInFlight marks the refusal, so a caller can tell a rollout it
+// should wait out from a failure to find out whether there is one. The two
+// want different words: the first is a state, the second is a read that did
+// not happen, and a caller that wrapped both would put "cannot tell whether"
+// in front of a sentence that already knows.
+//
+// It reads as a whole sentence rather than as a fragment of the message above,
+// because a sentinel is the one error a caller may hand on by itself.
+var ErrReplacementInFlight = errors.New("a replacement is already in progress")
+
+// describeActive names what is in flight, carrying only the fields the
+// platform actually filled in.
+//
+// The artifact is one of them because a settings change rolls the workload
+// onto the artifact it is already running, and the platform returns no
+// candidate for it. Naming one unconditionally printed an empty field
+// mid-sentence, or the id of the version the plan had just reported as live,
+// which reads as a rollout onto itself.
+func describeActive(active *Replacement) string {
+	parts := make([]string, 0, 2)
+
+	if active.ArtifactID != "" {
+		parts = append(parts, "to artifact "+active.ArtifactID)
+	}
+
+	if active.Status != "" {
+		parts = append(parts, "status "+active.Status)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 // confirmWorkloadExists turns the replacement route's ambiguous 404 into a
@@ -271,15 +342,22 @@ func confirmWorkloadExists(workloadID string) error {
 //   - the settled replacement and an error, when it failed, so the caller can
 //     still show what happened
 //   - the last-seen replacement and an error, on timeout, for the same reason
-//   - nil and an error, when a poll failed or nothing was ever active
+//   - the last-seen replacement and an error, when polling failed; that is the
+//     seed when nothing was ever observed, so its status is what StartReplacement
+//     answered rather than anything this wait saw
+//   - nil and an error, when nothing was ever active
 //
 // The two 404 cases mean opposite things, which is why this is not a plain
 // poll loop. Seen after a status, a 404 means the platform settled the
 // rollout and collected the record, which is success. Seen before any status,
-// it means nothing was ever active. That second case used to be reported as
-// an error unconditionally, which was wrong whenever the platform settled a
-// fast rollout before the first poll landed: passing started lets the wait
-// tell "it finished before I looked" from "it was never there".
+// it means either that nothing was ever active or that the platform settled a
+// fast rollout before the first poll landed; passing started is what lets the
+// wait tell those from each other.
+//
+// A 404 before any record has been watched has to earn its meaning: the first
+// poll fires immediately after the POST, and a route that has not caught up
+// answers exactly like one whose rollout is over, so it is counted rather than
+// acted on.
 //
 // A settled rollout does not guarantee a terminal Status on the way out. When
 // the record is collected before the first poll lands, the seed is the only
@@ -288,6 +366,7 @@ func confirmWorkloadExists(workloadID string) error {
 // status should ask IsTerminalReplacementStatus rather than read a nil error
 // as "completed".
 func WaitForReplacement(
+	ctx context.Context,
 	workloadID string,
 	started *Replacement,
 	interval, timeout time.Duration,
@@ -298,42 +377,132 @@ func WaitForReplacement(
 	}
 
 	deadline := time.Now().Add(timeout)
-	lastSeen := started
+	wait := &replacementWait{workloadID: workloadID, lastSeen: started, onTick: onTick}
 
 	for {
-		replacement, err := GetActiveReplacement(workloadID)
-		if err != nil {
-			return nil, fmt.Errorf("poll replacement for workload %s: %w", workloadID, err)
+		if err := ctx.Err(); err != nil {
+			return wait.lastSeen, abandoned(workloadID, err)
 		}
 
-		if replacement == nil {
-			if lastSeen == nil {
-				// Only reachable when started was nil, since lastSeen begins
-				// as started: this is the attach path, and the caller asked
-				// to follow a rollout that is not running.
-				return nil, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
-			}
-
-			return lastSeen, nil
-		}
-
-		lastSeen = replacement
-
-		if onTick != nil {
-			onTick(replacement)
-		}
-
-		if IsTerminalReplacementStatus(replacement.Status) {
-			return replacement, terminalReplacementErr(workloadID, replacement.Status)
+		done, err := wait.step() //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
+		if done {
+			return wait.lastSeen, err
 		}
 
 		if time.Now().After(deadline) {
-			return replacement, fmt.Errorf("timeout waiting for replacement on workload %s after %s", workloadID, timeout)
+			return wait.lastSeen, timedOut(workloadID, timeout)
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return wait.lastSeen, abandoned(workloadID, ctx.Err())
+		}
 	}
 }
+
+// replacementWait is one wait's state, held together so the loop above stays a
+// loop and the decisions live in step.
+type replacementWait struct {
+	workloadID string
+	lastSeen   *Replacement
+	onTick     func(*Replacement)
+	watched    bool
+	absences   int
+	budget     transientBudget
+}
+
+// step polls once and reports whether the wait is over, with the error to
+// return when it is.
+func (w *replacementWait) step() (bool, error) {
+	replacement, err := GetActiveReplacement(w.workloadID)
+	if err != nil {
+		// A roll now spends minutes on this route, which is long enough for
+		// one 502 or one dropped connection to land between healthy polls, and
+		// failing there leaves the swap in flight with the deploy reporting
+		// failure.
+		if w.budget.forgive(err) {
+			return false, nil
+		}
+
+		return true, fmt.Errorf("poll replacement for workload %s: %w", w.workloadID, err)
+	}
+
+	w.budget.reset()
+
+	if replacement == nil {
+		w.absences++
+
+		settled, done, absenceErr := absenceMeans(w.workloadID, w.lastSeen, w.watched, w.absences)
+		w.lastSeen = settled
+
+		return done, absenceErr
+	}
+
+	w.watched = true
+	w.absences = 0
+	w.lastSeen = replacement
+
+	if w.onTick != nil {
+		w.onTick(replacement)
+	}
+
+	if !IsTerminalReplacementStatus(replacement.Status) {
+		return false, nil
+	}
+
+	return true, terminalReplacementErr(w.workloadID, replacement)
+}
+
+// timedOut is the deadline error, spelled once because two paths reach it.
+func timedOut(workloadID string, timeout time.Duration) error {
+	return fmt.Errorf("timeout waiting for replacement on workload %s after %s", workloadID, timeout)
+}
+
+// absenceMeans reads a 404 off the replacement route, which says three things
+// depending on what the wait has seen: nothing seen and nothing seeded is the
+// attach path, gone after being watched is a finished rollout, and gone without
+// ever being watched settles only after uncorroboratedAbsences. done reports
+// whether the wait is over.
+func absenceMeans(workloadID string, lastSeen *Replacement, watched bool, absences int) (*Replacement, bool, error) {
+	switch {
+	case lastSeen == nil:
+		return nil, true, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
+
+	case watched, absences >= uncorroboratedAbsences:
+		settled := recordedOutcome(workloadID, lastSeen)
+
+		return settled, true, terminalReplacementErr(workloadID, settled)
+
+	default:
+		return lastSeen, false, nil
+	}
+}
+
+// recordedOutcome reads how a replacement ended from the workload's events once
+// its record is gone: a failed rollout is cleared as fast as a successful one.
+// Falls back to the last status seen.
+func recordedOutcome(workloadID string, lastSeen *Replacement) *Replacement {
+	record, err := RolloutRecord(workloadID, lastSeen)
+	if err != nil || record == nil {
+		log.Debug("replacement record gone and not yet in the trail; settling on the last status seen",
+			"workload_id", workloadID, "replacement_id", lastSeen.ID, "err", err)
+
+		return lastSeen
+	}
+
+	settled := *lastSeen
+	settled.Status = record.ReplacementStatus()
+
+	if message := record.Message(); message != "" {
+		settled.Message = message
+	}
+
+	return &settled
+}
+
+// uncorroboratedAbsences is how many consecutive 404s it takes to believe a
+// rollout the wait never watched is over. One is not enough: the first lands
+// immediately after the POST, before the record is necessarily readable.
+const uncorroboratedAbsences = 3
 
 // defaultReplacementPollInterval keeps an exported poller from busy-spinning
 // when handed a non-positive interval. The CLI's own flags cannot produce one
@@ -344,14 +513,22 @@ const defaultReplacementPollInterval = 2 * time.Second
 // should return, or nil when the rollout succeeded. It is only meaningful for
 // a status IsTerminalReplacementStatus accepts; anything else reads as
 // success, which is why the single call site is behind that check.
-func terminalReplacementErr(workloadID, status string) error {
-	if !IsFailedReplacementStatus(status) {
+//
+// The platform's message travels with the status when there is one: without it
+// the reader is told that a swap failed and sent to the logs for the reason.
+func terminalReplacementErr(workloadID string, replacement *Replacement) error {
+	if !IsFailedReplacementStatus(replacement.Status) {
 		return nil
 	}
 
+	why := ""
+	if replacement.Message != "" {
+		why = " (" + replacement.Message + ")"
+	}
+
 	return fmt.Errorf(
-		"replacement for workload %s ended with status %s; the workload reverted to its previous artifact",
-		workloadID, status,
+		"replacement for workload %s ended with status %s%s; the workload is still on the generation it was running",
+		workloadID, replacement.Status, why,
 	)
 }
 

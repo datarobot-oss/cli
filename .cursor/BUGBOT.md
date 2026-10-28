@@ -8,6 +8,7 @@ Catch silent failures, resource leaks, data corruption, poor error handling, pla
 - **bugbot-errors.md** — Error wrapping, user-facing messages, error handling patterns
 - **bugbot-security.md** — Security boundaries, validation, threat models
 - **bugbot-validation.md** — Input validation, error messages, test coverage
+- **bugbot-user-files.md** — Editing files the user owns: comment preservation, round-trip symmetry
 
 ## Resource & Operations Rules
 

@@ -25,6 +25,14 @@ import (
 )
 
 // eeDoc is one execution environment as the server serializes it.
+// eeDocLang is eeDoc with a programmingLanguage, for the sorting tests.
+func eeDocLang(id, name, language, versionID string) string {
+	return fmt.Sprintf(
+		`{"id": %q, "name": %q, "programmingLanguage": %q, "latestSuccessfulVersion": {"id": %q}}`,
+		id, name, language, versionID,
+	)
+}
+
 func eeDoc(id, name, versionID string) string {
 	if versionID == "" {
 		return fmt.Sprintf(`{"id": %q, "name": %q, "latestSuccessfulVersion": null}`, id, name)
@@ -36,7 +44,7 @@ func eeDoc(id, name, versionID string) string {
 	)
 }
 
-func TestResolveExecutionEnvironment_MatchesByName(t *testing.T) {
+func TestFindExecutionEnvironment_MatchesByName(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -50,13 +58,13 @@ func TestResolveExecutionEnvironment_MatchesByName(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("Python 3.12")
+	ee, err := FindExecutionEnvironment("Python 3.12")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-2", id)
-	assert.Equal(t, "ver-2", versionID)
+	assert.Equal(t, "ee-2", ee.ID)
+	assert.Equal(t, "ver-2", ee.LatestSuccessfulVersion.ID)
 }
 
-func TestResolveExecutionEnvironment_MatchesByID(t *testing.T) {
+func TestFindExecutionEnvironment_MatchesByID(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -67,15 +75,15 @@ func TestResolveExecutionEnvironment_MatchesByID(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("ee-1")
+	ee, err := FindExecutionEnvironment("ee-1")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-1", id)
-	assert.Equal(t, "ver-1", versionID)
+	assert.Equal(t, "ee-1", ee.ID)
+	assert.Equal(t, "ver-1", ee.LatestSuccessfulVersion.ID)
 }
 
 // The match may live past the first page, so a miss on page one must follow
 // next rather than reporting not-found.
-func TestResolveExecutionEnvironment_FollowsNextPage(t *testing.T) {
+func TestFindExecutionEnvironment_FollowsNextPage(t *testing.T) {
 	installSkipAuth(t)
 
 	var srv *httptest.Server
@@ -97,16 +105,16 @@ func TestResolveExecutionEnvironment_FollowsNextPage(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("Wanted")
+	ee, err := FindExecutionEnvironment("Wanted")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-9", id)
-	assert.Equal(t, "ver-9", versionID)
+	assert.Equal(t, "ee-9", ee.ID)
+	assert.Equal(t, "ver-9", ee.LatestSuccessfulVersion.ID)
 }
 
 // An environment whose builds have all failed cannot be built from, and the
 // error must say that rather than "not found", which would send the user
 // looking for a typo.
-func TestResolveExecutionEnvironment_NoSuccessfulVersion(t *testing.T) {
+func TestFindExecutionEnvironment_NoSuccessfulVersion(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -117,12 +125,12 @@ func TestResolveExecutionEnvironment_NoSuccessfulVersion(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Broken")
+	_, err := FindExecutionEnvironment("Broken")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no successful version")
 }
 
-func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
+func TestFindExecutionEnvironment_NotFound(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -133,7 +141,7 @@ func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("nope")
+	_, err := FindExecutionEnvironment("nope")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `"nope" not found`)
 }
@@ -142,7 +150,7 @@ func TestResolveExecutionEnvironment_NotFound(t *testing.T) {
 // copies can share one. Picking the server's first hit would build against the
 // wrong base image and surface as a puzzling runtime failure, so an ambiguous
 // name is an error naming the candidates.
-func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
+func TestFindExecutionEnvironment_AmbiguousName(t *testing.T) {
 	installSkipAuth(t)
 
 	var srv *httptest.Server
@@ -164,7 +172,7 @@ func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Python 3.11")
+	_, err := FindExecutionEnvironment("Python 3.11")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ambiguous")
 	assert.Contains(t, err.Error(), "ee-1")
@@ -173,7 +181,7 @@ func TestResolveExecutionEnvironment_AmbiguousName(t *testing.T) {
 
 // Ids are unique, so an id match is answered from the page it appears on
 // without scanning the rest for name collisions.
-func TestResolveExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
+func TestFindExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -187,16 +195,16 @@ func TestResolveExecutionEnvironment_IDWinsOverDuplicateNames(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	id, versionID, err := ResolveExecutionEnvironment("ee-2")
+	ee, err := FindExecutionEnvironment("ee-2")
 	require.NoError(t, err)
-	assert.Equal(t, "ee-2", id)
-	assert.Equal(t, "ver-2", versionID)
+	assert.Equal(t, "ee-2", ee.ID)
+	assert.Equal(t, "ver-2", ee.LatestSuccessfulVersion.ID)
 }
 
 // Unlike the limit-bounded listings this one scans for a match, so a server
 // that keeps handing back a next cursor has no natural stopping point. The cap
 // turns a hung command into an error.
-func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
+func TestFindExecutionEnvironment_StopsAtPageCap(t *testing.T) {
 	installSkipAuth(t)
 
 	var (
@@ -217,7 +225,7 @@ func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Wanted")
+	_, err := FindExecutionEnvironment("Wanted")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pages")
 	assert.Equal(t, maxExecEnvPages, pages, "the walk stops at the cap rather than running forever")
@@ -225,7 +233,7 @@ func TestResolveExecutionEnvironment_StopsAtPageCap(t *testing.T) {
 
 // A next link pointing at another host is an SSRF vector, so pagination must
 // refuse to follow it.
-func TestResolveExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
+func TestFindExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
 	installSkipAuth(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -238,7 +246,7 @@ func TestResolveExecutionEnvironment_RejectsCrossHostNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, _, err := ResolveExecutionEnvironment("Wanted")
+	_, err := FindExecutionEnvironment("Wanted")
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "not found", "a cross-host next must fail loudly, not fall through to not-found")
 }
@@ -269,7 +277,7 @@ func TestListExecutionEnvironments_SkipsVersionlessEnvironments(t *testing.T) {
 	assert.Equal(t, "ee-3", environments[1].ID)
 }
 
-func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
+func TestListExecutionEnvironments_DrainsSortsAndTrimsDeterministically(t *testing.T) {
 	installSkipAuth(t)
 
 	// next is filled in once the server has an address; the handler only ever
@@ -280,11 +288,19 @@ func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		pages++
 
-		fmt.Fprintf(w, `{"data": [%s, %s], "next": %q}`,
-			eeDoc(fmt.Sprintf("ee-%da", pages), "A", "ver-a"),
-			eeDoc(fmt.Sprintf("ee-%db", pages), "B", "ver-b"),
-			next,
-		)
+		switch pages {
+		case 1:
+			fmt.Fprintf(w, `{"data": [%s, %s], "next": %q}`,
+				eeDocLang("ee-pyz", "Zephyr", "python", "v1"),
+				eeDocLang("ee-oth", "Aardvark", "other", "v2"),
+				next,
+			)
+		default:
+			fmt.Fprintf(w, `{"data": [%s, %s], "next": ""}`,
+				eeDocLang("ee-pya", "apex", "Python", "v3"),
+				eeDocLang("ee-r", "Stats", "r", "v4"),
+			)
+		}
 	}))
 
 	defer srv.Close()
@@ -296,8 +312,75 @@ func TestListExecutionEnvironments_StopsAtTheLimit(t *testing.T) {
 	environments, err := ListExecutionEnvironments(3)
 	require.NoError(t, err)
 
-	assert.Len(t, environments, 3)
-	assert.Equal(t, 2, pages, "paging stops as soon as the limit is reached")
+	// Every page is read BEFORE trimming: an unsorted early stop would keep
+	// whichever environments the server listed first, an arbitrary subset.
+	assert.Equal(t, 2, pages, "the whole listing is drained before sorting and trimming")
+
+	// Languages cluster (case-insensitively), names sort within a language,
+	// and the trim cuts the SORTED list — here dropping the catch-all
+	// "other" entry, the least informative group, not a random page-two row.
+	require.Len(t, environments, 3)
+	assert.Equal(t, []string{"ee-pya", "ee-pyz", "ee-r"},
+		[]string{environments[0].ID, environments[1].ID, environments[2].ID})
+}
+
+func TestListExecutionEnvironments_ClustersLanguagesWithOtherLast(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"data": [%s, %s, %s, %s, %s], "next": ""}`,
+			eeDocLang("ee-other", "AAA first by name alone", "other", "v1"),
+			eeDocLang("ee-none", "BBB unlabeled", "", "v2"),
+			eeDocLang("ee-r", "R Lab", "R", "v3"),
+			eeDocLang("ee-java", "JVM", "java", "v4"),
+			eeDocLang("ee-py", "Py", "python", "v5"),
+		)
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	environments, err := ListExecutionEnvironments(50)
+	require.NoError(t, err)
+	require.Len(t, environments, 5)
+
+	got := make([]string, 0, len(environments))
+	for _, ee := range environments {
+		got = append(got, ee.ID)
+	}
+
+	// java < python < r, then the catch-all and the unlabeled at the end by
+	// name — "other" is where the platform files what it cannot name, so it
+	// belongs after the languages that say something. The capital "R" is the
+	// pin on the case folding: byte-sorted it would land ahead of java.
+	assert.Equal(t, []string{"ee-java", "ee-py", "ee-r", "ee-other", "ee-none"}, got)
+}
+
+// The labels staging carries: python, other, java, julia, legacy and r. Only
+// the ones that name a runtime take part in the sort and the mismatch check.
+func TestEnvironmentLanguage(t *testing.T) {
+	for label, want := range map[string]string{
+		"python": "python", " Python ": "python", "java": "java", "julia": "julia", "r": "r", "R": "r",
+		"node": "node", "NodeJS": "node", "javascript": "node",
+		"": "", "other": "", "Other": "", "legacy": "",
+	} {
+		assert.Equal(t, want, EnvironmentLanguage(label), "label %q", label)
+	}
+}
+
+// The one-environment read goes to the environment's own route, with the id
+// escaped, and decodes the fields the language check needs.
+func TestGetExecutionEnvironment_ReadsTheEnvironmentByID(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/executionEnvironments/a%2Fb/", r.URL.EscapedPath())
+		fmt.Fprint(w, `{"id": "a/b", "name": "[DataRobot] Python 3.12", "programmingLanguage": "python"}`)
+	}))
+
+	ee, err := GetExecutionEnvironment("a/b")
+	require.NoError(t, err)
+	assert.Equal(t, "[DataRobot] Python 3.12", ee.Name)
+	assert.Equal(t, "python", ee.ProgrammingLanguage)
 }
 
 func TestListExecutionEnvironments_ServerError(t *testing.T) {

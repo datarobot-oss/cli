@@ -88,9 +88,9 @@ func (v *positiveDurationValue) Type() string {
 	return "duration"
 }
 
-// Register adds --wait, --poll-interval (hidden), and --poll-timeout
-// (hidden) to cmd with the build-oriented defaults and --wait help text,
-// binding them into s. Returns s for chaining.
+// Register adds --wait, --poll-interval and --poll-timeout to cmd with the
+// build-oriented defaults and --wait help text, binding them into s. Returns
+// s for chaining.
 func Register(cmd *cobra.Command, s *Set) *Set {
 	return RegisterWithDefaults(cmd, s, DefaultPollInterval, DefaultPollTimeout,
 		"Poll until the build reaches a terminal status.")
@@ -99,14 +99,16 @@ func Register(cmd *cobra.Command, s *Set) *Set {
 // RegisterWithDefaults is Register with caller-chosen interval and timeout
 // defaults plus the --wait help text, for commands whose work settles on a
 // different timescale or vocabulary than a container build (e.g.
-// `dr workload status --wait` settles in minutes, and on steady states
-// like running that are not terminal).
+// `dr workload settings --wait` settles on a workload running the new
+// settings, a steady state rather than a terminal one).
+//
+// Both poll flags are listed in --help. A --wait runs for minutes, and how
+// to bound it is the first thing someone stuck in one looks for.
 func RegisterWithDefaults(cmd *cobra.Command, s *Set, interval, timeout time.Duration, waitUsage string) *Set {
 	cmd.Flags().BoolVar(&s.Wait, "wait", false, waitUsage)
 	cmd.Flags().Var(PositiveDuration(&s.Interval, interval), "poll-interval", "Interval between status polls.")
-	cmd.Flags().Var(PositiveDuration(&s.Timeout, timeout), "poll-timeout", "Maximum time to wait before giving up.")
-	_ = cmd.Flags().MarkHidden("poll-interval")
-	_ = cmd.Flags().MarkHidden("poll-timeout")
+	cmd.Flags().Var(PositiveDuration(&s.Timeout, timeout), "poll-timeout",
+		"Maximum time to wait before giving up. Giving up ends the wait, not what it is waiting on.")
 
 	return s
 }

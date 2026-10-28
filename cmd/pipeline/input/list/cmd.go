@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/internal/errmsg"
 	"github.com/datarobot/cli/cmd/pipeline/scopeflag"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -73,8 +74,8 @@ Example:
 
 	flags.Bind(cmd)
 	_ = cmd.MarkFlagRequired("pipeline")
-	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of inputs to return")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Pagination offset")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of inputs to return")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{

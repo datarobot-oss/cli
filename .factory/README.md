@@ -19,7 +19,7 @@ For BYOM (Bring Your Own Machine), see the [BYOM docs](https://docs.factory.ai/c
 
 ### Option A: Devcontainer (VS Code, Codespaces, Droid Computers)
 
-A [devcontainer](https://containers.dev/) configuration is provided at `.devcontainer/devcontainer.json`. It pins Go 1.26 and installs Task automatically.
+A [devcontainer](https://containers.dev/) configuration is provided at `.devcontainer/devcontainer.json`. It pins Go 1.27 and installs Task automatically.
 
 - **VS Code**: Open the repo and select "Reopen in Container"
 - **Zed**: Open the repo and click **Open in Container** when prompted. If you modify `.devcontainer/devcontainer.json`, Zed does not auto-rebuild — kill the container manually (`docker kill <container-id>`) and use **Project: Open Remote** to reconnect.
@@ -45,6 +45,43 @@ task lint           # Run linters and formatters (read-only)
 task run            # Run the CLI via go run
 task run -- --help  # Run CLI with arguments
 ```
+
+## Functional QA
+
+Run `/qa` for diff-targeted functional testing, or `/qa-cli` for the CLI flow
+menu. Configuration lives in `skills/qa/config.yaml`; the default target is an
+isolated local CLI built from the current branch. These skills do not run unit
+tests or lint, and the existing smoke workflows remain unchanged.
+
+This change installs local skills only. CI support is a separate follow-up;
+local use needs no GitHub repository secrets.
+
+Droid Control is declared in `.factory/settings.json`. A shared active user-scope
+installation can satisfy this dependency locally; fresh environments can install
+it at project scope. Local terminal QA needs tuistory. Recording/Compose tools are
+resolved conditionally from the runtime configuration.
+
+The same skills are exposed to Claude Code through the `.claude/skills/qa` and
+`.claude/skills/qa-cli` symlinks, so `/qa` and `/qa-cli` work there too. Claude
+Code needs no plugin: it drives tuistory directly (`npm i -g tuistory`) and
+records text snapshots as evidence. Edit the skills here, in `.factory/skills/`.
+
+Staging is disabled until dedicated QA accounts and secret references are
+configured. Each staging run also requires explicit approval of its target and
+mutations. Never reuse personal credentials or existing resources. Public
+downloads do not authorize execution of downloaded plugins or dependency
+installation. Missing prerequisites are reported BLOCKED, not passed.
+
+Failure learning only suggests updates in reports. Changing to an automatic
+write mode requires a separately configured workflow and permissions.
+
+## Release
+
+The `/release` skill runs the release pipeline: readiness review, semver decision,
+tag push to `upstream`, promotion monitoring, release notes, and the #dr-cli
+announcement. It serves Factory Droid here in `.factory/skills/`, Claude Code
+through the `.claude/skills/release` symlink, and Opencode, which discovers
+`.claude/skills/` natively. Edit it here, in `.factory/skills/`.
 
 ## Related Documentation
 

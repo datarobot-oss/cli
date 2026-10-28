@@ -24,6 +24,7 @@ Use Taskfile tasks rather than raw Go commands:
 - Tests use `testify/assert` for assertions
 - Test files follow `*_test.go` naming convention
 - If DR_API_TOKEN is set, run smoke tests: `task smoke-test` (but ask for permission before using a real API token)
+- Workload/artifact acceptance (live): `task acceptance-test-workload` for scenarios A–C + artifact, or `task acceptance-test-workload-full` to include the ~20-30 min built-workload scenario D. Uses the CLI's existing `drconfig.yaml` auth (set `DATAROBOT_API_TOKEN` / `DATAROBOT_ENDPOINT` only to override). Runs nightly in CI (`nightly-smoke.yaml`) and on demand (`manual-smoke.yaml`, suite `acceptance`); it does not gate releases.
 
 **Go Version Requirement:** Tests run with the `-race` flag for data race detection. The race runtime must match your Go compiler version exactly. If you see errors like `compile: version "go1.X.Y" does not match go tool version "go1.X.Z"`, ensure your installed Go version matches the version in `go.mod` (run `brew upgrade go` or adjust `go.mod` accordingly).
 
@@ -158,13 +159,21 @@ For full details, see [docs/development/configuration.md](docs/development/confi
 - **Never bulk-bind subcommand flags to viper.** `viperx` does not expose
   `BindPFlags`. Bind only specific persistent flags explicitly via
   `viperx.BindPFlag` in `cmd/root.go::init()`.
-- **Read transient flags directly from cobra**: `cmd.Flags().GetBool("yes")`.
+- **Read transient flags directly from cobra**: e.g. `cmd.Flags().GetBool(cli.YesFlagName)`.
   Do not bind them with `viperx.BindPFlag`.
 - **Env-var override for a transient flag:** register only the env var via
-  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and OR the two sources at the call site:
-  `yesFlag, _ := cmd.Flags().GetBool("yes"); yes := yesFlag || viperx.GetBool("yes")`.
+  `viperx.BindEnv(key, "DATAROBOT_CLI_…")` and merge the sources with
+  `cli.IsNonInteractive(cmd)` rather than inlining the flag/env OR yourself.
 - **To make a key persistable**, add it to `config.PersistableKeys` and have the
   write site call `config.UpdateConfigFile("my-key")`.
+
+## Auth & API Client Conventions
+
+For OAuth/browser login internals, see [docs/development/authentication.md](docs/development/authentication.md).
+For wiring in a new authenticated DataRobot API call&mdash;timeout clamping,
+the `HTTPError`/`errors.As` contract, and the origin-safety check before
+attaching credentials to a server-supplied URL&mdash;see
+[docs/development/drapi-client.md](docs/development/drapi-client.md).
 
 ## Code Review Guidelines
 
@@ -176,6 +185,7 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 - **Error Handling** — Wrapping errors with context, user-facing messages, not silently ignoring errors
 - **Security** — Input validation, security boundaries, threat models
 - **Testing** — Race detector, error path coverage, test seams
+- **User Files** — In-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry
 
 **Resource & Operations** (prevents hangs, leaks, platform bugs):
 
@@ -204,17 +214,18 @@ All PRs are reviewed against **bugbot rules** in [.cursor/BUGBOT.md](.cursor/BUG
 - **Commands**: Use `lipgloss/table` + `tui.TableBorderStyle`, consistent styling, test output formatting
 - **JSON output purity**: When `--output-format json` is set, stdout must contain only valid JSON. All deprecation warnings, logs, usage, and update hints go to stderr
 - **Platforms**: Add build tags, match signatures, test on target platforms
+- **User files**: Re-emit the parsed tree, never regenerate; CLI markers must die with the key they annotate; refuse a file you cannot put back soundly
 
 Refer to [.cursor/BUGBOT.md](.cursor/BUGBOT.md) for detailed rules and examples during PR review.
 
 > [!NOTE]
-> **Composite action changes need special testing.** Workflows like `_smoke.yaml` and
-> `_pre-release-smoke.yaml` reference `.github/actions/*` via a pinned `@main` ref, not
-> the calling ref — so a PR that edits a composite action's `action.yaml` does not
-> exercise that change in its own CI run; the fix only takes effect after merge. Either
-> temporarily point the ref at the PR branch to get a real CI run (reverting before
-> merge), or verify immediately after merge via a manual `workflow_dispatch` run. See
-> [.cursor/bugbot-ci.md](.cursor/bugbot-ci.md).
+> **Composite actions are referenced locally.** All workflows use
+> `./.github/actions/<name>` after an `actions/checkout` first step — never a
+> remote ref like `datarobot-oss/cli/.github/actions/<name>@main`, which makes
+> the runner download the whole repo tarball into a fixed 2 GiB buffer (the repo
+> now exceeds that; see the v0.15.2 release incident). With local refs, a PR's
+> own CI exercises its composite-action changes — no post-merge verification
+> step needed.
 
 ## Feature Gates
 
@@ -222,7 +233,7 @@ Feature gates allow commands to be hidden until ready for release. For comprehen
 
 **Quick reference:**
 - Gate a command via `features.SetGate(cmd, "feature-name")` (sets the annotation on the command)
-- Enable via env var: `DATAROBOT_CLI_FEATURE_<NAME>=true` (e.g., `DATAROBOT_CLI_FEATURE_WORKLOAD=true`)
+- Enable via env var: `DATAROBOT_CLI_FEATURE_<NAME>=true` (e.g., `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA=true`)
 - Currently supported: environment variables only (config file support planned)
 - Filtering happens via `cli.CommandAdder.AddCommand` at registration time — `CommandAdder` is the only filtering mechanism
 - To gate a **nested** subcommand, wrap the parent with `&cli.CommandAdder{Command: parent}` and call `adder.AddCommand(...)` instead of `parent.AddCommand(...)`

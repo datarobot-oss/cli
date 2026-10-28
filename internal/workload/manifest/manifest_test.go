@@ -240,3 +240,72 @@ func TestLocate_IgnoresDirectory(t *testing.T) {
 
 	assert.Equal(t, path, found)
 }
+
+// The suffix is printed inside commands the reader is meant to copy, so a
+// project directory with a space in it has to survive the paste. Unquoted it
+// becomes a --dir that stops at the space with a stray argument behind it,
+// pointed at a directory nobody has.
+func TestDirFlag_QuotesAPathWithASpace(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	spaced := filepath.Join(cwd, "My Projects", "app")
+
+	assert.Equal(t, ` --dir "My Projects/app"`, DirFlag(spaced))
+}
+
+// Quoting an ordinary path would be noise on every message that carries one.
+// The path is built with the OS separator and comes out with forward slashes,
+// which is the one spelling every shell hands over as it is.
+func TestDirFlag_LeavesAnOrdinaryPathBare(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, " --dir services/api", DirFlag(filepath.Join(cwd, "services", "api")))
+}
+
+// The project directory is the one the command was run from, so there is
+// nothing to point it at.
+func TestDirFlag_SaysNothingAboutTheCurrentDirectory(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Empty(t, DirFlag(cwd))
+}
+
+// A shell does something with far more than a space. An allowlist is what
+// keeps the list from having to be guessed at.
+func TestDirFlag_QuotesWhatAShellWouldActOn(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	for _, name := range []string{"a&b", "proj$HOME", "back`tick`", "semi;colon", "sub*shell", "quo'te"} {
+		flag := DirFlag(filepath.Join(cwd, name))
+
+		assert.True(t, strings.HasPrefix(flag, ` --dir "`), "%s was left bare: %s", name, flag)
+		assert.True(t, strings.HasSuffix(flag, `"`), "%s was not closed: %s", name, flag)
+	}
+}
+
+// Double quotes so the path survives the single quotes around the whole
+// command, and cmd.exe, which reads no other kind. Inside them a POSIX shell
+// still expands a dollar and a backtick and reads a backslash as an escape, so
+// those are escaped rather than merely wrapped.
+func TestDirFlag_EscapesWhatDoubleQuotesLeaveLive(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, ` --dir "proj\$HOME"`, DirFlag(filepath.Join(cwd, "proj$HOME")))
+	assert.Equal(t, " --dir \"back\\`tick\\`\"", DirFlag(filepath.Join(cwd, "back`tick`")))
+	assert.Equal(t, ` --dir "say \"hi\""`, DirFlag(filepath.Join(cwd, `say "hi"`)))
+}
+
+// An ordinary path stays bare, or every message that carries one is littered
+// with quotes it does not need.
+func TestDirFlag_LeavesAnOrdinaryPathUnquoted(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	assert.Equal(t, " --dir services/api-2_v1.0",
+		DirFlag(filepath.Join(cwd, "services", "api-2_v1.0")))
+}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/version"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
 // InitOptions carries the caller-supplied values that Initialize persists
@@ -33,12 +34,17 @@ type InitOptions struct {
 	ArtifactID          string `validate:"required,dr_id"`
 	CatalogID           string `validate:"omitempty,dr_id"`
 	LastSyncedVersionID string `validate:"omitempty,dr_id"`
+
+	// RolloutPending marks ArtifactID as a version a deploy is about to roll
+	// onto, which Config.PendingRolloutArtifactID records.
+	RolloutPending bool
 }
 
 // Initialize creates the state directory at projectDir and writes all the
 // bootstrap files: config.json, manifest.json (empty BASE), .gitignore ("*"),
-// and an "init" entry in history.log. It also drops the .wapiignore template
-// at projectDir if the user has no .wapiignore yet.
+// and an "init" entry in history.log. It also drops the starter ignore-file
+// template at projectDir if the user has no ignore file yet, under either the
+// current or the legacy name.
 //
 // Basic input validation happens before any filesystem changes (including
 // creating projectDir or running mkdir for the state directory).
@@ -73,6 +79,10 @@ func Initialize(projectDir string, opts InitOptions) error {
 		CLIVersion:          version.Version,
 	}
 
+	if opts.RolloutPending {
+		cfg.PendingRolloutArtifactID = stringPtr(opts.ArtifactID)
+	}
+
 	if err := writeConfig(projectDir, cfg); err != nil {
 		return err
 	}
@@ -85,8 +95,13 @@ func Initialize(projectDir string, opts InitOptions) error {
 		return err
 	}
 
-	if !fsutil.FileExists(wapiignorePath(projectDir)) {
-		if err := fsutil.AtomicWriteFile(wapiignorePath(projectDir), wapiignoreTemplate); err != nil {
+	// Any name counts as having one, which is why this asks the package that
+	// reads them rather than testing for the current name. Writing the default
+	// template beside a tuned legacy file would not overwrite anything, but the
+	// new name takes precedence when both exist, so the user's own patterns
+	// would stop applying without a single byte of theirs being touched.
+	if ignore.Locate(projectDir) == "" {
+		if err := fsutil.AtomicWriteFile(ignorePath(projectDir), ignoreTemplate); err != nil {
 			return err
 		}
 	}

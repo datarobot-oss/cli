@@ -49,6 +49,16 @@ func TestCmd_InvalidLimit(t *testing.T) {
 
 		err := cmd.Execute()
 		require.Error(t, err, "limit %s", v)
-		assert.Contains(t, err.Error(), "must be positive")
+		assert.Contains(t, err.Error(), "must be a positive integer")
 	}
+}
+
+func TestCmd_InvalidOffset(t *testing.T) {
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetArgs([]string{"--offset", "-1"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a non-negative integer")
 }

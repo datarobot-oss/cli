@@ -1,112 +1,8 @@
-# Telemetry
+# Telemetry (contributor guide)
 
-The CLI collects usage analytics linked to your DataRobot user ID via [Amplitude](https://amplitude.com/) to help the DataRobot team understand how the tool is used. Telemetry is an optional feature that can be turned off at any time (see [Configuring and disabling telemetry](#configuring-and-disabling-telemetry)). Telemetry is implemented in `internal/telemetry/`.
+This page covers how telemetry is implemented and how to add it to a command. For what the CLI collects, where it is sent, and how to opt out, see [Telemetry](../user-guide/telemetry.md) in the user guide.
 
-All telemetry data sent over the network is stored in the USA. When telemetry is disabled, every operation is a safe no-op — events are logged to the debug logger instead of being sent over the network.
-
-## Configuring and disabling telemetry
-
-Telemetry is enabled by default. Users can disable it at any time via any of the three methods below (listed in order of precedence — higher precedence wins):
-
-| Method               | How                                          |
-|----------------------|----------------------------------------------|
-| Flag                 | `dr --disable-telemetry <command>`           |
-| Environment variable | `DATAROBOT_CLI_DISABLE_TELEMETRY=true`       |
-| Config file          | `disable-telemetry: true` in `drconfig.yaml` |
-
-To disable telemetry permanently, add the key to your config file:
-
-```yaml
-# ~/.config/datarobot/drconfig.yaml
-disable-telemetry: true
-```
-
-The `--disable-telemetry` flag is a [universal flag](flags.md) — it is forwarded to plugin subprocesses as the `DATAROBOT_CLI_DISABLE_TELEMETRY` environment variable, so plugin commands respect the same setting.
-
-When telemetry is disabled, events are logged to the debug logger (visible with `--debug`) instead of being sent over the network to Amplitude.
-
-## Network endpoints
-
-Telemetry makes outbound HTTPS requests to two services. In network-restricted environments (corporate proxies, firewalls, air-gapped CI), the following hosts must be allowlisted for telemetry to function:
-
-| Host                                                       | Purpose                                                                                                       | Port |
-|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|------|
-| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone) — event ingestion                                                                | 443  |
-| *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
-
-The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to `device_id`-only tracking — the CLI does not error.
-
-No other hosts are contacted by the telemetry subsystem.
-
-## Device ID
-
-Amplitude requires a `device_id` or `user_id` on every event. The CLI uses a stable device identifier obtained in this order:
-
-1. **OS-provided machine ID** — via [`github.com/denisbrodbeck/machineid`](https://github.com/denisbrodbeck/machineid), which reads:
-   - `IOPlatformUUID` on macOS
-   - `/etc/machine-id` on Linux
-   - `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid` on Windows
-
-   The raw value is HMAC-SHA256'd with the app ID `"dr"` before use, so the actual system identifier is never sent to Amplitude.
-
-2. **Persisted random UUID** — if the OS identifier is unavailable, a random UUID is generated and written to `~/.config/datarobot/device_id` (respects `$XDG_CONFIG_HOME`). The same value is reused on subsequent invocations.
-
-3. **Session-scoped fallback** — if the config directory is also inaccessible, a fresh ID prefixed with `"fallback-"` is generated for that session only.
-
-## User ID
-
-When the user is authenticated, the CLI sends a real DataRobot `uid` as the top-level Amplitude `user_id` field. If the user is unauthenticated (no API token, invalid token, or network failure with no valid cache), the field is left empty and Amplitude falls back to `device_id`-only tracking.
-
-The `uid` is fetched from `GET /api/v2/account/info/`, which returns an `AccountInfo` response containing the user's unique identifier, organization ID, and tenant ID. The `uid` is stable per DataRobot instance and uniquely identifies your DataRobot user account. Email is deliberately excluded from telemetry payloads. The organization ID and tenant ID are also cached and sent as event properties (see [Common Properties](#common-properties)).
-
-### Caching
-
-To avoid an API call on every CLI invocation, the account info (`uid`, `organization_id`, `tenant_id`) is cached to disk alongside `device_id` and `drconfig.yaml`:
-
-- **Cache file**: `$CONFIG_DIR/datarobot/user_id` (respects `$XDG_CONFIG_HOME`)
-- **File permissions**: `0600` (owner read/write only), consistent with `device_id` and `drconfig.yaml`
-- **Cache format** (JSON):
-
-  ```json
-  {
-    "uid": "...",
-    "endpoint": "https://app.datarobot.com",
-    "token_fingerprint": "sha256hex",
-    "organization_id": "...",
-    "tenant_id": "..."
-  }
-  ```
-
-  - `uid` — the DataRobot user identifier
-  - `endpoint` — the scheme+host of the DataRobot instance (e.g., `https://app.datarobot.com`)
-  - `token_fingerprint` — SHA-256 hex digest of the current API token
-  - `organization_id` — the DataRobot organization ID
-  - `tenant_id` — the DataRobot tenant ID (may be empty for legacy/system accounts)
-
-### Cache validation and invalidation
-
-On subsequent invocations, when no fresh API response is available, the cache is validated against both the current endpoint and the current token fingerprint:
-
-- **Endpoint match**: the cached `endpoint` must equal the current `config.GetBaseURL()` (scheme+host only)
-- **Token fingerprint match**: the cached `token_fingerprint` must equal the SHA-256 hex of the current API token
-- **Completeness check**: the cache must contain both a non-empty `uid` and `organization_id`. Cache files written by older CLI versions (before `organization_id`/`tenant_id` were added) are treated as partial and trigger a re-fetch. (`tenant_id` may legitimately be empty for legacy or system accounts, so it is not included in this check.)
-
-If any check fails, the cache is treated as stale and a fresh API call is made. If the API call also fails (network error), the cached `uid` is still used as long as the endpoint and token fingerprint match — this preserves tracking in offline scenarios. If the endpoint or token changed and the API is unreachable, `user_id` is left empty (`device_id`-only tracking).
-
-This ensures correct behavior in shared environments (e.g., Codespaces) where two users may authenticate sequentially with different tokens — the token fingerprint prevents incorrectly attributing User B's activity to User A's cached `uid`.
-
-### Behavior summary
-
-| Scenario                                                         | `user_id` / `organization_id` / `tenant_id` behavior  |
-|------------------------------------------------------------------|-------------------------------------------------------|
-| Authenticated, API succeeds                                      | `uid`, `org_id`, `tenant_id` from API, cached to disk |
-| Authenticated, cache hit (same endpoint + token, complete cache) | Cached `uid`, `org_id`, `tenant_id` (no API call)     |
-| Endpoint changed                                                 | Re-fetch from API, update cache                       |
-| Token changed (rotation / new user)                              | Re-fetch from API, update cache                       |
-| Partial cache (old CLI version, missing `org_id`)                | Re-fetch from API, update cache                       |
-| No API token / invalid token                                     | Empty `user_id`, `device_id`-only tracking            |
-| Network error, same endpoint + token, valid cache                | Return cached `uid`, `org_id`, `tenant_id`            |
-| Network error, endpoint/token changed                            | Empty `user_id`, `device_id`-only tracking            |
+Telemetry is implemented in `internal/telemetry/`.
 
 ## Common Properties
 
@@ -118,8 +14,8 @@ These map to Amplitude's built-in fields and power native segmentation (version 
 
 | Field         | Source                                                                                                                                                                          |
 |---------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `user_id`     | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty if unauthenticated or cache miss — see [User ID](#user-id) |
-| `device_id`   | OS machine ID (hashed) or persisted UUID — see [Device ID](#device-id) above                                                                                                    |
+| `user_id`     | DataRobot `uid` from `GET /api/v2/account/info/`, cached to disk with endpoint + token fingerprint validation; empty if unauthenticated or cache miss — see [User ID](../user-guide/telemetry.md#user-id) |
+| `device_id`   | OS machine ID (hashed) or persisted UUID — see [Device ID](../user-guide/telemetry.md#device-id)                                                                                                  |
 | `session_id`  | Unix millisecond timestamp generated once per process invocation — Amplitude uses this as the built-in Session ID for session-based analysis                                    |
 | `app_version` | CLI version set at build time via ldflags                                                                                                                                       |
 | `platform`    | Always `"CLI"`                                                                                                                                                                  |
@@ -179,17 +75,21 @@ if err := cmd.ExecuteContext(ctx); err != nil {
 
 `cmd.Exit` is nil-safe: if `PersistentPreRunE` never ran (e.g. flag parse failure before any command executes) there are no queued events and it falls straight through to `os.Exit`.
 
-### `telemetry.ExitWithContext(ctx context.Context, code int)` — for cobra sub-commands
+### `telemetry.ExitCommand(cmd *cobra.Command, args []string, code int)` — for cobra sub-commands
 
-Commands that must propagate a subprocess exit code (plugin dispatch, `task run --exit-code`) cannot use `return err` because Go errors carry no integer code. They call `telemetry.ExitWithContext` with the command's cobra context — the client stored there by `PersistentPreRunE` is flushed before `os.Exit`:
+Commands that must propagate a subprocess exit code (plugin dispatch, `task run`) cannot use `return err` because Go errors carry no integer code. They exit through `telemetry.ExitCommand`. It queues the command's own event, flushes the client that `PersistentPreRunE` stored in the command's context, then calls `os.Exit`:
 
 ```go
 RunE: func(cmd *cobra.Command, args []string) error {
     exitCode := runSubprocess(...)
-    telemetry.ExitWithContext(cmd.Context(), exitCode) // never returns
+    telemetry.ExitCommand(cmd, args, exitCode) // queue event, flush, never returns
     return nil // unreachable
 },
 ```
+
+The command's event is normally queued by `cobra.OnFinalize` after `RunE` returns, which `os.Exit` never allows. `ExitCommand` queues it itself, so a path that exits records the run. The event is skipped when the command is not tracked or the context has no client.
+
+`telemetry.ExitWithContext(ctx, code)` is the flush-and-exit half on its own. It queues nothing, so a command that leaves through it directly is not recorded. Prefer `ExitCommand` for any tracked command. Plugin dispatch (`createPluginCommand` in `cmd/plugin/discovery.go`) uses it. `dr task run` still calls `ExitWithContext` and should move to `ExitCommand`.
 
 ### State ownership
 
@@ -198,7 +98,7 @@ RunE: func(cmd *cobra.Command, args []string) error {
 1. The `cmd` package (`root.go` + `exit.go`) with the `telemetryClient` variable.
 2. The cobra command context, which stores a `*telemetry.Client` under `telemetry.ClientContextKey{}`.
 
-Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitWithContext` (exit-code path).
+Both are set in `PersistentPreRunE`; the context value is consumed by `PersistentPostRunE` (normal path) or `telemetry.ExitCommand` / `telemetry.ExitWithContext` (exit-code path).
 
 ## Silent errors and `SilenceErrors`
 
@@ -243,6 +143,8 @@ PersistentPreRunE (root.go)
     ├─ Initialize CommonProperties (session ID, user ID, env, ...)
     ├─ Stamp props.CommandKind = "core" or "plugin"
     │   based on telemetry.IsPluginCommand(cmd)
+    ├─ Stamp props.NonInteractive via telemetry.StampInteractionMode
+    │   so every event shares the same automation signal
     ├─ Build telemetry.Client
     └─ Register cobra.OnFinalize (closes over cmd, args, client)
     ↓
@@ -253,6 +155,25 @@ cobra.OnFinalize (via cobra's deferred postRun, fires on success and error paths
     ├─ Flush telemetry (3-second timeout)
     └─ log.Stop()
 ```
+
+### Stamping universal interaction flags
+
+`telemetry.StampInteractionMode` centralizes everything that decides whether the
+current invocation is interactive. The helper runs exactly once in
+`root.PersistentPreRunE`, so every event in the session inherits the same
+`non_interactive` property without each command needing to parse flags on its own.
+
+- `DATAROBOT_CLI_NON_INTERACTIVE=true` forces `non_interactive=true`
+- Any parsed `--yes` flag (including short `-y`) flips the flag for that session
+- `--force-interactive` is not an interaction signal: it only forces the setup wizard
+  to re-run (via `state.HasCompletedDotenvSetup`) and does not override `--yes` or the
+  env var for confirmation prompts
+- Commands can reuse the same logic directly via `cli.IsNonInteractive(cmd)`
+
+To expose another universal flag or environment override, extend
+`telemetry.StampInteractionMode` (and update its tests) rather than touching
+individual commands. **TODO:** when the next global automation flag is added,
+document its behavior here and wire it through the helper alongside `--yes`.
 
 ### Reading RunE results in a PropExtractor
 
@@ -376,7 +297,7 @@ The event type is `cmd.CommandPath()` — for example `dr assist`. There is no l
 
 The Amplitude SDK emits its own internal logs (HTTP responses, client lifecycle, etc.) via a custom logger adapter in `amplitudeLogger`. All Amplitude SDK log entries are prefixed with `[amplitude]` for traceability in debug log files.
 
-The adapter demotes Amplitude's INFO-level logs (e.g. `HTTP response code`, `HTTP response body`) to DEBUG when the app's log level is above INFO. This keeps them off stderr by default while still capturing them in the debug log file (see [Logging](../../user-guide/configuration.md#logging)).
+The adapter demotes Amplitude's INFO-level logs (e.g. `HTTP response code`, `HTTP response body`) to DEBUG when the app's log level is above INFO. This keeps them off stderr by default while still capturing them in the debug log file (see [Logging](../user-guide/configuration.md#logging)).
 
 | CLI flags   | Amplitude INFO appears as | Visible on stderr? |
 |-------------|---------------------------|--------------------|
@@ -398,10 +319,11 @@ Key tests:
 
 - `internal/telemetry/wire_test.go` — exercises `Track`, `TrackWith`, `TrackPlugin`, `EventFor`, `IsPluginCommand`, `FirstArg`.
 - `internal/telemetry/properties_test.go` — exercises common properties including `command_kind`.
-- `cmd/telemetry_wiring_test.go` — verifies that every expected core command path is wired in the static command tree.
+- `cmd/telemetry_wiring_test.go` — verifies that every expected core command path is wired in the static command tree, and separately walks the `dr workload`, `dr artifact` and `dr pipeline` groups asserting every leaf under them is wired, listed or not.
 
 ## Maintenance checklist
 
 - **Renaming a command?** The event type follows `cmd.CommandPath()` automatically, but you must update `expectedTrackedCommands` in `cmd/telemetry_wiring_test.go`.
 - **Removing a command?** Remove its `expectedTrackedCommands` entry.
+- **Adding a leaf under `dr workload`, `dr artifact` or `dr pipeline`?** Wire it with `Track` / `TrackWith` and add it to `expectedTrackedCommands`. The subtree walk fails on an unwired leaf whether or not the list mentions it, which is what a list alone cannot check.
 - **Changing event properties?** Update the closure passed to `TrackWith`.

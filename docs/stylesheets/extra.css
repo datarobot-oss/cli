@@ -1,0 +1,124 @@
+/* DataRobot Brand — matches docs.datarobot.com style */
+
+/* DM Sans (brand font, closest public equivalent to proprietary STK Miso) + Roboto Mono for code */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Roboto+Mono:opsz,wght@6..40,400;6..40,500&display=swap');
+
+:root {
+  --md-text-font: "DM Sans";
+  --md-code-font: "Roboto Mono";
+}
+
+/* Primary (header, tabs, drawer) and accent are defined per scheme below, so the
+   palette toggle repaints the chrome — header, nav tabs and footer — along with
+   the page body. Keep them inside the scheme blocks: a shared rule sets one
+   colour for both schemes, which is what used to leave the header black and the
+   footer dark in light mode. */
+
+/* Dark (slate) scheme — DataRobot brand colors */
+[data-md-color-scheme="slate"] {
+  /* Header/nav: DataRobot Black */
+  --md-primary-fg-color: #0B0B0B;
+  --md-primary-fg-color--light: #6C6A6B;
+  --md-primary-fg-color--dark: #0B0B0B;
+  --md-primary-bg-color: #FFFFFF;
+  --md-primary-bg-color--light: rgba(255, 255, 255, 0.7);
+
+  /* Accent: DataRobot Green (key brand color) */
+  --md-accent-fg-color: #81FBA5;
+  --md-accent-fg-color--transparent: rgba(129, 251, 165, 0.1);
+  --md-accent-bg-color: #0B0B0B;
+
+  /* Background: near-black, closer to DataRobot's dark UI */
+  --md-default-bg-color: #111111;
+  --md-default-bg-color--light: rgba(17, 17, 17, 0.54);
+  --md-default-bg-color--lighter: rgba(17, 17, 17, 0.26);
+  --md-default-bg-color--lightest: rgba(17, 17, 17, 0.07);
+
+  /* Links: Green (DataRobot key color) on dark background */
+  --md-typeset-a-color: #81FBA5;
+
+  /* Code block background */
+  --md-code-bg-color: #1A1A1A;
+  --md-code-fg-color: #E4E4E4;
+
+  /* Footer */
+  --md-footer-bg-color: #0B0B0B;
+  --md-footer-bg-color--dark: #0B0B0B;
+  --md-footer-fg-color: rgba(255, 255, 255, 0.7);
+  --md-footer-fg-color--light: rgba(255, 255, 255, 0.45);
+  --md-footer-fg-color--lighter: rgba(255, 255, 255, 0.28);
+}
+
+/* Light (default) scheme — DataRobot brand colors */
+[data-md-color-scheme="default"] {
+  /* Header/nav: white with black type, so the chrome flips with the toggle */
+  --md-primary-fg-color: #FFFFFF;
+  --md-primary-fg-color--light: #F2F4F3;
+  --md-primary-fg-color--dark: #E4E8E6;
+  --md-primary-bg-color: #0B0B0B;
+  --md-primary-bg-color--light: rgba(11, 11, 11, 0.7);
+
+  /* Accent: Indigo — the green has too little contrast on white */
+  --md-accent-fg-color: #5C41FF;
+  --md-accent-fg-color--transparent: rgba(92, 65, 255, 0.1);
+  --md-accent-bg-color: #FFFFFF;
+
+  /* Links: Indigo (best contrast on white per brand guidelines) */
+  --md-typeset-a-color: #5C41FF;
+
+  /* Footer */
+  --md-footer-bg-color: #F2F4F3;
+  --md-footer-bg-color--dark: #E4E8E6;
+  --md-footer-fg-color: #0B0B0B;
+  --md-footer-fg-color--light: rgba(11, 11, 11, 0.7);
+  --md-footer-fg-color--lighter: rgba(11, 11, 11, 0.45);
+}
+
+/* A white header on a white page needs a hairline to separate it — on the tabs
+   when they are shown (they sit directly under the header), on the header
+   itself when they are not. Once scrolled, Material's own header shadow takes
+   over. */
+[data-md-color-scheme="default"] .md-tabs {
+  border-bottom: 1px solid rgba(11, 11, 11, 0.12);
+}
+
+@media screen and (max-width: 76.2344em) {
+  [data-md-color-scheme="default"] .md-header {
+    border-bottom: 1px solid rgba(11, 11, 11, 0.12);
+  }
+}
+
+/* The search field is tinted from the header colour, which is now light. */
+[data-md-color-scheme="default"] .md-search__form {
+  background-color: rgba(11, 11, 11, 0.06);
+}
+
+[data-md-color-scheme="default"] .md-search__form:hover {
+  background-color: rgba(11, 11, 11, 0.11);
+}
+
+/* Sidebar active item highlight with brand green */
+[data-md-color-scheme="slate"] .md-nav__link--active,
+[data-md-color-scheme="slate"] .md-nav__link:is(:focus, :hover) {
+  color: #81FBA5;
+}
+
+/* Admonition accent override */
+[data-md-color-scheme="slate"] .md-typeset .admonition,
+[data-md-color-scheme="slate"] .md-typeset details {
+  border-color: #81FBA5;
+}
+
+/* Wider layout — Material defaults to 61rem, which squeezes the content column
+   (and wide assets like the architecture diagram) on large displays. */
+.md-grid {
+  max-width: 84rem;
+}
+
+/* The sidebars keep their default width, so the extra room goes to the content.
+   Cap it so prose lines stay readable on very wide screens. */
+@media screen and (min-width: 76.25em) {
+  .md-content {
+    max-width: 58rem;
+  }
+}

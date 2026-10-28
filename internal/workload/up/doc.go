@@ -16,11 +16,15 @@
 // live workload, work out what differs, and later apply only that.
 //
 // A deploy is a function of the repository checkout and nothing else. This
-// package never reads .env and never expands shell variables into a deploy.
-// Anything a container needs at runtime is in the manifest, as a literal or
-// as a credential reference; anything kept only in .env would not reach the
-// container, which is why importing it is the setup wizard's job and happens
-// once, not on every deploy.
+// package never deploys from .env and never expands shell variables into a
+// deploy. Anything a container needs at runtime is in the manifest, as a
+// literal or as a credential reference; anything kept only in .env would not
+// reach the container, which is why importing it is the setup wizard's job and
+// happens once, not on every deploy.
+//
+// The file is read for one thing: to say that it and the manifest have parted,
+// which is a notice rather than an input. Nothing it holds reaches the
+// platform without one of the two flags that asks for it by name.
 //
 // Drift is measured against the running object, not against a record of the
 // last deploy, and it is one-directional. Whatever the file says, `up` makes
@@ -65,6 +69,23 @@
 // upload can never rewrite what is currently serving. A run that dies between
 // minting a version and promoting it leaves a draft nothing points at, and
 // the next run continues with it rather than adding another to the pile.
+//
+// A build is the expensive part, and most of what a file can change is not an
+// input to one: environment, port, probes and routes are read when a container
+// starts, so the version carrying them is a copy of the one now serving with
+// the file's spec written over it. Everything else still builds.
+//
+// Locking is one-way, and it is the rule both deploy shapes have to obey the
+// same way: a locked artifact can take neither new code nor a new image, so
+// the next version of a locked thing is a new artifact rather than a change to
+// it. It joins the lineage the locked one belongs to, the checkout's link
+// moves onto it, and the code the locked one was running is carried across
+// when the working tree has nothing to upload. Whether the successor is itself
+// locked is the one part that differs: a roll onto a locked version has to
+// lock it, because the platform refuses to put a draft where a locked artifact
+// was, while a first deploy leaves it a draft unless the run asked for a lock.
+// A deploy that refused instead would be a one-way door, since a workload that
+// must stay up has to be locked and a locked one could then never be changed.
 //
 // Non-scope: no terminal output and no cobra. Rendering a plan and running
 // the phases belong to the command; this package hands back values.

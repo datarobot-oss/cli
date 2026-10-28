@@ -17,8 +17,10 @@ package workload
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -75,24 +77,55 @@ func printArtifactsJSON(artifacts []Artifact) error {
 }
 
 func printArtifactDetails(artifact Artifact) {
-	catalogID, versionID := emptyValuePlaceholder, emptyValuePlaceholder
-
-	if codeRef := ExtractCodeRef(artifact); codeRef != nil {
-		catalogID = codeRef.CatalogID
-		versionID = codeRef.CatalogVersionID
-	}
+	catalogID, versionID := codeRefDisplay(artifact)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	fmt.Fprintf(w, "ID:\t%s\n", artifact.ID)
 	fmt.Fprintf(w, "Name:\t%s\n", artifact.Name)
 	fmt.Fprintf(w, "Status:\t%s\n", artifact.Status)
+	// Spelled "Repository version" rather than "Version", which would sit two
+	// lines from the catalog's "Version ID" and read as the same thing.
+	fmt.Fprintf(w, "Repository:\t%s\n", orPlaceholder(artifact.ArtifactRepositoryID))
+	fmt.Fprintf(w, "Repository version:\t%s\n", artifactVersion(artifact))
 	fmt.Fprintf(w, "Catalog ID:\t%s\n", catalogID)
 	fmt.Fprintf(w, "Version ID:\t%s\n", versionID)
 	fmt.Fprintf(w, "Created:\t%s\n", artifact.CreatedAt.UTC().Format(timestampFormat))
 	fmt.Fprintf(w, "Updated:\t%s\n", artifact.UpdatedAt.UTC().Format(timestampFormat))
 
 	w.Flush()
+}
+
+// artifactVersion is the artifact's number within its repository. The platform
+// assigns one only on locking, so a draft genuinely has none and says so
+// rather than reporting 0, which would name a version no repository issues.
+func artifactVersion(artifact Artifact) string {
+	if artifact.Version == nil {
+		return emptyValuePlaceholder
+	}
+
+	return strconv.Itoa(*artifact.Version)
+}
+
+// codeRefDisplay is the artifact's catalog pair as the table and the detail
+// block both print it, with the placeholder wherever there is nothing to name.
+func codeRefDisplay(artifact Artifact) (catalogID, versionID string) {
+	codeRef := ExtractCodeRef(artifact)
+	if codeRef == nil {
+		return emptyValuePlaceholder, emptyValuePlaceholder
+	}
+
+	return orPlaceholder(codeRef.CatalogID), orPlaceholder(codeRef.CatalogVersionID)
+}
+
+// orPlaceholder is the single spelling of "nothing to show here", so a value
+// that renders as a dash in one command does not render as a blank in another.
+func orPlaceholder(value string) string {
+	if value == "" {
+		return emptyValuePlaceholder
+	}
+
+	return value
 }
 
 // Build log levels in ascending severity. Used by FilterLogsByLevel to drop
@@ -211,7 +244,15 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 		fmt.Printf("Build %s: %s in %s\n", summary.BuildID, summary.Status, dur)
 	}
 
-	if len(summary.LogTail) > 0 {
+	// Before the log tail, and on stderr with it: the platform's own reason
+	// is the shortest account of why a build failed, and a reader who has to
+	// find it in fifty log lines mostly does not. Text and JSON carry the
+	// same facts.
+	if summary.FailureReason != "" {
+		fmt.Fprintf(os.Stderr, "Reason: %s\n", summary.FailureReason)
+	}
+
+	if len(summary.LogTail) > 0 && !summary.LogTailShown {
 		fmt.Fprintf(os.Stderr, "--- last %d log lines ---\n", len(summary.LogTail))
 
 		for _, entry := range summary.LogTail {
@@ -222,9 +263,21 @@ func RenderBuildSummary(format outputformat.OutputFormat, summary BuildSummary) 
 	return nil
 }
 
+// RenderBuildLogs prints a build's log lines, or [] under JSON and "No logs
+// found." on stderr in text when there are none, so stdout stays log lines.
 func RenderBuildLogs(format outputformat.OutputFormat, entries []BuildLogEntry) error {
 	if format == outputformat.OutputFormatJSON {
+		if len(entries) == 0 {
+			entries = []BuildLogEntry{}
+		}
+
 		return printJSON(entries)
+	}
+
+	if len(entries) == 0 {
+		fmt.Fprintln(os.Stderr, "No logs found.")
+
+		return nil
 	}
 
 	for _, entry := range entries {
@@ -292,10 +345,7 @@ func printBuildsTable(builds []Build) {
 		Headers(headers...)
 
 	for _, b := range builds {
-		name := b.Name
-		if name == "" {
-			name = emptyValuePlaceholder
-		}
+		name := orPlaceholder(b.Name)
 
 		t.Row(
 			b.ID,
@@ -370,10 +420,7 @@ func printWorkloadsJSON(workloads []Workload) error {
 }
 
 func printWorkloadDetails(workload Workload) {
-	endpoint := workload.Endpoint
-	if endpoint == "" {
-		endpoint = emptyValuePlaceholder
-	}
+	endpoint := orPlaceholder(workload.Endpoint)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
@@ -462,12 +509,7 @@ func printArtifactsTable(artifacts []Artifact) {
 		Headers(headers...)
 
 	for _, a := range artifacts {
-		catalogID, versionID := emptyValuePlaceholder, emptyValuePlaceholder
-
-		if codeRef := ExtractCodeRef(a); codeRef != nil {
-			catalogID = codeRef.CatalogID
-			versionID = codeRef.CatalogVersionID
-		}
+		catalogID, versionID := codeRefDisplay(a)
 
 		updated := a.UpdatedAt.UTC().Format(timestampFormat)
 
@@ -478,17 +520,29 @@ func printArtifactsTable(artifacts []Artifact) {
 }
 
 // RenderWorkloadOperation renders the acknowledgement of an asynchronous
-// start/stop request. Text mode prints the server's human-readable outcome
-// message; JSON mode emits the full operation response document so scripts
-// keep the workloadId and trackVia handles.
-func RenderWorkloadOperation(format outputformat.OutputFormat, resp WorkloadOperationResponse) error {
+// start/stop request on workload id. Text mode prints the server's
+// human-readable outcome message, and on stderr the command that checks how
+// it went, since the request has only been accepted; stdout stays the
+// acknowledgement alone for a script that captures it. JSON mode emits the
+// full operation response document, so scripts keep the workloadId and
+// trackVia handles, and nothing else.
+func RenderWorkloadOperation(stderr io.Writer, format outputformat.OutputFormat, id string, resp WorkloadOperationResponse) error {
 	if format == outputformat.OutputFormatJSON {
 		return printJSON(resp)
 	}
 
 	fmt.Println(resp.Status)
 
+	tui.PrintNextSteps(stderr, StatusStep(" "+id))
+
 	return nil
+}
+
+// StatusStep is the follow-up that checks on a workload, worded once for every
+// command that suggests it. at names the workload the way the command line
+// would: " <id>", a --dir flag, or empty for the project the shell is in.
+func StatusStep(at string) tui.NextStep {
+	return tui.NextStep{Command: "dr workload status" + at, Description: "Check the workload status"}
 }
 
 // RenderWorkloadStatus renders just the workload's status. Text mode prints

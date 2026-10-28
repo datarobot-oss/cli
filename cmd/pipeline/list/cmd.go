@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/pipeline"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -68,8 +69,8 @@ Example:
 
 	cmd.Flags().StringVar(&mode, "mode", "", "Pipeline mode: draft or locked")
 	cmd.Flags().StringVar(&search, "search", "", "Filter pipelines by name substring")
-	cmd.Flags().IntVar(&offset, "offset", 0, "Pagination offset")
-	cmd.Flags().IntVar(&limit, "limit", 50, "Pagination limit (1-200)")
+	cmd.Flags().Var(countflags.NonNegativeInt(&offset, 0), "offset", "Pagination offset")
+	cmd.Flags().Var(countflags.PositiveInt(&limit, 50), "limit", "Pagination limit (1-200)")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{

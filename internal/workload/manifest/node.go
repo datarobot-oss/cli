@@ -29,6 +29,74 @@ const (
 	boolTag = "!!bool"
 )
 
+// isNullish reports whether a node is meaningfully absent for validator
+// checks. mapValue returns a non-nil scalar node for a present key whose value
+// is null, so callers that test `!= nil` to mean "this block is set" get a
+// false positive unless they also call this helper.
+func isNullish(node *yaml.Node) bool {
+	// Note: this helper deliberately collapses three wire shapes
+	// 1. absent,
+	// 2. explicit null, and
+	// 3. empty mapping
+	// into a single "not set" meaning.
+	//
+	// The autoscaling BLOCK is nullable (AutoscalingProperties | None,
+	// protons/runtime.py:502), so GET responses echo "autoscaling: null" when
+	// no policy is configured — but its fields are NOT: enabled is a non-
+	// nullable bool (default True, protons/runtime.py:217), so
+	// "autoscaling: {enabled: null}" can never arrive. The real nullable set
+	// (verified against the Pydantic models in workload-api/schemas/) is:
+	// autoscaling block, codeRef, imageBuildConfig, imageUri, entrypoint,
+	// port, primary, livenessProbe/readinessProbe/startupProbe, routes,
+	// gpuType, build, and the api-key env var name.
+	//
+	// The empty-mapping arm (shape 3) is semantically correct ONLY for
+	// autoscaling: the server reads an empty autoscaling block the same as a
+	// missing one. For other fields the server does NOT treat {} as absent —
+	// imageBuildConfig: {} is default-constructed into a real ImageBuildConfig
+	// by Pydantic (containers.py:83-95), and artifact: {} is rejected with a
+	// confusing 422 (missing name/spec). Use the narrower isNull helper (nil
+	// or !!null scalar only) for those exclusivity checks; keep isNullish only
+	// where the server's own semantics make empty-means-absent true
+	// (checkScaling).
+	//
+	// The CLI never writes nulls back: stripKeys purges them so a committed
+	// manifest stays canonical even when the wire format is not.
+	//
+	// If the API ever gives these shapes distinct meanings — the classic case
+	// being null-as-delete in a PATCH — this helper, its validator call sites,
+	// and the nil-key purge in stripKeys are what should be updated.
+	node = resolveAlias(node)
+	if node == nil {
+		return true
+	}
+
+	if node.Kind == yaml.ScalarNode && node.Tag == nullTag {
+		return true
+	}
+
+	return node.Kind == yaml.MappingNode && len(node.Content) == 0
+}
+
+// isNull reports whether a node is a YAML null: a nil node or a scalar with
+// the !!null tag. Unlike isNullish, it does NOT treat an empty mapping ({})
+// as null — that distinction matters for fields whose server semantics
+// differ between null and empty. For artifact and imageBuildConfig, the
+// server never echoes {} and Pydantic does not treat {} as absent: it 422s
+// on artifact: {} with a confusing missing-fields error, and
+// default-constructs imageBuildConfig: {} into a real ImageBuildConfig,
+// silently dropping imageUri on create (workload-api
+// artifact.py:201-214, _strip_client_image_uris_on_build_containers). Use
+// isNull for the exclusivity checks (checkArtifactBinding, checkImageSource,
+// checkArtifact) where an empty block must still count as "set". Use
+// isNullish only where the server itself reads {} as absent — verified
+// today for autoscaling only (checkScaling).
+func isNull(node *yaml.Node) bool {
+	node = resolveAlias(node)
+
+	return node == nil || (node.Kind == yaml.ScalarNode && node.Tag == nullTag)
+}
+
 // resolveAlias follows an alias to the node it anchors, so the helpers below
 // see through YAML anchors/aliases the same way they see a literal value.
 // yaml.v3 aliases point directly at the anchored node, never at another

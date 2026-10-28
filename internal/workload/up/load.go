@@ -44,6 +44,10 @@ type Loaded struct {
 	// shell happened to be sitting in.
 	ProjectDir string
 
+	// Env is what a --sync-env run did to this file before
+	// it was read, zero when neither was asked for.
+	Env EnvEdit
+
 	// Manifest is the parse tree, kept so later stages can ask it questions
 	// without re-reading the file.
 	Manifest *manifest.Manifest
@@ -64,6 +68,15 @@ func (l Loaded) WorkloadID() string {
 // the compiled payload rather than the file is what makes the comparison fair:
 // the shorthand is already expanded, so a credential reference does not look
 // like drift against the object form the platform stores.
+//
+// The type is removed rather than compared, because the live side never has
+// one: the platform reads the discriminator off the artifact and pops any type
+// sent inside the spec, so a spec that came back from the server carries only
+// the rest. A file that wrote its type there would otherwise report it missing
+// on every single run, mint a version and roll for it, and find it missing
+// again the next time, which is a deploy loop with no state that can end it.
+// ArtifactType below is what compares the type, from wherever the file put it,
+// and the wizard's own writer drops it from this block for the same reason.
 func (l Loaded) Spec() (map[string]any, error) {
 	payload, err := l.payload()
 	if err != nil {
@@ -71,15 +84,62 @@ func (l Loaded) Spec() (map[string]any, error) {
 	}
 
 	artifact, _ := payload["artifact"].(map[string]any)
+	hoistArtifactType(artifact)
+
 	spec, _ := artifact["spec"].(map[string]any)
 
 	return spec, nil
 }
 
+// hoistArtifactType moves a type written inside the spec up beside it, and
+// takes it out of the spec either way.
+//
+// It exists because the file may legitimately say the type in either place,
+// while the platform only ever answers in one: it reads the discriminator on
+// the way in from wherever it finds it, keeps it on the artifact, and returns
+// a spec without it. Any comparison of the file's artifact block against the
+// platform's own document has to reconcile that first, or the type reads as a
+// field the live side is missing, on every run, with nothing a deploy can do
+// to settle it: mint a version, roll it, find it missing again.
+//
+// The callers pass a freshly decoded copy, so this never edits the compiled
+// request. What a create sends is untouched, which is what keeps the two
+// placements equally valid on the way in.
+func hoistArtifactType(artifact map[string]any) {
+	spec, ok := artifact["spec"].(map[string]any)
+	if !ok {
+		return
+	}
+
+	within, _ := spec[keyType].(string)
+
+	delete(spec, keyType)
+
+	if within == "" {
+		return
+	}
+
+	// Beside the spec wins when a file says both, because that is where the
+	// platform keeps the answer.
+	if beside, _ := artifact[keyType].(string); beside == "" {
+		artifact[keyType] = within
+	}
+}
+
 // ArtifactType is the kind of artifact the file asks for, "" when it names
-// none. It sits beside the spec rather than inside it, because the platform
-// reads the discriminator from the artifact itself and pops any type sent
-// within the spec, so Spec above can never see it.
+// none.
+//
+// It is read from beside the spec and from inside it, because a file can
+// legitimately have written it in either: the platform accepts both on the way
+// in and keeps the result on the artifact, and the manifest ledger blesses
+// neither placement over the other. This is the only place the answer is read,
+// since Spec above removes it so the spec walk cannot see it, so missing one
+// placement here would mean a file that names a type is treated as naming
+// none, and the walk never reverts what the file leaves out.
+//
+// Beside the spec wins when a file says both, because that is where the
+// platform keeps it and so where a reader checking the live artifact would
+// look for the answer.
 func (l Loaded) ArtifactType() (string, error) {
 	payload, err := l.payload()
 	if err != nil {
@@ -87,7 +147,9 @@ func (l Loaded) ArtifactType() (string, error) {
 	}
 
 	artifact, _ := payload["artifact"].(map[string]any)
-	artifactType, _ := artifact["type"].(string)
+	hoistArtifactType(artifact)
+
+	artifactType, _ := artifact[keyType].(string)
 
 	return artifactType, nil
 }
@@ -143,6 +205,27 @@ func Load(dir string) (Loaded, error) {
 		return Loaded{}, err
 	}
 
+	return compileLoaded(m, path)
+}
+
+// LoadRendered is Load for a manifest that exists only as bytes: the file a
+// dry run of setup would have written at path. It is validated and compiled
+// exactly as the file would be, anchored to the directory it would sit in, so
+// the plan a preview prints is the plan the real run would print.
+func LoadRendered(content []byte, path string) (Loaded, error) {
+	m, err := manifest.Parse(content, filepath.Dir(path))
+	if err != nil {
+		return Loaded{}, fmt.Errorf("%s: %w", path, err)
+	}
+
+	m.Path = path
+
+	return compileLoaded(m, path)
+}
+
+// compileLoaded runs the checks both loaders share, so a manifest previewed
+// from memory and one read from disk are judged by the same rules.
+func compileLoaded(m *manifest.Manifest, path string) (Loaded, error) {
 	if err := m.Validate(); err != nil {
 		return Loaded{}, err
 	}

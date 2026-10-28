@@ -22,16 +22,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wizard"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -44,17 +47,39 @@ type configResult struct {
 	// is created by the first `dr workload up`.
 	CreateOnUp bool   `json:"createOnUp"`
 	BuildMode  string `json:"buildMode"`
-	// Action is created, unchanged or planned. A caller keying on it has to be
-	// able to tell a dry run's planned from a file that now exists.
+	// Action is created, updated, unchanged or planned. A caller keying on it
+	// has to be able to tell a dry run's planned from a file that now exists,
+	// and a --sync-env edit from the run that wrote the file.
 	Action string `json:"action"`
-	// EnvKeysListed is how many .env variables the file carries and
+	// EnvKeysListed is how many .env variables this run put in the file and
 	// EnvSecretsPending how many of those still name the placeholder instead
 	// of a credential id. Without them a pipeline reading only this envelope
-	// would see a created manifest and no sign that it cannot deploy yet.
-	EnvKeysListed     int `json:"envKeysListed"`
+	// would see a created manifest and no sign that it cannot deploy yet. A
+	// create writes the whole list, so there the count is also what the file
+	// carries; a --sync-env run adds to a list already there, so there it
+	// is only what it added.
+	EnvKeysListed int `json:"envKeysListed"`
+	// EnvNamesRemoved is how many entries the reconciliation took out because
+	// .env no longer names them, reported apart from the rest because it is
+	// the one act that loses configuration.
+	EnvNamesRemoved   int `json:"envNamesRemoved"`
 	EnvSecretsPending int `json:"envSecretsPending"`
-	// EnvLiterals names the variables whose values the file carries in the
-	// clear, so an audit step can check them without parsing the YAML.
+	// EnvValuesUpdated is how many declared literals a --sync-env run
+	// rewrote, and EnvSecretsRotated how many credentials it re-sent. Counted
+	// apart from the added variables because they are different acts: one adds
+	// a name, the other changes what a name is worth.
+	EnvValuesUpdated  int `json:"envValuesUpdated"`
+	EnvSecretsRotated int `json:"envSecretsRotated"`
+	// EnvSecretsNotRotated is how many re-sends failed. The terminal names
+	// each one, and this envelope is what a JSON run has instead: a failed
+	// re-send leaves the old value serving, changes no file and stops nothing,
+	// so a pipeline with no count for it cannot tell that run from a clean one.
+	EnvSecretsNotRotated int `json:"envSecretsNotRotated"`
+	// EnvLiterals names the variables this run wrote into the file in the
+	// clear, so an audit step can check them without parsing the YAML. A
+	// create writes the whole list, so there it is every literal the file
+	// carries; a --sync-env run touches part of one, so
+	// there it is only what that run put there.
 	EnvLiterals []string `json:"envLiterals"`
 }
 
@@ -63,8 +88,10 @@ type configResult struct {
 type flags struct {
 	dir        string
 	dockerfile string
+	specFile   string
 	dryRun     bool
 	yes        bool
+	syncEnv    bool
 	answers    wizard.Answers
 }
 
@@ -76,7 +103,7 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Set up this project for `dr workload up`.",
+		Short: "Declare the workload's config in .datarobot.yaml.",
 		Long: `Answer a handful of questions and write the committed .datarobot.yaml
 that 'dr workload up' deploys from.
 
@@ -85,6 +112,21 @@ binding the CLI manages for you. Setup is a one-time act: with a manifest
 already present, this command prints its path and exits, because editing
 twelve lines of YAML beats re-answering eight questions. Delete the file to
 start over.
+
+The exception is --sync-env. It brings the manifest into line with .env in one
+act: a name the file does not declare is added, a literal whose value has moved
+is rewritten, the credential behind a secret is re-sent, and a name .env no
+longer carries is taken out. It prints a table of what it would do to every
+variable, and why, and asks before it writes a line or sends a value, because
+.env winning on everything means a stale copy is enough to delete something a
+running workload needs. It is opt-in because .env is your local copy and is
+allowed to drift: a deploy that silently picked up whatever it grew since is
+what this command is built not to do.
+
+A secret is re-sent without being compared. The platform never returns a
+stored value, so nothing can tell a rotated key from an untouched one, and a
+run that reported "no change" for a key you had just rotated would be worse
+than one request too many.
 
 Defaults come from wherever the truth already lives: a Dockerfile and its
 EXPOSE line for a fresh project, the workload's own live spec when you bind
@@ -101,7 +143,8 @@ Examples:
   dr workload config --yes --build-mode image --image registry/team/app:v1
   dr workload config --yes --build-mode generated \
     --execution-environment "[DataRobot] Python 3.12 Applications Base" \
-    --entrypoint "uvicorn app:app --host 0.0.0.0 --port 8080"`,
+    --entrypoint "uvicorn app:app --host 0.0.0.0 --port 8080"
+  dr workload config --sync-env`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -117,14 +160,18 @@ Examples:
 
 	// Only the env var binds to viper; --yes is read from cobra so it never
 	// persists into drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
-	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
+	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
+		nonInteractive := cli.IsNonInteractive(cmd)
+
 		return map[string]any{
-			"yes":           f.yes || viperx.GetBool("yes"),
+			"yes":           nonInteractive,
 			"type":          f.answers.Type,
 			"build_mode":    f.answers.BuildMode,
 			"bound":         f.answers.WorkloadID != "",
+			"spec_file":     f.specFile != "",
+			"sync_env":      f.syncEnv,
 			"dry_run":       f.dryRun,
 			"output_format": string(outputFormat),
 		}
@@ -140,16 +187,30 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	// only guessing is what the project directory can be read for, so the
 	// help text has to say that rather than leave "defaults" to be read as
 	// the other command's meaning.
-	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false,
+	cmd.Flags().BoolVarP(&f.yes, cli.YesFlagName, "y", false,
 		"Do not prompt; answer every question from flags and what the project directory shows. "+
 			"A question neither of those answers is an error naming the flag that would settle it.")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the manifest and write nothing.")
+	cmd.Flags().StringVar(&f.specFile, "spec-file", "",
+		"Take the answers from a prepared artifact spec or workload spec (JSON or YAML, what 'dr artifact create' "+
+			"and 'dr workload create' take) and ask only what it leaves open: a name if it has none, the .env "+
+			"import, the sizing if it has no runtime block. The file is left alone; .datarobot.yaml is written. "+
+			"The build-source flags, --type, --a2a-enabled, --sync-env and --workload-id cannot be combined with it.")
 	cmd.Flags().BoolVar(&f.answers.SkipEnv, "skip-env", false,
 		"Do not carry the project's .env into the manifest. By default its variables are written there: "+
 			"ordinary values as literals, secrets as credential references you complete later.")
+	// The one flag that acts on a manifest already present, and the reason it
+	// is opt-in: re-reading .env on every run would carry whatever the file
+	// grew since into a deploy nobody asked to change. Exclusive with
+	// --skip-env, which says the opposite about the same file.
+	cmd.Flags().BoolVar(&f.syncEnv, "sync-env", false,
+		"Bring the manifest into line with .env: add the variables it does not declare, rewrite a literal "+
+			"whose value has moved, and re-send the credential behind a secret. Prints what it would do and "+
+			"asks first, removals included: a name dropped from .env is taken out. Secrets are re-sent "+
+			"without being compared, because the platform never returns a stored value.")
 
 	cmd.Flags().StringVar(&f.answers.WorkloadID, "workload-id", "", "Bind an existing workload by id. Exclusive with --name.")
-	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first `dr workload up`.")
+	cmd.Flags().StringVar(&f.answers.Name, "name", "", "Name a new workload, created by the first 'dr workload up'.")
 	cmd.Flags().StringVar(&f.answers.Type, "type", "", "Workload kind: service or agent (default service).")
 	cmd.Flags().BoolVar(&f.answers.A2AEnabled, "a2a-enabled", false,
 		"Agent only: publish the app's A2A agent card to the tenant-wide agent registry.")
@@ -164,38 +225,94 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().StringVar(&f.answers.Image, "image", "", "Published image URI. Required with --build-mode image.")
 
 	cmd.Flags().IntVar(&f.answers.Port, "port", 0, "Container port (default: the Dockerfile's EXPOSE, else 8080).")
-	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "", "Readiness path (default /health).")
+	cmd.Flags().StringVar(&f.answers.HealthPath, "health", "",
+		"Readiness path, e.g. /health. A new manifest gets no probe without it: a probe has to be written "+
+			"for the app it probes, and a wrong one stops a healthy deploy from ever going ready. "+
+			"With --workload-id the bound workload's own probe is kept.")
+	// A flag of its own rather than an empty --health. Declining a probe is a
+	// different act from not mentioning one, and a flag that says so is both
+	// greppable in a CI script and impossible to type by accident.
+	// Deliberately about the file rather than about the running workload: `up`
+	// leaves out what the file leaves out, so a probe already deployed goes
+	// only when the artifact is rebuilt for some other reason.
+	cmd.Flags().BoolVar(&f.answers.NoProbe, "no-readiness-probe", false,
+		"Write no readiness probe, so traffic is not gated on a health check. Exclusive with --health. "+
+			"With --workload-id it drops the probe from the manifest; a deployed probe goes on the next artifact build.")
 
 	cmd.Flags().IntVar(&f.answers.Replicas, "replicas", 0, "Replica count (default 1).")
 	cmd.Flags().Float64Var(&f.answers.CPU, "cpu", 0, "CPU per replica (default 0.5).")
 	cmd.Flags().StringVar(&f.answers.Memory, "memory", "", "Memory per replica (default 512MB).")
+	// Applied when the workload is created. `up` compares the artifact spec and
+	// the runtime block, and importance is neither, so changing it for a
+	// workload that already exists is an edit the file records and the next
+	// deploy does not carry.
+	cmd.Flags().StringVar(&f.answers.Importance, "importance", "",
+		"Scheduling priority when capacity is constrained: "+
+			strings.Join(manifest.ImportanceLevels, ", ")+
+			" (default "+manifest.DefaultImportance+", or the bound workload's own level). Applied on create.")
 }
 
 func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
-	if err := checkDockerfileFlag(cmd, f.dockerfile); err != nil {
+	if err := checkSourceFlags(cmd, f); err != nil {
 		return err
 	}
 
-	dir := f.dir
-	if dir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("cannot determine the current directory: %w", err)
-		}
+	if err := checkSyncEnvFlags(cmd, f); err != nil {
+		return err
+	}
 
-		dir = cwd
+	// Shared with `up` and `delete` so one typo is refused one way. Without it
+	// this command walked into a directory that is not there and reported the
+	// missing Dockerfile instead, three messages after the one fact that
+	// explains them.
+	dir, err := idargs.ProjectDir(f.dir)
+	if err != nil {
+		return err
 	}
 
 	// JSON output implies non-interactive: a wizard on stderr alongside a
 	// machine-readable stdout is a trap for whoever is parsing it.
-	yes := f.yes || viperx.GetBool("yes")
+	yes := cli.IsNonInteractive(cmd)
+
+	asJSON := format == outputformat.OutputFormatJSON
+
+	// No writer at all under JSON, rather than a guard inside each of the
+	// wizard's reporters: stdout purity is only half the contract, and one of
+	// eight reporters forgetting the check is all it takes to break
+	// `2>&1 | jq .`. What a terminal run would have warned about becomes an
+	// error there instead, so nothing is quietly lost.
+	stderr := cmd.ErrOrStderr()
+	if asJSON {
+		stderr = nil
+	}
 
 	result, err := wizard.Run(wizard.Options{
 		Dir:            dir,
-		NonInteractive: yes || format == outputformat.OutputFormatJSON,
+		NonInteractive: yes || asJSON,
 		DryRun:         f.dryRun,
-		Answers:        f.answers,
-		Stderr:         cmd.ErrOrStderr(),
+		SyncEnv:        f.syncEnv,
+		SpecFile:       f.specFile,
+		// f.yes rather than the merged signal: the environment variable that
+		// suppresses wizards in CI is not consent to overwrite a value on the
+		// tenant, which is the line `dr workload delete` already draws.
+		Confirm: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+			Yes:    f.yes,
+			DryRun: f.dryRun,
+			// Both ends, through the same check the id prompts use. The
+			// question goes to stderr, so a live stdin alone is not enough:
+			// with stderr redirected the prompt is written where nobody can
+			// see it and the run then blocks for an answer nobody knows to
+			// give.
+			Interactive: !asJSON && idargs.CanAsk(cmd),
+			Silent:      asJSON,
+		}),
+		JSONOutput: asJSON,
+		Answers:    f.answers,
+		// With the --dir this run was given: this command looks only where it
+		// is pointed, so a remedy without it is one the reader cannot run from
+		// where they are standing.
+		Remedy: "dr workload config" + manifest.DirFlag(dir),
+		Stderr: stderr,
 	})
 	if err != nil {
 		if errors.Is(err, wizard.ErrCancelled) {
@@ -208,6 +325,69 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 	}
 
 	return render(cmd, f, format, result)
+}
+
+// editsEnv reports that this run acts on the .env of a manifest that already
+// exists, which is the question four sites here and one in the wizard were
+// each spelling out for themselves.
+func (f flags) editsEnv() bool {
+	return f.syncEnv
+}
+
+// setupOnlyFlags are the answers that only a run writing a manifest can act
+// on. An import edits one key of a file that already answered all of them.
+var setupOnlyFlags = []string{
+	"workload-id", "name", "type", "a2a-enabled", "build-mode", "dockerfile",
+	"execution-environment", "entrypoint", "image", "port", "health",
+	"no-readiness-probe", "replicas", "cpu", "memory", "importance",
+}
+
+// checkSyncEnvFlags refuses the combinations --sync-env cannot honour,
+// rather than accepting them and reporting a success that did none of it.
+//
+// Silently dropping them is the trap worth closing: a CI line that gains
+// --sync-env alongside its existing --workload-id would stop binding the
+// workload and still exit 0.
+func checkSyncEnvFlags(cmd *cobra.Command, f flags) error {
+	if !f.editsEnv() {
+		return nil
+	}
+
+	if f.answers.SkipEnv {
+		return errors.New("--sync-env reads .env, and --skip-env says not to read it at all: " +
+			"pass one or the other")
+	}
+
+	ignored := make([]string, 0, len(setupOnlyFlags))
+
+	for _, name := range setupOnlyFlags {
+		if cmd.Flags().Changed(name) {
+			ignored = append(ignored, "--"+name)
+		}
+	}
+
+	if len(ignored) > 0 {
+		return fmt.Errorf("--sync-env acts on the .env variables of a manifest that already "+
+			"exists, so they cannot also apply %s. Edit %s directly for those, and run the env flags on their own",
+			strings.Join(ignored, ", "), manifest.FileName)
+	}
+
+	return nil
+}
+
+// checkSourceFlags refuses the image-source flags this command cannot honour:
+// a Dockerfile elsewhere than the project root, and --dockerfile beside a
+// spec file that already says how the image is built.
+func checkSourceFlags(cmd *cobra.Command, f flags) error {
+	if err := checkDockerfileFlag(cmd, f.dockerfile); err != nil {
+		return err
+	}
+
+	if f.specFile != "" && cmd.Flags().Changed("dockerfile") {
+		return errors.New("--dockerfile cannot be combined with --spec-file: the file says how the image is built")
+	}
+
+	return nil
 }
 
 // checkDockerfileFlag holds --dockerfile to the one path a build can use.
@@ -230,38 +410,69 @@ func checkDockerfileFlag(cmd *cobra.Command, path string) error {
 func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, result wizard.Result) error {
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "config", configResult{
-			Path:              result.Path,
-			Name:              result.Draft.Name,
-			WorkloadID:        result.Draft.WorkloadID,
-			CreateOnUp:        result.Draft.WorkloadID == "",
-			BuildMode:         result.Draft.Build.Mode,
-			Action:            result.Action,
-			EnvKeysListed:     result.EnvKeysListed,
-			EnvSecretsPending: result.EnvSecretsPending,
-			EnvLiterals:       literalNames(result.Draft.EnvVars),
+			Path:                 result.Path,
+			Name:                 result.Draft.Name,
+			WorkloadID:           result.Draft.WorkloadID,
+			CreateOnUp:           result.Draft.WorkloadID == "",
+			BuildMode:            result.Draft.Build.Mode,
+			Action:               result.Action,
+			EnvKeysListed:        result.EnvKeysListed,
+			EnvNamesRemoved:      result.EnvNamesRemoved,
+			EnvSecretsPending:    result.EnvSecretsPending,
+			EnvValuesUpdated:     result.EnvValuesUpdated,
+			EnvSecretsRotated:    result.EnvSecretsRotated,
+			EnvSecretsNotRotated: result.EnvSecretsNotRotated,
+			EnvLiterals:          wizard.LiteralNames(result.Draft.EnvVars),
 		})
 	}
 
 	stderr := cmd.ErrOrStderr()
 
 	switch {
+	case result.Action == wizard.ActionUnchanged && result.EnvSecretsRotated > 0:
+		// A run that only re-sent secrets. The wizard has already said what
+		// went, and what is left to say is where: the credential store took
+		// the value and the file carrying the reference is byte for byte what
+		// it was, so "✓ Updated .datarobot.yaml" would be a plain untruth.
+		fmt.Fprintf(stderr, "%s was not changed: a secret's value lives in the credential store, not in the file.\n",
+			wizard.ShortPath(result.Path))
+
+		// A container reads its credentials when it starts, so one already
+		// running serves the value it started with until it is replaced. `up`
+		// will not do it: the manifest it compares against is the one it
+		// already deployed, and a rotation does not touch that, so it reports
+		// the workload as up to date and changes nothing.
+		dir := manifest.DirFlag(filepath.Dir(result.Path))
+		fmt.Fprintf(stderr,
+			"\nA running container keeps the value it started with. To serve the new one:\n"+
+				"  dr workload stop --yes%s\n  dr workload start --yes%s\n", dir, dir)
 	case result.Action == wizard.ActionUnchanged:
-		fmt.Fprintf(stderr, "%s already exists; edit it directly. Delete it to run setup again.\n", result.Path)
+		// An import that found nothing already said why on its way through:
+		// the file was complete, or absent, or complete only because what is
+		// missing was held back, and only the wizard can tell those apart.
+		// Repeating a guess here would contradict it, and "delete it to run
+		// setup again" is advice for a question that was not asked.
+		if !f.editsEnv() {
+			fmt.Fprintf(stderr, "%s already exists; edit it directly. Delete it to run setup again.\n", result.Path)
+		}
+	case f.dryRun && f.editsEnv():
+		fmt.Fprintf(stderr, "Dry run: %s was not written.\n", result.Path)
+		reportEnvAdded(stderr, result)
 	case f.dryRun:
 		fmt.Fprintf(stderr, "Dry run: %s was not written.\n\n", result.Path)
 		fmt.Fprint(stderr, string(result.Content))
 	default:
-		fmt.Fprintf(stderr, "✓ Wrote %s\n", wizard.ShortPath(result.Path))
+		fmt.Fprintf(stderr, "✓ %s %s\n", writeVerb(result.Action), wizard.ShortPath(result.Path))
 
-		if result.EnvKeysListed > 0 {
-			fmt.Fprintf(stderr, "  %d %s from %s added%s.\n",
-				result.EnvKeysListed, wizard.Plural(result.EnvKeysListed, "variable", "variables"),
-				wizard.EnvFileName, secretSuffix(result.EnvSecretsPending))
+		reportEnvAdded(stderr, result)
 
-			warnLiterals(stderr, result.Draft.EnvVars)
-		}
-
-		fmt.Fprint(stderr, "\nNext: dr workload up\n")
+		// The wizard may have written the manifest into a directory the shell
+		// is not standing in; a bare `up` there would configure and deploy
+		// the wrong tree.
+		tui.PrintNextSteps(stderr, tui.NextStep{
+			Command:     "dr workload up" + manifest.DirFlag(filepath.Dir(result.Path)),
+			Description: deployStep(result.EnvSecretsPending),
+		})
 	}
 
 	// stdout carries the path and nothing else, so it can be piped.
@@ -270,46 +481,57 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 	return nil
 }
 
-// literalListLimit caps how many names are printed, because a long .env
-// would bury the summary the list is there to qualify.
-const literalListLimit = 8
-
-// literalNames is the variables whose values the manifest carries in the
-// clear. The classifier prefers to call a doubtful value secret, but it is
-// still a heuristic: a short secret under an ordinary name reads as
-// configuration, and its value goes into a file meant to be committed.
-func literalNames(vars []manifest.EnvVar) []string {
-	names := make([]string, 0, len(vars))
-
-	for _, v := range vars {
-		if !v.Secret {
-			names = append(names, v.Name)
-		}
+// deployStep is what the suggested `up` will do. A secret still on the
+// credential placeholder is refused by the deploy, as the lines above have
+// just said, so promising one outright would send the reader to a failure.
+func deployStep(secretsPending int) string {
+	if secretsPending == 0 {
+		return "Deploy the workload"
 	}
 
-	return names
+	return fmt.Sprintf("Deploy the workload, once every %s holds a credential id", manifest.CredentialPlaceholder)
 }
 
-// warnLiterals names those variables. Nothing prompts on a headless run and
-// the classifier's verdict is final there, so this listing is the only chance
-// the user gets to catch a misread before the file is committed. Names only:
-// the values are the thing being protected.
-func warnLiterals(stderr io.Writer, vars []manifest.EnvVar) {
-	names := literalNames(vars)
-	if len(names) == 0 {
-		return
+// writeVerb says what happened to the file. Updated rather than wrote, because
+// the file was the user's before an edit and every line it already had is
+// still theirs.
+func writeVerb(action string) string {
+	if action == wizard.ActionUpdated {
+		return "Updated"
 	}
 
-	shown := names
-	suffix := ""
+	return "Wrote"
+}
 
-	if len(names) > literalListLimit {
-		shown = names[:literalListLimit]
-		suffix = fmt.Sprintf(" and %d more", len(names)-literalListLimit)
+// reportEnvAdded says what this run put in the file, and names the values it
+// wrote in the clear. Shared by the write and the import's dry run, which
+// report the same act and must describe it the same way.
+func reportEnvAdded(stderr io.Writer, result wizard.Result) {
+	if result.EnvValuesUpdated > 0 {
+		fmt.Fprintf(stderr, "  %d declared %s updated to match %s.\n",
+			result.EnvValuesUpdated, wizard.Plural(result.EnvValuesUpdated, "value", "values"),
+			wizard.EnvFileName)
 	}
 
-	fmt.Fprintf(stderr, "  Values written in the clear: %s%s. Anything secret among them belongs in a %s reference instead.\n",
-		strings.Join(shown, ", "), suffix, manifest.CredentialShorthandPrefix)
+	if result.EnvKeysListed > 0 {
+		fmt.Fprintf(stderr, "  %d %s from %s added%s.\n",
+			result.EnvKeysListed, wizard.Plural(result.EnvKeysListed, "variable", "variables"),
+			wizard.EnvFileName, secretSuffix(result.EnvSecretsPending))
+	}
+
+	// Said out loud, because it is the one act that loses configuration rather
+	// than gaining it, and the two counts above would otherwise report a run
+	// that added three variables and dropped four as a run that added three.
+	if result.EnvNamesRemoved > 0 {
+		fmt.Fprintf(stderr, "  %d %s removed, gone from %s.\n",
+			result.EnvNamesRemoved, wizard.Plural(result.EnvNamesRemoved, "variable", "variables"),
+			wizard.EnvFileName)
+	}
+
+	// Last, and outside every count: every value this run put in the file is
+	// owed the same disclosure, whether it arrived as a new name or as a new
+	// value for one already there.
+	wizard.WarnLiterals(stderr, result.Draft.EnvVars)
 }
 
 // secretSuffix names the entries that still need a credential id, because a

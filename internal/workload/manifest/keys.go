@@ -45,3 +45,21 @@ const (
 	keyStartupProbe   = "startupProbe"
 	keyType           = "type"
 )
+
+// Server-managed and build-output field names declared in the field rule
+// table (schema.go). The server-managed keys are the server's own
+// bookkeeping, stripped at any depth; the build-output keys are
+// server-assigned values stripped from containers. Defined here so a
+// rename in the rule table is a one-line change, matching the convention
+// above.
+const (
+	keyBuild          = "build"
+	keyCodeRef        = "codeRef"
+	keyCreatedAt      = "createdAt"
+	keyEndpoint       = "endpoint"
+	keyID             = "id"
+	keyImageOutdated  = "imageOutdated"
+	keyResolvedBundle = "resolvedBundle"
+	keyStatus         = "status"
+	keyUpdatedAt      = "updatedAt"
+)

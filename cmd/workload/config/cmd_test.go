@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/stretchr/testify/assert"
@@ -55,6 +56,35 @@ func project(t *testing.T) string {
 	return dir
 }
 
+// A prepared spec plus a name writes the manifest headless, the spec file is
+// left alone, and a build-source flag given alongside it is refused.
+func TestCmd_SpecFileWritesTheManifest(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "artifact.yaml")
+	require.NoError(t, os.WriteFile(spec, []byte(`name: prepared-artifact
+spec:
+  containerGroups:
+    - name: default
+      containers:
+        - name: primary
+          primary: true
+          port: 9090
+          imageUri: registry/app:v7
+`), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app", "--spec-file", spec)
+	require.NoError(t, err)
+
+	written, err := os.ReadFile(filepath.Join(dir, ".datarobot.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "name: my-app\n")
+	assert.Contains(t, string(written), "imageUri: registry/app:v7")
+
+	_, _, err = runCmd(t, "--dir", t.TempDir(), "--yes", "--name", "my-app", "--spec-file", spec, "--dockerfile", "./Dockerfile")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--dockerfile cannot be combined with --spec-file")
+}
+
 func TestCmd_WritesTheManifest(t *testing.T) {
 	dir := project(t)
 
@@ -67,6 +97,11 @@ func TestCmd_WritesTheManifest(t *testing.T) {
 	assert.Equal(t, path+"\n", stdout.String())
 	assert.Contains(t, stderr.String(), "Wrote")
 	assert.FileExists(t, path)
+
+	// The follow-up carries the --dir, since the shell is not standing in the
+	// project and a bare `up` would deploy some other tree.
+	assert.Contains(t, ansi.Strip(stderr.String()),
+		"Next:\n  dr workload up"+manifest.DirFlag(dir)+"  Deploy the workload\n")
 }
 
 // JSON mode means stdout is JSON and only JSON: every human-facing word goes
@@ -74,8 +109,9 @@ func TestCmd_WritesTheManifest(t *testing.T) {
 func TestCmd_JSONEnvelope(t *testing.T) {
 	dir := project(t)
 
-	stdout, _, err := runCmd(t, "--dir", dir, "--name", "my-app", "--output-format", "json")
+	stdout, stderr, err := runCmd(t, "--dir", dir, "--name", "my-app", "--output-format", "json")
 	require.NoError(t, err)
+	assert.NotContains(t, stderr.String(), "Next:")
 
 	var envelope struct {
 		Config struct {
@@ -143,8 +179,6 @@ func TestCmd_DockerfileFlagIsPinned(t *testing.T) {
 }
 
 func TestCmd_RejectsBadFlagCombinations(t *testing.T) {
-	dir := project(t)
-
 	tests := map[string][]string{
 		"id and name":       {"--workload-id", "68b0", "--name", "my-app"},
 		"unsupported type":  {"--name", "my-app", "--type", "nim"},
@@ -152,15 +186,41 @@ func TestCmd_RejectsBadFlagCombinations(t *testing.T) {
 		"relative health":   {"--name", "my-app", "--health", "health"},
 		"privileged port":   {"--name", "my-app", "--port", "80"},
 		"image mode no uri": {"--name", "my-app", "--build-mode", "image"},
+		"probe and no probe": {
+			"--name", "my-app", "--no-readiness-probe", "--health", "/ready",
+		},
+		"unsupported importance": {"--name", "my-app", "--importance", "urgent"},
 	}
 
 	for name, args := range tests {
 		t.Run(name, func(t *testing.T) {
+			// A directory each: sharing one means a case that stops erroring
+			// writes a manifest the remaining cases then find already there,
+			// and they all fail without naming the one that regressed.
+			dir := project(t)
+
 			_, _, err := runCmd(t, append([]string{"--dir", dir, "--yes"}, args...)...)
 			require.Error(t, err)
 			assert.NoFileExists(t, manifest.Path(dir))
 		})
 	}
+}
+
+// The two fields the settings screen hides have to stay reachable without a
+// terminal, which for the probe means a flag of its own: an empty --health
+// cannot be told apart from an absent one.
+func TestCmd_HiddenFieldsAreReachableByFlag(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app",
+		"--no-readiness-probe", "--importance", "high")
+	require.NoError(t, err)
+
+	written, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(written), "readinessProbe")
+	assert.Contains(t, string(written), "importance: high")
 }
 
 func TestCmd_RejectsPositionalArgs(t *testing.T) {
@@ -187,10 +247,10 @@ func TestCmd_JSONImpliesNonInteractive(t *testing.T) {
 	var ran bool
 
 	restoreFlow := wizard.SetInteractiveFlowForTest(
-		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, error) {
+		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, string, error) {
 			ran = true
 
-			return nil, manifest.Draft{}, errors.New("the wizard must not run")
+			return nil, manifest.Draft{}, "", errors.New("the wizard must not run")
 		})
 	defer restoreFlow()
 
@@ -214,10 +274,10 @@ func TestCmd_YesImpliesNonInteractive(t *testing.T) {
 	var ran bool
 
 	restoreFlow := wizard.SetInteractiveFlowForTest(
-		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, error) {
+		func(wizard.Options, wizard.Detected) ([]byte, manifest.Draft, string, error) {
 			ran = true
 
-			return nil, manifest.Draft{}, errors.New("the wizard must not run")
+			return nil, manifest.Draft{}, "", errors.New("the wizard must not run")
 		})
 	defer restoreFlow()
 
@@ -259,6 +319,19 @@ func TestCmd_JSONEnvelopeCarriesTheEnvCounts(t *testing.T) {
 	assert.Equal(t, 2, envelope.Config.EnvKeysListed)
 	assert.Equal(t, 1, envelope.Config.EnvSecretsPending)
 	assert.Equal(t, []string{"LOG_LEVEL"}, envelope.Config.EnvLiterals)
+}
+
+// A secret left on the placeholder is refused by the deploy, so the follow-up
+// says what has to happen first instead of promising one. The value is empty
+// so that nothing is sent to a credential store to get there.
+func TestCmd_NextStepWaitsOnAPendingSecret(t *testing.T) {
+	dir := projectWithEnv(t, "API_TOKEN=\n")
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	assert.Contains(t, ansi.Strip(stderr.String()), "  dr workload up"+manifest.DirFlag(dir)+
+		"  Deploy the workload, once every "+manifest.CredentialPlaceholder+" holds a credential id\n")
 }
 
 // The classifier prefers to call a doubtful value secret, but it is a
@@ -307,4 +380,181 @@ func TestCmd_UnparseableEnvFileLeaksNoValues(t *testing.T) {
 	assert.Contains(t, stderr.String(), "on line 2")
 	assert.NotContains(t, stderr.String(), "sk-live-do-not-print")
 	assert.NotContains(t, stderr.String(), "hunter2")
+}
+
+// A --dir that is not a directory is refused by name, the way 'up' and 'delete'
+// already refuse it. This command used to walk on into a path that was not
+// there and report the missing Dockerfile instead, three messages after the one
+// fact that explains them, with a manifest-search warning in between naming an
+// ancestor the user never typed.
+func TestCmd_RefusesADirThatIsNotADirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope", "project")
+
+	_, stderr, err := runCmd(t, "--dir", missing, "--yes", "--name", "my-app")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--dir "+missing)
+	assert.Contains(t, err.Error(), "not a directory")
+	assert.NotContains(t, stderr.String(), "cannot check for a manifest above",
+		"the refusal is the whole answer; a warning about an ancestor is noise on top of it")
+	assert.NotContains(t, stderr.String(), "no Dockerfile")
+}
+
+// The flag that reaches past the existing-manifest guard, seen from the
+// command: the file is edited, and the envelope says so with an action a
+// pipeline can tell apart from a create.
+func TestCmd_SyncEnvReportsUpdated(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"),
+		[]byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+
+	stdout, _, err := runCmd(t, "--dir", dir, "--yes", "--sync-env", "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope struct {
+		Config struct {
+			Action        string `json:"action"`
+			EnvKeysListed int    `json:"envKeysListed"`
+		} `json:"config"`
+	}
+
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &envelope))
+	assert.Equal(t, "updated", envelope.Config.Action)
+	assert.Equal(t, 1, envelope.Config.EnvKeysListed)
+
+	written, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), "REGION")
+}
+
+// An import that found nothing is reported as such rather than as setup
+// declining to run: telling the user to delete the file answers a question
+// they did not ask.
+func TestCmd_SyncEnvWithNothingToDo(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--sync-env")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "already says what .env says")
+	assert.NotContains(t, stderr.String(), "Delete it to run setup again")
+}
+
+// The two flags say opposite things about the same file, so the run stops
+// rather than picking one.
+func TestCmd_SyncEnvAndSkipEnvConflict(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--sync-env", "--skip-env")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--sync-env")
+	assert.Contains(t, err.Error(), "--skip-env")
+}
+
+// Every setup answer is dropped by an import, so passing one is a mistake the
+// run names rather than a no-op it reports as a success.
+func TestCmd_SyncEnvRejectsSetupFlags(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--sync-env",
+		"--workload-id", "68b0c1d2e3f4a5b6c7d8e9f0", "--port", "9999")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "--workload-id")
+	assert.Contains(t, err.Error(), "--port")
+}
+
+// The flag names a file to add to. Creating one instead would configure a
+// directory the flag says was already configured.
+func TestCmd_SyncEnvWithNoManifest(t *testing.T) {
+	dir := project(t)
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--sync-env")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "nothing to reconcile")
+	assert.NoFileExists(t, manifest.Path(dir))
+}
+
+// stdout purity is only half the contract: `--output-format json 2>&1 | jq .`
+// has to parse too, so the drift notice stays off a JSON run.
+func TestCmd_EnvDriftNoticeSilentInJSON(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName),
+		[]byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+
+	stdout, stderr, err := runCmd(t, "--dir", dir, "--yes", "--output-format", "json")
+	require.NoError(t, err)
+
+	assert.Empty(t, stderr.String())
+	assert.True(t, json.Valid(stdout.Bytes()))
+}
+
+// The import writes fresh literal values into a committed file, so it owes
+// the same disclosure the create path gives.
+func TestCmd_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, wizard.EnvFileName),
+		[]byte("LOG_LEVEL=debug\nREGION=eu-west-1\n"), 0o600))
+
+	_, stderr, err := runCmd(t, "--dir", dir, "--yes", "--sync-env")
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(), "Values written in the clear: REGION")
+
+	stdout, _, err := runCmd(t, "--dir", dir, "--yes", "--sync-env",
+		"--output-format", "json")
+	require.NoError(t, err)
+
+	// Nothing left to add by now, but the envelope must still be well formed.
+	assert.True(t, json.Valid(stdout.Bytes()))
+}
+
+// The environment variable that suppresses wizards in CI is not consent to
+// overwrite a value on the tenant, which is the line `dr workload delete`
+// already draws. A scheduled run that reaches a reconciliation with it set and
+// no --yes is refused, the refusal names the flag, and the file is left alone.
+func TestCmd_SyncEnvWithoutYesIsRefusedWhereNobodyCanAnswer(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "1")
+
+	dir := project(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("LOG_LEVEL=debug\n"), 0o600))
+
+	_, _, err := runCmd(t, "--dir", dir, "--yes", "--name", "my-app")
+	require.NoError(t, err)
+
+	// .env drops the one name the manifest declares, which is the half of a
+	// reconciliation that loses configuration.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("REGION=eu-west-1\n"), 0o600))
+
+	before, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+
+	_, _, err = runCmd(t, "--dir", dir, "--sync-env")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--yes", "the refusal names the way out of it")
+
+	after, err := os.ReadFile(manifest.Path(dir))
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after), "nothing was written")
 }

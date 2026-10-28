@@ -28,7 +28,7 @@ func TestCmd_InvalidLimit(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "limit")
+	assert.Contains(t, err.Error(), "must be a positive integer")
 }
 
 func TestCmd_InvalidOutputFormat(t *testing.T) {

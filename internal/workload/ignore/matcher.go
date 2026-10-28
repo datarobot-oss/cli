@@ -18,20 +18,54 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	gitignore "github.com/sabhiram/go-gitignore"
 )
 
-const wapiignoreFile = ".wapiignore"
+const (
+	// FileName is the user-authored ignore file at the project root. It is
+	// exported so the package that writes the starter template names the same
+	// file this one reads, rather than keeping a second copy of the string.
+	FileName = ".drignore"
 
-// systemExcludes are always-ignored paths, not overridable by .wapiignore.
+	// LegacyFileName is the name FileName replaced. It is read only when
+	// FileName is absent: a project set up before the rename has a committed
+	// one, and ignoring it would upload the .venv, node_modules and .env it
+	// was written to keep out.
+	LegacyFileName = ".wapiignore"
+
+	// BackupInfix separates a path from the timestamp in the *.LOCAL backup the
+	// sync engine writes when remote wins over a local file. The engine builds
+	// "<path>" + BackupInfix + "<stamp>"; IsBackupCopy matches the same shape so
+	// those backups are never re-uploaded on the next sync.
+	BackupInfix = ".LOCAL."
+)
+
+// backupCopyPattern matches a *.LOCAL.<stamp> backup basename, where <stamp> is
+// the engine's ISO-8601 basic UTC format (20060102T150405Z). Kept tight so a
+// real file that merely contains ".LOCAL." is not swept up.
+var backupCopyPattern = regexp.MustCompile(`\.LOCAL\.[0-9]{8}T[0-9]{6}Z$`)
+
+// IsBackupCopy reports whether relPath is one of the engine's *.LOCAL backups.
+func IsBackupCopy(relPath string) bool {
+	return backupCopyPattern.MatchString(path.Base(relPath))
+}
+
+// systemPatterns are always-ignored paths, not overridable by .drignore. They
+// are gitignore patterns compiled by the same engine as the user's file, so
+// they match at any depth the way a user's own `.git` line would: a vendored
+// checkout's `sub/.git/` used to be uploaded because the old prefix check
+// only saw the project root.
 //
-// The state directory is listed at its full path, not as a bare ".datarobot":
-// entries match as prefixes, so a bare one would also exclude the CLI's own
-// tool state under .datarobot/cli/, which syncs today. The legacy ".wapi"
-// stays listed so an un-migrated project does not upload its state.
+// The state directory is listed at its full path, not as a bare ".datarobot",
+// and root-anchored by the leading slash: a bare one would also exclude the
+// CLI's own tool state under .datarobot/cli/, which syncs today. The legacy
+// ".wapi" stays listed so an un-migrated project does not upload its state.
 //
 // The manifest is excluded because a deploy rewrites it: `up` writes the new
 // workload's id into it after the sync has run. Uploaded, it would differ from
@@ -41,29 +75,177 @@ const wapiignoreFile = ".wapiignore"
 // container has no use for it.
 //
 // Entries must be lowercase: matchesSystemExclude folds the path it is given.
-var systemExcludes = []string{".datarobot/workload", ".wapi", ".git", ".gitignore", ".datarobot.yaml"}
+var systemPatterns = []string{
+	"/.datarobot/workload", // the leading slash keeps the state dir root-anchored
+	".wapi",
+	".git",
+	// Root-anchored: a nested .gitignore is often the "keep this empty
+	// directory" placeholder (`logs/.gitignore` holding `*` and `!.gitignore`),
+	// and since a system exclude cannot be overridden from .drignore, matching
+	// it at depth would keep that directory out of every image for good.
+	"/.gitignore",
+	".datarobot.yaml",
+}
+
+// system is systemPatterns compiled once. The same engine as the user file,
+// so the two cannot disagree about what "a path under .git" means.
+var system = gitignore.CompileIgnoreLines(systemPatterns...)
 
 // Matcher decides whether a path is excluded from sync. Match is safe for
 // concurrent use after New.
 type Matcher struct {
-	user *gitignore.GitIgnore // nil when the user has no .wapiignore
+	user *gitignore.GitIgnore // nil when the user has no ignore file
+
+	// source is the base filename the patterns came from, empty when none
+	// was loaded. Kept so callers can name the file the user actually has
+	// instead of assuming the current name.
+	source string
+
+	// shadowed is a candidate that lost to source, empty when only one was
+	// present. Its patterns are not applied and the user is told so.
+	shadowed string
 }
 
-// New loads .wapiignore from projectDir if present. A missing file is
-// fine — only the hardcoded system excludes apply.
-func New(projectDir string) (*Matcher, error) {
-	path := filepath.Join(projectDir, wapiignoreFile)
+// Locate returns the path New would take its patterns from, or "" when the
+// project has neither name. The package that writes the starter template asks
+// this rather than testing for a filename itself, so the two cannot drift.
+//
+// It uses the same file test as the rest of the CLI, which means it agrees
+// with New on the awkward cases: a directory at one of these names is not an
+// ignore file, and neither is a symlink whose target is missing. Answering
+// "present" for either would have the writer side skip the template while New
+// found nothing to read, leaving the project with no patterns at all.
+func Locate(projectDir string) string {
+	for _, name := range []string{FileName, LegacyFileName} {
+		path := filepath.Join(projectDir, name)
+		if fsutil.FileExists(path) {
+			return path
+		}
+	}
 
+	return ""
+}
+
+// New loads the project's ignore file, preferring FileName and falling back to
+// LegacyFileName when it is absent. A project with neither is fine: only the
+// hardcoded system excludes apply.
+//
+// The newer name wins outright when both are present. Merging two files would
+// make the effective pattern set depend on an ordering nobody wrote down, and
+// a project that has both is mid-rename, where the new file is the one being
+// edited. ShadowWarning reports the loser, because a file at the project root
+// that looks like it is filtering the sync and is not needs saying out loud.
+//
+// An unreadable file in effect fails rather than falling through to the older
+// name. Quietly syncing under a different set of patterns than the one the
+// user is looking at is how a .env reaches the remote; a failed sync they can
+// retry is the better end of that trade. The loser is only ever stat'd, so a
+// leftover the run would not have applied cannot fail it either.
+func New(projectDir string) (*Matcher, error) {
+	gi, err := compileIfPresent(filepath.Join(projectDir, FileName))
+	if err != nil {
+		return nil, err
+	}
+
+	if gi != nil {
+		return &Matcher{user: gi, source: FileName, shadowed: shadowedBy(projectDir)}, nil
+	}
+
+	gi, err = compileIfPresent(filepath.Join(projectDir, LegacyFileName))
+	if err != nil {
+		return nil, err
+	}
+
+	if gi == nil {
+		return &Matcher{}, nil
+	}
+
+	return &Matcher{user: gi, source: LegacyFileName}, nil
+}
+
+// shadowedBy names the older file sitting beside the one in effect, empty when
+// there is none. Existence is all the warning needs, so this does not read it:
+// compiling a file whose patterns are inert would be work thrown away, and its
+// read errors would fail a sync that was never going to use it.
+func shadowedBy(projectDir string) string {
+	if fsutil.FileExists(filepath.Join(projectDir, LegacyFileName)) {
+		return LegacyFileName
+	}
+
+	return ""
+}
+
+// compileIfPresent returns nil, nil when path does not exist, so New can try
+// the next candidate without treating absence as failure.
+//
+// A read failure is returned as it comes: os.ReadFile's error is already a
+// *PathError naming the operation and the file, so wrapping it here would only
+// print the path twice.
+func compileIfPresent(path string) (*gitignore.GitIgnore, error) {
 	gi, err := gitignore.CompileIgnoreFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &Matcher{}, nil
+			return nil, nil
 		}
 
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, err
 	}
 
-	return &Matcher{user: gi}, nil
+	return gi, nil
+}
+
+// Source is the base filename the patterns were read from, empty when the
+// Matcher has none. Callers writing a message about a pattern use it so the
+// advice points at the file that exists on disk.
+func (m *Matcher) Source() string { return m.source }
+
+// Notice is a one-line account of the legacy filename still being in use,
+// empty in every other case. The file keeps working either way, so this is the
+// only signal a user gets that the old name is on its way out.
+//
+// It carries the coordination caveat because the ignore file is part of the
+// synced set: renaming it deletes the old name from the remote, and a
+// collaborator on a CLI from before this change reads only that name. The
+// person who runs the rename is the one who needs to know, and they are
+// reading this rather than the docs.
+//
+// Printing it is the caller's job, which keeps this package doing no I/O
+// beyond finding the ignore file. Same for ShadowWarning. The two are never
+// both set: the legacy name is only ever in effect when it is the only one.
+func (m *Matcher) Notice() string {
+	if m.source != LegacyFileName {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"Using %s for sync ignore patterns. That name is deprecated: rename the file to %s. "+
+			"It syncs with your code, so agree the rename with anyone else deploying this project.",
+		LegacyFileName, FileName)
+}
+
+// ShadowWarning reports a second ignore file whose patterns are not being
+// applied, empty when the project has at most one.
+//
+// It is separate from Notice, and a warning rather than housekeeping, because
+// the two states differ in what they cost. Using the old name costs nothing;
+// the patterns still apply. Having both means a set of patterns the user wrote
+// is silently inert, and the ways to end up there do not look like mistakes: a
+// half-finished rename, or a `touch .drignore` in response to the deprecation
+// line. Sync can also create it unaided, since the ignore file is itself part
+// of the synced set, so a machine that links to an artifact carrying the other
+// name downloads it right next to the one already on disk.
+//
+// Nothing else in a run would mention it. The first sign otherwise is a .venv
+// on the remote.
+func (m *Matcher) ShadowWarning() string {
+	if m.shadowed == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"Both %s and %s are present. %s is the one in effect, and the patterns in %s are not applied. "+
+			"Merge them into %s and delete %s.",
+		FileName, m.shadowed, FileName, m.shadowed, FileName, m.shadowed)
 }
 
 // FromLines builds a Matcher from in-memory pattern lines. Empty/nil
@@ -87,24 +269,35 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 		return true
 	}
 
+	// The engine's own *.LOCAL backups are never sync input: uploading them
+	// would push a copy of the file that was just overwritten, and the next
+	// sync would see it as a new local file for ever.
+	if IsBackupCopy(relPath) {
+		return true
+	}
+
 	if m.user == nil {
 		return false
 	}
 
-	if m.user.MatchesPath(relPath) {
-		return true
-	}
-
-	// Directory-only patterns need a trailing slash to match in go-gitignore.
+	// One probe, and for a directory it is the slashed form: the single
+	// question git asks. A bare pattern ("build") matches "build/" just as
+	// well as "build", so nothing is lost, and probing the unslashed form
+	// first was a bug: with `*` followed by `!build/`, the `*` rule matched
+	// "build" and returned before the negation the user wrote to bring the
+	// directory back was ever consulted. The engine applies patterns in file
+	// order and a negation only clears an earlier match, so the probe has to
+	// be the one the negation was written against.
+	probe := relPath
 	if isDir {
-		return m.user.MatchesPath(relPath + "/")
+		probe += "/"
 	}
 
-	return false
+	return m.user.MatchesPath(probe)
 }
 
 // matchesSystemExclude reports whether relPath is or lives inside a
-// system-excluded directory.
+// system-excluded directory, at any depth.
 //
 // The comparison folds case because macOS and Windows preserve case without
 // distinguishing it: a project that already holds a differently-cased
@@ -112,14 +305,20 @@ func (m *Matcher) Match(relPath string, isDir bool) bool {
 // exclude would then let config.json and manifest.json sync to the remote. The
 // cost is that a case-sensitive filesystem also excludes a genuine .Git or
 // .DataRobot, which is not a directory anyone keeps alongside the real ones.
+//
+// The path is probed as given, without a trailing slash, because every entry
+// is a name rather than a directory-only pattern: "sub/.git" matches `.git`
+// whether it is a file or a directory, and "sub/.git/HEAD" matches it as
+// something inside.
 func matchesSystemExclude(relPath string) bool {
-	lowered := strings.ToLower(relPath)
+	return system.MatchesPath(strings.ToLower(relPath))
+}
 
-	for _, name := range systemExcludes {
-		if lowered == name || strings.HasPrefix(lowered, name+"/") {
-			return true
-		}
-	}
-
-	return false
+// IsSystemExcluded is matchesSystemExclude for callers outside the walk. The
+// sync engine asks it about the remote manifest: a path the walk would never
+// list, but that an older CLI uploaded before the excludes reached every
+// depth, is something to delete from the remote rather than download over
+// the real local file.
+func IsSystemExcluded(relPath string) bool {
+	return matchesSystemExclude(relPath)
 }

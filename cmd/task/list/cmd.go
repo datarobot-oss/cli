@@ -291,9 +291,8 @@ func Cmd() *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			binaryName := "task"
-			discovery := task.NewTaskDiscovery("Taskfile.gen.yaml")
 
-			rootTaskfile, err := discovery.Discover(dir, 2)
+			rootTaskfile, _, err := task.ResolveTaskfile(dir)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, task.FormatDiscoveryError(err))
 

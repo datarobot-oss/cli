@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -37,11 +38,23 @@ import (
 func startServer(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
 
+	return startServerAt(t, `{"major": 2, "minor": 49, "versionString": "2.49"}`, handler)
+}
+
+// startServerAt is startServer with the API version the server reports.
+func startServerAt(t *testing.T, apiVersion string, handler http.Handler) *httptest.Server {
+	t.Helper()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/version/", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{}"))
+	})
+
+	mux.HandleFunc("/api/v2/version/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(apiVersion))
 	})
 
 	mux.Handle("/api/v2/", http.StripPrefix("", handler))
@@ -63,20 +76,72 @@ func startServer(t *testing.T, handler http.Handler) *httptest.Server {
 	return srv
 }
 
+// TestCreateCatalog pins the name onto the JSON body. Sent anywhere else
+// it is dropped and the entry lands in the File Registry as "Untitled
+// Dataset", which is the whole defect this parameter exists to fix.
 func TestCreateCatalog(t *testing.T) {
+	var gotBody map[string]any
+
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/v2/files/", r.URL.Path)
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
 	}))
 
 	c := New()
-	got, err := c.CreateCatalog()
+	got, err := c.CreateCatalog("my-agent-artifact")
 
 	require.NoError(t, err)
 	assert.Equal(t, "cid-1", got.CatalogID)
 	assert.Equal(t, "v0", got.CatalogVersionID)
+	assert.Equal(t, map[string]any{"name": "my-agent-artifact"}, gotBody)
+}
+
+// TestCreateCatalog_NoName checks that an unnamed create sends no name key
+// at all rather than an empty string. The server reads the field as `name
+// or <derived title>`, where a blank string is falsy, so "omitted" and
+// "empty" are not interchangeable.
+func TestCreateCatalog_NoName(t *testing.T) {
+	var gotBody map[string]any
+
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
+	}))
+
+	c := New()
+	_, err := c.CreateCatalog("")
+
+	require.NoError(t, err)
+	assert.Empty(t, gotBody, "an unnamed create must not carry a name key")
+}
+
+// TestCreateCatalog_ClampsName covers the one input that would otherwise
+// fail the create outright: workload artifact names are allowed to run to
+// 5000 characters, the Files API stops at 255.
+func TestCreateCatalog_ClampsName(t *testing.T) {
+	var gotName string
+
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		gotName, _ = body["name"].(string)
+
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v0"}`))
+	}))
+
+	c := New()
+	_, err := c.CreateCatalog(strings.Repeat("é", 300))
+
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("é", 255), gotName,
+		"the limit counts characters, so multi-byte names must not be cut mid-rune")
 }
 
 func TestCreateStage_ApplyStage(t *testing.T) {
@@ -146,8 +211,74 @@ func TestUploadToStage_Multipart(t *testing.T) {
 
 	c := New()
 	body := strings.NewReader("print('hi')\n")
-	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), body)
+	err := c.UploadToStage("cid-1", "st-1", "agent.py", int64(body.Len()), false, body)
 	require.NoError(t, err)
+}
+
+func TestUploadToStage_ExecutableFormFieldPrecedesFile(t *testing.T) {
+	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.URL.RawQuery)
+
+		mr, err := r.MultipartReader()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		field, err := mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, "isExecutable", field.FormName())
+
+		value, err := io.ReadAll(field)
+		assert.NoError(t, err)
+		assert.Equal(t, "true", string(value))
+
+		file, err := mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, "file", file.FormName())
+		assert.Equal(t, "run.sh", file.FileName())
+
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
+	}))
+
+	c := New()
+	body := strings.NewReader("#!/bin/sh\n")
+	require.NoError(t, c.UploadToStage("cid-1", "st-1", "run.sh", int64(body.Len()), true, body))
+}
+
+// A server older than the field validates its form strictly, so it gets the
+// plain upload it always got: no isExecutable part, only the file.
+func TestUploadToStage_OlderServerGetsNoExecutableField(t *testing.T) {
+	for _, version := range []string{`{"major": 2, "minor": 48}`, `not json`} {
+		t.Run(version, func(t *testing.T) {
+			startServerAt(t, version, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mr, err := r.MultipartReader()
+				if !assert.NoError(t, err) {
+					return
+				}
+
+				first, err := mr.NextPart()
+				if !assert.NoError(t, err) {
+					return
+				}
+
+				assert.Equal(t, "file", first.FormName(), "no isExecutable field ahead of the file")
+
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"catalogId":"cid-1","stageId":"st-1"}`))
+			}))
+
+			c := New()
+			body := strings.NewReader("#!/bin/sh\n")
+			require.NoError(t, c.UploadToStage("cid-1", "st-1", "run.sh", int64(body.Len()), true, body))
+		})
+	}
 }
 
 // TestUploadToStage_AdvertisesContentLength verifies that the size
@@ -176,7 +307,7 @@ func TestUploadToStage_AdvertisesContentLength(t *testing.T) {
 
 	c := New()
 	body := strings.NewReader(payload)
-	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), body))
+	require.NoError(t, c.UploadToStage("cid-1", "st-1", "test.txt", int64(body.Len()), false, body))
 
 	assert.Greater(t, gotContentLength, int64(len(payload)),
 		"Content-Length should include multipart envelope, not just payload")
@@ -224,6 +355,27 @@ func TestAllFiles_Pagination(t *testing.T) {
 	assert.Len(t, got, 3)
 	assert.Equal(t, FileMeta{Hash: "aaa", Size: 10}, got["a.py"])
 	assert.Equal(t, FileMeta{Hash: "ccc", Size: 30}, got["café.py"])
+}
+
+func TestAllFiles_ExecutableFlag(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v2/files/cid-1/versions/v1/allFiles/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[` +
+			`{"fileName":"run.sh","fileSize":1,"fileChecksum":"aa","isExecutable":true},` +
+			`{"fileName":"a.py","fileSize":1,"fileChecksum":"bb","isExecutable":false},` +
+			`{"fileName":"old.py","fileSize":1,"fileChecksum":"cc"}]}`))
+	})
+
+	startServer(t, mux)
+
+	got, err := New().AllFiles("cid-1", "v1")
+	require.NoError(t, err)
+
+	require.NotNil(t, got["run.sh"].Executable)
+	assert.True(t, *got["run.sh"].Executable)
+	require.NotNil(t, got["a.py"].Executable)
+	assert.False(t, *got["a.py"].Executable)
+	assert.Nil(t, got["old.py"].Executable, "a server that omits the field leaves the bit unknown")
 }
 
 // TestAllFiles_RejectsCrossHostNext confirms that a pagination cursor
@@ -364,10 +516,19 @@ func TestPollStatus_CompletedRedirect(t *testing.T) {
 	assert.True(t, IsTerminalStatus(resp.Status))
 }
 
+// TestUploadFromZipExisting pins where the upload's parameters travel. The
+// Files API reads them from the multipart form: a value sent only in the
+// query is accepted and ignored. For the overwrite mode that meant the rename
+// default applied and every existing path came back as "name (2).ext"; for
+// useArchiveContents it meant extraction happened only because the server's
+// own default is true. So both form fields must be present and
+// must precede the file part. The overwrite query copy stays until the API
+// documents which location is authoritative; useArchiveContents has no query
+// copy at all.
 func TestUploadFromZipExisting(t *testing.T) {
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/files/cid-1/fromFile/", r.URL.Path)
-		assert.Equal(t, "true", r.URL.Query().Get("useArchiveContents"))
+		assert.False(t, r.URL.Query().Has("useArchiveContents"), "the query is not a channel the server reads")
 		assert.Equal(t, "REPLACE", r.URL.Query().Get("overwrite"))
 		assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
 
@@ -381,8 +542,40 @@ func TestUploadFromZipExisting(t *testing.T) {
 			return
 		}
 
+		assert.Equal(t, "overwrite", part.FormName(), "form fields must precede the file part")
+		assert.Empty(t, part.FileName())
+
+		value, err := io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "REPLACE", string(value))
+
+		part, err = mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		assert.Equal(t, "useArchiveContents", part.FormName())
+		assert.Empty(t, part.FileName())
+
+		value, err = io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "true", string(value))
+
+		part, err = mr.NextPart()
+		if !assert.NoError(t, err) {
+			return
+		}
+
 		assert.Equal(t, "file", part.FormName())
 		assert.Equal(t, "changes.zip", part.FileName())
+
+		zipBytes, err := io.ReadAll(part)
+		assert.NoError(t, err)
+		assert.Equal(t, "PK\x03\x04fake-zip", string(zipBytes))
+
+		// Expect no further parts.
+		_, err = mr.NextPart()
+		assert.ErrorIs(t, err, io.EOF)
 
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
@@ -397,42 +590,55 @@ func TestUploadFromZipExisting(t *testing.T) {
 	assert.Equal(t, "sid-9", resp.StatusID)
 }
 
-// TestUploadFromZipNew_HitsFromFileEndpoint locks in the (post-2026-04-30)
-// fix that the new-catalog-from-zip path posts to /files/fromFile/ rather
-// than /files/. The bare /files/ endpoint silently created an empty catalog
-// without extracting the zip, so smoke-tested syncs reported success but
-// the remote was empty.
-func TestUploadFromZipNew_HitsFromFileEndpoint(t *testing.T) {
+// TestUploadFromZipExisting_ContentLengthWithFormFields checks that folding
+// form fields into the prologue keeps the advertised Content-Length exact
+// and the streamed file intact. An off-by-N here surfaces as a transport
+// error or a truncated part, never as a silent pass.
+func TestUploadFromZipExisting_ContentLengthWithFormFields(t *testing.T) {
+	// Long enough to cross io.Copy's internal buffer more than once.
+	payload := strings.Repeat("0123456789abcdef", 4096)
+
 	startServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v2/files/fromFile/", r.URL.Path)
-		assert.Equal(t, "true", r.URL.Query().Get("useArchiveContents"))
-		assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
-
-		mr, err := r.MultipartReader()
+		raw, err := io.ReadAll(r.Body)
 		if !assert.NoError(t, err) {
 			return
 		}
 
-		part, err := mr.NextPart()
+		assert.Equal(t, r.ContentLength, int64(len(raw)),
+			"advertised Content-Length must match the received body")
+
+		// The body is consumed above, so parse the buffered copy.
+		_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if !assert.NoError(t, err) {
 			return
 		}
 
-		assert.Equal(t, "file", part.FormName())
-		assert.Equal(t, "wapi-sync.zip", part.FileName())
+		// Looked up by name rather than read in order: this test is about
+		// the byte count, and a new form field sorting ahead of these must
+		// not fail it.
+		parts, err := decodeMultipart(multipart.NewReader(bytes.NewReader(raw), params["boundary"]))
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		byName := make(map[string]multipartPart, len(parts))
+		for _, p := range parts {
+			byName[p.Name] = p
+		}
+
+		assert.Equal(t, "REPLACE", string(byName["overwrite"].Content))
+		assert.Equal(t, "true", string(byName["useArchiveContents"].Content))
+		assert.Equal(t, payload, string(byName["file"].Content), "the streamed file arrived intact")
 
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"catalogId":"new-cid","catalogVersionId":"new-ver","statusId":"sid-new"}`))
+		_, _ = w.Write([]byte(`{"catalogId":"cid-1","catalogVersionId":"v9","statusId":"sid-9"}`))
 	}))
 
 	c := New()
 
-	zipBody := bytes.NewReader([]byte("PK\x03\x04fake-zip"))
-	resp, err := c.UploadFromZipNew("wapi-sync.zip", int64(zipBody.Len()), zipBody)
+	body := strings.NewReader(payload)
+	_, err := c.UploadFromZipExisting("cid-1", "changes.zip", OverwriteReplace, int64(body.Len()), body)
 	require.NoError(t, err)
-	assert.Equal(t, "new-cid", resp.CatalogID)
-	assert.Equal(t, "new-ver", resp.CatalogVersionID)
-	assert.Equal(t, "sid-new", resp.StatusID)
 }
 
 // Ensure the package's mime/multipart writer references compile (helps catch

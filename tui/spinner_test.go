@@ -16,6 +16,7 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -136,6 +137,41 @@ func TestRunWithSpinner_LabelRendered(t *testing.T) {
 	assert.Contains(t, view, "my special label")
 }
 
+// The prefix exists so a spinner can sit in an indented block: the glyph
+// leads the line, so only a prefix ahead of it can move it into the column
+// where the surrounding "  ✓ label" lines put theirs.
+func TestSpinnerModel_ViewLeadsWithThePrefix(t *testing.T) {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = InfoStyle
+
+	m := spinnerModel{
+		spinner: Loading{Spinner: s},
+		label:   "Loading…",
+		prefix:  "  ",
+	}
+
+	view := m.View()
+
+	assert.True(t, strings.HasPrefix(view, "  "), "the prefix must come before the glyph")
+	assert.Contains(t, view, "Loading…")
+}
+
+// One column between glyph and label, not two: the Dot frames carry their own
+// trailing space, and a second one would push the label out of line with the
+// text of the "✓ label" rows rendered around the spinner.
+func TestSpinnerModel_ViewLeavesOneColumnAfterTheGlyph(t *testing.T) {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+
+	m := spinnerModel{
+		spinner: Loading{Spinner: s},
+		label:   "Loading…",
+	}
+
+	assert.NotContains(t, m.View(), "  Loading…", "exactly the frame's own space separates glyph and label")
+}
+
 func TestSpinnerModel_InitReturnsBatch(t *testing.T) {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -203,4 +239,100 @@ func TestSpinnerModel_UpdateReturnsSelf(t *testing.T) {
 	_, ok := updated.(spinnerModel)
 
 	assert.True(t, ok)
+}
+
+// foreignModel is a model Run never produces: something that is neither a
+// wrapper nor the spinner. It stands in for a wrapper added without Unwrap.
+type foreignModel struct{}
+
+func (foreignModel) Init() tea.Cmd                       { return nil }
+func (foreignModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return foreignModel{}, nil }
+func (foreignModel) View() string                        { return "" }
+
+// The read that turned an abandoned deploy into a healthy one, held branch by
+// branch. Tests have no TTY, so RunWithSpinnerNote never reaches this in the
+// suite; swapping any of its returns for nil used to leave everything green.
+func TestSpinnerVerdict(t *testing.T) {
+	failed := errors.New("the build failed")
+
+	for _, tc := range []struct {
+		name   string
+		final  tea.Model
+		runErr error
+		want   error
+		lost   bool
+	}{
+		{
+			name:  "ctrl-c: the wrapper says interrupted, whatever the model holds",
+			final: InterruptibleModel{Model: spinnerModel{err: nil}, interrupted: true},
+			want:  ErrInterrupted,
+		},
+		{
+			name:   "a SIGINT bubble tea caught itself is the same interrupt",
+			runErr: tea.ErrInterrupted,
+			want:   ErrInterrupted,
+		},
+		{
+			name:   "any other run error is handed back as it is",
+			runErr: failed,
+			want:   failed,
+		},
+		{
+			name:  "fn failed: its error is the verdict",
+			final: InterruptibleModel{Model: spinnerModel{err: failed}},
+			want:  failed,
+		},
+		{
+			name:  "fn finished cleanly",
+			final: InterruptibleModel{Model: spinnerModel{}},
+			want:  nil,
+		},
+		{
+			name:  "a wrapper that cannot be peeled is never read as success",
+			final: foreignModel{},
+			lost:  true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := spinnerVerdict(tc.final, tc.runErr)
+
+			if tc.lost {
+				require.Error(t, got)
+				assert.Contains(t, got.Error(), "lost behind")
+
+				return
+			}
+
+			if tc.want == nil {
+				assert.NoError(t, got)
+
+				return
+			}
+
+			assert.ErrorIs(t, got, tc.want)
+		})
+	}
+}
+
+// The spinner animates only with a keyboard and a screen: stdin to answer
+// keystrokes, stderr to draw on. A redirected stderr gets the plain line, so
+// nothing is drawn into a file, and stdout is never involved.
+func TestSpinnerModeFor(t *testing.T) {
+	tests := []struct {
+		name                         string
+		stdinTerm, stderrTerm, nonIn bool
+		want                         spinnerMode
+	}{
+		{"no terminal at all", false, false, false, spinnerSilent},
+		{"piped stdin, terminal stderr", false, true, false, spinnerSilent},
+		{"both terminals", true, true, false, spinnerDrawn},
+		{"stderr redirected", true, false, false, spinnerLine},
+		{"non-interactive", true, true, true, spinnerLine},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, spinnerModeFor(tt.stdinTerm, tt.stderrTerm, tt.nonIn))
+		})
+	}
 }

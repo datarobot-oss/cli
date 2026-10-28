@@ -20,6 +20,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
@@ -48,9 +49,18 @@ type Answers struct {
 	Entrypoint string
 	Port       int
 	HealthPath string
-	Replicas   int
-	CPU        float64
-	Memory     string
+	// NoProbe writes no readinessProbe block at all. Declining is a separate
+	// field rather than an empty HealthPath because this struct is the wizard's
+	// own vocabulary and is filled in from more than one place: "" here means
+	// "nobody said", and a caller that never touches cobra has no other way to
+	// say "no probe" out loud.
+	NoProbe  bool
+	Replicas int
+	CPU      float64
+	Memory   string
+	// Importance is the scheduling priority, one of
+	// manifest.ImportanceLevels.
+	Importance string
 	// SkipEnv leaves the project's .env out of the manifest entirely. By
 	// default the variables are carried across, because a deploy that
 	// silently drops the app's configuration is the worse default.
@@ -67,7 +77,9 @@ var ErrCancelled = errors.New("cancelled")
 // incomplete are the headless path's business: interactively they are just
 // questions that have not been answered yet.
 func (a Answers) check() error {
-	for _, check := range []func() error{a.checkBinding, a.checkKind, a.checkImageSource, a.checkReadiness, a.checkSizing} {
+	for _, check := range []func() error{
+		a.checkBinding, a.checkKind, a.checkImageSource, a.checkReadiness, a.checkSizing, a.checkImportance,
+	} {
 		if err := check(); err != nil {
 			return err
 		}
@@ -117,7 +129,26 @@ func (a Answers) checkImageSource() error {
 	}
 }
 
+// checkProbeExclusive is the one readiness rule no screen can settle, so it is
+// the only one the interactive path refuses up front. The settings screen has a
+// single health field and cannot represent "both were passed"; a path that
+// simply lacks its leading slash, or an importance outside the enum, is a value
+// the screen can show and the user can correct.
+func (a Answers) checkProbeExclusive() error {
+	if a.NoProbe && a.HealthPath != "" {
+		return fmt.Errorf("--no-readiness-probe and --health %q are exclusive: "+
+			"pass --health alone to probe that path, or --no-readiness-probe alone to run without a probe",
+			a.HealthPath)
+	}
+
+	return nil
+}
+
 func (a Answers) checkReadiness() error {
+	if err := a.checkProbeExclusive(); err != nil {
+		return err
+	}
+
 	if a.HealthPath != "" && !strings.HasPrefix(a.HealthPath, "/") {
 		return fmt.Errorf("--health %q must start with /", a.HealthPath)
 	}
@@ -175,6 +206,71 @@ func (a Answers) checkSizing() error {
 	return nil
 }
 
+// checkProbeEditable refuses a probe answer the CLI cannot carry out, which is
+// only possible once the workload has been read.
+//
+// A readiness probe that declares no path is not the HTTP probe these flags
+// describe, and binding preserves it rather than rewriting a shape this release
+// does not model. Preserving is right when nobody said anything about the
+// probe. When a flag did say something, staying silent would mean the run
+// reports success having ignored the one thing it was asked to change, and
+// without a screen there is nothing else to notice it.
+func (a Answers) checkProbeEditable(live manifest.Live) error {
+	if !a.NoProbe && a.HealthPath == "" {
+		return nil
+	}
+
+	present, readable := live.ReadinessProbe()
+	if !present || readable {
+		return nil
+	}
+
+	flag := "--health " + a.HealthPath
+	if a.NoProbe {
+		flag = "--no-readiness-probe"
+	}
+
+	return fmt.Errorf(
+		"%s runs a readiness probe with no path, which this CLI keeps as it is rather than rewriting a shape it "+
+			"does not model, so %s cannot be applied to it. Drop the flag to bind without touching the probe, "+
+			"or change the probe where it was defined",
+		live.Name, flag)
+}
+
+// checkImportance holds the flag to the enum. The reader passes an
+// unrecognized level through and lets the platform decide, but a level nobody
+// meant to type is worth refusing here rather than after a round trip.
+func (a Answers) checkImportance() error {
+	if a.Importance != "" && !manifest.ValidImportance(a.importance()) {
+		return fmt.Errorf("--importance %q is not supported: use one of %s",
+			a.Importance, strings.Join(manifest.ImportanceLevels, ", "))
+	}
+
+	return nil
+}
+
+// importance is the level to write, lowercased because the casing is the
+// user's business and the file's is settled.
+func (a Answers) importance() string {
+	return strings.ToLower(strings.TrimSpace(a.Importance))
+}
+
+// healthPath is the path to probe: the flag's answer, or nothing at all.
+//
+// There is deliberately no default. A probe has to be written for the app it
+// probes: pointing one at / kills every API-only deploy whose framework 404s
+// there, and it presents as a workload that goes ERRORED minutes later with
+// nothing saying why. A wrong probe kills a healthy deploy, which is worse
+// than no probe — the deploy's own endpoint check is what catches a container
+// that answers nothing.
+func (a Answers) healthPath() string {
+	if a.NoProbe {
+		return ""
+	}
+
+	return a.HealthPath
+}
+
 // The range a primary container's port may fall in. The floor is the
 // manifest ledger's; below it an unprivileged container cannot bind, so the
 // workload never becomes ready.
@@ -199,11 +295,11 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 	draft := manifest.Draft{
 		WorkloadID: a.WorkloadID,
 		Name:       name,
-		Importance: manifest.DefaultImportance,
-		Type:       orDefault(a.Type, manifest.TypeService),
+		Importance: orDefault(a.importance(), manifest.DefaultImportance),
+		Type:       manifest.ArtifactTypeOrDefault(a.Type),
 		A2AEnabled: a.A2AEnabled,
 		Port:       a.Port,
-		HealthPath: orDefault(a.HealthPath, manifest.DefaultHealthPath),
+		HealthPath: a.healthPath(),
 		Runtime:    a.runtime(),
 		EnvVars:    a.envVars(detected),
 	}
@@ -226,9 +322,41 @@ func (a Answers) draft(detected Detected) (manifest.Draft, error) {
 	return draft, nil
 }
 
-// envVars is the .env listing the file will carry: everything the classifier
-// found by default, none when the user opted out. Local-only variables are
-// dropped, because deploying them would be wrong rather than unnecessary.
+// syncVars is every variable .env defines, which is what a reconciliation
+// carries.
+//
+// The classifier still decides the form an entry takes, a literal or a
+// reference to a credential, and no longer decides whether the variable
+// travels at all. That is the difference between this and envVars, and it is
+// deliberate: setup offers its verdicts on a screen you can argue with, while
+// a sync shows a table and asks once, so a name held back there would be one
+// the reader agreed to without ever seeing it.
+//
+// --skip-env still empties it. "Do not read the file" is a statement the user
+// makes; "this looks local to me" is a guess the classifier makes.
+func (a Answers) syncVars(detected Detected) []manifest.EnvVar {
+	if a.SkipEnv {
+		return nil
+	}
+
+	out := make([]manifest.EnvVar, 0, len(detected.EnvVars))
+
+	for _, v := range detected.EnvVars {
+		out = append(out, manifest.EnvVar{
+			Name:   v.Name,
+			Value:  v.Value,
+			Secret: v.Kind == EnvSecret,
+		})
+	}
+
+	return out
+}
+
+// envVars is the .env listing a fresh manifest will carry: everything the
+// classifier found by default, none when the user opted out. Local-only
+// variables are dropped, because deploying them would be wrong rather than
+// unnecessary. Setup asks about that verdict on a screen; a sync overrules it,
+// which is what syncVars above is for.
 func (a Answers) envVars(detected Detected) []manifest.EnvVar {
 	if a.SkipEnv {
 		return nil
@@ -290,7 +418,11 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 		return manifest.Build{Mode: manifest.BuildModeImage, ImageURI: a.Image}, nil
 
 	case manifest.BuildModeGenerated:
-		return a.generatedBuild()
+		if problem := detected.generatedBuild().problem; problem != "" {
+			return manifest.Build{}, fmt.Errorf("--build-mode %s: %s", manifest.BuildModeGenerated, problem)
+		}
+
+		return a.generatedBuild(detected)
 
 	default:
 		return manifest.Build{}, fmt.Errorf(
@@ -319,7 +451,7 @@ func (a Answers) buildMode(detected Detected) string {
 	}
 }
 
-func (a Answers) generatedBuild() (manifest.Build, error) {
+func (a Answers) generatedBuild(detected Detected) (manifest.Build, error) {
 	var missing []string
 
 	if a.ExecutionEnvironment == "" {
@@ -340,20 +472,32 @@ func (a Answers) generatedBuild() (manifest.Build, error) {
 		return manifest.Build{}, fmt.Errorf("--entrypoint %q: %w", a.Entrypoint, err)
 	}
 
-	// Resolved at setup, not at deploy: the file records both ids so the same
-	// manifest builds the same image after the environment moves on, and a
-	// name that does not exist fails now rather than after a sync.
-	id, versionID, err := resolveExecEnvFn(a.ExecutionEnvironment)
+	ee, err := a.executionEnvironment(detected)
 	if err != nil {
 		return manifest.Build{}, err
 	}
 
 	return manifest.Build{
 		Mode:                          manifest.BuildModeGenerated,
-		ExecutionEnvironmentID:        id,
-		ExecutionEnvironmentVersionID: versionID,
+		ExecutionEnvironmentID:        ee.ID,
+		ExecutionEnvironmentVersionID: ee.LatestSuccessfulVersion.ID,
 		Entrypoint:                    entrypoint,
 	}, nil
+}
+
+// executionEnvironment resolves --execution-environment at setup, so a missing
+// name or a wrong-language environment fails now rather than after a build.
+func (a Answers) executionEnvironment(detected Detected) (workload.ExecutionEnvironment, error) {
+	ee, err := findExecEnvFn(a.ExecutionEnvironment)
+	if err != nil {
+		return workload.ExecutionEnvironment{}, err
+	}
+
+	if problem := detected.EnvironmentMismatch(ee); problem != "" {
+		return workload.ExecutionEnvironment{}, fmt.Errorf("--execution-environment %q: %s", a.ExecutionEnvironment, problem)
+	}
+
+	return ee, nil
 }
 
 // splitCommand parses a command line the way a shell would, so quoted

@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/countflags"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -52,7 +53,10 @@ func Cmd() *cobra.Command {
 }
 
 func cmdWithDeps(deps Deps) *cobra.Command {
-	var outputFormat outputformat.OutputFormat
+	var (
+		outputFormat outputformat.OutputFormat
+		limit        int
+	)
 
 	c := &cobra.Command{
 		Use:          "versions",
@@ -87,7 +91,7 @@ Example:
 	outputformat.AddFlag(c, &outputFormat)
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
-	c.Flags().Int("limit", 100, "Maximum number of versions to return.")
+	c.Flags().Var(countflags.PositiveInt(&limit, 100), "limit", "Maximum number of versions to return.")
 
 	telemetry.TrackWith(c, func(cmd *cobra.Command, _ []string) map[string]any {
 		limit, _ := cmd.Flags().GetInt("limit")
@@ -104,10 +108,6 @@ Example:
 func runVersions(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps Deps) error {
 	dirFlag, _ := cmd.Flags().GetString("dir")
 	limit, _ := cmd.Flags().GetInt("limit")
-
-	if limit <= 0 {
-		return fmt.Errorf("invalid --limit %d: must be positive", limit)
-	}
 
 	absDir, err := resolveProjectDir(dirFlag)
 	if err != nil {

@@ -44,7 +44,7 @@ func (c *httpClient) AllFiles(catalogID, versionID string) (map[string]FileMeta,
 				return nil, fmt.Errorf("remote manifest entry %q: %w", item.FileName, err)
 			}
 
-			out[key] = FileMeta{Hash: item.FileChecksum, Size: item.FileSize}
+			out[key] = FileMeta{Hash: item.FileChecksum, Size: item.FileSize, Executable: item.IsExecutable}
 		}
 
 		if page.Next == "" {
@@ -84,7 +84,7 @@ func (c *httpClient) DownloadFile(catalogID, versionID, path string, w io.Writer
 		return "", 0, fmt.Errorf("build download url: %w", err)
 	}
 
-	resp, err := drapi.Get(requestURL, "file", int(downloadHTTPTimeout.Seconds()))
+	resp, err := drapi.Get(requestURL, "file", downloadHTTPTimeout)
 	if err != nil {
 		return "", 0, fmt.Errorf("download %s: %w", path, err)
 	}

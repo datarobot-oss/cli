@@ -19,8 +19,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
+	"github.com/datarobot/cli/internal/workload/ignore"
 )
 
 // phase5Execute applies the SyncPlan in the order: disk-space check +
@@ -28,6 +31,17 @@ import (
 // deletes, uploads. Any error after the rollback dir is created triggers
 // a Restore to pre-sync state.
 func phase5Execute(e *Engine) error {
+	// Above the empty-plan return, because this is a statement about the
+	// artifact rather than about the plan: phase 7 writes local state and a
+	// history entry for an empty plan too, and recording a sync against
+	// something immutable is the same lie as performing one. Phase 1 lets a
+	// preview plan against a locked artifact and Run returns before this phase
+	// in both preview modes, but nothing stops a caller holding the engine from
+	// planning and then executing anyway.
+	if e.artifact != nil && e.artifact.IsLocked() {
+		return fmt.Errorf("artifact %s is locked (immutable); refusing to execute a plan against it", e.artifact.ID)
+	}
+
 	if e.plan == nil || e.plan.IsEmpty() {
 		return nil
 	}
@@ -39,8 +53,14 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	if len(e.plan.Uploads)+len(e.plan.Downloads)+len(e.plan.Deletes)+len(e.plan.Conflicts) > RollbackMaxFiles {
-		return fmt.Errorf("plan exceeds RollbackMaxFiles=%d; refusing to run", RollbackMaxFiles)
+	uploads, downloads := len(e.plan.Uploads), len(e.plan.Downloads)
+	deletes, conflicts := len(e.plan.Deletes), len(e.plan.Conflicts)
+
+	if total := uploads + downloads + deletes + conflicts; total > RollbackMaxFiles {
+		return fmt.Errorf(
+			"plan touches %d files (uploads=%d, downloads=%d, deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d; refusing to run",
+			total, uploads, downloads, deletes, conflicts, RollbackMaxFiles,
+		)
 	}
 
 	if err := EnsureSpaceFor(e.projectDir, e.plan.TotalDownloadBytes()); err != nil {
@@ -57,26 +77,31 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	// Phase 6 discards the rollback only after SaveConfig + SaveManifest
-	// succeed.
+	// Hand the rollback to Phase 7, which discards it at entry — before its
+	// first state write, not after its last. Once the plan has executed
+	// successfully the backup tree protects nothing, and discarding
+	// unconditionally keeps a Phase 7 write failure from stranding the dir
+	// for the next run's stale-restore to resurrect pre-sync bytes from.
+	// A Phase 5 failure above restores and returns, leaving the dir in place
+	// for exactly that stale-restore recovery.
 	e.rollback = rb
 
 	return nil
 }
 
 func executePlan(e *Engine, rb *Rollback) error {
-	if err := applyConflictCopies(e, rb); err != nil {
-		return fmt.Errorf("conflict copies: %w", err)
+	// Every local file a remote-side action would replace or delete is moved to
+	// a *.LOCAL.<ts> copy first, so nothing local is ever destroyed without a
+	// recoverable backup. This subsumes the old REMOTE_DELETED os.Remove: those
+	// files are renamed aside here, not removed.
+	if err := backupOverwrittenLocals(e, rb); err != nil {
+		return fmt.Errorf("back up overwritten local files: %w", err)
 	}
 
 	codeRef := codeRefOrEmpty(e)
 
 	if err := applyDownloads(e, rb, codeRef); err != nil {
 		return fmt.Errorf("downloads: %w", err)
-	}
-
-	if err := applyLocalDeletes(e, rb); err != nil {
-		return fmt.Errorf("local deletes: %w", err)
 	}
 
 	newCatalogID, newVersionID, err := applyRemoteDeletesAndUploads(e, codeRef)
@@ -90,105 +115,108 @@ func executePlan(e *Engine, rb *Rollback) error {
 	return nil
 }
 
-// applyConflictCopies renames each conflict's local file to
-// <path>.LOCAL.<ISO8601Z>. EDIT_DEL_CONFLICT is excluded since the user
-// already deleted that file.
-func applyConflictCopies(e *Engine, rb *Rollback) error {
-	stamp := e.nowFn().UTC().Format("20060102T150405Z")
+// backupStampFormat is the ISO-8601 basic UTC stamp appended after
+// ignore.BackupInfix to name a *.LOCAL backup. ignore.IsBackupCopy matches this
+// shape to keep backups out of the next sync; the two must stay in step.
+const backupStampFormat = "20060102T150405Z"
 
-	for _, fa := range e.plan.Conflicts {
-		if fa.Classification == ClsEditDelConflict {
-			continue
-		}
+// backupOverwrittenLocals moves every local file a remote-side action would
+// replace or delete to <path>.LOCAL.<stamp>, before any of those actions run.
+// It covers the three ways remote wins: a REMOTE_MODIFIED download (remote
+// bytes are about to land over the local file), a REMOTE_DELETED delete (the
+// local file is about to be removed), and a conflict (both sides changed).
+// REMOTE_ADDED and EDIT_DEL have no local file to keep, so they are not here.
+//
+// The rename frees the original path: applyDownloads then writes the remote
+// bytes there for downloads and conflicts, while REMOTE_DELETED has no download
+// and so simply stays gone, which is what the remote deletion asked for.
+func backupOverwrittenLocals(e *Engine, rb *Rollback) error {
+	stamp := e.nowFn().UTC().Format(backupStampFormat)
 
-		src := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
-		dst := src + ".LOCAL." + stamp
-
-		if err := rb.Backup(fa.Path); err != nil {
+	// OverwrittenLocalPaths is exactly the set of local files a remote-side
+	// action would replace or delete, so backing up that set is the whole job.
+	for _, path := range e.plan.OverwrittenLocalPaths() {
+		if err := backupLocalFile(e, rb, path, stamp); err != nil {
 			return err
 		}
-
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("rename %s -> %s: %w", fa.Path, dst, err)
-		}
-
-		rb.TrackCreated(dst)
-		e.conflictCopies = append(e.conflictCopies, dst)
 	}
 
 	return nil
 }
 
-// applyDownloads runs the download list plus the conflict-copy follow-up
-// downloads (remote wins, so remote bytes land at the original path).
-// REMOTE_DELETED files are removed locally instead.
+// backupLocalFile renames one local file to <path>.LOCAL.<stamp>, recording it
+// for rollback and for the result. A missing or non-regular local file is a
+// no-op: the remote-side action that follows still runs (a REMOTE_ADDED writes
+// a new file; an already-absent file has nothing to keep).
+func backupLocalFile(e *Engine, rb *Rollback, path, stamp string) error {
+	// phase5Execute already rejected unsafe server paths up front via
+	// validateServerPaths; re-check here so the per-call-site invariant
+	// survives future refactors that might reach this without the phase entry
+	// point, before Lstat/Rename touch anything outside projectDir.
+	if err := fileops.SafeRelPath(path); err != nil {
+		return fmt.Errorf("server returned unsafe path %q: %w", path, err)
+	}
+
+	src := filepath.Join(e.projectDir, filepath.FromSlash(path))
+
+	info, err := os.Lstat(src)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("stat %s for backup: %w", path, err)
+	}
+
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+
+	dst := src + ignore.BackupInfix + stamp
+
+	if err := rb.Backup(path); err != nil {
+		return err
+	}
+
+	if err := os.Rename(src, dst); err != nil {
+		return fmt.Errorf("rename %s -> %s: %w", path, dst, err)
+	}
+
+	rb.TrackCreated(dst)
+	e.localBackups = append(e.localBackups, dst)
+
+	return nil
+}
+
+// applyDownloads pulls remote bytes for downloads and conflicts (remote wins,
+// so remote bytes land at the original path, which backupOverwrittenLocals has
+// already freed for REMOTE_MODIFIED and conflicts). REMOTE_DELETED needs no
+// download: its local file was renamed aside and stays gone.
 func applyDownloads(e *Engine, rb *Rollback, codeRef codeRefRef) error {
 	if codeRef.CatalogID == "" || codeRef.CatalogVersionID == "" {
 		return nil
 	}
 
-	if err := backupDownloadTargets(e, rb); err != nil {
-		return err
-	}
-
-	if err := removeLocalDeletedFiles(e); err != nil {
-		return err
-	}
-
 	pulls := pullList(e.plan)
+
+	// Back up every pull target before writing it. For REMOTE_MODIFIED and
+	// conflicts this is a no-op (backupOverwrittenLocals already renamed the
+	// original aside), but a REMOTE_ADDED path can still hold a file the local
+	// manifest never saw — a .drignore'd file, or a symlink the walk skipped —
+	// and TrackCreated below would otherwise let a failed sync's Restore delete
+	// it with nothing to put back.
+	for _, fa := range pulls {
+		if err := rb.Backup(fa.Path); err != nil {
+			return err
+		}
+	}
+
 	if err := downloadFiles(e, codeRef.CatalogID, codeRef.CatalogVersionID, pulls); err != nil {
 		return err
 	}
 
 	for _, fa := range pulls {
 		rb.TrackCreated(filepath.Join(e.projectDir, filepath.FromSlash(fa.Path)))
-	}
-
-	return nil
-}
-
-func backupDownloadTargets(e *Engine, rb *Rollback) error {
-	for _, fa := range e.plan.Downloads {
-		if err := rb.Backup(fa.Path); err != nil {
-			return err
-		}
-	}
-
-	// ActDownloadDelete lives in plan.Deletes, so back those up here
-	// before removeLocalDeletedFiles removes them.
-	for _, fa := range e.plan.Deletes {
-		if fa.Action != ActDownloadDelete {
-			continue
-		}
-
-		if err := rb.Backup(fa.Path); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// removeLocalDeletedFiles removes local copies of REMOTE_DELETED files.
-// Missing-file errors are tolerated for idempotency under retry.
-func removeLocalDeletedFiles(e *Engine) error {
-	for _, fa := range e.plan.Deletes {
-		if fa.Action != ActDownloadDelete {
-			continue
-		}
-
-		// phase5Execute already rejected unsafe server paths up front
-		// via validateServerPaths; re-check here so the per-call-site
-		// invariant survives future refactors that might bypass the
-		// phase entry point.
-		if err := fileops.SafeRelPath(fa.Path); err != nil {
-			return fmt.Errorf("server returned unsafe delete path %q: %w", fa.Path, err)
-		}
-
-		abs := filepath.Join(e.projectDir, filepath.FromSlash(fa.Path))
-		if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove %s: %w", fa.Path, err)
-		}
 	}
 
 	return nil
@@ -242,12 +270,6 @@ func pullList(plan *SyncPlan) []FileAction {
 	return out
 }
 
-// applyLocalDeletes is a no-op; applyDownloads already removed
-// REMOTE_DELETED files.
-func applyLocalDeletes(_ *Engine, _ *Rollback) error {
-	return nil
-}
-
 // applyRemoteDeletesAndUploads sends LOCAL_DELETED paths to FilesAPI,
 // runs the chosen Uploader for LOCAL_MODIFIED + LOCAL_ADDED, and PATCHes
 // the artifact's codeRef so the workload picks up the new version.
@@ -265,13 +287,30 @@ func applyRemoteDeletesAndUploads(e *Engine, codeRef codeRefRef) (string, string
 	if len(e.plan.Uploads) > 0 {
 		uploader := ChooseUploader(e.plan)
 
-		cid, vid, err := uploader.ApplyUploads(e, e.plan.Uploads)
+		outcome, err := uploader.ApplyUploads(e, e.plan.Uploads)
 		if err != nil {
 			return "", "", err
 		}
 
-		newCatalogID = cid
-		newVersionID = vid
+		// Store the outcome on the engine so Phase 7 can read
+		// outcome.Sent[path]. The phase pipeline runs each phase
+		// independently via runPhases with no per-phase return
+		// threading, so Engine state is the only channel between
+		// Phase 5 and Phase 7.
+		e.uploadOutcome = &outcome
+
+		e.execNotice = executableNotice(outcome.Sent, e.remote,
+			e.artifact != nil && workload.GeneratesDockerfile(*e.artifact))
+
+		newCatalogID = outcome.CatalogID
+		newVersionID = outcome.VersionID
+	}
+
+	// Before the codeRef PATCH: a version the check rejects is never the one
+	// the artifact serves, and the failure trips the rollback while the
+	// state phase has written nothing.
+	if err := verifyPostApplyUploads(e, e.uploadOutcome); err != nil {
+		return "", "", err
 	}
 
 	if newVersionID != "" && newVersionID != codeRef.CatalogVersionID {
@@ -308,4 +347,68 @@ func applyDeletes(e *Engine, catalogID string) (string, error) {
 	}
 
 	return resp.CatalogVersionID, nil
+}
+
+// verifyPostApplyUploads is --verify's second effect: after ApplyUploads,
+// fetch the new version's file listing and confirm the server's checksum for
+// every UPLOADED path equals the hash of the bytes this run streamed. The
+// comparison is plain strings because the server's file checksum is the
+// SHA-256 hex of the content, the same digest the uploader computed while
+// streaming.
+//
+// It runs in Phase 5, before the codeRef PATCH: a mismatch fails the phase
+// and trips the rollback while the state phase has written nothing, and the
+// artifact goes on serving the version it served before. The rejected
+// version stays in the catalog unreferenced; the config still names the old
+// one, so the next sync re-uploads the changed files.
+//
+// Only uploaded paths are compared. Stage REPLACE merges staged paths into
+// the version in place, so the listing legitimately contains files this sync
+// never touched, some carrying checksums from earlier runs; flagging one of
+// those would fail honest runs.
+//
+// numFiles from ApplyStage counts every file in the resulting version, not
+// the ones uploaded, so it has no arithmetic relationship to the plan and is
+// never used to gate, skip, or abort this check.
+//
+// The check is skipped entirely when nothing was uploaded: a downloads-only
+// or empty plan makes no AllFiles request here, and a nil outcome or an
+// empty Sent map is not an error.
+func verifyPostApplyUploads(e *Engine, outcome *UploadOutcome) error {
+	if !e.opts.Verify || outcome == nil || len(outcome.Sent) == 0 {
+		return nil
+	}
+
+	listing, err := e.files.AllFiles(outcome.CatalogID, outcome.VersionID)
+	if err != nil {
+		return fmt.Errorf("post-apply verification: fetch files of version %s: %w", outcome.VersionID, err)
+	}
+
+	// Sorted so the reported path is deterministic when several differ.
+	paths := make([]string, 0, len(outcome.Sent))
+
+	for path := range outcome.Sent {
+		paths = append(paths, path)
+	}
+
+	sort.Strings(paths)
+
+	for _, path := range paths {
+		sent := outcome.Sent[path]
+
+		held, ok := listing[path]
+		if !ok {
+			return fmt.Errorf("post-apply verification: uploaded file %s is absent from server version %s; "+
+				"the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID)
+		}
+
+		if held.Hash != sent.Hash {
+			return fmt.Errorf("post-apply verification: server checksum for %s in version %s does not match the uploaded bytes "+
+				"(sent %s, server holds %s); the artifact keeps serving its previous version, run 'dr artifact code sync' again to push afresh",
+				path, outcome.VersionID, sent.Hash, held.Hash)
+		}
+	}
+
+	return nil
 }

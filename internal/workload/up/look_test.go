@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi"
@@ -149,8 +150,52 @@ func TestLook_ReadsBothDocuments(t *testing.T) {
 	assert.Equal(t, "gpt-oss-20b-vllm-artifact", live.ArtifactName)
 	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/", live.Endpoint)
 	assert.True(t, live.Locked)
+	assert.Equal(t, "registry.internal/built-by-the-server:sha-abc123", live.ImageURI)
+	assert.Equal(t, "ver1", live.CodeVersionID,
+		"the code the running image was built from is what staleness is measured against")
 	assert.NotEmpty(t, live.Spec)
 	assert.NotEmpty(t, live.Runtime)
+}
+
+// Both fields are read off the primary container, and the sidecar beside it
+// carries an image of its own that a runtime-only deploy must not inherit.
+func TestLook_ReadsTheImageAndCodeOffThePrimaryContainer(t *testing.T) {
+	// The flagged primary is not the first, so a walk falling through to
+	// [0][0] would answer with the sidecar for both.
+	reordered := strings.Replace(liveArtifactJSON,
+		`          {
+            "name": "vllm-server",`,
+		`          {"name": "metrics-bridge", "imageUri": "registry/vllm-metrics-bridge:v1"},
+          {
+            "name": "vllm-server",`, 1)
+	reordered = strings.Replace(reordered,
+		`,
+          {"name": "metrics-bridge", "imageUri": "registry/vllm-metrics-bridge:v1"}
+        ]`, `
+        ]`, 1)
+
+	stubLive(t, liveWorkloadJSON, reordered)
+
+	live, err := Look("68b0c1d2e3f4a5b6c7d8e9f0")
+	require.NoError(t, err)
+
+	assert.Equal(t, "registry.internal/built-by-the-server:sha-abc123", live.ImageURI)
+	assert.Equal(t, "ver1", live.CodeVersionID)
+}
+
+// An artifact the platform builds nothing for has no code reference to read,
+// and imageStale reads it, so a wrong key path skips every staleness check.
+func TestLook_NoCodeReferenceReadsAsNone(t *testing.T) {
+	stubLive(t, liveWorkloadJSON, strings.Replace(liveArtifactJSON,
+		`,
+              "codeRef": {"datarobot": {"catalogId": "cat1", "catalogVersionId": "ver1"}}`, "", 1))
+
+	live, err := Look("68b0c1d2e3f4a5b6c7d8e9f0")
+	require.NoError(t, err)
+
+	assert.Empty(t, live.CodeVersionID)
+	assert.Equal(t, "registry.internal/built-by-the-server:sha-abc123", live.ImageURI,
+		"the image is still there; it is the code that is not")
 }
 
 // TestLook_StripsBuildOutputsFromTheSpec is the property that keeps a
@@ -294,6 +339,75 @@ func TestLook_LockedIsCaseInsensitive(t *testing.T) {
 	assert.False(t, live.Locked)
 }
 
+// TestLook_SpeclessArtifactFailsLoudly pins the deliberate behavior that a
+// present-but-spec-less artifact document fails the up path rather than
+// rendering a manifest Validate would reject. The error from NewLive names the
+// workload id. Empty artifactID and 404 from artifactFor remain exempt:
+// artifactDoc is nil, so the error is swallowed and Look returns a Live with
+// an empty spec and no error.
+func TestLook_SpeclessArtifactFailsLoudly(t *testing.T) {
+	t.Run("spec absent", func(t *testing.T) {
+		stubLive(t, liveWorkloadJSON, `{"id":"art-1","status":"locked"}`)
+
+		_, err := Look("wl-specless")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "wl-specless", "error must name the workload id")
+		assert.Contains(t, err.Error(), "no artifact spec")
+	})
+
+	t.Run("spec null", func(t *testing.T) {
+		stubLive(t, liveWorkloadJSON, `{"id":"art-1","status":"locked","spec":null}`)
+
+		_, err := Look("wl-specless")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "wl-specless")
+	})
+
+	t.Run("spec empty mapping", func(t *testing.T) {
+		stubLive(t, liveWorkloadJSON, `{"id":"art-1","status":"locked","spec":{}}`)
+
+		_, err := Look("wl-specless")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "wl-specless")
+	})
+
+	t.Run("spec strips to nothing", func(t *testing.T) {
+		// spec carries only server-managed keys that stripServerManaged removes
+		stubLive(t, liveWorkloadJSON, `{"id":"art-1","status":"locked","spec":{"id":"x","createdAt":"now","status":"ok"}}`)
+
+		_, err := Look("wl-specless")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "wl-specless")
+	})
+
+	t.Run("empty artifactId exempt", func(t *testing.T) {
+		prev := getWorkloadDocFn
+
+		getWorkloadDocFn = func(string) (workload.Document, error) {
+			return doc(t, `{"id":"wl-1","name":"fresh","status":"submitted"}`), nil
+		}
+
+		t.Cleanup(func() { getWorkloadDocFn = prev })
+
+		live, err := Look("wl-1")
+		require.NoError(t, err)
+		assert.Empty(t, live.Spec, "no artifact to read means no spec, not an error")
+	})
+
+	t.Run("artifact 404 exempt", func(t *testing.T) {
+		prevWorkload, prevArtifact := getWorkloadDocFn, getArtifactDocFn
+
+		getWorkloadDocFn = func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil }
+		getArtifactDocFn = func(string) (workload.Document, error) { return nil, notFoundErr() }
+
+		t.Cleanup(func() { getWorkloadDocFn, getArtifactDocFn = prevWorkload, prevArtifact })
+
+		live, err := Look("wl-1")
+		require.NoError(t, err)
+		assert.Empty(t, live.Spec, "a vanished artifact is not a failure")
+	})
+}
+
 // primaryContainer digs the flagged container out of a live spec.
 func primaryContainer(t *testing.T, spec map[string]any) map[string]any {
 	t.Helper()
@@ -308,4 +422,24 @@ func primaryContainer(t *testing.T, spec map[string]any) map[string]any {
 	container, _ := containers[0].(map[string]any)
 
 	return container
+}
+
+// The file's side reads the artifact type from either placement, so the live
+// side has to as well. A reader that only looked beside the spec would report
+// an agent as having no type, default it to a service, and drift against a
+// file correctly calling it an agent on every run.
+func TestLook_ArtifactTypeIsReadFromEitherPlacement(t *testing.T) {
+	assert.Equal(t, "agent", liveArtifactType(workload.Document{"type": "agent"}),
+		"beside the spec is where the platform keeps it")
+
+	assert.Equal(t, "agent", liveArtifactType(workload.Document{
+		"spec": map[string]any{"type": "agent"},
+	}), "a document that did not hoist it still answers")
+
+	assert.Equal(t, "agent", liveArtifactType(workload.Document{
+		"type": "agent",
+		"spec": map[string]any{"type": "service"},
+	}), "beside the spec wins")
+
+	assert.Empty(t, liveArtifactType(workload.Document{"spec": map[string]any{}}))
 }

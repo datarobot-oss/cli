@@ -66,6 +66,9 @@ type Compiled struct {
 	// A deploy reads it to know there is nothing to create: the version being
 	// rolled onto already exists.
 	ArtifactID string
+	// ArtifactName is what the inline block calls the artifact, "" when the
+	// file describes none. Lifted out so a caller need not decode the payload.
+	ArtifactName string
 	// CredentialRefs lists every credential the payload references.
 	CredentialRefs []CredentialRef
 }
@@ -88,9 +91,11 @@ func (m *Manifest) Compile() (*Compiled, error) {
 
 	workloadID := m.WorkloadID()
 	artifactID := topLevelString(m.root, keyArtifactID)
+	artifactName, _ := mapAt(doc, keyArtifact)[keyName].(string)
 
 	delete(doc, keyWorkloadID)
 	expandCredentialShorthand(doc)
+	nameRuntimeGroups(doc)
 
 	payload, err := json.Marshal(doc)
 	if err != nil {
@@ -101,8 +106,30 @@ func (m *Manifest) Compile() (*Compiled, error) {
 		Payload:        payload,
 		WorkloadID:     workloadID,
 		ArtifactID:     artifactID,
+		ArtifactName:   artifactName,
 		CredentialRefs: refs,
 	}, nil
+}
+
+// nameRuntimeGroups gives an unnamed runtime group the name of the artifact
+// group at the same position, or the platform's default when the file binds
+// an artifact by id. The file leaves the name out because the platform
+// assigns it; the API joins the two lists by name, so the payload carries it.
+func nameRuntimeGroups(doc map[string]any) {
+	artifactGroups := slicesAt(mapAt(mapAt(doc, keyArtifact), keySpec), keyContainerGroups)
+
+	for i, group := range slicesAt(mapAt(doc, keyRuntime), keyContainerGroups) {
+		if stringAt(group, keyName) != "" {
+			continue
+		}
+
+		name := GroupName
+		if i < len(artifactGroups) && stringAt(artifactGroups[i], keyName) != "" {
+			name = stringAt(artifactGroups[i], keyName)
+		}
+
+		group[keyName] = name
+	}
 }
 
 // ArtifactPayload is the inline artifact block on its own, which is exactly
@@ -127,6 +154,33 @@ func (c *Compiled) ArtifactPayload() (json.RawMessage, error) {
 	raw, err := json.Marshal(artifact)
 	if err != nil {
 		return nil, fmt.Errorf("cannot convert the %s block to JSON: %w", keyArtifact, err)
+	}
+
+	return raw, nil
+}
+
+// ArtifactSpecPayload is the spec inside the inline artifact block, which is
+// what an update takes: the block's own name and type are not an update's to
+// restate. A manifest bound by id has no block and says so.
+func (c *Compiled) ArtifactSpecPayload() (json.RawMessage, error) {
+	payload, err := c.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	artifact, ok := payload[keyArtifact].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("the manifest has no %s block to update from", keyArtifact)
+	}
+
+	spec, ok := artifact[keySpec]
+	if !ok {
+		return nil, fmt.Errorf("the manifest's %s block has no %s to update from", keyArtifact, keySpec)
+	}
+
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert the %s block to JSON: %w", keySpec, err)
 	}
 
 	return raw, nil

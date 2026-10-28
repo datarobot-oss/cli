@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,11 @@ const (
 	screenSettings
 	screenEnv
 	screenConfirm
+	// screenDirectory is conditional and first when shown: it exists only
+	// when the directory looks like the wrong place to run setup from and
+	// there are subdirectories to offer instead. Everything Detect suggests
+	// hangs off the answer, so nothing else may be asked before it.
+	screenDirectory
 )
 
 // flow is the wizard: one model for every screen, because the screens share
@@ -51,6 +57,12 @@ const (
 type flow struct {
 	detected  Detected
 	workloads []workload.Workload
+	// offer is the Detected the directory question was built from, frozen at
+	// construction: acceptDirectory re-points detected at the chosen tree,
+	// and rebuilding the offer from that tree would make the question
+	// unanswerable a second time — Escape must find the original candidates,
+	// not the choice's own (empty) ones.
+	offer Detected
 	// pendingBind is a workload id a flag named, fetched by Init before the
 	// first screen so a flag-driven bind downloads the live spec exactly as
 	// the picker would.
@@ -62,9 +74,15 @@ type flow struct {
 	execEnvs []workload.ExecutionEnvironment
 
 	// draft accumulates the answers. live is the workload being bound to,
-	// nil when a new one is being created.
+	// nil when a new one is being created; a prepared spec file sets it too,
+	// since the confirm screen and the write treat the file like a bound
+	// workload's documents.
 	draft manifest.Draft
 	live  *manifest.Live
+	// prepared marks a run on a spec file: the screens the file answers are
+	// skipped, and preparedRuntime says the sizing is among them.
+	prepared        bool
+	preparedRuntime bool
 
 	// answers is what the flags said, kept because some of it is needed after
 	// the run has started: binding downloads the live spec mid-flow, and the
@@ -80,7 +98,17 @@ type flow struct {
 	envTable envTable
 	picker   rowTable
 	inputs   []textinput.Model
-	focus    int
+	// focus is the settings screen's cursor: a field index, or advancedStop
+	// when the row that opens the rest of the screen is what is focused.
+	focus int
+	// advancedOpen is whether that row is open. It survives leaving the screen
+	// and coming back, so back-navigation returns to the screen the user left
+	// rather than folding their own fields away again.
+	advancedOpen bool
+	// focusCmd parks the cursor-blink command from a focus change that happened
+	// somewhere with no tea.Cmd to return, so the caller that does have one can
+	// hand it on.
+	focusCmd tea.Cmd
 
 	// loading is the message shown while a screen waits on the network.
 	loading string
@@ -158,19 +186,13 @@ type secretsStoredMsg struct {
 func newFlow(detected Detected, workloads []workload.Workload, answers Answers) flow {
 	f := flow{detected: detected, workloads: workloads, answers: answers, pendingBind: answers.WorkloadID}
 
-	draft, err := answers.draft(detected)
-	if err != nil {
-		// Interactively an unanswerable flag set is not fatal: the screens
-		// exist to answer exactly this. Everything the flags did settle is
-		// kept.
-		draft = answers.partialDraft(detected)
+	f.startFrom(answers.draftOrPartial(detected))
+
+	f.at = f.first(answers)
+	if f.at == screenDirectory {
+		f.offer = detected
 	}
 
-	f.draft = draft
-	// A name passed as a flag is an answer the user gave, so the screen shows
-	// it as a value rather than re-offering the directory's suggestion.
-	f.nameGiven = answers.Name != ""
-	f.at = f.first(answers)
 	f.enter(f.at)
 
 	// Only a flag the wizard cannot ask about is worth reporting on arrival.
@@ -180,11 +202,134 @@ func newFlow(detected Detected, workloads []workload.Workload, answers Answers) 
 	// about something the user has not been asked yet.
 	f.failed = answers.check()
 
-	if f.pendingBind != "" {
+	// A flag-named workload is fetched behind a loading view — but not while
+	// the directory question is on screen: the view would swallow every key
+	// and the question would never be seen (the fetch is deferred to the
+	// answer instead, see acceptDirectory and Init).
+	if f.pendingBind != "" && f.at != screenDirectory {
 		f.loading = "Reading workload " + f.pendingBind + "…"
 	}
 
 	return f
+}
+
+// withPrepared turns the flow into a run on a spec file: the file is the
+// live document, the flags are layered over its defaults as they are over a
+// bound workload's, and the first screen is the name when the file has none.
+func (f flow) withPrepared(p Prepared) flow {
+	live := p.Live
+
+	f.live = &live
+	f.prepared = true
+	f.preparedRuntime = p.HasRuntime
+	f.draft = f.answers.partialApplyTo(live.Defaults(), f.detected)
+	f.nameGiven = f.draft.Name != ""
+	f.history = nil
+	f.at = f.first(f.answers)
+	f.enter(f.at)
+
+	// A build the directory cannot support is the headless refusal; on a
+	// terminal the source screen that would say so is skipped, so it is
+	// said here, before anything is asked.
+	if f.at != screenDirectory {
+		f.failed = f.preparedBuildFailure()
+	}
+
+	// A file that answers everything opens on the confirm screen, which is
+	// rendered on arrival rather than on entry.
+	if f.at == screenConfirm && f.failed == nil {
+		if err := f.render(); err != nil {
+			f.failed = err
+		}
+	}
+
+	return f
+}
+
+// checkPrepared is what confirm asks of a spec file before Enter can store a
+// secret for it: the build check again, since the failure set on entry is
+// cleared by the first keystroke and the screen that would refuse the build
+// is the one the file skips, and the ledger, which a hand-written spec fails
+// easily. A credential created for a file that is then refused would outlive
+// the run with nothing pointing at it.
+func (f flow) checkPrepared(content []byte) error {
+	if !f.prepared {
+		return nil
+	}
+
+	if err := f.preparedBuildFailure(); err != nil {
+		return err
+	}
+
+	return checkRendered(content, f.detected.Dir, authorUser)
+}
+
+// preparedBuildFailure is the build problem the spec file has in this
+// directory, nil when there is none.
+func (f flow) preparedBuildFailure() error {
+	if problem := preparedBuildProblem(f.detected, f.draft); problem != "" {
+		return errors.New(problem)
+	}
+
+	return nil
+}
+
+// bound reports a run on a workload that exists: the notes that say "in use"
+// and the diff against what is running are about one of those, not about a
+// spec file, which is as new as a fresh setup.
+func (f flow) bound() bool {
+	return f.live != nil && !f.prepared
+}
+
+// preparedSkips reports the screens a spec file already answers.
+func (f flow) preparedSkips(at screen) bool {
+	if !f.prepared {
+		return false
+	}
+
+	switch at {
+	case screenKind, screenA2A, screenSource, screenExecEnv, screenEntrypoint, screenImage:
+		return true
+	case screenSettings:
+		return f.preparedRuntime
+	case screenBinding, screenName, screenEnv, screenConfirm, screenDirectory:
+		return false
+	}
+
+	return false
+}
+
+// skipPrepared walks forward past the screens the spec file answers, taking
+// each skipped screen's own branch so the questions after it still come up.
+func (f flow) skipPrepared(next screen) screen {
+	for f.preparedSkips(next) {
+		at := f
+		at.at = next
+		next = at.after()
+	}
+
+	return next
+}
+
+// after is where the flow goes from its current screen, before any skip.
+func (f flow) after() screen {
+	if next, ok := f.branch(); ok {
+		return next
+	}
+
+	return nextScreen[f.at]
+}
+
+// startFrom installs a draft built from this run's flags, at the start and
+// again whenever the flow starts over. The name question starts over with it:
+// a name typed for the draft being replaced went with that draft, so only a
+// --name still counts as given. That flag is an answer the user gave and the
+// screen shows it as a value; the suggestion a fresh draft carries is a
+// placeholder, and left marked as given it would come back looking typed,
+// one reflexive Enter away from naming a deployed workload "src".
+func (f *flow) startFrom(draft manifest.Draft) {
+	f.draft = draft
+	f.nameGiven = f.answers.Name != ""
 }
 
 // defaultDraft is where a run starts when nothing else has been said: the
@@ -193,13 +338,35 @@ func defaultDraft(detected Detected) manifest.Draft {
 	return Answers{}.partialDraft(detected)
 }
 
-// first picks the opening screen. Binding is skipped when there is nothing to
-// bind to, or when a flag already said which workload this is.
+// first picks the opening screen. The directory question, when it exists,
+// comes before everything: a bound workload still syncs its code from here,
+// and every suggestion the other screens show was read from this directory.
 func (f flow) first(answers Answers) screen {
-	// A named workload is fetched by Init, and the kind screen is where the
-	// questions resume once it arrives.
+	if f.detected.SuspectDir() && len(f.detected.Candidates) > 0 {
+		return screenDirectory
+	}
+
+	return f.firstQuestion(answers)
+}
+
+// firstQuestion picks the first ordinary screen. Binding is skipped when
+// there is nothing to bind to, or when a flag already said which workload
+// this is.
+func (f flow) firstQuestion(answers Answers) screen {
+	// A prepared spec names the workload or does not; everything else it
+	// says is skipped on the way to what it leaves open.
+	if f.prepared {
+		if f.draft.Name == "" {
+			return screenName
+		}
+
+		return f.skipPrepared(afterName())
+	}
+
+	// A named workload is fetched by Init, and the questions resume after
+	// the name once it arrives.
 	if answers.WorkloadID != "" {
-		return screenKind
+		return afterName()
 	}
 
 	if len(f.workloads) == 0 || answers.Name != "" {
@@ -211,6 +378,12 @@ func (f flow) first(answers Answers) screen {
 
 func (f flow) Init() tea.Cmd {
 	if f.pendingBind == "" {
+		return nil
+	}
+
+	// The directory answer decides which tree the bound workload syncs from,
+	// so it comes first; acceptDirectory starts this fetch once it is given.
+	if f.at == screenDirectory {
 		return nil
 	}
 
@@ -282,10 +455,28 @@ func (f flow) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	f.failed = nil
 
+	if f.at == screenSettings && msg.String() == advancedKey {
+		// Assigned before returning, not called inside the return list: the
+		// call mutates f through a pointer receiver, and Go does not specify
+		// whether the f being returned is copied before or after it runs.
+		cmd := f.toggleAdvanced()
+
+		return f, cmd
+	}
+
 	switch msg.String() {
 	case "esc":
 		return f.back()
 	case "enter":
+		// On the advanced row enter is the row's own action. The screen is
+		// still submitted with enter from any of its fields, which is where the
+		// cursor starts.
+		if f.onAdvancedRow() {
+			cmd := f.toggleAdvanced()
+
+			return f, cmd
+		}
+
 		return f.advance()
 	}
 
@@ -325,7 +516,7 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return f, nil
 
-	case screenKind, screenA2A, screenSource, screenEnv:
+	case screenKind, screenA2A, screenSource, screenEnv, screenDirectory:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			f.updateSelection(key)
 		}
@@ -333,17 +524,7 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return f, nil
 
 	case screenName, screenEntrypoint, screenImage, screenSettings:
-		if key, ok := msg.(tea.KeyMsg); ok && f.at == screenSettings && isFocusKey(key) {
-			f.moveFocus(key)
-
-			return f, nil
-		}
-
-		var cmd tea.Cmd
-
-		f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
-
-		return f, cmd
+		return f.delegateToInput(msg)
 
 	case screenConfirm:
 		var cmd tea.Cmd
@@ -354,6 +535,37 @@ func (f flow) delegate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return f, nil
+}
+
+// delegateToInput routes a message on the text-entry screens: to the focus
+// ring when the key moves between fields, and to the focused field otherwise.
+func (f flow) delegateToInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, isKey := msg.(tea.KeyMsg)
+
+	if isKey && f.at == screenSettings && isFocusKey(key) {
+		cmd := f.moveFocus(key)
+
+		return f, cmd
+	}
+
+	// The advanced row is not a field, so a keystroke on it has nowhere to be
+	// typed. Without this it would go into whichever input the index happened
+	// to reach, or panic on the one it does not have. Only keystrokes are
+	// swallowed: everything else routed here belongs to a component that is
+	// still on screen, and dropping it would end whatever it is driving.
+	if isKey && f.onAdvancedRow() {
+		return f, nil
+	}
+
+	if f.focus < 0 {
+		return f, nil
+	}
+
+	var cmd tea.Cmd
+
+	f.inputs[f.focus], cmd = f.inputs[f.focus].Update(msg)
+
+	return f, cmd
 }
 
 // updateSelection routes a key to whichever selection component the current
@@ -393,7 +605,10 @@ func (f flow) advance() (tea.Model, tea.Cmd) {
 	if err != nil {
 		f.failed = err
 
-		return f, nil
+		// A refusal still moves the cursor to the field it is about, and the
+		// blink that goes with it has to be scheduled or the caret sits frozen
+		// in a field the user is being asked to edit.
+		return f, f.takeFocusCmd()
 	}
 
 	if cmd != nil {
@@ -427,6 +642,22 @@ func (f flow) advance() (tea.Model, tea.Cmd) {
 	return f, cmd
 }
 
+// askKind is whether the wizard asks service or agent. Agents are in private
+// preview, so the question is skipped and the manifest says service; the
+// screen, the A2A screen after it and the --type flag stay in place for when
+// agents leave preview, and tests about those screens switch this back on.
+var askKind = false
+
+// afterName is where the questions go once the workload is named, or bound:
+// the kind screen when it is asked, the image source otherwise.
+func afterName() screen {
+	if askKind {
+		return screenKind
+	}
+
+	return screenSource
+}
+
 // nextScreen is the flow when the answer does not change it.
 var nextScreen = map[screen]screen{
 	screenBinding:    screenName,
@@ -453,19 +684,21 @@ func (f flow) renderFailure() error {
 
 // next is the flow: the table above, plus the four answers that change it.
 func (f flow) next() screen {
-	if next, ok := f.branch(); ok {
-		return next
-	}
-
-	return nextScreen[f.at]
+	return f.skipPrepared(f.after())
 }
 
 // branch is the four answers that change where the flow goes next.
 func (f flow) branch() (screen, bool) {
 	switch f.at {
+	case screenDirectory:
+		// The flow restarts where it would have begun: the answer decided
+		// what every later screen suggests, not where the questions go.
+		return f.firstQuestion(f.answers), true
 	case screenBinding:
 		// A bound workload is already named.
-		return screenKind, f.live != nil
+		return afterName(), f.live != nil
+	case screenName:
+		return afterName(), true
 	case screenKind:
 		return screenA2A, f.draft.Type == manifest.TypeAgent
 	case screenSource:
@@ -475,7 +708,7 @@ func (f flow) branch() (screen, bool) {
 		// screen anyway would ask a question the user already declined, and
 		// accepting it refills the EnvVars the flag deliberately emptied.
 		return screenEnv, f.detected.HasEnvFile() && !f.answers.SkipEnv
-	case screenName, screenA2A, screenExecEnv, screenEntrypoint, screenImage, screenEnv, screenConfirm:
+	case screenA2A, screenExecEnv, screenEntrypoint, screenImage, screenEnv, screenConfirm:
 		// These always go where the table says.
 		return 0, false
 	}
@@ -497,6 +730,7 @@ func (f flow) afterSource() (screen, bool) {
 // accepting maps each screen to what recording its answer means. Screens
 // absent from the table (the confirm screen) have nothing to record.
 var accepting = map[screen]func(*flow) (tea.Cmd, error){
+	screenDirectory:  (*flow).acceptDirectory,
 	screenBinding:    (*flow).acceptBinding,
 	screenName:       (*flow).acceptName,
 	screenKind:       (*flow).acceptKind,
@@ -618,6 +852,48 @@ func (f *flow) acceptKind() (tea.Cmd, error) {
 	return nil, nil
 }
 
+// acceptDirectory re-reads the project from the directory chosen. This is
+// always the first screen, and choosing another directory starts the run over
+// from it: the draft is rebuilt the way newFlow built it, because everything
+// Detect suggests (name, port, Dockerfile, .env) belonged to the old
+// directory. On the way back that also discards the answers given after it,
+// the typed name included: they were given for the old tree's draft.
+// The env table is dropped for the same reason: built once from the old
+// tree, it would otherwise write the old directory's variables into the new
+// one's manifest. f.offer stays untouched throughout, so Escape re-poses the
+// original question.
+func (f *flow) acceptDirectory() (tea.Cmd, error) {
+	if chosen := f.choice.value(); chosen != f.detected.Dir {
+		f.detected = Detect(chosen)
+		f.envTable = envTable{}
+
+		// A spec file's answers are the file's, not the old directory's, so
+		// they are layered again rather than rebuilt from detection.
+		if f.prepared {
+			f.draft = f.answers.partialApplyTo(f.live.Defaults(), f.detected)
+			f.nameGiven = f.draft.Name != ""
+		} else {
+			f.startFrom(f.answers.draftOrPartial(f.detected))
+		}
+	}
+
+	// Whether the directory changed or not, this is the first chance to say
+	// the file's build cannot be made here; confirm asks again.
+	if f.prepared {
+		f.failed = f.preparedBuildFailure()
+	}
+
+	// A flag-named workload's fetch was deferred to here (see Init): the
+	// directory is settled, so the loading view no longer hides a question.
+	if f.pendingBind != "" {
+		f.loading = "Reading workload " + f.pendingBind + "…"
+
+		return fetchLiveCmd(f.pendingBind), nil
+	}
+
+	return nil, nil
+}
+
 func (f *flow) acceptA2A() (tea.Cmd, error) {
 	f.draft.A2AEnabled = f.choice.value() == "yes"
 
@@ -646,11 +922,33 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 		return nil, fmt.Errorf("no %s in %s: pick another source or add one", DockerfileName, f.detected.Dir)
 	}
 
+	if mode == manifest.BuildModeGenerated && !f.keepsLiveCode() {
+		if problem := f.detected.generatedBuild().problem; problem != "" {
+			return nil, fmt.Errorf("%s (or pick another source)", problem)
+		}
+	}
+
 	if mode != f.draft.Build.Mode {
 		f.draft.Build = manifest.Build{Mode: mode}
 	}
 
 	return nil, nil
+}
+
+// liveBuildMode is how the bound workload is built today, "" when the run is
+// not bound to one.
+func (f flow) liveBuildMode() string {
+	if f.live == nil {
+		return ""
+	}
+
+	return f.live.Defaults().Build.Mode
+}
+
+// keepsLiveCode is the one shape that needs no project files: bound to a
+// generated build, in an empty directory `up` seeds from the artifact.
+func (f flow) keepsLiveCode() bool {
+	return f.liveBuildMode() == manifest.BuildModeGenerated && f.detected.SuspectDir()
 }
 
 func (f *flow) acceptBinding() (tea.Cmd, error) {
@@ -667,10 +965,13 @@ func (f *flow) acceptBinding() (tea.Cmd, error) {
 	if item.id == createNewID {
 		// Start over rather than carrying the previous pick's name, kind and
 		// image forward: "create a new workload" after looking at an existing
-		// one must not prefill a copy of it.
+		// one must not prefill a copy of it. Starting over means from this
+		// run's own flags, not from nothing: a flag the user passed is an
+		// answer they gave, and looking at a workload and declining it is not
+		// a reason to withdraw it.
 		if f.live != nil {
 			f.live = nil
-			f.draft = defaultDraft(f.detected)
+			f.startFrom(f.answers.partialDraft(f.detected))
 		}
 
 		f.draft.WorkloadID = ""
@@ -713,6 +1014,13 @@ func (f *flow) acceptExecEnv() (tea.Cmd, error) {
 	item, ok := row.value.(pickedEnv)
 	if !ok {
 		return nil, errors.New("nothing selected")
+	}
+
+	// Refused on the screen where the pick is made, like a source the files
+	// cannot support, rather than after the sync and a build.
+	if problem := f.detected.EnvironmentMismatch(
+		workload.ExecutionEnvironment{Name: item.name, ProgrammingLanguage: item.language}); problem != "" {
+		return nil, errors.New(problem)
 	}
 
 	f.draft.Build.ExecutionEnvironmentID = item.id
@@ -787,43 +1095,50 @@ func (f flow) autoscaled() bool {
 
 // acceptSettings validates every field before recording any of them, so a
 // screen that is refused leaves the answers exactly as the user left them.
+// Fields behind the advanced row are validated too, since a bad --cpu has to
+// fail here rather than at write time, and a refusal there opens the row: an
+// error naming a field nobody can see is a screen with no way forward.
 func (f *flow) acceptSettings() (tea.Cmd, error) {
 	port, err := strconv.Atoi(f.field(fieldPort))
 	if err != nil {
-		return nil, errors.New("the port must be a number")
+		return nil, f.reveal(fieldPort, errors.New("the port must be a number"))
 	}
 
 	if err := checkPort(port, "port"); err != nil {
-		return nil, err
+		return nil, f.reveal(fieldPort, err)
 	}
 
 	path := f.field(fieldHealthPath)
-	if !strings.HasPrefix(path, "/") {
-		return nil, errors.New("the health path must start with /")
+	if err := f.acceptHealthPath(path); err != nil {
+		return nil, f.reveal(fieldHealthPath, err)
 	}
 
 	replicas, err := f.acceptReplicas()
 	if err != nil {
-		return nil, err
+		return nil, f.reveal(fieldReplicas, err)
 	}
 
 	cpu, err := f.acceptCPU()
 	if err != nil {
-		return nil, err
+		return nil, f.reveal(fieldCPU, err)
 	}
 
 	memory := f.field(fieldMemory)
 	if !manifest.ValidMemory(memory) {
-		return nil, fmt.Errorf("memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
-			strings.Join(manifest.MemoryUnits(), ", "))
+		return nil, f.reveal(fieldMemory, fmt.Errorf(
+			"memory must be a byte count or a 1000-based unit (%s), such as 512MB or 4GB",
+			strings.Join(manifest.MemoryUnits(), ", ")))
 	}
 
 	memory = manifest.NormalizeMemory(memory)
 
-	importance := strings.ToLower(f.field(fieldImportance))
+	// An empty field takes the documented default, the same as the headless
+	// path, rather than being the one field on this screen where clearing is
+	// fatal.
+	importance := orDefault(strings.ToLower(f.field(fieldImportance)), manifest.DefaultImportance)
 	if !manifest.ValidImportance(importance) {
-		return nil, fmt.Errorf("importance must be one of %s",
-			strings.Join(manifest.ImportanceLevels, ", "))
+		return nil, f.reveal(fieldImportance, fmt.Errorf("importance must be one of %s",
+			strings.Join(manifest.ImportanceLevels, ", ")))
 	}
 
 	f.draft.Port = port
@@ -834,6 +1149,43 @@ func (f *flow) acceptSettings() (tea.Cmd, error) {
 	return nil, nil
 }
 
+// acceptHealthPath holds the probe field to what the file can express. An
+// empty path is the answer "no readiness probe", which the file records by
+// carrying no probe block at all; a path that is set still has to be one.
+//
+// The third case is a bound workload whose probe declares no path. That shape
+// is preserved rather than rewritten, so a path typed here would be accepted
+// and then quietly dropped by the merge. It is refused while the answer can
+// still be taken back, and the note beside the field says why.
+func (f flow) acceptHealthPath(path string) error {
+	if path != "" && !strings.HasPrefix(path, "/") {
+		return errors.New("the health path must start with /, or leave it empty to run without a probe")
+	}
+
+	if present, readable := f.liveReadinessProbe(); present && !readable && path != "" {
+		return fmt.Errorf(
+			"%s runs a readiness probe with no path, which is kept as it is rather than rewritten, "+
+				"so a path here would not reach the file; clear the field to leave it alone",
+			f.probeOwner())
+	}
+
+	return nil
+}
+
+// reveal puts the cursor on the field a validation error is about, opening the
+// advanced row when that is where the field lives. The error is returned
+// unchanged so the caller reads as one statement.
+func (f *flow) reveal(field int, err error) error {
+	if field >= firstAdvancedField {
+		f.advancedOpen = true
+	}
+
+	f.focus = field
+	f.focusCmd = f.applyFocus()
+
+	return err
+}
+
 // field is the trimmed contents of one input on the current screen.
 func (f flow) field(i int) string {
 	return strings.TrimSpace(f.inputs[i].Value())
@@ -841,35 +1193,48 @@ func (f flow) field(i int) string {
 
 // onEnter starts whatever the screen needs before it can be answered.
 func (f *flow) onEnter(at screen) tea.Cmd {
+	// Whatever entering the screen did to the cursor rides along with the work
+	// the screen starts, since both reach bubbletea through this one return.
+	focus := f.takeFocusCmd()
+
 	switch at {
 	case screenExecEnv:
 		if len(f.execEnvs) > 0 {
 			// Already fetched, and enter() has rebuilt the table from it.
-			return nil
+			return focus
 		}
 
 		f.loading = "Loading base images…"
 
-		return func() tea.Msg {
+		return tea.Batch(focus, func() tea.Msg {
 			environments, err := listExecEnvsFn(execEnvPickLimit)
 
 			return execEnvsLoadedMsg{environments: environments, err: err}
-		}
+		})
 
 	case screenConfirm:
 		if err := f.render(); err != nil {
 			f.failed = err
 		}
 
-		return nil
+		return focus
 
 	case screenBinding, screenName, screenKind, screenA2A, screenSource,
-		screenEntrypoint, screenImage, screenSettings, screenEnv:
+		screenEntrypoint, screenImage, screenSettings, screenEnv, screenDirectory:
 		// Everything these screens show is already in hand.
-		return nil
+		return focus
 	}
 
-	return nil
+	return focus
+}
+
+// takeFocusCmd hands over the parked cursor-blink command and clears it, so it
+// is scheduled once rather than on every later return.
+func (f *flow) takeFocusCmd() tea.Cmd {
+	cmd := f.focusCmd
+	f.focusCmd = nil
+
+	return cmd
 }
 
 // render produces the file the confirm screen shows, and for a bound workload
@@ -894,7 +1259,15 @@ func (f *flow) render() error {
 		return nil
 	}
 
-	before, err := f.live.Render()
+	// A prepared spec may leave the artifact unnamed; it takes the workload's
+	// name the way a fresh render does. On a copy, so a rename on the way
+	// back through the name screen is not stuck with the first derivation.
+	live := *f.live
+	if f.prepared && live.ArtifactName == "" {
+		live.ArtifactName = manifest.ArtifactName(f.draft.Name)
+	}
+
+	before, err := live.Render()
 	if err != nil {
 		return err
 	}
@@ -903,9 +1276,9 @@ func (f *flow) render() error {
 	// not one this run adds. Narrowing before Apply rather than leaving it to
 	// Apply's own skip is what keeps the summary the command prints equal to
 	// what reached the file.
-	f.draft.EnvVars = f.live.NewEnvVars(f.draft.EnvVars)
+	f.draft.EnvVars = live.NewEnvVars(f.draft.EnvVars)
 
-	applied, err := f.live.Apply(f.draft)
+	applied, err := live.Apply(f.draft)
 	if err != nil {
 		return err
 	}
@@ -915,8 +1288,17 @@ func (f *flow) render() error {
 		return err
 	}
 
+	if err := f.checkPrepared(content); err != nil {
+		return err
+	}
+
 	f.content = content
-	f.diff = unifiedDiff(f.live.Name, string(before), string(content))
+	// A spec file is not running anywhere, so there is nothing to diff it
+	// against: the confirm screen shows the file itself.
+	if f.bound() {
+		f.diff = unifiedDiff(f.live.Name, string(before), string(content))
+	}
+
 	f.buildPreview()
 
 	return nil
@@ -941,11 +1323,30 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	live := msg.live
+
+	// The same refusal the headless bind makes, for the same reason: a probe
+	// flag this workload cannot honour is an instruction the run would carry
+	// out nowhere, and the screen it would go unnoticed on is one the user has
+	// to open a drawer to reach. Same flags, same answer, terminal or not.
+	if err := f.answers.checkProbeEditable(live); err != nil {
+		f.fatal = err
+
+		return f, tea.Quit
+	}
+
 	f.live = &live
 	// The live spec is the new set of defaults, not the new set of answers:
 	// --replicas and --memory were given before the fetch and still stand.
 	// Replacing the draft outright would drop every flag the wizard has no
 	// screen to re-ask, which is the same layering the headless bind does.
+	//
+	// This is the one draft rebuild that does not go through startFrom, so
+	// nameGiven is left as it stands. A bound workload is already named and
+	// never gets asked: branch sends the binding screen past the name while
+	// live is set, and firstQuestion sends a flag-named workload there too,
+	// so screenName is unreachable and the flag's only reader never runs.
+	// Give a bound workload a rename screen and that stops being true; this
+	// site then has to start over from the draft like the other two.
 	f.draft = f.answers.partialApplyTo(live.Defaults(), f.detected)
 	f.pendingBind = ""
 
@@ -955,10 +1356,10 @@ func (f flow) liveLoaded(msg liveLoadedMsg) (tea.Model, tea.Cmd) {
 		f.history = append(f.history, screenBinding)
 	}
 
-	f.at = screenKind
+	f.at = afterName()
 	f.enter(f.at)
 
-	return f, nil
+	return f, f.takeFocusCmd()
 }
 
 func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
@@ -971,7 +1372,16 @@ func (f flow) execEnvsLoaded(msg execEnvsLoadedMsg) (tea.Model, tea.Cmd) {
 		f.failed = errors.New("no execution environments are available; go back and pick another image source")
 	default:
 		f.execEnvs = msg.environments
-		f.picker = newExecEnvPicker(msg.environments, f.width, f.height)
+
+		// Through enterPicker, not by building the picker here, because the
+		// cursor has to go back on the draft's answer and enterPicker is
+		// where that is written. Building it directly left the cursor on row
+		// 0, and acceptExecEnv records whatever the cursor is on: a run given
+		// --execution-environment walked into this screen, pressed Enter, and
+		// had its flag quietly replaced by the first row — which, since the
+		// live environment is lifted to the top and labelled "· in use",
+		// wears the most authoritative label on the list.
+		f.enterPicker(screenExecEnv)
 	}
 
 	return f, nil
@@ -1002,7 +1412,7 @@ func (f flow) edited(msg editedMsg) (tea.Model, tea.Cmd) {
 // rediff recomputes what the confirm screen shows against the current bytes,
 // which is only meaningful when a live workload is being changed.
 func (f *flow) rediff() error {
-	if f.live != nil {
+	if f.bound() {
 		before, err := f.live.Render()
 		if err != nil {
 			return err
@@ -1040,14 +1450,84 @@ func isFocusKey(msg tea.KeyMsg) bool {
 	return false
 }
 
-func (f *flow) moveFocus(msg tea.KeyMsg) {
-	f.inputs[f.focus].Blur()
+// moveFocus walks the settings screen's stops: the port, the advanced row, and
+// the fields that row reveals while it is open. Only the settings screen has
+// more than one thing to move between, which is why this is not reached from
+// the other input screens.
+func (f *flow) moveFocus(msg tea.KeyMsg) tea.Cmd {
+	stops := f.settingsStops()
 
-	if msg.String() == "shift+tab" || msg.String() == "up" {
-		f.focus = (f.focus - 1 + len(f.inputs)) % len(f.inputs)
-	} else {
-		f.focus = (f.focus + 1) % len(f.inputs)
+	// Not found and the first stop are different things, and slices.Index
+	// spells both -1 and the sentinel this ring uses the same way. A focus that
+	// is not a stop is a broken invariant rather than a reason to move, so it
+	// restarts the walk deliberately instead of being clamped into one.
+	at := slices.Index(stops, f.focus)
+	if at < 0 {
+		at = 0
 	}
 
-	f.inputs[f.focus].Focus()
+	step := 1
+	if msg.String() == "shift+tab" || msg.String() == "up" {
+		step = -1
+	}
+
+	f.focus = stops[(at+step+len(stops))%len(stops)]
+
+	return f.applyFocus()
+}
+
+// toggleAdvanced shows or hides the fields behind the row and puts the cursor
+// somewhere that still exists afterwards: on the first revealed field when it
+// opens, since reaching them is the point, and back on the port when it closes,
+// since the field the cursor was in has just gone.
+func (f *flow) toggleAdvanced() tea.Cmd {
+	f.advancedOpen = !f.advancedOpen
+
+	if f.advancedOpen {
+		f.focus = firstAdvancedField
+	} else {
+		f.focus = fieldPort
+	}
+
+	return f.applyFocus()
+}
+
+// settingsStops is the order the cursor visits. The advanced half is built
+// from the field order, so a field added behind the row needs no second edit
+// here; the visible half is the port and the row, and making a second field
+// always-visible does mean editing this literal.
+func (f flow) settingsStops() []int {
+	stops := []int{fieldPort, advancedStop}
+
+	if !f.advancedOpen {
+		return stops
+	}
+
+	for field := firstAdvancedField; field < settingsFieldCount; field++ {
+		stops = append(stops, field)
+	}
+
+	return stops
+}
+
+// applyFocus puts the cursor in the focused field, and in none of them when
+// the advanced row is what is focused.
+//
+// The command it returns starts the cursor blinking in the newly focused
+// field, and has to reach the caller: dropped, the field keeps a static block
+// where the caret should be, which reads as a field that cannot be typed into.
+func (f *flow) applyFocus() tea.Cmd {
+	var cmd tea.Cmd
+
+	for i := range f.inputs {
+		if i == f.focus {
+			cmd = f.inputs[i].Focus()
+
+			continue
+		}
+
+		f.inputs[i].Blur()
+	}
+
+	return cmd
 }

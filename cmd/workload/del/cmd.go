@@ -20,22 +20,27 @@ package del
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"path/filepath"
 
-	"github.com/datarobot/cli/cmd/helpers"
+	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
-	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/drapi"
-	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
+	var ref idargs.Ref
+
 	cmd := &cobra.Command{
-		Use:   "delete <workload-id>",
+		Use:   "delete [<workload-id>]",
 		Short: "Delete a workload.",
 		Long: `Delete a workload by id.
 
@@ -44,87 +49,285 @@ replicas first, then removes the workload. The artifact it was created from
 is not deleted with it; remove that separately with
 'dr artifact delete <artifact-id>' once no workload references it.
 
-Without --yes the command asks for confirmation.
+If the .datarobot.yaml found from --dir (the current directory by default,
+searched upward from there) is bound to the workload being deleted, its
+workloadId is removed too, so the project stops pointing at a workload that
+is gone. Only a manifest naming that exact id is touched. Pass the same
+--dir you deployed with: a manifest in a subdirectory is not visible from
+its parent.
+
+--purge also removes what the deploy created beside the workload: the
+credentials this project minted (named <workload>/<VARIABLE> and referenced
+from the manifest), the draft artifact the project is linked to when no other
+workload references it, and the local state directory, so the next 'dr
+workload up' starts from scratch. A locked artifact and a credential this
+project did not mint are left and named, and the credentials stay whenever
+the artifact does, since whatever runs it may read them. A second project
+set up under the same workload name and pointed at the same credential
+shares that name, so a purge of either removes it. The manifest keeps its
+environment variables; a reference to a credential this purge removed is
+reset to the placeholder, which the next --sync-env fills. Without a manifest
+here naming the workload, only the workload is deleted.
+
+Without --yes the command asks for confirmation, and the question names
+everything --purge would remove.
+
+` + idargs.HelpText + `
 
 Example:
+  dr workload delete
   dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0
-  dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes`,
-		Args:         cobra.ExactArgs(1),
+  dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --yes
+  dr workload delete --purge --yes`,
+		Args:         cobra.MaximumNArgs(1),
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, err := confirmDelete(cmd, args[0])
+			var err error
+
+			ref, err = idargs.Resolve(cmd, args)
+			if err != nil {
+				return err
+			}
+
+			purge, _ := cmd.Flags().GetBool("purge")
+
+			confirmed, err := confirmDelete(cmd, ref, purge)
 			if err != nil || !confirmed {
 				return err
 			}
 
-			if err := workload.DeleteWorkload(args[0]); err != nil {
-				return handleDeleteError(err, args[0])
+			// Worked out while the workload still exists: the artifact it
+			// runs is read off it, and a binding that cannot be cleared
+			// afterwards must not leave the purge with no way to run.
+			var set purgeSet
+
+			if purge {
+				if set, err = planPurge(ref); err != nil {
+					return err
+				}
 			}
 
-			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + args[0]))
+			if err := workload.DeleteWorkload(ref.ID); err != nil {
+				return handleDeleteError(cmd.ErrOrStderr(), err, ref, purge)
+			}
+
+			fmt.Println(tui.BaseTextStyle.Render("Deleted workload: " + ref.ID))
+
+			clearStaleBinding(cmd.ErrOrStderr(), ref.Dir, ref.ID, purge)
+
+			if purge {
+				runPurge(cmd.ErrOrStderr(), set)
+			}
 
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt.")
+	cmd.Flags().Bool("purge", false,
+		"Also remove the artifact the workload ran, the credentials this project minted, and the local state directory.")
 
-	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
-	// flag itself is read directly from cmd.Flags() so an explicit --yes does
-	// not leak into viper.AllSettings() and persist to drconfig.yaml.
-	_ = viperx.BindEnv("yes", "DATAROBOT_CLI_NON_INTERACTIVE")
+	idargs.AddDirFlag(cmd)
+	// Only here does --dir also decide which manifest gets its binding cleared,
+	// which is the whole reason a delete by typed id still takes the flag.
+	cmd.Flags().Lookup("dir").Usage += " Its binding to the deleted workload is cleared too."
+
+	idargs.AddYesFlag(cmd, "Skip the confirmation prompt.")
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, args []string) map[string]any {
-		yesFlag, _ := cmd.Flags().GetBool("yes")
+		yesFlag, _ := cmd.Flags().GetBool(cli.YesFlagName)
+		purge, _ := cmd.Flags().GetBool("purge")
 
 		return map[string]any{
-			"workload_id": telemetry.FirstArg(args),
-			"yes":         yesFlag || viperx.GetBool("yes"),
+			"workload_id":        idargs.TelemetryID(ref, args),
+			"workload_id_source": ref.Source,
+			"purge":              purge,
+			// The environment variable is only consent for a workload the user
+			// named, so reporting it unconditionally would say yes about the
+			// runs this command refuses for want of it.
+			"yes": yesFlag || (!ref.FromManifest() && cli.IsNonInteractive(cmd)),
 		}
 	})
 
 	return cmd
 }
 
-// confirmDelete returns (true, nil) when the deletion may proceed: either
-// --yes / DATAROBOT_CLI_NON_INTERACTIVE was given, or the user confirmed
-// interactively. A declined prompt is (false, nil) so the command exits 0
-// as a no-op.
-func confirmDelete(cmd *cobra.Command, workloadID string) (bool, error) {
-	yesFlag, _ := cmd.Flags().GetBool("yes")
-	if yesFlag || viperx.GetBool("yes") {
-		return true, nil
+// confirmDelete returns (true, nil) when the deletion may proceed: either it
+// was already answered, or the user confirmed interactively. A declined prompt
+// is (false, nil) so the command exits 0 as a no-op.
+//
+// A workload the manifest specified rather than the user takes the explicit
+// --yes only. Delete is the one irreversible verb here, and the environment
+// variable that suppresses wizards in CI should not also stand as consent to
+// remove something nobody typed.
+func confirmDelete(cmd *cobra.Command, ref idargs.Ref, purge bool) (bool, error) {
+	env := idargs.EnvMayConsent
+	if ref.FromManifest() {
+		env = idargs.EnvMayNotConsent
 	}
 
-	if !reader.IsStdinTerminal() {
-		return false, errors.New("confirmation required: pass --yes (or set DATAROBOT_CLI_NON_INTERACTIVE=1) to delete without a prompt")
+	return idargs.Confirm(cmd, deleteQuestion(ref, purge), env)
+}
+
+// deleteConsequence is what agreeing to this question costs, and the one part
+// of it `stop` and `start` have no equivalent of.
+const deleteConsequence = "This stops and removes a running workload."
+
+// deleteQuestion is the question itself, split out because Confirm refuses
+// before printing anything when there is no terminal, which is every test.
+func deleteQuestion(ref idargs.Ref, purge bool) string {
+	consequence := deleteConsequence
+	if purge {
+		consequence += " " + purgeConsequence
 	}
 
-	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
-		"Delete workload "+workloadID+"? This stops and removes a running workload. [y/N] ")
-	if err != nil {
-		return false, err
-	}
-
-	if !confirmed {
-		fmt.Println(tui.DimStyle.Render("Aborted."))
-	}
-
-	return confirmed, nil
+	return idargs.Prompt("Delete", ref, consequence)
 }
 
 // handleDeleteError converts a 404 into a friendly informational message
 // (returns nil) so the user does not see a stack-trace-style HTTP error
 // for what is effectively a no-op.
-func handleDeleteError(err error, workloadID string) error {
+//
+// The binding is deliberately left alone here. A 404 says the workload is not
+// on this instance, which is not the same as saying it is gone: the same
+// manifest read against the wrong endpoint, organisation or token answers
+// exactly this way. `up` treats that ambiguity by naming the id and letting
+// the user look; rewriting a committed file on the strength of it, in the one
+// branch where nothing was actually deleted, would be the stronger claim made
+// on the weaker evidence. A binding that really is dead is cleared by the
+// deploy that recreates it.
+func handleDeleteError(w io.Writer, err error, ref idargs.Ref, purge bool) error {
 	var httpErr *drapi.HTTPError
 
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		fmt.Println(tui.DimStyle.Render("No workload found with id: " + workloadID))
+		// The manifest is named when it, rather than the user, chose the id:
+		// otherwise this reports an id the reader has never seen and gives
+		// them nowhere to look.
+		said := "No workload found with id: " + ref.ID
+		if ref.FromManifest() {
+			said += ref.SpecifiedIn()
+		}
+
+		fmt.Println(tui.DimStyle.Render(said))
+
+		// The same doubt that leaves the binding alone leaves the leftovers:
+		// nothing was deleted, so nothing is purged, and it has to be said.
+		if purge {
+			fmt.Fprintln(w, tui.WarnStyle.Render("Nothing purged: the workload was not found here, so its leftovers were not looked for."))
+		}
 
 		return nil
 	}
 
-	return err
+	// Anything else keeps the provenance too, which is what turns a bare 403
+	// against an ambient id into something actionable.
+	return ref.Wrap(err)
+}
+
+// clearStaleBinding takes back the workloadId the CLI wrote into a manifest,
+// now that the workload it names has been deleted.
+//
+// The id is matched inside the edit itself, so this only ever touches a file
+// that is demonstrably about the workload just deleted, and the value it
+// checks is the value it removes. A manifest naming some other workload is
+// none of its business.
+//
+// dir is where to start looking, and it exists because Locate only walks
+// upward. A project deployed with `up --dir site` and then deleted from the
+// repository root is invisible from there, which is the reported bug's own
+// reproduction; --dir is how the two commands agree on which project this is.
+// A path that is not a directory is a typo worth naming, because Locate would
+// otherwise walk past it to an ancestor and quietly edit the wrong project.
+//
+// Nothing here can fail the command. The workload is already gone by the time
+// this runs, so a manifest that cannot be found, read or written is stepped
+// over rather than turned into a failure for an operation that succeeded. The
+// unwritable case still says so, because the user has to finish it by hand.
+func clearStaleBinding(w io.Writer, dir, workloadID string, purge bool) {
+	if dir == "" {
+		dir = "."
+	}
+
+	path, err := manifest.Locate(dir)
+	if err != nil {
+		// Locate is the one place that decides what counts as a directory, so
+		// its answer is used rather than re-derived here. Reaching this needs
+		// the directory to have gone away between the check that runs before
+		// the delete and this line, which is rare and still worth a word: the
+		// binding was not looked at, so it may well still be there.
+		if errors.Is(err, manifest.ErrNotADirectory) {
+			fmt.Fprintln(w, tui.DimStyle.Render("No manifest was checked: "+err.Error()+"."))
+		}
+
+		return
+	}
+
+	cleared, err := manifest.ClearWorkloadID(path, workloadID)
+
+	// A file that cannot be parsed cannot be checked, so there is nothing to
+	// say: it may not be this project's manifest at all, and `up` reports an
+	// unreadable one in its own words. A failure past that point is on a file
+	// whose binding was matched, so it is this command's business to report.
+	if errors.Is(err, manifest.ErrUnreadable) {
+		return
+	}
+
+	// The manifest package's refusals each carry the remedy that fits them,
+	// and they differ: one says delete the file, another says edit it by hand.
+	// Appending a single generic "remove that line" walked the user into the
+	// empty manifest the only-key refusal exists to prevent.
+	if err != nil {
+		fmt.Fprintln(w, tui.DimStyle.Render(
+			"Could not remove workloadId from "+idargs.DisplayPath(path)+": "+err.Error()))
+
+		return
+	}
+
+	if !cleared {
+		return
+	}
+
+	fmt.Fprintln(w, tui.DimStyle.Render(
+		"Removed workloadId from "+idargs.DisplayPath(path)+
+			"; this project no longer points at a workload."))
+
+	// A purge removes the link, so the note about keeping it is for a plain
+	// delete.
+	if !purge {
+		noteLinkedArtifact(w, filepath.Dir(path))
+	}
+}
+
+// noteLinkedArtifact names the artifact this project is linked to, and how to
+// stop being linked to it.
+//
+// Deleting a workload leaves its artifact alone, by design and as this
+// command's help promises, so the link under .datarobot/ is still accurate and
+// is deliberately left in place. It is only surprising when it is invisible,
+// which is what this line fixes.
+//
+// It states that the artifact survived and stops there. Saying the next deploy
+// reuses it would be false twice over: a locked artifact makes the next deploy
+// refuse instead, and a manifest naming a published image or an artifactId
+// never consults the link at all.
+//
+// The remedy is the state directory, not `dr artifact delete`. Deleting the
+// artifact is refused outright while it is locked, and for an unlocked one it
+// leaves the link pointing at something gone, which the next deploy reports as
+// a bare 404 naming no fix. The link is repointed with the doctor, and the
+// artifact itself removed with `dr artifact delete` once nothing runs it.
+func noteLinkedArtifact(w io.Writer, projectDir string) {
+	if !wapi.Exists(projectDir) {
+		return
+	}
+
+	cfg, err := wapi.LoadConfig(projectDir)
+	if err != nil || cfg.ArtifactID == "" {
+		return
+	}
+
+	fmt.Fprintln(w, tui.DimStyle.Render(
+		"This project is still linked to artifact "+cfg.ArtifactID+", which was not deleted with the workload. "+
+			"'dr artifact code doctor --relink <artifact-id>"+manifest.DirFlag(projectDir)+"' points the project at another artifact; "+
+			"'dr artifact delete "+cfg.ArtifactID+"' removes this one once nothing references it."))
 }

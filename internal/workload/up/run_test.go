@@ -16,6 +16,7 @@ package up
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,8 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/ignore"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/datarobot/cli/internal/workload/wizard"
@@ -86,6 +89,38 @@ runtime:
           resourceAllocation: {cpu: 0.5, memory: 512MB}
 `
 
+// linkedArtifactDoc is the artifact unboundDockerfileManifest describes, in the
+// shape the comparison expects to find it. A test that leaves this out is not
+// testing reuse: the failed read folds into "reuse it" and the comparison never
+// runs, so the assertion passes for the wrong reason.
+//
+// The kind sits inside the spec because that is where the manifest above puts
+// it, and the two sides have to agree for a match. A real platform hoists it to
+// the document root, so a manifest spelling it here and an artifact returning it
+// there never match and the project mints an artifact per deploy. That is not
+// this change's to fix; the fixture mirrors the manifest so these tests measure
+// what they say they measure.
+func linkedArtifactDoc(id string) (workload.Document, error) {
+	return workload.Document{
+		"id":     id,
+		"status": workload.ArtifactStatusDraft,
+		"spec": map[string]any{
+			"type": "service",
+			"containerGroups": []any{map[string]any{
+				"name": "default",
+				"containers": []any{map[string]any{
+					"name":    "primary",
+					"primary": true,
+					"port":    float64(8080),
+					"imageBuildConfig": map[string]any{
+						"dockerfile": map[string]any{"source": "provided"},
+					},
+				}},
+			}},
+		},
+	}, nil
+}
+
 // boundArtifactManifest names an artifact the platform already holds instead
 // of describing one. There is no container to read a build mode from, so the
 // mode is empty, and the create is the same single POST as a published image.
@@ -135,10 +170,12 @@ runtime:
 type fakes struct {
 	wizard         func(wizard.Options) (wizard.Result, error)
 	create         func(any) (*workload.Workload, error)
-	wait           func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
-	list           func(int, []string) ([]workload.Workload, error)
+	wait           func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	waitSteady     func(context.Context, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error)
+	list           func(int, int, []string, string) ([]workload.Workload, error)
 	start          func(string) (*workload.WorkloadOperationResponse, error)
 	lock           func(string) (*workload.Artifact, error)
+	promote        func(string) (*workload.Workload, error)
 	cred           func(string) (*workload.Credential, error)
 	findCredential func(string, int) (*workload.Credential, error)
 	writeID        func(string, string) error
@@ -146,24 +183,50 @@ type fakes struct {
 	workloadD      func(string) (workload.Document, error)
 	artifactD      func(string) (workload.Document, error)
 
+	// reason is the platform's account of why a workload is errored, read
+	// only for one that is.
+	reason func(string) string
+
 	// The build track: create an artifact, link the project to it, push the
 	// code, turn it into an image.
 	newArtifact func(any) (*workload.Artifact, error)
 	getArtifact func(string) (*workload.Artifact, error)
-	linked      func(string) bool
-	project     func(string) (wapi.Config, error)
-	link        func(string, wapi.InitOptions) error
-	save        func(string, wapi.Config) error
-	codeRef     func(string, string, string) error
-	sync        func(string) (*sync.Result, error)
-	build       func(string) (*workload.BuildTriggerResponse, error)
-	waitBuild   func(string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
-	builds      func(string, int) ([]workload.Build, error)
 
-	// The roll track: refuse to queue a second swap, start one, follow it.
-	guard       func(string) error
-	replace     func(string, string, json.RawMessage) (*workload.Replacement, error)
-	waitReplace func(string, *workload.Replacement, time.Duration, time.Duration,
+	// The copy track: a runtime-only change is made from the version now
+	// serving and written over, rather than created and built.
+	copyArtifact   func(string, string) (*workload.Artifact, error)
+	updateSpec     func(string, json.RawMessage) error
+	deleteArtifact func(string) error
+	recordBuilt    func(string)
+
+	linked    func(string) bool
+	project   func(string) (wapi.Config, error)
+	link      func(string, wapi.InitOptions) error
+	save      func(string, wapi.Config) error
+	codeRef   func(string, string, string) error
+	sync      func(string) (*sync.Result, error)
+	build     func(string) (*workload.BuildTriggerResponse, error)
+	waitBuild func(context.Context, string, string, time.Duration, time.Duration, func(*workload.Build)) (*workload.Build, error)
+	builds    func(string, int) ([]workload.Build, error)
+	hasLogs   func(string, string) workload.LogEvidence
+
+	// checkEndpoint is the one GET a deploy ends with.
+	checkEndpoint func(string) (int, error)
+
+	// activeProton is the generation marked as serving, which an otherwise
+	// empty plan on a draft sets the artifact's last change against.
+	activeProton func(string) (*workload.Proton, error)
+
+	// execEnv is the environment a generated build is made from, read to
+	// hold its language against the project's files.
+	execEnv func(string) (workload.ExecutionEnvironment, error)
+
+	// The roll track: read what is already in flight, refuse to queue a second
+	// swap, start one, follow it.
+	activeReplacement func(string) (*workload.Replacement, error)
+	guard             func(string) error
+	replace           func(string, string, json.RawMessage) (*workload.Replacement, error)
+	waitReplace       func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
 		func(*workload.Replacement)) (*workload.Replacement, error)
 
 	// settings is the in-place path: a change that moved only the sizing.
@@ -180,6 +243,17 @@ func install(t *testing.T, f fakes) {
 	force(t, &writeWorkloadIDFn, func(string, string) error { return nil })
 	force(t, &codeChangeFn, func(Loaded, Live) (CodeChange, error) { return CodeChange{}, nil })
 
+	// The endpoint check would otherwise GET whatever URL the fixture
+	// carries, spending a real network timeout per test that reaches settle.
+	force(t, &checkEndpointFn, func(string) (int, error) { return http.StatusOK, nil })
+	swap(t, &checkEndpointFn, f.checkEndpoint)
+
+	// The same check first reads the served artifact for its readiness probe.
+	// It defaults to an artifact with none, so the check asks /. Being its own
+	// seam, this default leaves every other artifact read alone, and tests
+	// keep wiring those through artifactD.
+	force(t, &servedArtifactFn, func(string) (workload.Document, error) { return nil, nil })
+
 	// swap leaves a seam alone when the test supplied nothing, so without this
 	// a stopped fixture with no start fake POSTs to whatever tenant the
 	// developer is logged into.
@@ -188,6 +262,23 @@ func install(t *testing.T, f fakes) {
 
 		return nil, nil
 	})
+
+	// The same for the wait a settling workload triggers, which a fixture can
+	// reach without the test having asked for it.
+	force(t, &waitSteadyFn,
+		func(_ context.Context, id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			t.Fatalf("the run waited on workload %s to settle, which this test did not wire", id)
+
+			return nil, nil
+		})
+
+	swap(t, &waitSteadyFn, f.waitSteady)
+
+	// The reason an errored workload is read with costs two requests to
+	// whatever tenant the developer is logged into, so an errored fixture is
+	// errored for no stated reason unless the test says otherwise.
+	force(t, &failureReasonFn, func(string) string { return "" })
+	swap(t, &failureReasonFn, f.reason)
 
 	// The placeholder message looks a credential up by name. Left unwired it
 	// would list credentials from whatever tenant the developer is logged
@@ -202,6 +293,7 @@ func install(t *testing.T, f fakes) {
 	swap(t, &listWorkloadsFn, f.list)
 	swap(t, &startWorkloadFn, f.start)
 	swap(t, &lockArtifactFn, f.lock)
+	swap(t, &promoteWorkloadFn, f.promote)
 	swap(t, &getCredentialFn, f.cred)
 	swap(t, &writeWorkloadIDFn, f.writeID)
 	swap(t, &codeChangeFn, f.code)
@@ -222,8 +314,35 @@ func install(t *testing.T, f fakes) {
 		return nil, nil
 	})
 
+	force(t, &copyArtifactFn, func(id, _ string) (*workload.Artifact, error) {
+		t.Fatalf("the run copied artifact %s, which this test did not wire", id)
+
+		return nil, nil
+	})
+	force(t, &updateArtifactSpecFn, func(id string, _ json.RawMessage) error {
+		t.Fatalf("the run rewrote the spec of artifact %s, which this test did not wire", id)
+
+		return nil
+	})
+	force(t, &deleteArtifactFn, func(id string) error {
+		t.Fatalf("the run deleted artifact %s, which this test did not wire", id)
+
+		return nil
+	})
+
+	force(t, &recordBuiltFn, func(string) {})
+
+	// A leftover with no image sends the run to the build history, so a test
+	// that wired none would ask whatever tenant is logged in. Empty builds,
+	// which is the track those tests were written against.
+	force(t, &listBuildsFn, func(string, int) ([]workload.Build, error) { return nil, nil })
+
 	swap(t, &createArtifactFn, f.newArtifact)
 	swap(t, &getArtifactFn, f.getArtifact)
+	swap(t, &copyArtifactFn, f.copyArtifact)
+	swap(t, &updateArtifactSpecFn, f.updateSpec)
+	swap(t, &deleteArtifactFn, f.deleteArtifact)
+	swap(t, &recordBuiltFn, f.recordBuilt)
 	swap(t, &projectLinkedFn, f.linked)
 	swap(t, &loadProjectFn, f.project)
 	swap(t, &initProjectFn, f.link)
@@ -234,13 +353,45 @@ func install(t *testing.T, f fakes) {
 	swap(t, &waitBuildFn, f.waitBuild)
 	swap(t, &listBuildsFn, f.builds)
 
+	// No logs unless a test says so, and never a real fetch by accident.
+	force(t, &hasLogsFn, func(string, string) workload.LogEvidence { return workload.LogsAbsent })
+	swap(t, &hasLogsFn, f.hasLogs)
+
 	// Nothing stands in the way of a rollout unless a test says so, because
-	// the quiet answer is the one every other roll test wants.
+	// the quiet answer is the one every other roll test wants. That covers the
+	// pre-plan read as well as the guards: a test wiring neither is saying its
+	// workload has no swap in flight.
+	force(t, &activeReplacementFn, func(string) (*workload.Replacement, error) { return nil, nil })
+	swap(t, &activeReplacementFn, f.activeReplacement)
+
 	force(t, &guardReplacementFn, func(string) error { return nil })
 	swap(t, &guardReplacementFn, f.guard)
+
+	// No generation marked as serving unless a test says so: the real read
+	// would ask whatever tenant the developer is logged into.
+	force(t, &activeProtonFn, func(string) (*workload.Proton, error) { return nil, nil })
+	swap(t, &activeProtonFn, f.activeProton)
+
+	// An environment with no language label, so a generated build in a test
+	// that said nothing about it is judged on its files alone.
+	force(t, &getExecEnvFn, func(string) (workload.ExecutionEnvironment, error) {
+		return workload.ExecutionEnvironment{ProgrammingLanguage: "other"}, nil
+	})
+	swap(t, &getExecEnvFn, f.execEnv)
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)
+}
+
+// servingLabel renders what a wait was asked to confirm, so a trace shows the
+// difference between a create (nothing), a resize (drain only) and a roll.
+func servingLabel(want workload.Serving) string {
+	label := "settle:" + want.ArtifactID
+	if want.AwaitDrain {
+		label += "+drain"
+	}
+
+	return label
 }
 
 // swap installs fake over the seam at target, and does nothing when the test
@@ -269,7 +420,7 @@ func force[F any](t *testing.T, target *F, value F) {
 }
 
 // runIn deploys the manifest written into a fresh directory.
-func runIn(t *testing.T, content string, opts Options) (Result, string, error) {
+func runIn(t *testing.T, content string, opts Options, files ...string) (Result, string, error) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -281,12 +432,18 @@ func runIn(t *testing.T, content string, opts Options) (Result, string, error) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"),
 		[]byte("FROM scratch\nEXPOSE 8080\n"), 0o600))
 
+	// A generated build needs a project the platform builds from, which the
+	// fixtures that ask for one name here.
+	for _, name := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o600))
+	}
+
 	var stderr bytes.Buffer
 
 	opts.Dir = dir
 	opts.Stderr = &stderr
 
-	result, err := Run(opts)
+	result, err := Run(t.Context(), opts)
 
 	return result, stderr.String(), err
 }
@@ -298,23 +455,136 @@ func running(id string) *workload.Workload {
 	}
 }
 
-// TestRun_NoManifestWithoutATerminalNamesTheFix is the rule that keeps a CI
-// job from deploying a workload nobody described.
-func TestRun_NoManifestWithoutATerminalNamesTheFix(t *testing.T) {
-	install(t, fakes{
-		wizard: func(wizard.Options) (wizard.Result, error) {
-			t.Fatal("the wizard must not run without a terminal")
+// A fresh project deploys without a human. The refusal that used to stand
+// here sent an agent to a command whose own help says it opens a wizard, and
+// it gave up.
+//
+// It replaces TestRun_NoManifestWithoutATerminalNamesTheFix, which held the
+// opposite rule. What that rule was protecting — never deploying a workload
+// nobody described — is still held, by the two tests below it: the setup runs
+// headlessly and writes the file first, and a project it cannot read is
+// refused rather than guessed at.
+func TestRun_NoManifestWithoutATerminalRunsTheSetupHeadlessly(t *testing.T) {
+	dir := t.TempDir()
 
-			return wizard.Result{}, nil
+	var asked bool
+
+	install(t, fakes{
+		wizard: func(opts wizard.Options) (wizard.Result, error) {
+			asked = true
+
+			assert.True(t, opts.NonInteractive,
+				"a run with nobody watching must not leave the wizard able to prompt")
+			assert.False(t, opts.DryRun, "a deploy needs the file on disk")
+			assert.Equal(t, dir, opts.Dir)
+
+			writeManifest(t, dir, unboundImageManifest)
+
+			return wizard.Result{
+				Path:    manifest.Path(opts.Dir),
+				Action:  wizard.ActionCreated,
+				Content: []byte(unboundImageManifest),
+				Draft:   manifest.Draft{EnvVars: []manifest.EnvVar{{Name: "LOG_LEVEL", Value: "debug"}}},
+			}, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
 		},
 	})
 
 	var stderr bytes.Buffer
 
-	_, err := Run(Options{Dir: t.TempDir(), NonInteractive: true, Stderr: &stderr})
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNoManifest)
-	assert.Contains(t, err.Error(), "dr workload config")
+	result, err := Run(t.Context(), Options{Dir: dir, NonInteractive: true, Stderr: &stderr})
+	require.NoError(t, err)
+	assert.True(t, asked, "the setup has to run; refusing is what left the agent stuck")
+	assert.Equal(t, "wl-new", result.WorkloadID)
+
+	// Nobody saw the wizard, so the run is the only place its answers are
+	// shown, and the file has to be named because it has to be committed: a
+	// CI job that never commits it would create a workload per run.
+	out := stderr.String()
+	assert.Contains(t, out, "✓ Wrote "+manifest.Path(dir))
+	assert.Contains(t, out, "commit it")
+	assert.Contains(t, out, unboundImageManifest, "a headless run prints the file it wrote")
+	assert.Contains(t, out, "Values written in the clear: LOG_LEVEL",
+		"the same warning `dr workload config` gives for the same file")
+}
+
+// The rule the refusal was really protecting: nothing is deployed from a
+// guess the project does not support. The wizard says which flags settle it,
+// and this adds the command they belong to — they are `dr workload config`'s,
+// not this one's, and a reader told to pass --image to a command with no such
+// flag finds that out the hard way.
+func TestRun_NoManifestAndNothingToInferIsStillRefused(t *testing.T) {
+	refusal := errors.New(
+		"no Dockerfile found in x, so the image source cannot be guessed: " +
+			"pass --build-mode image with --image, or --build-mode generated " +
+			"with --execution-environment and --entrypoint")
+
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) { return wizard.Result{}, refusal },
+	})
+
+	var stderr bytes.Buffer
+
+	_, err := Run(t.Context(), Options{Dir: t.TempDir(), NonInteractive: true, Stderr: &stderr})
+	require.ErrorIs(t, err, refusal, "the wizard's own words survive; it knows the project")
+	assert.Contains(t, err.Error(), "dr workload config", "and the flags are named as that command's")
+}
+
+// A preview must not write the file it is previewing, and it must not refuse
+// either: looking before deploying is the natural first move on a fresh
+// project, for an agent above all. The wizard renders without writing, and
+// the plan is computed from what it rendered. On a terminal as well as off
+// one — the interactive wizard used to write the manifest during a dry run.
+func TestRun_DryRunWithNoManifestPreviewsTheFileAndThePlan(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		nonInteractive bool
+	}{
+		{name: "headless", nonInteractive: true},
+		{name: "on a terminal", nonInteractive: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			install(t, fakes{
+				wizard: func(opts wizard.Options) (wizard.Result, error) {
+					assert.True(t, opts.DryRun, "the wizard must be told not to write")
+					assert.Equal(t, tc.nonInteractive, opts.NonInteractive)
+
+					// Rendered, not written: what the real wizard does under DryRun.
+					return wizard.Result{
+						Path:    manifest.Path(opts.Dir),
+						Action:  wizard.ActionPlanned,
+						Content: []byte(unboundImageManifest),
+					}, nil
+				},
+				create: func(any) (*workload.Workload, error) {
+					t.Fatal("a dry run must not create anything")
+
+					return nil, nil
+				},
+			})
+
+			var stderr bytes.Buffer
+
+			result, err := Run(t.Context(), Options{Dir: dir, NonInteractive: tc.nonInteractive, DryRun: true, Stderr: &stderr})
+			require.NoError(t, err)
+			assert.Equal(t, ActionCreated, result.Action, "the plan is the one a real run would carry out")
+			assert.True(t, result.Plan.Creates)
+
+			out := stderr.String()
+			assert.Contains(t, out, "Dry run: "+manifest.Path(dir)+" was not written")
+			assert.Contains(t, out, unboundImageManifest, "the file it would write is the whole of the preview")
+			assert.Contains(t, out, "+ workload", "followed by what it would then do")
+
+			entries, readErr := os.ReadDir(dir)
+			require.NoError(t, readErr)
+			assert.Empty(t, entries, "a dry run left a file behind")
+		})
+	}
 }
 
 // TestRun_NoManifestOnATerminalRunsTheWizard: setup and the first deploy are
@@ -330,20 +600,60 @@ func TestRun_NoManifestOnATerminalRunsTheWizard(t *testing.T) {
 
 			writeManifest(t, dir, unboundImageManifest)
 
-			return wizard.Result{Path: opts.Dir}, nil
+			// Path is the manifest itself, as the real wizard reports it;
+			// load follows it, so a fake handing back the directory would
+			// send the deploy to the parent.
+			return wizard.Result{Path: manifest.Path(opts.Dir)}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
 
 	var stderr bytes.Buffer
 
-	result, err := Run(Options{Dir: dir, Stderr: &stderr})
+	result, err := Run(t.Context(), Options{Dir: dir, Stderr: &stderr})
 	require.NoError(t, err)
 	assert.True(t, asked)
 	assert.Equal(t, "wl-new", result.WorkloadID)
+}
+
+// TestRun_WizardRedirectIsFollowed: the wizard's directory question can move
+// the project into a subdirectory, and the deploy must follow the manifest it
+// wrote there — re-searching from where the command ran walks upward and
+// cannot see it.
+func TestRun_WizardRedirectIsFollowed(t *testing.T) {
+	dir := t.TempDir()
+	app := filepath.Join(dir, "web")
+	require.NoError(t, os.MkdirAll(app, 0o755))
+
+	var boundPath string
+
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			writeManifest(t, app, unboundImageManifest)
+
+			return wizard.Result{Path: manifest.Path(app)}, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		writeID: func(path, _ string) error {
+			boundPath = path
+
+			return nil
+		},
+	})
+
+	var stderr bytes.Buffer
+
+	result, err := Run(t.Context(), Options{Dir: dir, Stderr: &stderr})
+	require.NoError(t, err)
+	assert.Equal(t, "wl-new", result.WorkloadID)
+	assert.Equal(t, manifest.Path(app), boundPath, "the id lands in the manifest the wizard wrote")
+	assert.Equal(t, app, result.ProjectDir, "the follow-ups have to reach the project the deploy followed")
 }
 
 func TestRun_DryRunAppliesNothing(t *testing.T) {
@@ -361,6 +671,152 @@ func TestRun_DryRunAppliesNothing(t *testing.T) {
 	assert.Equal(t, ActionCreated, result.Action)
 	assert.Empty(t, result.WorkloadID)
 	assert.Contains(t, stderr, "+ workload")
+}
+
+// resizedManifest is the bound fixture with the sizing moved one step, which
+// is the one-change plan the wiring tests below diff. The binding line rides
+// on top, as it does wherever the tests deploy against the live fixtures.
+func resizedManifest() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "memory: 22GB", "memory: 24GB", 1)
+}
+
+// TestRun_DiffRendersTheUnifiedDiffInsteadOfTheSummary is the selector: the
+// flag swaps the renderer and nothing else. With it the plan is laid out as
+// a diff stating both sides of what moves; without it the summary keeps its
+// own spelling, because a flag nobody passed may not change a byte.
+func TestRun_DiffRendersTheUnifiedDiffInsteadOfTheSummary(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	sized := resizedManifest()
+
+	_, stderr, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "resourceAllocation.memory: 22GB -> 24GB",
+		"the default plan states a change as have -> want")
+	assert.NotContains(t, stderr, "\n+ ")
+	assert.NotContains(t, stderr, "\n- ", "the diff is opt-in; the default plan must not grow hunks")
+
+	_, diffStderr, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, diffStderr, "- containerGroups[default].containers[vllm-server].resourceAllocation.memory: 22GB")
+	assert.Contains(t, diffStderr, "+ containerGroups[default].containers[vllm-server].resourceAllocation.memory: 24GB")
+	assert.NotContains(t, diffStderr, "-> ",
+		"a diff states each side of a change on its own line, never the summary's arrow")
+}
+
+// TestRun_DryRunDiffMatchesTheWetDiffAndWritesNothing is the contract that
+// makes --dry-run --diff the look-without-touching combination: the dry run
+// prints the identical diff body the wet run prints for the same state, and
+// stops where the wet run continues into progress. The mutating seams are
+// wired to fail the test on the dry leg, so "prints the same body" and
+// "performs zero writes" are asserted by the same run.
+func TestRun_DryRunDiffMatchesTheWetDiffAndWritesNothing(t *testing.T) {
+	sized := resizedManifest()
+
+	liveDocs := fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+
+	dry := liveDocs
+	dry.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not touch the workload")
+
+		return nil, nil
+	}
+	dry.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not roll anything")
+
+		return nil, nil
+	}
+
+	install(t, dry)
+
+	dryResult, dryStderr, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionUpdated, dryResult.Action, "the dry run's action is the plan's own")
+	assert.Contains(t, dryStderr, "+ containerGroups[default].containers[vllm-server].resourceAllocation.memory: 24GB")
+
+	// The wet leg runs the same plan far enough to act: the resize is
+	// requested, and --detach stops there so the leg needs no wait wiring.
+	var resized bool
+
+	wet := liveDocs
+	wet.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		resized = true
+
+		return nil, nil
+	}
+
+	install(t, wet)
+
+	_, wetStderr, err := runIn(t, sized, Options{NonInteractive: true, Diff: true, Detach: true})
+	require.NoError(t, err)
+	assert.True(t, resized, "the wet leg has to reach the mutation for the comparison to mean anything")
+
+	assert.True(t, strings.HasPrefix(wetStderr, dryStderr),
+		"the wet run must print the identical diff body before its progress;\ndry: %q\nwet: %q", dryStderr, wetStderr)
+}
+
+// TestRun_PlanJSONDiffIsTheSameDryAndWet is that equivalence for the machine
+// envelope: the diff section is computed from the pre-apply plan, so the dry
+// preview and the run that follows it hand a consumer the same changes and
+// the same unmanaged paths, in the same order. The action differs between
+// the two; the section must not, or a script diffing the two envelopes would
+// read drift into a deploy that fixed it.
+func TestRun_PlanJSONDiffIsTheSameDryAndWet(t *testing.T) {
+	sized := resizedManifest()
+
+	liveDocs := fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+
+	dry := liveDocs
+	dry.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not touch the workload")
+
+		return nil, nil
+	}
+	dry.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+		t.Fatal("a dry run must not roll anything")
+
+		return nil, nil
+	}
+
+	install(t, dry)
+
+	dryResult, _, err := runIn(t, sized, Options{NonInteractive: true, DryRun: true, Diff: true})
+	require.NoError(t, err)
+
+	dryDiff := dryResult.Plan.JSONWithDiff().Diff
+	require.NotNil(t, dryDiff)
+	require.NotEmpty(t, dryDiff.Changes,
+		"the fixture has to move something for the comparison to mean anything")
+
+	var resized bool
+
+	wet := liveDocs
+	wet.settings = func(string, json.RawMessage) (*workload.Replacement, error) {
+		resized = true
+
+		return nil, nil
+	}
+
+	install(t, wet)
+
+	wetResult, _, err := runIn(t, sized, Options{NonInteractive: true, Diff: true, Detach: true})
+	require.NoError(t, err)
+	assert.True(t, resized, "the wet leg has to reach the mutation for the comparison to mean anything")
+
+	assert.Equal(t, dryDiff, wetResult.Plan.JSONWithDiff().Diff)
 }
 
 // TestRun_AlreadyUpToDate exits without touching anything, which is what
@@ -383,6 +839,108 @@ func TestRun_AlreadyUpToDate(t *testing.T) {
 
 	assert.Equal(t, ActionUnchanged, result.Action)
 	assert.Contains(t, stderr, "Already up to date")
+}
+
+// --promote is about the end state, not about what this run changed, so a run
+// that finds nothing to do still has to make the serving artifact permanent.
+// Returning early on an empty plan printed "Already up to date" and exited 0
+// having locked nothing, which silently broke the sequence the draft warning
+// asks for: deploy, read the warning, promote. By then the plan is always
+// empty. The workload's promote route is what locks in place: it locks what
+// the workload serves, so there is no artifact id to get wrong.
+func TestRun_PromoteWithNothingToDoStillPromotes(t *testing.T) {
+	promoted := ""
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock:      neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			promoted = id
+
+			return &workload.Workload{ID: id}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", promoted, "the workload that is serving is the one promoted")
+	assert.True(t, result.Locked)
+}
+
+// neverLocks fails the test if the artifact lock route is used: an in-place
+// promotion goes through the workload, and only a roll locks a candidate.
+func neverLocks(t *testing.T) func(string) (*workload.Artifact, error) {
+	return func(id string) (*workload.Artifact, error) {
+		t.Fatalf("artifact %s was locked through the artifact route; an in-place promotion uses the workload's", id)
+
+		return nil, nil
+	}
+}
+
+// The lock a `--promote` run takes on an empty plan lands on whatever Look read as
+// serving, and a rollout in flight is about to move the workload off exactly
+// that artifact. Locking cannot be undone, so a lost race would leave the
+// outgoing version permanent and the rollout unable to complete. deployable
+// cannot catch it: the workload reports itself running for the whole of a swap.
+//
+// A swap that starts after the pre-plan read is a concurrent deploy; waiting
+// would take a one-way lock on a stale plan, so it is refused.
+func TestRun_LockWithNothingToDoRefusesARolloutThatStartedLate(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		guard: func(workloadID string) error {
+			return fmt.Errorf("workload %s: %w (status switching)",
+				workloadID, workload.ErrReplacementInFlight)
+		},
+		lock: neverLocks(t),
+		promote: func(string) (*workload.Workload, error) {
+			t.Fatal("locking is one-way, so it may not land on a version being rolled off")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a replacement is already in progress")
+}
+
+// The same run without the flag stays as cheap as it was. Locking is one-way,
+// so an empty plan must never take it on its own initiative.
+func TestRun_NothingToDoWithoutLockLocksNothing(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock:      neverLocks(t),
+		promote: func(string) (*workload.Workload, error) {
+			t.Fatal("nothing asked for a promotion")
+
+			return nil, nil
+		},
+		// Recorded rather than left to install's silent no-op. The guard is
+		// justified by not spending a round trip on the quiet path, and this is
+		// the quietest path there is: an empty plan that is not locking has
+		// nothing to guard, so a guard appearing here would be pure cost and
+		// the default fake would hide it.
+		guard: func(string) error {
+			t.Fatal("a run that changes nothing has no rollout to guard against")
+
+			return nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.False(t, result.Locked)
 }
 
 // boundLiveManifest says exactly what the live fixture already says, so the
@@ -427,7 +985,7 @@ func TestRun_CreatesFromAPublishedImage(t *testing.T) {
 
 			return nil
 		},
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 	})
@@ -470,7 +1028,7 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		list: func(int, []string) ([]workload.Workload, error) {
+		list: func(int, int, []string, string) ([]workload.Workload, error) {
 			return []workload.Workload{{ID: "wl-other", Name: "someone-else"}, *running("wl-existing")}, nil
 		},
 		writeID: func(string, string) error {
@@ -478,7 +1036,7 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 
 			return nil
 		},
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("nothing was deployed, so there is nothing to wait for")
 
 			return nil, nil
@@ -499,12 +1057,79 @@ func TestRun_ConflictNamesTheWorkloadThatOwnsTheName(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, httpErr.StatusCode)
 }
 
+// The name-conflict refusal must not recommend the state it is refusing.
+// Told to bind to an errored holder, the next run walks into that state's own
+// refusal — and the user who hand-cleared the binding because their workload
+// was stuck is sent back to the exact line they deleted: a loop.
+func TestRun_ConflictWithADeadHolder(t *testing.T) {
+	cases := []struct {
+		status string
+		want   string
+		not    string
+	}{
+		// Binding advice against a terminated holder is the loop this exists
+		// to break; an errored holder can be deployed onto again, so binding
+		// is the way back rather than a dead end.
+		{workload.WorkloadStatusTerminated, "dr workload delete wl-dead --dir ", "workloadId: wl-dead"},
+		{workload.WorkloadStatusErrored, "workloadId: wl-dead", "dr workload delete"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.status, func(t *testing.T) {
+			install(t, fakes{
+				create: func(any) (*workload.Workload, error) {
+					return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
+				},
+				list: func(int, int, []string, string) ([]workload.Workload, error) {
+					dead := *running("wl-dead")
+					dead.Status = c.status
+
+					return []workload.Workload{dead}, nil
+				},
+			})
+
+			_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), c.want)
+			assert.NotContains(t, err.Error(), c.not)
+		})
+	}
+}
+
+// The errored refusal is for a deploy with nothing new to run, and it names
+// what would be: --force-build for a built image, the platform's reason beside
+// the state, and the delete as the exit for when nothing else works.
+func TestRun_ErroredRefusalNamesTheWayOut(t *testing.T) {
+	f := liveIn(t, workload.WorkloadStatusErrored)
+	f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true}, nil }
+	f.reason = func(string) string { return "vllm-server: ErrImagePull: failed to resolve image: not found" }
+
+	install(t, f)
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "ErrImagePull", "the platform's reason is the fact that decides what to do")
+	assert.Contains(t, err.Error(), "dr workload up --force-build", "a built image can be built again")
+	assert.Contains(t, err.Error(), "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0", "diagnosis first: it may recover")
+	assert.Contains(t, err.Error(), "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0", "and the exit when nothing else works")
+	assert.Contains(t, err.Error(), "clears the binding", "the delete owns the binding, so nobody hand-edits the file")
+
+	assert.Contains(t, stderr, "ErrImagePull", "the plan says it too, which is all a --dry-run shows")
+	assert.Contains(t, stderr, "Nothing below will be applied")
+}
+
 func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		list: func(int, []string) ([]workload.Workload, error) { return nil, errors.New("list unavailable") },
+		list: func(int, int, []string, string) ([]workload.Workload, error) {
+			return nil, errors.New("list unavailable")
+		},
 	})
 
 	_, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
@@ -519,7 +1144,7 @@ func TestRun_ConflictWithNoMatchKeepsTheOriginalError(t *testing.T) {
 func TestRun_DetachSkipsTheWait(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("--detach must not wait")
 
 			return nil, nil
@@ -539,28 +1164,29 @@ func TestRun_LockHappensAfterTheWorkloadServes(t *testing.T) {
 
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			order = append(order, "wait")
 
 			return running("wl-new"), nil
 		},
-		lock: func(id string) (*workload.Artifact, error) {
-			order = append(order, "lock:"+id)
+		lock: neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			order = append(order, "promote:"+id)
 
-			return &workload.Artifact{ID: id}, nil
+			return &workload.Workload{ID: id}, nil
 		},
 	})
 
 	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"wait", "lock:art-1"}, order)
+	assert.Equal(t, []string{"wait", "promote:wl-new"}, order)
 	assert.True(t, result.Locked)
 }
 
 func TestRun_LockIsNotAttemptedWhenTheWorkloadFailed(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			errored := running("wl-new")
 			errored.Status = workload.WorkloadStatusErrored
 
@@ -581,31 +1207,37 @@ func TestRun_LockIsNotAttemptedWhenTheWorkloadFailed(t *testing.T) {
 
 // TestRun_RefusesTheStatesThatCannotTakeADeploy checks each live state gets
 // its own message rather than a generic failure.
+//
+// The settling statuses are not among them any more: a workload still moving is
+// waited out before the plan is built, so it is deployed rather than refused.
 func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 	cases := []struct {
 		status string
 		want   string
 	}{
-		{workload.WorkloadStatusTerminated, "remove workloadId"},
-		{workload.WorkloadStatusErrored, "dr workload logs"},
-		{workload.WorkloadStatusProvisioning, "still settling"},
+		// Errored is refused only with nothing new to deploy: a run that
+		// would put the same failure back.
+		{workload.WorkloadStatusErrored, "nothing here would change what it runs"},
+		{workload.WorkloadStatusTerminated, "dr workload delete"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.status, func(t *testing.T) {
-			install(t, fakes{
-				workloadD: func(string) (workload.Document, error) {
-					return workload.Document{"id": "wl-1", "name": "my-app", "status": c.status}, nil
-				},
-				artifactD: func(string) (workload.Document, error) { return nil, nil },
-				create: func(any) (*workload.Workload, error) {
-					t.Fatal("nothing may be created for a workload in this state")
+			f := liveIn(t, c.status)
+			f.create = func(any) (*workload.Workload, error) {
+				t.Fatal("nothing may be created for a workload in this state")
 
-					return nil, nil
-				},
-			})
+				return nil, nil
+			}
+			f.replace = func(string, string, json.RawMessage) (*workload.Replacement, error) {
+				t.Fatal("nothing may be rolled onto a workload in this state")
 
-			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+				return nil, nil
+			}
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
 
 			_, _, err := runIn(t, bound, Options{NonInteractive: true})
 			require.Error(t, err)
@@ -614,10 +1246,918 @@ func TestRun_RefusesTheStatesThatCannotTakeADeploy(t *testing.T) {
 	}
 }
 
-func TestRun_MissingWorkloadNamesTheRebind(t *testing.T) {
+// The reported dead end: a workload mid-transition used to be refused with
+// "wait for it to finish, then deploy", which is work the command can do
+// itself. It waits, re-reads, and deploys against where the workload landed.
+func TestRun_SettlingWorkloadIsWaitedOutAndThenDeployed(t *testing.T) {
+	var (
+		looks  int
+		waited string
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := stoppedWorkload(t)
+			if looks == 1 {
+				d["status"] = workload.WorkloadStatusProvisioning
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(_ context.Context, id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			waited = id
+
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusStopped}, nil
+		},
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", waited)
+	assert.Equal(t, 2, looks, "the workload is re-read, because a transition can land somewhere new")
+	assert.Equal(t, ActionStarted, result.Action,
+		"the plan is built against where it settled, which here is stopped")
+	assert.Contains(t, stderr, "Waiting for the workload to settle")
+}
+
+// A workload still moving after the wait gave up has not been deployed onto.
+// The message names where it got to, because "still stopping after 30m" is what
+// decides whether to wait longer or go and look at the platform.
+func TestRun_SettlingThatNeverLandsStopsBeforeMutating(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := stoppedWorkload(t)
+			d["status"] = workload.WorkloadStatusStopping
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(_ context.Context, id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusStopping},
+				errors.New("timeout waiting for workload " + id + " after 30m0s")
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("a run that never got a settled state must not have deployed")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was still stopping")
+	assert.Contains(t, err.Error(), "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+
+	// The binding survives the failure. Without it the command prints no JSON
+	// envelope at all, and losing the id is how a deploy becomes unfindable.
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// A workload deleted while the deploy was waiting it out is drift, not a wait
+// that failed. Reporting "did not settle" against an id nothing answers to
+// would send the reader to a status command that 404s, when the answer `up`
+// already has for a workload that is gone is to create one.
+func TestRun_WorkloadDeletedDuringTheWaitIsRecreated(t *testing.T) {
+	var looks int
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+			if looks > 1 {
+				return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+			}
+
+			d := stoppedWorkload(t)
+			d["status"] = workload.WorkloadStatusStopping
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(context.Context, string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, ActionCreated, result.Action)
+}
+
+// --detach is about not waiting for the deploy to serve, and this wait is
+// before the deploy: what to apply cannot be known until the workload stops
+// moving. Blocking is right, blocking in silence is not.
+func TestRun_DetachedRunSaysWhyItIsWaitingToSettle(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(_ context.Context, id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusStopped}, nil
+		},
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+	})
+
+	// stoppedWorkload is read once as stopping so the wait fires, and the
+	// re-read is the stopped fixture the seam above already returns.
+	first := true
+
+	force(t, &getWorkloadDocFn, func(string) (workload.Document, error) {
+		d := stoppedWorkload(t)
+
+		if first {
+			first = false
+			d["status"] = workload.WorkloadStatusStopping
+		}
+
+		return d, nil
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "--detach applies to the deploy")
+}
+
+// A preview must not block for the poll timeout: it changes nothing, so the
+// honest answer is the plan as things stand plus a note that a deploy would
+// wait. The header carries the state, so nothing here reads as settled.
+func TestRun_DryRunOnASettlingWorkloadDoesNotWait(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := stoppedWorkload(t)
+			d["status"] = workload.WorkloadStatusLaunching
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Contains(t, stderr, "settling")
+	assert.Equal(t, "settling", result.Status)
+
+	// The trap this closes: nothing differs from the state as it stands, so the
+	// preview used to claim the deploy would do nothing, while the deploy that
+	// follows waits for the stop to land and then starts the workload.
+	assert.NotContains(t, stderr, "Already up to date")
+}
+
+// The settling exemption in refusal, guarded. A moving workload is waited out
+// before the plan is built, so the only run that reaches a plan still settling
+// is a dry run, which does not wait. Refusing that would contradict the note
+// printed two lines above it, which says a deploy would wait and plan against
+// where the workload lands. deployable keeps its settling branch for the point
+// of action; nothing may ask it here.
+func TestRun_DryRunOnASettlingWorkloadWithDriftIsStillAPreview(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusLaunching
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err, "a preview of a moving workload is early, not wrong")
+
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Contains(t, stderr, "+ artifact")
+	assert.NotContains(t, stderr, "Nothing below will be applied")
+}
+
+// The other half of the settling exemption, and the reason it is keyed on the
+// dry run rather than on the state.
+//
+// awaitSteady ends with a fresh Look, so a workload can be steady when the wait
+// lands and moving again one call later. That run is not a preview: deployable
+// refuses it at the point of action either way, so the plan printed above that
+// refusal has to carry the same disclaimer every other refused state gets.
+// Exempting the state wholesale left this one path announcing work it would not
+// do, which is the defect itself, in one of the two states the report named.
+func TestRun_SettlingOnTheReReadIsRefusedLikeAnyOtherState(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusProvisioning
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		waitSteady: func(_ context.Context, id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			// Steady at the moment the wait lands; the Look that follows
+			// disagrees, which is the race this covers.
+			return &workload.Workload{ID: id, Status: workload.WorkloadStatusRunning}, nil
+		},
+	})
+
+	_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a state a deploy can act on")
+
+	assert.Contains(t, stderr, "Nothing below will be applied",
+		"a real run refused for settling is refused like any other state")
+
+	note := strings.Index(stderr, "Nothing below will be applied")
+	change := strings.Index(stderr, "+ artifact")
+	require.Positive(t, change)
+	assert.Less(t, note, change)
+}
+
+// A workload that dies while the deploy is watching it must not be reported as
+// a success. The deploy now waits transitions out, so a workload that settles
+// into errored is one this run had a front-row seat to, and the file matching
+// it field for field is not a reason to print a green tick over the wreckage.
+func TestRun_SettlingIntoErroredIsNotReportedAsUpToDate(t *testing.T) {
+	for _, status := range []string{workload.WorkloadStatusErrored, workload.WorkloadStatusTerminated} {
+		t.Run(status, func(t *testing.T) {
+			var looks int
+
+			install(t, fakes{
+				workloadD: func(string) (workload.Document, error) {
+					looks++
+
+					d := doc(t, liveWorkloadJSON)
+					d["status"] = status
+
+					if looks == 1 {
+						d["status"] = workload.WorkloadStatusProvisioning
+					}
+
+					return d, nil
+				},
+				artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+				waitSteady: func(_ context.Context, id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+					return &workload.Workload{ID: id, Status: status}, nil
+				},
+			})
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+			require.Error(t, err, "a broken workload is not a successful deploy")
+			assert.NotContains(t, stderr, "Already up to date")
+			assert.Contains(t, stderr, status, "the plan says what it found before the error explains it")
+		})
+	}
+}
+
+// The fixture carries drift on the first read and none on the second: the swap
+// in flight is what closed the gap, so the deploy has nothing left to do.
+func TestRun_RolloutInFlightIsWaitedOutAndThenDeployed(t *testing.T) {
+	var (
+		artifacts int
+		waitedFor string
+		seeded    *workload.Replacement
+	)
+
+	active := &workload.Replacement{
+		ID: "rep-1", WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0",
+		ArtifactID: "68a0000000000000000000a2", Status: "switching",
+	}
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) {
+			artifacts++
+
+			d := doc(t, liveArtifactJSON)
+			if artifacts == 1 {
+				// Drift only the first read sees: a port the file does not name.
+				group := d["spec"].(map[string]any)["containerGroups"].([]any)[0].(map[string]any)
+				group["containers"].([]any)[0].(map[string]any)["port"] = float64(8001)
+			}
+
+			return d, nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) { return active, nil },
+		waitReplace: func(_ context.Context, id string, started *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			waitedFor, seeded = id, started
+
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+		replace: func(string, string, json.RawMessage) (*workload.Replacement, error) {
+			t.Fatal("the swap already in flight is what closed the gap; nothing was left to roll")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", waitedFor)
+	assert.Same(t, active, seeded,
+		"the record just read is the seed, so the wait can tell a rollout that finished early "+
+			"from one that was never there")
+	assert.Equal(t, 2, artifacts, "the workload is re-read, because a swap lands somewhere new")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"the plan is built against where the swap landed, and the swap is what closed the gap")
+
+	assert.Contains(t, stderr, "is being replaced")
+	assert.Contains(t, stderr, "68a0000000000000000000a2", "the note names what is being rolled on")
+	assert.Contains(t, stderr, "switching")
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+}
+
+// A failed rollout never promotes, so the workload is still deployable; the run
+// says what it saw and carries on.
+func TestRun_RolloutThatEndsFailedIsNotedAndTheRunContinues(t *testing.T) {
+	var started string
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(_ context.Context, id string, _ *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusFailed, Message: "candidate never became healthy"},
+				errors.New("replacement for workload " + id + " ended with status failed")
+		},
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			started = id
+
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err, "a rollout somebody else lost is not this deploy's failure")
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", started, "the run went on to do what the file asked")
+	assert.Equal(t, ActionStarted, result.Action)
+	assert.Contains(t, stderr, "ended as failed (candidate never became healthy)")
+	assert.Contains(t, stderr, "still on the version it was")
+}
+
+// A rollout still going when the wait gave up has not been deployed onto. The
+// message names where it got to, because "still switching after 30m" is what
+// decides whether to wait longer or go and look at the platform.
+func TestRun_RolloutThatNeverLandsStopsBeforeMutating(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(_ context.Context, id string, _ *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"},
+				errors.New("timeout waiting for replacement on workload " + id + " after 30m0s")
+		},
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("a run that never got a settled state must not have changed anything")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was still switching")
+	assert.Contains(t, err.Error(), "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
+
+	// The binding survives the failure, for the same reason it does when a
+	// workload never settles: losing the id is how a deploy becomes unfindable.
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
+}
+
+// A read that cannot answer is not a rollout. The two want different words: one
+// is a state to wait out, the other is a question that did not get asked.
+func TestRun_UnreadableRolloutStateStopsTheRun(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return nil, errors.New("500 Internal Server Error")
+		},
+		start: func(string) (*workload.WorkloadOperationResponse, error) {
+			t.Fatal("a run that could not read the rollout state must not have changed anything")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot tell whether")
+}
+
+// A preview must not block for the poll timeout. It changes nothing, so the
+// honest answer is the plan as things stand plus a note that a deploy would
+// wait: the same bargain a settling workload gets.
+func TestRun_DryRunWithARolloutInFlightDoesNotWait(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			t.Fatal("a preview must not block for the poll timeout")
+
+			return nil, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "is being replaced")
+	assert.Contains(t, stderr, "A deploy would wait for this rollout to finish")
+
+	// One wait pending, one sentence about it. The settling state this preview
+	// leaves behind is synthetic — awaitReplaced put it there so an empty plan
+	// is not called up to date — so awaitSteady must not read it as a second
+	// transition and print its own near-identical hint underneath.
+	assert.Equal(t, 1, strings.Count(stderr, "plan against where it lands"))
+}
+
+// --detach is about not waiting for the deploy to serve, and this wait comes
+// before the deploy: what to apply cannot be known until the swap lands.
+// Blocking is right, blocking in silence is not.
+func TestRun_DetachedRunSaysWhyItIsWaitingForTheRollout(t *testing.T) {
+	waited := 0
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			waited++
+
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, Detach: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "--detach applies to the deploy")
+	assert.Equal(t, 1, waited, "the hint is about a wait that actually happens")
+}
+
+// The two waits before the plan share one --poll-timeout: what the rollout
+// wait spent is taken off the budget the settling wait gets.
+func TestRun_RolloutAndSettleWaitsShareTheTimeout(t *testing.T) {
+	var (
+		looks   int
+		steadyT time.Duration
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := doc(t, liveWorkloadJSON)
+			if looks > 1 {
+				d["status"] = workload.WorkloadStatusProvisioning // the swap left it coming up
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			time.Sleep(2 * time.Millisecond)
+
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+		waitSteady: func(_ context.Context, id string, _, timeout time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			steadyT = timeout
+
+			return running(id), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true, PollTimeout: 10 * time.Minute})
+	require.NoError(t, err)
+	assert.Positive(t, steadyT)
+	assert.Less(t, steadyT, 10*time.Minute-time.Millisecond, "the second wait gets what the first left")
+}
+
+// A preview during a rollout keeps the verdict the plan exists to report: an
+// errored workload is still reported as errored, not as settling.
+func TestRun_DryRunDuringARolloutKeepsAnErroredVerdict(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusErrored
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err, "the swap decides the verdict; a preview reports the state and refuses nothing")
+	assert.Contains(t, stderr, "is being replaced")
+	assert.Contains(t, stderr, "errored")
+	assert.NotContains(t, stderr, "Already up to date")
+	assert.NotEqual(t, "settling", result.Status)
+}
+
+// The usual way a broken workload gets fixed: a rollout is already carrying
+// the fix when up runs. The run waits it out, re-reads, and plans against the
+// workload the swap left running.
+func TestRun_ErroredWorkloadWithARolloutInFlightIsReadAgainAfterIt(t *testing.T) {
+	reads := 0
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			reads++
+
+			d := doc(t, liveWorkloadJSON)
+			if reads == 1 {
+				d["status"] = workload.WorkloadStatusErrored
+			}
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, reads, "re-read after the swap landed")
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+	assert.Contains(t, stderr, "Already up to date")
+	assert.Equal(t, "running", result.Status)
+}
+
+// A --promote run that arrives mid-swap waits it out and locks whatever the swap
+// left serving. Locking is one-way, so the pre-swap read must not be locked.
+func TestRun_LockWaitsOutARolloutThatWasAlreadyInFlight(t *testing.T) {
+	var (
+		locked    string
+		artifacts int
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) {
+			artifacts++
+
+			return draftArtifact(t), nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "switching"}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: workload.ReplacementStatusCompleted}, nil
+		},
+		lock: neverLocks(t),
+		promote: func(workloadID string) (*workload.Workload, error) {
+			assert.Equal(t, 2, artifacts,
+				"the lock is one-way, so it lands on what the swap left serving, not on the pre-swap read")
+
+			locked = workloadID
+
+			return &workload.Workload{ID: workloadID}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", locked)
+	assert.True(t, result.Locked)
+	assert.Contains(t, stderr, "Waiting for the rollout already in progress")
+}
+
+// The swap lands between the workload read and the replacement read, so there
+// is nothing to wait for, but the snapshot in hand names the outgoing artifact.
+// Without the re-read, --promote would make that version permanent.
+func TestRun_SwapThatLandsBeforeTheRolloutReadIsStillReRead(t *testing.T) {
+	const (
+		outgoing = "68a0000000000000000000a1"
+		incoming = "68a0000000000000000000b2"
+	)
+
+	var (
+		looks  int
+		locked string
+	)
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			d := doc(t, liveWorkloadJSON)
+			if looks > 1 {
+				// The swap has landed by the time anything re-reads.
+				d["artifactId"] = incoming
+			}
+
+			return d, nil
+		},
+		artifactD: func(id string) (workload.Document, error) {
+			d := draftArtifact(t)
+			d["id"] = id
+
+			return d, nil
+		},
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{
+				ID: "rep-1", ArtifactID: incoming, Status: workload.ReplacementStatusCompleted,
+			}, nil
+		},
+		waitReplace: func(context.Context, string, *workload.Replacement, time.Duration, time.Duration,
+			func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			t.Fatal("a settled record is nothing to wait for")
+
+			return nil, nil
+		},
+		lock: neverLocks(t),
+		promote: func(workloadID string) (*workload.Workload, error) {
+			locked = workloadID
+
+			return &workload.Workload{ID: workloadID}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, looks, "a terminal record means a swap landed, so the snapshot is re-read")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", locked)
+	assert.Equal(t, incoming, result.ArtifactID,
+		"the re-read is what names the version the promotion made permanent")
+}
+
+// A record that says nothing is in flight is no evidence a swap just happened,
+// so the quiet path stays one workload read. Without this the fix above would
+// double the read on every deploy to close a window it cannot see anyway.
+func TestRun_NoRolloutRecordCostsNoSecondRead(t *testing.T) {
+	var looks int
+
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			looks++
+
+			return doc(t, liveWorkloadJSON), nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	_, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, 1, looks, "nothing in flight is nothing to re-read")
+}
+
+// The fixture matches the live state field for field, so the plan is empty;
+// "Already up to date" beneath "a deploy would wait" would contradict itself.
+func TestRun_DryRunDuringARolloutDoesNotClaimUpToDate(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", ArtifactID: "68a0…b2", Status: "promoting"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.NotContains(t, stderr, "Already up to date",
+		"the swap decides what differs, and it has not landed")
+	assert.Contains(t, stderr, "still settling")
+	assert.Contains(t, stderr, "plan against where it lands")
+	assert.Equal(t, "settling", result.Status,
+		"the envelope reports the state, and a workload mid-swap is not settled")
+}
+
+// A replacement onto a stopped workload is what starts it, so a preview taken
+// mid-swap must not promise a start the deploy will find already done.
+func TestRun_DryRunDuringARolloutOnAStoppedWorkloadDoesNotPlanAStart(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = workload.WorkloadStatusStopped
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			return &workload.Replacement{ID: "rep-1", Status: "initializing"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "settling", result.Status)
+	assert.NotEqual(t, ActionStarted, result.Action, "the swap starts it; the deploy will not")
+	assert.NotContains(t, stderr, "having been stopped")
+	assert.Contains(t, stderr, "plan against where it lands")
+}
+
+// With no workload to ask about, the replacement route's 404 could mean
+// anything, so it is not asked.
+func TestRun_ARunWithNoLiveWorkloadNeverAsksAboutARollout(t *testing.T) {
+	install(t, fakes{
+		activeReplacement: func(string) (*workload.Replacement, error) {
+			t.Fatal("there is no workload to be replaced")
+
+			return nil, nil
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			return running(id), nil
+		},
+	})
+
+	result, _, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Equal(t, ActionCreated, result.Action)
+}
+
+// TestRun_MissingWorkloadIsRecreated is the reported bug: a workload deleted
+// out from under the manifest used to leave the user with a binding only a
+// hand edit could clear. It is drift, so the deploy recreates and rebinds.
+func TestRun_MissingWorkloadIsRecreated(t *testing.T) {
+	var writtenID string
+
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(_, id string) error {
+			writtenID = id
+
+			return nil
+		},
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, "wl-new", result.WorkloadID)
+	assert.Equal(t, ActionCreated, result.Action)
+	assert.Equal(t, "wl-new", writtenID, "the stale binding is replaced, not left for the user")
+}
+
+// TestRun_MissingWorkloadNamesTheDeadBinding: recreating is right when the
+// workload was deleted and wrong when the run is pointed at an instance that
+// never had it. `up` cannot tell those apart from a 404, and it applies
+// without confirming, so naming the id it could not find is the only warning
+// the wrong-instance case gets.
+func TestRun_MissingWorkloadNamesTheDeadBinding(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(string, string) error { return nil },
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "no longer exists")
+	assert.Contains(t, stderr, "68b0c1d2", "the dead id is what tells a deletion from a wrong endpoint")
+}
+
+// TestRun_FailedRecreateReportsNoWorkloadID: a create that fails leaves
+// nothing behind, and the id the file was bound to answers to nothing either.
+// Reporting it in the envelope would hand a caller an id whose only use is a
+// 404.
+func TestRun_FailedRecreateReportsNoWorkloadID(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) {
+			return nil, errors.New("platform said no")
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Empty(t, result.WorkloadID, "the dead binding is not this run's workload")
+}
+
+// TestRun_TerminatedWorkloadIsRefused: terminated looks like missing from the
+// file's side and is not. The workload still exists, still holds its name and
+// still owns its artifact, so a create would collide with it, and every line a
+// create plan prints about it would be false. The message names the one thing
+// that clears the way.
+func TestRun_TerminatedWorkloadIsRefused(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return workload.Document{
+				"id": "68b0c1d2e3f4a5b6c7d8e9f0", "name": "my-app",
+				"status": workload.WorkloadStatusTerminated,
+			}, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return nil, nil },
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("a terminated workload still owns its name; creating over it collides")
+
+			return nil, nil
 		},
 	})
 
@@ -625,8 +2165,133 @@ func TestRun_MissingWorkloadNamesTheRebind(t *testing.T) {
 
 	_, _, err := runIn(t, bound, Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--workload-id")
-	assert.Contains(t, err.Error(), "remove workloadId")
+
+	assert.Contains(t, err.Error(), "terminated")
+	assert.Contains(t, err.Error(), "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0",
+		"the remedy has to be one that works, and deleting it also clears the binding")
+}
+
+// A refusal must not have announced a create, because nothing is being
+// created and the name it would print is the dead workload's.
+func TestRun_TerminatedWorkloadDoesNotAnnounceACreate(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return workload.Document{
+				"id": "68b0c1d2e3f4a5b6c7d8e9f0", "name": "old-name",
+				"status": workload.WorkloadStatusTerminated,
+			}, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return nil, nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	_, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.NotContains(t, stderr, "will be created")
+	assert.NotContains(t, stderr, "no longer exists", "it does still exist")
+}
+
+// liveIn is the live pair for a workload the platform reports in status,
+// still holding its name and its artifact.
+func liveIn(t *testing.T, status string) fakes {
+	t.Helper()
+
+	return fakes{
+		workloadD: func(string) (workload.Document, error) {
+			d := doc(t, liveWorkloadJSON)
+			d["status"] = status
+
+			return d, nil
+		},
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	}
+}
+
+// driftedManifest is boundLiveManifest with one port moved, which is enough to
+// make the plan want a new version.
+func driftedManifest() string {
+	return "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
+		strings.Replace(boundLiveManifest, "port: 8000", "port: 9000", 1)
+}
+
+// TestRun_RefusedStateDescribesItsDriftRatherThanAnnouncingIt is the reported
+// bug. The plan was rendered before the apply path ever asked whether the state
+// could take one, so a refusal printed a full announcement of a rollout and
+// only disowned it on the last line.
+//
+// The drift itself stays: someone who has just been told the workload cannot
+// take a deploy is usually about to ask what the deploy would have been. What
+// changes is that the block says so before the reader gets to it.
+//
+// Both refusals a drifted file can meet are driven: they differ in the remedy
+// they name and in how they reach deployable. Errored is not among them any
+// more, because drift is exactly what lets a deploy act on it.
+func TestRun_RefusedStateDescribesItsDriftRatherThanAnnouncingIt(t *testing.T) {
+	cases := []struct {
+		status string
+		want   string
+	}{
+		{workload.WorkloadStatusTerminated, "dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0"},
+
+		// Suspended reaches the refusal by its own route, through
+		// deployable's stopped branch and into startable, and is the one
+		// refused status whose State is shared with a state that deploys
+		// perfectly well. A note that keyed off the state rather than the
+		// answer would go missing here and nowhere else.
+		{workload.WorkloadStatusSuspended, "suspended"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.status, func(t *testing.T) {
+			install(t, liveIn(t, c.status))
+
+			_, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.want)
+
+			assert.Contains(t, stderr, "Nothing below will be applied")
+			assert.Contains(t, stderr, "+ artifact",
+				"the drift is still worth reading; only its framing changes")
+
+			note := strings.Index(stderr, "Nothing below will be applied")
+			change := strings.Index(stderr, "+ artifact")
+			require.Positive(t, change)
+			assert.Less(t, note, change, "the disclaimer has to come before the work it disclaims")
+		})
+	}
+}
+
+// A deploy that is going to happen says nothing about not happening, which is
+// the whole of what makes the note mean anything.
+func TestRun_AnAppliedPlanIsStillAnnounced(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+	})
+
+	_, stderr, err := runIn(t, unboundImageManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.NotContains(t, stderr, "Nothing below will be applied")
+}
+
+// A --dry-run onto a refused state is a failure rather than a preview. The
+// question the flag asks is "what would this deploy", and the honest answer is
+// that it would be turned away, which a CI job has to be able to see in the
+// exit code. The plan is still printed, disclaimed, so the answer is not just
+// the refusal.
+func TestRun_RefusedDryRunIsAFailureNotAPreview(t *testing.T) {
+	install(t, liveIn(t, workload.WorkloadStatusTerminated))
+
+	result, stderr, err := runIn(t, driftedManifest(), Options{NonInteractive: true, DryRun: true})
+	require.Error(t, err)
+
+	assert.Contains(t, stderr, "Nothing below will be applied")
+	assert.Contains(t, stderr, "+ artifact")
+	assert.Equal(t, ActionUnchanged, result.Action, "a refused run did nothing, including in a preview")
 }
 
 // track records what the build path did, in order, so a test can pin the
@@ -646,6 +2311,13 @@ type track struct {
 	// rolledRuntime is the sizing that travelled with the swap, nil when the
 	// deploy changed only the version.
 	rolledRuntime json.RawMessage
+
+	copiedAs    string
+	updatedSpec json.RawMessage
+
+	// updatedTo is the artifact the spec write went to: the copy on the copy
+	// path, the version serving when it is written to in place.
+	updatedTo string
 }
 
 // wiredBuild is a build path where every step works, over the track that
@@ -677,7 +2349,7 @@ func wiredBuild(tr *track) fakes {
 
 			return &workload.BuildTriggerResponse{BuildIDs: []string{"bld-1"}}, nil
 		},
-		waitBuild: func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		waitBuild: func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 			return &workload.Build{ID: id, Status: workload.BuildStatusCompleted}, nil
 		},
 		create: func(payload any) (*workload.Workload, error) {
@@ -686,7 +2358,7 @@ func wiredBuild(tr *track) fakes {
 
 			return running("wl-1"), nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	}
@@ -747,6 +2419,7 @@ func TestRun_LinkedProjectReusesItsArtifact(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.newArtifact = func(any) (*workload.Artifact, error) {
 		t.Fatal("the project is already linked; a second artifact would orphan the first")
 
@@ -775,10 +2448,11 @@ func TestRun_ConflictOnAReusedArtifactExplainsTheLink(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
-	f.list = func(int, []string) ([]workload.Workload, error) {
+	f.list = func(int, int, []string, string) ([]workload.Workload, error) {
 		return []workload.Workload{{ID: "wl-owner", Name: "someone-else", ArtifactID: "art-existing"}}, nil
 	}
 
@@ -806,11 +2480,12 @@ func TestRun_NameConflictOnALinkedProjectKeepsItsOwnMessage(t *testing.T) {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
 	// Nothing holds the artifact; the name is what collided.
-	f.list = func(int, []string) ([]workload.Workload, error) {
+	f.list = func(int, int, []string, string) ([]workload.Workload, error) {
 		return []workload.Workload{{ID: "wl-1", Name: "my-app", ArtifactID: "art-somewhere-else"}}, nil
 	}
 
@@ -832,7 +2507,7 @@ func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
 	f.create = func(any) (*workload.Workload, error) {
 		return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 	}
-	f.list = func(int, []string) ([]workload.Workload, error) { return nil, nil }
+	f.list = func(int, int, []string, string) ([]workload.Workload, error) { return nil, nil }
 
 	install(t, f)
 
@@ -841,26 +2516,114 @@ func TestRun_ConflictOnAFreshArtifactIsNotBlamedOnTheLink(t *testing.T) {
 	assert.NotContains(t, err.Error(), "only one workload per draft artifact")
 }
 
-// A locked artifact can take neither code nor an image, so the deploy stops
-// before the sync rather than failing halfway through with the platform's
-// 403, which says nothing about what to do next.
-func TestRun_LockedArtifactStopsBeforeThePush(t *testing.T) {
+// lockedLink is a project pointed at an artifact that has since been locked,
+// which is what a deploy that locked its own artifact leaves behind. The
+// repository is the lineage the replacement has to join.
+func lockedLink(f fakes, tr *track) fakes {
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-locked")
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{
+			ID: id, Status: workload.ArtifactStatusLocked, ArtifactRepositoryID: "repo-1",
+		}, nil
+	}
+	// The same artifact as the server sends it. One read answers the lock, the
+	// lineage and the spec, so the document is what the deploy actually reads.
+	f.artifactD = func(id string) (workload.Document, error) {
+		return workload.Document{
+			"id":                   id,
+			"status":               workload.ArtifactStatusLocked,
+			"artifactRepositoryId": "repo-1",
+			"type":                 "service",
+		}, nil
+	}
+	f.save = relinkStep(tr)
+
+	return f
+}
+
+// A locked artifact can take neither code nor an image, and locking cannot be
+// undone, so the deploy makes the version the lock made necessary rather than
+// refusing. The link moves with it, which is what keeps the catalog and the
+// last-synced version: telling the reader to delete the state directory works
+// too, and costs a full re-upload of a tree the platform already holds.
+func TestRun_LockedLinkIsRedrafted(t *testing.T) {
+	var tr track
+
+	install(t, lockedLink(wiredBuild(&tr), &tr))
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t,
+		[]string{"create-artifact", "relink", "sync", "build", "create-workload"}, tr.steps)
+	assert.Equal(t, "art-1", tr.savedCfg.ArtifactID, "the project has to push at the version that can take code")
+	require.NotNil(t, tr.savedCfg.CatalogID, "the code store has to survive the redraft")
+	assert.Equal(t, "cat1", *tr.savedCfg.CatalogID,
+		"the code store survives the redraft, or the next sync re-uploads the whole tree")
+
+	// The replacement joins the lineage it replaces. Without the repository the
+	// Registry grows a second entry under the same name on every lock, and the
+	// workload's versions stop reading as versions of one thing.
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1")
+
+	// The whole point is which artifact the rest of the run targets. Step names
+	// alone would stay identical if the build and the create kept using the
+	// locked id, which is the one outcome this must never produce.
+	workloadIn, ok := tr.workloadIn.(json.RawMessage)
+	require.True(t, ok)
+	assert.Contains(t, string(workloadIn), "art-1")
+	assert.NotContains(t, string(workloadIn), "art-locked")
+}
+
+// The tree was already synced into the artifact that got locked, so the sync
+// onto its replacement can have nothing to upload, and the new version would
+// go to the builder with no code reference at all. The code the locked one
+// was running is carried across instead.
+func TestRun_RedraftedArtifactInheritsTheSyncedCode(t *testing.T) {
+	var tr track
+
+	f := lockedLink(wiredBuild(&tr), &tr)
+	f.sync = emptySync(&tr)
+	f.codeRef = carryCodeStep(&tr)
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"art-1", "cat1", "ver1"}, tr.carried)
+	assert.Contains(t, tr.steps, "carry-code")
+}
+
+// A first deploy whose sync uploaded nothing has no code anywhere: not on the
+// artifact, and not in a previous version to carry over. Building it would ask
+// the platform to make an image out of nothing and fail minutes later saying
+// so in its own words, so the run stops here and says which directory it
+// looked in.
+func TestRun_FirstDeployWithNothingToUploadStopsBeforeTheBuild(t *testing.T) {
 	var tr track
 
 	f := wiredBuild(&tr)
-	f.linked = func(string) bool { return true }
-	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-locked"}, nil }
-	f.getArtifact = func(id string) (*workload.Artifact, error) {
-		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+	f.sync = emptySync(&tr)
+
+	// What the link this run just wrote holds: an artifact and nothing else,
+	// because no sync has ever produced a version to record.
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-1"}, nil }
+	f.codeRef = func(string, string, string) error {
+		t.Fatal("a first deploy has no earlier version whose code it could carry over")
+
+		return nil
 	}
 
 	install(t, f)
 
 	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "art-locked")
-	assert.Contains(t, err.Error(), "locked")
-	assert.Empty(t, tr.steps, "nothing may be pushed at an artifact that cannot accept it")
+	assert.Contains(t, err.Error(), "nothing to build")
+	assert.NotContains(t, tr.steps, "build", "an artifact with no code must not reach the builder")
 }
 
 // The artifact exists and only the local record of it failed to write, which
@@ -881,6 +2644,34 @@ func TestRun_LinkFailureNamesTheStrandedArtifact(t *testing.T) {
 	assert.NotContains(t, tr.steps, "sync")
 }
 
+// The other half of the same accident, on a directory that is already linked,
+// which is what every roll and every redraft is. The advice has to differ:
+// 'dr artifact code init' refuses a directory holding state, so naming it here
+// would send the reader in a circle, and deleting the state to force it would
+// throw away the catalog the redraft exists to keep. The artifact id still has
+// to reach the envelope, or a run that stranded one reports none.
+func TestRun_RelinkFailureNamesTheFileToEditInstead(t *testing.T) {
+	var tr track
+
+	f := lockedLink(wiredBuild(&tr), &tr)
+	f.save = func(string, wapi.Config) error { return errors.New("permission denied") }
+
+	install(t, f)
+
+	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-1", "the stranded artifact has to be named")
+	assert.Contains(t, err.Error(), "artifactId")
+	assert.Contains(t, err.Error(), "config.json")
+	assert.NotContains(t, err.Error(), "dr artifact code init",
+		"that command refuses a directory that already has state")
+
+	assert.Equal(t, "art-1", result.ArtifactID,
+		"a run that created an artifact and then stranded it still has to report which")
+	assert.NotContains(t, tr.steps, "sync", "nothing may be pushed once the link is unknown")
+}
+
 // A build that fails is the end of the deploy. Creating the workload anyway
 // would produce something that cannot start, and the message points at the
 // logs that say why rather than repeating that it failed.
@@ -891,18 +2682,119 @@ func TestRun_FailedBuildStopsAndNamesTheLogs(t *testing.T) {
 	// WaitForBuild's own contract: on a terminal error status it returns the
 	// build and an error together. Stubbing a nil error here would test a
 	// wait that does not exist and hide the id being dropped.
-	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+
+	f.hasLogs = func(string, string) workload.LogEvidence { return workload.LogsCaptured }
+
+	install(t, f)
+
+	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 bld-1'")
+	assert.NotContains(t, tr.steps, "create-workload")
+	assert.Equal(t, "bld-1", result.BuildID, "a failed build is still the build to go and read")
+}
+
+// Lines the stream already printed are the evidence, so the probe is never
+// asked when the tail emitted something.
+func TestRun_FailedBuildWhoseStreamSpokeSkipsTheProbe(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, onTick func(*workload.Build)) (*workload.Build, error) {
+		onTick(&workload.Build{ID: id, Status: workload.BuildStatusInProgress})
+
+		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
+			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+	f.hasLogs = func(string, string) workload.LogEvidence {
+		t.Fatal("the stream printed lines, so nothing is left to ask")
+
+		return workload.LogsUnknown
+	}
+
+	install(t, f)
+
+	force(t, &newBuildLogTailFn, func(_, _ string, onLine func(workload.WorkloadLogEntry), onWarn func(string)) *workload.BuildLogTail {
+		return workload.NewBuildLogTailFetching(func(int, string, string, string) ([]workload.WorkloadLogEntry, error) {
+			return []workload.WorkloadLogEntry{{Timestamp: "2026-10-02T10:00:00Z", Level: "error", Message: "step 3 exited 1"}}, nil
+		}, onLine, onWarn)
+	})
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 bld-1'")
+	assert.Contains(t, stderr, "step 3 exited 1")
+}
+
+// A build that fails faster than its log is ingested ends the wait with
+// nothing streamed. The phase reads on until the builder's closing line
+// lands, so the cause is in the failed phase rather than only in a command
+// the user has to run next.
+func TestRun_FailedBuildReadsUntilItsLastLines(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, onTick func(*workload.Build)) (*workload.Build, error) {
+		failed := &workload.Build{ID: id, Status: workload.BuildStatusFailed}
+		onTick(failed)
+
+		return failed, fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
+	}
+	f.hasLogs = func(string, string) workload.LogEvidence {
+		t.Fatal("the stream printed lines, so nothing is left to ask")
+
+		return workload.LogsUnknown
+	}
+
+	install(t, f)
+
+	force(t, &buildLogSettleBudget, time.Minute)
+	force(t, &newBuildLogTailFn, func(_, _ string, onLine func(workload.WorkloadLogEntry), onWarn func(string)) *workload.BuildLogTail {
+		reads := 0
+
+		return workload.NewBuildLogTailFetching(func(int, string, string, string) ([]workload.WorkloadLogEntry, error) {
+			if reads++; reads <= 3 {
+				return nil, nil
+			}
+
+			return []workload.WorkloadLogEntry{
+				{Timestamp: "2026-10-02T10:00:03Z", Level: "info", Message: "Image build FAILED in 3.069211 seconds."},
+				{Timestamp: "2026-10-02T10:00:02Z", Level: "error", Message: "failed to solve: exit code: 7"},
+			}, nil
+		}, onLine, onWarn)
+	})
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, PollInterval: time.Millisecond})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 bld-1'")
+	assert.Contains(t, stderr, "waiting up to a minute for its last log lines")
+	assert.Contains(t, stderr, "failed to solve: exit code: 7")
+	assert.Contains(t, stderr, "Image build FAILED in 3.069211 seconds.")
+}
+
+// A build that died before the builder wrote anything is not sent to a logs
+// command that prints nothing; the error says no lines exist yet, and where
+// to look if they arrive.
+func TestRun_FailedBuildWithNoLogsSaysSo(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusFailed},
 			fmt.Errorf("build %s ended with status %s", id, workload.BuildStatusFailed)
 	}
 
 	install(t, f)
 
-	result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no log lines have been captured for it yet")
 	assert.Contains(t, err.Error(), "dr artifact build logs art-1 bld-1")
-	assert.NotContains(t, tr.steps, "create-workload")
-	assert.Equal(t, "bld-1", result.BuildID, "a failed build is still the build to go and read")
+	assert.NotContains(t, err.Error(), "see '")
 }
 
 // A wait that runs out returns the build it was still watching, and that id
@@ -911,7 +2803,7 @@ func TestRun_TimedOutBuildKeepsItsID(t *testing.T) {
 	var tr track
 
 	f := wiredBuild(&tr)
-	f.waitBuild = func(_, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
+	f.waitBuild = func(_ context.Context, _, id string, _, _ time.Duration, _ func(*workload.Build)) (*workload.Build, error) {
 		return &workload.Build{ID: id, Status: workload.BuildStatusInProgress},
 			fmt.Errorf("timeout waiting for build %s", id)
 	}
@@ -931,7 +2823,7 @@ func TestRun_DetachStillWaitsForTheImage(t *testing.T) {
 	var tr track
 
 	f := wiredBuild(&tr)
-	f.wait = func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+	f.wait = func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 		t.Fatal("--detach does not wait for the workload")
 
 		return nil, nil
@@ -952,8 +2844,11 @@ func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
 	var tr track
 
 	f := linkedAndSynced(&tr)
+	f.artifactD = linkedAndBuilt("ver-1")
 	f.builds = func(string, int) ([]workload.Build, error) {
-		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusCompleted}}, nil
+		t.Fatal("the artifact's own build record has answered the question")
+
+		return nil, nil
 	}
 
 	install(t, f)
@@ -963,6 +2858,27 @@ func TestRun_UnchangedTreeWithAnImageSkipsTheBuild(t *testing.T) {
 
 	assert.Equal(t, []string{"sync", "create-workload"}, tr.steps)
 	assert.Contains(t, stderr, "Image is up to date")
+}
+
+// The image on the artifact was built from code it has since moved past, which
+// is what a sync into it after the build leaves. A completed build in its
+// history used to be enough to skip, and the deploy then ran the older code.
+func TestRun_UnchangedTreeWithAnOlderImageStillBuilds(t *testing.T) {
+	var tr track
+
+	f := linkedAndSynced(&tr)
+	f.artifactD = linkedAndBuilt("ver-0")
+	f.builds = func(string, int) ([]workload.Build, error) {
+		return []workload.Build{{ID: "bld-0", Status: workload.BuildStatusCompleted}}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"sync", "build", "create-workload"}, tr.steps)
+	assert.NotContains(t, stderr, "Image is up to date")
 }
 
 // The same run where the previous attempt never got as far as an image. The
@@ -1017,6 +2933,7 @@ func linkedAndSynced(tr *track) fakes {
 	f.getArtifact = func(id string) (*workload.Artifact, error) {
 		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 	}
+	f.artifactD = linkedArtifactDoc
 	f.sync = func(string) (*sync.Result, error) {
 		tr.steps = append(tr.steps, "sync")
 
@@ -1024,6 +2941,17 @@ func linkedAndSynced(tr *track) fakes {
 	}
 
 	return f
+}
+
+// linkedAndBuilt is linkedArtifactDoc pointing at ver-1, with the platform's
+// record of a completed build of builtFrom.
+func linkedAndBuilt(builtFrom string) func(string) (workload.Document, error) {
+	return func(id string) (workload.Document, error) {
+		d, err := linkedArtifactDoc(id)
+		stampBuild(workload.PrimaryContainerInDocument(d), "ver-1", builtFrom)
+
+		return d, err
+	}
 }
 
 // A conflict is not a failure, and it cannot be silent either: what was just
@@ -1045,28 +2973,57 @@ func TestRun_SyncConflictsAreReported(t *testing.T) {
 	assert.Contains(t, stderr, "app.py.LOCAL.170")
 }
 
-// A flag that was asked for and did nothing has to say so, or it reads as a
-// rebuild that quietly happened.
-func TestRun_ForceBuildWithNothingToDoSaysSo(t *testing.T) {
-	install(t, fakes{
-		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
-		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
-	})
+// The executable-bit warning rides on the sync result, because the progress
+// display silences the stderr logger while the sync runs.
+func TestRun_SyncExecutableNoticeIsReported(t *testing.T) {
+	var tr track
 
-	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+	f := wiredBuild(&tr)
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
 
-	_, stderr, err := runIn(t, bound, Options{NonInteractive: true, ForceBuild: true})
+		return &sync.Result{UploadedCount: 1, ExecutableNotice: "Image builds do not keep the executable bit yet; start.sh"}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.NoError(t, err)
-	assert.Contains(t, stderr, "--force-build had no effect")
+	assert.Contains(t, stderr, "Warning: Image builds do not keep the executable bit yet; start.sh")
 }
 
-// The quieter half of the same problem: a manifest naming a published image
-// deploys and succeeds, so a --force-build that was never going to build
-// anything leaves nothing to suggest the image is not what the flag implied.
+// Sizing the working tree is the whole of what a --dry-run does, and it is
+// where the engine reads the ignore file, so a preview that stayed silent
+// would be a preview of a different run than the one that follows.
+func TestRun_DryRunReportsTheIgnoreFileNotice(t *testing.T) {
+	const notice = "Using .wapiignore for sync ignore patterns."
+
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.code = func(Loaded, Live) (CodeChange, error) {
+		return CodeChange{Applies: true, FirstDeploy: true, IgnoreNotice: notice}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.NotContains(t, tr.steps, "sync", "a dry run must not sync")
+	assert.Equal(t, 1, strings.Count(stderr, notice))
+}
+
+// A flag that was asked for and did nothing has to say so, or it reads as a
+// rebuild that quietly happened.
+// A manifest naming a published image deploys and succeeds, so a --force-build
+// that was never going to build anything leaves nothing to suggest the image
+// is not what the flag implied. A built project with nothing else to do is no
+// longer the other idle case: the flag is a reason to deploy there now.
 func TestRun_ForceBuildOnAPublishedImageSaysSo(t *testing.T) {
 	install(t, fakes{
 		create: func(any) (*workload.Workload, error) { return running("wl-new"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
 		},
 		build: func(string) (*workload.BuildTriggerResponse, error) {
@@ -1111,8 +3068,11 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 			return running("wl-new"), nil
 		},
 		writeID: func(string, string) error { return nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-new"), nil
+		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
 		},
 	})
 
@@ -1122,6 +3082,51 @@ func TestRun_CreatesFromAnArtifactTheManifestNames(t *testing.T) {
 	assert.NotNil(t, payload)
 	assert.Equal(t, "wl-new", result.WorkloadID)
 	assert.Equal(t, ActionCreated, result.Action)
+	assert.False(t, result.Locked, "the artifact the file names is a draft")
+}
+
+// A create bound to an artifact that is already locked is a promotion: the
+// version is permanent before this run touches anything. Locked comes off the
+// artifact the workload is running, and a create has no workload, so without
+// asking the file's artifact directly the result would call a permanent deploy
+// a draft and the caller would advise locking what cannot be locked twice.
+func TestRun_CreatesFromALockedArtifactReportsItLocked(t *testing.T) {
+	install(t, fakes{
+		create:  func(any) (*workload.Workload, error) { return running("wl-new"), nil },
+		writeID: func(string, string) error { return nil },
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+			return running("wl-new"), nil
+		},
+		getArtifact: func(id string) (*workload.Artifact, error) {
+			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		},
+	})
+
+	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.True(t, result.Locked)
+}
+
+// The read is not optional. The id came out of the committed file, so an
+// artifact that cannot be read is one the create was going to fail on anyway,
+// and failing here costs a plan rather than a half-made workload.
+func TestRun_CreateBoundToAnUnreadableArtifactFails(t *testing.T) {
+	install(t, fakes{
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("nothing may be created once the artifact could not be read")
+
+			return nil, nil
+		},
+		getArtifact: func(string) (*workload.Artifact, error) {
+			return nil, errors.New("boom")
+		},
+	})
+
+	result, _, err := runIn(t, boundArtifactManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already locked")
+	assert.Equal(t, ActionUnchanged, result.Action,
+		"this fails before apply is reached, so the envelope must not report the create the plan wanted")
 }
 
 func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
@@ -1134,6 +3139,18 @@ func TestRun_DryRunOnABuildTrackSucceeds(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err, "planning works on every track even where applying does not")
 	assert.Contains(t, stderr, "uploaded for the first time")
+}
+
+// draftArtifact is the live fixture before anyone locked it. The shared one is
+// locked, which is right for the roll tests and wrong for anything asking what
+// --promote does, since a locked artifact is exactly the case that short-circuits.
+func draftArtifact(t *testing.T) workload.Document {
+	t.Helper()
+
+	d := doc(t, liveArtifactJSON)
+	d["status"] = workload.ArtifactStatusDraft
+
+	return d
 }
 
 // stoppedWorkload is the live fixture, off. Everything else about it still
@@ -1162,7 +3179,7 @@ func TestRun_StartsAStoppedWorkload(t *testing.T) {
 
 			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "queued"}, nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 		create: func(any) (*workload.Workload, error) {
@@ -1183,17 +3200,36 @@ func TestRun_StartsAStoppedWorkload(t *testing.T) {
 	assert.Contains(t, stderr, "Starting workload")
 }
 
-// A plan that asks for more than a start is refused whole. Starting the
-// workload first would bring it up on the version it was stopped on and then
-// report a failure, which leaves the user worse off than refusing did.
-func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
+// The reported dead end: a stopped workload whose file asks for more than a
+// start used to be refused, with a remedy naming two more commands. It is one
+// run now, and the plan says both halves of it out loud.
+func TestRun_StoppedWithDriftStartsAndThenReconciles(t *testing.T) {
+	var order []string
+
 	install(t, fakes{
 		workloadD: func(string) (workload.Document, error) { return stoppedWorkload(t), nil },
 		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
-		start: func(string) (*workload.WorkloadOperationResponse, error) {
-			t.Fatal("a refused plan must not have started anything")
+		start: func(id string) (*workload.WorkloadOperationResponse, error) {
+			order = append(order, "start")
 
-			return nil, nil
+			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
+		},
+		settings: func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+			order = append(order, "settings")
+
+			return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+		},
+		waitReplace: func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
+			_ func(*workload.Replacement),
+		) (*workload.Replacement, error) {
+			started.Status = workload.ReplacementStatusCompleted
+
+			return started, nil
+		},
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+			order = append(order, "wait")
+
+			return running(id), nil
 		},
 	})
 
@@ -1202,10 +3238,14 @@ func TestRun_StoppedWithDriftIsRefusedWithoutStarting(t *testing.T) {
 	drifted := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" +
 		strings.Replace(boundLiveManifest, "cpu: 3", "cpu: 4", 1)
 
-	_, _, err := runIn(t, drifted, Options{NonInteractive: true})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "dr workload start")
-	assert.Contains(t, err.Error(), "more than starting it")
+	result, stderr, err := runIn(t, drifted, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"start", "wait", "settings", "wait"}, order,
+		"the workload has to be up before a settings change can land on it")
+	assert.Equal(t, ActionUpdated, result.Action)
+	assert.Contains(t, stderr, "started, having been stopped")
+	assert.Contains(t, stderr, "runtime")
 }
 
 func TestRun_StartFailureNamesTheWorkload(t *testing.T) {
@@ -1215,7 +3255,7 @@ func TestRun_StartFailureNamesTheWorkload(t *testing.T) {
 		start: func(string) (*workload.WorkloadOperationResponse, error) {
 			return nil, &drapi.HTTPError{StatusCode: http.StatusConflict}
 		},
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("there is nothing to wait for when the start was refused")
 
 			return nil, nil
@@ -1236,7 +3276,7 @@ func TestRun_DetachedStartDoesNotWait(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			t.Fatal("--detach returns as soon as the start is requested")
 
 			return nil, nil
@@ -1291,7 +3331,7 @@ func TestRun_InterruptedStartsLikeAnyStoppedWorkload(t *testing.T) {
 
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	})
@@ -1313,7 +3353,7 @@ func TestRun_StartAcknowledgementIsPrinted(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id, Status: "Proton is already running"}, nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 	})
@@ -1325,7 +3365,7 @@ func TestRun_StartAcknowledgementIsPrinted(t *testing.T) {
 	assert.Contains(t, stderr, "already running")
 }
 
-// --lock on a workload already running a locked artifact has nothing to do,
+// --promote on a workload already running a locked artifact has nothing to do,
 // and locking twice is not a no-op at the platform.
 func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 	install(t, fakes{
@@ -1334,7 +3374,7 @@ func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 		start: func(id string) (*workload.WorkloadOperationResponse, error) {
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			return running(id), nil
 		},
 		lock: func(string) (*workload.Artifact, error) {
@@ -1353,7 +3393,7 @@ func TestRun_StartDoesNotRelockALockedArtifact(t *testing.T) {
 
 // unlockedArtifact is the live artifact as a draft. liveArtifactJSON is
 // locked, which is the right shape for most of these tests and the wrong one
-// for asking whether --lock still does anything.
+// for asking whether --promote still does anything.
 func unlockedArtifact(t *testing.T) workload.Document {
 	t.Helper()
 
@@ -1363,7 +3403,7 @@ func unlockedArtifact(t *testing.T) workload.Document {
 	return d
 }
 
-// The other half of --lock on the start path. The test above starts from an
+// The other half of --promote on the start path. The test above starts from an
 // artifact that is already locked, so it only reaches the skip branch; this
 // one has to actually lock, and not until the workload is serving.
 func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
@@ -1377,15 +3417,16 @@ func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
 
 			return &workload.WorkloadOperationResponse{WorkloadID: id}, nil
 		},
-		wait: func(id string, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration, _ func(*workload.Workload)) (*workload.Workload, error) {
 			order = append(order, "wait")
 
 			return running(id), nil
 		},
-		lock: func(id string) (*workload.Artifact, error) {
-			order = append(order, "lock:"+id)
+		lock: neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			order = append(order, "promote:"+id)
 
-			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+			return &workload.Workload{ID: id}, nil
 		},
 	})
 
@@ -1394,8 +3435,8 @@ func TestRun_StartLocksAnUnlockedArtifactOnceItServes(t *testing.T) {
 	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, ActionStarted, result.Action, "a start, not a create: --lock has to work on this path too")
-	assert.Equal(t, []string{"start", "wait", "lock:art-1"}, order,
+	assert.Equal(t, ActionStarted, result.Action, "a start, not a create: --promote has to work on this path too")
+	assert.Equal(t, []string{"start", "wait", "promote:68b0c1d2e3f4a5b6c7d8e9f0"}, order,
 		"locking is one-way, so it waits until the workload is actually serving")
 	assert.True(t, result.Locked)
 }
@@ -1518,7 +3559,7 @@ func TestRun_ResolvedCredentialDeploys(t *testing.T) {
 			return &workload.Credential{CredentialID: id, Name: "my-app/OPENAI_API_KEY"}, nil
 		},
 		create: func(any) (*workload.Workload, error) { return running("wl-1"), nil },
-		wait: func(string, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
+		wait: func(context.Context, string, workload.Serving, time.Duration, time.Duration, func(*workload.Workload)) (*workload.Workload, error) {
 			return running("wl-1"), nil
 		},
 	})
@@ -1526,4 +3567,468 @@ func TestRun_ResolvedCredentialDeploys(t *testing.T) {
 	result, _, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true})
 	require.NoError(t, err)
 	assert.Equal(t, "wl-1", result.WorkloadID)
+}
+
+// The first deploy of a project that was cloned rather than linked here is the
+// run most likely to be someone's first sight of the old filename, and it is
+// also the one run that builds no sizing engine: defaultCodeChange returns
+// before that on an unlinked project. Reading the ignore file directly is what
+// keeps the notice from waiting for the second deploy.
+func TestDefaultCodeChange_ReportsLegacyIgnoreFileOnAnUnlinkedProject(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, unboundDockerfileManifest)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.LegacyFileName), []byte("*.tmp\n"), 0o644))
+
+	loaded, err := load(dir, Options{NonInteractive: true})
+	require.NoError(t, err)
+	require.False(t, wapi.Exists(dir), "the point of this case is that nothing is linked yet")
+
+	code, err := defaultCodeChange(loaded, Live{})
+	require.NoError(t, err)
+
+	assert.True(t, code.FirstDeploy)
+	assert.Contains(t, code.IgnoreNotice, ignore.LegacyFileName)
+	assert.Contains(t, code.IgnoreNotice, ignore.FileName, "and what to rename it to")
+}
+
+// The same project on the current name has nothing to report, which is what
+// separates "the file was read" from "the notice is hardcoded on this path".
+func TestDefaultCodeChange_SaysNothingForTheCurrentIgnoreFileName(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, unboundDockerfileManifest)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ignore.FileName), []byte("*.tmp\n"), 0o644))
+
+	loaded, err := load(dir, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	code, err := defaultCodeChange(loaded, Live{})
+	require.NoError(t, err)
+
+	assert.True(t, code.FirstDeploy)
+	assert.Empty(t, code.IgnoreNotice)
+}
+
+// TestRun_LinkedArtifactThatNoLongerMatchesIsReplaced is the recovery flow the
+// missing-binding recreate advertises. The link records which artifact this
+// checkout pushes to, not what that artifact holds, and an artifact's spec is
+// fixed at creation. Reusing one whose spec has since diverged deploys the
+// frozen answer and reports success, so the edit the user just made never
+// leaves the machine.
+func TestRun_LinkedArtifactThatNoLongerMatchesIsReplaced(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-stale"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.save = func(_ string, cfg wapi.Config) error {
+		tr.linkedTo = wapi.InitOptions{ArtifactID: cfg.ArtifactID}
+
+		return nil
+	}
+	// The live artifact says port 9999; the manifest says 8080.
+	f.artifactD = func(string) (workload.Document, error) {
+		return workload.Document{"spec": map[string]any{
+			"type": "service",
+			"containerGroups": []any{map[string]any{
+				"name": "default",
+				"containers": []any{map[string]any{
+					"name": "primary", "primary": true, "port": 9999,
+				}},
+			}},
+		}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, tr.steps, "create-artifact",
+		"a linked artifact that no longer says what the file says has to be replaced, not reused")
+	assert.NotEqual(t, "art-stale", decodePayload(t, tr.workloadIn)["artifactId"])
+	assert.Equal(t, decodePayload(t, tr.workloadIn)["artifactId"], tr.linkedTo.ArtifactID,
+		"the project has to end up pointing at the artifact it just deployed")
+}
+
+// divergedLink is a project whose linked artifact still takes code but no
+// longer says what the file says: it holds port 9999 where the manifest asks
+// for 8080. The repository is the lineage the replacement has to join, exactly
+// as it is for a locked one.
+func divergedLink(f fakes, tr *track) fakes {
+	f.linked = func(string) bool { return true }
+	f.project = syncedProject("art-stale")
+	f.artifactD = func(id string) (workload.Document, error) {
+		return workload.Document{
+			"id":                   id,
+			"status":               workload.ArtifactStatusDraft,
+			"artifactRepositoryId": "repo-1",
+			"type":                 "service",
+			"spec": map[string]any{
+				"containerGroups": []any{map[string]any{
+					"name": "default",
+					"containers": []any{map[string]any{
+						"name": "primary", "primary": true, "port": 9999,
+					}},
+				}},
+			},
+		}, nil
+	}
+	f.save = relinkStep(tr)
+
+	return f
+}
+
+// A spec that has diverged and a lock that cannot be undone are two reasons for
+// the same act, so the replacement they produce has to be the same one. Locking
+// got the lineage right and this route reached the create by a different path,
+// which is where the two could quietly come apart: a replacement that opens a
+// repository of its own leaves the Registry with a second entry under the same
+// name, and the workload's versions stop reading as versions of one thing.
+func TestRun_ReplacementForADivergedSpecJoinsTheSameLineage(t *testing.T) {
+	var tr track
+
+	install(t, divergedLink(wiredBuild(&tr), &tr))
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1")
+
+	assert.Equal(t, "art-1", tr.savedCfg.ArtifactID, "the link moves to what the run just made")
+	require.NotNil(t, tr.savedCfg.CatalogID, "the code store has to survive the replacement")
+	assert.Equal(t, "cat1", *tr.savedCfg.CatalogID)
+}
+
+// The same lineage question asked of an agent, which is what makes it a
+// regression test rather than a duplicate.
+//
+// The comparison that decides whether the linked draft still matches used to
+// normalise the live document in place, taking the type off it. The next line
+// read that type to pick the repository, found nothing, defaulted it to
+// service, and concluded the file had changed the artifact's kind. Every
+// redraft of an agent therefore started a new lineage instead of joining its
+// own, silently and permanently. Nothing caught it because every other fixture
+// here is a service, where the default happens to be the right answer.
+func TestRun_ReplacementForADivergedAgentJoinsTheSameLineage(t *testing.T) {
+	var tr track
+
+	f := divergedLink(wiredBuild(&tr), &tr)
+
+	inner := f.artifactD
+	f.artifactD = func(id string) (workload.Document, error) {
+		d, err := inner(id)
+		if err != nil {
+			return nil, err
+		}
+
+		d[keyType] = "agent"
+
+		return d, nil
+	}
+
+	install(t, f)
+
+	agent := strings.Replace(unboundDockerfileManifest, "type: service", "type: agent", 1)
+
+	_, _, err := runIn(t, agent, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	payload, ok := tr.artifactIn.(json.RawMessage)
+	require.True(t, ok, "the create has to have been given the artifact block")
+	assert.Contains(t, string(payload), "repo-1",
+		"an agent redraft joins its own lineage, exactly as a service does")
+}
+
+// The other half of that equivalence. The tree was already synced into the
+// artifact the file has since diverged from, so the sync onto its replacement
+// can find nothing to upload and the new version would go to the builder with
+// no code reference at all. The code the old one was running is carried across
+// instead, which is what makes this a new version of the same code rather than
+// a build of nothing.
+func TestRun_ReplacementForADivergedSpecInheritsTheSyncedCode(t *testing.T) {
+	var tr track
+
+	f := divergedLink(wiredBuild(&tr), &tr)
+	f.sync = emptySync(&tr)
+	f.codeRef = carryCodeStep(&tr)
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"art-1", "cat1", "ver1"}, tr.carried)
+	assert.Contains(t, tr.steps, "carry-code")
+}
+
+// A read that fails is not a difference. Minting on it would orphan the
+// artifact this project pushes to because of a timeout, so the run stops and
+// names the artifact it could not read instead of guessing either way.
+//
+// The lock check and the spec comparison are one read, so there is one failure
+// to answer rather than two, and reusing an artifact whose state was never
+// established is no better than replacing it: the sync that follows fetches the
+// same artifact and would fail a step later with a worse message.
+func TestRun_UnreadableLinkedArtifactStopsRatherThanGuessing(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-existing"}, nil }
+	f.artifactD = func(string) (workload.Document, error) { return nil, errors.New("gateway timeout") }
+	f.newArtifact = func(any) (*workload.Artifact, error) {
+		t.Fatal("a timeout is not a reason to start a new artifact lineage")
+
+		return nil, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "art-existing", "the artifact the link names")
+	assert.Contains(t, err.Error(), "linked to")
+	assert.Contains(t, err.Error(), "gateway timeout", "the platform's own reason has to survive")
+	assert.Nil(t, tr.workloadIn, "nothing is deployed on a state that was never established")
+}
+
+// StateMissing is the one state this change converted from a refusal into a
+// mutating create, so --dry-run over it is the combination that most needs
+// holding: a dry run that creates would be the worst possible regression here.
+func TestRun_DryRunOnAMissingBindingMutatesNothing(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) {
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+		create: func(any) (*workload.Workload, error) {
+			t.Fatal("--dry-run must not create a workload")
+
+			return nil, nil
+		},
+		writeID: func(string, string) error {
+			t.Fatal("--dry-run must not rebind the manifest")
+
+			return nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + unboundImageManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "no longer exists")
+	assert.Equal(t, ActionCreated, result.Action, "the plan still says what it would do")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.Plan.PriorWorkloadID)
+}
+
+// A create that reports no id cannot be linked to. SaveConfig does not
+// validate the way Initialize does, so relinking to an empty id wrote a
+// config.json every later command rejected as corrupt: the run failed anyway,
+// but two steps later and having damaged the project on the way.
+func TestRun_ArtifactCreatedWithoutAnIDIsRefusedBeforeLinking(t *testing.T) {
+	var tr track
+
+	f := wiredBuild(&tr)
+	f.linked = func(string) bool { return true }
+	f.project = func(string) (wapi.Config, error) { return wapi.Config{ArtifactID: "art-stale"}, nil }
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
+	f.artifactD = func(string) (workload.Document, error) {
+		return workload.Document{"spec": map[string]any{"type": "service"}}, nil
+	}
+	f.newArtifact = func(any) (*workload.Artifact, error) { return &workload.Artifact{ID: ""}, nil }
+	f.save = func(string, wapi.Config) error {
+		t.Fatal("nothing may be written when there is no id to write")
+
+		return nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reported no id")
+}
+
+// The roll decides whether to build from plan.Code.Applies rather than reading
+// the file again, so the two must answer alike for every file.
+func TestDefaultCodeChange_AppliesMatchesTheFilesBuildMode(t *testing.T) {
+	generated := strings.Replace(unboundDockerfileManifest,
+		"                source: provided\n",
+		"                source: generated\n"+
+			"                executionEnvironmentId: 6890000000000000000000e1\n"+
+			"                executionEnvironmentVersionId: 6890000000000000000000e2\n"+
+			"                entrypoint: [\"python\", \"app.py\"]\n", 1)
+
+	cases := []struct {
+		name string
+		file string
+	}{
+		{name: "a dockerfile the platform builds", file: unboundDockerfileManifest},
+		{name: "an image the platform generates", file: generated},
+		{name: "an image someone else published", file: unboundImageManifest},
+		{name: "a manifest bound to an artifact by id", file: boundArtifactManifest},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeManifest(t, dir, c.file)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o644))
+
+			loaded, err := load(dir, Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			mode := loaded.Manifest.BuildMode()
+			builds := mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeGenerated
+
+			code, err := defaultCodeChange(loaded, Live{})
+			require.NoError(t, err)
+			assert.Equal(t, builds, code.Applies,
+				"the plan's answer and the file's have to be the same answer (build mode %q)", mode)
+		})
+	}
+}
+
+// Both dead-workload refusals end at "delete it and deploy again", which keeps
+// the name and is what makes the advice sound like continuity. It is not: the
+// replacement is a different workload with a different id, so its endpoint URL
+// is different too, permanently. A caller pointed at the old URL finds out when
+// their traffic stops arriving, which is too late to be told.
+func TestDeployable_DeadWorkloadRemediesSayTheEndpointChanges(t *testing.T) {
+	cases := map[string]struct {
+		state  State
+		status string
+	}{
+		"errored":    {StateErrored, workload.WorkloadStatusErrored},
+		"terminated": {StateTerminated, workload.WorkloadStatusTerminated},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			live := Live{
+				Live:   manifest.Live{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"},
+				State:  c.state,
+				Status: c.status,
+			}
+
+			err := deployable(live, Plan{}, "my-app", " --dir ./svc")
+			require.Error(t, err)
+
+			assert.Contains(t, err.Error(), "'dr workload delete 68b0c1d2e3f4a5b6c7d8e9f0 --dir ./svc'",
+				"the remedy this note qualifies, with the --dir the run was given")
+			assert.Contains(t, err.Error(), ", then deploy again. The replacement keeps the name",
+				"then, not and: the imperative must not read as another thing the delete does")
+			assert.Contains(t, err.Error(), "new endpoint URL")
+			assert.Contains(t, err.Error(), "anything calling the old URL has to be pointed at the new one")
+			assert.NotContains(t, err.Error(), "under the same name")
+		})
+	}
+}
+
+// The third refusal giving the same advice. It is reached by a create that 409s
+// on a name a terminated workload still holds, and the sentence it qualifies
+// opens "If it is this project's dead workload", so its reader loses the same
+// URL.
+func TestNameTaken_DeadHolderRemedySaysTheEndpointChanges(t *testing.T) {
+	swap(t, &listWorkloadsFn, func(int, int, []string, string) ([]workload.Workload, error) {
+		return []workload.Workload{{
+			ID: "68b0c1d2e3f4a5b6c7d8e9f0", Name: "my-app", Status: workload.WorkloadStatusTerminated,
+		}}, nil
+	})
+
+	err := nameTaken(&drapi.HTTPError{StatusCode: http.StatusConflict}, "my-app", ".datarobot.yaml", "")
+	require.Error(t, err)
+
+	assert.Contains(t, err.Error(), "then deploy again to take the name back")
+	assert.Contains(t, err.Error(), "new endpoint URL")
+	assert.NotContains(t, err.Error(), "deploy again to recreate the name",
+		"recreating the name is exactly what sounds like continuity and is not")
+}
+
+// A run can rotate a secret and then die before there is a plan, and the
+// rotation is the one edit with nothing left on disk to find it by. Dropping
+// it from the failed result made the next bare `up` report the workload as up
+// to date while the container went on serving the old value.
+func TestRun_EnvEditSurvivesAFailureBeforeThePlan(t *testing.T) {
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			return wizard.Result{Action: wizard.ActionUnchanged, EnvSecretsRotated: 2}, nil
+		},
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+		code: func(Loaded, Live) (CodeChange, error) {
+			return CodeChange{}, errors.New("cannot read the project")
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, SyncEnv: true})
+	require.Error(t, err)
+
+	assert.Equal(t, 2, result.Env.SecretsRotated, "the failure has to carry what already reached the store")
+	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID,
+		"and which workload it was about, or the deploy is unfindable")
+}
+
+// The values these flags write land in a file headed for git, exactly as
+// `dr workload config` writes them. The classifier is a heuristic, so naming
+// them is the only chance to catch a misread before the commit, and it cannot
+// depend on which command carried the edit.
+func TestRun_SyncEnvNamesTheValuesWrittenInTheClear(t *testing.T) {
+	install(t, fakes{
+		wizard: func(wizard.Options) (wizard.Result, error) {
+			return wizard.Result{
+				Action:        wizard.ActionUnchanged,
+				EnvKeysListed: 2,
+				Draft: manifest.Draft{EnvVars: []manifest.EnvVar{
+					{Name: "REGION", Value: "eu-west-1"},
+					{Name: "OPENAI_API_KEY", Secret: true},
+				}},
+			}, nil
+		},
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return doc(t, liveArtifactJSON), nil },
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, stderr, err := runIn(t, bound, Options{NonInteractive: true, SyncEnv: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Values written in the clear: REGION.")
+	assert.NotContains(t, stderr, "OPENAI_API_KEY", "the secret is the thing being protected")
+	assert.Equal(t, []string{"REGION"}, result.Env.Literals)
+}
+
+// The promote route answers with what it locked, and that is the artifact the
+// summary names: a swap that landed between the read and the promotion would
+// otherwise be reported under the version rolled off.
+func TestRun_PromoteReportsTheArtifactTheRouteLocked(t *testing.T) {
+	install(t, fakes{
+		workloadD: func(string) (workload.Document, error) { return doc(t, liveWorkloadJSON), nil },
+		artifactD: func(string) (workload.Document, error) { return draftArtifact(t), nil },
+		lock:      neverLocks(t),
+		promote: func(id string) (*workload.Workload, error) {
+			return &workload.Workload{ID: id, ArtifactID: "68a0000000000000000000c3"}, nil
+		},
+	})
+
+	bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+	result, _, err := runIn(t, bound, Options{NonInteractive: true, Lock: true})
+	require.NoError(t, err)
+	assert.Equal(t, "68a0000000000000000000c3", result.ArtifactID)
+	assert.True(t, result.Locked)
 }

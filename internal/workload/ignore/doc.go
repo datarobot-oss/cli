@@ -15,5 +15,15 @@
 // Package ignore decides which files the sync engine excludes. The
 // effective set is the union of hardcoded system excludes (the state
 // directory, .git)
-// and patterns from <project-root>/.wapiignore in gitignore syntax.
+// and patterns from <project-root>/.drignore in gitignore syntax.
+//
+// A project set up before the rename has a .wapiignore instead. That name is
+// still read when no .drignore is present, and Matcher.Notice says so, but it
+// is deprecated and nothing writes it any more.
+//
+// It also owns the filenames themselves, for the package that seeds a starter
+// file rather than reading one: FileName is what to write, and Locate answers
+// whether a project already has one under either name. Keeping both sides on
+// this package's answer is what stops a project being given a name that a
+// later sync does not look for.
 package ignore

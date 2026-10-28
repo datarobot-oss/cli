@@ -24,11 +24,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	gosync "sync"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -41,8 +43,9 @@ import (
 type fakeClient struct {
 	mu gosync.Mutex
 
-	versions []filesapi.CatalogVersion
-	content  map[string][]byte
+	versions   []filesapi.CatalogVersion
+	content    map[string][]byte
+	executable map[string]bool
 
 	allFilesErr error
 	downloadErr error
@@ -69,7 +72,13 @@ func (f *fakeClient) AllFiles(_, _ string) (map[string]filesapi.FileMeta, error)
 
 	for path, data := range f.content {
 		sum := sha256.Sum256(data)
-		out[path] = filesapi.FileMeta{Hash: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+		meta := filesapi.FileMeta{Hash: hex.EncodeToString(sum[:]), Size: int64(len(data))}
+
+		if exec, ok := f.executable[path]; ok {
+			meta.Executable = &exec
+		}
+
+		out[path] = meta
 	}
 
 	return out, nil
@@ -103,14 +112,13 @@ func (f *fakeClient) callCounts() (all, dl int) {
 }
 
 // Panicking stubs for the rest of filesapi.Client.
-func (*fakeClient) CreateCatalog() (*filesapi.CatalogResp, error)                { panic("unused") }
-func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error)              { panic("unused") }
-func (*fakeClient) UploadToStage(string, string, string, int64, io.Reader) error { panic("unused") }
-func (*fakeClient) ApplyStage(string, string, string) (*filesapi.ApplyStageResp, error) {
+func (*fakeClient) CreateCatalog(string) (*filesapi.CatalogResp, error) { panic("unused") }
+func (*fakeClient) CreateStage(string) (*filesapi.StageResp, error)     { panic("unused") }
+func (*fakeClient) UploadToStage(string, string, string, int64, bool, io.Reader) error {
 	panic("unused")
 }
 
-func (*fakeClient) UploadFromZipNew(string, int64, io.Reader) (*filesapi.FromFileResp, error) {
+func (*fakeClient) ApplyStage(string, string, string) (*filesapi.ApplyStageResp, error) {
 	panic("unused")
 }
 
@@ -177,11 +185,15 @@ const (
 )
 
 func TestCheckout_NotLinked(t *testing.T) {
-	cmd, _ := newTestCmd(t, t.TempDir(), Deps{}, []string{"abcdef12"})
+	dir := t.TempDir()
+
+	cmd, _ := newTestCmd(t, dir, Deps{}, []string{"abcdef12"})
 	err := cmd.Execute()
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not linked")
+	assert.Contains(t, err.Error(), "Run 'dr artifact code init <id>"+manifest.DirFlag(dir)+"' first",
+		"the remedy links the project being checked out, not the shell's directory")
 }
 
 // The state directory moving out from under a project is the sort of thing a
@@ -203,12 +215,60 @@ func TestCheckout_ReportsStateMigration(t *testing.T) {
 	assert.NoDirExists(t, legacy, "and the move actually happened")
 }
 
+func TestCheckout_RestoresExecutableBit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no executable bit")
+	}
+
+	dir := initLinkedDir(t, "cat-1")
+
+	fc := &fakeClient{
+		versions:   []filesapi.CatalogVersion{{ID: verA}},
+		content:    map[string][]byte{"run.sh": []byte("#!/bin/sh\n"), "app.py": []byte("x"), "old.py": []byte("y")},
+		executable: map[string]bool{"run.sh": true, "app.py": false},
+	}
+
+	cmd, _ := newTestCmd(t, dir, fakeDeps(draftArtifact("art-abc-123"), fc), []string{verA})
+	require.NoError(t, cmd.Execute())
+
+	checkoutDir := wapi.CheckoutDir(dir, verA)
+
+	// Only the executable bits: the rest follow the host's umask.
+	for name, want := range map[string]bool{"run.sh": true, "app.py": false, "old.py": false} {
+		info, err := os.Stat(filepath.Join(checkoutDir, name))
+		require.NoError(t, err)
+		assert.Equal(t, want, info.Mode().Perm()&0o111 != 0, name)
+	}
+}
+
 func TestCheckout_NoCatalog(t *testing.T) {
-	cmd, _ := newTestCmd(t, initLinkedDir(t, ""), Deps{}, []string{"abcdef12"})
+	dir := initLinkedDir(t, "")
+
+	cmd, _ := newTestCmd(t, dir, Deps{}, []string{"abcdef12"})
 	err := cmd.Execute()
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no code has been synced yet")
+	assert.Contains(t, err.Error(), "Run 'dr artifact code sync"+manifest.DirFlag(dir)+"' first")
+}
+
+// A project with nothing synced has no version to name, so it is refused
+// before the question rather than after an answer that could never work.
+func TestCheckout_NoCatalogIsRefusedBeforeThePrompt(t *testing.T) {
+	deps := Deps{
+		PromptVersion: func(string) (string, error) {
+			t.Fatal("nothing has been synced, so there is no version to ask for")
+
+			return "", nil
+		},
+	}
+
+	cmd, buf := newTestCmd(t, initLinkedDir(t, ""), deps, nil)
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no code has been synced yet")
+	assert.NotContains(t, buf.String(), "dr artifact code versions", "nor a hint at a command that would fail the same way")
 }
 
 func TestCheckout_HappyPath_FullID(t *testing.T) {
@@ -518,10 +578,78 @@ func TestCheckout_PromptsForVersionWhenMissing(t *testing.T) {
 		return verA, nil
 	}
 
-	cmd, buf := newTestCmd(t, dir, deps, nil)
+	cmd, stdout := newTestCmd(t, dir, deps, nil)
+
+	var stderr bytes.Buffer
+
+	cmd.SetErr(&stderr)
 
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, "Code version ID", promptedLabel)
-	assert.Contains(t, buf.String(), "dr artifact code versions")
+
+	// Help with the question rather than a Next: block, since the command is
+	// not done, and on stderr, since stdout is the result document.
+	hint := "Run 'dr artifact code versions" + manifest.DirFlag(dir) + "' to list available versions."
+	assert.Contains(t, stderr.String(), hint,
+		"the hint lists the versions of the project being checked out, not of the shell's directory")
+	assert.NotContains(t, stdout.String(), hint)
+	assert.NotContains(t, stderr.String(), "Next:")
 	assert.DirExists(t, wapi.CheckoutDir(dir, verA))
+}
+
+func (*fakeClient) SupportsExecutable() bool { return true }
+
+// The download stages into a .tmp-<version>-* sibling of the final snapshot
+// dir and swaps it into place. Regression guard for the surrounding-state
+// contract: whether the checkout succeeds or fails mid-download, the staging
+// directory must be gone from the checkouts parent — renamed away on success,
+// removed by the failure defer otherwise.
+func TestCheckout_LeavesNoTempDirsInCheckoutsParent(t *testing.T) {
+	// Failure first: the download dies mid-way and the staging dir must be
+	// cleaned up rather than stranded next to the (absent) snapshot.
+	failDir := initLinkedDir(t, "cat-1")
+
+	failing := &fakeClient{
+		versions:    []filesapi.CatalogVersion{{ID: verA}},
+		content:     map[string][]byte{"a.txt": []byte("a")},
+		downloadErr: errors.New("network died"),
+	}
+
+	cmd, _ := newTestCmd(t, failDir, fakeDeps(draftArtifact("art-abc-123"), failing), []string{verA})
+
+	require.Error(t, cmd.Execute())
+
+	assertNoTmpStagingDirs(t, failDir)
+
+	// Then success: the staging dir is renamed to the snapshot, so the
+	// parent must hold only the snapshot — no staging residue.
+	okDir := initLinkedDir(t, "cat-1")
+
+	fc := &fakeClient{
+		versions: []filesapi.CatalogVersion{{ID: verA}},
+		content:  map[string][]byte{"a.txt": []byte("a")},
+	}
+
+	cmd2, _ := newTestCmd(t, okDir, fakeDeps(draftArtifact("art-abc-123"), fc), []string{verA})
+
+	require.NoError(t, cmd2.Execute())
+
+	assertNoTmpStagingDirs(t, okDir)
+}
+
+// assertNoTmpStagingDirs fails when any .tmp- prefixed staging directory
+// survived a checkout in the project's checkouts parent.
+func assertNoTmpStagingDirs(t *testing.T, dir string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(wapi.CheckoutsDir(dir))
+	if os.IsNotExist(err) {
+		return
+	}
+
+	require.NoError(t, err)
+
+	for _, e := range entries {
+		assert.NotContains(t, e.Name(), ".tmp-", "checkout staging directory must not survive the command")
+	}
 }

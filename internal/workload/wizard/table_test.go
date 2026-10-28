@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -158,6 +159,41 @@ func TestRowTable_Filter(t *testing.T) {
 	assert.False(t, table.clearFilter())
 }
 
+// Space reaches the filter like any other printable key. It arrives as its
+// own key type, never inside KeyRunes, and the table underneath binds it to
+// page-down — so before this was handled, a name like "Py 3.12" could not be
+// typed and the keystroke silently paged the list instead.
+func TestRowTable_FilterAcceptsSpaces(t *testing.T) {
+	rows := []tableRow{
+		{cells: []string{"Py 3.12", "a"}, value: 1},
+		{cells: []string{"Py 3.9", "b"}, value: 2},
+		{cells: []string{"Python-nospace", "c"}, value: 3},
+	}
+
+	table := newRowTable([]string{"NAME", "DETAIL"}, rows, true, 120, 44)
+
+	// A leading space is swallowed like "/": a filter of one space is
+	// invisible, and the esc that then seems to do nothing would be spent
+	// clearing it instead of going back.
+	assert.True(t, table.update(tea.KeyMsg{Type: tea.KeySpace}), "swallowed, not handed to paging")
+	assert.Empty(t, table.filter, "a space does not start a filter")
+
+	typeFilter(&table, "py")
+	assert.True(t, table.update(tea.KeyMsg{Type: tea.KeySpace}), "space is filter input, not paging")
+	typeFilter(&table, "3.1")
+
+	assert.Equal(t, "py 3.1", table.filter)
+	assert.Equal(t, 1, visibleRowCount(table.view(120)), "only 'Py 3.12' carries the spaced query")
+
+	// One backspace removes the space like any other character.
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	table.update(tea.KeyMsg{Type: tea.KeyBackspace})
+	assert.Equal(t, "py", table.filter)
+	assert.Equal(t, 3, visibleRowCount(table.view(120)))
+}
+
 // A filter that matches nothing says so, rather than showing an empty frame.
 func TestRowTable_FilterMatchingNothing(t *testing.T) {
 	table := newRowTable([]string{"NAME", "DETAIL"}, fakeRows(3), true, 120, 44)
@@ -200,4 +236,22 @@ func TestColumnsFor_CapsAnOutlier(t *testing.T) {
 	assert.LessOrEqual(t, columns[1].Width, maxColumnWidth)
 	assert.Equal(t, len("67a554bbfef3a4ce2ab6700"), columns[2].Width,
 		"the id column keeps its natural width")
+}
+
+// columnsFor sizes by display width, not byte length. A cell carrying ANSI (as
+// a styled tag once did) or a multibyte name must be measured by what it shows,
+// not its raw bytes: bubbles/table truncates against display width and is not
+// escape-aware, so an over-measured column would let it cut a real escape
+// mid-sequence.
+func TestColumnsFor_SizesByDisplayWidthNotBytes(t *testing.T) {
+	plain := "ee-1  · in use"
+	styled := "\x1b[38;2;0;200;0m" + plain + "\x1b[0m"
+
+	columns := columnsFor([]string{"BASE IMAGE", "LANGUAGE", "ID"},
+		[]tableRow{{cells: []string{"Node", "javascript", styled}}}, 200)
+
+	id := columns[len(columns)-1]
+	assert.Equal(t, lipgloss.Width(plain), id.Width,
+		"the id column is sized to the visible width, not the escape-inflated byte length")
+	assert.Less(t, id.Width, len(styled), "byte length would have over-sized the column")
 }
