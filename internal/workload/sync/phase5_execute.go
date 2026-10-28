@@ -53,14 +53,8 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	uploads, downloads := len(e.plan.Uploads), len(e.plan.Downloads)
-	deletes, conflicts := len(e.plan.Deletes), len(e.plan.Conflicts)
-
-	if total := uploads + downloads + deletes + conflicts; total > RollbackMaxFiles {
-		return fmt.Errorf(
-			"plan touches %d files (uploads=%d, downloads=%d, deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d; refusing to run",
-			total, uploads, downloads, deletes, conflicts, RollbackMaxFiles,
-		)
+	if err := checkPlanSize(e.plan); err != nil {
+		return err
 	}
 
 	if err := EnsureSpaceFor(e.projectDir, e.plan.TotalDownloadBytes()); err != nil {
@@ -85,6 +79,30 @@ func phase5Execute(e *Engine) error {
 	// A Phase 5 failure above restores and returns, leaving the dir in place
 	// for exactly that stale-restore recovery.
 	e.rollback = rb
+
+	return nil
+}
+
+// checkPlanSize refuses a plan that would back up more local files than the
+// rollback may hold, or delete more remote files than one request may name.
+// However many files it uploads does not matter to either.
+func checkPlanSize(plan *SyncPlan) error {
+	downloads, conflicts := len(plan.Downloads), len(plan.Conflicts)
+	localDeletes := plan.RollbackFiles() - downloads - conflicts
+
+	if total := plan.RollbackFiles(); total > RollbackMaxFiles {
+		return fmt.Errorf(
+			"plan would back up %d local files (downloads=%d, local deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d; refusing to run",
+			total, downloads, localDeletes, conflicts, RollbackMaxFiles,
+		)
+	}
+
+	if remote := plan.RemoteDeletes(); remote > RemoteDeleteMaxPaths {
+		return fmt.Errorf(
+			"plan deletes %d remote files, more than the %d the Files API accepts in one request; refusing to run",
+			remote, RemoteDeleteMaxPaths,
+		)
+	}
 
 	return nil
 }

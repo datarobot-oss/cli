@@ -25,8 +25,13 @@ const (
 	DiskSpaceMarginMB = 100
 
 	// RollbackMaxFiles caps the rollback set so a single sync cannot
-	// produce a multi-gigabyte rollback tree.
+	// produce a multi-gigabyte rollback tree. Only files the sync may back
+	// up count (SyncPlan.RollbackFiles); uploads never do.
 	RollbackMaxFiles = 1000
+
+	// RemoteDeleteMaxPaths is the most paths the Files API accepts in one
+	// delete request, and the sync sends its deletions in one request.
+	RemoteDeleteMaxPaths = 1000
 
 	// Stage path is used when files <= threshold AND bytes <= threshold;
 	// zip path otherwise.
