@@ -15,12 +15,14 @@
 package manifest
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // A commented-out block after the last item of a nested sequence is re-emitted
@@ -49,54 +51,112 @@ runtime:
   replicaCount: 1
 `
 
+const oldID, newID = "6ad3c5ed190d72e5948d8051", "6adb9de43bff6a3b37d1b9d7"
+
 func TestWriteWorkloadID_ReplaceKeepsNestedCommentColumns(t *testing.T) {
 	path := writeManifest(t, t.TempDir(), nestedCommentManifest)
 
-	require.NoError(t, WriteWorkloadID(path, "6adb9de43bff6a3b37d1b9d7"))
+	require.NoError(t, WriteWorkloadID(path, newID))
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	want := strings.Replace(nestedCommentManifest, "6ad3c5ed190d72e5948d8051", "6adb9de43bff6a3b37d1b9d7", 1)
+	want := strings.Replace(nestedCommentManifest, oldID, newID, 1)
 	assert.Equal(t, want, string(got))
 }
 
-// Quoted values and CRLF files are spliced as written, never corrupted.
+// Every case keeps the nested comment block a re-encode would move, so each
+// one fails unless the splice actually ran.
 func TestWriteWorkloadID_ReplaceQuotedAndCRLF(t *testing.T) {
-	for name, tc := range map[string]struct{ in, want string }{
-		"double quoted": {
-			in:   "workloadId: \"6ad3c5ed190d72e5948d8051\" # managed by the CLI\nname: x\n",
-			want: "workloadId: \"6adb9de43bff6a3b37d1b9d7\" # managed by the CLI\nname: x\n",
+	firstLine := "workloadId: " + oldID + " # managed by the CLI\n"
+	rest := strings.TrimPrefix(nestedCommentManifest, firstLine)
+
+	for name, in := range map[string]string{
+		"double quoted":   `workloadId: "` + oldID + `" # managed by the CLI` + "\n" + rest,
+		"single quoted":   "workloadId: '" + oldID + "'\n" + rest,
+		"crlf":            strings.ReplaceAll(nestedCommentManifest, "\n", "\r\n"),
+		"not first key":   rest + "# bound by up\nworkloadId: " + oldID + "\n",
+		"byte order mark": "\xef\xbb\xbf" + nestedCommentManifest,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeManifest(t, t.TempDir(), in)
+
+			require.NoError(t, WriteWorkloadID(path, newID))
+
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, strings.Replace(in, oldID, newID, 1), string(got))
+		})
+	}
+
+	t.Run("same id writes nothing", func(t *testing.T) {
+		path := writeManifest(t, t.TempDir(), nestedCommentManifest)
+
+		require.NoError(t, WriteWorkloadID(path, oldID))
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, nestedCommentManifest, string(got))
+	})
+}
+
+// Column counts runes, so multi-byte text before the token is stepped over
+// whole.
+func TestTokenOffset_StepsRunes(t *testing.T) {
+	data := []byte("name: x\n{a: ééé, b: c}\n")
+
+	offset, ok := tokenOffset(data, 2, 13)
+	require.True(t, ok)
+	assert.Equal(t, "c}\n", string(data[offset:]))
+}
+
+// A position whose bytes do not hold the parsed value is refused, never
+// overwritten.
+func TestSpliceScalar_RefusesBytesThatDoNotMatch(t *testing.T) {
+	node := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "abc", Line: 1, Column: 3}
+
+	_, ok := spliceScalar([]byte("x: abc\n"), node, "xyz")
+	assert.False(t, ok)
+}
+
+// The splice declines what it cannot place or write back exactly, and the
+// tree edit still rebinds the file without touching anything else.
+func TestWriteWorkloadID_SpliceDeclines(t *testing.T) {
+	for name, tc := range map[string]struct{ in, id string }{
+		// yaml.v3 also ends a line on a lone CR or LS, so a count of LFs
+		// lands on the next line, here a name holding the same text.
+		"lone CR before the binding": {
+			in: "importance: low\rworkloadId: " + oldID + "\nname:       " + oldID + "\n", id: newID,
 		},
-		"single quoted": {
-			in:   "workloadId: '6ad3c5ed190d72e5948d8051'\nname: x\n",
-			want: "workloadId: '6adb9de43bff6a3b37d1b9d7'\nname: x\n",
+		"line separator before the binding": {
+			in: "importance: low\xe2\x80\xa8workloadId: " + oldID + "\nname:       " + oldID + "\n", id: newID,
 		},
-		"crlf": {
-			in:   "workloadId: 6ad3c5ed190d72e5948d8051 # managed by the CLI\r\nname: x\r\n",
-			want: "workloadId: 6adb9de43bff6a3b37d1b9d7 # managed by the CLI\r\nname: x\r\n",
-		},
-		"not first key": {
-			in:   "name: x\n# bound by up\nworkloadId: 6ad3c5ed190d72e5948d8051\n",
-			want: "name: x\n# bound by up\nworkloadId: 6adb9de43bff6a3b37d1b9d7\n",
-		},
-		"multi-byte text before the token": {
-			in:   "{name: ééé, workloadId: 6ad3c5ed190d72e5948d8051}\n",
-			want: "{name: ééé, workloadId: 6adb9de43bff6a3b37d1b9d7}\n",
-		},
-		"same id writes nothing": {
-			in:   "workloadId: 6adb9de43bff6a3b37d1b9d7 # managed by the CLI\nname: x\n",
-			want: "workloadId: 6adb9de43bff6a3b37d1b9d7 # managed by the CLI\nname: x\n",
-		},
+		// Written plain, an all-digit id would read back as a number.
+		"all-digit id": {in: "workloadId: " + oldID + "\nname: x\n", id: "123456789012345678901234"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeManifest(t, t.TempDir(), tc.in)
 
-			require.NoError(t, WriteWorkloadID(path, "6adb9de43bff6a3b37d1b9d7"))
-
-			got, err := os.ReadFile(path)
+			data, err := os.ReadFile(path)
 			require.NoError(t, err)
-			assert.Equal(t, tc.want, string(got))
+
+			_, root, err := soleDocument(data, path, "test", func(format string, args ...any) error {
+				return fmt.Errorf(format, args...)
+			})
+			require.NoError(t, err)
+
+			_, ok := spliceWorkloadID(data, root, tc.id)
+			assert.False(t, ok)
+
+			require.NoError(t, WriteWorkloadID(path, tc.id))
+
+			m, err := Load(path)
+			require.NoError(t, err)
+			assert.Equal(t, tc.id, m.WorkloadID())
+
+			if strings.Contains(tc.in, "name:       ") {
+				assert.Equal(t, oldID, m.Name())
+			}
 		})
 	}
 }
@@ -106,17 +166,17 @@ func TestWriteWorkloadID_ReplaceQuotedAndCRLF(t *testing.T) {
 func TestWriteWorkloadID_ReplaceFallsBackToTreeEdit(t *testing.T) {
 	for name, in := range map[string]string{
 		"spaces in quotes": "workloadId: \"a b\" # managed by the CLI\nname: x\n",
-		"block scalar":     "workloadId: |\n  6ad3c5ed190d72e5948d8051\n# bound by up\nname: x\n",
+		"block scalar":     "workloadId: |\n  " + oldID + "\n# bound by up\nname: x\n",
 		"alias":            "anchor: &id other\nworkloadId: *id # managed by the CLI\nname: x\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeManifest(t, t.TempDir(), in)
 
-			require.NoError(t, WriteWorkloadID(path, "6adb9de43bff6a3b37d1b9d7"))
+			require.NoError(t, WriteWorkloadID(path, newID))
 
 			m, err := Load(path)
 			require.NoError(t, err)
-			assert.Equal(t, "6adb9de43bff6a3b37d1b9d7", m.WorkloadID())
+			assert.Equal(t, newID, m.WorkloadID())
 
 			got, err := os.ReadFile(path)
 			require.NoError(t, err)

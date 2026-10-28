@@ -39,8 +39,14 @@ func spliceScalar(data []byte, node *yaml.Node, value string) ([]byte, bool) {
 		return nil, false
 	}
 
+	// A plain value has to read back as a string: an all-digit id would come
+	// back as a number.
+	if node.Style == 0 && !resolvesToString(value) {
+		return nil, false
+	}
+
 	start, ok := tokenOffset(data, node.Line, node.Column)
-	if !ok {
+	if !ok || hasOtherLineBreak(data[:start]) {
 		return nil, false
 	}
 
@@ -87,9 +93,9 @@ func spliceableNode(node *yaml.Node) bool {
 	return node.Tag == "" || node.Tag == "!!str"
 }
 
-// plainSafe reports whether s reads back as itself in every style the splice
-// handles: no quoting, escapes, or characters YAML treats as structure. A
-// lone "-" is still a sequence marker.
+// plainSafe reports whether s needs no quoting, escapes, or characters YAML
+// treats as structure in any style the splice handles. A lone "-" is still a
+// sequence marker. Whether a plain s resolves to a string is resolvesToString.
 func plainSafe(s string) bool {
 	if s == "" || s == "-" {
 		return false
@@ -109,12 +115,51 @@ func plainRune(r rune) bool {
 		r == '-' || r == '_' || r == '.'
 }
 
+// resolvesToString reports whether s, written plain, parses as a string.
+func resolvesToString(s string) bool {
+	var doc yaml.Node
+
+	if err := yaml.Unmarshal([]byte(s), &doc); err != nil || len(doc.Content) != 1 {
+		return false
+	}
+
+	return doc.Content[0].ShortTag() == "!!str"
+}
+
+// The line breaks yaml.v3 counts besides LF: NEL, LS and PS.
+var otherLineBreaks = [][]byte{[]byte("\xc2\x85"), []byte("\xe2\x80\xa8"), []byte("\xe2\x80\xa9")}
+
+// hasOtherLineBreak reports a line break lineOffset does not count: a lone
+// CR, or one of otherLineBreaks.
+func hasOtherLineBreak(data []byte) bool {
+	for i, b := range data {
+		if b == '\r' && (i+1 == len(data) || data[i+1] != '\n') {
+			return true
+		}
+	}
+
+	for _, lineBreak := range otherLineBreaks {
+		if bytes.Contains(data, lineBreak) {
+			return true
+		}
+	}
+
+	return false
+}
+
+const byteOrderMark = "\xef\xbb\xbf"
+
 // tokenOffset is the byte offset of the 1-based line and column. Column
-// counts runes, so any multi-byte text before the token is stepped over.
+// counts runes, so any multi-byte text before the token is stepped over. The
+// parser does not count a leading byte order mark.
 func tokenOffset(data []byte, line, column int) (int, bool) {
 	offset, ok := lineOffset(data, line)
 	if !ok {
 		return 0, false
+	}
+
+	if offset == 0 && bytes.HasPrefix(data, []byte(byteOrderMark)) {
+		offset = len(byteOrderMark)
 	}
 
 	for n := 1; n < column; n++ {
