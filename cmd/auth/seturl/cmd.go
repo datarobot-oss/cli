@@ -23,6 +23,65 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// RunE configures the DataRobot endpoint, persists it, and then continues
+// into authentication. A successful persistence announces where the
+// credentials landed; a failed one is reported instead of being ignored, so
+// the command never claims a write that did not happen.
+func RunE(cmd *cobra.Command, args []string) error {
+	var url string
+	if len(args) > 0 {
+		url = args[0]
+	}
+
+	// A bad explicit arg is reported, not silently replaced by the picker.
+	if url != "" {
+		if err := config.SetURLToConfig(url); err != nil {
+			log.Error(err.Error())
+
+			return cli.ErrSilent
+		}
+
+		if err := persistAndAnnounce(cmd); err != nil {
+			return err
+		}
+
+		_ = auth.EnsureAuthenticatedE(cmd, args)
+
+		return nil
+	}
+
+	if auth.SetURLAction() {
+		if err := persistAndAnnounce(cmd); err != nil {
+			return err
+		}
+
+		_ = auth.EnsureAuthenticatedE(cmd, args)
+	}
+
+	return nil
+}
+
+// persistAndAnnounce writes the allowlisted config keys and, only after the
+// write succeeded, emits the single save notice naming the saved profile and
+// the actual config file. The notice goes to the error stream, so
+// --output-format json keeps stdout a parseable channel.
+//
+// A write failure is reported once -- by WriteConfigFileSilent's own error
+// logging -- and returned as the silent sentinel, matching how this command
+// reports its other RunE errors; the subsequent authentication step is
+// skipped so a failed write is never followed by a success claim.
+func persistAndAnnounce(cmd *cobra.Command) error {
+	if err := auth.WriteConfigFileSilent(); err != nil {
+		// Already reported by WriteConfigFileSilent; log again and this
+		// failure would appear twice.
+		return cli.ErrSilent
+	}
+
+	auth.AnnounceCredentialsSavedForCommand(cmd)
+
+	return nil
+}
+
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "set-url [url]",
@@ -42,33 +101,7 @@ This command helps you choose the correct DataRobot environment:
 			// set-url is expected to create a not-yet-existing --profile.
 			config.ProfileCreateAnnotationKey: "true",
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var url string
-			if len(args) > 0 {
-				url = args[0]
-			}
-
-			// A bad explicit arg is reported, not silently replaced by the picker.
-			if url != "" {
-				if err := config.SetURLToConfig(url); err != nil {
-					log.Error(err.Error())
-
-					return cli.ErrSilent
-				}
-
-				_ = auth.WriteConfigFileSilent()
-				_ = auth.EnsureAuthenticatedE(cmd, args)
-
-				return nil
-			}
-
-			if auth.SetURLAction() {
-				_ = auth.WriteConfigFileSilent()
-				_ = auth.EnsureAuthenticatedE(cmd, args)
-			}
-
-			return nil
-		},
+		RunE: RunE,
 	}
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

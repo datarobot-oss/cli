@@ -17,6 +17,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/testutil"
@@ -330,4 +331,34 @@ func TestUpdateConfigFile_ExplicitDefaultReusesExistingSection(t *testing.T) {
 	def, ok := profiles["default"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "https://new.example.com/api/v2", def["endpoint"])
+}
+
+// TestConfigFilePath_ReturnsActiveConfigFile pins that the save-notice path
+// helper resolves the same drconfig.yaml viper actually read and wrote.
+func TestConfigFilePath_ReturnsActiveConfigFile(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	path, err := ConfigFilePath()
+
+	require.NoError(t, err)
+	assert.Equal(t, configFile, path)
+}
+
+// TestConfigFilePath_IsAbsolute pins that the helper absolutizes a relative
+// config path: the save notice must name the real file, not a cwd-relative
+// fragment.
+func TestConfigFilePath_IsAbsolute(t *testing.T) {
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	viper.SetConfigFile("relative/drconfig.yaml")
+
+	path, err := ConfigFilePath()
+
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(path), "the save notice must name an absolute config path, got %q", path)
+	assert.True(t, strings.HasSuffix(path, filepath.Join("relative", "drconfig.yaml")))
 }

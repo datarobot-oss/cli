@@ -141,17 +141,26 @@ func ActiveProfile() string {
 	return NormalizeProfileName(viper.GetString(ProfileKey))
 }
 
+// ProfileDescription names, in user-facing wording, the credentials a given
+// normalized profile name resolves to: the root-level credentials for the
+// empty name (an omitted selection), otherwise the quoted profile name. It
+// is the shared wording behind SelectedCredentialsDescription and the save
+// notice emitted by successful auth login/set-url writes.
+func ProfileDescription(name string) string {
+	if name == "" {
+		return "the root-level credentials"
+	}
+
+	return fmt.Sprintf("profile %q", name)
+}
+
 // SelectedCredentialsDescription names, in user-facing wording, whose
 // credentials the active selection resolves to: the root-level credentials
 // when selection is omitted, otherwise the explicitly selected profile. The
 // name is the normalized one (see ActiveProfile), so status and recovery
 // messages match what a follow-up command must spell.
 func SelectedCredentialsDescription() string {
-	if name := ActiveProfile(); name != "" {
-		return fmt.Sprintf("profile %q", name)
-	}
-
-	return "the root-level credentials"
+	return ProfileDescription(ActiveProfile())
 }
 
 // SelectedProfileFlagSuffix returns " --profile <name>" when a profile is

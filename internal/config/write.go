@@ -123,6 +123,24 @@ func resolveConfigFilePath() (string, error) {
 	return filepath.Join(dir, configFileName), nil
 }
 
+// ConfigFilePath returns the absolute path of the drconfig.yaml the CLI is
+// currently using. Save announcements after successful login/set-url writes
+// use it to name the file the data actually landed in, so the notice must be
+// absolute even when the config was pointed at a relative path.
+func ConfigFilePath() (string, error) {
+	configFile, err := resolveConfigFilePath()
+	if err != nil {
+		return "", err
+	}
+
+	absolute, err := filepath.Abs(configFile)
+	if err != nil {
+		return configFile, nil
+	}
+
+	return absolute, nil
+}
+
 // readYAMLNode reads a YAML file into a *yaml.Node, preserving comments and
 // structure. If the file does not exist or is empty, an empty map node is returned.
 // Returns the root mapping node (unwrapping the document node if necessary).

@@ -30,6 +30,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 	"github.com/datarobot/cli/tui/hostpicker"
 	"github.com/spf13/cobra"
@@ -453,13 +454,26 @@ func WriteConfigFileSilent() error {
 	return nil
 }
 
-func WriteConfigFile() error {
+// WriteConfigFile persists the config file and prints a success line. The
+// line follows the command's output-format contract: under
+// --output-format json it goes to stderr so stdout stays a parseable
+// channel, mirroring the save notice the auth commands emit after a
+// successful login/set-url write.
+func WriteConfigFile(cmd *cobra.Command) error {
 	err := WriteConfigFileSilent()
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Config file written successfully.")
+	successLine := "Config file written successfully."
+
+	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
+		fmt.Fprintln(os.Stderr, successLine)
+
+		return nil
+	}
+
+	fmt.Println(successLine)
 
 	return nil
 }
