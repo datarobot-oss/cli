@@ -34,6 +34,11 @@ import (
 // RegisterPluginCommands discovers installed plugins and registers them as sub-commands
 // on rootCmd. The plugin group is only added when at least one plugin is found.
 func RegisterPluginCommands(rootCmd *cobra.Command) {
+	// Resolve the discovery cache TTL from the leading global flag (or
+	// env/config fallbacks) before any discovery runs, so the on-disk cache
+	// honors the same control surface as the discovery timeout.
+	internalPlugin.SetDiscoveryCacheTTL(pluginDiscoveryCacheTTL(rootCmd))
+
 	timeout := pluginDiscoveryTimeout(rootCmd)
 	if timeout <= 0 {
 		log.Debug("Plugin discovery disabled", "timeout", timeout)
@@ -108,6 +113,26 @@ func pluginDiscoveryTimeout(rootCmd *cobra.Command) time.Duration {
 	}
 
 	return internalPlugin.DiscoveryTimeout()
+}
+
+// pluginDiscoveryCacheTTL resolves the startup discovery cache TTL, mirroring
+// pluginDiscoveryTimeout: the leading global flag wins when explicitly
+// provided; otherwise internalPlugin.DiscoveryCacheTTL applies the env var
+// (read directly, since config initialization has not happened yet) and the
+// viper/config fallback. A TTL of 0s disables the cache entirely.
+func pluginDiscoveryCacheTTL(rootCmd *cobra.Command) time.Duration {
+	if flag := rootCmd.PersistentFlags().Lookup(internalPlugin.DiscoveryCacheKey); flag != nil && flag.Changed {
+		ttl, err := time.ParseDuration(flag.Value.String())
+		if err != nil {
+			log.Debug("Invalid plugin discovery cache TTL flag", "value", flag.Value.String(), "error", err)
+
+			return internalPlugin.DefaultDiscoveryCacheTTL
+		}
+
+		return ttl
+	}
+
+	return internalPlugin.DiscoveryCacheTTL()
 }
 
 func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {

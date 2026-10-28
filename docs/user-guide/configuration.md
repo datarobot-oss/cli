@@ -240,6 +240,9 @@ dr templates list --debug
 
 # Timeout for startup plugin discovery (0s disables discovery; place before the command)
 dr --plugin-discovery-timeout 2s --help
+
+# TTL for the plugin discovery cache (0s disables the cache; place before the command)
+dr --plugin-discovery-cache-ttl 1h --help
 ```
 
 > [!WARNING]

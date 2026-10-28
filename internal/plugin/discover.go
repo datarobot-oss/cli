@@ -51,8 +51,8 @@ var registry = &DiscoveredPluginsRegistry{}
 // GetPlugins returns discovered plugins and any name conflicts found along
 // the way, discovering lazily on first call. If PrimeCache already populated
 // the registry (e.g. RegisterPluginCommands ran during startup), that result
-// is reused instead of discovering again.
-// TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation.
+// is reused instead of discovering again. Manifest probes are additionally
+// accelerated by the on-disk discovery cache (see discovery_cache.go).
 func GetPlugins() ([]DiscoveredPlugin, []PluginConflict) {
 	registry.once.Do(func() {
 		timeout := DiscoveryTimeout()
@@ -139,6 +139,10 @@ func ConflictsForName(conflicts []PluginConflict, name string) []PluginConflict 
 // so they are always returned even when ctx is cancelled mid-discovery. PATH plugins
 // return whatever finished before ctx is done.
 func DiscoverPluginsWithContext(ctx context.Context) ([]DiscoveredPlugin, []PluginConflict) {
+	// cache is nil when the discovery cache is disabled; all cache helpers
+	// are nil-receiver safe.
+	cache := sharedDiscoveryCache()
+
 	plugins := make([]DiscoveredPlugin, 0)
 
 	var conflicts []PluginConflict
@@ -162,7 +166,7 @@ func DiscoverPluginsWithContext(ctx context.Context) ([]DiscoveredPlugin, []Plug
 
 	// 2. Check project-local directory (higher priority than PATH)
 	// TODO: LocalPluginDir shares path with QuickstartScriptPath - consider dedicated plugin directory
-	localPlugins, localConflicts, errs := discoverInDir(ctx, repo.LocalPluginDir, seen)
+	localPlugins, localConflicts, errs := discoverInDir(ctx, repo.LocalPluginDir, seen, cache)
 	plugins = append(plugins, localPlugins...)
 	conflicts = append(conflicts, localConflicts...)
 
@@ -175,7 +179,7 @@ func DiscoverPluginsWithContext(ctx context.Context) ([]DiscoveredPlugin, []Plug
 	// without sharing mutable state. Cross-dir dedup is handled inside the helper.
 	baseSeen := maps.Clone(seen)
 
-	pathPlugins, pathConflicts := discoverPathDirsParallel(ctx, uniqueDirs(filepath.SplitList(os.Getenv("PATH"))), baseSeen)
+	pathPlugins, pathConflicts := discoverPathDirsParallel(ctx, uniqueDirs(filepath.SplitList(os.Getenv("PATH"))), baseSeen, cache)
 	plugins = append(plugins, pathPlugins...)
 	conflicts = append(conflicts, pathConflicts...)
 
@@ -184,6 +188,10 @@ func DiscoverPluginsWithContext(ctx context.Context) ([]DiscoveredPlugin, []Plug
 	}
 
 	log.Debug("Plugin discovery complete", "count", len(plugins))
+
+	// Persist any probe results recorded during this scan. No-op when the
+	// cache is disabled or nothing changed.
+	cache.saveIfDirty()
 
 	return plugins, conflicts
 }
@@ -214,7 +222,7 @@ func uniqueDirs(dirs []string) []string {
 // Each goroutine receives its own copy of baseSeen so managed/local plugins are filtered
 // without cross-goroutine map races. Goroutines not yet started are skipped when ctx is done.
 // Results are merged in directory order and cross-dir duplicates are recorded as conflicts.
-func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen map[string]bool) ([]DiscoveredPlugin, []PluginConflict) {
+func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen map[string]bool, cache *DiscoveryCache) ([]DiscoveredPlugin, []PluginConflict) {
 	type dirResult struct {
 		plugins   []DiscoveredPlugin
 		conflicts []PluginConflict
@@ -238,7 +246,7 @@ func discoverPathDirsParallel(ctx context.Context, pathDirs []string, baseSeen m
 			// A conflict here means the name was already seen in baseSeen
 			// (i.e. claimed by a managed/local plugin); genuine cross-dir
 			// PATH conflicts are detected below during the merge step.
-			p, c, e := discoverInDir(ctx, dir, localSeen)
+			p, c, e := discoverInDir(ctx, dir, localSeen, cache)
 			dirResults[i] = dirResult{plugins: p, conflicts: c, errs: e}
 		})
 	}
@@ -390,7 +398,7 @@ func errMissingManifestField(field string) error {
 	return errors.New("plugin manifest missing required field: " + field)
 }
 
-func discoverInDir(ctx context.Context, dir string, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
+func discoverInDir(ctx context.Context, dir string, seen map[string]bool, cache *DiscoveryCache) ([]DiscoveredPlugin, []PluginConflict, []error) {
 	// Check if directory exists
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
@@ -427,21 +435,27 @@ func discoverInDir(ctx context.Context, dir string, seen map[string]bool) ([]Dis
 	}
 
 	// Phase 2 & 3: fetch manifests in parallel and deduplicate on manifest.Name.
-	return getManifestsParallel(ctx, executables, seen)
+	return getManifestsParallel(ctx, executables, seen, cache)
 }
 
-// getManifestsParallel calls getManifest concurrently for each executable, then
-// deduplicates results against seen in lexicographic (input) order. Preserves the
-// "first binary wins" guarantee that os.ReadDir's alphabetical ordering provides.
-// Goroutines that have not yet called getManifest are skipped when ctx is done.
-func getManifestsParallel(ctx context.Context, executables []string, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
-	type result struct {
-		path     string
-		manifest *PluginManifest
-		err      error
-	}
+// probeResult is the per-executable outcome of a manifest resolution,
+// either probed live or read from the discovery cache.
+type probeResult struct {
+	path     string
+	manifest *PluginManifest
+	err      error
+	cached   bool
+}
 
-	results := make([]result, len(executables))
+// getManifestsParallel resolves each executable's manifest, consulting the
+// discovery cache first: a fresh cache hit (manifest or recorded failure)
+// skips the exec entirely. Cache misses probe via getManifest and record
+// their outcome after the parallel phase completes. Preserves the
+// "first binary wins" guarantee that os.ReadDir's alphabetical ordering
+// provides. Goroutines that have not yet called getManifest are skipped
+// when ctx is done.
+func getManifestsParallel(ctx context.Context, executables []string, seen map[string]bool, cache *DiscoveryCache) ([]DiscoveredPlugin, []PluginConflict, []error) {
+	results := make([]probeResult, len(executables))
 
 	var wg sync.WaitGroup
 
@@ -453,14 +467,55 @@ func getManifestsParallel(ctx context.Context, executables []string, seen map[st
 			default:
 			}
 
+			// lookup is a pure read; no cache mutations happen while the
+			// probe goroutines run, so this is race-free. nil cache misses.
+			if entry, ok := cache.lookup(fullPath); ok {
+				results[i] = cachedProbeResult(fullPath, entry)
+
+				return
+			}
+
 			manifest, err := getManifest(ctx, fullPath)
-			results[i] = result{path: fullPath, manifest: manifest, err: err}
+			results[i] = probeResult{path: fullPath, manifest: manifest, err: err}
 		})
 	}
 
 	wg.Wait()
 
+	// Record fresh probe outcomes after each directory's parallel phase.
+	// Directories merge concurrently, so record takes the cache's write
+	// lock; lookups inside other directories' goroutines take the read side.
+	recordProbeResults(cache, results)
+
 	// Deduplicate on manifest.Name (the actual command name), preserving lexicographic order
+	return dedupProbeResults(results, seen)
+}
+
+// cachedProbeResult converts a cache entry into a probe result. A cached
+// failure re-creates the original probe error.
+func cachedProbeResult(path string, entry *cacheEntry) probeResult {
+	if entry.ProbeError != "" {
+		return probeResult{path: path, err: errors.New(entry.ProbeError), cached: true}
+	}
+
+	return probeResult{path: path, manifest: entry.Manifest, cached: true}
+}
+
+// recordProbeResults stores every freshly probed outcome in the cache,
+// including duplicates that dedup later skips.
+// Note: callers may run concurrently (one merge loop per PATH directory);
+// the cache's internal locking makes this safe.
+func recordProbeResults(cache *DiscoveryCache, results []probeResult) {
+	for _, r := range results {
+		if r.path != "" && !r.cached {
+			cache.record(r.path, r.manifest, r.err)
+		}
+	}
+}
+
+// dedupProbeResults merges probe results in input order, deduplicating on
+// manifest.Name: the first occurrence wins and later ones become conflicts.
+func dedupProbeResults(results []probeResult, seen map[string]bool) ([]DiscoveredPlugin, []PluginConflict, []error) {
 	var plugins []DiscoveredPlugin
 
 	var conflicts []PluginConflict
