@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -84,6 +85,13 @@ func TestCheckPlanSize(t *testing.T) {
 			plan:    &SyncPlan{Deletes: actions(RemoteDeleteMaxPaths+1, ActUploadDelete, "remotedel")},
 			wantErr: fmt.Sprintf("plan deletes %d remote files, more than the %d the Files API accepts", RemoteDeleteMaxPaths+1, RemoteDeleteMaxPaths),
 		},
+		"both limits are named": {
+			plan: &SyncPlan{
+				Downloads: actions(RollbackMaxFiles+1, ActDownloadModify, "down"),
+				Deletes:   actions(RemoteDeleteMaxPaths+1, ActUploadDelete, "remotedel"),
+			},
+			wantErr: fmt.Sprintf("exceeding RollbackMaxFiles=%d; plan deletes %d remote files", RollbackMaxFiles, RemoteDeleteMaxPaths+1),
+		},
 	}
 
 	for name, tc := range cases {
@@ -100,6 +108,16 @@ func TestCheckPlanSize(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+// A large archive gets longer than the fixed wait to extract, a small one
+// never less.
+func TestZipPollTimeout(t *testing.T) {
+	floor := time.Duration(ZipPollTimeoutSecs) * time.Second
+
+	assert.Equal(t, floor, zipPollTimeout(1))
+	assert.Equal(t, floor, zipPollTimeout(int(floor/ZipPollPerFile)))
+	assert.Equal(t, 50000*ZipPollPerFile, zipPollTimeout(50000))
 }
 
 // The refusal comes before anything touches the tree: no rollback dir.

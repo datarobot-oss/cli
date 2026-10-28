@@ -14,6 +14,8 @@
 
 package sync
 
+import "time"
+
 // Sync-engine orchestration tunables. File-level limits live in
 // internal/workload/fileops.
 const (
@@ -40,4 +42,9 @@ const (
 
 	ZipPollIntervalMS  = 500
 	ZipPollTimeoutSecs = 600
+
+	// ZipPollPerFile scales the extract wait for archives too large for
+	// ZipPollTimeoutSecs. Staging extracts about 30ms per file; this allows
+	// three times that.
+	ZipPollPerFile = 100 * time.Millisecond
 )

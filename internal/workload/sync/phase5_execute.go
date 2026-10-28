@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -90,21 +91,27 @@ func checkPlanSize(plan *SyncPlan) error {
 	downloads, conflicts := len(plan.Downloads), len(plan.Conflicts)
 	localDeletes := plan.RollbackFiles() - downloads - conflicts
 
+	var over []string
+
 	if total := plan.RollbackFiles(); total > RollbackMaxFiles {
-		return fmt.Errorf(
-			"plan would back up %d local files (downloads=%d, local deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d; refusing to run",
+		over = append(over, fmt.Sprintf(
+			"plan would back up %d local files (downloads=%d, local deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d",
 			total, downloads, localDeletes, conflicts, RollbackMaxFiles,
-		)
+		))
 	}
 
 	if remote := plan.RemoteDeletes(); remote > RemoteDeleteMaxPaths {
-		return fmt.Errorf(
-			"plan deletes %d remote files, more than the %d the Files API accepts in one request; refusing to run",
+		over = append(over, fmt.Sprintf(
+			"plan deletes %d remote files, more than the %d the Files API accepts in one request",
 			remote, RemoteDeleteMaxPaths,
-		)
+		))
 	}
 
-	return nil
+	if len(over) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%s; refusing to run", strings.Join(over, "; "))
 }
 
 func executePlan(e *Engine, rb *Rollback) error {
