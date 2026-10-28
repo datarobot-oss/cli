@@ -60,11 +60,7 @@ func spliceScalar(data []byte, node *yaml.Node, value string) ([]byte, bool) {
 // scalarSource is the source text node occupies and the text that value
 // takes in the same style, or false when the splice does not model the node.
 func scalarSource(node *yaml.Node, value string) (old, replacement string, ok bool) {
-	if node == nil || node.Kind != yaml.ScalarNode || node.Anchor != "" || node.Line < 1 || node.Column < 1 {
-		return "", "", false
-	}
-
-	if (node.Tag != "" && node.Tag != "!!str") || !plainSafe(node.Value) || !plainSafe(value) {
+	if !spliceableNode(node) || !plainSafe(node.Value) || !plainSafe(value) {
 		return "", "", false
 	}
 
@@ -80,6 +76,15 @@ func scalarSource(node *yaml.Node, value string) (old, replacement string, ok bo
 	}
 
 	return "", "", false
+}
+
+// spliceableNode is a positioned string scalar with no anchor or explicit tag.
+func spliceableNode(node *yaml.Node) bool {
+	if node == nil || node.Kind != yaml.ScalarNode || node.Anchor != "" || node.Line < 1 || node.Column < 1 {
+		return false
+	}
+
+	return node.Tag == "" || node.Tag == "!!str"
 }
 
 // plainSafe reports whether s reads back as itself in every style the splice
