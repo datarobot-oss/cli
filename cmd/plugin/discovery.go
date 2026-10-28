@@ -17,7 +17,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
@@ -122,9 +121,7 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 		Run: func(pluginCmd *cobra.Command, args []string) {
 			shared.CheckAndPromptPluginUpdate(pluginName, manifest.Version, pluginPath)
 
-			// The banner goes to stderr so stdout stays reserved for the
-			// plugin's own output (e.g. under --output-format json).
-			fmt.Fprintln(os.Stderr, tui.InfoStyle.Render("🔌 Running plugin: "+pluginName))
+			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := internalPlugin.ExecutePlugin(pluginCmd.Context(), manifest, executable, args, pluginCmd.Root().PersistentFlags())

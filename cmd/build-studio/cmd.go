@@ -89,11 +89,10 @@ func run(cmd *cobra.Command, rawArgs []string) error {
 		return err
 	}
 
-	// Enqueue the command's telemetry event before exiting: os.Exit skips
-	// the OnFinalize hook that normally fires it. Error paths return above
-	// and reach the hook as usual.
-	telemetry.TrackCommandFromContext(cmd.Context(), cmd, rawArgs)
-	telemetry.ExitWithContext(cmd.Context(), exitCode)
+	// ExitCommand enqueues the command's telemetry event before exiting:
+	// os.Exit skips the OnFinalize hook that normally fires it. Error paths
+	// return above and reach the hook as usual.
+	telemetry.ExitCommand(cmd, rawArgs, exitCode)
 
 	return nil
 }
