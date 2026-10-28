@@ -164,9 +164,9 @@ func TestShow_NamedProfile_InheritsCACertFromDefault(t *testing.T) {
 // config.applyProfile, which merges endpoint and token atomically: a profile
 // created by `auth set-url` alone owns its endpoint and an empty token, and
 // must never be shown pairing its own endpoint with the default's token (or
-// the default's endpoint under its own name). The *_own flags stay per-key:
-// an endpoint-only profile reports endpoint_own=true but has_token_own=false,
-// because it defines no token of its own.
+// the default's endpoint under its own name). The *_own flags report
+// ownership of the atomic pair, so a profile owning the pair through either
+// key reports both flags true.
 func TestShow_EndpointOnlyProfileDoesNotInheritCredentials(t *testing.T) {
 	writeTestConfig(t)
 
@@ -175,17 +175,20 @@ func TestShow_EndpointOnlyProfileDoesNotInheritCredentials(t *testing.T) {
 	assert.Equal(t, "https://staging.example.com/api/v2", detail.Endpoint)
 	assert.True(t, detail.EndpointOwn)
 	assert.False(t, detail.HasToken, "a profile that owns an endpoint but no token must not borrow the default's")
-	assert.False(t, detail.HasTokenOwn)
+	assert.True(t, detail.HasTokenOwn)
 }
 
 // writeTestConfigWithPairingFixtures builds a config whose root credentials
 // are complete (endpoint plus token, no ca-cert) and whose named profiles
 // cover every ownership shape the atomic endpoint/token merge can produce:
-// endpoint-only, full, and token-only.
+// endpoint-only, full, token-only, and CA-only (which owns no credential and
+// inherits the root pair).
 func writeTestConfigWithPairingFixtures(t *testing.T) {
 	writeFixtureConfig(t, `endpoint: https://root.example.com/api/v2
 token: root-secret-token
 profiles:
+  caonly:
+    ca-cert: /etc/ssl/caonly.pem
   eponly:
     endpoint: https://eponly.example.com/api/v2
   full:
@@ -196,12 +199,16 @@ profiles:
 `)
 }
 
-// TestShow_JSONOwnFlagsArePerKey covers the JSON ownership contract for every
-// credential ownership shape: the *_own flags report which keys the profile's
-// own section defines, while the resolved values keep the atomic pairing (an
+// TestShow_JSONOwnFlagsArePairAtomic covers the JSON ownership contract for
+// every credential ownership shape. endpoint_own and has_token_own report
+// ownership of the atomic endpoint/token pair, not per-key presence: both are
+// true whenever the profile's own section defines an endpoint, a token, or
+// both, and both are false when it defines neither (empty or CA-only), in
+// which case the profile inherits the root pair. Only the resolved fields
+// (endpoint, has_token) reflect which individual values are present: an
 // endpoint-only profile resolves its own endpoint and an empty token, never
-// the root token, and a token-only profile resolves no endpoint at all).
-func TestShow_JSONOwnFlagsArePerKey(t *testing.T) {
+// the root token, and a token-only profile resolves no endpoint at all.
+func TestShow_JSONOwnFlagsArePairAtomic(t *testing.T) {
 	writeTestConfigWithPairingFixtures(t)
 
 	eponly, _ := runShowJSON(t, "eponly")
@@ -209,7 +216,7 @@ func TestShow_JSONOwnFlagsArePerKey(t *testing.T) {
 	assert.Equal(t, "https://eponly.example.com/api/v2", eponly.Endpoint)
 	assert.True(t, eponly.EndpointOwn)
 	assert.False(t, eponly.HasToken, "an endpoint-only profile must not inherit the root token")
-	assert.False(t, eponly.HasTokenOwn)
+	assert.True(t, eponly.HasTokenOwn, "owning the pair through the endpoint reports both flags")
 
 	full, _ := runShowJSON(t, "full")
 
@@ -219,10 +226,19 @@ func TestShow_JSONOwnFlagsArePerKey(t *testing.T) {
 
 	toonly, _ := runShowJSON(t, "toonly")
 
-	assert.False(t, toonly.EndpointOwn)
+	assert.True(t, toonly.EndpointOwn, "owning the pair through the token reports both flags")
 	assert.Empty(t, toonly.Endpoint, "a token-only profile must not inherit the root endpoint")
 	assert.True(t, toonly.HasToken)
 	assert.True(t, toonly.HasTokenOwn)
+
+	// A CA-only profile owns neither credential: both flags are false and the
+	// root endpoint/token pair is inherited whole.
+	caonly, _ := runShowJSON(t, "caonly")
+
+	assert.Equal(t, "https://root.example.com/api/v2", caonly.Endpoint, "a profile owning no credential inherits the root pair")
+	assert.True(t, caonly.HasToken)
+	assert.False(t, caonly.EndpointOwn)
+	assert.False(t, caonly.HasTokenOwn)
 }
 
 // assertCACertStringKey re-parses a show JSON document and asserts the
@@ -357,6 +373,19 @@ func TestShow_HumanFullProfileHasNoUnpairingExplanation(t *testing.T) {
 
 	assert.NotContains(t, out, "root-level token")
 	assert.NotContains(t, out, "root-level endpoint")
+}
+
+// TestShow_HumanCAOnlyProfileInheritsRootPair covers the human side of the
+// empty/CA-only shape: a profile owning neither credential inherits the whole
+// root pair (labeled as inherited) and needs no unpairing explanation.
+func TestShow_HumanCAOnlyProfileInheritsRootPair(t *testing.T) {
+	writeTestConfigWithPairingFixtures(t)
+
+	out := runShowHuman(t, "caonly")
+
+	assert.Contains(t, out, "https://root.example.com/api/v2")
+	assert.Contains(t, out, "set (inherited from the root-level credentials)")
+	assert.NotContains(t, out, "endpoint and token are always paired")
 }
 
 // TestShow_HumanRootTitleIsLabeled covers the distinct root labeling: the

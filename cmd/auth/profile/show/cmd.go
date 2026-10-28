@@ -111,7 +111,7 @@ func runShow(cmd *cobra.Command, args []string) error {
 		configPath = path
 	}
 
-	printDetail(detail, name == "", configPath)
+	printDetail(detail, name == "", configPath, own)
 
 	return nil
 }
@@ -164,15 +164,18 @@ func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active
 
 	// config.applyProfile merges endpoint and token atomically, so a profile
 	// that defines either one owns both and never inherits the other; the
-	// resolved values below follow that pairing. The *_own flags, however,
-	// stay per-key: an endpoint-only profile reports endpoint_own=true but
-	// has_token_own=false, because it defines no token of its own. The root
+	// resolved values below follow that pairing. The *_own flags report
+	// ownership of that atomic pair, not per-key presence: both are true
+	// whenever the profile defines an endpoint, a token, or both, and both
+	// are false when it defines neither (empty or CA-only), in which case
+	// the root pair is inherited whole. Only the resolved Endpoint/HasToken
+	// fields distinguish which individual values are present. The root
 	// profile is its own fallback and always reports ownership (an existing
 	// contract, kept for ca_cert_own below as well).
 	credOwn := isRoot || own.Endpoint != "" || own.HasToken
 
-	detail.EndpointOwn = isRoot || own.Endpoint != ""
-	detail.HasTokenOwn = isRoot || own.HasToken
+	detail.EndpointOwn = credOwn
+	detail.HasTokenOwn = credOwn
 	detail.Endpoint = own.Endpoint
 	detail.HasToken = own.HasToken
 
@@ -193,9 +196,10 @@ func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active
 
 // printDetail renders the human show output. isRoot distinguishes the
 // root-level profile (displayed as "default") from an explicit
-// profiles.default section, and configPath names the drconfig.yaml the
-// settings were read from (empty when it could not be resolved).
-func printDetail(d profileDetail, isRoot bool, configPath string) {
+// profiles.default section, configPath names the drconfig.yaml the settings
+// were read from (empty when it could not be resolved), and own is the
+// inspected section's own settings, which drive the unpairing explanation.
+func printDetail(d profileDetail, isRoot bool, configPath string, own config.ProfileInfo) {
 	title := d.Name
 
 	if isRoot {
@@ -223,21 +227,24 @@ func printDetail(d profileDetail, isRoot bool, configPath string) {
 	printField("token", tokenStatus(d.HasToken), !isRoot && !pairOwn)
 	printField("ca-cert", valueOrDash(d.CACert), !d.CACertOwn)
 
-	printUnpairingExplanation(d, isRoot)
+	printUnpairingExplanation(isRoot, own.Endpoint != "", own.HasToken)
 }
 
 // printUnpairingExplanation renders the human note explaining why a profile
 // that owns only one credential never borrows the other from the root-level
 // credentials: endpoint and token are saved and resolved as an atomic pair,
 // so a half-defined profile leaves the other half empty rather than mixing
-// sources. A profile owning both or neither needs no note, and the root
-// profile is its own fallback.
-func printUnpairingExplanation(d profileDetail, isRoot bool) {
-	if isRoot || d.EndpointOwn == d.HasTokenOwn {
+// sources. The explanation is derived from the section's own endpoint/token
+// values rather than the JSON *_own flags, which report pair-wide ownership
+// and can no longer distinguish an endpoint-only from a token-only profile.
+// A profile owning both or neither needs no note, and the root profile is
+// its own fallback.
+func printUnpairingExplanation(isRoot, ownEndpoint, ownToken bool) {
+	if isRoot || ownEndpoint == ownToken {
 		return
 	}
 
-	if d.EndpointOwn {
+	if ownEndpoint {
 		fmt.Printf("  %s\n", tui.DimStyle.Render(
 			"This profile has its own endpoint and no token of its own; it does not use the root-level token (endpoint and token are always paired)."))
 	} else {
