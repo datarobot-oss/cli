@@ -47,4 +47,8 @@ const (
 	// ZipPollTimeoutSecs. Staging extracts about 30ms per file; this allows
 	// three times that.
 	ZipPollPerFile = 100 * time.Millisecond
+
+	// ZipPollMaxTimeoutSecs caps the scaled wait. The engine takes no
+	// context, so an interrupt cannot end the wait early.
+	ZipPollMaxTimeoutSecs = 3600
 )

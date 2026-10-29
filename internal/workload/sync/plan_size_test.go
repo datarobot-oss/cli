@@ -111,13 +111,16 @@ func TestCheckPlanSize(t *testing.T) {
 }
 
 // A large archive gets longer than the fixed wait to extract, a small one
-// never less.
+// never less, and none more than the cap.
 func TestZipPollTimeout(t *testing.T) {
 	floor := time.Duration(ZipPollTimeoutSecs) * time.Second
+	ceiling := time.Duration(ZipPollMaxTimeoutSecs) * time.Second
 
 	assert.Equal(t, floor, zipPollTimeout(1))
 	assert.Equal(t, floor, zipPollTimeout(int(floor/ZipPollPerFile)))
-	assert.Equal(t, 50000*ZipPollPerFile, zipPollTimeout(50000))
+	assert.Equal(t, 20000*ZipPollPerFile, zipPollTimeout(20000))
+	assert.Equal(t, ceiling, zipPollTimeout(int(ceiling/ZipPollPerFile)))
+	assert.Equal(t, ceiling, zipPollTimeout(100000))
 }
 
 // The refusal comes before anything touches the tree: no rollback dir.

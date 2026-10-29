@@ -226,9 +226,11 @@ func postZip(e *Engine, body io.Reader, size int64) (*filesapi.FromFileResp, err
 
 // zipPollTimeout is how long to wait for the server to extract an archive of
 // files entries: ZipPollTimeoutSecs, or longer for an archive large enough to
-// need it.
+// need it, up to ZipPollMaxTimeoutSecs.
 func zipPollTimeout(files int) time.Duration {
-	return max(time.Duration(ZipPollTimeoutSecs)*time.Second, time.Duration(files)*ZipPollPerFile)
+	scaled := max(time.Duration(ZipPollTimeoutSecs)*time.Second, time.Duration(files)*ZipPollPerFile)
+
+	return min(scaled, time.Duration(ZipPollMaxTimeoutSecs)*time.Second)
 }
 
 // waitForCompletion polls until terminal status or timeout elapses.
