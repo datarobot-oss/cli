@@ -20,6 +20,7 @@ import (
 	"github.com/datarobot/cli/cmd/job/del"
 	"github.com/datarobot/cli/cmd/job/get"
 	"github.com/datarobot/cli/cmd/job/list"
+	"github.com/datarobot/cli/cmd/job/logs"
 	"github.com/datarobot/cli/cmd/job/run"
 	"github.com/datarobot/cli/cmd/job/runs"
 	"github.com/datarobot/cli/cmd/job/update"
@@ -55,6 +56,7 @@ DATAROBOT_CLI_FEATURE_JOB=true.`,
 		run.Cmd(),
 		runs.Cmd(),
 		cancel.Cmd(),
+		logs.Cmd(),
 	)
 
 	return cmd

@@ -69,6 +69,33 @@ func TestGetWorkloadLogs_SendsTheServerSideFilter(t *testing.T) {
 	require.Len(t, entries, 1)
 }
 
+// One proton's lines, such as one job run's, take the route's one search
+// slot; a --grep term is then matched here only, never dropped.
+func TestGetWorkloadLogs_AProtonTakesTheSearchAndGrepMovesClientSide(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		assert.Equal(t, "proton_id", q.Get("searchKeys"))
+		assert.Equal(t, "run-1", q.Get("searchValues"))
+
+		fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "epoch 2 done"), logEntryDoc("INFO", "epoch 1 started")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	filter := LogFilter{ProtonID: "run-1", Grep: []string{"done"}}
+
+	entries, err := GetWorkloadLogs("job-1", 25, filter)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "epoch 2 done", entries[0].Message)
+
+	assert.False(t, LogFilter{ProtonID: "run-1"}.Narrows(), "a proton is a scope, not a narrowing")
+}
+
 // A filter with nothing to say sends nothing: the route refuses parameters
 // it does not know, and an empty one is not the same as an absent one.
 func TestGetWorkloadLogs_EmptyFilterSendsOnlyTheLimit(t *testing.T) {

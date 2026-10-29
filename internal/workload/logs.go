@@ -140,6 +140,11 @@ type LogFilter struct {
 	TraceID string
 	SpanID  string
 
+	// ProtonID selects the lines of one proton, such as one run of a job. It
+	// takes the route's one search slot, so every Grep term is then matched
+	// here only. It is a scope rather than a narrowing: Narrows ignores it.
+	ProtonID string
+
 	// Since and Until bound the window. Zero means unbounded on that side.
 	Since time.Time
 	Until time.Time
@@ -322,7 +327,11 @@ func logsQueryParams(maxEntries int, filter LogFilter, cursor string) url.Values
 		query.Set("level", strings.ToLower(filter.Level))
 	}
 
-	if len(filter.Grep) > 0 {
+	switch {
+	case filter.ProtonID != "":
+		query.Set("searchKeys", "proton_id")
+		query.Set("searchValues", filter.ProtonID)
+	case len(filter.Grep) > 0:
 		query.Set("searchKeys", "message")
 		query.Set("searchValues", filter.Grep[0])
 	}
