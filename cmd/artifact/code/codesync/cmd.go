@@ -364,7 +364,7 @@ func skippedSymlinkSummaryNotice(symlinks []sync.SkippedSymlink) string {
 			kind = "directory"
 		}
 
-		parts[i] = fmt.Sprintf("%s (%s)", s.Path, kind)
+		parts[i] = fmt.Sprintf("%s (%s, %s)", s.Path, kind, s.Why())
 	}
 
 	return fmt.Sprintf("%d symlink(s) were not uploaded or synced: %s.",

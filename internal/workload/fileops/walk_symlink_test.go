@@ -17,257 +17,190 @@ package fileops
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// symlinkTestSkipReason is the visible reason emitted when symlink tests are
-// skipped on Windows. os.Symlink needs Developer Mode or elevated privileges
-// there, and junctions are a different mechanism entirely — no attempt is made.
-const symlinkTestSkipReason = "symlink tests skipped on Windows: os.Symlink needs Developer Mode; junctions are not equivalent"
-
-// skipNonWindowsSymlink skips on Windows following the existing
-// runtime.GOOS == "windows" precedent in walk_test.go. The skip reason is
-// visible so a CI log shows why the test did not run rather than appearing to
-// have passed vacuously.
-func skipNonWindowsSymlink(t *testing.T) {
+// symlinkOrSkip creates link pointing at target, skipping the test where the
+// OS refuses: Windows allows symlinks only with Developer Mode or elevation.
+func symlinkOrSkip(t *testing.T, target, link string) {
 	t.Helper()
 
-	if runtime.GOOS == "windows" {
-		t.Skip(symlinkTestSkipReason)
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
 	}
 }
 
-// symlinkReport captures what the SymlinkLogger callback observed, so a test
-// can assert on path, target, isDir, and dangling together.
-type symlinkReport struct {
-	rel      string
-	target   string
-	isDir    bool
-	dangling bool
+// walkLinks walks root and returns its entries' rel paths and the links it
+// met, by rel path.
+func walkLinks(t *testing.T, root string, ignore IgnoreFunc) ([]string, map[string]Link) {
+	t.Helper()
+
+	links := map[string]Link{}
+
+	got, err := Walk(root, ignore, func(l Link) {
+		_, seen := links[l.RelPath]
+		assert.False(t, seen, "%s reported twice", l.RelPath)
+
+		links[l.RelPath] = l
+	})
+	require.NoError(t, err)
+
+	return relPaths(got), links
 }
 
-// TestWalk_SymlinkedDirectory_Pruned verifies that a symlink to a directory
-// produces exactly one callback for the symlink path and zero callbacks for
-// any path beneath it, and that no entry is emitted for the symlink or its
-// children. filepath.WalkDir tests ModeSymlink before IsDir and never descends
-// into a non-directory, so children are never visited.
-//
-// Fulfills VAL-SYMLINK-011(a) and VAL-SYMLINK-011(e).
-func TestWalk_SymlinkedDirectory_Pruned(t *testing.T) {
-	skipNonWindowsSymlink(t)
-
+func TestWalk_FollowsADirectoryLinkInsideTheProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "realdir/inner.py", "x")
 	writeFile(t, root, "realdir/sub/deep.py", "y")
+	symlinkOrSkip(t, filepath.Join(root, "realdir"), filepath.Join(root, "link_to_dir"))
 
-	// link_to_dir -> realdir (a directory symlink)
-	require.NoError(t, os.Symlink(
-		filepath.Join(root, "realdir"),
-		filepath.Join(root, "link_to_dir")))
+	paths, links := walkLinks(t, root, nil)
 
-	var reports []symlinkReport
-
-	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
-	})
-	require.NoError(t, err)
-
-	// Exactly one callback for the symlink path itself.
-	require.Len(t, reports, 1, "a symlinked directory must produce exactly one callback")
-	assert.Equal(t, "link_to_dir", reports[0].rel)
-	assert.True(t, reports[0].isDir, "isDir must be true when the link target is a directory")
-	assert.False(t, reports[0].dangling, "a resolvable link must not be reported as dangling")
-
-	// No entry for the symlink or anything beneath it. The real directory's
-	// children ARE present (the symlink is a separate path).
-	paths := relPaths(got)
-	assert.NotContains(t, paths, "link_to_dir")
-	assert.NotContains(t, paths, "link_to_dir/inner.py")
-	assert.NotContains(t, paths, "link_to_dir/sub/deep.py")
-	assert.Contains(t, paths, "realdir/inner.py")
-	assert.Contains(t, paths, "realdir/sub/deep.py")
+	assert.ElementsMatch(t, []string{
+		"realdir/inner.py", "realdir/sub/deep.py",
+		"link_to_dir/inner.py", "link_to_dir/sub/deep.py",
+	}, paths)
+	assert.Equal(t, Link{
+		RelPath: "link_to_dir", Target: filepath.Join(root, "realdir"), IsDir: true, Outcome: LinkFollowed,
+	}, links["link_to_dir"])
 }
 
-// TestWalk_Symlink_ReportsIsDir verifies that the callback reports isDir true
-// when the link target is a directory and false when it is a regular file.
-// The kind is resolved via os.Stat (which follows the link), the syscall
-// already available on the notify path.
-//
-// Fulfills VAL-SYMLINK-011(b).
-func TestWalk_Symlink_ReportsIsDir(t *testing.T) {
-	skipNonWindowsSymlink(t)
-
+// The entry reads what the link points at, so hashing it hashes the target.
+func TestWalk_FollowsAFileLinkWithARelativeTarget(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, "realfile.py", "x")
-	writeFile(t, root, "realdir/inner.py", "y")
+	writeFile(t, root, "shared/config.py", "x")
+	writeFile(t, root, "app/main.py", "y")
+	symlinkOrSkip(t, filepath.Join("..", "shared", "config.py"), filepath.Join(root, "app", "config.py"))
 
-	// link_to_file -> realfile.py (a file symlink)
-	require.NoError(t, os.Symlink(
-		filepath.Join(root, "realfile.py"),
-		filepath.Join(root, "link_to_file")))
-
-	// link_to_dir -> realdir (a directory symlink)
-	require.NoError(t, os.Symlink(
-		filepath.Join(root, "realdir"),
-		filepath.Join(root, "link_to_dir")))
-
-	var reports []symlinkReport
-
-	_, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
-	})
+	got, err := Walk(root, nil, nil)
 	require.NoError(t, err)
 
-	// Two callbacks, one per symlink, each with the correct kind.
-	require.Len(t, reports, 2)
-
-	byRel := make(map[string]symlinkReport, len(reports))
-	for _, r := range reports {
-		byRel[r.rel] = r
+	byRel := map[string]string{}
+	for _, e := range got {
+		byRel[e.RelPath] = e.AbsPath
 	}
 
-	fileRpt, ok := byRel["link_to_file"]
-	require.True(t, ok, "file symlink must be reported")
-	assert.False(t, fileRpt.isDir, "isDir must be false for a file symlink")
-	assert.NotEmpty(t, fileRpt.target, "target must be the link text")
+	require.Contains(t, byRel, "app/config.py")
 
-	dirRpt, ok := byRel["link_to_dir"]
-	require.True(t, ok, "directory symlink must be reported")
-	assert.True(t, dirRpt.isDir, "isDir must be true for a directory symlink")
-	assert.NotEmpty(t, dirRpt.target, "target must be the link text")
+	data, err := os.ReadFile(byRel["app/config.py"])
+	require.NoError(t, err)
+	assert.Equal(t, "x", string(data))
 }
 
-// TestWalk_DanglingSymlink verifies that a symlink whose target does not exist
-// produces a callback with an empty target and isDir false, and that the walk
-// returns no error. The target is cleared because os.Stat fails on a dangling
-// link — the user sees "this link points nowhere" rather than a walk crash.
-//
-// Fulfills VAL-SYMLINK-011(c).
-func TestWalk_DanglingSymlink(t *testing.T) {
-	skipNonWindowsSymlink(t)
+func TestWalk_FollowsAChainOfLinks(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "realfile.py", "x")
+	symlinkOrSkip(t, filepath.Join(root, "realfile.py"), filepath.Join(root, "inner.lnk"))
+	symlinkOrSkip(t, filepath.Join(root, "inner.lnk"), filepath.Join(root, "outer.lnk"))
 
+	paths, links := walkLinks(t, root, nil)
+
+	assert.ElementsMatch(t, []string{"realfile.py", "inner.lnk", "outer.lnk"}, paths)
+	assert.Equal(t, LinkFollowed, links["outer.lnk"].Outcome)
+	assert.Equal(t, LinkFollowed, links["inner.lnk"].Outcome)
+}
+
+func TestWalk_DoesNotFollowADanglingLink(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "agent.py", "x")
+	symlinkOrSkip(t, filepath.Join(root, "nonexistent"), filepath.Join(root, "dangling.lnk"))
+
+	paths, links := walkLinks(t, root, nil)
+
+	assert.Equal(t, []string{"agent.py"}, paths)
+	assert.Equal(t, Link{RelPath: "dangling.lnk", Outcome: LinkDangling}, links["dangling.lnk"])
+}
+
+// Nothing outside the project is read: neither the file nor the directory a
+// link points at.
+func TestWalk_DoesNotFollowALinkOutsideTheProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "agent.py", "x")
 
-	// A symlink to a path that does not exist.
-	require.NoError(t, os.Symlink(
-		filepath.Join(root, "nonexistent"),
-		filepath.Join(root, "dangling.lnk")))
-
-	var reports []symlinkReport
-
-	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
-	})
-	require.NoError(t, err, "a dangling symlink must not cause a walk error")
-
-	require.Len(t, reports, 1, "dangling symlink must produce exactly one callback")
-	assert.Equal(t, "dangling.lnk", reports[0].rel)
-	assert.Empty(t, reports[0].target, "dangling symlink must report an empty target")
-	assert.False(t, reports[0].isDir, "dangling symlink must report isDir false")
-	assert.True(t, reports[0].dangling, "dangling symlink must report dangling true")
-
-	// The dangling symlink is not in entries.
-	paths := relPaths(got)
-	assert.NotContains(t, paths, "dangling.lnk")
-	assert.Contains(t, paths, "agent.py")
-}
-
-// TestWalk_SymlinkChain_NotFollowed verifies that a symlink chain (outer ->
-// inner -> realfile, both outer and inner top-level) reports each top-level
-// symlink exactly once and follows neither. The walker never follows symlinks
-// (it tests ModeSymlink before descending), so a chain is reported per link
-// without traversing to the final target.
-//
-// Fulfills VAL-SYMLINK-011(d).
-func TestWalk_SymlinkChain_NotFollowed(t *testing.T) {
-	skipNonWindowsSymlink(t)
-
-	root := t.TempDir()
-	writeFile(t, root, "realfile.py", "x")
-
-	// inner -> realfile.py
-	require.NoError(t, os.Symlink(
-		filepath.Join(root, "realfile.py"),
-		filepath.Join(root, "inner.lnk")))
-
-	// outer -> inner.lnk (a chain: outer -> inner -> realfile.py)
-	require.NoError(t, os.Symlink(
-		filepath.Join(root, "inner.lnk"),
-		filepath.Join(root, "outer.lnk")))
-
-	var reports []symlinkReport
-
-	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
-	})
-	require.NoError(t, err)
-
-	// Each top-level symlink is reported exactly once. The walker does not
-	// follow the chain: outer reports its own link text (inner.lnk), not
-	// realfile.py, and neither is uploaded.
-	require.Len(t, reports, 2, "each top-level symlink must be reported exactly once")
-
-	byRel := make(map[string]int)
-	for _, r := range reports {
-		byRel[r.rel]++
-	}
-
-	assert.Equal(t, 1, byRel["outer.lnk"], "outer must be reported exactly once")
-	assert.Equal(t, 1, byRel["inner.lnk"], "inner must be reported exactly once")
-	assert.NotContains(t, byRel, "realfile.py", "the chain target must not be reported as a symlink")
-
-	// Neither symlink is in entries; the real file IS.
-	paths := relPaths(got)
-	assert.NotContains(t, paths, "outer.lnk")
-	assert.NotContains(t, paths, "inner.lnk")
-	assert.Contains(t, paths, "realfile.py")
-
-	// Neither link resolves to a directory (realfile.py is a regular file).
-	for _, r := range reports {
-		assert.False(t, r.isDir, "chain links to a regular file must report isDir false")
-	}
-}
-
-// TestWalk_SymlinkedDirectory_ExternalTarget verifies that a symlink whose
-// target is an absolute path outside the project directory is reported as a
-// skipped symlink, is not uploaded, and no file outside the project root is
-// read. The plan contains only paths under the project root.
-//
-// Fulfills VAL-SYMLINK-004(b) at the walk level.
-func TestWalk_SymlinkedDirectory_ExternalTarget(t *testing.T) {
-	skipNonWindowsSymlink(t)
-
-	root := t.TempDir()
-	writeFile(t, root, "agent.py", "x")
-
-	// A file outside the project root.
 	external := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(external, "secret.txt"), []byte("secret"), 0o644))
+	writeFile(t, external, "secret.txt", "secret")
+	symlinkOrSkip(t, filepath.Join(external, "secret.txt"), filepath.Join(root, "secret.lnk"))
+	symlinkOrSkip(t, external, filepath.Join(root, "external"))
 
-	// link_to_external -> /tmp/.../secret.txt (absolute, outside project)
-	require.NoError(t, os.Symlink(
-		filepath.Join(external, "secret.txt"),
-		filepath.Join(root, "link_to_external")))
+	paths, links := walkLinks(t, root, nil)
 
-	var reports []symlinkReport
+	assert.Equal(t, []string{"agent.py"}, paths)
+	assert.Equal(t, LinkOutside, links["secret.lnk"].Outcome)
+	assert.False(t, links["secret.lnk"].IsDir)
+	assert.Equal(t, LinkOutside, links["external"].Outcome)
+	assert.True(t, links["external"].IsDir)
+}
 
-	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
-		reports = append(reports, symlinkReport{rel: rel, target: target, isDir: isDir, dangling: dangling})
-	})
-	require.NoError(t, err)
+// A link out of the project and back in again stays inside it: what counts is
+// where the chain ends.
+func TestWalk_JudgesALinkByWhereItsChainEnds(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "realdir/inner.py", "x")
 
-	require.Len(t, reports, 1, "external-target symlink must be reported")
-	assert.Equal(t, "link_to_external", reports[0].rel)
-	assert.False(t, reports[0].isDir, "external file target must report isDir false")
-	assert.False(t, reports[0].dangling, "an external file target must not be reported as dangling")
+	outside := t.TempDir()
+	symlinkOrSkip(t, filepath.Join(root, "realdir"), filepath.Join(outside, "back"))
+	symlinkOrSkip(t, filepath.Join(outside, "back"), filepath.Join(root, "via_outside"))
 
-	// The symlink is not in entries; only the real project file is.
-	paths := relPaths(got)
-	assert.NotContains(t, paths, "link_to_external")
-	assert.Contains(t, paths, "agent.py")
+	paths, links := walkLinks(t, root, nil)
+
+	assert.Contains(t, paths, "via_outside/inner.py")
+	assert.Equal(t, LinkFollowed, links["via_outside"].Outcome)
+}
+
+func TestWalk_DoesNotFollowALinkIntoADirectoryItIsInside(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "a/file.py", "x")
+	symlinkOrSkip(t, root, filepath.Join(root, "a", "to_root"))
+	symlinkOrSkip(t, filepath.Join(root, "a"), filepath.Join(root, "a", "self"))
+
+	paths, links := walkLinks(t, root, nil)
+
+	assert.Equal(t, []string{"a/file.py"}, paths)
+	assert.Equal(t, LinkLoop, links["a/to_root"].Outcome)
+	assert.Equal(t, LinkLoop, links["a/self"].Outcome)
+}
+
+// Two directories linking to each other end the walk instead of recursing
+// forever: each is followed once, from the other.
+func TestWalk_StopsAtLinksThatPointAtEachOther(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "a/a.py", "x")
+	writeFile(t, root, "b/b.py", "y")
+	symlinkOrSkip(t, filepath.Join(root, "b"), filepath.Join(root, "a", "to_b"))
+	symlinkOrSkip(t, filepath.Join(root, "a"), filepath.Join(root, "b", "to_a"))
+
+	paths, links := walkLinks(t, root, nil)
+
+	assert.ElementsMatch(t, []string{
+		"a/a.py", "a/to_b/b.py",
+		"b/b.py", "b/to_a/a.py",
+	}, paths)
+	assert.Equal(t, LinkFollowed, links["a/to_b"].Outcome)
+	assert.Equal(t, LinkLoop, links["a/to_b/to_a"].Outcome)
+}
+
+func TestWalk_IgnoreRulesApplyToLinksAndWhatTheyPointAt(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "app.py", "x")
+	writeFile(t, root, "node_modules/pkg/index.js", "y")
+	writeFile(t, root, "realdir/inner.py", "z")
+	symlinkOrSkip(t, filepath.Join(root, "node_modules", "pkg"), filepath.Join(root, "vendor"))
+	symlinkOrSkip(t, filepath.Join(root, "realdir"), filepath.Join(root, "ignored_link"))
+	symlinkOrSkip(t, filepath.Join(root, "nonexistent"), filepath.Join(root, "ignored_dangling"))
+
+	ignore := func(rel string, isDir bool) bool {
+		return (rel == "node_modules" && isDir) || rel == "ignored_link" || (rel == "ignored_dangling" && isDir)
+	}
+
+	paths, links := walkLinks(t, root, ignore)
+
+	assert.ElementsMatch(t, []string{"app.py", "realdir/inner.py"}, paths)
+	assert.Equal(t, map[string]Link{
+		"vendor": {
+			RelPath: "vendor", Target: filepath.Join(root, "node_modules", "pkg"), IsDir: true, Outcome: LinkTargetIgnored,
+		},
+	}, links, "an ignored link is not reported, a dangling one under either spelling")
 }

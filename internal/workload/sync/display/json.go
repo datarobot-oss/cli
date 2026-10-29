@@ -68,6 +68,9 @@ type PlanJSON struct {
 type SkippedSymlinkJSON struct {
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
+	// Reason is why it was not followed: dangling, outside_project,
+	// target_ignored, loop or unreadable.
+	Reason string `json:"reason"`
 }
 
 // DivergenceJSON is one BASE-vs-REMOTE disagreement in the plan document.
@@ -233,8 +236,9 @@ func skippedSymlinksJSON(in []sync.SkippedSymlink) []SkippedSymlinkJSON {
 
 	for i, s := range in {
 		out[i] = SkippedSymlinkJSON{
-			Path:  s.Path,
-			IsDir: s.IsDir,
+			Path:   s.Path,
+			IsDir:  s.IsDir,
+			Reason: string(s.Reason),
 		}
 	}
 

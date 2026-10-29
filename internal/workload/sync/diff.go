@@ -36,12 +36,24 @@ type (
 // Diff produces a SyncPlan from the three input manifests. The result is
 // returned unsorted; callers must call Sort before display or execution.
 func Diff(base, local, remote BaseManifest) *SyncPlan {
+	return diff(base, local, remote, nil)
+}
+
+// diff is Diff for a tree in which the walk followed links. A path at or under
+// one is only ever pushed: a download, a local delete or a conflict copy there
+// would write through the link into what it points at. Reading it against
+// REMOTE as its base makes the local copy win every disagreement.
+func diff(base, local, remote BaseManifest, linkedPaths []string) *SyncPlan {
 	plan := &SyncPlan{}
 
 	for path := range pathUnion(base, local, remote) {
 		b := base[path]
 		l := local[path]
 		r := remote[path]
+
+		if underLink(path, linkedPaths) {
+			b = r
+		}
 
 		cls := refineExecutable(Classify(b.Hash, l.Hash, r.Hash), b, l, r)
 

@@ -64,6 +64,10 @@ type Result struct {
 	// files it names; "" when this sync uploaded none. Returned rather than
 	// logged, because up's progress display silences the stderr logger.
 	ExecutableNotice string
+
+	// SkippedSymlinks are the links the walk did not follow, for a caller
+	// that ran the engine quietly and has not named them yet.
+	SkippedSymlinks []SkippedSymlink
 }
 
 var ErrNoPlan = errors.New("sync engine: Execute called before Plan")
@@ -147,6 +151,10 @@ type Engine struct {
 	// through the ignore matcher so deliberately-ignored or system-excluded
 	// links are absent. Populated in Phase 2; exposed by the display layer.
 	skippedSymlinks []SkippedSymlink
+
+	// linkedPaths are the paths of the links the walk followed. Populated in
+	// Phase 2; Phase 3 pushes everything at or under them and pulls nothing.
+	linkedPaths []string
 
 	lockfileFn        LockfileRunner
 	lockfileCheckFn   LockfileChecker
@@ -265,8 +273,9 @@ func (e *Engine) Run() (*Result, error) {
 		}
 
 		return &Result{
-			OldVersion: ptrOrEmpty(e.config.LastSyncedVersionID),
-			Duration:   e.nowFn().Sub(e.startedAt),
+			OldVersion:      ptrOrEmpty(e.config.LastSyncedVersionID),
+			Duration:        e.nowFn().Sub(e.startedAt),
+			SkippedSymlinks: e.skippedSymlinks,
 		}, nil
 	}
 

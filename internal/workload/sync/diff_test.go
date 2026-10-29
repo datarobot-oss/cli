@@ -15,6 +15,7 @@
 package sync
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
@@ -164,4 +165,51 @@ func TestFromFilesAPI_RoundTrip(t *testing.T) {
 	assert.Len(t, got, 2)
 	assert.Equal(t, FileEntry{Hash: "aaa", Size: 10}, got["a.py"])
 	assert.Equal(t, FileEntry{Hash: "bbb", Size: 20}, got["b.py"])
+}
+
+// A path reached through a link the walk followed is pushed whatever the
+// remote did: pulling it would write through the link into what it points at.
+func TestDiff_LinkedPathsArePushedNeverPulled(t *testing.T) {
+	linked := []string{"lib", "config.py"}
+
+	for name, tc := range map[string]struct {
+		path                string
+		base, local, remote string
+		want                Action
+	}{
+		"remote changed a linked file": {
+			path: "lib/x.py", base: "aaa", local: "aaa", remote: "rem", want: ActUploadModify,
+		},
+		"both changed a linked file": {
+			path: "lib/x.py", base: "aaa", local: "loc", remote: "rem", want: ActUploadModify,
+		},
+		"remote changed a linked file at the link itself": {
+			path: "config.py", base: "aaa", local: "aaa", remote: "rem", want: ActUploadModify,
+		},
+		"remote added a file under a linked directory": {
+			path: "lib/new.py", remote: "rem", want: ActUploadDelete,
+		},
+		"remote deleted a linked file": {
+			path: "lib/x.py", base: "aaa", local: "aaa", want: ActUploadAdd,
+		},
+		"remote changed a file beside the link, not under it": {
+			path: "library/x.py", base: "aaa", local: "aaa", remote: "rem", want: ActDownloadModify,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			manifest := func(hash string) BaseManifest {
+				if hash == "" {
+					return BaseManifest{}
+				}
+
+				return BaseManifest{tc.path: entry(hash, 1)}
+			}
+
+			plan := diff(manifest(tc.base), manifest(tc.local), manifest(tc.remote), linked)
+
+			rows := slices.Concat(plan.Uploads, plan.Downloads, plan.Deletes, plan.Conflicts)
+			require.Len(t, rows, 1)
+			assert.Equal(t, tc.want, rows[0].Action)
+		})
+	}
 }

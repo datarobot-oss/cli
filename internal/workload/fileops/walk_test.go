@@ -17,7 +17,6 @@ package fileops
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"testing"
 
@@ -93,31 +92,6 @@ func TestWalk_PrunesIgnoredDirectory(t *testing.T) {
 	// Pruning means we should have called ignore for the node_modules
 	// directory but never for any child path inside it.
 	assert.Less(t, calls, 8, "ignore should not have been called for every descendant")
-}
-
-func TestWalk_SkipsSymlinkAndNotifies(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink test skipped on windows")
-	}
-
-	root := t.TempDir()
-	writeFile(t, root, "agent.py", "x")
-	writeFile(t, root, "real/data.bin", "z")
-	require.NoError(t, os.Symlink(filepath.Join(root, "real", "data.bin"), filepath.Join(root, "data.lnk")))
-
-	var seen []string
-
-	got, err := Walk(root, nil, func(rel, target string, isDir, dangling bool) {
-		_ = target
-		_ = isDir
-		_ = dangling
-
-		seen = append(seen, rel)
-	})
-	require.NoError(t, err)
-	// data.lnk is NOT in entries; the underlying real/data.bin IS.
-	assert.ElementsMatch(t, []string{"agent.py", "real/data.bin"}, relPaths(got))
-	assert.Equal(t, []string{"data.lnk"}, seen)
 }
 
 func TestWalk_NormalizesPaths(t *testing.T) {

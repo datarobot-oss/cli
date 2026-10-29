@@ -30,6 +30,7 @@ import (
 
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/fileops"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -2990,6 +2991,35 @@ func TestRun_SyncExecutableNoticeIsReported(t *testing.T) {
 	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
 	require.NoError(t, err)
 	assert.Contains(t, stderr, "Warning: Image builds do not keep the executable bit yet; start.sh")
+}
+
+// A first deploy plans no sync beforehand, so the links the sync skipped are
+// named from its result, the long list cut short.
+func TestRun_FirstDeployNamesTheSkippedSymlinks(t *testing.T) {
+	var tr track
+
+	skipped := make([]sync.SkippedSymlink, 0, sync.SymlinkNoticeBound+2)
+	skipped = append(skipped, sync.SkippedSymlink{Path: "shared", IsDir: true, Reason: fileops.LinkOutside})
+
+	for i := range sync.SymlinkNoticeBound + 1 {
+		skipped = append(skipped, sync.SkippedSymlink{Path: fmt.Sprintf("gone%d.py", i), Reason: fileops.LinkDangling})
+	}
+
+	f := wiredBuild(&tr)
+	f.sync = func(string) (*sync.Result, error) {
+		tr.steps = append(tr.steps, "sync")
+
+		return &sync.Result{UploadedCount: 1, SkippedSymlinks: skipped}, nil
+	}
+
+	install(t, f)
+
+	_, stderr, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "Warning: skipped symlink: shared was not synced (it is a directory symlink that points outside the project")
+	assert.Contains(t, stderr, "Warning: skipped symlink: gone3.py was not uploaded (it is a symlink that points at nothing)")
+	assert.NotContains(t, stderr, "gone4.py")
+	assert.Contains(t, stderr, "Warning: 2 more symlink(s) were not uploaded.")
 }
 
 // Sizing the working tree is the whole of what a --dry-run does, and it is
