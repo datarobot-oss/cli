@@ -20,6 +20,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/datarobot/cli/internal/workload/docker"
 	"gopkg.in/yaml.v3"
 )
 
@@ -159,8 +160,8 @@ func (l Live) ReadinessProbe() (present, readable bool) {
 }
 
 // BuildMode reports how the primary container's image comes to be, in the
-// wizard's vocabulary: BuildModeDockerfile, BuildModeGenerated or
-// BuildModeImage. It is "" for a manifest with no inline artifact, which is
+// wizard's vocabulary: BuildModeDockerfile, BuildModeGenerated, BuildModeImage
+// or BuildModeLocal. It is "" for a manifest with no inline artifact, which is
 // what a manifest bound to an existing artifact by id looks like.
 func (m *Manifest) BuildMode() string {
 	container := primaryContainerNode(mapValue(mapValue(m.root, keyArtifact), keySpec))
@@ -180,6 +181,11 @@ func (m *Manifest) BuildMode() string {
 
 	if uri, _ := scalarString(mapValue(container, keyImageURI)); uri != "" {
 		return BuildModeImage
+	}
+
+	// Validate admits this shape only behind the local-build gate.
+	if isNull(mapValue(container, keyImageBuildConfig)) {
+		return BuildModeLocal
 	}
 
 	return ""
@@ -307,7 +313,15 @@ func liveBuild(container map[string]any) Build {
 		return Build{Mode: BuildModeUnchanged}
 	}
 
-	return Build{Mode: BuildModeImage, ImageURI: stringAt(container, keyImageURI)}
+	uri := stringAt(container, keyImageURI)
+
+	// A pushed image's reference is issued per artifact, so writing it into
+	// the file would point the next version at an image it never received.
+	if _, pushed := docker.ParseReference(uri); pushed {
+		return Build{Mode: BuildModeLocal}
+	}
+
+	return Build{Mode: BuildModeImage, ImageURI: uri}
 }
 
 // Apply writes the wizard's answers onto the live spec and returns the
@@ -744,6 +758,12 @@ func applyBuild(container map[string]any, build Build) error {
 		delete(dockerfile, keyExecEnvID)
 		delete(dockerfile, keyExecEnvVersionID)
 		delete(dockerfile, keyEntrypoint)
+
+	case BuildModeLocal:
+		// Both left out is what asks for an address; one already issued is
+		// the platform's, and dropping it lets each new version get its own.
+		delete(container, keyImageURI)
+		delete(container, keyImageBuildConfig)
 
 	case BuildModeGenerated:
 		delete(container, keyImageURI)

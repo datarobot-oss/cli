@@ -181,6 +181,16 @@ dr artifact lock <artifact-id> [--output-format text|json]
 
 A second `lock` on an artifact that is already locked answers `403`.
 
+### `pull`
+
+Pull the image an artifact runs with your local Docker, when that image was pushed to DataRobot (see [building the image with your own Docker](workload.md#building-the-image-with-your-own-docker)). Behind the `local-build` feature gate: `DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true`.
+
+```bash
+dr artifact pull <artifact-id> [--output-format text|json]
+```
+
+A locked artifact is pulled by its pinned digest and tagged `<registry>/artifacts/<artifact-id>`; a draft gets whatever was pushed to it last. Docker logs in with your DataRobot API key for this command only. An artifact built on the platform or running a published image is refused: pull that image from its own registry. The JSON output is `{"pull": {"artifactId", "image", "digest"}}`.
+
 ### `delete`
 
 Delete an artifact by id. Locked artifacts cannot be deleted, and an artifact still referenced by a workload cannot be deleted either (the error names the blocking workloads, so delete those first). You are asked to confirm unless `--yes` is set.

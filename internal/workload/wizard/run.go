@@ -1606,7 +1606,7 @@ func (a Answers) mergeBuild(build *manifest.Build, detected Detected) error {
 			build.ExecutionEnvironmentID, build.ExecutionEnvironmentVersionID = ee.ID, ee.LatestSuccessfulVersion.ID
 		}
 
-	case manifest.BuildModeDockerfile:
+	case manifest.BuildModeDockerfile, manifest.BuildModeLocal:
 		// The mode is the whole answer; there is nothing else to carry.
 	}
 

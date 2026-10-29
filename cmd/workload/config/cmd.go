@@ -215,7 +215,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().BoolVar(&f.answers.A2AEnabled, "a2a-enabled", false,
 		"Agent only: publish the app's A2A agent card to the tenant-wide agent registry.")
 
-	cmd.Flags().StringVar(&f.answers.BuildMode, "build-mode", "", "Image source: dockerfile, generated or image.")
+	cmd.Flags().StringVar(&f.answers.BuildMode, "build-mode", "", "Image source: dockerfile, generated or image (or local, with DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true).")
 	cmd.Flags().StringVar(&f.dockerfile, "dockerfile", wizard.DefaultDockerfilePath,
 		"Dockerfile to build. Only the project root's ./Dockerfile is supported.")
 	cmd.Flags().StringVar(&f.answers.ExecutionEnvironment, "execution-environment", "",

@@ -203,7 +203,7 @@ func renderPrepared(live manifest.Live, draft manifest.Draft) ([]byte, error) {
 // file asks for, "" when it can.
 func preparedBuildProblem(detected Detected, draft manifest.Draft) string {
 	switch draft.Build.Mode {
-	case manifest.BuildModeDockerfile:
+	case manifest.BuildModeDockerfile, manifest.BuildModeLocal:
 		if !detected.HasDockerfile {
 			return "the spec file builds from a " + DockerfileName + " and " + detected.Dir + " has none"
 		}

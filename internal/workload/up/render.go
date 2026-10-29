@@ -586,6 +586,10 @@ func reusesLink(plan Plan) bool {
 
 // codeDetail says how much of the tree is going up.
 func codeDetail(code CodeChange) string {
+	if code.Local {
+		return localCodeDetail(code)
+	}
+
 	if code.FirstDeploy {
 		return "all project files, uploaded for the first time"
 	}
@@ -595,6 +599,18 @@ func codeDetail(code CodeChange) string {
 	}
 
 	return fmt.Sprintf("%d %s changed since the last deploy", code.Files, plural(code.Files, "file", "files"))
+}
+
+// localCodeDetail is codeDetail for an image built here with Docker.
+func localCodeDetail(code CodeChange) string {
+	switch {
+	case code.FirstDeploy:
+		return "image built here with Docker and pushed for the first time"
+	case !code.TreeChanged && code.Unserved:
+		return "already pushed, but not what the workload is running"
+	default:
+		return "working tree changed since the last push; image built here with Docker and pushed"
+	}
 }
 
 // lockLines says what the deploy will do about a version that cannot be

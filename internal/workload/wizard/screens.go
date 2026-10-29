@@ -30,6 +30,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/tui"
@@ -358,7 +359,7 @@ func (f flow) sourceOptions() []option {
 		generatedNote = "uv.lock is generated at deploy if uv is installed; commit it"
 	}
 
-	return []option{
+	options := []option{
 		{
 			value: manifest.BuildModeDockerfile,
 			label: "Build this repository's " + DockerfileName,
@@ -373,6 +374,17 @@ func (f flow) sourceOptions() []option {
 		},
 		{value: manifest.BuildModeImage, label: "Use an already published image"},
 	}
+
+	if features.Enabled(features.LocalBuild) {
+		options = append(options, option{
+			value: manifest.BuildModeLocal,
+			label: "Build here with Docker and push to DataRobot",
+			note:  dockerfileNote,
+			warn:  missing,
+		})
+	}
+
+	return options
 }
 
 // View renders the current screen: a question, the answer being given, and

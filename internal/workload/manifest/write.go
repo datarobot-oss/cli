@@ -65,6 +65,12 @@ const (
 	BuildModeGenerated  = "generated"
 	BuildModeImage      = "image"
 
+	// BuildModeLocal is a primary container that names neither an image nor
+	// a build: `up` builds the project's Dockerfile with the local Docker and
+	// pushes it to the address the platform issues for the artifact. Behind
+	// the local-build feature gate.
+	BuildModeLocal = "local"
+
 	// BuildModeUnchanged means the live container's build block says
 	// something this release does not model, so it is carried over verbatim
 	// instead of being rewritten. It only ever comes from a live workload;
@@ -813,9 +819,14 @@ func (d Draft) artifact(build field) *yaml.Node {
 
 	container := []field{
 		{key: keyName, value: scalar(PrimaryContainerName)},
-		{key: keyPrimary, value: boolean(true)},
+		{key: keyPrimary, value: boolean(true), comment: build.comment},
 		{key: keyPort, value: number(d.Port), comment: "must be 1024 or above"},
-		build,
+	}
+
+	// A local build has no key of its own, so its comment rides on primary.
+	if build.key != "" {
+		container[1].comment = ""
+		container = append(container, build)
 	}
 
 	if d.WantsReadinessProbe() {
@@ -949,16 +960,24 @@ func (d Draft) buildFields() (field, error) {
 	case BuildModeImage:
 		return field{key: keyImageURI, value: scalar(d.Build.ImageURI), comment: "already published; no build"}, nil
 
+	case BuildModeLocal:
+		// No key: leaving both out is what asks the platform for an address
+		// to push to. The comment is all that says so in the file.
+		return field{comment: localBuildComment}, nil
+
 	case BuildModeUnchanged:
 		// Only a live workload can carry this, and that path renders through
 		// Live, which keeps the block it came from.
 		return field{}, errors.New("cannot render a build mode of " + BuildModeUnchanged + " from scratch")
 
 	default:
-		return field{}, fmt.Errorf("unknown build mode %q: want %s, %s or %s",
-			d.Build.Mode, BuildModeDockerfile, BuildModeGenerated, BuildModeImage)
+		return field{}, fmt.Errorf("unknown build mode %q: want %s, %s, %s or %s",
+			d.Build.Mode, BuildModeDockerfile, BuildModeGenerated, BuildModeImage, BuildModeLocal)
 	}
 }
+
+// localBuildComment marks a container whose image `up` builds and pushes.
+const localBuildComment = "image built here with Docker and pushed to DataRobot"
 
 // field is one key/value pair of a rendered mapping, with the comment that
 // earns its place next to it.

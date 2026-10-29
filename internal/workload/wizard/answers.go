@@ -20,6 +20,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
@@ -123,6 +124,12 @@ func (a Answers) checkImageSource() error {
 	switch a.BuildMode {
 	case "", manifest.BuildModeDockerfile, manifest.BuildModeGenerated, manifest.BuildModeImage:
 		return nil
+	case manifest.BuildModeLocal:
+		if features.Enabled(features.LocalBuild) {
+			return nil
+		}
+
+		return fmt.Errorf("--build-mode %s needs DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true", manifest.BuildModeLocal)
 	default:
 		return fmt.Errorf("--build-mode %q is not supported: use %s, %s or %s",
 			a.BuildMode, manifest.BuildModeDockerfile, manifest.BuildModeGenerated, manifest.BuildModeImage)
@@ -409,6 +416,14 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 		}
 
 		return manifest.Build{Mode: manifest.BuildModeDockerfile}, nil
+
+	case manifest.BuildModeLocal:
+		if !detected.HasDockerfile {
+			return manifest.Build{}, fmt.Errorf("--build-mode %s needs a %s in %s for Docker to build",
+				manifest.BuildModeLocal, DockerfileName, detected.Dir)
+		}
+
+		return manifest.Build{Mode: manifest.BuildModeLocal}, nil
 
 	case manifest.BuildModeImage:
 		if a.Image == "" {

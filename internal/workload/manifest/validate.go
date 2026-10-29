@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
@@ -371,7 +372,7 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 			primaries++
 		}
 
-		v.checkImageSource(container, containerPath)
+		v.checkImageSource(container, containerPath, primary)
 		v.checkPort(container, containerPath, primary)
 		v.checkEnvironmentVars(container, containerPath)
 	}
@@ -397,7 +398,11 @@ func (v *validator) checkArtifactGroup(group *yaml.Node, path string) groupShape
 // count as "set" so that imageUri + imageBuildConfig: {} is caught locally
 // with the clean never-both message rather than silently dropping the
 // user's declared imageUri.
-func (v *validator) checkImageSource(container *yaml.Node, path string) {
+//
+// Neither is accepted on the primary container behind the local-build gate:
+// `up` then builds the project's Dockerfile with the local Docker and pushes
+// it to the address the platform issues.
+func (v *validator) checkImageSource(container *yaml.Node, path string, primary bool) {
 	imageURI, hasImage := scalarString(mapValue(container, keyImageURI))
 	hasImage = hasImage && imageURI != ""
 	buildConfig := mapValue(container, keyImageBuildConfig)
@@ -409,7 +414,7 @@ func (v *validator) checkImageSource(container *yaml.Node, path string) {
 			"sets both %s and %s; a container names an image or says how to build one, never both",
 			keyImageURI, keyImageBuildConfig)
 	case !hasImage && !hasBuildConfig:
-		v.add(nil, container, path, "must set either %s or %s", keyImageURI, keyImageBuildConfig)
+		v.checkNoImageSource(container, path, primary)
 	case hasBuildConfig:
 		v.checkBuildConfig(buildConfig, joinPath(path, keyImageBuildConfig))
 	}
@@ -445,6 +450,22 @@ func (v *validator) checkBuildConfig(buildConfig *yaml.Node, path string) {
 		v.add(sourceNode, dockerfile, joinPath(dockerfilePath, keySource),
 			"must be %q (build the repository's %s) or %q (build from a DataRobot base image)",
 			sourceProvided, dockerfileName, sourceGenerated)
+	}
+}
+
+// checkNoImageSource fails a container that names neither, except a local
+// build's primary, which fails only with no Dockerfile for Docker to build.
+func (v *validator) checkNoImageSource(container *yaml.Node, path string, primary bool) {
+	if !primary || !features.Enabled(features.LocalBuild) {
+		v.add(nil, container, path, "must set either %s or %s", keyImageURI, keyImageBuildConfig)
+
+		return
+	}
+
+	if v.dir != "" && !fsutil.FileExists(filepath.Join(v.dir, dockerfileName)) {
+		v.add(nil, container, path,
+			"sets neither %s nor %s, so its image is built here with Docker, but no %s exists in %s",
+			keyImageURI, keyImageBuildConfig, dockerfileName, v.dir)
 	}
 }
 

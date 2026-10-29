@@ -46,6 +46,15 @@ type Config struct {
 	// workload someone else has since moved on.
 	PendingRolloutArtifactID *string `json:"pendingRolloutArtifactId,omitempty" validate:"omitempty,dr_nonempty_ptr,dr_id"`
 
+	// LastPushedArtifactID, LastPushedTreeHash and LastPushedDigest record the
+	// last image a local build pushed: to which artifact, from which working
+	// tree, and what the registry recorded. A deploy skips the build and push
+	// only when the same tree goes to the same artifact again; a new version
+	// has its own address, and nothing has been pushed to it yet.
+	LastPushedArtifactID *string `json:"lastPushedArtifactId,omitempty" validate:"omitempty,dr_nonempty_ptr,dr_id"`
+	LastPushedTreeHash   *string `json:"lastPushedTreeHash,omitempty" validate:"omitempty,dr_nonempty_ptr"`
+	LastPushedDigest     *string `json:"lastPushedDigest,omitempty" validate:"omitempty,dr_nonempty_ptr"`
+
 	CreatedAt  time.Time `json:"createdAt" validate:"required"`
 	CLIVersion string    `json:"cliVersion" validate:"required"`
 

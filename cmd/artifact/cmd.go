@@ -22,6 +22,8 @@ import (
 	"github.com/datarobot/cli/cmd/artifact/get"
 	"github.com/datarobot/cli/cmd/artifact/list"
 	"github.com/datarobot/cli/cmd/artifact/lock"
+	"github.com/datarobot/cli/cmd/artifact/pull"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +38,10 @@ Create and inspect artifacts, build their container images, and
 synchronize local code with a remote artifact.`,
 	}
 
-	cmd.AddCommand(
+	// Through the adder so the gated pull stays out of help, completion and
+	// dispatch until DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true.
+	adder := &cli.CommandAdder{Command: cmd}
+	adder.AddCommand(
 		// The artifact is the primary resource: direct verbs, like
 		// `dr pipeline create|get|...`.
 		create.Cmd(),
@@ -44,6 +49,7 @@ synchronize local code with a remote artifact.`,
 		get.Cmd(),
 		list.Cmd(),
 		lock.Cmd(),
+		pull.Cmd(),
 		// Sub-resources keep their noun groups.
 		build.Cmd(),
 		code.Cmd(),
