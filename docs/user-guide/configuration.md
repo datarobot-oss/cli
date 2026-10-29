@@ -82,7 +82,7 @@ instance, a second account), store each one as a named profile inside the same
 `drconfig.yaml` rather than juggling separate config files:
 
 ```yaml
-# Default profile (used when no --profile is given)
+# Root-level credentials (used when no --profile is given)
 endpoint: https://app.datarobot.com/api/v2
 token: default-api-key
 
@@ -108,14 +108,32 @@ export DATAROBOT_CLI_PROFILE=eu-mtsaas
 dr templates list
 ```
 
+Omitting the selection uses the **root-level credentials** — the top-level
+keys — and never activates a section named `default`. `default` is also a
+legal *explicit* profile name: `dr --profile default …` and
+`DATAROBOT_CLI_PROFILE=default` select a `profiles.default` section **only**
+when one is defined in the file, and fail with an unknown-profile error (plus
+an explanation of the distinction) when it is not. `dr auth login --profile
+default` and `dr auth set-url --profile default` can create that section, the
+same way they create any other profile. The positional form
+`dr auth profile show default` is a compatibility exception: it shows the
+explicit `profiles.default` section when one is defined and the root-level
+credentials otherwise.
+
 Only `endpoint`, `token`, and `ca-cert` are profile-scoped. A profile that
-doesn't define `ca-cert` inherits the default profile's value. Every other
-setting (e.g. `default-llm-id`, `ssl_verify`) is global and shared by all
+doesn't define `ca-cert` inherits the root-level value. A profile's endpoint
+and token are an **atomic pair**: a profile that defines either one never
+inherits the missing half from the root-level credentials, so an endpoint-only
+profile cannot end up sending your root-level token to its endpoint. Every
+other setting (e.g. `default-llm-id`, `ssl_verify`) is global and shared by all
 profiles.
 
-There's no `create` or `delete` subcommand: a profile is created the first
-time you run `dr --profile <name> auth login` (or `auth set-url`) for a name
-that doesn't exist yet. Inspect what's configured with:
+A profile is created the first time you run `dr --profile <name> auth login`
+(or `auth set-url`) for a name that doesn't exist yet, and each successful
+write announces the saved profile and the config file it landed in. Remove a
+profile with `dr auth profile delete <name>` (alias `rm`); the reserved name
+`default` cannot be deleted — clear the root-level credentials with
+`dr auth logout` instead. Inspect what's configured with:
 
 ```bash
 dr auth profile list
@@ -251,7 +269,7 @@ When the CLI needs configuration settings, it looks for them in this order (high
 
 1. **Command-line flags** (e.g., `--config <path>`, `--profile <name>`)&mdash;overrides everything.
 2. **Environment variables** (e.g., `DATAROBOT_CLI_CONFIG`, `DATAROBOT_CLI_PROFILE`)&mdash;overrides config files.
-3. **The active named profile's own settings**&mdash;shadows the default profile's `endpoint`/`token`/`ca-cert`.
+3. **The active named profile's own settings**&mdash;shadows the root-level credentials' `endpoint`/`token`/`ca-cert`.
 4. **Config files** (e.g., `~/.config/datarobot/drconfig.yaml`)&mdash;default (top-level) profile.
 5. **Built-in defaults**&mdash;fallback values.
 
@@ -642,6 +660,7 @@ State files are small and do not require manual management under normal circumst
 
 - [Quick start](https://github.com/datarobot-oss/cli/blob/main/README.md#quick-start)&mdash;initial setup and first-time configuration
 - [auth command](../commands/auth.md)&mdash;authentication commands and troubleshooting
+- [Auth profiles walkthrough](../demos/auth-profiles.md)&mdash;a hands-on, offline beginner tour of named profiles
 
 > [!TIP]
 > **What's next?** After understanding configuration:

@@ -25,6 +25,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/spf13/cobra"
 )
 
@@ -88,8 +89,9 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
-		NoBrowser: noBrowser,
-		Timeout:   timeout,
+		NoBrowser:  noBrowser,
+		Timeout:    timeout,
+		JSONOutput: outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON,
 	})
 	if err != nil {
 		cmd.SilenceUsage = true
@@ -111,7 +113,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	viperx.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
 
-	err = auth.WriteConfigFile()
+	err = auth.WriteConfigFile(cmd)
 	if err != nil {
 		log.Error(err)
 
@@ -119,6 +121,9 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		return err
 	}
+
+	// The write succeeded, so announce where the credentials landed, once.
+	auth.AnnounceCredentialsSavedForCommand(cmd)
 
 	return nil
 }

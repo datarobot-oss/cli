@@ -22,7 +22,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 )
 
@@ -31,10 +30,11 @@ import (
 const profilesKey = "profiles"
 
 // DefaultProfileLabel is how the default (top-level, unnamed) profile is
-// addressed on the command line and in `dr auth profile` output. It is
-// reserved: ValidateProfileName rejects it as a named-profile name, since
-// drconfig.yaml would otherwise have no way to tell a literal
-// "profiles.default" section apart from the true default profile.
+// addressed on the command line and in `dr auth profile` output. The root
+// profile's internal name stays "" (see ProfileInfo), but "default" is also
+// a legal explicit profile name: a hand-edited or CLI-written
+// profiles.default section is selected only by --profile default or
+// DATAROBOT_CLI_PROFILE=default, never by omission.
 const DefaultProfileLabel = "default"
 
 // ProfileScopedKeys are the persistable keys a named profile may override.
@@ -56,18 +56,60 @@ var ProfileScopedKeys = map[string]struct{}{
 var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // UnknownProfileError is returned when --profile (or DATAROBOT_CLI_PROFILE)
-// names a section that does not exist in the config file.
+// names a section that does not exist in the config file, or when `auth
+// profile show <name>` is given a name that is not defined. Known holds the
+// explicitly defined profile names, sorted; it never contains an entry for
+// the root (top-level) credentials.
 type UnknownProfileError struct {
 	Name  string
 	Known []string
 }
 
+// Error renders the actionable message shared by the flag/env selection path
+// and the positional `auth profile show <name>` path: the normalized missing
+// name, the explicit candidate set (or a statement that none are defined),
+// and list/create remediation, with no wrapper noise. The normalized name
+// "default" gets extra guidance because selecting it looks like the omitted
+// selection: omission uses the root-level credentials and never activates
+// profiles.default, so the user must create the explicit section or drop the
+// selection.
 func (e *UnknownProfileError) Error() string {
+	name := NormalizeProfileName(e.Name)
+
+	var summary string
+
 	if len(e.Known) == 0 {
-		return fmt.Sprintf("unknown profile %q; no profiles are configured in drconfig.yaml", e.Name)
+		summary = fmt.Sprintf("unknown profile %q; no explicit profiles are defined in drconfig.yaml", name)
+	} else {
+		summary = fmt.Sprintf("unknown profile %q; defined profiles: %s", name, strings.Join(e.Known, ", "))
 	}
 
-	return fmt.Sprintf("unknown profile %q; known profiles: %s", e.Name, strings.Join(e.Known, ", "))
+	if name == DefaultProfileLabel {
+		return strings.Join([]string{
+			summary,
+			"",
+			`Omitting the profile selection uses the root-level credentials, which are`,
+			`separate from a profile named "default": omission never activates`,
+			`profiles.default, and this config does not define one.`,
+			"",
+			`To create the explicit "default" profile, run one of:`,
+			"  dr auth login --profile default",
+			"  dr auth set-url --profile default",
+			"Or drop the selection (remove --profile default, or unset",
+			"DATAROBOT_CLI_PROFILE) to use the root-level credentials.",
+		}, "\n")
+	}
+
+	return strings.Join([]string{
+		summary,
+		"",
+		"To list the defined profiles, run:",
+		"  dr auth profile list",
+		"",
+		"To create this profile, run one of:",
+		"  dr auth login --profile " + name,
+		"  dr auth set-url --profile " + name,
+	}, "\n")
 }
 
 // NormalizeProfileName lowercases and trims a profile name to match viper's
@@ -77,14 +119,13 @@ func NormalizeProfileName(name string) string {
 }
 
 // ValidateProfileName rejects names viper cannot address as a config
-// section: empty, or containing characters outside [A-Za-z0-9_-].
+// section: empty, or containing characters outside [A-Za-z0-9_-]. The
+// normalized name "default" is legal: an explicit profiles.default section
+// may be selected and written like any other profile. (Deleting it stays
+// reserved; see the auth profile delete command.)
 func ValidateProfileName(name string) error {
 	if name == "" {
 		return errors.New("profile name must not be empty")
-	}
-
-	if NormalizeProfileName(name) == DefaultProfileLabel {
-		return fmt.Errorf("profile name %q is reserved for the default profile; omit --profile to use it", name)
 	}
 
 	if !profileNamePattern.MatchString(name) {
@@ -98,6 +139,40 @@ func ValidateProfileName(name string) error {
 // the default (top-level) profile.
 func ActiveProfile() string {
 	return NormalizeProfileName(viper.GetString(ProfileKey))
+}
+
+// ProfileDescription names, in user-facing wording, the credentials a given
+// normalized profile name resolves to: the root-level credentials for the
+// empty name (an omitted selection), otherwise the quoted profile name. It
+// is the shared wording behind SelectedCredentialsDescription and the save
+// notice emitted by successful auth login/set-url writes.
+func ProfileDescription(name string) string {
+	if name == "" {
+		return "the root-level credentials"
+	}
+
+	return fmt.Sprintf("profile %q", name)
+}
+
+// SelectedCredentialsDescription names, in user-facing wording, whose
+// credentials the active selection resolves to: the root-level credentials
+// when selection is omitted, otherwise the explicitly selected profile. The
+// name is the normalized one (see ActiveProfile), so status and recovery
+// messages match what a follow-up command must spell.
+func SelectedCredentialsDescription() string {
+	return ProfileDescription(ActiveProfile())
+}
+
+// SelectedProfileFlagSuffix returns " --profile <name>" when a profile is
+// explicitly selected (flag or environment variable), or "" when selection is
+// omitted, so suggested recovery commands retrace the selection that produced
+// the problem instead of silently targeting the root credentials.
+func SelectedProfileFlagSuffix() string {
+	if name := ActiveProfile(); name != "" {
+		return " --profile " + name
+	}
+
+	return ""
 }
 
 // profileSection returns the raw sub-map for a profile as loaded from the
@@ -119,20 +194,14 @@ func ProfileNames() []string {
 }
 
 // namedProfileKeys returns the sorted, addressable section names in a raw
-// profiles map. A hand-edited "profiles.default" section is dropped:
-// ValidateProfileName reserves that name for the top-level profile, so such a
-// section can never be selected and must not be listed as if it could.
+// profiles map. An explicit "profiles.default" section is enumerated like
+// any other: it is a legal profile selected by --profile default, and error
+// guidance and completion must list it whenever it is defined. The root
+// profile is not a section here and is never part of the result.
 func namedProfileKeys(profiles map[string]any) []string {
 	names := make([]string, 0, len(profiles))
 
 	for name := range profiles {
-		if NormalizeProfileName(name) == DefaultProfileLabel {
-			log.Debugf("ignoring %s.%s section in drconfig.yaml: %q is reserved for the top-level default profile",
-				profilesKey, name, DefaultProfileLabel)
-
-			continue
-		}
-
 		names = append(names, name)
 	}
 
@@ -148,8 +217,8 @@ func namedProfileKeys(profiles map[string]any) []string {
 //
 // endpoint and token are merged atomically: if the profile section defines
 // either one, both are merged (substituting "" for the one it omits), so a
-// profile can never end up pairing its own endpoint with the default
-// profile's token or vice versa.
+// profile can never end up pairing its own endpoint with the root profile's
+// token or vice versa. This includes an explicit profiles.default section.
 func applyProfile(name string) error {
 	if err := ValidateProfileName(name); err != nil {
 		return err
@@ -198,9 +267,11 @@ func stringOrEmpty(v any) string {
 }
 
 // ProfileInfo is a read-only snapshot of one profile's own settings, exactly
-// as stored in drconfig.yaml. Name is "" for the default (top-level)
-// profile. A field is the zero value when the profile does not define it
-// (it inherits from the default profile at merge time; see applyProfile).
+// as stored in drconfig.yaml. Name is "" for the root (top-level) profile;
+// an explicit profiles.default section appears under the name "default" and
+// is distinct from the root profile. A field is the zero value when the
+// profile does not define it (it inherits from the root profile at merge
+// time; see applyProfile).
 type ProfileInfo struct {
 	Name     string
 	Endpoint string

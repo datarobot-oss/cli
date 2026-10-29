@@ -236,6 +236,10 @@ type LoginOptions struct {
 
 	// Timeout overrides DefaultLoginTimeout for the callback wait. Zero uses the default.
 	Timeout time.Duration
+
+	// JSONOutput marks --output-format json runs: stdout is a parseable channel,
+	// so the human link/wait block is routed to stderr instead of stdout.
+	JSONOutput bool
 }
 
 // RunBrowserLogin opens the browser, tells the user what is happening, and blocks
@@ -308,10 +312,11 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	var err error
 
-	// The link is what this command exists to produce, so it always reaches stdout,
-	// where callers that redirect the streams separately look for it. The Windows
-	// smoke test is one such caller; the expect-based Linux and macOS ones cannot tell
-	// the difference, because a PTY merges stdout and stderr.
+	// In text mode the link is what this command exists to produce, so it reaches
+	// stdout, where callers that redirect the streams separately look for it. The
+	// Windows smoke test is one such caller; the expect-based Linux and macOS ones
+	// cannot tell the difference, because a PTY merges stdout and stderr. Under
+	// --output-format json the block moves to stderr so stdout stays parseable.
 	//
 	// The spinner draws on stderr, so it only carries the link to a reader who sees
 	// both streams on one terminal. Whenever stdout is not that terminal the label is
@@ -320,8 +325,17 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	printLink, spin := loginOutput(reader.IsStdinTerminal(), reader.IsStdoutTerminal(),
 		reader.IsStderrTerminal(), reader.IsNonInteractive())
 
+	// The link block is human instruction. Under --output-format json stdout is a
+	// parseable channel, so the block rides stderr there; text-mode stdout behavior
+	// (the Windows smoke test's contract) is unchanged.
+	linkDest := io.Writer(os.Stdout)
+
+	if opts.JSONOutput {
+		linkDest = os.Stderr
+	}
+
 	if printLink {
-		fmt.Fprintln(os.Stdout, label)
+		fmt.Fprintln(linkDest, label)
 	}
 
 	if spin {

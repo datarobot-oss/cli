@@ -15,13 +15,16 @@
 package auth
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -402,4 +405,80 @@ func TestWriteConfigFileSilent_WithActiveProfile_WritesUnderProfileAndLeavesDefa
 
 	assert.Equal(t, "https://app.eu.datarobot.com/api/v2", eu["endpoint"])
 	assert.Equal(t, "eu-token", eu["token"])
+}
+
+// TestWriteConfigFile_RoutesSuccessLineByOutputFormat pins the success
+// line's stream contract: human mode keeps it on stdout (as before), while
+// --output-format json moves it to stderr so stdout stays a parseable
+// channel.
+func TestWriteConfigFile_RoutesSuccessLineByOutputFormat(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		json    bool
+		wantOut bool
+		wantErr bool
+	}{
+		{name: "human mode keeps the success line on stdout", json: false, wantOut: true},
+		{name: "json mode moves the success line to stderr", json: true, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			testutil.SetTestHomeDir(t, tempDir)
+
+			viperx.Reset()
+			t.Cleanup(viperx.Reset)
+
+			require.NoError(t, config.CreateConfigFileDirIfNotExists())
+
+			viperx.Set(config.DataRobotURL, "https://app.datarobot.com/api/v2")
+
+			var format outputformat.OutputFormat
+
+			cmd := &cobra.Command{Use: "test"}
+			outputformat.AddFlag(cmd, &format)
+
+			if tc.json {
+				require.NoError(t, cmd.Flags().Set("output-format", "json"))
+			}
+
+			oldOut, oldErr := os.Stdout, os.Stderr
+
+			rOut, wOut, err := os.Pipe()
+			require.NoError(t, err)
+
+			rErr, wErr, err := os.Pipe()
+			require.NoError(t, err)
+
+			os.Stdout, os.Stderr = wOut, wErr
+
+			writeErr := WriteConfigFile(cmd)
+
+			require.NoError(t, wOut.Close())
+			require.NoError(t, wErr.Close())
+
+			os.Stdout, os.Stderr = oldOut, oldErr
+
+			require.NoError(t, writeErr)
+
+			outBytes, err := io.ReadAll(rOut)
+			require.NoError(t, err)
+
+			errBytes, err := io.ReadAll(rErr)
+			require.NoError(t, err)
+
+			stdout, stderr := string(outBytes), string(errBytes)
+
+			if tc.wantOut {
+				assert.Contains(t, stdout, "Config file written successfully.")
+			} else {
+				assert.Empty(t, stdout, "json stdout must stay a parseable channel")
+			}
+
+			if tc.wantErr {
+				assert.Contains(t, stderr, "Config file written successfully.")
+			} else {
+				assert.Empty(t, stderr)
+			}
+		})
+	}
 }

@@ -169,8 +169,17 @@ at `0644` by an older CLI would otherwise stay world-readable forever.
 
 - `WriteConfigFileSilent()`&mdash;writes only allowlisted keys
   (`config.PersistableKeys`) back to `drconfig.yaml` and returns an error.
-- `WriteConfigFile()`&mdash;writes the config file, prints a success
-  message, and returns an error.
+- `WriteConfigFile(cmd)`&mdash;writes the config file and prints a success
+  message before returning an error. The message follows the command's
+  output-format contract: stdout in human mode, stderr under
+  `--output-format json` so stdout stays a parseable channel.
+- `AnnounceCredentialsSavedForCommand(cmd)`&mdash;after a successful
+  `dr auth login` or `dr auth set-url` write, emits a single notice on the
+  command's error stream naming the saved credentials (the root-level
+  credentials when selection is omitted, otherwise the normalized profile,
+  including an explicit "default") and the actual `drconfig.yaml` path
+  (`config.ConfigFilePath`). It never includes credential values, and it is
+  only called after the persistence it describes has succeeded.
 - `SetURLAction()`&mdash;asks for a DataRobot URL and returns whether it changed. On an
   interactive terminal it runs the `tui/hostpicker` list; otherwise it falls back to a
   plain-text stdin prompt so piped input and the expect-based smoke tests keep working.

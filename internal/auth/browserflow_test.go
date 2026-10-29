@@ -534,6 +534,32 @@ func TestRunLoginWithFlow_PrintsLinkToStdout(t *testing.T) {
 		"the link must not be diverted to stderr, where redirected callers miss it")
 }
 
+// TestRunLoginWithFlow_JSONKeepsLoginLinkOffStdout mirrors PrintsLinkToStdout
+// under --output-format json: the link block is human instruction, so it must
+// ride stderr and leave stdout as a parseable channel (VAL-WRITE-003).
+func TestRunLoginWithFlow_JSONKeepsLoginLinkOffStdout(t *testing.T) {
+	flow := newTestFlow(t)
+
+	// Already cancelled, so Wait returns at once instead of holding the test for the
+	// full login timeout. The prompt is printed before the wait either way.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	stdout, stderr := captureStdoutStderr(t, func() {
+		_, err := runLoginWithFlow(ctx, flow, LoginOptions{NoBrowser: true, JSONOutput: true})
+		assert.ErrorIs(t, err, ErrLoginInterrupted)
+	})
+
+	assert.NotContains(t, stdout, "cliRedirect=true",
+		"JSON stdout must stay parseable: no human link text")
+	assert.NotContains(t, stdout, flow.AuthURL(),
+		"JSON stdout must stay parseable: no login URL")
+	assert.Contains(t, stderr, "cliRedirect=true",
+		"the link block moves to stderr in JSON mode instead of vanishing")
+	assert.Contains(t, stderr, flow.AuthURL(),
+		"the whole link must reach stderr unbroken")
+}
+
 // The link reaches stdout in every case but one: the spinner is animating on
 // the same terminal stdout is, and already shows it. A terminal session that
 // redirects stdout (the Windows smoke test, or `dr auth login > link.txt`)

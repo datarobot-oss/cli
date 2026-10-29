@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package profile provides read-only inspection of the named profiles
-// stored in drconfig.yaml. Profiles are created by pointing --profile (or
-// DATAROBOT_CLI_PROFILE) at a name that doesn't exist yet and running
-// `dr auth login` or `dr auth set-url`; there is no `create` here.
+// Package profile provides inspection and lifecycle management of the named
+// profiles stored in drconfig.yaml. Profiles are created by pointing
+// --profile (or DATAROBOT_CLI_PROFILE) at a name that doesn't exist yet and
+// running `dr auth login` or `dr auth set-url`; there is no `create` here.
+// A profile is removed with `dr auth profile delete <name>`.
 package profile
 
 import (
+	"github.com/datarobot/cli/cmd/auth/profile/del"
 	"github.com/datarobot/cli/cmd/auth/profile/list"
 	"github.com/datarobot/cli/cmd/auth/profile/show"
 	"github.com/spf13/cobra"
@@ -28,8 +30,8 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "profile",
 		Aliases: []string{"profiles"},
-		Short:   "📇 Inspect named DataRobot profiles",
-		Long: `Inspect the named profiles stored in drconfig.yaml.
+		Short:   "📇 Inspect and manage named DataRobot profiles",
+		Long: `Inspect and manage the named profiles stored in drconfig.yaml.
 
 A profile is a named set of credentials (endpoint + token, optionally
 ca-cert) alongside the default one, so you can work against
@@ -37,12 +39,14 @@ several DataRobot installations without re-authenticating each time.
 Select one with --profile <name> or DATAROBOT_CLI_PROFILE=<name> on any
 command.
 
-There is no 'create' or 'delete' subcommand: a profile is created the first
-time you run 'dr --profile <name> auth login' (or 'auth set-url') for a name
-that doesn't exist yet, and removed by editing drconfig.yaml directly.`,
+There is no 'create' subcommand: a profile is created the first time you run
+'dr --profile <name> auth login' (or 'auth set-url') for a name that doesn't
+exist yet. Remove one with 'dr auth profile delete <name>' (alias 'rm');
+the reserved name "default" cannot be deleted.`,
 	}
 
 	cmd.AddCommand(
+		del.Cmd(),
 		list.Cmd(),
 		show.Cmd(),
 	)
