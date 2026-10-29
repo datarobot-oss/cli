@@ -21,6 +21,7 @@ package del
 import (
 	"fmt"
 
+	authcompletion "github.com/datarobot/cli/cmd/auth/profile/completion"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -44,6 +45,10 @@ those are cleared by 'dr auth logout' instead.
 The profile is deleted immediately; there is no confirmation prompt.`,
 		Args: cobra.ExactArgs(1),
 		RunE: runDelete,
+		// Offer only the deletable (non-reserved) profile names for the one
+		// positional argument: "default" is never suggested because deleting
+		// it is always refused.
+		ValidArgsFunction: authcompletion.PositionalCompletion(false),
 	}
 
 	return cmd

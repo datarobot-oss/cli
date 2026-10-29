@@ -36,6 +36,7 @@ import (
 
 	"github.com/datarobot/cli/cmd/artifact"
 	"github.com/datarobot/cli/cmd/auth"
+	authcompletion "github.com/datarobot/cli/cmd/auth/profile/completion"
 	buildstudio "github.com/datarobot/cli/cmd/build-studio"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
@@ -595,6 +596,12 @@ func (f *RootFactory) registerFlags(adder *cli.CommandAdder, outputFormat *outpu
 	registerExportWindowsCertsFlag(adder.Command)
 
 	outputformat.AddPersistentFlag(adder.Command, outputFormat)
+
+	// Complete the --profile value with the explicitly defined profile names
+	// from the config selected for the completion invocation. Registered once
+	// on the shared persistent flag, so every subcommand offers the same
+	// candidates (cobra keys flag-completion functions by flag pointer).
+	_ = adder.RegisterFlagCompletionFunc(config.ProfileKey, authcompletion.FlagCompletion)
 }
 
 // bindViperFlags is the production ViperBinderFunc. It wires persistent

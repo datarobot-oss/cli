@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 
+	authcompletion "github.com/datarobot/cli/cmd/auth/profile/completion"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
@@ -57,6 +58,11 @@ explicit profiles.default section when one is defined, or the top-level
 (root) profile otherwise. The token itself is never printed.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runShow,
+		// Offer the explicitly defined profile names for the one positional
+		// argument. An explicit profiles.default section is suggested when
+		// defined; when it is not, `show default` still works manually (the
+		// root fallback), it just is not suggested.
+		ValidArgsFunction: authcompletion.PositionalCompletion(true),
 	}
 
 	return cmd
