@@ -116,15 +116,6 @@ func (r Run) Succeeded() bool {
 	return r.Status == StatusSucceeded
 }
 
-// CreateRequest is the body of POST /jobs.
-type CreateRequest struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	ArtifactID  string          `json:"artifactId"`
-	Runtime     json.RawMessage `json:"runtime,omitempty"`
-	UseCaseID   string          `json:"useCaseId,omitempty"`
-}
-
 type page[T any] struct {
 	Data       []T    `json:"data"`
 	TotalCount int    `json:"totalCount"`
@@ -147,8 +138,9 @@ func jobURL(jobID string, rest ...string) (string, error) {
 	return config.GetEndpointURL(path.String())
 }
 
-// CreateJob creates a job. It does not start a run.
-func CreateJob(request CreateRequest) (*Job, error) {
+// CreateJob creates a job from the POST /jobs body. It does not start a run.
+// The body is a map so fields this release does not know reach the server.
+func CreateJob(request map[string]any) (*Job, error) {
 	url, err := config.GetEndpointURL("/api/v2/jobs/")
 	if err != nil {
 		return nil, err

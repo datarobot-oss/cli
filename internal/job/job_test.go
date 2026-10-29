@@ -86,11 +86,11 @@ func TestCreateJob_PostsTheRequestAndKeepsTheRuntimeVerbatim(t *testing.T) {
 		fmt.Fprint(w, jobDoc)
 	})
 
-	job, err := CreateJob(CreateRequest{
-		Name:       "train",
-		ArtifactID: "art-1",
-		UseCaseID:  "uc-1",
-		Runtime:    json.RawMessage(`{"futureField": true}`),
+	job, err := CreateJob(map[string]any{
+		"name":       "train",
+		"artifactId": "art-1",
+		"useCaseId":  "uc-1",
+		"runtime":    map[string]any{"futureField": true},
 	})
 
 	require.NoError(t, err)
@@ -105,7 +105,7 @@ func TestCreateJob_ShowsTheServersReason(t *testing.T) {
 		fmt.Fprint(w, `{"detail": "Jobs are disabled on this cluster"}`)
 	})
 
-	_, err := CreateJob(CreateRequest{Name: "train", ArtifactID: "art-1"})
+	_, err := CreateJob(map[string]any{"name": "train", "artifactId": "art-1"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Jobs are disabled on this cluster")
