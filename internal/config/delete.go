@@ -15,7 +15,11 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -54,8 +58,20 @@ func (e *ReservedProfileError) Error() string {
 //
 // The file is never modified unless the deletion is sound. Invalid names and
 // the reserved "default" name are refused, a name that is not defined fails
-// with UnknownProfileError, and a file that cannot be parsed or rewritten
-// fails with its path and cause -- all without touching disk.
+// with UnknownProfileError, and three unsound shapes are refused before any
+// write because editing them would corrupt or misreport the config:
+//
+//   - a multi-document YAML stream, since the single-document reader and
+//     writer would silently discard every later document;
+//   - several profiles sections whose keys normalize to the requested name
+//     (for example "Beta" and "beta"), since removing one would leave the
+//     other's credentials in place while reporting the profile deleted; and
+//   - a target section defining YAML anchors that surviving sections alias,
+//     since removing the anchor would leave dangling aliases and an
+//     unloadable config.
+//
+// A file that cannot be parsed or rewritten fails with its path and cause --
+// all without touching disk.
 func DeleteProfile(name string) error {
 	name = NormalizeProfileName(name)
 
@@ -72,6 +88,13 @@ func DeleteProfile(name string) error {
 		return err
 	}
 
+	// The document count is checked before anything is parsed for editing:
+	// readYAMLNode decodes only a stream's first document, so a multi-document
+	// file would otherwise lose every later document on rewrite.
+	if err := refuseMultiDocumentStream(configFile); err != nil {
+		return err
+	}
+
 	rootNode, profilesNode, err := profilesSectionForEdit(configFile)
 	if err != nil {
 		return err
@@ -82,9 +105,27 @@ func DeleteProfile(name string) error {
 		return &UnknownProfileError{Name: name}
 	}
 
-	if !removeProfileSection(profilesNode, name) {
+	matches := matchingProfileSectionIndices(profilesNode, name)
+	if len(matches) == 0 {
 		return &UnknownProfileError{Name: name, Known: profileNamesFromNode(profilesNode)}
 	}
+
+	// More than one section normalizing to the requested name is refused
+	// rather than silently deleting only the first match.
+	if len(matches) > 1 {
+		return duplicateProfileSectionError(configFile, profilesNode, matches)
+	}
+
+	matchIndex := matches[0]
+	targetValue := profilesNode.Content[matchIndex+1]
+
+	// Deleting an anchor definition that surviving sections still alias is
+	// refused rather than leaving the rewritten config unloadable.
+	if err := refuseOrphanedAliases(configFile, rootNode, targetValue, name); err != nil {
+		return err
+	}
+
+	profilesNode.Content = append(profilesNode.Content[:matchIndex], profilesNode.Content[matchIndex+2:]...)
 
 	return writeYAMLNode(configFile, rootNode)
 }
@@ -125,10 +166,13 @@ func isNullNode(node *yaml.Node) bool {
 	return node.Kind == yaml.ScalarNode && node.Tag == "!!null"
 }
 
-// removeProfileSection removes the key/value pair whose key matches name
-// exactly or after normalization (a section stored as "Beta" is removed by
-// "beta") from profilesNode, reporting whether a section was removed.
-func removeProfileSection(profilesNode *yaml.Node, name string) bool {
+// matchingProfileSectionIndices returns the content indices (of key nodes;
+// each value follows at i+1) of the profiles entries whose key matches name
+// exactly or after normalization (a section stored as "Beta" is matched by
+// "beta").
+func matchingProfileSectionIndices(profilesNode *yaml.Node, name string) []int {
+	matches := []int{}
+
 	for i := 0; i+1 < len(profilesNode.Content); i += 2 {
 		keyNode := profilesNode.Content[i]
 
@@ -136,9 +180,132 @@ func removeProfileSection(profilesNode *yaml.Node, name string) bool {
 			continue
 		}
 
-		profilesNode.Content = append(profilesNode.Content[:i], profilesNode.Content[i+2:]...)
+		matches = append(matches, i)
+	}
 
+	return matches
+}
+
+// duplicateProfileSectionError renders the refusal for a profiles mapping
+// that defines several sections normalizing to the requested name (for
+// example "Beta" and "beta"): deleting one would leave the other's
+// credentials in place while reporting the profile deleted.
+func duplicateProfileSectionError(configFile string, profilesNode *yaml.Node, matches []int) error {
+	spellings := make([]string, 0, len(matches))
+
+	for _, i := range matches {
+		spellings = append(spellings, fmt.Sprintf("%q", profilesNode.Content[i].Value))
+	}
+
+	return fmt.Errorf(
+		"%s: profiles defines %d sections whose names normalize to the requested profile (%s); refusing to delete it because removing one would leave the other's credentials in place",
+		configFile, len(matches), strings.Join(spellings, ", "),
+	)
+}
+
+// refuseMultiDocumentStream rejects YAML files containing more than one
+// document. readYAMLNode decodes only a stream's first document, so a
+// deletion that edited and rewrote a multi-document file would silently
+// discard every later document; the delete path refuses such files instead.
+func refuseMultiDocumentStream(configFile string) error {
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("%s: failed to read config file: %w", configFile, err)
+	}
+
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+
+	documents := 0
+
+	for {
+		var node yaml.Node
+
+		err := decoder.Decode(&node)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return fmt.Errorf("%s: failed to parse config file: %w", configFile, err)
+		}
+
+		documents++
+	}
+
+	if documents > 1 {
+		return fmt.Errorf(
+			"%s: config file contains %d YAML documents; refusing to edit it because deleting a profile would discard the later documents",
+			configFile, documents,
+		)
+	}
+
+	return nil
+}
+
+// refuseOrphanedAliases rejects deleting a section whose subtree defines YAML
+// anchors that surviving parts of the document alias. yaml.v3 re-encodes
+// alias nodes as references to their anchor, so removing the anchor would
+// leave a dangling alias and an unloadable config.
+func refuseOrphanedAliases(configFile string, rootNode *yaml.Node, target *yaml.Node, name string) error {
+	anchors := map[*yaml.Node]bool{}
+
+	collectAnchorNodes(target, anchors)
+
+	if len(anchors) == 0 || !documentAliasesAnchor(rootNode, target, anchors) {
+		return nil
+	}
+
+	anchorNames := make([]string, 0, len(anchors))
+
+	for node := range anchors {
+		anchorNames = append(anchorNames, "&"+node.Anchor)
+	}
+
+	sort.Strings(anchorNames)
+
+	return fmt.Errorf(
+		"%s: refusing to delete %q: its section defines YAML anchor(s) %s that surviving sections alias; deleting it would leave the config unloadable",
+		configFile, name, strings.Join(anchorNames, ", "),
+	)
+}
+
+// collectAnchorNodes gathers every node of subtree that defines a YAML
+// anchor. Alias nodes are skipped: they reference anchors defined elsewhere
+// and cannot define one themselves.
+func collectAnchorNodes(node *yaml.Node, anchors map[*yaml.Node]bool) {
+	if node == nil || node.Kind == yaml.AliasNode {
+		return
+	}
+
+	if node.Anchor != "" {
+		anchors[node] = true
+	}
+
+	for _, child := range node.Content {
+		collectAnchorNodes(child, anchors)
+	}
+}
+
+// documentAliasesAnchor walks the document from root, skipping the deleted
+// subtree, and reports whether any surviving alias node resolves to an anchor
+// that the deleted subtree defined.
+func documentAliasesAnchor(node *yaml.Node, skip *yaml.Node, anchors map[*yaml.Node]bool) bool {
+	if node == skip {
+		return false
+	}
+
+	if node.Kind == yaml.AliasNode && node.Alias != nil && anchors[node.Alias] {
 		return true
+	}
+
+	for _, child := range node.Content {
+		if documentAliasesAnchor(child, skip, anchors) {
+			return true
+		}
 	}
 
 	return false

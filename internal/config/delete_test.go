@@ -366,6 +366,123 @@ func TestDeleteProfile_UnreadableConfigFailsWithoutChanges(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to read config file")
 }
 
+// writeRawConfigFile writes raw to a scratch config path and points viper at
+// it without parsing, for tests that exercise files DeleteProfile must refuse
+// or that shape raw YAML the higher-level fixtures cannot express. It returns
+// the config file path.
+func writeRawConfigFile(t *testing.T, raw string) string {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	testutil.SetTestHomeDir(t, tempDir)
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	configFile := filepath.Join(tempDir, ".config", "datarobot", "drconfig.yaml")
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(configFile), 0o755))
+	require.NoError(t, os.WriteFile(configFile, []byte(raw), 0o600))
+	viper.SetConfigFile(configFile)
+
+	return configFile
+}
+
+// TestDeleteProfile_RefusesDeletingAnchorTargetOfSurvivingAlias covers the
+// VAL-DELETE-004(c) defect: alpha's section defines the anchor the surviving
+// beta section aliases, so removing alpha would leave a dangling *shared
+// alias and an unloadable config. The deletion is refused and the file is
+// left byte-identical.
+func TestDeleteProfile_RefusesDeletingAnchorTargetOfSurvivingAlias(t *testing.T) {
+	configFile := writeRawConfigFile(t, `endpoint: https://app.datarobot.com/api/v2
+token: root-token
+profiles:
+  alpha: &shared
+    endpoint: https://alpha.example.com/api/v2
+    token: alpha-token
+  beta: *shared
+`)
+
+	// The fixture itself must be loadable before the refusal is meaningful.
+	raw := readRawYAML(t, configFile)
+	require.Contains(t, rawKeys(raw["profiles"].(map[string]any)), "alpha")
+
+	before := readDeleteFixtureBytes(t, configFile)
+
+	err := DeleteProfile("alpha")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), configFile, "the error must name the config path")
+	assert.Contains(t, err.Error(), "anchor", "the error must state the anchor/alias cause")
+
+	assert.Equal(t, before, readDeleteFixtureBytes(t, configFile))
+
+	// Deleting the alias itself is sound: the anchor stays defined and the
+	// file still parses afterwards.
+	require.NoError(t, DeleteProfile("beta"))
+
+	raw = readRawYAML(t, configFile)
+	profiles := raw["profiles"].(map[string]any)
+	assert.Equal(t, []string{"alpha"}, rawKeys(profiles))
+}
+
+// TestDeleteProfile_RefusesMultiDocumentStream covers the VAL-DELETE-004(d)
+// defect: the single-document reader decodes only the first document, so
+// editing and rewriting a multi-document stream would silently discard every
+// later document. The deletion is refused and the second document is kept.
+func TestDeleteProfile_RefusesMultiDocumentStream(t *testing.T) {
+	configFile := writeRawConfigFile(t, `endpoint: https://app.datarobot.com/api/v2
+token: root-token
+profiles:
+  alpha:
+    endpoint: https://alpha.example.com/api/v2
+    token: alpha-token
+---
+other: unrelated-second-document
+note: keep me
+`)
+
+	before := readDeleteFixtureBytes(t, configFile)
+
+	err := DeleteProfile("alpha")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), configFile, "the error must name the config path")
+	assert.Contains(t, err.Error(), "documents", "the error must state the multi-document cause")
+
+	assert.Equal(t, before, readDeleteFixtureBytes(t, configFile), "the later document must be retained")
+}
+
+// TestDeleteProfile_RefusesDuplicateNormalizedSections covers the
+// VAL-DELETE-004(e) defect: Beta and beta both normalize to the requested
+// name, so removing only the first match would leave the other's credentials
+// in place while reporting the profile deleted. The deletion is refused and
+// both sections survive unchanged.
+func TestDeleteProfile_RefusesDuplicateNormalizedSections(t *testing.T) {
+	configFile := writeRawConfigFile(t, `endpoint: https://app.datarobot.com/api/v2
+token: root-token
+profiles:
+  Beta:
+    endpoint: https://upper.example.com/api/v2
+    token: upper-token
+  beta:
+    endpoint: https://lower.example.com/api/v2
+    token: lower-token
+`)
+
+	before := readDeleteFixtureBytes(t, configFile)
+
+	err := DeleteProfile("beta")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), configFile, "the error must name the config path")
+	assert.Contains(t, err.Error(), "normalize", "the error must state the duplicate-name cause")
+	assert.Contains(t, err.Error(), `"Beta"`, "the error should name the colliding section spellings")
+	assert.Contains(t, err.Error(), `"beta"`)
+
+	assert.Equal(t, before, readDeleteFixtureBytes(t, configFile), "both sections and their credentials must remain")
+
+	raw := readRawYAML(t, configFile)
+	profiles := raw["profiles"].(map[string]any)
+	assert.Equal(t, []string{"Beta", "beta"}, rawKeys(profiles))
+}
+
 // TestDeleteProfile_LeavesParseableConfigAfterLastOrdinarySection deletes
 // every ordinary section: the file must still parse afterwards. The explicit
 // profiles.default survives, since the reserved name cannot be deleted.
