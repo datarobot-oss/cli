@@ -115,6 +115,34 @@ func (p *SyncPlan) IsEmpty() bool {
 	return len(p.Uploads) == 0 && len(p.Downloads) == 0 && len(p.Deletes) == 0 && len(p.Conflicts) == 0
 }
 
+// RollbackFiles counts the local files a sync may copy into its rollback tree:
+// every download target, every local file a remote deletion removes, and every
+// conflict. Uploads and deletions sent to the server leave local files alone.
+func (p *SyncPlan) RollbackFiles() int {
+	n := len(p.Downloads) + len(p.Conflicts)
+
+	for _, fa := range p.Deletes {
+		if fa.Action == ActDownloadDelete {
+			n++
+		}
+	}
+
+	return n
+}
+
+// RemoteDeletes counts the paths the sync asks the Files API to delete.
+func (p *SyncPlan) RemoteDeletes() int {
+	n := 0
+
+	for _, fa := range p.Deletes {
+		if fa.Action == ActUploadDelete {
+			n++
+		}
+	}
+
+	return n
+}
+
 // TotalUploadBytes sums the bytes the upload step will push.
 func (p *SyncPlan) TotalUploadBytes() int64 {
 	var n int64

@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -53,14 +54,8 @@ func phase5Execute(e *Engine) error {
 		return err
 	}
 
-	uploads, downloads := len(e.plan.Uploads), len(e.plan.Downloads)
-	deletes, conflicts := len(e.plan.Deletes), len(e.plan.Conflicts)
-
-	if total := uploads + downloads + deletes + conflicts; total > RollbackMaxFiles {
-		return fmt.Errorf(
-			"plan touches %d files (uploads=%d, downloads=%d, deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d; refusing to run",
-			total, uploads, downloads, deletes, conflicts, RollbackMaxFiles,
-		)
+	if err := checkPlanSize(e.plan); err != nil {
+		return err
 	}
 
 	if err := EnsureSpaceFor(e.projectDir, e.plan.TotalDownloadBytes()); err != nil {
@@ -87,6 +82,36 @@ func phase5Execute(e *Engine) error {
 	e.rollback = rb
 
 	return nil
+}
+
+// checkPlanSize refuses a plan that would back up more local files than the
+// rollback may hold, or delete more remote files than one request may name.
+// However many files it uploads does not matter to either.
+func checkPlanSize(plan *SyncPlan) error {
+	downloads, conflicts := len(plan.Downloads), len(plan.Conflicts)
+	localDeletes := plan.RollbackFiles() - downloads - conflicts
+
+	var over []string
+
+	if total := plan.RollbackFiles(); total > RollbackMaxFiles {
+		over = append(over, fmt.Sprintf(
+			"plan would back up %d local files (downloads=%d, local deletes=%d, conflicts=%d), exceeding RollbackMaxFiles=%d",
+			total, downloads, localDeletes, conflicts, RollbackMaxFiles,
+		))
+	}
+
+	if remote := plan.RemoteDeletes(); remote > RemoteDeleteMaxPaths {
+		over = append(over, fmt.Sprintf(
+			"plan deletes %d remote files, more than the %d the Files API accepts in one request",
+			remote, RemoteDeleteMaxPaths,
+		))
+	}
+
+	if len(over) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("%s; refusing to run", strings.Join(over, "; "))
 }
 
 func executePlan(e *Engine, rb *Rollback) error {
