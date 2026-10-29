@@ -436,6 +436,7 @@ See the links below for specific details:
 - **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
 - **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
 - **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
+- **[Auth profiles walkthrough](docs/demos/auth-profiles.md)**&mdash;a hands-on, offline beginner tour of named profiles: selecting with `--profile` or `DATAROBOT_CLI_PROFILE`, creating, inspecting, and deleting them in a safe scratch config.
 - **[Deploying workloads](docs/commands/workload-spec.md)**&mdash;take your own code from an artifact to a running URL with [`dr artifact`](docs/commands/artifact.md) and [`dr workload`](docs/commands/workload.md), including the spec files both commands read.
 - **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 
