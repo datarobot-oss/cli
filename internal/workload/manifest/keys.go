@@ -27,6 +27,7 @@ const (
 	keyName            = "name"
 	keyRuntime         = "runtime"
 	keySource          = "source"
+	keyUseCaseID       = "useCaseId"
 	keyValue           = "value"
 	keyWorkloadID      = "workloadId"
 )
@@ -39,6 +40,7 @@ const (
 const (
 	keyA2AEnabled     = "a2aEnabled"
 	keyCPU            = "cpu"
+	keyEnclavePolicy  = "enclaveSelectionPolicy"
 	keyLivenessProbe  = "livenessProbe"
 	keyPath           = "path"
 	keyReadinessProbe = "readinessProbe"

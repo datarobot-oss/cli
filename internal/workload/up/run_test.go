@@ -39,6 +39,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	// The setup wizard runs here; it must not read the developer's tenant.
+	wizard.SetNoUseCasesForTest()
+
+	os.Exit(m.Run())
+}
+
 // unboundImageManifest deploys a published image and has never been deployed,
 // which is the one apply path this change can actually take.
 const unboundImageManifest = `name: my-app

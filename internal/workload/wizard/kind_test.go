@@ -33,6 +33,9 @@ func TestMain(m *testing.M) {
 	shippedAskKind = askKind
 	askKind = true
 
+	// usecase_test.go wires its own.
+	SetNoUseCasesForTest()
+
 	os.Exit(m.Run())
 }
 

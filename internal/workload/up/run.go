@@ -66,6 +66,8 @@ var (
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
+	workloadUseCaseFn    = workload.WorkloadUseCase
+	linkUseCaseFn        = workload.LinkWorkloadToUseCase
 	writeWorkloadIDFn    = manifest.WriteWorkloadID
 	codeChangeFn         = defaultCodeChange
 	projectLinkedFn      = wapi.Exists
@@ -337,6 +339,13 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 	}
 
 	if err := dockerReady(ctx, plan); err != nil {
+		return result, err
+	}
+
+	// Ahead of every path, the empty plan's included: a workload on an Enclave
+	// with no Use Case cannot be restarted or replaced, so the link has to be
+	// in place before anything below asks for either.
+	if err := linkUseCase(loaded, live, opts); err != nil {
 		return result, err
 	}
 

@@ -44,6 +44,8 @@ The runtime group carries no `name`: the platform assigns `default` to the one g
 
 No readiness probe is written unless you give a health path (`--health /ready`): a guessed path kills a healthy deploy whose framework answers 404 there.
 
+`config` also writes `useCaseId`, the Use Case the workload is linked to; see [Use Case](workload.md#use-case).
+
 After the first write the file is yours. `config` leaves an existing manifest alone, and `up` edits exactly one key, `workloadId`. The exception on both is `--sync-env`, which edits only the environment variables after showing what it would change. Both keep your comments, your key order and any keys they do not know.
 
 ## Where the image comes from
