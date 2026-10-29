@@ -33,5 +33,5 @@ func TestTheJobCommands(t *testing.T) {
 		names = append(names, sub.Name())
 	}
 
-	assert.ElementsMatch(t, []string{"create", "list", "get", "update", "delete"}, names)
+	assert.ElementsMatch(t, []string{"create", "list", "get", "update", "delete", "run", "runs", "cancel"}, names)
 }

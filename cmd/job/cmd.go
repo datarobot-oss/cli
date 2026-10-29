@@ -15,10 +15,13 @@
 package job
 
 import (
+	"github.com/datarobot/cli/cmd/job/cancel"
 	"github.com/datarobot/cli/cmd/job/create"
 	"github.com/datarobot/cli/cmd/job/del"
 	"github.com/datarobot/cli/cmd/job/get"
 	"github.com/datarobot/cli/cmd/job/list"
+	"github.com/datarobot/cli/cmd/job/run"
+	"github.com/datarobot/cli/cmd/job/runs"
 	"github.com/datarobot/cli/cmd/job/update"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
@@ -49,6 +52,9 @@ DATAROBOT_CLI_FEATURE_JOB=true.`,
 		get.Cmd(),
 		update.Cmd(),
 		del.Cmd(),
+		run.Cmd(),
+		runs.Cmd(),
+		cancel.Cmd(),
 	)
 
 	return cmd
