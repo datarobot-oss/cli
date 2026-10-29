@@ -101,6 +101,7 @@ nav:
       - workload: commands/workload.md
       - spec reference: commands/workload-spec.md
       - manifest reference: commands/workload-manifest.md
+      - job: commands/job.md
       - pipeline: commands/pipeline.md
       - pipeline reference: commands/pipelines-reference.md
       - llm-gateway: commands/llm-gateway.md

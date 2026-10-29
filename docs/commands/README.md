@@ -61,6 +61,7 @@ These flags are available for all commands:
 | [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
 | [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
+| [`job`](job.md)                   | Run code to completion and read how each run ended (feature-gated). |
 | [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
 
 ### Command tree
@@ -173,6 +174,16 @@ dr
 │   ├── logs           Show a workload's container logs
 │   ├── config         Write the .datarobot.yaml manifest for a project (feature-gated)
 │   └── up             Deploy the difference between .datarobot.yaml and what is running (feature-gated)
+├── job                Run-to-completion jobs (alias: jobs, feature-gated)
+│   ├── create         Create a job from a job artifact and a runtime
+│   ├── list           List jobs
+│   ├── get            Display details of a job
+│   ├── update         Change what later runs use
+│   ├── delete         Delete a job and stop its active runs
+│   ├── run            Start a run; --wait follows it to its end
+│   ├── runs           List a job's runs, or display one
+│   ├── cancel         Cancel a run that has not ended
+│   └── logs           Show a run's logs
 ├── enclave            Enclave management (alias: enclaves, outpost(s), feature-gated)
 │   ├── register       Register an enclave, returning one-shot install secrets
 │   ├── get            Display details of an enclave
