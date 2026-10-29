@@ -228,6 +228,8 @@ func syncHistoryEntry(e *Engine, now time.Time) wapi.HistoryEntry {
 }
 
 func (e *Engine) populateResult(versionForState string) {
+	planned := planSize(e.plan)
+
 	r := &Result{
 		OldVersion:      ptrOrEmpty(e.config.LastSyncedVersionID),
 		NewVersion:      versionForState,
@@ -235,8 +237,11 @@ func (e *Engine) populateResult(versionForState string) {
 		DownloadedCount: len(e.plan.Downloads),
 		DeletedCount:    len(e.plan.Deletes),
 		ConflictCount:   len(e.plan.Conflicts),
-		ConflictCopies:  e.localBackups,
-		Duration:        e.nowFn().Sub(e.startedAt),
+
+		LocalDeletedCount:  planned.LocalDeletes,
+		RemoteDeletedCount: planned.RemoteDeletes,
+		ConflictCopies:     e.localBackups,
+		Duration:           e.nowFn().Sub(e.startedAt),
 
 		ExecutableNotice: e.execNotice,
 	}

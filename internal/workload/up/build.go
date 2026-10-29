@@ -59,6 +59,11 @@ func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result 
 	artifactID, fresh := made.ID, made.Fresh
 
 	synced, err := syncCode(loaded.ProjectDir, report)
+
+	// Recorded before the error check: a plan refused for its size is the
+	// outcome telemetry most needs to hear about.
+	result.Sync = sync.SizeOf(synced, err)
+
 	if err != nil {
 		return result, err
 	}
