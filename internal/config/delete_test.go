@@ -424,6 +424,40 @@ profiles:
 	assert.Equal(t, []string{"alpha"}, rawKeys(profiles))
 }
 
+// TestDeleteProfile_RefusesDeletingKeyAnchorTargetOfSurvivingAlias covers the
+// VAL-DELETE-004(f) defect: the anchor is defined on the removed section's
+// *key* node ("&shared alpha:") rather than inside its value subtree, so an
+// anchor scan limited to the value misses it and deleting alpha would leave
+// the surviving beta alias dangling and the config unloadable. The deletion
+// is refused and the file is left byte-identical.
+func TestDeleteProfile_RefusesDeletingKeyAnchorTargetOfSurvivingAlias(t *testing.T) {
+	configFile := writeRawConfigFile(t, `endpoint: https://app.datarobot.com/api/v2
+token: root-token
+profiles:
+  &shared alpha:
+    endpoint: https://alpha.example.com/api/v2
+    token: alpha-token
+  beta:
+    endpoint: *shared
+    token: beta-token
+`)
+
+	// The fixture itself must be loadable before the refusal is meaningful:
+	// the key-node anchor resolves and beta's alias reads back as "alpha".
+	raw := readRawYAML(t, configFile)
+	require.Contains(t, rawKeys(raw["profiles"].(map[string]any)), "alpha")
+	require.Equal(t, "alpha", raw["profiles"].(map[string]any)["beta"].(map[string]any)["endpoint"])
+
+	before := readDeleteFixtureBytes(t, configFile)
+
+	err := DeleteProfile("alpha")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), configFile, "the error must name the config path")
+	assert.Contains(t, err.Error(), "anchor", "the error must state the anchor/alias cause")
+
+	assert.Equal(t, before, readDeleteFixtureBytes(t, configFile), "a refused deletion must not touch the file")
+}
+
 // TestDeleteProfile_RefusesMultiDocumentStream covers the VAL-DELETE-004(d)
 // defect: the single-document reader decodes only the first document, so
 // editing and rewriting a multi-document stream would silently discard every

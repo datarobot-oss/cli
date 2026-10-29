@@ -66,9 +66,9 @@ func (e *ReservedProfileError) Error() string {
 //   - several profiles sections whose keys normalize to the requested name
 //     (for example "Beta" and "beta"), since removing one would leave the
 //     other's credentials in place while reporting the profile deleted; and
-//   - a target section defining YAML anchors that surviving sections alias,
-//     since removing the anchor would leave dangling aliases and an
-//     unloadable config.
+//   - a target section defining YAML anchors (on its key or in its value
+//     subtree) that surviving parts of the document alias, since removing
+//     the anchor would leave dangling aliases and an unloadable config.
 //
 // A file that cannot be parsed or rewritten fails with its path and cause --
 // all without touching disk.
@@ -117,11 +117,15 @@ func DeleteProfile(name string) error {
 	}
 
 	matchIndex := matches[0]
+	targetKey := profilesNode.Content[matchIndex]
 	targetValue := profilesNode.Content[matchIndex+1]
 
 	// Deleting an anchor definition that surviving sections still alias is
-	// refused rather than leaving the rewritten config unloadable.
-	if err := refuseOrphanedAliases(configFile, rootNode, targetValue, name); err != nil {
+	// refused rather than leaving the rewritten config unloadable. The key
+	// node is scanned alongside the value subtree: an anchor may be defined
+	// on the section's key itself ("&k alpha:") and still be aliased by a
+	// surviving section.
+	if err := refuseOrphanedAliases(configFile, rootNode, targetKey, targetValue, name); err != nil {
 		return err
 	}
 
@@ -246,16 +250,19 @@ func refuseMultiDocumentStream(configFile string) error {
 	return nil
 }
 
-// refuseOrphanedAliases rejects deleting a section whose subtree defines YAML
-// anchors that surviving parts of the document alias. yaml.v3 re-encodes
-// alias nodes as references to their anchor, so removing the anchor would
-// leave a dangling alias and an unloadable config.
-func refuseOrphanedAliases(configFile string, rootNode *yaml.Node, target *yaml.Node, name string) error {
+// refuseOrphanedAliases rejects deleting a section whose key node or value
+// subtree defines YAML anchors that surviving parts of the document alias.
+// yaml.v3 re-encodes alias nodes as references to their anchor, so removing
+// the anchor would leave a dangling alias and an unloadable config.
+func refuseOrphanedAliases(configFile string, rootNode *yaml.Node, targetKey, targetValue *yaml.Node, name string) error {
 	anchors := map[*yaml.Node]bool{}
 
-	collectAnchorNodes(target, anchors)
+	// Collect anchors from both removed nodes: an anchor on the section key
+	// is just as dangling after deletion as one inside the value subtree.
+	collectAnchorNodes(targetKey, anchors)
+	collectAnchorNodes(targetValue, anchors)
 
-	if len(anchors) == 0 || !documentAliasesAnchor(rootNode, target, anchors) {
+	if len(anchors) == 0 || !documentAliasesAnchor(rootNode, targetKey, targetValue, anchors) {
 		return nil
 	}
 
@@ -268,7 +275,7 @@ func refuseOrphanedAliases(configFile string, rootNode *yaml.Node, target *yaml.
 	sort.Strings(anchorNames)
 
 	return fmt.Errorf(
-		"%s: refusing to delete %q: its section defines YAML anchor(s) %s that surviving sections alias; deleting it would leave the config unloadable",
+		"%s: refusing to delete %q: its section defines YAML anchor(s) %s that surviving parts of the config alias; deleting it would leave the config unloadable",
 		configFile, name, strings.Join(anchorNames, ", "),
 	)
 }
@@ -291,10 +298,10 @@ func collectAnchorNodes(node *yaml.Node, anchors map[*yaml.Node]bool) {
 }
 
 // documentAliasesAnchor walks the document from root, skipping the deleted
-// subtree, and reports whether any surviving alias node resolves to an anchor
-// that the deleted subtree defined.
-func documentAliasesAnchor(node *yaml.Node, skip *yaml.Node, anchors map[*yaml.Node]bool) bool {
-	if node == skip {
+// section's key and value subtrees, and reports whether any surviving alias
+// node resolves to an anchor that the deleted section defined.
+func documentAliasesAnchor(node *yaml.Node, skipKey, skipValue *yaml.Node, anchors map[*yaml.Node]bool) bool {
+	if node == skipKey || node == skipValue {
 		return false
 	}
 
@@ -303,7 +310,7 @@ func documentAliasesAnchor(node *yaml.Node, skip *yaml.Node, anchors map[*yaml.N
 	}
 
 	for _, child := range node.Content {
-		if documentAliasesAnchor(child, skip, anchors) {
+		if documentAliasesAnchor(child, skipKey, skipValue, anchors) {
 			return true
 		}
 	}
