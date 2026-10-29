@@ -41,9 +41,11 @@ func TestTelemetry_ReportsTheSyncSize(t *testing.T) {
 			engine: &fakeEngine{plan: plan, executeErr: &sync.PlanTooLargeError{Downloads: 1001, OverRollback: true}},
 			want:   sync.Size{Ran: true, Failed: true, Downloads: 1001, OverRollback: true},
 		},
-		"failed for another reason": {
-			engine: &fakeEngine{plan: plan, executeErr: errors.New("upload failed mid-sync")},
-			want:   sync.Size{Ran: true, Failed: true},
+		"failed partway through executing": {
+			engine: &fakeEngine{plan: plan, executeErr: &sync.ExecuteError{
+				Size: sync.Size{Uploads: 1}, Err: errors.New("upload failed mid-sync"),
+			}},
+			want: sync.Size{Ran: true, Failed: true, Uploads: 1},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

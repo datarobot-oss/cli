@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/wapi"
 )
 
@@ -150,6 +151,26 @@ func TestCheckPlanSize_ReportsCounts(t *testing.T) {
 	assert.False(t, tooLarge.OverRollback)
 	assert.True(t, tooLarge.OverRemoteDelete)
 	assert.Equal(t, RemoteDeleteMaxPaths+1, tooLarge.RemoteDeletes)
+}
+
+// A failure inside Execute carries the plan's counts, so telemetry can report
+// what a sync that failed partway was applying.
+func TestExecute_FailureCarriesThePlanSize(t *testing.T) {
+	e := &Engine{
+		plan: &SyncPlan{
+			Uploads: actions(2, ActUploadAdd, "up"),
+			Deletes: append(actions(1, ActDownloadDelete, "localdel"), actions(3, ActUploadDelete, "remotedel")...),
+		},
+		artifact: &workload.Artifact{ID: "art-1", Status: workload.ArtifactStatusLocked},
+	}
+
+	_, err := e.Execute(e.plan)
+
+	var executed *ExecuteError
+
+	require.ErrorAs(t, err, &executed)
+	assert.Contains(t, err.Error(), "is locked")
+	assert.Equal(t, Size{Uploads: 2, LocalDeletes: 1, RemoteDeletes: 3}, executed.Size)
 }
 
 // The refusal comes before anything touches the tree: no rollback dir.

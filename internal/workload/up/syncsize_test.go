@@ -36,20 +36,34 @@ var refusedSize = sync.Size{
 	OverRollback: true,
 }
 
-// A first deploy refused for its size still reports the plan it was refused
-// for: that run is the one the limit exists to be sized against.
+// A first deploy reports the size of its sync, applied or not: a refused or
+// failed one is the run the limits exist to be sized against.
 func TestRun_FirstDeployReportsTheSyncSize(t *testing.T) {
 	for name, tc := range map[string]struct {
-		sync func(string) (*sync.Result, error)
-		want sync.Size
+		sync    func(string) (*sync.Result, error)
+		want    sync.Size
+		wantErr bool
 	}{
-		"refused": {
-			sync: func(string) (*sync.Result, error) { return nil, refusedPlan() },
-			want: refusedSize,
+		"applied": {
+			sync: func(string) (*sync.Result, error) { return &sync.Result{UploadedCount: 2, NewVersion: "ver-2"}, nil },
+			want: sync.Size{Ran: true, Uploads: 2},
 		},
-		"failed for another reason": {
-			sync: func(string) (*sync.Result, error) { return nil, errors.New("network down") },
-			want: sync.Size{Ran: true, Failed: true},
+		"refused": {
+			sync:    func(string) (*sync.Result, error) { return nil, refusedPlan() },
+			want:    refusedSize,
+			wantErr: true,
+		},
+		"failed partway through executing": {
+			sync: func(string) (*sync.Result, error) {
+				return nil, &sync.ExecuteError{Size: sync.Size{Uploads: 20000}, Err: errors.New("timeout waiting for archive extract")}
+			},
+			want:    sync.Size{Ran: true, Failed: true, Uploads: 20000},
+			wantErr: true,
+		},
+		"failed before there was a plan": {
+			sync:    func(string) (*sync.Result, error) { return nil, errors.New("another sync holds the lock") },
+			want:    sync.Size{},
+			wantErr: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -65,9 +79,11 @@ func TestRun_FirstDeployReportsTheSyncSize(t *testing.T) {
 			install(t, f)
 
 			result, _, err := runIn(t, unboundDockerfileManifest, Options{NonInteractive: true})
-			require.Error(t, err)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Equal(t, []string{"create-artifact", "link", "sync"}, tr.steps)
+			}
 
-			assert.Equal(t, []string{"create-artifact", "link", "sync"}, tr.steps)
 			assert.Equal(t, tc.want, result.Sync)
 		})
 	}

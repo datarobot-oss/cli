@@ -39,24 +39,62 @@ type Size struct {
 	OverRemoteDelete bool
 }
 
-// SizeOf is the Size of a sync that returned result and err. A failure other
-// than a size refusal carries no counts, because the plan never came back.
-func SizeOf(result *Result, err error) Size {
-	size := Size{Ran: true, Failed: err != nil}
+// ExecuteError is a failure once Execute had a plan, carrying the plan's
+// counts so a sync that failed partway reports what it was applying.
+type ExecuteError struct {
+	Size Size
+	Err  error
+}
 
-	var tooLarge *PlanTooLargeError
+func (e *ExecuteError) Error() string { return e.Err.Error() }
+
+func (e *ExecuteError) Unwrap() error { return e.Err }
+
+// planSize counts what plan applies.
+func planSize(plan *SyncPlan) Size {
+	remoteDeletes := plan.RemoteDeletes()
+
+	return Size{
+		Uploads:       len(plan.Uploads),
+		Downloads:     len(plan.Downloads),
+		LocalDeletes:  len(plan.Deletes) - remoteDeletes,
+		RemoteDeletes: remoteDeletes,
+		Conflicts:     len(plan.Conflicts),
+	}
+}
+
+// SizeOf is the Size of a sync that returned result and err. A failure before
+// Execute had a plan is no sync at all.
+func SizeOf(result *Result, err error) Size {
+	var (
+		tooLarge *PlanTooLargeError
+		executed *ExecuteError
+	)
 
 	switch {
 	case errors.As(err, &tooLarge):
-		size.Uploads, size.Downloads, size.Conflicts = tooLarge.Uploads, tooLarge.Downloads, tooLarge.Conflicts
-		size.LocalDeletes, size.RemoteDeletes = tooLarge.LocalDeletes, tooLarge.RemoteDeletes
-		size.OverRollback, size.OverRemoteDelete = tooLarge.OverRollback, tooLarge.OverRemoteDelete
-	case err == nil && result != nil:
-		size.Uploads, size.Downloads, size.Conflicts = result.UploadedCount, result.DownloadedCount, result.ConflictCount
-		size.LocalDeletes, size.RemoteDeletes = result.LocalDeletedCount, result.RemoteDeletedCount
+		return Size{
+			Ran: true, Failed: true,
+			Uploads: tooLarge.Uploads, Downloads: tooLarge.Downloads, Conflicts: tooLarge.Conflicts,
+			LocalDeletes: tooLarge.LocalDeletes, RemoteDeletes: tooLarge.RemoteDeletes,
+			OverRollback: tooLarge.OverRollback, OverRemoteDelete: tooLarge.OverRemoteDelete,
+		}
+	case errors.As(err, &executed):
+		size := executed.Size
+		size.Ran, size.Failed = true, true
+
+		return size
+	case err != nil || result == nil:
+		return Size{}
 	}
 
-	if err == nil && size == (Size{Ran: true}) {
+	size := Size{
+		Ran:     true,
+		Uploads: result.UploadedCount, Downloads: result.DownloadedCount, Conflicts: result.ConflictCount,
+		LocalDeletes: result.LocalDeletedCount, RemoteDeletes: result.RemoteDeletedCount,
+	}
+
+	if size == (Size{Ran: true}) {
 		return Size{}
 	}
 

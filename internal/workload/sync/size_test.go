@@ -51,12 +51,23 @@ func TestSizeOf(t *testing.T) {
 				Ran: true, Failed: true, Downloads: 1001, RemoteDeletes: 1001, OverRollback: true, OverRemoteDelete: true,
 			},
 		},
-		"failed for another reason": {
-			err:  errors.New("network down"),
-			want: Size{Ran: true, Failed: true},
+		"failed partway through executing": {
+			err: fmt.Errorf("cannot sync the project's code: %w", &ExecuteError{
+				Size: Size{Uploads: 20000}, Err: errors.New("timeout waiting for archive extract"),
+			}),
+			want: Size{Ran: true, Failed: true, Uploads: 20000},
 		},
-		// Engine.Run returns an empty result for an up-to-date tree, which
-		// code sync never executes: both report no sync.
+		"applied, then failed to release the lock": {
+			result: &Result{UploadedCount: 3},
+			err:    &ExecuteError{Size: Size{Uploads: 3}, Err: errors.New("release lock: busy")},
+			want:   Size{Ran: true, Failed: true, Uploads: 3},
+		},
+		"failed before there was a plan": {
+			err:  errors.New("another sync holds the lock"),
+			want: Size{},
+		},
+		// An up-to-date tree applies nothing, whether or not --verify still
+		// executes its empty plan: both commands report no sync.
 		"nothing to apply": {
 			result: &Result{NewVersion: "v1"},
 			want:   Size{},

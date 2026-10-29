@@ -237,6 +237,9 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 
 	defer func() {
 		retErr = e.joinReleaseErr(retErr)
+		if retErr != nil {
+			retErr = &ExecuteError{Size: planSize(e.plan), Err: retErr}
+		}
 	}()
 
 	if err := runPhases(
