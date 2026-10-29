@@ -25,10 +25,18 @@ import (
 
 // symlinkOrSkip creates link pointing at target, skipping the test where the
 // OS refuses: Windows allows symlinks only with Developer Mode or elevation.
+// CI fails instead, so a runner that lost the right cannot drop the coverage
+// unnoticed.
 func symlinkOrSkip(t *testing.T, target, link string) {
 	t.Helper()
 
-	if err := os.Symlink(target, link); err != nil {
+	err := os.Symlink(target, link)
+
+	switch {
+	case err == nil:
+	case os.Getenv("CI") != "":
+		t.Fatalf("cannot create symlinks on this CI runner: %v", err)
+	default:
 		t.Skipf("cannot create symlinks here: %v", err)
 	}
 }
@@ -202,5 +210,28 @@ func TestWalk_IgnoreRulesApplyToLinksAndWhatTheyPointAt(t *testing.T) {
 		"vendor": {
 			RelPath: "vendor", Target: filepath.Join(root, "node_modules", "pkg"), IsDir: true, Outcome: LinkTargetIgnored,
 		},
-	}, links, "an ignored link is not reported, a dangling one under either spelling")
+		"ignored_link": {
+			RelPath: "ignored_link", Target: filepath.Join(root, "realdir"), IsDir: true, Outcome: LinkIgnored,
+		},
+		"ignored_dangling": {RelPath: "ignored_dangling", Outcome: LinkIgnored},
+	}, links, "a dangling link is ignored under either spelling")
+}
+
+// A link at a named pipe would upload nothing, so it is not reported as
+// followed.
+func TestWalk_DoesNotFollowALinkToSomethingNotAFile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "app.py", "x")
+
+	pipe := filepath.Join(root, "pipe")
+	if err := mkfifo(pipe); err != nil {
+		t.Skipf("cannot create a named pipe here: %v", err)
+	}
+
+	symlinkOrSkip(t, pipe, filepath.Join(root, "pipe.lnk"))
+
+	paths, links := walkLinks(t, root, nil)
+
+	assert.Equal(t, []string{"app.py"}, paths)
+	assert.Equal(t, LinkNotAFile, links["pipe.lnk"].Outcome)
 }

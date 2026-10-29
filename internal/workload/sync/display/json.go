@@ -69,7 +69,7 @@ type SkippedSymlinkJSON struct {
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
 	// Reason is why it was not followed: dangling, outside_project,
-	// target_ignored, loop or unreadable.
+	// target_ignored, loop, not_a_file or unreadable.
 	Reason string `json:"reason"`
 }
 

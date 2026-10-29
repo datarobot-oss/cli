@@ -52,6 +52,10 @@ func diff(base, local, remote BaseManifest, linkedPaths []string) *SyncPlan {
 		r := remote[path]
 
 		if underLink(path, linkedPaths) {
+			if b.Hash != r.Hash && l.Hash != r.Hash {
+				plan.ReplacedRemote = append(plan.ReplacedRemote, path)
+			}
+
 			b = r
 		}
 

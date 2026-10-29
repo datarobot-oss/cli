@@ -23,6 +23,9 @@ func phase3Diff(e *Engine) error {
 		plan.pushOnly()
 	}
 
+	plan.skipPullsThrough(e.unfollowedLinks)
+	warnReplacedRemoteEdits(e, plan)
+
 	e.plan = plan
 
 	return nil

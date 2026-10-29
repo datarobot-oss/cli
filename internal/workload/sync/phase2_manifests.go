@@ -59,6 +59,29 @@ func warnSkippedSymlinks(e *Engine) {
 	}
 }
 
+// warnReplacedRemoteEdits says which server changes the plan replaces because
+// the path is reached through a link, up to SymlinkNoticeBound of them.
+func warnReplacedRemoteEdits(e *Engine, plan *SyncPlan) {
+	if e.opts.Quiet {
+		return
+	}
+
+	sort.Strings(plan.ReplacedRemote)
+
+	for i, path := range plan.ReplacedRemote {
+		if i == SymlinkNoticeBound {
+			log.Warn(fmt.Sprintf("linked path: and %d more server change(s) under symlinks are replaced by the local copy",
+				len(plan.ReplacedRemote)-i))
+
+			return
+		}
+
+		log.Warn(fmt.Sprintf(
+			"linked path: %s changed on the server, but it is reached through a symlink, so the local copy replaces that change",
+			path))
+	}
+}
+
 // phase2Manifests builds the LOCAL manifest by walking + hashing the
 // project, and either fetches REMOTE from FilesAPI (when drifted) or
 // copies it from BASE (the solo-developer fast path).
@@ -88,7 +111,12 @@ func phase2Manifests(e *Engine) error {
 			return
 		}
 
-		e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: link.RelPath, IsDir: link.IsDir, Reason: link.Outcome})
+		e.unfollowedLinks = append(e.unfollowedLinks, link.RelPath)
+
+		// The user excluded an ignored link, so it is not news.
+		if link.Outcome != fileops.LinkIgnored {
+			e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: link.RelPath, IsDir: link.IsDir, Reason: link.Outcome})
+		}
 	}
 
 	entries, err := fileops.Walk(e.projectDir, matcher.Match, onLink)

@@ -42,8 +42,13 @@ const (
 	LinkLoop LinkOutcome = "loop"
 	// LinkTargetIgnored: the ignore rules exclude what the link points at.
 	LinkTargetIgnored LinkOutcome = "target_ignored"
+	// LinkNotAFile: the link points at something neither a regular file nor
+	// a directory, such as a named pipe.
+	LinkNotAFile LinkOutcome = "not_a_file"
 	// LinkUnreadable: the link's target could not be resolved.
 	LinkUnreadable LinkOutcome = "unreadable"
+	// LinkIgnored: the ignore rules exclude the link itself.
+	LinkIgnored LinkOutcome = "ignored"
 )
 
 // Link is a symlink, or on Windows a junction, that the walk met.
@@ -60,8 +65,9 @@ type Link struct {
 	Outcome LinkOutcome
 }
 
-// LinkFunc is called once per link the walk meets, followed or not. A link
-// the ignore function excludes is not reported. nil disables it.
+// LinkFunc is called once per link the walk meets, followed or not, ignored
+// ones included: a caller writing into the tree must not write through any of
+// them. nil disables it.
 type LinkFunc func(Link)
 
 type Entry struct {
@@ -74,9 +80,10 @@ type Entry struct {
 //
 // A link whose target lies inside root is walked as if its target sat at the
 // link's path, so a linked file or directory is listed under the link's name
-// as well as its own. A link pointing outside root, at nothing, or back into
-// a directory the walk is inside is not followed. Each link is reported via
-// onLink with what was done with it.
+// as well as its own. A link the ignore rules exclude, or pointing outside
+// root, at nothing, at an ignored path, at something that is neither a file
+// nor a directory, or back into a directory the walk is inside, is not
+// followed. Each link is reported via onLink with what was done with it.
 func Walk(root string, ignore IgnoreFunc, onLink LinkFunc) ([]Entry, error) {
 	rootReal, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -151,17 +158,13 @@ func (w *walker) link(path, rel string, inside []string) error {
 		return nil
 	}
 
-	if w.ignored(rel, info.IsDir()) {
-		return nil
-	}
-
 	// The directory the link sits in is one the walk is inside.
 	if dir, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
 		inside = append(slices.Clone(inside), dir)
 	}
 
 	target, _ := os.Readlink(path)
-	link := Link{RelPath: rel, Target: target, IsDir: info.IsDir(), Outcome: w.outcome(resolved, info.IsDir(), inside)}
+	link := Link{RelPath: rel, Target: target, IsDir: info.IsDir(), Outcome: w.outcome(rel, resolved, info, inside)}
 
 	w.report(link)
 
@@ -170,38 +173,44 @@ func (w *walker) link(path, rel string, inside []string) error {
 		return nil
 	case info.IsDir():
 		return w.walk(resolved, rel, append(slices.Clone(inside), resolved))
-	case info.Mode().IsRegular():
-		w.entries = append(w.entries, Entry{AbsPath: resolved, RelPath: rel})
 	}
+
+	w.entries = append(w.entries, Entry{AbsPath: resolved, RelPath: rel})
 
 	return nil
 }
 
-// outcome decides whether to follow a link that resolves to resolved.
-func (w *walker) outcome(resolved string, isDir bool, inside []string) LinkOutcome {
+// outcome decides whether to follow the link at rel, which resolves to
+// resolved, described by info.
+func (w *walker) outcome(rel, resolved string, info fs.FileInfo, inside []string) LinkOutcome {
 	switch {
+	case w.ignored(rel, info.IsDir()):
+		return LinkIgnored
 	case !within(w.rootReal, resolved):
 		return LinkOutside
-	case w.targetIgnored(resolved, isDir):
+	case w.targetIgnored(resolved, info.IsDir()):
 		return LinkTargetIgnored
-	case isDir && loops(resolved, inside):
+	case !info.IsDir() && !info.Mode().IsRegular():
+		return LinkNotAFile
+	case info.IsDir() && loops(resolved, inside):
 		return LinkLoop
 	}
 
 	return LinkFollowed
 }
 
-// unresolved reports a link that resolves to nothing, err saying why.
+// unresolved reports a link that cannot be resolved, err saying why.
 func (w *walker) unresolved(rel string, err error) {
 	// A dangling link's kind is unknowable, so either spelling of an ignore
 	// pattern excludes it.
 	dangling := errors.Is(err, fs.ErrNotExist)
-	if w.ignored(rel, false) || (dangling && w.ignored(rel, true)) {
-		return
-	}
 
 	outcome := LinkUnreadable
-	if dangling {
+
+	switch {
+	case w.ignored(rel, false) || (dangling && w.ignored(rel, true)):
+		outcome = LinkIgnored
+	case dangling:
 		outcome = LinkDangling
 	}
 

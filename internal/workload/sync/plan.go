@@ -53,6 +53,10 @@ type SyncPlan struct {
 	// downloads and the remote deletes it would otherwise apply locally.
 	Skipped []FileAction
 
+	// ReplacedRemote are the paths reached through a link whose server copy
+	// changed since the last sync and that the local copy replaces anyway.
+	ReplacedRemote []string
+
 	// OldVersionShort is the 8-char prefix of the BASE manifest's
 	// syncedVersionId; empty before the first successful sync.
 	OldVersionShort string
@@ -78,6 +82,34 @@ func (p *SyncPlan) pushOnly() {
 	}
 
 	p.Deletes = kept
+}
+
+// skipPullsThrough leaves alone every download and conflict at or under one of
+// links, links the walk did not follow: writing there would go through the
+// link, possibly out of the project.
+func (p *SyncPlan) skipPullsThrough(links []string) {
+	if len(links) == 0 {
+		return
+	}
+
+	keep := func(group []FileAction) []FileAction {
+		kept := group[:0]
+
+		for _, fa := range group {
+			if underLink(fa.Path, links) {
+				p.Skipped = append(p.Skipped, fa)
+
+				continue
+			}
+
+			kept = append(kept, fa)
+		}
+
+		return kept
+	}
+
+	p.Downloads = keep(p.Downloads)
+	p.Conflicts = keep(p.Conflicts)
 }
 
 // Append routes a FileAction into the right group based on its Action.

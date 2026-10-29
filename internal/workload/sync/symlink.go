@@ -68,7 +68,9 @@ func (s SkippedSymlink) Why() string {
 		return "points at a path the ignore rules exclude"
 	case fileops.LinkLoop:
 		return "points back into a directory that contains it"
-	case fileops.LinkFollowed, fileops.LinkUnreadable:
+	case fileops.LinkNotAFile:
+		return "points at something that is neither a file nor a directory"
+	case fileops.LinkFollowed, fileops.LinkUnreadable, fileops.LinkIgnored:
 	}
 
 	return "could not be resolved"

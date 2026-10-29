@@ -733,7 +733,7 @@ func TestRunE_PushOnly_UploadsAndListsWhatItLeftAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, fe.executed)
 	assert.True(t, fe.opts.PushOnly, "the flag reaches the engine; the fake's plan shape alone would not prove it")
-	assert.Contains(t, stdout.String(), "LEFT ALONE (push-only)")
+	assert.Contains(t, stdout.String(), "LEFT ALONE (not pulled)")
 	assert.Contains(t, stdout.String(), "theirs.py")
 
 	fe = &fakeEngine{plan: plan}

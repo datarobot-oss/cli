@@ -156,6 +156,11 @@ type Engine struct {
 	// Phase 2; Phase 3 pushes everything at or under them and pulls nothing.
 	linkedPaths []string
 
+	// unfollowedLinks are the paths of every other link, ignored ones
+	// included. Phase 3 pulls nothing at or under them either: the write
+	// would go through the link, possibly out of the project.
+	unfollowedLinks []string
+
 	lockfileFn        LockfileRunner
 	lockfileCheckFn   LockfileChecker
 	lockfileGenerated bool
