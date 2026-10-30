@@ -49,8 +49,9 @@ type SyncPlan struct {
 	Deletes   []FileAction // LOCAL_DELETED + REMOTE_DELETED
 	Conflicts []FileAction // CONFLICT + ADD_CONFLICT + DEL_EDIT_CONFLICT
 
-	// Skipped is what a push-only run leaves as it is on both sides: the
-	// downloads and the remote deletes it would otherwise apply locally.
+	// Skipped is what the plan leaves as it is on both sides: what a push-only
+	// run would otherwise apply locally, and the downloads and conflicts under
+	// a link the walk did not follow.
 	Skipped []FileAction
 
 	// ReplacedRemote are the paths reached through a link whose server copy
