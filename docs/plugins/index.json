@@ -6,6 +6,12 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.40",
+          "url": "assist/assist-0.1.40.tar.xz",
+          "sha256": "fd56cd281003a229bae32dd26ba8daf29929aa132fa6a5285dcf0fbef1c5d646",
+          "releaseDate": "2026-10-28"
+        },
+        {
           "version": "0.1.39",
           "url": "assist/assist-0.1.39.tar.xz",
           "sha256": "68eb4eb4e5573368203be7097deefb8e437d2bb258a00b0ead6163645f78b331",
@@ -198,6 +204,12 @@
       "description": "A local experimentation dashboard for DataRobot users to visualize and compare agent runs.",
       "versions": [
         {
+          "version": "2.3.0",
+          "url": "xp/xp-2.3.0.tar.xz",
+          "sha256": "ca46163ebb3e7024fec749d44a40f66ca373d511a54a397cde5ec7c9f8612752",
+          "releaseDate": "2026-10-21"
+        },
+        {
           "version": "2.2.0",
           "url": "xp/xp-2.2.0.tar.xz",
           "sha256": "fa19e5e43d15f1917356cccf2940fbfeb40b0a7d503f97e1a988f30cc524a29d",
@@ -288,6 +300,30 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.16",
+          "url": "opencode/opencode-0.1.16.tar.xz",
+          "sha256": "c7f7bb834d223f9fe56cff5645fea7da9fcbc0434a8998ed7c2c4cd8b20bc687",
+          "releaseDate": "2026-10-28"
+        },
+        {
+          "version": "0.1.14",
+          "url": "opencode/opencode-0.1.14.tar.xz",
+          "sha256": "db6753ae6c81925ce4dc30e41f9e400b4608f59a5f7a260293e378e6bb33b01d",
+          "releaseDate": "2026-10-22"
+        },
+        {
+          "version": "0.1.13",
+          "url": "opencode/opencode-0.1.13.tar.xz",
+          "sha256": "c169946af48ae21c3c65cb7eb1b51515531e018690723ab2ebd815fefed7df03",
+          "releaseDate": "2026-10-21"
+        },
+        {
+          "version": "0.1.12",
+          "url": "opencode/opencode-0.1.12.tar.xz",
+          "sha256": "10b26cf58e9925e193db96f4b6e6dd84e691887148b0a7aa08ff93d4d332135f",
+          "releaseDate": "2026-10-20"
+        },
+        {
           "version": "0.1.11",
           "url": "opencode/opencode-0.1.11.tar.xz",
           "sha256": "636852bf14630bb93a7c4a1215bb63d8179b8bd16e78392b8c4c9972fbdb874c",
@@ -358,6 +394,12 @@
           "url": "codespace/codespace-0.5.5.tar.xz",
           "sha256": "0bc6930325562e84d5ae61532b258cec2c09f6652d0a7605df952573aab03630",
           "releaseDate": "2026-08-28"
+        },
+        {
+          "version": "0.6.0",
+          "url": "codespace/codespace-0.6.0.tar.xz",
+          "sha256": "4ac8ac2350ecd9fe52b3098bc04f94efbd8e374915928ed6f204b974ba4ebd11",
+          "releaseDate": "2026-10-19"
         }
       ]
     }

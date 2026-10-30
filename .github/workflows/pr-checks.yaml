@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Detect Changes
     timeout-minutes: 5
+    # PR-file API mode avoids cloning the large repository just to select jobs.
+    permissions:
+      pull-requests: read
     outputs:
       completion: ${{ steps.changes.outputs.completion }}
       dotenv: ${{ steps.changes.outputs.dotenv }}
@@ -32,9 +35,6 @@ jobs:
       test_config: ${{ steps.changes.outputs.test_config }}
       lint_config: ${{ steps.changes.outputs.lint_config }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Detect file changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: changes
@@ -215,7 +215,7 @@ jobs:
           install-task: 'false'
 
       - name: Build all platforms with GoReleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: '~> v2'

@@ -67,7 +67,7 @@ func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, e
 	// Small archives complete inline (201, no statusId); larger ones
 	// come back 202 with a statusId we then poll.
 	if resp.StatusID != "" {
-		if err := waitForCompletion(e, resp.StatusID); err != nil {
+		if err := waitForCompletion(e, resp.StatusID, zipPollTimeout(len(files))); err != nil {
 			return UploadOutcome{}, err
 		}
 	}
@@ -224,10 +224,18 @@ func postZip(e *Engine, body io.Reader, size int64) (*filesapi.FromFileResp, err
 	return e.files.UploadFromZipExisting(catalogID, syncZipName, filesapi.OverwriteReplace, size, body)
 }
 
-// waitForCompletion polls until terminal status or ZipPollTimeoutSecs
-// elapses.
-func waitForCompletion(e *Engine, statusID string) error {
-	deadline := time.Now().Add(time.Duration(ZipPollTimeoutSecs) * time.Second)
+// zipPollTimeout is how long to wait for the server to extract an archive of
+// files entries: ZipPollTimeoutSecs, or longer for an archive large enough to
+// need it, up to ZipPollMaxTimeoutSecs.
+func zipPollTimeout(files int) time.Duration {
+	scaled := max(time.Duration(ZipPollTimeoutSecs)*time.Second, time.Duration(files)*ZipPollPerFile)
+
+	return min(scaled, time.Duration(ZipPollMaxTimeoutSecs)*time.Second)
+}
+
+// waitForCompletion polls until terminal status or timeout elapses.
+func waitForCompletion(e *Engine, statusID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 
 	for {
 		if time.Now().After(deadline) {

@@ -100,7 +100,13 @@ func detectDivergence(base, remote BaseManifest) []Divergence {
 // tail; the structured field on the engine carries every divergence
 // regardless.
 func maybeDetectDivergence(e *Engine) {
-	if e.drifted || !e.opts.Verify {
+	if !e.opts.Verify {
+		return
+	}
+
+	if e.drifted {
+		warnVerifySkipped(e)
+
 		return
 	}
 
@@ -125,6 +131,18 @@ func maybeDetectDivergence(e *Engine) {
 			"divergence: and %d more divergence(s) were found (see the plan JSON for the full list)",
 			len(e.divergences)-DivergenceNoticeBound))
 	}
+}
+
+// warnVerifySkipped says why --verify checked nothing on an artifact that has
+// not moved: an earlier sync left server changes alone, so BASE is behind the
+// server on purpose.
+func warnVerifySkipped(e *Engine) {
+	if e.opts.Quiet || e.remoteVer != ptrOrEmpty(e.config.LastSyncedVersionID) {
+		return
+	}
+
+	log.Warn("verify: skipped the divergence check, since an earlier sync left server changes alone " +
+		"(push-only, or under a symlink that is not followed) and manifest.json is behind the server on purpose")
 }
 
 // trustLocalOverServer corrects BASE for the divergences found. BASE records

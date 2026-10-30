@@ -57,13 +57,22 @@ type Result struct {
 	DownloadedCount int
 	DeletedCount    int
 	ConflictCount   int
-	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
-	Duration        time.Duration
+
+	// The two halves of DeletedCount: local files a remote deletion removed,
+	// and remote files a local deletion removed.
+	LocalDeletedCount  int
+	RemoteDeletedCount int
+	ConflictCopies     []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
+	Duration           time.Duration
 
 	// ExecutableNotice warns that image builds drop the executable bit of the
 	// files it names; "" when this sync uploaded none. Returned rather than
 	// logged, because up's progress display silences the stderr logger.
 	ExecutableNotice string
+
+	// SkippedSymlinks are the links the walk did not follow, for a caller
+	// that ran the engine quietly and has not named them yet.
+	SkippedSymlinks []SkippedSymlink
 }
 
 var ErrNoPlan = errors.New("sync engine: Execute called before Plan")
@@ -147,6 +156,19 @@ type Engine struct {
 	// through the ignore matcher so deliberately-ignored or system-excluded
 	// links are absent. Populated in Phase 2; exposed by the display layer.
 	skippedSymlinks []SkippedSymlink
+
+	// linkedPaths are the paths of the links the walk followed. Populated in
+	// Phase 2; Phase 3 pushes everything at or under them and pulls nothing.
+	linkedPaths []string
+
+	// aliases maps each file listed under a followed link to the path the
+	// project lists it under in its own right. Populated in Phase 2.
+	aliases map[string]string
+
+	// unfollowedLinks are the paths of every other link, ignored ones
+	// included. Phase 3 pulls nothing at or under them either: the write
+	// would go through the link, possibly out of the project.
+	unfollowedLinks []string
 
 	lockfileFn        LockfileRunner
 	lockfileCheckFn   LockfileChecker
@@ -232,6 +254,9 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 
 	defer func() {
 		retErr = e.joinReleaseErr(retErr)
+		if retErr != nil {
+			retErr = &ExecuteError{Size: planSize(e.plan), Err: retErr}
+		}
 	}()
 
 	if err := runPhases(
@@ -265,8 +290,9 @@ func (e *Engine) Run() (*Result, error) {
 		}
 
 		return &Result{
-			OldVersion: ptrOrEmpty(e.config.LastSyncedVersionID),
-			Duration:   e.nowFn().Sub(e.startedAt),
+			OldVersion:      ptrOrEmpty(e.config.LastSyncedVersionID),
+			Duration:        e.nowFn().Sub(e.startedAt),
+			SkippedSymlinks: e.skippedSymlinks,
 		}, nil
 	}
 

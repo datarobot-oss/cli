@@ -44,9 +44,10 @@ func runFailing(t *testing.T, runErr error, args []string, opts ...Option) (stri
 	root := NewIsolatedRootFactory(opts...).Build()
 
 	stub := &cobra.Command{
-		Use:  "stub",
-		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error { return runErr },
+		Use:           "stub",
+		Args:          cobra.NoArgs,
+		SilenceErrors: true, // Match auth commands that report their own RunE failures.
+		RunE:          func(_ *cobra.Command, _ []string) error { return runErr },
 	}
 
 	root.AddCommand(stub)
@@ -106,6 +107,49 @@ func TestExecuteRoot_TextModeUnchanged(t *testing.T) {
 
 	assert.Empty(t, stdout)
 	assert.Equal(t, "Error: boom\n", stderr)
+}
+
+// TestExecuteRoot_PreRunFailures reports errors even when the selected command
+// silences cobra and never reaches its own error-handling code.
+func TestExecuteRoot_PreRunFailures(t *testing.T) {
+	for _, format := range []string{"text", "json"} {
+		for _, phase := range []string{"config", "tls"} {
+			t.Run(format+"/"+phase, func(t *testing.T) {
+				failure := errors.New(phase + " setup failed")
+				fail := func(_ *cobra.Command) error { return failure }
+
+				option := WithConfigInitializer(fail)
+				if phase == "tls" {
+					option = WithTLSSetup(fail)
+				}
+
+				stdout, stderr := runFailing(t, nil,
+					[]string{"stub", "--output-format", format}, option)
+
+				assert.Empty(t, stdout)
+
+				if format == "json" {
+					assert.Equal(t, failure.Error(), decodeEnvelope(t, stderr)["message"])
+				} else {
+					assert.Equal(t, "Error: "+failure.Error()+"\n", stderr)
+				}
+			})
+		}
+	}
+}
+
+// TestExecuteRoot_WrappedErrSilent verifies both output formats leave messages
+// already printed by a command alone, including sentinels wrapped by a hook.
+func TestExecuteRoot_WrappedErrSilent(t *testing.T) {
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			stdout, stderr := runFailing(t, fmt.Errorf("auth check: %w", cli.ErrSilent),
+				[]string{"stub", "--output-format", format})
+
+			assert.Empty(t, stdout)
+			assert.Empty(t, stderr)
+		})
+	}
 }
 
 func TestExecuteRoot_ErrSilentGetsNoEnvelope(t *testing.T) {
@@ -201,6 +245,24 @@ func TestExecuteRoot_JSONFromConfigFile(t *testing.T) {
 
 	assert.Empty(t, stdout)
 	assert.Equal(t, "boom", decodeEnvelope(t, stderr)["message"])
+}
+
+// TestExecuteRoot_TextOverridesJSONConfig checks format precedence in the actual
+// reporter, not only the pre-parse flag scan.
+func TestExecuteRoot_TextOverridesJSONConfig(t *testing.T) {
+	t.Cleanup(func() { viperx.Set("output-format", "") })
+
+	stdout, stderr := runFailing(t, errors.New("boom"),
+		[]string{"stub", "--output-format", "text"},
+		WithConfigInitializer(func(_ *cobra.Command) error {
+			viperx.Set("output-format", "json")
+
+			return nil
+		}),
+	)
+
+	assert.Empty(t, stdout)
+	assert.Equal(t, "Error: boom\n", stderr)
 }
 
 func TestExecuteRoot_ExplicitTextFlagOverridesEnv(t *testing.T) {

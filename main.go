@@ -34,6 +34,7 @@ func main() {
 	defer log.Stop()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
+		// ExecuteContext already reported the error in the selected output format.
 		log.Stop()
 		cmd.Exit(1)
 	}

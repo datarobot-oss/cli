@@ -14,7 +14,13 @@
 
 package sync
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/datarobot/cli/internal/workload/fileops"
+)
 
 // SymlinkNoticeBound is the maximum number of skipped symlinks the stderr
 // prose lists individually before summarizing the remainder as a count.
@@ -30,21 +36,50 @@ const SymlinkNoticeBound = 5
 type SkippedSymlink struct {
 	Path  string
 	IsDir bool
+	// Reason is why the walk did not follow it.
+	Reason fileops.LinkOutcome
 }
 
-// skippedSymlinkNotice renders one skipped symlink as a self-contained stderr
+// Notice renders one skipped symlink as a self-contained stderr
 // line. The wording differs by kind so a reader can tell "lost one file"
 // apart from "lost an entire subtree", and both say the symlink was NOT
 // uploaded or synced — not merely that one was found — so the user
 // understands their file is absent from the remote.
-func skippedSymlinkNotice(s SkippedSymlink) string {
+func (s SkippedSymlink) Notice() string {
 	if s.IsDir {
 		return fmt.Sprintf(
-			"skipped symlink: %s was not synced (it is a directory symlink; the entire subtree under it is omitted from the sync)",
-			s.Path)
+			"skipped symlink: %s was not synced (it is a directory symlink that %s; the entire subtree under it is omitted from the sync)",
+			s.Path, s.Why())
 	}
 
 	return fmt.Sprintf(
-		"skipped symlink: %s was not uploaded (it is a symlink, not a regular file)",
-		s.Path)
+		"skipped symlink: %s was not uploaded (it is a symlink that %s)",
+		s.Path, s.Why())
+}
+
+// Why completes "it is a symlink that ...".
+func (s SkippedSymlink) Why() string {
+	switch s.Reason {
+	case fileops.LinkDangling:
+		return "points at nothing"
+	case fileops.LinkOutside:
+		return "points outside the project"
+	case fileops.LinkTargetIgnored:
+		return "points at a path the ignore rules exclude"
+	case fileops.LinkLoop:
+		return "points back into a directory that contains it"
+	case fileops.LinkNotAFile:
+		return "points at something that is neither a file nor a directory"
+	case fileops.LinkFollowed, fileops.LinkUnreadable, fileops.LinkIgnored:
+	}
+
+	return "could not be resolved"
+}
+
+// underLink reports whether path is a link the walk followed or lies under
+// one.
+func underLink(path string, links []string) bool {
+	return slices.ContainsFunc(links, func(link string) bool {
+		return path == link || strings.HasPrefix(path, link+"/")
+	})
 }

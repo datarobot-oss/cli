@@ -218,6 +218,10 @@ type Result struct {
 	// changes no file, so a run that re-sent a secret and deployed nothing
 	// would otherwise report itself as a deploy that did nothing at all.
 	Env EnvEdit
+
+	// Sync is the size of the code sync this run ran, zero when it ran none.
+	// It is for telemetry, which sizes the sync limits from it.
+	Sync sync.Size
 }
 
 // EnvEdit is the .env re-entry's side of a deploy.

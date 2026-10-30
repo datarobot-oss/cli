@@ -109,23 +109,106 @@ func TestRenderEnclavePermissions_JSONRoundTrip(t *testing.T) {
 	assert.Len(t, back["permissions"], 2)
 }
 
-func TestPinPermission_UsersOnly(t *testing.T) {
-	// The server refuses group and organization recipients for pin; fail before
-	// sending the request, naming the one flag that works.
+func TestPinPermission_UsersAndGroupsOnly(t *testing.T) {
+	// The server refuses organization recipients for pin, and the endpoint takes an
+	// id; fail before sending the request, naming the flags that work.
 	for _, r := range []Recipient{
-		{Type: RecipientGroup, ID: "g-1"},
 		{Type: RecipientOrg, ID: "org-1"},
 		{Type: RecipientUser, Username: "alice@corp.io"},
+		{Type: RecipientGroup},
 	} {
 		err := GrantPinPermission(r)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "users only")
-		assert.Contains(t, err.Error(), "--user-id")
+		assert.Contains(t, err.Error(), "users and groups only")
+		assert.Contains(t, err.Error(), "--user-id or --group")
 
 		err = RevokePinPermission(r)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "users only")
+		assert.Contains(t, err.Error(), "users and groups only")
 	}
+}
+
+func TestPinPermission_GroupRecipient(t *testing.T) {
+	// A group is sent to pinAccess as shareRecipientType group, for grant and revoke.
+	installSkipAuth(t)
+
+	var bodies []createAccessUpdate
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/enclaves/pinAccess", r.URL.Path)
+
+		var body createAccessUpdate
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		bodies = append(bodies, body)
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	group := Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcd"}
+
+	require.NoError(t, GrantPinPermission(group))
+	require.NoError(t, RevokePinPermission(group))
+
+	assert.Equal(t, []createAccessUpdate{
+		{Operation: operationGrant, ShareRecipientType: RecipientGroup, ID: group.ID},
+		{Operation: operationRevoke, ShareRecipientType: RecipientGroup, ID: group.ID},
+	}, bodies)
+}
+
+func TestPinPermission_GroupOnUsersOnlyServerHint(t *testing.T) {
+	// A server that predates group recipients refuses them with a 422 saying pin is
+	// for users only. Say what that means, and keep the HTTP error reachable.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"detail":[{"type":"value_error","loc":["body","shareRecipientType"],` +
+			`"msg":"Value error, the pin permission can be granted to users only, got group"}]}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	group := Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcd"}
+
+	for name, err := range map[string]error{
+		"grant":  GrantPinPermission(group),
+		"revoke": RevokePinPermission(group),
+	} {
+		require.ErrorIs(t, err, errPinGroupUnsupported, name)
+
+		var httpErr *drapi.HTTPError
+
+		require.ErrorAs(t, err, &httpErr, name)
+		assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode, name)
+	}
+}
+
+func TestPinPermission_UnknownGroupHasNoHint(t *testing.T) {
+	// A 422 about the group itself is the server's answer to this request, not a
+	// missing feature, so it passes through unchanged.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"detail":"the recipient group id does not name a known group"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := GrantPinPermission(Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcd"})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errPinGroupUnsupported)
+	assert.Contains(t, err.Error(), "known group")
 }
 
 func TestCollectionAccessPath(t *testing.T) {

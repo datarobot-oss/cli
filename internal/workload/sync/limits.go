@@ -14,6 +14,8 @@
 
 package sync
 
+import "time"
+
 // Sync-engine orchestration tunables. File-level limits live in
 // internal/workload/fileops.
 const (
@@ -25,8 +27,13 @@ const (
 	DiskSpaceMarginMB = 100
 
 	// RollbackMaxFiles caps the rollback set so a single sync cannot
-	// produce a multi-gigabyte rollback tree.
+	// produce a multi-gigabyte rollback tree. Only files the sync may back
+	// up count (SyncPlan.RollbackFiles); uploads never do.
 	RollbackMaxFiles = 1000
+
+	// RemoteDeleteMaxPaths is the most paths the Files API accepts in one
+	// delete request, and the sync sends its deletions in one request.
+	RemoteDeleteMaxPaths = 1000
 
 	// Stage path is used when files <= threshold AND bytes <= threshold;
 	// zip path otherwise.
@@ -35,4 +42,13 @@ const (
 
 	ZipPollIntervalMS  = 500
 	ZipPollTimeoutSecs = 600
+
+	// ZipPollPerFile scales the extract wait for archives too large for
+	// ZipPollTimeoutSecs. Staging extracts about 30ms per file; this allows
+	// three times that.
+	ZipPollPerFile = 100 * time.Millisecond
+
+	// ZipPollMaxTimeoutSecs caps the scaled wait. The engine takes no
+	// context, so an interrupt cannot end the wait early.
+	ZipPollMaxTimeoutSecs = 3600
 )

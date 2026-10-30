@@ -31,26 +31,33 @@ const (
 	outputFormatEnvVar = "DATAROBOT_CLI_OUTPUT_FORMAT"
 )
 
-// executeRoot runs root with args. Under --output-format json a failure is
-// reported as a JSON envelope on stderr in place of cobra's "Error:" line.
+// executeRoot runs root with args and reports failures exactly once. JSON mode
+// keeps its structured stderr envelope; text mode uses ReportError, including
+// failures raised before a self-silencing child command can report them.
 func executeRoot(ctx context.Context, root *cobra.Command, args []string) error {
-	// Decided before parsing, so flag and argument errors cobra reports before
-	// any hook runs are silenced too; persistentPreRun adds the config-file case.
-	// The usage text cobra prints with those errors would also break jq.
-	root.SilenceErrors = jsonRequested(args)
-	if root.SilenceErrors {
+	// Silence cobra in both formats, including errors before any hook runs.
+	// JSON also suppresses usage text so stderr remains one JSON value.
+	root.SilenceErrors = true
+
+	jsonMode := jsonRequested(args)
+	if jsonMode {
 		root.SilenceUsage = true
 	}
 
 	root.SetArgs(args)
 
 	err := root.ExecuteContext(ctx)
-	if err == nil || !root.SilenceErrors || errors.Is(err, cli.ErrSilent) {
+	if err == nil || errors.Is(err, cli.ErrSilent) {
 		return err
 	}
 
-	if printErr := outputformat.PrintJSONError(root.ErrOrStderr(), err); printErr != nil {
-		log.Debug("Failed to write JSON error", "error", printErr)
+	// Config-only output formats become available during the pre-run hook.
+	if jsonMode || outputformat.GetFormat(root) == outputformat.OutputFormatJSON {
+		if printErr := outputformat.PrintJSONError(root.ErrOrStderr(), err); printErr != nil {
+			log.Debug("Failed to write JSON error", "error", printErr)
+		}
+	} else {
+		ReportError(root.ErrOrStderr(), err)
 	}
 
 	return err

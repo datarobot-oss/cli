@@ -33,18 +33,44 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// ExecOption customizes a single ExecutePlugin call.
+type ExecOption func(*execOptions)
+
+type execOptions struct {
+	depsConsent bool
+}
+
+// WithDepsConsent pre-approves the dependency-install prompt, as if the user
+// had answered yes. Use it when a wrapping command already collected consent
+// (e.g. via its own --yes flag) and cannot forward it through the plugin args
+// without the plugin binary rejecting an unknown flag.
+func WithDepsConsent() ExecOption {
+	return func(o *execOptions) { o.depsConsent = true }
+}
+
 // checkAndInstallPluginDeps checks and installs the plugin's declared dependencies
 // before execution. Returns false if the check fails or the user declines installation.
 //
 // Confirmation modes (in order of precedence):
-//  1. -y / --yes present in args
-//  2. DATAROBOT_CLI_NON_INTERACTIVE env var set
-//  3. Interactive [Y/n] prompt
-func checkAndInstallPluginDeps(manifest PluginManifest, args []string) bool {
-	confirm := func() bool { return confirmPluginDepsInstall(args) }
+//  1. Explicit consent from the caller (WithDepsConsent)
+//  2. -y / --yes present in args
+//  3. DATAROBOT_CLI_NON_INTERACTIVE env var set
+//  4. Interactive [Y/n] prompt
+//
+// When the user declines (or stdin closes before an answer), it says what was
+// skipped and how to proceed, instead of exiting without a word.
+func checkAndInstallPluginDeps(manifest PluginManifest, args []string, consent bool) bool {
+	confirm := func() bool { return consent || confirmPluginDepsInstall(args) }
 
 	if err := CheckAndInstallDeps(manifest.Name, confirm, os.Stderr); err != nil {
-		if !errors.Is(err, ErrDepsDeclined) {
+		if errors.Is(err, ErrDepsDeclined) {
+			// The guidance names the env var rather than -y: -y is read from
+			// the plugin's own args and is also passed on to the plugin, so a
+			// plugin that parses flags strictly rejects it (xp does).
+			fmt.Fprintf(os.Stderr,
+				"Skipped installing dependencies that %s needs to run. Re-run the command and accept the prompt, or set %s=1 to install them automatically.\n",
+				manifest.Name, reader.NonInteractiveEnv)
+		} else {
 			fmt.Fprintf(os.Stderr, "plugin dependency check failed: %v\n", err)
 		}
 
@@ -73,8 +99,14 @@ func confirmPluginDepsInstall(args []string) bool {
 // ctx is used to cancel the auth flow and subprocess if the user presses Ctrl-C.
 // rootFlags is the root command's persistent flagset, used to forward annotated
 // universal flags (e.g. --debug) to the plugin subprocess as DATAROBOT_CLI_* env vars.
-func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string, rootFlags *pflag.FlagSet) int {
-	if !checkAndInstallPluginDeps(manifest, args) {
+func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string, rootFlags *pflag.FlagSet, opts ...ExecOption) int {
+	var options execOptions
+
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	if !checkAndInstallPluginDeps(manifest, args, options.depsConsent) {
 		return 1
 	}
 

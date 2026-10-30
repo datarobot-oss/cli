@@ -48,8 +48,8 @@ const PermissionCreate = "create"
 
 // PermissionPin is the user-facing name of the permission that allows pinning a
 // workload to one chosen enclave, overriding the scheduler's placement (server:
-// CAN_OVERRIDE_WORKLOAD_PLACEMENT). It is granted to users only, and it is
-// independent of create. The pinned enclave must still be one the workload's use
+// CAN_OVERRIDE_WORKLOAD_PLACEMENT). It is granted to users and groups, not
+// organizations, and it is independent of create. The pinned enclave must still be one the workload's use
 // case allows and the user can deploy to.
 const PermissionPin = "pin"
 
@@ -148,14 +148,20 @@ func updateCreateAccess(operation string, r Recipient) error {
 }
 
 // updatePinAccess PATCHes a grant or revoke of the pin permission. Pin is granted
-// to users only, by id; the server refuses groups and organizations with a 422,
-// so fail before sending the request.
+// to users and groups, by id; the server refuses organizations with a 422, so
+// fail before sending the request.
 func updatePinAccess(operation string, r Recipient) error {
-	if r.Type != RecipientUser || r.ID == "" {
-		return errors.New("the enclave pin permission is granted to users only: use --user-id")
+	if (r.Type != RecipientUser && r.Type != RecipientGroup) || r.ID == "" {
+		return errors.New(
+			"the enclave pin permission is granted to users and groups only: use --user-id or --group")
 	}
 
-	return updateCollectionAccess(PermissionPin, operation, r)
+	err := updateCollectionAccess(PermissionPin, operation, r)
+	if r.Type == RecipientGroup {
+		return pinGroupUnsupportedHint(err)
+	}
+
+	return err
 }
 
 func updateCollectionAccess(permission, operation string, r Recipient) error {
@@ -179,6 +185,25 @@ func updateCollectionAccess(permission, operation string, r Recipient) error {
 var errPinUnsupported = errors.New(
 	"this server doesn't support the enclave pin permission yet; " +
 		"it needs a covalent-cloud-server with /api/v2/enclaves/pinAccess")
+
+// errPinGroupUnsupported explains a 422 for a group recipient from a server that
+// still grants the pin permission to users only.
+var errPinGroupUnsupported = errors.New(
+	"this server grants the enclave pin permission to users only; " +
+		"granting it to a group needs a newer covalent-cloud-server")
+
+// pinGroupUnsupportedHint adds errPinGroupUnsupported to a 422 whose body says
+// pin is for users only. Any other 422, such as an unknown group, passes through
+// unchanged. The original *drapi.HTTPError stays reachable through errors.As.
+func pinGroupUnsupportedHint(err error) error {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusUnprocessableEntity ||
+		!strings.Contains(string(httpErr.Body), "users only") {
+		return err
+	}
+
+	return fmt.Errorf("%w: %w", errPinGroupUnsupported, err)
+}
 
 // pinUnsupportedHint adds errPinUnsupported to a 404 from the pin endpoint when
 // the route itself is missing. The original *drapi.HTTPError stays reachable
@@ -220,13 +245,14 @@ func RevokeCreatePermission(r Recipient) error {
 	return updateCreateAccess(operationRevoke, r)
 }
 
-// GrantPinPermission allows the user to pin a workload to one chosen enclave.
+// GrantPinPermission allows the user, or a group's members, to pin a workload to one chosen enclave.
 func GrantPinPermission(r Recipient) error {
 	return updatePinAccess(operationGrant, r)
 }
 
-// RevokePinPermission withdraws the user's ability to pin. A no-op server-side
-// when the user doesn't hold it.
+// RevokePinPermission withdraws the recipient's grant to pin. A no-op server-side
+// when the recipient doesn't hold it. A group member who also holds a grant of
+// their own can still pin.
 func RevokePinPermission(r Recipient) error {
 	return updatePinAccess(operationRevoke, r)
 }
@@ -328,7 +354,7 @@ type CollectionPermissions struct {
 }
 
 // CreateAccessHolder is a recipient holding a collection-level enclave permission
-// (create, or pin for users).
+// (create, or pin for users and groups).
 type CreateAccessHolder struct {
 	ShareRecipientType string   `json:"shareRecipientType"`
 	ID                 string   `json:"id"`
@@ -363,7 +389,8 @@ func ListCreateAccess() ([]CreateAccessHolder, error) {
 }
 
 // ListCollectionAccess returns who holds the named permission ("create" or
-// "pin"). For pin the server lists the users in the caller's organization.
+// "pin"). For pin the server lists the users and groups in the caller's
+// organization.
 // Create is listed for system administrators; pin for system administrators
 // and org admins.
 func ListCollectionAccess(permission string) ([]CreateAccessHolder, error) {
