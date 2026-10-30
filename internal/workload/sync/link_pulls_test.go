@@ -74,6 +74,17 @@ func TestSync_PullsNothingThroughALinkItDidNotFollow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "outside content\n", string(data), "the file outside the project is untouched")
 	assert.NoFileExists(t, filepath.Join(external, "x.py"), "nothing is written into the directory outside the project")
+
+	// The server change is still pending, so the next --verify cannot check
+	// manifest.json against the server, and says so.
+	again := engineFor(t, dir, Options{Verify: true, DryRun: true, Yes: true}, fake, catalogID, versionID)
+
+	logged := captureWarnLog(t, func() {
+		_, err := again.Plan()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, logged, "verify: skipped the divergence check")
 }
 
 // A teammate with the same link deleted a file the link reaches: removing it
