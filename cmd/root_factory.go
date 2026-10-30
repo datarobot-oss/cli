@@ -362,6 +362,9 @@ func (f *RootFactory) buildRootCommand(outputFormat *outputformat.OutputFormat) 
 		Version: internalVersion.Version,
 		Short:   "Build AI Applications Faster",
 
+		// executeRoot reports errors for every child and for pre-run failures.
+		SilenceErrors: true,
+
 		// TraverseChildren causes cobra to parse persistent flags left-to-right
 		// before descending into each subcommand. This lets universal flags such
 		// as --debug be placed before a plugin name (e.g. "dr --debug myplugin")
@@ -444,12 +447,6 @@ func (f *RootFactory) persistentPreRun(cmd *cobra.Command, args []string) error 
 	// Read drconfig.yaml and bind env vars into viper.
 	if err := f.deps.ConfigInitializer(cmd); err != nil {
 		return err
-	}
-
-	// A format set only in drconfig.yaml is known from here on; executeRoot
-	// reads root's SilenceErrors as "report failures as JSON".
-	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
-		cmd.Root().SilenceErrors = true
 	}
 
 	// Configure the default HTTP transport (ca-cert, skip-verify).
