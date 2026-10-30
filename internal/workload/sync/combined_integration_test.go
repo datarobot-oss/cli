@@ -42,27 +42,48 @@ import (
 // Helpers
 // ---------------------------------------------------------------------------
 
-// addFileSymlink creates a file symlink (linkTo -> target) in dir, skipping
-// on Windows where os.Symlink needs Developer Mode.
+// addFileSymlink writes target in dir and creates linkTo, a file symlink the
+// walk skips because it points at a copy of target outside the project.
 func addFileSymlink(t *testing.T, dir, target, linkTo string) {
 	t.Helper()
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, target), []byte("target content\n"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, target),
-		filepath.Join(dir, linkTo)))
+	require.NoError(t, os.Symlink(outsideFile(t, target), filepath.Join(dir, linkTo)))
 }
 
-// addDirSymlink creates a directory symlink (linkTo -> targetDir) in dir,
-// with a child file inside the target so the subtree is non-empty.
+// addDirSymlink writes targetDir/child in dir and creates linkTo, a directory
+// symlink the walk skips because it points at a copy of targetDir outside the
+// project.
 func addDirSymlink(t *testing.T, dir, targetDir, child, linkTo string) {
 	t.Helper()
 
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, targetDir), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, targetDir, child), []byte("child content\n"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, targetDir),
-		filepath.Join(dir, linkTo)))
+
+	require.NoError(t, os.Symlink(outsideDir(t, targetDir, child), filepath.Join(dir, linkTo)))
+}
+
+// outsideDir writes name/child outside any project and returns the
+// directory's path, for a symlink the walk must skip.
+func outsideDir(t *testing.T, name, child string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.MkdirAll(path, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(path, child), []byte("outside content\n"), 0o644))
+
+	return path
+}
+
+// outsideFile writes a file named name outside any project and returns its
+// path, for a symlink the walk must skip.
+func outsideFile(t *testing.T, name string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(path, []byte("outside content\n"), 0o644))
+
+	return path
 }
 
 // manyFiles builds a map of n small files (file_00.py … file_NN-1.py) for
@@ -324,13 +345,12 @@ func TestCombined_SymlinkReplacementDelete_NotDivergence(t *testing.T) {
 
 	fake := (&fakeFilesClient{}).withVersionContent(catalogID, versionID, seed)
 
-	// Replace oldfile.py with a symlink. The walk will not follow it, so
-	// LOCAL is absent for oldfile.py. BASE and REMOTE still agree (both
-	// have the original hash), so this is a LOCAL_DELETED, not a divergence.
+	// Replace oldfile.py with a symlink out of the project. The walk will not
+	// follow it, so LOCAL is absent for oldfile.py. BASE and REMOTE still
+	// agree (both have the original hash), so this is a LOCAL_DELETED, not a
+	// divergence.
 	require.NoError(t, os.Remove(filepath.Join(dir, "oldfile.py")))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "app.py"),
-		filepath.Join(dir, "oldfile.py")))
+	require.NoError(t, os.Symlink(outsideFile(t, "app.py"), filepath.Join(dir, "oldfile.py")))
 
 	var logged string
 
@@ -926,11 +946,9 @@ func TestCombined_DefaultNoVerifyUX(t *testing.T) {
 			"util.py": "def u(): pass\n",
 		}, catalogID, versionID)
 
-		// Replace util.py with a symlink.
+		// Replace util.py with a symlink out of the project.
 		require.NoError(t, os.Remove(filepath.Join(dir, "util.py")))
-		require.NoError(t, os.Symlink(
-			filepath.Join(dir, "app.py"),
-			filepath.Join(dir, "util.py")))
+		require.NoError(t, os.Symlink(outsideFile(t, "app.py"), filepath.Join(dir, "util.py")))
 
 		// Seed server with original content (before the replacement).
 		seed := map[string][]byte{

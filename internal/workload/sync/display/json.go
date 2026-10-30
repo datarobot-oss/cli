@@ -29,9 +29,13 @@ type PlanJSON struct {
 	Downloads []FileActionJSON `json:"downloads"`
 	Deletes   []FileActionJSON `json:"deletes"`
 	Conflicts []FileActionJSON `json:"conflicts"`
-	// Skipped lists the remote-side changes a push-only run left alone.
+	// Skipped lists the remote-side changes left alone, by a push-only run or
+	// because the path is under a link the walk did not follow.
 	Skipped []FileActionJSON `json:"skipped,omitempty"`
-	Stats   PlanStatsJSON    `json:"stats"`
+	// ReplacedRemote lists the uploads that replace a server change, because
+	// the path is reached through a link and so is only ever pushed.
+	ReplacedRemote []string      `json:"replacedRemote,omitempty"`
+	Stats          PlanStatsJSON `json:"stats"`
 
 	// Locked marks a plan that can never be applied, because the artifact it
 	// was computed against is immutable. A preview of a locked artifact is the
@@ -68,6 +72,9 @@ type PlanJSON struct {
 type SkippedSymlinkJSON struct {
 	Path  string `json:"path"`
 	IsDir bool   `json:"isDir"`
+	// Reason is why it was not followed: dangling, outside_project,
+	// target_ignored, loop, not_a_file or unreadable.
+	Reason string `json:"reason"`
 }
 
 // DivergenceJSON is one BASE-vs-REMOTE disagreement in the plan document.
@@ -162,6 +169,7 @@ func planJSON(plan *sync.SyncPlan, locked bool, f Findings) PlanJSON {
 		Deletes:         actionsJSON(plan.Deletes),
 		Conflicts:       actionsJSON(plan.Conflicts),
 		Skipped:         actionsJSON(plan.Skipped),
+		ReplacedRemote:  plan.ReplacedRemote,
 		Stats: PlanStatsJSON{
 			UploadCount:     len(plan.Uploads),
 			DownloadCount:   len(plan.Downloads),
@@ -233,8 +241,9 @@ func skippedSymlinksJSON(in []sync.SkippedSymlink) []SkippedSymlinkJSON {
 
 	for i, s := range in {
 		out[i] = SkippedSymlinkJSON{
-			Path:  s.Path,
-			IsDir: s.IsDir,
+			Path:   s.Path,
+			IsDir:  s.IsDir,
+			Reason: string(s.Reason),
 		}
 	}
 

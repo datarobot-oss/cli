@@ -70,6 +70,13 @@ func TestRenderSyncJSON_VerifiedFlag(t *testing.T) {
 	assert.Empty(t, doc["divergence"])
 }
 
+func TestRenderSyncJSON_ReplacedRemote(t *testing.T) {
+	doc := planDoc(t, &sync.SyncPlan{ReplacedRemote: []string{"lib/x.py"}}, Findings{})
+
+	assert.Equal(t, []any{"lib/x.py"}, doc["replacedRemote"])
+	assert.NotContains(t, planDoc(t, &sync.SyncPlan{}, Findings{}), "replacedRemote")
+}
+
 func TestRenderSyncJSON_DivergenceEntries(t *testing.T) {
 	doc := planDoc(t, &sync.SyncPlan{}, Findings{Divergence: []sync.Divergence{
 		{Path: "app.py", Kind: sync.DivergenceHashMismatch, BaseHash: "h-base", RemoteHash: "h-remote"},

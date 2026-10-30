@@ -68,6 +68,12 @@ func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result 
 		return result, err
 	}
 
+	// A first deploy sizes nothing beforehand, so no pass has named the links
+	// the sync skipped yet.
+	if code.FirstDeploy {
+		reportSkippedSymlinks(synced, report)
+	}
+
 	// Asked unconditionally, exactly as the roll path asks it. A sync that
 	// minted a version answers immediately; the cases that reach further are a
 	// version standing in for a locked one, whose tree was already synced and
@@ -312,6 +318,24 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 	}
 
 	return result, nil
+}
+
+// reportSkippedSymlinks names the links a sync did not follow, up to
+// sync.SymlinkNoticeBound of them.
+func reportSkippedSymlinks(synced *sync.Result, report *reporter) {
+	if synced == nil {
+		return
+	}
+
+	for i, s := range synced.SkippedSymlinks {
+		if i == sync.SymlinkNoticeBound {
+			report.say("  Warning: %d more symlink(s) were not uploaded.\n", len(synced.SkippedSymlinks)-i)
+
+			return
+		}
+
+		report.say("  Warning: %s\n", s.Notice())
+	}
 }
 
 // maybeBuild spends a build only when there is a reason to, and names the
