@@ -119,6 +119,32 @@ func Ask(stderr io.Writer, stdin io.Reader, policy Policy) func() (bool, error) 
 	}
 }
 
+// AskDelete returns the function `wizard.Options.ConfirmDelete` expects, which
+// asks about one credential the sync has made redundant.
+//
+// nil means do not delete, and that includes --yes: it agrees to the sync, and
+// destroying a stored copy is a separate act the user gets to see named.
+func AskDelete(stderr io.Writer, stdin io.Reader, policy Policy) func(string) bool {
+	if policy.Yes || policy.DryRun || !policy.Interactive {
+		return nil
+	}
+
+	answers := bufio.NewReader(stdin)
+
+	return func(name string) bool {
+		fmt.Fprintf(stderr, "\n  Credential %q holds a copy of your token that nothing uses now. Delete it? [y/N] ", name)
+
+		line, _ := answers.ReadString('\n')
+
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true
+		default:
+			return false
+		}
+	}
+}
+
 // refuse is what a run with nobody to ask gets. An error rather than a quiet
 // skip, because the flag was passed on purpose and a run that ignored it would
 // report a reconciliation it never carried out.

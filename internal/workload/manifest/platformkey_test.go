@@ -122,3 +122,22 @@ func TestLive_ApplyDeclaresThePlatformKey(t *testing.T) {
 	assert.Contains(t, string(rendered), "source: api-key")
 	assert.NotContains(t, string(rendered), `value: ""`)
 }
+
+// The platform defaults a nameless api-key entry to DATAROBOT_API_TOKEN and
+// rejects a second one, so neither bind nor sync may append a duplicate.
+func TestSyncEnvVars_TreatsANamelessPlatformKeyAsDeclared(t *testing.T) {
+	path := syncFixture(t, container(`            environmentVars:
+              - source: api-key
+`))
+
+	changes, _, err := SyncEnvVars(path, []EnvVar{{Name: APIKeyEnvName, APIKey: true}}, false)
+	require.NoError(t, err)
+
+	assert.False(t, changes.Any(), "the entry already answers to the name")
+}
+
+func TestLive_ApplyDoesNotDuplicateANamelessPlatformKey(t *testing.T) {
+	existing := []any{map[string]any{keySource: sourceAPIKey}}
+
+	assert.True(t, declaredEnvNames(existing)[APIKeyEnvName])
+}

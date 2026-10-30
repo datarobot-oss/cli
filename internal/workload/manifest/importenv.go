@@ -430,7 +430,7 @@ func declaredEnvNodeNames(entries *yaml.Node) map[string]bool {
 	declared := make(map[string]bool, len(items))
 
 	for _, entry := range items {
-		if name, ok := scalarString(mapValue(entry, keyName)); ok {
+		if name, ok := envEntryName(entry); ok {
 			declared[name] = true
 		}
 	}
@@ -495,7 +495,7 @@ func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
 	declared := make([]DeclaredEnvVar, 0, len(entries))
 
 	for _, entry := range entries {
-		name, ok := scalarString(mapValue(entry, keyName))
+		name, ok := envEntryName(entry)
 		if !ok {
 			continue
 		}
@@ -517,6 +517,22 @@ func (m *Manifest) DeclaredEnvVars() []DeclaredEnvVar {
 	}
 
 	return declared
+}
+
+// envEntryName is the name an entry answers to. The platform lets a
+// `source: api-key` entry omit it and defaults it to APIKeyEnvName, then
+// rejects duplicates by that effective name, so an entry keyed on the written
+// name alone would be appended beside it.
+func envEntryName(entry *yaml.Node) (string, bool) {
+	if name, ok := scalarString(mapValue(entry, keyName)); ok {
+		return name, true
+	}
+
+	if source, _ := scalarString(mapValue(entry, keySource)); source == sourceAPIKey {
+		return APIKeyEnvName, true
+	}
+
+	return "", false
 }
 
 // isAPIKeyEntry reports an entry the platform fills with the workload's own
@@ -685,7 +701,7 @@ func reconcileEnvVars(entries *yaml.Node, vars []EnvVar) (SyncChanges, error) {
 	kept := make([]*yaml.Node, 0, len(items))
 
 	for _, entry := range items {
-		name, ok := scalarString(mapValue(entry, keyName))
+		name, ok := envEntryName(entry)
 		if !ok {
 			// Nothing .env can address, so nothing this reconciles. Kept
 			// rather than dropped: an entry whose name cannot be read is not

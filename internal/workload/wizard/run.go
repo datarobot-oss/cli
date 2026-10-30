@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -156,6 +157,11 @@ type Options struct {
 	// on with the file as it stands, which is what the same command without
 	// the flag would have deployed.
 	Confirm func() (bool, error)
+	// ConfirmDelete is asked, once per credential, whether to delete one the
+	// sync has just replaced with the workload's own key. nil means do not
+	// delete: --yes agrees to the sync, not to destroying a stored copy, so
+	// the credential is named in the output and left alone.
+	ConfirmDelete func(name string) bool
 	// Stderr carries the wizard and its summary. Nothing the wizard says
 	// belongs on stdout, which is the command's machine-readable channel.
 	Stderr io.Writer
@@ -812,6 +818,8 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 
 	o.recordSync(parsed, detected, actions, changes, content, &result)
 
+	o.offerCredentialCleanup(parsed, wanted)
+
 	// Re-read rather than reported from parsed: this run may have finished the
 	// very placeholder the notice is about, and saying a deploy will refuse an
 	// entry the line above just fixed is the contradiction the re-read exists
@@ -998,6 +1006,63 @@ func usableCredentials(parsed *manifest.Manifest) map[string]string {
 	}
 
 	return held
+}
+
+// offerCredentialCleanup deals with the credential an api-key entry replaced.
+// The CLI minted it from the user's own token, so after the swap it is a stored
+// copy of that token nothing references. Only a credential this project named
+// and wrote is touched: the store is tenant-wide, and one another workload may
+// share is not this run's to delete.
+func (o Options) offerCredentialCleanup(parsed *manifest.Manifest, wanted []manifest.EnvVar) {
+	if o.DryRun {
+		return
+	}
+
+	for _, v := range wanted {
+		if !v.APIKey {
+			continue
+		}
+
+		for _, declared := range parsed.DeclaredEnvVars() {
+			if declared.Name != v.Name || !declared.Secret() || declared.CredentialID == manifest.CredentialPlaceholder ||
+				declared.CredentialKey != manifest.CredentialKeyWritten {
+				continue
+			}
+
+			o.deleteReplacedCredential(declared, CredentialName(parsed.Name(), declared.Name))
+		}
+	}
+}
+
+func (o Options) deleteReplacedCredential(declared manifest.DeclaredEnvVar, want string) {
+	cred, err := getCredentialFn(declared.CredentialID)
+	if err != nil || cred.Name != want {
+		// Unreadable or someone else's: left alone, same as a rotation.
+		return
+	}
+
+	if o.ConfirmDelete == nil || !o.ConfirmDelete(cred.Name) {
+		if !o.quiet() {
+			fmt.Fprintf(o.Stderr, "  Credential %q (%s) still holds a copy of your token and nothing uses it now.\n",
+				cred.Name, declared.CredentialID)
+		}
+
+		return
+	}
+
+	if err := deleteCredentialFn(declared.CredentialID); err != nil {
+		log.Error("could not delete the replaced credential", "credential_id", declared.CredentialID, "err", err)
+
+		if !o.quiet() {
+			fmt.Fprintf(o.Stderr, "  Could not delete credential %q (%s): %v\n", cred.Name, declared.CredentialID, err)
+		}
+
+		return
+	}
+
+	if !o.quiet() {
+		fmt.Fprintf(o.Stderr, "  Deleted credential %q.\n", cred.Name)
+	}
 }
 
 // recordSync is what the run has to show for what the reconciliation did.
