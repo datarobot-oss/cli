@@ -156,6 +156,10 @@ type Engine struct {
 	// Phase 2; Phase 3 pushes everything at or under them and pulls nothing.
 	linkedPaths []string
 
+	// aliases maps each file listed under a followed link to the path the
+	// project lists it under in its own right. Populated in Phase 2.
+	aliases map[string]string
+
 	// unfollowedLinks are the paths of every other link, ignored ones
 	// included. Phase 3 pulls nothing at or under them either: the write
 	// would go through the link, possibly out of the project.

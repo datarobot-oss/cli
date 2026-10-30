@@ -176,21 +176,25 @@ func TestDiff_LinkedPathsArePushedNeverPulled(t *testing.T) {
 		path                string
 		base, local, remote string
 		want                Action
+		replaced            bool
 	}{
 		"remote changed a linked file": {
-			path: "lib/x.py", base: "aaa", local: "aaa", remote: "rem", want: ActUploadModify,
+			path: "lib/x.py", base: "aaa", local: "aaa", remote: "rem", want: ActUploadModify, replaced: true,
 		},
 		"both changed a linked file": {
-			path: "lib/x.py", base: "aaa", local: "loc", remote: "rem", want: ActUploadModify,
+			path: "lib/x.py", base: "aaa", local: "loc", remote: "rem", want: ActUploadModify, replaced: true,
+		},
+		"local changed a linked file": {
+			path: "lib/x.py", base: "aaa", local: "loc", remote: "aaa", want: ActUploadModify,
 		},
 		"remote changed a linked file at the link itself": {
-			path: "config.py", base: "aaa", local: "aaa", remote: "rem", want: ActUploadModify,
+			path: "config.py", base: "aaa", local: "aaa", remote: "rem", want: ActUploadModify, replaced: true,
 		},
 		"remote added a file under a linked directory": {
-			path: "lib/new.py", remote: "rem", want: ActUploadDelete,
+			path: "lib/new.py", remote: "rem", want: ActUploadDelete, replaced: true,
 		},
 		"remote deleted a linked file": {
-			path: "lib/x.py", base: "aaa", local: "aaa", want: ActUploadAdd,
+			path: "lib/x.py", base: "aaa", local: "aaa", want: ActUploadAdd, replaced: true,
 		},
 		"remote changed a file beside the link, not under it": {
 			path: "library/x.py", base: "aaa", local: "aaa", remote: "rem", want: ActDownloadModify,
@@ -205,11 +209,62 @@ func TestDiff_LinkedPathsArePushedNeverPulled(t *testing.T) {
 				return BaseManifest{tc.path: entry(hash, 1)}
 			}
 
-			plan := diff(manifest(tc.base), manifest(tc.local), manifest(tc.remote), linked)
+			plan := diff(manifest(tc.base), manifest(tc.local), manifest(tc.remote), linked, nil)
 
 			rows := slices.Concat(plan.Uploads, plan.Downloads, plan.Deletes, plan.Conflicts)
 			require.Len(t, rows, 1)
 			assert.Equal(t, tc.want, rows[0].Action)
+			assert.Equal(t, tc.replaced, slices.Contains(plan.ReplacedRemote, tc.path), "replaced remote")
+		})
+	}
+}
+
+// With lib linked to shared, lib/x.py is shared/x.py by another name: it ends
+// up holding whatever the plan leaves in shared/x.py, and is pushed as that.
+func TestDiff_AFileReachedThroughALinkFollowsTheFileItIs(t *testing.T) {
+	const own, alias = "shared/x.py", "lib/x.py"
+
+	aliases := map[string]string{alias: own}
+	both := func(hash string) BaseManifest { return BaseManifest{own: entry(hash, 1), alias: entry(hash, 1)} }
+
+	for name, tc := range map[string]struct {
+		local, remote BaseManifest
+		want          map[string]Action
+		replaced      []string
+	}{
+		"a teammate with the link deleted it": {
+			local: both("aaa"), remote: BaseManifest{},
+			want: map[string]Action{own: ActDownloadDelete},
+		},
+		"a teammate without the link deleted it": {
+			local: both("aaa"), remote: BaseManifest{alias: entry("aaa", 1)},
+			want: map[string]Action{own: ActDownloadDelete, alias: ActUploadDelete},
+		},
+		"a teammate with the link edited it": {
+			local: both("aaa"), remote: both("rem"),
+			want: map[string]Action{own: ActDownloadModify},
+		},
+		"it was edited here": {
+			local: both("loc"), remote: both("aaa"),
+			want: map[string]Action{own: ActUploadModify, alias: ActUploadModify},
+		},
+		"the server copy under the link was edited": {
+			local: both("aaa"), remote: BaseManifest{own: entry("aaa", 1), alias: entry("rem", 1)},
+			want:     map[string]Action{alias: ActUploadModify},
+			replaced: []string{alias},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan := diff(both("aaa"), tc.local, tc.remote, []string{"lib"}, aliases)
+			plan.planAliases(aliases, both("aaa"), tc.local, tc.remote)
+
+			got := map[string]Action{}
+			for _, fa := range slices.Concat(plan.Uploads, plan.Downloads, plan.Deletes, plan.Conflicts) {
+				got[fa.Path] = fa.Action
+			}
+
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, tc.replaced, plan.ReplacedRemote)
 		})
 	}
 }

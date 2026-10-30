@@ -76,6 +76,41 @@ func TestSync_PullsNothingThroughALinkItDidNotFollow(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(external, "x.py"), "nothing is written into the directory outside the project")
 }
 
+// A teammate with the same link deleted a file the link reaches: removing it
+// here removes the linked copy too, so the sync uploads nothing for it.
+func TestSync_ALinkedFileDeletedOnTheServerGoesInBothPlaces(t *testing.T) {
+	const (
+		catalogID = "cat-linked-delete"
+		versionID = "ver-linked-delete"
+		newerID   = "ver-linked-delete-2"
+	)
+
+	dir := syncedProject(t, map[string]string{
+		"app.py":      "print('hi')\n",
+		"shared/x.py": "x = 1\n",
+		"lib/x.py":    "x = 1\n",
+	}, catalogID, versionID)
+
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "lib")))
+	symlinkOrSkip(t, "shared", filepath.Join(dir, "lib"))
+
+	seed := seededServerContents(t, dir, map[string]string{"app.py": ""}, nil)
+	fake := (&fakeFilesClient{}).withVersionContent(catalogID, newerID, seed)
+
+	e := engineFor(t, dir, Options{Yes: true}, fake, catalogID, newerID)
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+
+	assert.Empty(t, plan.Uploads)
+	assert.Empty(t, plan.ReplacedRemote)
+
+	_, err = e.Execute(plan)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(dir, "shared", "x.py"))
+}
+
 // The local copy of a linked path replaces a server change to it, and says so.
 func TestSync_WarnsWhenALinkedPathReplacesAServerChange(t *testing.T) {
 	const (

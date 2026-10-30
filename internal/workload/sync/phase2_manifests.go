@@ -16,6 +16,7 @@ package sync
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/datarobot/cli/internal/log"
@@ -132,6 +133,7 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	e.local = local
+	e.aliases = aliasesOf(e.projectDir, entries, e.linkedPaths, local)
 
 	if cs := caseCollisionsFromManifest(local); len(cs) > 0 {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
@@ -230,6 +232,40 @@ func hashEntries(entries []fileops.Entry) (LocalManifest, error) {
 	}
 
 	return out, nil
+}
+
+// aliasesOf maps each entry listed under one of links to the path local lists
+// the same file under in its own right, where it does.
+func aliasesOf(projectDir string, entries []fileops.Entry, links []string, local LocalManifest) map[string]string {
+	if len(links) == 0 {
+		return nil
+	}
+
+	root, err := filepath.EvalSymlinks(projectDir)
+	if err != nil {
+		return nil
+	}
+
+	out := map[string]string{}
+
+	for _, ent := range entries {
+		if !underLink(ent.RelPath, links) {
+			continue
+		}
+
+		rel, err := filepath.Rel(root, ent.AbsPath)
+		if err != nil {
+			continue
+		}
+
+		if own := fileops.NormalizePath(rel); own != ent.RelPath {
+			if _, ok := local[own]; ok {
+				out[ent.RelPath] = own
+			}
+		}
+	}
+
+	return out
 }
 
 func caseCollisionsFromManifest(m LocalManifest) []fileops.CaseCollision {
