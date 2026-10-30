@@ -222,6 +222,9 @@ var updateCredentialFn = workload.UpdateCredential
 // checks that the id in the manifest names one this project created.
 var getCredentialFn = workload.GetCredential
 
+// deleteCredentialFn removes a credential the sync has just made redundant.
+var deleteCredentialFn = workload.DeleteCredential
+
 // reportRotation says what re-sending the secrets did. It is separate from
 // reportImport because the acts differ in what they risk: an import that fails
 // leaves a placeholder a deploy refuses by name, while a rotation that fails

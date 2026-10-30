@@ -114,7 +114,11 @@ func (o Options) addActions(wanted []manifest.EnvVar, declared map[string]bool) 
 
 	for _, v := range undeclared(wanted, declared) {
 		detail := "written into " + manifest.FileName + " as a literal"
-		if v.Secret {
+
+		switch {
+		case v.APIKey:
+			detail = "declared as the workload's own key (source: api-key); nothing is stored"
+		case v.Secret:
 			detail = "stored as a new credential, and referenced by id"
 		}
 
@@ -132,10 +136,12 @@ func (o Options) valueActions(parsed *manifest.Manifest, detected Detected) []en
 	actions := make([]envAction, 0, len(changed)+len(unverifiable))
 
 	for _, name := range changed {
-		actions = append(actions, envAction{
-			name, actUpdate,
-			"its entry in " + manifest.FileName + " is rewritten to match " + EnvFileName,
-		})
+		detail := "its entry in " + manifest.FileName + " is rewritten to match " + EnvFileName
+		if name == manifest.APIKeyEnvName {
+			detail = "its entry in " + manifest.FileName + " is rewritten as the workload's own key (source: api-key)"
+		}
+
+		actions = append(actions, envAction{name, actUpdate, detail})
 	}
 
 	for _, name := range unverifiable {

@@ -370,6 +370,12 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 			continue
 		}
 
+		if v.APIKey {
+			existing = append(existing, map[string]any{keyName: v.Name, keySource: sourceAPIKey})
+
+			continue
+		}
+
 		value := v.Value
 		if v.Secret {
 			value = CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey
@@ -450,7 +456,12 @@ func declaredEnvNames(existing []any) map[string]bool {
 
 	for _, entry := range existing {
 		if typed, ok := entry.(map[string]any); ok {
-			declared[stringAt(typed, keyName)] = true
+			name := stringAt(typed, keyName)
+			if name == "" && stringAt(typed, keySource) == sourceAPIKey {
+				name = APIKeyEnvName // the platform's default for a nameless api-key entry
+			}
+
+			declared[name] = true
 		}
 	}
 
