@@ -217,6 +217,40 @@ func TestWalk_IgnoreRulesApplyToLinksAndWhatTheyPointAt(t *testing.T) {
 	}, links, "a dangling link is ignored under either spelling")
 }
 
+func TestWalk_DoesNotFollowALinkToAnIgnoredFile(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "app.py", "x")
+	writeFile(t, root, "secrets.txt", "secret")
+	symlinkOrSkip(t, filepath.Join(root, "secrets.txt"), filepath.Join(root, "config.txt"))
+
+	paths, links := walkLinks(t, root, func(rel string, _ bool) bool { return rel == "secrets.txt" })
+
+	assert.Equal(t, []string{"app.py"}, paths)
+	assert.Equal(t, LinkTargetIgnored, links["config.txt"].Outcome)
+}
+
+// What a followed directory holds is still ignored by its own name, not only
+// by the name the link gives it.
+func TestWalk_IgnoreRulesApplyUnderAFollowedLinkByTheRealName(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "secrets/app.py", "x")
+	writeFile(t, root, "secrets/credentials.json", "secret")
+	writeFile(t, root, "secrets/cache/blob", "y")
+	writeFile(t, root, "other.py", "z")
+	symlinkOrSkip(t, filepath.Join(root, "secrets"), filepath.Join(root, "lib"))
+	symlinkOrSkip(t, filepath.Join(root, "other.py"), filepath.Join(root, "secrets", "other.lnk"))
+
+	ignore := func(rel string, isDir bool) bool {
+		return rel == "secrets/credentials.json" || (rel == "secrets/cache" && isDir) || rel == "secrets/other.lnk"
+	}
+
+	paths, links := walkLinks(t, root, ignore)
+
+	assert.ElementsMatch(t, []string{"other.py", "secrets/app.py", "lib/app.py"}, paths)
+	assert.Equal(t, Link{RelPath: "lib/other.lnk", Outcome: LinkIgnored}, links["lib/other.lnk"],
+		"a skipped link is still reported, so nothing writes through it")
+}
+
 // A link at a named pipe would upload nothing, so it is not reported as
 // followed.
 func TestWalk_DoesNotFollowALinkToSomethingNotAFile(t *testing.T) {

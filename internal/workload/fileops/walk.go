@@ -119,14 +119,15 @@ func (w *walker) walk(dir, prefix string, inside []string) error {
 			return nil
 		}
 
-		rel, err := filepath.Rel(dir, path)
+		normRel, err := listedAs(dir, prefix, path)
 		if err != nil {
-			return fmt.Errorf("relativize %s under %s: %w", path, dir, err)
+			return err
 		}
 
-		normRel := NormalizePath(rel)
-		if prefix != "" {
-			normRel = prefix + "/" + normRel
+		// Under a followed link the entry is listed by another name, and the
+		// rules for its own name still apply.
+		if prefix != "" && w.ownNameIgnored(path, d.IsDir()) {
+			return w.skip(path, normRel, d)
 		}
 
 		switch {
@@ -146,6 +147,21 @@ func (w *walker) walk(dir, prefix string, inside []string) error {
 
 		return nil
 	})
+}
+
+// listedAs is the rel path the walk lists path under, for dir sitting at
+// prefix.
+func listedAs(dir, prefix, path string) (string, error) {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return "", fmt.Errorf("relativize %s under %s: %w", path, dir, err)
+	}
+
+	if prefix == "" {
+		return NormalizePath(rel), nil
+	}
+
+	return prefix + "/" + NormalizePath(rel), nil
 }
 
 // link follows the link at path, listed as rel, when its target is inside
@@ -244,6 +260,30 @@ func (w *walker) targetIgnored(resolved string, isDir bool) bool {
 	}
 
 	return w.ignored(rel, isDir)
+}
+
+// ownNameIgnored reports whether the ignore rules exclude path, a real path
+// inside the root, by its own name.
+func (w *walker) ownNameIgnored(path string, isDir bool) bool {
+	rel, err := filepath.Rel(w.rootReal, path)
+	if err != nil || !within(w.rootReal, path) {
+		return false
+	}
+
+	return w.ignored(NormalizePath(rel), isDir)
+}
+
+// skip leaves out the ignored entry at path, listed as rel. A link is still
+// reported, so the caller knows not to write through it.
+func (w *walker) skip(path, rel string, d fs.DirEntry) error {
+	switch {
+	case isLink(path, d.Type()):
+		w.report(Link{RelPath: rel, Outcome: LinkIgnored})
+	case d.IsDir():
+		return filepath.SkipDir
+	}
+
+	return nil
 }
 
 func (w *walker) report(link Link) {
