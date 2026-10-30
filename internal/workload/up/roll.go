@@ -71,6 +71,10 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 		return result, err
 	}
 
+	if plan.Code.Local {
+		result.Image = made.ImageURI
+	}
+
 	// result.ArtifactID stays on the version that is serving, and settle moves
 	// it once the rollout has promoted the new one, which it now waits to see
 	// rather than assuming. A failed swap leaves the old version running, so an
@@ -84,7 +88,14 @@ func roll(ctx context.Context, loaded Loaded, live Live, plan Plan, lock bool, r
 		return result, err
 	}
 
-	return replace(ctx, live.WorkloadID, made, lock, sizing, plan.InPlace, result, opts, report)
+	result, err = replace(ctx, live.WorkloadID, made, lock, sizing, plan.InPlace, result, opts, report)
+
+	// A roll onto locked production locks the new version, which pins its image.
+	if result.Locked && result.Image != "" {
+		result.Image = pinnedImage(made.ID, result.Image)
+	}
+
+	return result, err
 }
 
 // candidateArtifact is the version to roll onto.

@@ -20,6 +20,8 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datarobot/cli/internal/features"
+	"github.com/datarobot/cli/internal/usecase"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
@@ -61,6 +63,9 @@ type Answers struct {
 	// Importance is the scheduling priority, one of
 	// manifest.ImportanceLevels.
 	Importance string
+	// UseCaseID links the workload to this Use Case instead of the most
+	// recently updated one.
+	UseCaseID string
 	// SkipEnv leaves the project's .env out of the manifest entirely. By
 	// default the variables are carried across, because a deploy that
 	// silently drops the app's configuration is the worse default.
@@ -79,6 +84,7 @@ var ErrCancelled = errors.New("cancelled")
 func (a Answers) check() error {
 	for _, check := range []func() error{
 		a.checkBinding, a.checkKind, a.checkImageSource, a.checkReadiness, a.checkSizing, a.checkImportance,
+		a.checkUseCase,
 	} {
 		if err := check(); err != nil {
 			return err
@@ -123,6 +129,12 @@ func (a Answers) checkImageSource() error {
 	switch a.BuildMode {
 	case "", manifest.BuildModeDockerfile, manifest.BuildModeGenerated, manifest.BuildModeImage:
 		return nil
+	case manifest.BuildModeLocal:
+		if features.Enabled(features.LocalBuild) {
+			return nil
+		}
+
+		return fmt.Errorf("--build-mode %s needs DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true", manifest.BuildModeLocal)
 	default:
 		return fmt.Errorf("--build-mode %q is not supported: use %s, %s or %s",
 			a.BuildMode, manifest.BuildModeDockerfile, manifest.BuildModeGenerated, manifest.BuildModeImage)
@@ -244,6 +256,18 @@ func (a Answers) checkImportance() error {
 	if a.Importance != "" && !manifest.ValidImportance(a.importance()) {
 		return fmt.Errorf("--importance %q is not supported: use one of %s",
 			a.Importance, strings.Join(manifest.ImportanceLevels, ", "))
+	}
+
+	return nil
+}
+
+func (a Answers) checkUseCase() error {
+	if a.UseCaseID == "" {
+		return nil
+	}
+
+	if _, err := usecase.ParseID(a.UseCaseID); err != nil {
+		return fmt.Errorf("invalid --use-case-id: %w", err)
 	}
 
 	return nil
@@ -409,6 +433,14 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 		}
 
 		return manifest.Build{Mode: manifest.BuildModeDockerfile}, nil
+
+	case manifest.BuildModeLocal:
+		if !detected.HasDockerfile {
+			return manifest.Build{}, fmt.Errorf("--build-mode %s needs a %s in %s for Docker to build",
+				manifest.BuildModeLocal, DockerfileName, detected.Dir)
+		}
+
+		return manifest.Build{Mode: manifest.BuildModeLocal}, nil
 
 	case manifest.BuildModeImage:
 		if a.Image == "" {

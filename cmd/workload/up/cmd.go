@@ -69,15 +69,18 @@ var canAskFn = idargs.CanAsk
 // is a pointer so it is null rather than empty when no build happened, which
 // is the difference between "skipped" and "produced nothing".
 type upResult struct {
-	WorkloadID string      `json:"workloadId"`
-	Name       string      `json:"name"`
-	Status     string      `json:"status"`
-	Endpoint   string      `json:"endpoint"`
-	ArtifactID string      `json:"artifactId"`
-	BuildID    *string     `json:"buildId"`
-	Action     string      `json:"action"`
-	Locked     bool        `json:"locked"`
-	Plan       up.PlanJSON `json:"plan"`
+	WorkloadID string  `json:"workloadId"`
+	Name       string  `json:"name"`
+	Status     string  `json:"status"`
+	Endpoint   string  `json:"endpoint"`
+	ArtifactID string  `json:"artifactId"`
+	BuildID    *string `json:"buildId"`
+	// Image is the image a local build deployed: its address on a draft, the
+	// pinned reference once locked. Null for every other build mode.
+	Image  *string     `json:"image"`
+	Action string      `json:"action"`
+	Locked bool        `json:"locked"`
+	Plan   up.PlanJSON `json:"plan"`
 	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
 	// these a run that re-sent a secret is indistinguishable from one that
@@ -150,9 +153,9 @@ func envLiterals(names []string) []string {
 	return names
 }
 
-// buildID is the envelope's build reference: the id when a build ran, null
-// when none did. An empty string would read as a build that produced nothing.
-func buildID(id string) *string {
+// nullable is an envelope reference: the value when there is one, null when
+// not. An empty string would read as a build that produced nothing.
+func nullable(id string) *string {
 	if id == "" {
 		return nil
 	}
@@ -754,7 +757,8 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Status:     result.Status,
 			Endpoint:   result.Endpoint,
 			ArtifactID: result.ArtifactID,
-			BuildID:    buildID(result.BuildID),
+			BuildID:    nullable(result.BuildID),
+			Image:      nullable(result.Image),
 			Action:     result.Action,
 			Locked:     result.Locked,
 			Plan:       planEnvelope(result.Plan, f.diff),

@@ -47,6 +47,9 @@ type configResult struct {
 	// is created by the first `dr workload up`.
 	CreateOnUp bool   `json:"createOnUp"`
 	BuildMode  string `json:"buildMode"`
+	// UseCaseID is the Use Case the manifest links the workload to, "" when
+	// it names none.
+	UseCaseID string `json:"useCaseId"`
 	// Action is created, updated, unchanged or planned. A caller keying on it
 	// has to be able to tell a dry run's planned from a file that now exists,
 	// and a --sync-env edit from the run that wrote the file.
@@ -141,6 +144,7 @@ Examples:
   dr workload config
   dr workload config --yes --name my-app
   dr workload config --yes --build-mode image --image registry/team/app:v1
+  dr workload config --yes --name my-app --use-case-id 68b0aa11bb22cc33dd44ee55
   dr workload config --yes --build-mode generated \
     --execution-environment "[DataRobot] Python 3.12 Applications Base" \
     --entrypoint "uvicorn app:app --host 0.0.0.0 --port 8080"
@@ -170,6 +174,7 @@ Examples:
 			"type":          f.answers.Type,
 			"build_mode":    f.answers.BuildMode,
 			"bound":         f.answers.WorkloadID != "",
+			"use_case_id":   f.answers.UseCaseID != "",
 			"spec_file":     f.specFile != "",
 			"sync_env":      f.syncEnv,
 			"dry_run":       f.dryRun,
@@ -215,7 +220,7 @@ func addFlags(cmd *cobra.Command, f *flags) {
 	cmd.Flags().BoolVar(&f.answers.A2AEnabled, "a2a-enabled", false,
 		"Agent only: publish the app's A2A agent card to the tenant-wide agent registry.")
 
-	cmd.Flags().StringVar(&f.answers.BuildMode, "build-mode", "", "Image source: dockerfile, generated or image.")
+	cmd.Flags().StringVar(&f.answers.BuildMode, "build-mode", "", "Image source: dockerfile, generated or image (or local, with DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true).")
 	cmd.Flags().StringVar(&f.dockerfile, "dockerfile", wizard.DefaultDockerfilePath,
 		"Dockerfile to build. Only the project root's ./Dockerfile is supported.")
 	cmd.Flags().StringVar(&f.answers.ExecutionEnvironment, "execution-environment", "",
@@ -250,6 +255,10 @@ func addFlags(cmd *cobra.Command, f *flags) {
 		"Scheduling priority when capacity is constrained: "+
 			strings.Join(manifest.ImportanceLevels, ", ")+
 			" (default "+manifest.DefaultImportance+", or the bound workload's own level). Applied on create.")
+	cmd.Flags().StringVar(&f.answers.UseCaseID, "use-case-id", "",
+		"Use Case to link the workload to (default: the one a bound workload is linked to, else the most "+
+			"recently updated). A new workload whose Use Case has Enclaves is placed on one of them. "+
+			"'dr workload up' links a bound workload that has no Use Case yet.")
 }
 
 func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
@@ -339,7 +348,7 @@ func (f flags) editsEnv() bool {
 var setupOnlyFlags = []string{
 	"workload-id", "name", "type", "a2a-enabled", "build-mode", "dockerfile",
 	"execution-environment", "entrypoint", "image", "port", "health",
-	"no-readiness-probe", "replicas", "cpu", "memory", "importance",
+	"no-readiness-probe", "replicas", "cpu", "memory", "importance", "use-case-id",
 }
 
 // checkSyncEnvFlags refuses the combinations --sync-env cannot honour,
@@ -415,6 +424,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			WorkloadID:           result.Draft.WorkloadID,
 			CreateOnUp:           result.Draft.WorkloadID == "",
 			BuildMode:            result.Draft.Build.Mode,
+			UseCaseID:            result.UseCaseID,
 			Action:               result.Action,
 			EnvKeysListed:        result.EnvKeysListed,
 			EnvNamesRemoved:      result.EnvNamesRemoved,

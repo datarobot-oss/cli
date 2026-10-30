@@ -66,6 +66,8 @@ var (
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
+	workloadUseCaseFn    = workload.WorkloadUseCase
+	linkUseCaseFn        = workload.LinkWorkloadToUseCase
 	writeWorkloadIDFn    = manifest.WriteWorkloadID
 	codeChangeFn         = defaultCodeChange
 	projectLinkedFn      = wapi.Exists
@@ -201,6 +203,11 @@ type Result struct {
 	// the caller can say which logs to read.
 	BuildID string
 
+	// Image is the image a local build deployed: its address while the
+	// version is a draft, the pinned reference once it is locked; "" for any
+	// other build mode.
+	Image string
+
 	// ProjectDir is the directory holding the manifest this run deployed,
 	// empty when it failed before finding one. It is not always the one the
 	// command was pointed at: the manifest search walks upward, and the setup
@@ -332,6 +339,17 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 	}
 
 	if err := confirmGate(plan, result, opts); err != nil {
+		return result, err
+	}
+
+	if err := dockerReady(ctx, plan); err != nil {
+		return result, err
+	}
+
+	// Ahead of every path, the empty plan's included: a workload on an Enclave
+	// with no Use Case cannot be restarted or replaced, so the link has to be
+	// in place before anything below asks for either.
+	if err := linkUseCase(loaded, live, opts); err != nil {
 		return result, err
 	}
 
@@ -2260,6 +2278,11 @@ func lock(result Result, report *reporter) (Result, error) {
 
 	result.Locked = true
 
+	// The lock pinned the pushed address to its digest; that is the image now.
+	if result.Image != "" {
+		result.Image = pinnedImage(result.ArtifactID, result.Image)
+	}
+
 	return result, nil
 }
 
@@ -2277,6 +2300,10 @@ func lock(result Result, report *reporter) (Result, error) {
 // way past a lock.
 func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) {
 	mode := loaded.Manifest.BuildMode()
+	if mode == manifest.BuildModeLocal {
+		return localCodeChange(loaded, live)
+	}
+
 	if mode != manifest.BuildModeDockerfile && mode != manifest.BuildModeGenerated {
 		// A published image has no code to sync, and a file bound by artifact
 		// id says nothing about how the image is made.

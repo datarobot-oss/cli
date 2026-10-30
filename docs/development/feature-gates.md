@@ -41,6 +41,8 @@ Feature names are converted from lowercase with hyphens to uppercase with unders
 - `workload-alpha` → `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA`
 - `my-feature` → `DATAROBOT_CLI_FEATURE_MY_FEATURE`
 
+Gates in use: `enclave`, `build-studio`, and `local-build` (`features.LocalBuild`), which gates `dr artifact pull` and the `local` build mode of `dr workload config` and `up`. A gate on behaviour rather than on a command is checked with `features.Enabled` where the behaviour starts: for `local-build`, the manifest validator and the wizard's build-mode choice.
+
 ### Config File (Future)
 
 Config file support (e.g., `drconfig.yaml`) is not yet implemented. See the TODO in `internal/features/features.go`. Currently, only environment variables work because feature gating happens during command registration (`init()`), before Viper configuration is loaded.

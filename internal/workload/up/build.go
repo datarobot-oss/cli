@@ -56,7 +56,14 @@ func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result 
 		return result, err
 	}
 
-	artifactID, fresh := made.ID, made.Fresh
+	if code.Local {
+		result.Image, err = pushLocally(ctx, loaded.ProjectDir, made, code, opts, report)
+		if err != nil {
+			return result, err
+		}
+
+		return createOn(ctx, loaded, made, result, opts, report)
+	}
 
 	synced, err := syncCode(loaded.ProjectDir, report)
 
@@ -94,6 +101,14 @@ func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result 
 	if err != nil {
 		return result, err
 	}
+
+	return createOn(ctx, loaded, made, result, opts, report)
+}
+
+// createOn creates the workload on the artifact this run built into.
+func createOn(ctx context.Context, loaded Loaded, made version, result Result, opts Options, report *reporter,
+) (Result, error) {
+	artifactID, fresh := made.ID, made.Fresh
 
 	payload, err := loaded.Compiled.BindArtifact(artifactID)
 	if err != nil {

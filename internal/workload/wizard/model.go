@@ -918,7 +918,7 @@ func (f *flow) acceptSource() (tea.Cmd, error) {
 
 	// Refusing before recording keeps a rejected pick from destroying the
 	// answer the screen is about to be shown again with.
-	if mode == manifest.BuildModeDockerfile && !f.detected.HasDockerfile {
+	if (mode == manifest.BuildModeDockerfile || mode == manifest.BuildModeLocal) && !f.detected.HasDockerfile {
 		return nil, fmt.Errorf("no %s in %s: pick another source or add one", DockerfileName, f.detected.Dir)
 	}
 

@@ -100,6 +100,17 @@ containers:
 
 The platform works out the runtime from the project's own files: `pyproject.toml` with `uv.lock`, or `package.json` with `package-lock.json`. A `pyproject.toml` without `uv.lock` is accepted: the deploy's sync generates the lock before the upload if `uv` is installed where the deploy runs, so commit it. A project with neither file pair, or a `package.json` without its lock, cannot be built this way, and `dr workload config` refuses the mode up front rather than letting the build fail after the code is synced; `dr workload up` refuses the same cases before it creates anything. Binding to a workload already built this way from a directory with none of the usual project files keeps its build: `dr workload up` pulls the workload's code into that directory first. A directory with project files of its own is uploaded as it is, so it has to be buildable. The environment also has to match the project: a Node project on a Python base image fails at build time, so `dr workload config` refuses the pair when the environment's language and the project's files disagree; an environment with no language label is accepted. `executionEnvironmentId` and `executionEnvironmentVersionId` are only valid when `source` is `generated`. No CLI command lists execution environments yet; take the ids from the DataRobot UI or from `GET /api/v2/executionEnvironments/`.
 
+**Built here with Docker and pushed to DataRobot** (behind the `local-build` feature gate: `DATAROBOT_CLI_FEATURE_LOCAL_BUILD=true`). The primary container names neither field, next to a `Dockerfile`:
+
+```yaml
+containers:
+  - name: primary
+    primary: true # image built here with Docker and pushed to DataRobot
+    port: 8080
+```
+
+The platform answers the artifact's create with an `imageUri` of the form `<registry>/artifacts/<artifact-id>`, the address to push to; it only does so where pushing images to DataRobot is enabled. `dr workload up` builds `./Dockerfile` with your local Docker for `linux/amd64` and pushes to that address, logging Docker in with your DataRobot API key for the push only. Locking the artifact pins the reference to the pushed digest (`...@sha256:...`). Only the primary container can take this form; other containers name an `imageUri`. With the gate off, a container with neither field is refused as before.
+
 `imageBuildConfig.codeRef` names the catalog version the build compiles, and `dr artifact code sync` writes it for you:
 
 ```yaml

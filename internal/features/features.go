@@ -24,6 +24,11 @@ import (
 
 const AnnotationKey = "feature-gate"
 
+// LocalBuild gates building a workload's image with the local Docker and
+// pushing it through the DataRobot registry (`dr workload up` in local build
+// mode, `dr artifact pull`).
+const LocalBuild = "local-build"
+
 // Provider defines the interface for reading feature gate values.
 // Implementations can read from environment variables, config files, or other sources.
 // This allows for easy migration to different feature flag systems without changing

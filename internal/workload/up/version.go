@@ -90,6 +90,15 @@ func buildVersion(
 		return made, err
 	}
 
+	if plan.Code.Local {
+		image, err := pushLocally(ctx, loaded.ProjectDir, made, plan.Code, opts, report)
+		if err == nil {
+			made.ImageURI = image
+		}
+
+		return made, err
+	}
+
 	synced, err := syncCode(loaded.ProjectDir, report)
 	made.Sync = sync.SizeOf(synced, err)
 

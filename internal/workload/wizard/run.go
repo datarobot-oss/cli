@@ -50,12 +50,25 @@ func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Dr
 	return func() { runInteractiveFlowFn = original }
 }
 
+// SetNoUseCasesForTest makes the wizard find no Use Case, so a test that runs
+// it does not read the tenant the developer is logged into.
+func SetNoUseCasesForTest() func() {
+	latest, ofWorkload := latestUseCaseFn, workloadUseCaseFn
+	latestUseCaseFn = func() (*workload.UseCase, error) { return nil, nil }
+	workloadUseCaseFn = func(string) (*workload.UseCase, error) { return nil, nil }
+
+	return func() { latestUseCaseFn, workloadUseCaseFn = latest, ofWorkload }
+}
+
 // Test seams: the wizard's tests replace these to keep the flow off the
 // network and off the terminal.
 var (
 	getWorkloadFn        = workload.GetWorkloadDocument
 	getArtifactFn        = workload.GetArtifactDocument
 	findExecEnvFn        = workload.FindExecutionEnvironment
+	latestUseCaseFn      = workload.LatestUseCase
+	workloadUseCaseFn    = workload.WorkloadUseCase
+	useCaseEnclavesFn    = workload.UseCaseHasEnclaves
 	isStdinTerminalFn    = reader.IsStdinTerminal
 	runInteractiveFlowFn = runInteractiveFlow
 )
@@ -206,6 +219,9 @@ type Result struct {
 	// of its own it is a silent failure for anything reading the result rather
 	// than the terminal, which is exactly what --output-format json does.
 	EnvSecretsNotRotated int
+	// UseCaseID is the Use Case the manifest links the workload to, "" when
+	// it names none.
+	UseCaseID string
 	// Draft is the answer set behind Content. For a bound workload it
 	// describes the fields the wizard asked about, not the whole file.
 	Draft manifest.Draft
@@ -277,6 +293,11 @@ func (o Options) create(dir string) (Result, error) {
 		}
 	}
 
+	content, useCaseID, err := o.linkUseCase(content)
+	if err != nil {
+		return Result{}, err
+	}
+
 	if err := checkRendered(content, projectDir, o.author(draft)); err != nil {
 		return Result{}, err
 	}
@@ -293,6 +314,7 @@ func (o Options) create(dir string) (Result, error) {
 		Draft:             draft,
 		EnvKeysListed:     len(draft.EnvVars),
 		EnvSecretsPending: pendingSecrets(draft.EnvVars),
+		UseCaseID:         useCaseID,
 	}
 
 	if o.DryRun {
@@ -1606,7 +1628,7 @@ func (a Answers) mergeBuild(build *manifest.Build, detected Detected) error {
 			build.ExecutionEnvironmentID, build.ExecutionEnvironmentVersionID = ee.ID, ee.LatestSuccessfulVersion.ID
 		}
 
-	case manifest.BuildModeDockerfile:
+	case manifest.BuildModeDockerfile, manifest.BuildModeLocal:
 		// The mode is the whole answer; there is nothing else to carry.
 	}
 

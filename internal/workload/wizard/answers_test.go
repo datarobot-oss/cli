@@ -435,3 +435,23 @@ func TestAnswers_ApplyToKeepsLiveDefaults(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, manifest.BuildModeDockerfile, draft.Build.Mode)
 }
+
+// --build-mode local is refused until the feature gate is on, and then needs
+// a Dockerfile for Docker to build.
+func TestAnswers_LocalMode(t *testing.T) {
+	err := Answers{BuildMode: manifest.BuildModeLocal}.check()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "DATAROBOT_CLI_FEATURE_LOCAL_BUILD")
+
+	t.Setenv("DATAROBOT_CLI_FEATURE_LOCAL_BUILD", "true")
+
+	require.NoError(t, Answers{BuildMode: manifest.BuildModeLocal}.check())
+
+	draft, err := Answers{BuildMode: manifest.BuildModeLocal}.draft(Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\n")))
+	require.NoError(t, err)
+	assert.Equal(t, manifest.Build{Mode: manifest.BuildModeLocal}, draft.Build)
+
+	_, err = Answers{BuildMode: manifest.BuildModeLocal}.draft(Detect(t.TempDir()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "needs a Dockerfile")
+}

@@ -81,12 +81,20 @@ type CodeChange struct {
 	// engine's Close costs nothing. Nil on a first deploy, for a manifest
 	// that names an image, and when a test harness wires only the count.
 	SyncPlan *sync.SyncPlan
+
+	// Local is an image built here with Docker and pushed to DataRobot
+	// rather than built by the platform from synced code. Files and SyncPlan
+	// stay empty: TreeHash measures the tree, and TreeChanged reports that
+	// it moved since the last push from this checkout.
+	Local       bool
+	TreeHash    string
+	TreeChanged bool
 }
 
 // Changed reports whether the workload is behind the working tree's code:
 // there is code to push, or code already pushed that it is not running.
 func (c CodeChange) Changed() bool {
-	return c.Applies && (c.FirstDeploy || c.Files > 0 || c.Unserved)
+	return c.Applies && (c.FirstDeploy || c.Files > 0 || c.TreeChanged || c.Unserved)
 }
 
 // Plan is what a run intends to do, computed before it does any of it.

@@ -31,6 +31,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	// The setup wizard runs here; it must not read the developer's tenant.
+	wizard.SetNoUseCasesForTest()
+
+	os.Exit(m.Run())
+}
+
 // runCmd executes the command with the auth check removed, capturing the two
 // streams separately: keeping them apart is the point of several tests below.
 func runCmd(t *testing.T, args ...string) (stdout, stderr *bytes.Buffer, err error) {
