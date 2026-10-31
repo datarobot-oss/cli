@@ -200,7 +200,101 @@ func TestRun_TakenCredentialNameSaysHowToFinish(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stderr.String(), "already exists")
-	assert.Contains(t, stderr.String(), "pasting its id")
+	assert.Contains(t, stderr.String(), "Find its id", "no holder was found, so there is no id to give")
+}
+
+func takenName(t *testing.T, found *workload.Credential) (updated *[]string) {
+	t.Helper()
+
+	noCredentialStore(t, &drapi.HTTPError{StatusCode: http.StatusConflict})
+
+	originalFind, originalUpdate := findCredentialFn, updateCredentialFn
+	updated = &[]string{}
+
+	findCredentialFn = func(string, int) (*workload.Credential, error) { return found, nil }
+	updateCredentialFn = func(id, value string) (*workload.Credential, error) {
+		*updated = append(*updated, id+"="+value)
+
+		return &workload.Credential{CredentialID: id}, nil
+	}
+
+	t.Cleanup(func() { findCredentialFn, updateCredentialFn = originalFind, originalUpdate })
+
+	return updated
+}
+
+func apiTokenCredential() *workload.Credential {
+	return &workload.Credential{
+		CredentialID: "66f0aaaa0000000000000009", Name: "my-app/API_TOKEN",
+		CredentialType: workload.CredentialTypeAPIToken,
+	}
+}
+
+func importTakenName(reuse ReuseFunc) ([]manifest.EnvVar, Import) {
+	return importSecrets(
+		[]manifest.EnvVar{{Name: "API_TOKEN", Secret: true}},
+		Detected{EnvVars: []EnvVar{{Name: "API_TOKEN", Kind: EnvSecret, Value: "shhh"}}},
+		"my-app", reuse,
+	)
+}
+
+// The case that cost a day: the name is taken by the credential an earlier run
+// made for this very variable. Saying yes points the entry at it and replaces
+// its value with the one in .env.
+func TestImportSecrets_TakenNameIsReusedWhenTheUserAgrees(t *testing.T) {
+	updated := takenName(t, apiTokenCredential())
+
+	var asked []string
+
+	vars, report := importTakenName(func(env, name, id string) bool {
+		asked = append(asked, env+"|"+name+"|"+id)
+
+		return true
+	})
+
+	assert.Equal(t, []string{"API_TOKEN|my-app/API_TOKEN|66f0aaaa0000000000000009"}, asked)
+	assert.Equal(t, []string{"66f0aaaa0000000000000009=shhh"}, *updated)
+	assert.Equal(t, "66f0aaaa0000000000000009", vars[0].CredentialID)
+	assert.Equal(t, []string{"API_TOKEN"}, report.Reused)
+	assert.Empty(t, report.Failed)
+}
+
+// Declining, or having nobody to ask, leaves the placeholder, and the message
+// carries the id and the line that finishes the job: that is the whole
+// difference from "paste its id".
+func TestImportSecrets_TakenNameNamesTheIdWhenNotReused(t *testing.T) {
+	for name, reuse := range map[string]ReuseFunc{
+		"declined":     func(string, string, string) bool { return false },
+		"nobody asked": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			updated := takenName(t, apiTokenCredential())
+
+			vars, report := importTakenName(reuse)
+
+			assert.Empty(t, *updated, "nothing is overwritten without a yes")
+			assert.Empty(t, vars[0].CredentialID)
+			require.Len(t, report.Failed, 1)
+			assert.Contains(t, report.Failed[0].Reason, "66f0aaaa0000000000000009")
+			assert.Contains(t, report.Failed[0].Reason, "dr-credential:66f0aaaa0000000000000009/apiToken")
+		})
+	}
+}
+
+// A same-named credential of another type is somebody else's: it is never
+// offered for overwriting, whatever the user would have answered.
+func TestImportSecrets_TakenNameOfAnotherTypeIsNeverOverwritten(t *testing.T) {
+	other := apiTokenCredential()
+	other.CredentialType = "basic"
+	updated := takenName(t, other)
+
+	asked := false
+	_, report := importTakenName(func(string, string, string) bool { asked = true; return true })
+
+	assert.False(t, asked)
+	assert.Empty(t, *updated)
+	require.Len(t, report.Failed, 1)
+	assert.Contains(t, report.Failed[0].Reason, "not an API-token credential")
 }
 
 // A dry run promises to change nothing, and a credential is the one thing
@@ -240,7 +334,7 @@ func TestImportSecrets_NoValueIsReportedNotSent(t *testing.T) {
 	vars, report := importSecrets(
 		[]manifest.EnvVar{{Name: "API_TOKEN", Secret: true}},
 		Detected{EnvVars: []EnvVar{{Name: "API_TOKEN", Kind: EnvSecret, Value: ""}}},
-		"my-app",
+		"my-app", nil,
 	)
 
 	assert.Empty(t, *stored)
@@ -258,7 +352,7 @@ func TestImportSecrets_AlreadyStoredIsLeftAlone(t *testing.T) {
 	vars, report := importSecrets(
 		[]manifest.EnvVar{{Name: "API_TOKEN", Secret: true, CredentialID: "66f0aaaa0000000000000001"}},
 		Detected{EnvVars: []EnvVar{{Name: "API_TOKEN", Kind: EnvSecret, Value: "shhh"}}},
-		"my-app",
+		"my-app", nil,
 	)
 
 	assert.Empty(t, *stored)

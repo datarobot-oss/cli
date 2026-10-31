@@ -767,7 +767,7 @@ func (f *flow) acceptConfirm() (tea.Cmd, error) {
 	vars, detected, name := f.draft.EnvVars, f.detected, f.draft.Name
 
 	return func() tea.Msg {
-		stored, report := importSecrets(vars, detected, name)
+		stored, report := importSecrets(vars, detected, name, nil)
 
 		return secretsStoredMsg{vars: stored, report: report}
 	}, nil
