@@ -174,6 +174,9 @@ type Options struct {
 	// ConfirmDelete is the wizard's question about a credential the sync made
 	// redundant, passed through for the same reason.
 	ConfirmDelete func(name string) bool
+	// ConfirmReuse is the wizard's question about a secret whose credential
+	// name is already taken, passed through for the same reason.
+	ConfirmReuse wizard.ReuseFunc
 
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
@@ -1170,6 +1173,7 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 		SyncEnv:        true,
 		Confirm:        o.ConfirmEnv,
 		ConfirmDelete:  o.ConfirmDelete,
+		ConfirmReuse:   o.ConfirmReuse,
 		Remedy:         remedy,
 		Stderr:         o.Stderr,
 	})

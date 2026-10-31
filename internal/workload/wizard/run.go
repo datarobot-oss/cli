@@ -162,6 +162,11 @@ type Options struct {
 	// delete: --yes agrees to the sync, not to destroying a stored copy, so
 	// the credential is named in the output and left alone.
 	ConfirmDelete func(name string) bool
+	// ConfirmReuse is asked, once per secret, whether to point it at the
+	// credential that already holds its name and replace that credential's
+	// value with the one in .env. nil means no: the failure then names the
+	// credential's id and the line that would use it as it is.
+	ConfirmReuse ReuseFunc
 	// Stderr carries the wizard and its summary. Nothing the wizard says
 	// belongs on stdout, which is the command's machine-readable channel.
 	Stderr io.Writer
@@ -1471,7 +1476,7 @@ func (o Options) storeSecrets(
 		return vars
 	}
 
-	stored, report := importSecrets(vars, detected, workloadName)
+	stored, report := importSecrets(vars, detected, workloadName, o.ConfirmReuse)
 
 	reportImport(o.Stderr, report, keepsPlaceholder)
 

@@ -34,6 +34,10 @@ import (
 type Import struct {
 	// Stored are the variables now carrying a credential id.
 	Stored []string
+	// Reused are the variables that pointed at a credential already holding
+	// their name, whose value was replaced with the one in .env on the user's
+	// say-so.
+	Reused []string
 	// Failed are the variables still carrying the placeholder, each with the
 	// reason, ready to be printed.
 	Failed []ImportFailure
@@ -51,7 +55,7 @@ type ImportFailure struct {
 
 // Any reports whether anything was tried at all.
 func (i Import) Any() bool {
-	return len(i.Stored) > 0 || len(i.Failed) > 0
+	return len(i.Stored) > 0 || len(i.Reused) > 0 || len(i.Failed) > 0
 }
 
 // importSecrets stores each secret and writes the credential id back into the
@@ -68,7 +72,13 @@ func (i Import) Any() bool {
 // placeholder, which is an entry a deploy refuses by name, so the worst case
 // is the state this whole feature started from rather than a wizard that
 // leaves nothing on disk after asking eight questions.
-func importSecrets(vars []manifest.EnvVar, detected Detected, workloadName string) ([]manifest.EnvVar, Import) {
+//
+// A name already taken is the one failure with a way forward: the credential
+// that holds it is looked up, and reuse (nil means never) is asked whether to
+// point the variable at it and replace its value with the one in .env.
+func importSecrets(
+	vars []manifest.EnvVar, detected Detected, workloadName string, reuse ReuseFunc,
+) ([]manifest.EnvVar, Import) {
 	values := secretValues(detected)
 	out := make([]manifest.EnvVar, len(vars))
 	copy(out, vars)
@@ -95,6 +105,21 @@ func importSecrets(vars []manifest.EnvVar, detected Detected, workloadName strin
 		name := CredentialName(workloadName, v.Name)
 
 		cred, err := createCredentialFn(name, value)
+		if isNameTaken(err) {
+			reused, reason := reuseTaken(v.Name, name, value, reuse)
+			if reused == nil {
+				report.Failed = append(report.Failed, ImportFailure{Name: v.Name, Reason: reason})
+
+				continue
+			}
+
+			out[i].CredentialID = reused.CredentialID
+
+			report.Reused = append(report.Reused, v.Name)
+
+			continue
+		}
+
 		if err != nil {
 			report.Failed = append(report.Failed, ImportFailure{Name: v.Name, Reason: importReason(err, name)})
 
@@ -136,6 +161,78 @@ func CredentialName(workloadName, envName string) string {
 	return workloadName + "/" + envName
 }
 
+// ReuseFunc is asked, once per variable, whether to point it at the credential
+// that already holds its name and replace that credential's value with the one
+// in .env. nil means no: --yes agrees to the import, not to overwriting a
+// credential somebody may be relying on.
+type ReuseFunc func(envName, credentialName, credentialID string) bool
+
+// credentialSearchLimit bounds the lookup of the credential holding a taken
+// name, the same bound the deploy uses for the same question.
+const credentialSearchLimit = 200
+
+// findCredentialFn is the seam for turning a taken name into the credential
+// that holds it.
+var findCredentialFn = workload.FindCredentialNamed
+
+func isNameTaken(err error) bool {
+	var httpErr *drapi.HTTPError
+
+	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusConflict
+}
+
+// reuseTaken settles a credential name that is already in use. It returns the
+// credential to use, or nil with the reason it could not be, phrased so the
+// reader can finish by hand.
+//
+// Only an API-token credential is ever overwritten: that is the one shape this
+// CLI writes, and the store is tenant-wide, so a same-named credential of
+// another type belongs to somebody else's use.
+func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credential, string) {
+	existing, err := findCredentialFn(name, credentialSearchLimit)
+	if err != nil || existing == nil {
+		return nil, takenReason(name, nil)
+	}
+
+	if existing.CredentialType != workload.CredentialTypeAPIToken {
+		return nil, fmt.Sprintf(
+			"a credential called %q (%s) already exists, but it is not an API-token credential, "+
+				"so it is not overwritten. Deploy under a different workload name, or point the entry at a "+
+				"credential you have checked holds this value.", name, existing.CredentialID)
+	}
+
+	if reuse == nil || !reuse(envName, name, existing.CredentialID) {
+		return nil, takenReason(name, existing)
+	}
+
+	if _, err := updateCredentialFn(existing.CredentialID, value); err != nil {
+		return nil, fmt.Sprintf("credential %q (%s) exists, but its value could not be replaced: %s",
+			name, existing.CredentialID, strings.TrimSpace(err.Error()))
+	}
+
+	return existing, ""
+}
+
+// takenReason says what to do about a name that is in use. With the holder
+// found it names the id and the exact line to write, because a message that
+// says "paste its id" without the id sends the reader looking for it.
+func takenReason(name string, existing *workload.Credential) string {
+	if existing == nil {
+		return fmt.Sprintf(
+			"a credential called %q already exists in your organisation, and its value may not be this one. "+
+				"Find its id, check it holds this value, and put it in %s, or deploy under a different workload name.",
+			name, manifest.FileName)
+	}
+
+	return fmt.Sprintf(
+		"a credential called %q already exists in your organisation (id %s), and its value may not be this one.\n"+
+			"    To use it as it is, set the entry's value to %s%s/%s in %s.\n"+
+			"    To replace its value with the one in %s, run this again where it can ask you.",
+		name, existing.CredentialID,
+		manifest.CredentialShorthandPrefix, existing.CredentialID, manifest.CredentialKeyWritten, manifest.FileName,
+		EnvFileName)
+}
+
 // importReason turns a failure into something worth reading. A name already
 // taken is the common one: credential names are unique across the whole
 // organisation, so setting up a second project under the same workload name
@@ -167,6 +264,13 @@ func reportImport(stderr io.Writer, report Import, keepsPlaceholder func(name st
 			tui.SuccessStyle.Render("✓"),
 			len(report.Stored), Plural(len(report.Stored), "secret", "secrets"),
 			tui.HintStyle.Render("("+JoinNames(report.Stored)+", all in "+manifest.FileName+")"))
+	}
+
+	if len(report.Reused) > 0 {
+		fmt.Fprintf(stderr, "  %s Reused %d existing %s, with the value from %s %s\n",
+			tui.SuccessStyle.Render("✓"),
+			len(report.Reused), Plural(len(report.Reused), "credential", "credentials"), EnvFileName,
+			tui.HintStyle.Render("("+JoinNames(report.Reused)+")"))
 	}
 
 	for _, failure := range report.Failed {

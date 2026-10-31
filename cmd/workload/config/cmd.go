@@ -286,6 +286,8 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		stderr = nil
 	}
 
+	interactive := !asJSON && idargs.CanAsk(cmd)
+
 	result, err := wizard.Run(wizard.Options{
 		Dir:            dir,
 		NonInteractive: yes || asJSON,
@@ -303,13 +305,18 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 			// with stderr redirected the prompt is written where nobody can
 			// see it and the run then blocks for an answer nobody knows to
 			// give.
-			Interactive: !asJSON && idargs.CanAsk(cmd),
+			Interactive: interactive,
 			Silent:      asJSON,
 		}),
 		ConfirmDelete: envconfirm.AskDelete(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
 			Yes:         f.yes,
 			DryRun:      f.dryRun,
-			Interactive: !asJSON && idargs.CanAsk(cmd),
+			Interactive: interactive,
+		}),
+		ConfirmReuse: envconfirm.AskReuse(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+			Yes:         f.yes,
+			DryRun:      f.dryRun,
+			Interactive: interactive,
 		}),
 		JSONOutput: asJSON,
 		Answers:    f.answers,
