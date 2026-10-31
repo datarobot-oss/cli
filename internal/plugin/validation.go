@@ -53,7 +53,7 @@ func ValidatePluginScript(pluginDir string, expectedManifest PluginManifest) err
 		return err
 	}
 
-	scriptPath, err := FindPluginScript(pluginDir, expectedManifest.Name)
+	scriptPath, err := validationScriptPath(pluginDir, expectedManifest)
 	if err != nil {
 		return err
 	}
@@ -150,6 +150,44 @@ func validateManifests(expected, actual PluginManifest) error {
 	log.Debug("Plugin script manifest validation passed")
 
 	return nil
+}
+
+// validationScriptPath resolves the plugin entry script to execute for
+// validation. When the manifest declares a platform script (scripts.posix /
+// scripts.windows), that declaration is authoritative: the declared file is
+// used, and a missing file is a hard error rather than a reason to fall back
+// to the name-based scan. The scan accepts any extensionless dr-* file, so on
+// an archive that bundles per-platform binaries it can pick a binary instead
+// of the entry script and fail with "exec format error" (ALIFE-994). Only
+// plugins without a scripts block (PATH-style plugins) fall back to the scan.
+func validationScriptPath(pluginDir string, manifest PluginManifest) (string, error) {
+	declared := declaredPluginScript(manifest)
+
+	if declared == "" {
+		return FindPluginScript(pluginDir, manifest.Name)
+	}
+
+	scriptPath := filepath.Join(pluginDir, declared)
+
+	if _, err := os.Stat(scriptPath); err != nil {
+		return "", fmt.Errorf("manifest.json declares script %q but it was not found in plugin directory %s: %w", declared, pluginDir, err)
+	}
+
+	return scriptPath, nil
+}
+
+// declaredPluginScript returns the entry script the manifest declares for the
+// current platform, or "" when the manifest declares none (PATH-style plugins).
+func declaredPluginScript(manifest PluginManifest) string {
+	if manifest.Scripts == nil {
+		return ""
+	}
+
+	if runtime.GOOS == "windows" {
+		return manifest.Scripts.Windows
+	}
+
+	return manifest.Scripts.Posix
 }
 
 // FindPluginScript finds the plugin script in the given directory.
