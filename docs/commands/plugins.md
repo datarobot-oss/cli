@@ -221,10 +221,10 @@ Lists plugins discovered by the CLI at startup. Discovery results are cached for
 
 ### Plugin requirements
 
-A plugin is an executable that:
+A plugin comes in one of two styles:
 
-- Is named `dr-*`.
-- Implements `--dr-plugin-manifest` (used to fetch metadata like name, version, and description).
+- **PATH-style**: an executable named `dr-*` on your `PATH` that implements `--dr-plugin-manifest` (used to fetch metadata like name, version, and description).
+- **Managed** (installed via `dr plugin install`): a directory containing a `manifest.json` whose `scripts` block declares the entry script per platform (`posix` / `windows`). The CLI executes the script declared for the current platform. See [Plugin package requirements](../development/plugins.md#plugin-package-requirements) for the full package layout.
 
 ### Plugin discovery
 

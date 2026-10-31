@@ -391,3 +391,72 @@ func TestValidatePluginScript_WithLicense(t *testing.T) {
 
 	assert.NoError(t, err)
 }
+
+func TestValidatePluginScript_UsesDeclaredScript(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: &PluginScripts{
+			Posix:   "dr-test.sh",
+			Windows: "dr-test.ps1",
+		},
+	}
+
+	// Extensionless dr-* binaries that sort ahead of the declared entry script
+	// must be ignored when the manifest declares its scripts (ALIFE-994).
+	createScript(t, filepath.Join(tempDir, "dr-test-linux-x64"), "not a script")
+	createScript(t, filepath.Join(tempDir, "dr-test-macos-arm64"), "not a script")
+
+	data, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	// Write the entry script under the manifest-declared name for this platform.
+	entryScript := filepath.Join(tempDir, "dr-test.sh")
+
+	if runtime.GOOS == "windows" {
+		entryScript = filepath.Join(tempDir, "dr-test.ps1")
+	}
+
+	writeManifestScriptAt(t, entryScript, string(data))
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	assert.NoError(t, err)
+}
+
+func TestValidatePluginScript_DeclaredScriptMissing(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: &PluginScripts{
+			Posix:   "dr-test.sh",
+			Windows: "dr-test.ps1",
+		},
+	}
+
+	// LICENSE.txt present so script resolution is what fails.
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manifest.json declares script")
+}
