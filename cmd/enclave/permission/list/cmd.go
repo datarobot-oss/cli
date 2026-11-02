@@ -31,9 +31,10 @@ func Cmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List who holds a collection-level enclave permission.",
-		Long: `List who has been granted an enclave permission: create by default, or pin
-with --permission pin. Create lists users, groups, and organizations; pin lists
-the users and groups in your organization.
+		Long: `List who has been granted an enclave permission: create by default, pin with
+--permission pin, or Hub access with --permission hub. Create lists users,
+groups, and organizations; pin and hub list the users and groups in your
+organization.
 
 This is the "did my grant land?" view for "dr enclave permission grant".
 "dr enclave permission show" answers only for a single subject, and for a system
@@ -43,12 +44,14 @@ been granted the permission.
 An empty result means nobody has been granted it — note that system
 administrators may create enclaves regardless and so do not appear here.
 
-Create requires a system administrator. --permission pin also works for an org
-admin, and lists their own organization; matching grant and revoke.
+Create requires a system administrator. --permission pin and --permission hub
+also work for an org admin, and list their own organization; matching grant and
+revoke.
 
 Example:
   dr enclave permission list
   dr enclave permission list --permission pin
+  dr enclave permission list --permission hub
   dr enclave permission list --output-format json`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
@@ -73,7 +76,7 @@ Example:
 	outputformat.AddFlag(cmd, &outputFormat)
 
 	cmd.Flags().StringVar(&permission, "permission", enclave.PermissionCreate,
-		"Permission to list holders of: create or pin")
+		"Permission to list holders of: create, pin or hub")
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, _ []string) map[string]any {
 		return map[string]any{
