@@ -460,3 +460,50 @@ func TestValidatePluginScript_DeclaredScriptMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "manifest.json declares script")
 }
+
+func TestValidatePluginScript_PlatformScriptNotConfigured(t *testing.T) {
+	tempDir := t.TempDir()
+
+	scripts := &PluginScripts{
+		Posix:   "dr-test.sh",
+		Windows: "dr-test.ps1",
+	}
+
+	// Leave the current platform's entry empty: validation must hard-error
+	// instead of silently falling back to the dr-* directory scan (ALIFE-994),
+	// mirroring resolvePlatformExecutable's "no script configured" behavior.
+	if runtime.GOOS == "windows" {
+		scripts.Windows = ""
+	} else {
+		scripts.Posix = ""
+	}
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: scripts,
+	}
+
+	// A plugin dir where the dr-* scan would happily find a candidate entry
+	// script; the strict error must still win.
+	otherPlatform := "dr-test.sh"
+
+	if runtime.GOOS == "windows" {
+		otherPlatform = "dr-test.ps1"
+	}
+
+	createScript(t, filepath.Join(tempDir, otherPlatform), "#!/bin/sh\nexit 0\n")
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no script for platform")
+}

@@ -98,7 +98,7 @@ The CLI currently understands the following fields:
   - If no valid credentials exist, the user will be prompted to log in.
   - Respects the global `--skip-auth` flag.
   - Defaults to `false` if omitted.
-- `scripts` (object): For registry-published (managed) plugins, maps platforms to entry script paths inside the package (`posix` / `windows`). The CLI executes the script declared for the current platform, both during packaging validation and at discovery time; a declared script that is missing from the package is a hard error. Omit for PATH-style plugins.
+- `scripts` (object): For registry-published (managed) plugins, maps platforms to entry script paths inside the package (`posix` / `windows`). Both entries are required when the block is present, and the CLI executes the script declared for the current platform, both during packaging validation and at discovery time; a missing entry or a declared script that is absent from the package is a hard error. Omit for PATH-style plugins.
 - `minCLIVersion` (string): Minimum CLI version the plugin supports (informational, used with managed plugins).
 
 ### Notes / recommendations
@@ -348,7 +348,7 @@ A plugin directory must satisfy all of the following for `dr self plugin package
 
 - **`manifest.json`** with at least `name` and `version`. Registry-published (managed) plugins must also declare a `scripts` block (see [Manifest protocol](#manifest-protocol)).
 - **`LICENSE.txt`** at the root of the plugin directory.
-- **Entry scripts** referenced by the manifest's `scripts` block, conventionally named `dr-<name>.sh` (Posix) and `dr-<name>.ps1` (Windows). The declared files must exist in the package; validation executes exactly the one declared for the current platform.
+- **Entry scripts** referenced by the manifest's `scripts` block, conventionally named `dr-<name>.sh` (Posix) and `dr-<name>.ps1` (Windows). When a `scripts` block is present, both `posix` and `windows` entries are required; the declared files must exist in the package, and validation executes exactly the one declared for the current platform.
 - **Bundled binaries must not be `dr-`-prefixed and extensionless.** When a manifest declares no `scripts` block, the CLI falls back to scanning the plugin directory for the first `dr-*` file, and any extensionless `dr-*` file is treated as a candidate entry point. An archive that bundles per-platform binaries (for example `myplugin-linux-amd64`) next to the entry script can therefore make validation execute the wrong file. Name binaries `<name>-<os>-<arch>` without the `dr-` prefix instead; the `opencode` plugin is the reference layout.
 
 The package is **one platform-agnostic archive per version**: the registry format (`index.json`) has a single `url` and `sha256` per version with no per-OS entries. OS selection happens at runtime — the CLI executes the script the manifest declares for the current platform (`scripts.posix` / `scripts.windows`), and that wrapper picks the right bundled binary.

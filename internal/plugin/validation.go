@@ -153,18 +153,23 @@ func validateManifests(expected, actual PluginManifest) error {
 }
 
 // validationScriptPath resolves the plugin entry script to execute for
-// validation. When the manifest declares a platform script (scripts.posix /
-// scripts.windows), that declaration is authoritative: the declared file is
-// used, and a missing file is a hard error rather than a reason to fall back
-// to the name-based scan. The scan accepts any extensionless dr-* file, so on
-// an archive that bundles per-platform binaries it can pick a binary instead
-// of the entry script and fail with "exec format error" (ALIFE-994). Only
-// plugins without a scripts block (PATH-style plugins) fall back to the scan.
+// validation. When the manifest declares a scripts block, that declaration is
+// authoritative: the entry script for the current platform is used, an empty
+// platform entry or a missing file is a hard error rather than a reason to
+// fall back to the name-based scan. The scan accepts any extensionless dr-*
+// file, so on an archive that bundles per-platform binaries it can pick a
+// binary instead of the entry script and fail with "exec format error"
+// (ALIFE-994). Only plugins without a scripts block (PATH-style plugins) fall
+// back to the scan.
 func validationScriptPath(pluginDir string, manifest PluginManifest) (string, error) {
+	if manifest.Scripts == nil {
+		return FindPluginScript(pluginDir, manifest.Name)
+	}
+
 	declared := declaredPluginScript(manifest)
 
 	if declared == "" {
-		return FindPluginScript(pluginDir, manifest.Name)
+		return "", fmt.Errorf("manifest.json declares a scripts block but no script for platform %s", runtime.GOOS)
 	}
 
 	scriptPath := filepath.Join(pluginDir, declared)
@@ -177,7 +182,8 @@ func validationScriptPath(pluginDir string, manifest PluginManifest) (string, er
 }
 
 // declaredPluginScript returns the entry script the manifest declares for the
-// current platform, or "" when the manifest declares none (PATH-style plugins).
+// current platform. Returns "" when the manifest declares no entry for the
+// current platform; callers decide whether that is an error.
 func declaredPluginScript(manifest PluginManifest) string {
 	if manifest.Scripts == nil {
 		return ""
