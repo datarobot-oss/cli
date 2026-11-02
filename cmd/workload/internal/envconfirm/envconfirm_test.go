@@ -111,3 +111,19 @@ func TestAskDelete_AnythingButYesKeepsIt(t *testing.T) {
 		assert.False(t, AskDelete(&strings.Builder{}, strings.NewReader(answer), Policy{Interactive: true})("cred"))
 	}
 }
+
+func TestAskReuseNilWhenNothingToAsk(t *testing.T) {
+	for _, policy := range []Policy{{Yes: true, Interactive: true}, {DryRun: true, Interactive: true}, {}} {
+		assert.Nil(t, AskReuse(&strings.Builder{}, strings.NewReader("y\n"), policy))
+	}
+}
+
+func TestAskReuseParsesAnswers(t *testing.T) {
+	for answer, want := range map[string]bool{"y\n": true, "YES\n": true, "n\n": false, "\n": false, "": false} {
+		out := &strings.Builder{}
+		got := AskReuse(out, strings.NewReader(answer), Policy{Interactive: true})("API_TOKEN", "my-cred", "abc123")
+
+		assert.Equal(t, want, got, "answer %q", answer)
+		assert.Contains(t, out.String(), "abc123")
+	}
+}

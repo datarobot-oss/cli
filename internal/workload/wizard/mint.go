@@ -191,7 +191,7 @@ func isNameTaken(err error) bool {
 func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credential, string) {
 	existing, err := findCredentialFn(name, credentialSearchLimit)
 	if err != nil || existing == nil {
-		return nil, takenReason(name, nil)
+		return nil, takenReason(name, nil, false)
 	}
 
 	if existing.CredentialType != workload.CredentialTypeAPIToken {
@@ -201,8 +201,12 @@ func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credent
 				"credential you have checked holds this value.", name, existing.CredentialID)
 	}
 
-	if reuse == nil || !reuse(envName, name, existing.CredentialID) {
-		return nil, takenReason(name, existing)
+	if reuse == nil {
+		return nil, takenReason(name, existing, false)
+	}
+
+	if !reuse(envName, name, existing.CredentialID) {
+		return nil, takenReason(name, existing, true)
 	}
 
 	if _, err := updateCredentialFn(existing.CredentialID, value); err != nil {
@@ -216,7 +220,7 @@ func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credent
 // takenReason says what to do about a name that is in use. With the holder
 // found it names the id and the exact line to write, because a message that
 // says "paste its id" without the id sends the reader looking for it.
-func takenReason(name string, existing *workload.Credential) string {
+func takenReason(name string, existing *workload.Credential, declined bool) string {
 	if existing == nil {
 		return fmt.Sprintf(
 			"a credential called %q already exists in your organisation, and its value may not be this one. "+
@@ -224,13 +228,17 @@ func takenReason(name string, existing *workload.Credential) string {
 			name, manifest.FileName)
 	}
 
-	return fmt.Sprintf(
+	useAsIs := fmt.Sprintf(
 		"a credential called %q already exists in your organisation (id %s), and its value may not be this one.\n"+
-			"    To use it as it is, set the entry's value to %s%s/%s in %s.\n"+
-			"    To replace its value with the one in %s, run this again where it can ask you.",
+			"    To use it as it is, set the entry's value to %s%s/%s in %s.",
 		name, existing.CredentialID,
-		manifest.CredentialShorthandPrefix, existing.CredentialID, manifest.CredentialKeyWritten, manifest.FileName,
-		EnvFileName)
+		manifest.CredentialShorthandPrefix, existing.CredentialID, manifest.CredentialKeyWritten, manifest.FileName)
+	if declined {
+		return useAsIs
+	}
+
+	return useAsIs + fmt.Sprintf(
+		"\n    To replace its value with the one in %s, run this again where it can ask you.", EnvFileName)
 }
 
 // importReason turns a failure into something worth reading. A name already
