@@ -238,7 +238,8 @@ func takenReason(name string, existing *workload.Credential, declined bool) stri
 	}
 
 	return useAsIs + fmt.Sprintf(
-		"\n    To replace its value with the one in %s, run this again where it can ask you.", EnvFileName)
+		"\n    To replace its value with the one in %s, run 'dr workload config --sync-env' again in a terminal, "+
+			"where it can ask you.", EnvFileName)
 }
 
 // importReason turns a failure into something worth reading. A name already

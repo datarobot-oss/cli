@@ -277,6 +277,8 @@ func TestImportSecrets_TakenNameNamesTheIdWhenNotReused(t *testing.T) {
 			require.Len(t, report.Failed, 1)
 			assert.Contains(t, report.Failed[0].Reason, "66f0aaaa0000000000000009")
 			assert.Contains(t, report.Failed[0].Reason, "dr-credential:66f0aaaa0000000000000009/apiToken")
+			assert.Equal(t, reuse == nil, strings.Contains(report.Failed[0].Reason, "dr workload config --sync-env"),
+				"only a run that was never asked points at the command that asks")
 		})
 	}
 }
