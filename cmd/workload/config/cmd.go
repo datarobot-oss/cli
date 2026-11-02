@@ -306,6 +306,11 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 			Interactive: !asJSON && idargs.CanAsk(cmd),
 			Silent:      asJSON,
 		}),
+		ConfirmDelete: envconfirm.AskDelete(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+			Yes:         f.yes,
+			DryRun:      f.dryRun,
+			Interactive: !asJSON && idargs.CanAsk(cmd),
+		}),
 		JSONOutput: asJSON,
 		Answers:    f.answers,
 		// With the --dir this run was given: this command looks only where it

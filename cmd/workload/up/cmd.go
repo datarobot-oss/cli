@@ -427,6 +427,11 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 			// other way round: it hands the wizard no writer at all under
 			// JSON, so there the table really is absent.
 		}),
+		ConfirmDelete: envconfirm.AskDelete(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
+			Yes:         f.yes,
+			DryRun:      f.dryRun,
+			Interactive: !json && idargs.CanAsk(cmd),
+		}),
 		PollInterval: poll.Interval,
 		PollTimeout:  poll.Timeout,
 		Stderr:       cmd.ErrOrStderr(),

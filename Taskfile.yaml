@@ -100,7 +100,9 @@ tasks:
           chmod +x {{.BIN_DIR}}/lefthook
         fi
     status:
-      - "{{.BIN_DIR}}/golangci-lint --version"
+      # Match the pinned version, not just "runs": a stale binary built with an older Go
+      # fails lint after a go.mod bump, and a bare --version check never reinstalls it.
+      - '{{.BIN_DIR}}/golangci-lint --version | grep -q "version {{trimPrefix "v" .GOLANGCI_LINT_VERSION}} "'
       - "{{.BIN_DIR}}/goreleaser --version"
       - "{{.BIN_DIR}}/jscpd --version"
       - "{{.BIN_DIR}}/lefthook version"

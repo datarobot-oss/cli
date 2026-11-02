@@ -342,14 +342,22 @@ func (a Answers) syncVars(detected Detected) []manifest.EnvVar {
 	out := make([]manifest.EnvVar, 0, len(detected.EnvVars))
 
 	for _, v := range detected.EnvVars {
-		out = append(out, manifest.EnvVar{
-			Name:   v.Name,
-			Value:  v.Value,
-			Secret: v.Kind == EnvSecret,
-		})
+		out = append(out, manifestVar(v.Name, v.Value, v.Kind == EnvSecret))
 	}
 
 	return out
+}
+
+// manifestVar is the manifest's form of one .env entry. The variable the
+// platform fills in itself is declared as such whatever .env holds, because
+// the value there is the deploying user's own token and the workload is given
+// one made for it; every other entry is a literal or a credential reference.
+func manifestVar(name, value string, secret bool) manifest.EnvVar {
+	if name == manifest.APIKeyEnvName {
+		return manifest.EnvVar{Name: name, APIKey: true}
+	}
+
+	return manifest.EnvVar{Name: name, Value: value, Secret: secret}
 }
 
 // envVars is the .env listing a fresh manifest will carry: everything the
@@ -369,11 +377,7 @@ func (a Answers) envVars(detected Detected) []manifest.EnvVar {
 			continue
 		}
 
-		out = append(out, manifest.EnvVar{
-			Name:   v.Name,
-			Value:  v.Value,
-			Secret: v.Kind == EnvSecret,
-		})
+		out = append(out, manifestVar(v.Name, v.Value, v.Kind == EnvSecret))
 	}
 
 	return out
