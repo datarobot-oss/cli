@@ -416,14 +416,12 @@ func TestValidatePluginScript_UsesDeclaredScript(t *testing.T) {
 	data, err := json.Marshal(manifest)
 	require.NoError(t, err)
 
-	// Write the entry script under the manifest-declared name for this platform.
-	entryScript := filepath.Join(tempDir, "dr-test.sh")
+	// Write the entry scripts under the manifest-declared names. Both platforms
+	// are written: packages are platform-agnostic, and validation now requires
+	// both declared scripts on disk.
+	writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.sh"), string(data))
 
-	if runtime.GOOS == "windows" {
-		entryScript = filepath.Join(tempDir, "dr-test.ps1")
-	}
-
-	writeManifestScriptAt(t, entryScript, string(data))
+	writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.ps1"), string(data))
 
 	licensePath := filepath.Join(tempDir, "LICENSE.txt")
 	err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
@@ -505,5 +503,45 @@ func TestValidatePluginScript_PlatformScriptNotConfigured(t *testing.T) {
 	err = ValidatePluginScript(tempDir, manifest)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no script for platform")
+	assert.Contains(t, err.Error(), "declares a scripts block but no")
+}
+
+func TestValidatePluginScript_OtherPlatformScriptMissing(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: &PluginScripts{
+			Posix:   "dr-test.sh",
+			Windows: "dr-test.ps1",
+		},
+	}
+
+	// Only the current platform's script is on disk. The package is a single
+	// platform-agnostic artifact, so packaging must fail even though the
+	// current platform would validate fine.
+	current := filepath.Join(tempDir, "dr-test.sh")
+
+	if runtime.GOOS == "windows" {
+		current = filepath.Join(tempDir, "dr-test.ps1")
+	}
+
+	data, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	writeManifestScriptAt(t, current, string(data))
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manifest.json declares script")
 }

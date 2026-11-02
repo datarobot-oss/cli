@@ -154,31 +154,39 @@ func validateManifests(expected, actual PluginManifest) error {
 
 // validationScriptPath resolves the plugin entry script to execute for
 // validation. When the manifest declares a scripts block, that declaration is
-// authoritative: the entry script for the current platform is used, an empty
-// platform entry or a missing file is a hard error rather than a reason to
-// fall back to the name-based scan. The scan accepts any extensionless dr-*
-// file, so on an archive that bundles per-platform binaries it can pick a
-// binary instead of the entry script and fail with "exec format error"
-// (ALIFE-994). Only plugins without a scripts block (PATH-style plugins) fall
-// back to the scan.
+// authoritative: BOTH platform entry scripts must be declared and on disk.
+// The package is a single platform-agnostic artifact, so a packager on any
+// host must not be able to publish an archive that is a corrupt managed
+// plugin on another platform. An empty entry or a missing file is a hard
+// error rather than a reason to fall back to the name-based scan. The scan
+// accepts any extensionless dr-* file, so on an archive that bundles
+// per-platform binaries it can pick a binary instead of the entry script and
+// fail with "exec format error" (ALIFE-994). Only plugins without a scripts
+// block (PATH-style plugins) fall back to the scan.
 func validationScriptPath(pluginDir string, manifest PluginManifest) (string, error) {
 	if manifest.Scripts == nil {
 		return FindPluginScript(pluginDir, manifest.Name)
 	}
 
-	declared := declaredPluginScript(manifest)
+	// Check both platform entries in a fixed order so the reported error is
+	// deterministic when more than one is broken.
+	for _, s := range []struct{ platform, script string }{
+		{"posix", manifest.Scripts.Posix},
+		{"windows", manifest.Scripts.Windows},
+	} {
+		if s.script == "" {
+			return "", fmt.Errorf("manifest.json declares a scripts block but no %s script", s.platform)
+		}
 
-	if declared == "" {
-		return "", fmt.Errorf("manifest.json declares a scripts block but no script for platform %s", runtime.GOOS)
+		scriptPath := filepath.Join(pluginDir, s.script)
+
+		if _, err := os.Stat(scriptPath); err != nil {
+			return "", fmt.Errorf("manifest.json declares script %q but it was not found in plugin directory %s: %w", s.script, pluginDir, err)
+		}
 	}
 
-	scriptPath := filepath.Join(pluginDir, declared)
-
-	if _, err := os.Stat(scriptPath); err != nil {
-		return "", fmt.Errorf("manifest.json declares script %q but it was not found in plugin directory %s: %w", declared, pluginDir, err)
-	}
-
-	return scriptPath, nil
+	// Both platform scripts verified; execute the one for this platform.
+	return filepath.Join(pluginDir, declaredPluginScript(manifest)), nil
 }
 
 // declaredPluginScript returns the entry script the manifest declares for the

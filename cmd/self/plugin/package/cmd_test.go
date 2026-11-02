@@ -68,28 +68,28 @@ func writePackagableFixture(t *testing.T, declaredVersion string) (string, strin
 		require.NoError(t, os.WriteFile(filepath.Join(pluginDir, bin), []byte("not a script"), 0o755))
 	}
 
-	// The entry script echoes the manifest the package claims to ship.
+	// The entry scripts echo the manifest the package claims to ship. Both
+	// platforms are written: packages are platform-agnostic, and validation
+	// requires both declared scripts on disk.
 	echoVersion := version
 
 	if declaredVersion != "" {
 		echoVersion = declaredVersion
 	}
 
-	script := "#!/bin/sh\n" +
+	shScript := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"--dr-plugin-manifest\" ]; then\n" +
 		"  echo '{\"name\":\"" + name + "\",\"version\":\"" + echoVersion + "\",\"description\":\"" + description + "\",\"authentication\":true}'\n" +
 		"  exit 0\n" +
 		"fi\n"
 
-	if runtime.GOOS == "windows" {
-		script = "if ($args[0] -eq '--dr-plugin-manifest') {\n" +
-			"  Write-Output '{\"name\":\"" + name + "\",\"version\":\"" + echoVersion + "\",\"description\":\"" + description + "\",\"authentication\":true}'\n" +
-			"}\n"
+	ps1Script := "if ($args[0] -eq '--dr-plugin-manifest') {\n" +
+		"  Write-Output '{\"name\":\"" + name + "\",\"version\":\"" + echoVersion + "\",\"description\":\"" + description + "\",\"authentication\":true}'\n" +
+		"}\n"
 
-		require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "dr-pkgtest.ps1"), []byte(script), 0o755))
-	} else {
-		require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "dr-pkgtest.sh"), []byte(script), 0o755))
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "dr-pkgtest.sh"), []byte(shScript), 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "dr-pkgtest.ps1"), []byte(ps1Script), 0o755))
 
 	return pluginDir, outDir
 }
