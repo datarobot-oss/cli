@@ -396,10 +396,10 @@
           "releaseDate": "2026-08-28"
         },
         {
-          "version": "0.6.0",
-          "url": "codespace/codespace-0.6.0.tar.xz",
-          "sha256": "4ac8ac2350ecd9fe52b3098bc04f94efbd8e374915928ed6f204b974ba4ebd11",
-          "releaseDate": "2026-10-19"
+          "version": "0.6.1",
+          "url": "codespace/codespace-0.6.1.tar.xz",
+          "sha256": "258b7816d9b2e40008521863b1f6d5b42688d7fad7466b021090e2122519c4cc",
+          "releaseDate": "2026-11-03"
         }
       ]
     }
