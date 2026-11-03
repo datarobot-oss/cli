@@ -36,6 +36,13 @@ const createAccessPath = "/createAccess"
 // (enclave_pin_collection) and is independent of create: neither implies the other.
 const pinAccessPath = "/pinAccess"
 
+// accessPath is the one endpoint for every collection-level permission, picked by a
+// permission parameter: GET /api/v2/enclaves/access?permission=hub and PATCH
+// /api/v2/enclaves/access with "permission" in the body. Hub access is only served
+// there; create and pin still use their own paths, so the CLI keeps working against
+// servers that predate it.
+const accessPath = "/access"
+
 // Operations accepted by the createAccess endpoint.
 const (
 	operationGrant  = "grant"
@@ -53,10 +60,19 @@ const PermissionCreate = "create"
 // case allows and the user can deploy to.
 const PermissionPin = "pin"
 
-// createAccessUpdate is the PATCH body (server EnclaveCreateAccessRequest).
+// PermissionHub is the user-facing name of the permission that allows running
+// workloads on the Hub (server: CAN_DEPLOY on hub_collection). The server only checks
+// it when the organization requires a use case (WORKLOAD_REQUIRE_USE_CASE): a workload
+// in a use case without Enclaves runs on the Hub and needs it. Like pin, it is granted
+// to users and groups, not organizations.
+const PermissionHub = "hub"
+
+// createAccessUpdate is the PATCH body (server EnclaveCreateAccessRequest, and
+// EnclaveAccessRequest on /access, which also takes the permission).
 // The endpoint identifies recipients by id only — there is no username form, so
 // users must be named with their DataRobot user id.
 type createAccessUpdate struct {
+	Permission         string `json:"permission,omitempty"`
 	Operation          string `json:"operation"`
 	ShareRecipientType string `json:"shareRecipientType"`
 	ID                 string `json:"id"`
@@ -69,8 +85,11 @@ func ParsePermission(value string) (string, error) {
 		return PermissionCreate, nil
 	case PermissionPin:
 		return PermissionPin, nil
+	case PermissionHub:
+		return PermissionHub, nil
 	default:
-		return "", fmt.Errorf("invalid permission %q: the supported permissions are create and pin", value)
+		return "", fmt.Errorf(
+			"invalid permission %q: the supported permissions are create, pin and hub", value)
 	}
 }
 
@@ -126,13 +145,16 @@ func RecipientTypeByIDOf(userID, group, org string) (string, bool) {
 }
 
 // collectionAccessPath is the sub-resource that grants, revokes and lists the
-// named permission ("create" or "pin").
+// named permission ("create", "pin" or "hub").
 func collectionAccessPath(permission string) string {
-	if permission == PermissionPin {
+	switch permission {
+	case PermissionPin:
 		return basePath + pinAccessPath
+	case PermissionHub:
+		return basePath + accessPath
+	default:
+		return basePath + createAccessPath
 	}
-
-	return basePath + createAccessPath
 }
 
 // updateCreateAccess PATCHes a grant or revoke of the create permission for the
@@ -164,6 +186,18 @@ func updatePinAccess(operation string, r Recipient) error {
 	return err
 }
 
+// updateHubAccess PATCHes a grant or revoke of Hub access. Like pin it is granted to
+// users and groups, by id; the server refuses organizations with a 422, so fail before
+// sending the request.
+func updateHubAccess(operation string, r Recipient) error {
+	if (r.Type != RecipientUser && r.Type != RecipientGroup) || r.ID == "" {
+		return errors.New(
+			"Hub access is granted to users and groups only: use --user-id or --group")
+	}
+
+	return updateCollectionAccess(PermissionHub, operation, r)
+}
+
 func updateCollectionAccess(permission, operation string, r Recipient) error {
 	// Named endpoint, not url: the net/url package is imported in this file.
 	endpoint, err := config.GetEndpointURL(collectionAccessPath(permission))
@@ -176,8 +210,16 @@ func updateCollectionAccess(permission, operation string, r Recipient) error {
 		ShareRecipientType: r.Type,
 		ID:                 r.ID,
 	}
+	if permission == PermissionHub {
+		body.Permission = PermissionHub
+	}
 
-	return pinUnsupportedHint(permission, drapi.PatchJSON(endpoint, "enclave", body, nil))
+	err = drapi.PatchJSON(endpoint, "enclave", body, nil)
+	if permission == PermissionHub {
+		return hubUnsupportedHint(err)
+	}
+
+	return pinUnsupportedHint(permission, err)
 }
 
 // errPinUnsupported explains a 404 on the pin endpoint: the server predates
@@ -185,6 +227,33 @@ func updateCollectionAccess(permission, operation string, r Recipient) error {
 var errPinUnsupported = errors.New(
 	"this server doesn't support the enclave pin permission yet; " +
 		"it needs a covalent-cloud-server with /api/v2/enclaves/pinAccess")
+
+// errHubUnsupported explains a server that predates /enclaves/access, where Hub
+// access is served: there the path reads as an enclave id, so a list gets a 422 about
+// enclave_id and a grant or revoke a 405 (or a plain 404 from a proxy).
+var errHubUnsupported = errors.New(
+	"this server doesn't support Hub access yet; " +
+		"it needs a covalent-cloud-server with /api/v2/enclaves/access")
+
+// hubUnsupportedHint adds errHubUnsupported to the answers an older server gives for
+// /enclaves/access. Any other error, such as a 403 or a 422 about the recipient, passes
+// through unchanged. The original *drapi.HTTPError stays reachable through errors.As.
+func hubUnsupportedHint(err error) error {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return err
+	}
+
+	switch {
+	case httpErr.StatusCode == http.StatusMethodNotAllowed,
+		httpErr.StatusCode == http.StatusNotFound && routeMissing(httpErr.Body),
+		httpErr.StatusCode == http.StatusUnprocessableEntity &&
+			strings.Contains(string(httpErr.Body), "enclave_id"):
+		return fmt.Errorf("%w: %w", errHubUnsupported, err)
+	default:
+		return err
+	}
+}
 
 // errPinGroupUnsupported explains a 422 for a group recipient from a server that
 // still grants the pin permission to users only.
@@ -257,22 +326,41 @@ func RevokePinPermission(r Recipient) error {
 	return updatePinAccess(operationRevoke, r)
 }
 
-// GrantCollectionPermission grants the named permission ("create" or "pin").
-func GrantCollectionPermission(permission string, r Recipient) error {
-	if permission == PermissionPin {
-		return GrantPinPermission(r)
-	}
-
-	return GrantCreatePermission(r)
+// GrantHubPermission allows the user, or a group's members, to run workloads on the
+// Hub when their organization requires a use case.
+func GrantHubPermission(r Recipient) error {
+	return updateHubAccess(operationGrant, r)
 }
 
-// RevokeCollectionPermission revokes the named permission ("create" or "pin").
-func RevokeCollectionPermission(permission string, r Recipient) error {
-	if permission == PermissionPin {
-		return RevokePinPermission(r)
-	}
+// RevokeHubPermission withdraws the recipient's Hub access. A no-op server-side when
+// the recipient doesn't hold it. A group member who also holds a grant of their own
+// keeps Hub access.
+func RevokeHubPermission(r Recipient) error {
+	return updateHubAccess(operationRevoke, r)
+}
 
-	return RevokeCreatePermission(r)
+// GrantCollectionPermission grants the named permission ("create", "pin" or "hub").
+func GrantCollectionPermission(permission string, r Recipient) error {
+	switch permission {
+	case PermissionPin:
+		return GrantPinPermission(r)
+	case PermissionHub:
+		return GrantHubPermission(r)
+	default:
+		return GrantCreatePermission(r)
+	}
+}
+
+// RevokeCollectionPermission revokes the named permission ("create", "pin" or "hub").
+func RevokeCollectionPermission(permission string, r Recipient) error {
+	switch permission {
+	case PermissionPin:
+		return RevokePinPermission(r)
+	case PermissionHub:
+		return RevokeHubPermission(r)
+	default:
+		return RevokeCreatePermission(r)
+	}
 }
 
 // permissionsSuffix is the effective-permissions sub-resource on an enclave:
@@ -388,13 +476,18 @@ func ListCreateAccess() ([]CreateAccessHolder, error) {
 	return ListCollectionAccess(PermissionCreate)
 }
 
-// ListCollectionAccess returns who holds the named permission ("create" or
-// "pin"). For pin the server lists the users and groups in the caller's
+// ListCollectionAccess returns who holds the named permission ("create", "pin" or
+// "hub"). For pin and hub the server lists the users and groups in the caller's
 // organization.
-// Create is listed for system administrators; pin for system administrators
+// Create is listed for system administrators; pin and hub for system administrators
 // and org admins.
 func ListCollectionAccess(permission string) ([]CreateAccessHolder, error) {
-	endpoint, err := config.GetEndpointURL(collectionAccessPath(permission))
+	path := collectionAccessPath(permission)
+	if permission == PermissionHub {
+		path += "?permission=" + url.QueryEscape(PermissionHub)
+	}
+
+	endpoint, err := config.GetEndpointURL(path)
 	if err != nil {
 		return nil, err
 	}
@@ -403,6 +496,10 @@ func ListCollectionAccess(permission string) ([]CreateAccessHolder, error) {
 
 	err = drapi.GetJSON(endpoint, "enclave "+permission+" access", &holders)
 	if err != nil {
+		if permission == PermissionHub {
+			return nil, hubUnsupportedHint(err)
+		}
+
 		return nil, pinUnsupportedHint(permission, err)
 	}
 

@@ -25,11 +25,11 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "permission",
-		Short: "Inspect and manage who can create enclaves or pin workloads.",
+		Short: "Inspect and manage who can create enclaves, pin workloads or use the Hub.",
 		Long: `Inspect ("show", "list") or manage ("grant", "revoke") collection-level enclave
 permissions — capabilities that are not tied to any single enclave.
 
-There are two, and they are independent (neither implies the other):
+There are three, and they are independent (none implies another):
   create   the right to register a new enclave. A system administrator grants
            it to org admins and other users, so that creating enclaves is
            delegated as a permission rather than inferred from a role.
@@ -39,13 +39,18 @@ There are two, and they are independent (neither implies the other):
            (any user or group) or an org admin (users and groups in their own
            organization). A group grant lets its members pin. A system
            administrator also needs a pin grant to pin.
+  hub      the right to run workloads on the Hub. Checked only when the
+           organization requires a use case: a workload in a use case without
+           Enclaves runs on the Hub and needs it. Granted like pin: to users and
+           groups, by a system administrator or an org admin in their own
+           organization.
 
 Use "dr enclave access" instead to manage access to an existing enclave.
 
 These commands take effect only when the server has ENCLAVE_RBAC_ENABLED=true;
-otherwise the call succeeds but changes nothing. Granting and revoking create
-require a system administrator; pin can also be managed by an org admin, for
-users and groups in their own organization.`,
+otherwise create and pin succeed but change nothing, and hub is refused. Granting
+and revoking create require a system administrator; pin and hub can also be
+managed by an org admin, for users and groups in their own organization.`,
 	}
 
 	cmd.AddCommand(
