@@ -486,15 +486,13 @@ func TestValidatePluginScript_PlatformScriptNotConfigured(t *testing.T) {
 		Scripts: scripts,
 	}
 
-	// A plugin dir where the dr-* scan would happily find a candidate entry
-	// script; the strict error must still win.
-	otherPlatform := "dr-test.sh"
+	// Both declared scripts exist on disk, so the missing-file check passes
+	// for whichever platform is checked first on this host; the only defect is
+	// the current platform's empty entry, which must hard-error rather than
+	// fall back to the dr-* scan.
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "dr-test.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
 
-	if runtime.GOOS == "windows" {
-		otherPlatform = "dr-test.ps1"
-	}
-
-	createScript(t, filepath.Join(tempDir, otherPlatform), "#!/bin/sh\nexit 0\n")
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "dr-test.ps1"), []byte("exit 0\n"), 0o755))
 
 	licensePath := filepath.Join(tempDir, "LICENSE.txt")
 	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
