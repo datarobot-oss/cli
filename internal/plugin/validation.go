@@ -157,19 +157,19 @@ func validateManifests(expected, actual PluginManifest) error {
 // authoritative: BOTH platform entry scripts must be declared and on disk.
 // The package is a single platform-agnostic artifact, so a packager on any
 // host must not be able to publish an archive that is a corrupt managed
-// plugin on another platform. An empty entry or a missing file is a hard
-// error rather than a reason to fall back to the name-based scan. The scan
-// accepts any extensionless dr-* file, so on an archive that bundles
-// per-platform binaries it can pick a binary instead of the entry script and
-// fail with "exec format error" (ALIFE-994). Only plugins without a scripts
-// block (PATH-style plugins) fall back to the scan.
+// plugin on another platform. Both entries are checked in a fixed
+// posix-then-windows order: the reported error depends only on the manifest
+// and package contents, never on the OS running the packaging. An empty entry
+// or a missing file is a hard error rather than a reason to fall back to the
+// name-based scan. The scan accepts any extensionless dr-* file, so on an
+// archive that bundles per-platform binaries it can pick a binary instead of
+// the entry script and fail with "exec format error" (ALIFE-994). Only
+// plugins without a scripts block (PATH-style plugins) fall back to the scan.
 func validationScriptPath(pluginDir string, manifest PluginManifest) (string, error) {
 	if manifest.Scripts == nil {
 		return FindPluginScript(pluginDir, manifest.Name)
 	}
 
-	// Check both platform entries in a fixed order so the reported error is
-	// deterministic when more than one is broken.
 	for _, s := range []struct{ platform, script string }{
 		{"posix", manifest.Scripts.Posix},
 		{"windows", manifest.Scripts.Windows},

@@ -460,48 +460,60 @@ func TestValidatePluginScript_DeclaredScriptMissing(t *testing.T) {
 }
 
 func TestValidatePluginScript_PlatformScriptNotConfigured(t *testing.T) {
-	tempDir := t.TempDir()
-
-	scripts := &PluginScripts{
-		Posix:   "dr-test.sh",
-		Windows: "dr-test.ps1",
-	}
-
-	// Leave the current platform's entry empty: validation must hard-error
-	// instead of silently falling back to the dr-* directory scan (ALIFE-994),
-	// mirroring resolvePlatformExecutable's "no script configured" behavior.
-	if runtime.GOOS == "windows" {
-		scripts.Windows = ""
-	} else {
-		scripts.Posix = ""
-	}
-
-	manifest := PluginManifest{
-		BasicPluginManifest: BasicPluginManifest{
-			Name:           "test",
-			Version:        "1.0.0",
-			Description:    "Test plugin",
-			Authentication: true,
+	tests := []struct {
+		name        string
+		scripts     *PluginScripts
+		wantErrText string
+	}{
+		{
+			name:        "posix entry blank",
+			scripts:     &PluginScripts{Posix: "", Windows: "dr-test.ps1"},
+			wantErrText: "no posix script",
 		},
-		Scripts: scripts,
+		{
+			name:        "windows entry blank",
+			scripts:     &PluginScripts{Posix: "dr-test.sh", Windows: ""},
+			wantErrText: "no windows script",
+		},
 	}
 
-	// Both declared scripts exist on disk, so the missing-file check passes
-	// for whichever platform is checked first on this host; the only defect is
-	// the current platform's empty entry, which must hard-error rather than
-	// fall back to the dr-* scan.
-	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "dr-test.sh"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
 
-	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "dr-test.ps1"), []byte("exit 0\n"), 0o755))
+			manifest := PluginManifest{
+				BasicPluginManifest: BasicPluginManifest{
+					Name:           "test",
+					Version:        "1.0.0",
+					Description:    "Test plugin",
+					Authentication: true,
+				},
+				Scripts: tt.scripts,
+			}
 
-	licensePath := filepath.Join(tempDir, "LICENSE.txt")
-	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
-	require.NoError(t, err)
+			// Both declared scripts exist on disk; the empty entry is the only
+			// defect under test.
+			data, err := json.Marshal(manifest)
+			require.NoError(t, err)
 
-	err = ValidatePluginScript(tempDir, manifest)
+			writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.sh"), string(data))
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "declares a scripts block but no")
+			writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.ps1"), string(data))
+
+			// An extensionless dr-* file the fallback scan would accept; the
+			// strict error must still win.
+			createScript(t, filepath.Join(tempDir, "dr-test-decoy"), "not a script")
+
+			licensePath := filepath.Join(tempDir, "LICENSE.txt")
+			err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+			require.NoError(t, err)
+
+			err = ValidatePluginScript(tempDir, manifest)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErrText)
+		})
+	}
 }
 
 func TestValidatePluginScript_OtherPlatformScriptMissing(t *testing.T) {
