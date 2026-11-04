@@ -342,6 +342,11 @@ func (a Answers) syncVars(detected Detected) []manifest.EnvVar {
 	out := make([]manifest.EnvVar, 0, len(detected.EnvVars))
 
 	for _, v := range detected.EnvVars {
+		// A rule, not a guess: the pod's endpoint is the platform's to set.
+		if v.Name == platformEndpointEnvName {
+			continue
+		}
+
 		out = append(out, manifestVar(v.Name, v.Value, v.Kind == EnvSecret))
 	}
 

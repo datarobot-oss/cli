@@ -177,11 +177,20 @@ func evidentSecret(value string) (string, bool) {
 	return "", false
 }
 
+// platformEndpointEnvName is the one the platform sets itself on the pod.
+const platformEndpointEnvName = "DATAROBOT_ENDPOINT"
+
 func classify(name, value string) EnvVar {
 	// Said here so the table tells the truth: the entry is written as the
 	// workload's own key, whatever the secret signals below would conclude.
 	if name == manifest.APIKeyEnvName {
 		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "replaced by the workload's own key (source: api-key)"}
+	}
+
+	// The pod is given the platform's internal endpoint; the one a developer's
+	// machine reaches the platform through must not replace it.
+	if name == platformEndpointEnvName {
+		return EnvVar{Name: name, Kind: EnvLocal, Value: value, Reason: "the platform gives the pod its own endpoint"}
 	}
 
 	for _, signal := range secretValuePatterns {
