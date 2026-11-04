@@ -481,11 +481,20 @@ func envVars(path string) ([]EnvVar, error) {
 
 	classified := make([]EnvVar, 0, len(values))
 	for _, name := range orderedKeys(text, values) {
+		if name == platformEndpointEnvName {
+			continue
+		}
+
 		classified = append(classified, ClassifyEnv(name, values[name]))
 	}
 
 	return classified, nil
 }
+
+// platformEndpointEnvName is never carried from .env: the pod is given the
+// platform's internal endpoint, which must not be overwritten by the one a
+// developer's machine reaches the platform through.
+const platformEndpointEnvName = "DATAROBOT_ENDPOINT"
 
 // parseProblem says why a .env would not parse without repeating any of it.
 // The parser reports the unparsed remainder of the input as part of its

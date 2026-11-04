@@ -124,6 +124,18 @@ func TestDetect_ReadsEnvKeyNamesInOrder(t *testing.T) {
 	assert.True(t, detected.HasEnvFile())
 }
 
+// The pod runs against the platform's internal endpoint, so the one in .env is
+// never imported, by setup or by a sync.
+func TestDetect_SkipsDataRobotEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	writeEnv(t, dir, "DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2\nLOG_LEVEL=debug\n")
+
+	detected := Detect(dir)
+
+	require.Len(t, detected.EnvVars, 1)
+	assert.Equal(t, "LOG_LEVEL", detected.EnvVars[0].Name)
+}
+
 func TestDetect_NoEnvFileIsSilent(t *testing.T) {
 	detected := Detect(t.TempDir())
 
