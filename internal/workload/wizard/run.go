@@ -1476,7 +1476,7 @@ func (o Options) storeSecrets(
 		return vars
 	}
 
-	stored, report := importSecrets(vars, detected, workloadName, o.ConfirmReuse)
+	stored, report := importSecrets(vars, detected, workloadName, o.ConfirmReuse, o.remedy("--sync-env"))
 
 	reportImport(o.Stderr, report, keepsPlaceholder)
 

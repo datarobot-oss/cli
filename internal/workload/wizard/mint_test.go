@@ -234,7 +234,7 @@ func importTakenName(reuse ReuseFunc) ([]manifest.EnvVar, Import) {
 	return importSecrets(
 		[]manifest.EnvVar{{Name: "API_TOKEN", Secret: true}},
 		Detected{EnvVars: []EnvVar{{Name: "API_TOKEN", Kind: EnvSecret, Value: "shhh"}}},
-		"my-app", reuse,
+		"my-app", reuse, "'dr workload config --sync-env'",
 	)
 }
 
@@ -277,7 +277,7 @@ func TestImportSecrets_TakenNameNamesTheIdWhenNotReused(t *testing.T) {
 			require.Len(t, report.Failed, 1)
 			assert.Contains(t, report.Failed[0].Reason, "66f0aaaa0000000000000009")
 			assert.Contains(t, report.Failed[0].Reason, "dr-credential:66f0aaaa0000000000000009/apiToken")
-			assert.Equal(t, reuse == nil, strings.Contains(report.Failed[0].Reason, "dr workload config --sync-env"),
+			assert.Equal(t, reuse == nil, strings.Contains(report.Failed[0].Reason, "run 'dr workload config --sync-env' again in a terminal"),
 				"only a run that was never asked points at the command that asks")
 		})
 	}
@@ -336,7 +336,7 @@ func TestImportSecrets_NoValueIsReportedNotSent(t *testing.T) {
 	vars, report := importSecrets(
 		[]manifest.EnvVar{{Name: "API_TOKEN", Secret: true}},
 		Detected{EnvVars: []EnvVar{{Name: "API_TOKEN", Kind: EnvSecret, Value: ""}}},
-		"my-app", nil,
+		"my-app", nil, "'dr workload config --sync-env'",
 	)
 
 	assert.Empty(t, *stored)
@@ -354,7 +354,7 @@ func TestImportSecrets_AlreadyStoredIsLeftAlone(t *testing.T) {
 	vars, report := importSecrets(
 		[]manifest.EnvVar{{Name: "API_TOKEN", Secret: true, CredentialID: "66f0aaaa0000000000000001"}},
 		Detected{EnvVars: []EnvVar{{Name: "API_TOKEN", Kind: EnvSecret, Value: "shhh"}}},
-		"my-app", nil,
+		"my-app", nil, "'dr workload config --sync-env'",
 	)
 
 	assert.Empty(t, *stored)
@@ -480,4 +480,13 @@ func ownedCredential(t *testing.T, name string) {
 	}
 
 	t.Cleanup(func() { getCredentialFn = original })
+}
+
+// The re-run hint names the command the reader ran, so a piped `up` is not
+// sent to `config`.
+func TestTakenReason_NamesTheCommandTheReaderRan(t *testing.T) {
+	reason := takenReason("my-app/API_TOKEN", apiTokenCredential(), false, "'dr workload up --sync-env'")
+
+	assert.Contains(t, reason, "run 'dr workload up --sync-env' again in a terminal")
+	assert.NotContains(t, reason, "dr workload config")
 }

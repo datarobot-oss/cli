@@ -77,7 +77,7 @@ func (i Import) Any() bool {
 // that holds it is looked up, and reuse (nil means never) is asked whether to
 // point the variable at it and replace its value with the one in .env.
 func importSecrets(
-	vars []manifest.EnvVar, detected Detected, workloadName string, reuse ReuseFunc,
+	vars []manifest.EnvVar, detected Detected, workloadName string, reuse ReuseFunc, rerun string,
 ) ([]manifest.EnvVar, Import) {
 	values := secretValues(detected)
 	out := make([]manifest.EnvVar, len(vars))
@@ -106,7 +106,7 @@ func importSecrets(
 
 		cred, err := createCredentialFn(name, value)
 		if isNameTaken(err) {
-			reused, reason := reuseTaken(v.Name, name, value, reuse)
+			reused, reason := reuseTaken(v.Name, name, value, reuse, rerun)
 			if reused == nil {
 				report.Failed = append(report.Failed, ImportFailure{Name: v.Name, Reason: reason})
 
@@ -188,10 +188,10 @@ func isNameTaken(err error) bool {
 // Only an API-token credential is ever overwritten: that is the one shape this
 // CLI writes, and the store is tenant-wide, so a same-named credential of
 // another type belongs to somebody else's use.
-func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credential, string) {
+func reuseTaken(envName, name, value string, reuse ReuseFunc, rerun string) (*workload.Credential, string) {
 	existing, err := findCredentialFn(name, credentialSearchLimit)
 	if err != nil || existing == nil {
-		return nil, takenReason(name, nil, false)
+		return nil, takenReason(name, nil, false, rerun)
 	}
 
 	if existing.CredentialType != workload.CredentialTypeAPIToken {
@@ -202,11 +202,11 @@ func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credent
 	}
 
 	if reuse == nil {
-		return nil, takenReason(name, existing, false)
+		return nil, takenReason(name, existing, false, rerun)
 	}
 
 	if !reuse(envName, name, existing.CredentialID) {
-		return nil, takenReason(name, existing, true)
+		return nil, takenReason(name, existing, true, rerun)
 	}
 
 	if _, err := updateCredentialFn(existing.CredentialID, value); err != nil {
@@ -217,10 +217,11 @@ func reuseTaken(envName, name, value string, reuse ReuseFunc) (*workload.Credent
 	return existing, ""
 }
 
-// takenReason says what to do about a name that is in use. With the holder
+// takenReason says what to do about a name that is in use. rerun is the quoted
+// command that offers the replacement, the one the reader ran. With the holder
 // found it names the id and the exact line to write, because a message that
 // says "paste its id" without the id sends the reader looking for it.
-func takenReason(name string, existing *workload.Credential, declined bool) string {
+func takenReason(name string, existing *workload.Credential, declined bool, rerun string) string {
 	if existing == nil {
 		return fmt.Sprintf(
 			"a credential called %q already exists in your organisation, and its value may not be this one. "+
@@ -238,8 +239,8 @@ func takenReason(name string, existing *workload.Credential, declined bool) stri
 	}
 
 	return useAsIs + fmt.Sprintf(
-		"\n    To replace its value with the one in %s, run 'dr workload config --sync-env' again in a terminal, "+
-			"where it can ask you.", EnvFileName)
+		"\n    To replace its value with the one in %s, run %s again in a terminal, "+
+			"where it can ask you.", EnvFileName, rerun)
 }
 
 // importReason turns a failure into something worth reading. A name already
