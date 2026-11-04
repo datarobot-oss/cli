@@ -68,12 +68,13 @@ jobs:
               - 'Taskfile.yaml'
               - '.github/workflows/pr-checks.yaml'
               - '.github/actions/setup/**'
-            # Re-run the lint job when the lint tooling itself changes, so a PR
-            # that only touches the Taskfile / golangci config still gets its
-            # lint behaviour validated (CFX-7138).
+            # Re-run the lint job when the lint or dupcheck tooling itself
+            # changes, so a PR that only touches the Taskfile / golangci /
+            # jscpd config still gets its behaviour validated (CFX-7138).
             lint_config:
               - 'Taskfile.yaml'
               - '.golangci.yaml'
+              - '.jscpd.json'
               - '.github/workflows/pr-checks.yaml'
               - '.github/actions/setup/**'
 
@@ -88,7 +89,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      actions: write   # actions/cache (save)
+      actions: write   # actions/cache (save), upload-artifact (jscpd report)
 
     steps:
       - name: Checkout Code
@@ -118,6 +119,23 @@ jobs:
       - name: Run all checks
         run: |
           task lint
+
+      # Duplicate-code detection. Not part of the lefthook pre-commit hook
+      # (kept fast); CI is the enforcement point. Fails on the percentage
+      # threshold in .jscpd.json or when the clone count exceeds
+      # JSCPD_CLONE_LIMIT in Taskfile.yaml.
+      - name: Check for duplicate code (jscpd)
+        run: task dupcheck
+
+      # Upload even on failure so reviewers can inspect what duplicated when
+      # the check above fails.
+      - name: Upload duplicate-code report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: jscpd-report
+          path: tmp/jscpd-report
+          retention-days: 7
 
   test:
     needs: detect-changes
