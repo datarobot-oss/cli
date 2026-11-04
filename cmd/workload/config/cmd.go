@@ -19,6 +19,7 @@
 package config
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -286,6 +287,12 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		stderr = nil
 	}
 
+	interactive := !asJSON && idargs.CanAsk(cmd)
+
+	// One reader for all three prompts: a reader per prompt loses what the
+	// previous one buffered, which is an answer typed ahead for the next.
+	stdin := bufio.NewReader(cmd.InOrStdin())
+
 	result, err := wizard.Run(wizard.Options{
 		Dir:            dir,
 		NonInteractive: yes || asJSON,
@@ -295,7 +302,7 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 		// f.yes rather than the merged signal: the environment variable that
 		// suppresses wizards in CI is not consent to overwrite a value on the
 		// tenant, which is the line `dr workload delete` already draws.
-		Confirm: envconfirm.Ask(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+		Confirm: envconfirm.Ask(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
 			Yes:    f.yes,
 			DryRun: f.dryRun,
 			// Both ends, through the same check the id prompts use. The
@@ -303,13 +310,18 @@ func run(cmd *cobra.Command, f flags, format outputformat.OutputFormat) error {
 			// with stderr redirected the prompt is written where nobody can
 			// see it and the run then blocks for an answer nobody knows to
 			// give.
-			Interactive: !asJSON && idargs.CanAsk(cmd),
+			Interactive: interactive,
 			Silent:      asJSON,
 		}),
-		ConfirmDelete: envconfirm.AskDelete(cmd.ErrOrStderr(), cmd.InOrStdin(), envconfirm.Policy{
+		ConfirmDelete: envconfirm.AskDelete(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
 			Yes:         f.yes,
 			DryRun:      f.dryRun,
-			Interactive: !asJSON && idargs.CanAsk(cmd),
+			Interactive: interactive,
+		}),
+		ConfirmReuse: envconfirm.AskReuse(cmd.ErrOrStderr(), stdin, envconfirm.Policy{
+			Yes:         f.yes,
+			DryRun:      f.dryRun,
+			Interactive: interactive,
 		}),
 		JSONOutput: asJSON,
 		Answers:    f.answers,

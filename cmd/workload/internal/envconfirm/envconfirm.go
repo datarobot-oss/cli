@@ -103,19 +103,9 @@ func Ask(stderr io.Writer, stdin io.Reader, policy Policy) func() (bool, error) 
 			"A rewrite lands in a file you commit, and a re-send overwrites the value on the tenant."))
 		fmt.Fprint(stderr, "\n  Apply this? [y/N] ")
 
-		// One line, like the deploy's own confirmation. An answer that cannot
-		// be read at all is a no, which leaves both files as they are.
-		line, err := answers.ReadString('\n')
-		if err != nil && line == "" {
-			return false, nil
-		}
-
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			return true, nil
-		default:
-			return false, nil
-		}
+		// An answer that cannot be read at all is a no, which leaves both
+		// files as they are.
+		return readYes(answers), nil
 	}
 }
 
@@ -134,14 +124,44 @@ func AskDelete(stderr io.Writer, stdin io.Reader, policy Policy) func(string) bo
 	return func(name string) bool {
 		fmt.Fprintf(stderr, "\n  Credential %q holds a copy of your token that nothing uses now. Delete it? [y/N] ", name)
 
-		line, _ := answers.ReadString('\n')
+		return readYes(answers)
+	}
+}
 
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "y", "yes":
-			return true
-		default:
-			return false
-		}
+// AskReuse returns the function `wizard.Options.ConfirmReuse` expects, which
+// asks about one secret whose credential name is already in use.
+//
+// nil means do not reuse, and that includes --yes: it agrees to the sync, and
+// replacing the value of a credential that already exists is a separate act
+// the user gets to see named. The failure then prints the id and the line to
+// use it as it is.
+func AskReuse(stderr io.Writer, stdin io.Reader, policy Policy) func(envName, credentialName, credentialID string) bool {
+	if policy.Yes || policy.DryRun || !policy.Interactive {
+		return nil
+	}
+
+	answers := bufio.NewReader(stdin)
+
+	return func(envName, credentialName, credentialID string) bool {
+		fmt.Fprintf(stderr,
+			"\n  A credential named %q (id %s) already exists in your organisation.\n"+
+				"  Use it for %s, replacing its stored value with the one in .env? [y/N] ",
+			credentialName, credentialID, envName)
+
+		return readYes(answers)
+	}
+}
+
+// readYes reads one line, like the deploy's own confirmation, and reports
+// whether it was a yes. Anything else, including a read error, is a no.
+func readYes(answers *bufio.Reader) bool {
+	line, _ := answers.ReadString('\n')
+
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	default:
+		return false
 	}
 }
 
