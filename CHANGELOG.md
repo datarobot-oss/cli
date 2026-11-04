@@ -3,6 +3,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [0.18.0] - 2026-11-04
+
+## Added
+
+- Importing a secret from `.env` whose credential name is already taken in the tenant no longer fails: `dr workload config` and `dr workload up` look up the credential that holds the name and ask whether to point the variable at it and replace its value with the one in `.env` (reported as a reused variable). A yes is explicit per variable — `--yes` agrees to the import, not to overwriting a credential somebody else may rely on — and declining keeps the variable naming the existing credential.
+
+## Fixed
+
+- `dr self plugin package` validates a plugin through the entry script its `manifest.json` declares (`scripts.posix` / `scripts.windows`) instead of scanning the plugin directory, where an alphabetically-earlier extensionless binary such as `dr-codespace-linux-x64` could be picked and fail with `exec format error`. An empty entry for the current platform in a declared scripts block is a hard error; the directory scan remains the fallback for plugins that declare no scripts block.
+- The `Running plugin: <name>` banner prints to stderr, so a plugin's stdout carries only the plugin's own output: JSON and piped output no longer start with a line that is not part of them.
+- The `xp` plugin is updated to v2.4.0.
+
 # [Unreleased]
 
 ## Changed
