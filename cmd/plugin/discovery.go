@@ -18,10 +18,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
@@ -122,12 +125,15 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 		Run: func(pluginCmd *cobra.Command, args []string) {
 			shared.CheckAndPromptPluginUpdate(pluginName, manifest.Version, pluginPath)
 
-			// The banner goes to stderr so stdout stays reserved for the
-			// plugin's own output (e.g. under --output-format json). It is
-			// styled for stderr, not with the package style, which probes
-			// stdout: otherwise `2> file` from a terminal would capture
-			// escape codes.
-			fmt.Fprintln(os.Stderr, tui.StylesFor(os.Stderr).Info.Render("🔌 Running plugin: "+pluginName))
+			if !suppressBanner(pluginCmd, args) {
+				// The banner goes to stderr so stdout stays reserved for the
+				// plugin's own output (e.g. under --output-format json). It is
+				// styled for stderr, not with the package style, which probes
+				// stdout: otherwise `2> file` from a terminal would capture
+				// escape codes.
+				fmt.Fprintln(os.Stderr, tui.StylesFor(os.Stderr).Info.Render("🔌 Running plugin: "+pluginName))
+			}
+
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := internalPlugin.ExecutePlugin(pluginCmd.Context(), manifest, executable, args, pluginCmd.Root().PersistentFlags())
@@ -139,6 +145,61 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 	telemetry.TrackPlugin(cmd, manifest.Version)
 
 	return cmd
+}
+
+// suppressBanner reports whether the "Running plugin" banner should be skipped.
+// The banner is a human-facing courtesy, so it is dropped when the output is
+// meant for a machine: when JSON output is requested (so that
+// `--output-format json 2>&1 | jq .` parses) and when the run is
+// non-interactive (DATAROBOT_CLI_NON_INTERACTIVE).
+//
+// Plugin commands set DisableFlagParsing, so cobra never parses the flags that
+// follow the plugin name. A `--yes` or `-y` there is handed to the plugin and
+// is not seen by cli.IsNonInteractive; only the environment variable is. The
+// same limitation applies to the `--output-format` flag, which is why
+// jsonOutputRequested scans args itself.
+func suppressBanner(cmd *cobra.Command, args []string) bool {
+	return cli.IsNonInteractive(cmd) || jsonOutputRequested(cmd, args)
+}
+
+// jsonOutputRequested reports whether the invocation asks for JSON output. An
+// explicit `--output-format` in args wins, as it does for every other command;
+// otherwise the format falls back to the env var / config file value that
+// outputformat.GetFormat resolves (DATAROBOT_CLI_OUTPUT_FORMAT).
+//
+// Only the `--output-format` flag is recognised. The deprecated `--format` and
+// `-o` aliases exist on `dr self version` alone, and on a plugin command line
+// `-o` belongs to the plugin and may mean something else entirely.
+func jsonOutputRequested(cmd *cobra.Command, args []string) bool {
+	if format, found := outputFormatFromArgs(args); found {
+		return format == string(outputformat.OutputFormatJSON)
+	}
+
+	return outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON
+}
+
+// outputFormatFromArgs returns the value of the last `--output-format` in args,
+// in either the `--output-format json` or `--output-format=json` form. found is
+// false when the flag is absent. Scanning stops at a bare `--`, after which
+// everything is a positional argument rather than a flag.
+func outputFormatFromArgs(args []string) (format string, found bool) {
+	const flag = "--output-format"
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch {
+		case arg == "--":
+			return format, found
+		case arg == flag && i+1 < len(args):
+			format, found = args[i+1], true
+			i++
+		case strings.HasPrefix(arg, flag+"="):
+			format, found = strings.TrimPrefix(arg, flag+"="), true
+		}
+	}
+
+	return format, found
 }
 
 // The update-check flow (prompt, backup → install → validate) lives in

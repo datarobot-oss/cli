@@ -17,9 +17,12 @@ package plugin
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/outputformat"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
@@ -88,4 +91,102 @@ func TestRegisterPluginCommands_DisabledSeedsEmptyLazyCache(t *testing.T) {
 	plugins, conflicts := internalPlugin.GetPlugins()
 	assert.Empty(t, plugins, "lazy discovery must not re-run after startup disabled it")
 	assert.Empty(t, conflicts)
+}
+
+func TestOutputFormatFromArgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantFormat string
+		wantFound  bool
+	}{
+		{"no args", nil, "", false},
+		{"unrelated args", []string{"run", "--verbose"}, "", false},
+		{"separate value", []string{"--output-format", "json"}, "json", true},
+		{"equals value", []string{"--output-format=json"}, "json", true},
+		{"text value", []string{"--output-format", "text"}, "text", true},
+		{"after other args", []string{"run", "app", "--output-format", "json"}, "json", true},
+		{"last occurrence wins", []string{"--output-format", "json", "--output-format=text"}, "text", true},
+		{"flag without a value", []string{"--output-format"}, "", false},
+		{"stops at the terminator", []string{"--", "--output-format", "json"}, "", false},
+		{"value that merely contains json", []string{"--file", "out.json"}, "", false},
+		{"deprecated -o alias is not recognised", []string{"-o", "json"}, "", false},
+		{"deprecated --format alias is not recognised", []string{"--format", "json"}, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			format, found := outputFormatFromArgs(tt.args)
+
+			assert.Equal(t, tt.wantFormat, format)
+			assert.Equal(t, tt.wantFound, found)
+		})
+	}
+}
+
+// resetViperWithEnv starts the test from a clean viper that reads
+// DATAROBOT_CLI_* env vars the way the real CLI does, and restores a clean
+// viper afterwards.
+func resetViperWithEnv(t *testing.T) {
+	t.Helper()
+
+	viperx.Reset()
+	viperx.SetEnvPrefix("DATAROBOT_CLI")
+	viperx.AutomaticEnv()
+	viperx.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+
+	t.Cleanup(viperx.Reset)
+}
+
+func TestSuppressBanner(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		args []string
+		want bool
+	}{
+		{"interactive text run shows the banner", nil, nil, false},
+		{"plugin args that are not output flags", nil, []string{"run", "--file", "out.json"}, false},
+		{"--output-format json", nil, []string{"--output-format", "json"}, true},
+		{"--output-format=json", nil, []string{"--output-format=json"}, true},
+		{"--output-format text", nil, []string{"--output-format", "text"}, false},
+		{
+			"explicit text beats a json env var",
+			map[string]string{"DATAROBOT_CLI_OUTPUT_FORMAT": "json"},
+			[]string{"--output-format", "text"},
+			false,
+		},
+		{"json env var", map[string]string{"DATAROBOT_CLI_OUTPUT_FORMAT": "json"}, nil, true},
+		{"text env var", map[string]string{"DATAROBOT_CLI_OUTPUT_FORMAT": "text"}, nil, false},
+		{"non-interactive env var", map[string]string{"DATAROBOT_CLI_NON_INTERACTIVE": "1"}, nil, true},
+		{
+			"non-interactive env var with text output",
+			map[string]string{"DATAROBOT_CLI_NON_INTERACTIVE": "true"},
+			[]string{"--output-format", "text"},
+			true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear the signals first so the host environment cannot leak in.
+			t.Setenv("DATAROBOT_CLI_NON_INTERACTIVE", "")
+			t.Setenv("DATAROBOT_CLI_OUTPUT_FORMAT", "")
+
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			resetViperWithEnv(t)
+
+			var format outputformat.OutputFormat
+
+			cmd := &cobra.Command{Use: "plugin", DisableFlagParsing: true}
+			outputformat.AddPersistentFlag(cmd, &format)
+
+			require.NoError(t, viperx.BindPFlag("output-format", cmd.PersistentFlags().Lookup("output-format")))
+
+			assert.Equal(t, tt.want, suppressBanner(cmd, tt.args))
+		})
+	}
 }
