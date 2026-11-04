@@ -171,6 +171,13 @@ type Options struct {
 	// put one in front of somebody.
 	ConfirmEnv func() (bool, error)
 
+	// ConfirmDelete is the wizard's question about a credential the sync made
+	// redundant, passed through for the same reason.
+	ConfirmDelete func(name string) bool
+	// ConfirmReuse is the wizard's question about a secret whose credential
+	// name is already taken, passed through for the same reason.
+	ConfirmReuse wizard.ReuseFunc
+
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
 	PollTimeout  time.Duration
@@ -214,6 +221,10 @@ type Result struct {
 	// changes no file, so a run that re-sent a secret and deployed nothing
 	// would otherwise report itself as a deploy that did nothing at all.
 	Env EnvEdit
+
+	// Sync is the size of the code sync this run ran, zero when it ran none.
+	// It is for telemetry, which sizes the sync limits from it.
+	Sync sync.Size
 }
 
 // EnvEdit is the .env re-entry's side of a deploy.
@@ -1161,6 +1172,8 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 		DryRun:         o.DryRun,
 		SyncEnv:        true,
 		Confirm:        o.ConfirmEnv,
+		ConfirmDelete:  o.ConfirmDelete,
+		ConfirmReuse:   o.ConfirmReuse,
 		Remedy:         remedy,
 		Stderr:         o.Stderr,
 	})

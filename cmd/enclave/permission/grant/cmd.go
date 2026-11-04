@@ -44,6 +44,9 @@ The permissions are:
            still be allowed by the workload's use case, and deploy access to it
            is still required. A group grant lets its members pin. Pin and create
            are independent: neither implies the other.
+  hub      run workloads on the Hub (users and groups, not organizations).
+           Checked only when the organization requires a use case: a workload
+           in a use case without Enclaves runs on the Hub and needs it.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -54,12 +57,12 @@ Recipients are named by id only — unlike "dr enclave access", there is no
 --user <username> form. There is also no separate "all users in a tenant"
 subject; grant the tenant's organization with --org to cover every user in it.
 
-Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise the
-call succeeds but grants nothing.
+Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise create
+and pin succeed but grant nothing, and hub is refused (409).
 
 Who may run it:
   create   a system administrator.
-  pin      a system administrator, for any user or group; or an org admin, for
+  pin, hub a system administrator, for any user or group; or an org admin, for
            users and groups in their own organization. A recipient in another
            organization, or any other caller, is refused with 403.
 
@@ -67,7 +70,9 @@ Example:
   dr enclave permission grant --permission create --org 656f0000000000000000abcd
   dr enclave permission grant --permission create --user-id 656f0000000000000000abce
   dr enclave permission grant --permission pin --user-id 656f0000000000000000abce
-  dr enclave permission grant --permission pin --group 656f0000000000000000abcf`,
+  dr enclave permission grant --permission pin --group 656f0000000000000000abcf
+  dr enclave permission grant --permission hub --user-id 656f0000000000000000abce
+  dr enclave permission grant --permission hub --group 656f0000000000000000abcf`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -99,7 +104,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().StringVar(&permission, "permission", "", "Permission to grant: create or pin (required)")
+	cmd.Flags().StringVar(&permission, "permission", "", "Permission to grant: create, pin or hub (required)")
 	_ = cmd.MarkFlagRequired("permission")
 
 	cmd.Flags().StringVar(&userID, "user-id", "", "Grant a user by DataRobot user id")

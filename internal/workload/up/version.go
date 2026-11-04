@@ -55,6 +55,9 @@ type version struct {
 
 	// HasCode reports that it points at the code its image was built from.
 	HasCode bool
+
+	// Sync is the code sync that made it, set on a failed sync too.
+	Sync sync.Size
 }
 
 // buildVersion produces the version a built project rolls onto: a new
@@ -88,6 +91,8 @@ func buildVersion(
 	}
 
 	synced, err := syncCode(loaded.ProjectDir, report)
+	made.Sync = sync.SizeOf(synced, err)
+
 	if err != nil {
 		return made, err
 	}

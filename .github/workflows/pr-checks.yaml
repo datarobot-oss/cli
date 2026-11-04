@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Detect Changes
     timeout-minutes: 5
+    # PR-file API mode avoids cloning the large repository just to select jobs.
+    permissions:
+      pull-requests: read
     outputs:
       completion: ${{ steps.changes.outputs.completion }}
       dotenv: ${{ steps.changes.outputs.dotenv }}
@@ -32,9 +35,6 @@ jobs:
       test_config: ${{ steps.changes.outputs.test_config }}
       lint_config: ${{ steps.changes.outputs.lint_config }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Detect file changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: changes

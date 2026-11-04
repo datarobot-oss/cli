@@ -33,10 +33,9 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
 	if viperx.GetBool(config.SkipAuthKey) {
-		err := errors.New("Login has been disabled via the '--skip-auth' flag.")
-		log.Error(err)
+		log.Error(errors.New("Login has been disabled via the '--skip-auth' flag."))
 
-		return err
+		return cli.ErrSilent
 	}
 
 	timeout, _ := cmd.Flags().GetDuration("timeout")
@@ -102,7 +101,8 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		log.Error(err)
 
-		return err
+		// The login flow already reported the failure; do not print it again.
+		return cli.ErrSilent
 	}
 
 	if key == "" {
@@ -117,7 +117,7 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		cmd.SilenceUsage = true
 
-		return err
+		return cli.ErrSilent
 	}
 
 	return nil

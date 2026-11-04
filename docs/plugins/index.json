@@ -6,6 +6,12 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.40",
+          "url": "assist/assist-0.1.40.tar.xz",
+          "sha256": "fd56cd281003a229bae32dd26ba8daf29929aa132fa6a5285dcf0fbef1c5d646",
+          "releaseDate": "2026-10-28"
+        },
+        {
           "version": "0.1.39",
           "url": "assist/assist-0.1.39.tar.xz",
           "sha256": "68eb4eb4e5573368203be7097deefb8e437d2bb258a00b0ead6163645f78b331",
@@ -198,6 +204,12 @@
       "description": "A local experimentation dashboard for DataRobot users to visualize and compare agent runs.",
       "versions": [
         {
+          "version": "2.4.0",
+          "url": "xp/xp-2.4.0.tar.xz",
+          "sha256": "dcc8c42141d79849fc846ee9fef93bb83fb3d97f9ceb169e0699a92abc3576d5",
+          "releaseDate": "2026-11-03"
+        },
+        {
           "version": "2.3.0",
           "url": "xp/xp-2.3.0.tar.xz",
           "sha256": "ca46163ebb3e7024fec749d44a40f66ca373d511a54a397cde5ec7c9f8612752",
@@ -294,6 +306,12 @@
       "description": "AI agent design, coding, and deployment assistant",
       "versions": [
         {
+          "version": "0.1.16",
+          "url": "opencode/opencode-0.1.16.tar.xz",
+          "sha256": "c7f7bb834d223f9fe56cff5645fea7da9fcbc0434a8998ed7c2c4cd8b20bc687",
+          "releaseDate": "2026-10-28"
+        },
+        {
           "version": "0.1.14",
           "url": "opencode/opencode-0.1.14.tar.xz",
           "sha256": "db6753ae6c81925ce4dc30e41f9e400b4608f59a5f7a260293e378e6bb33b01d",
@@ -384,10 +402,10 @@
           "releaseDate": "2026-08-28"
         },
         {
-          "version": "0.6.0",
-          "url": "codespace/codespace-0.6.0.tar.xz",
-          "sha256": "4ac8ac2350ecd9fe52b3098bc04f94efbd8e374915928ed6f204b974ba4ebd11",
-          "releaseDate": "2026-10-19"
+          "version": "0.6.1",
+          "url": "codespace/codespace-0.6.1.tar.xz",
+          "sha256": "258b7816d9b2e40008521863b1f6d5b42688d7fad7466b021090e2122519c4cc",
+          "releaseDate": "2026-11-03"
         }
       ]
     }

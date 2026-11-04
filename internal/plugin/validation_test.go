@@ -391,3 +391,167 @@ func TestValidatePluginScript_WithLicense(t *testing.T) {
 
 	assert.NoError(t, err)
 }
+
+func TestValidatePluginScript_UsesDeclaredScript(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: &PluginScripts{
+			Posix:   "dr-test.sh",
+			Windows: "dr-test.ps1",
+		},
+	}
+
+	// Extensionless dr-* binaries that sort ahead of the declared entry script
+	// must be ignored when the manifest declares its scripts (ALIFE-994).
+	createScript(t, filepath.Join(tempDir, "dr-test-linux-x64"), "not a script")
+	createScript(t, filepath.Join(tempDir, "dr-test-macos-arm64"), "not a script")
+
+	data, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	// Write the entry scripts under the manifest-declared names. Both platforms
+	// are written: packages are platform-agnostic, and validation now requires
+	// both declared scripts on disk.
+	writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.sh"), string(data))
+
+	writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.ps1"), string(data))
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	assert.NoError(t, err)
+}
+
+func TestValidatePluginScript_DeclaredScriptMissing(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: &PluginScripts{
+			Posix:   "dr-test.sh",
+			Windows: "dr-test.ps1",
+		},
+	}
+
+	// LICENSE.txt present so script resolution is what fails.
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err := os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manifest.json declares script")
+}
+
+func TestValidatePluginScript_PlatformScriptNotConfigured(t *testing.T) {
+	tests := []struct {
+		name        string
+		scripts     *PluginScripts
+		wantErrText string
+	}{
+		{
+			name:        "posix entry blank",
+			scripts:     &PluginScripts{Posix: "", Windows: "dr-test.ps1"},
+			wantErrText: "no posix script",
+		},
+		{
+			name:        "windows entry blank",
+			scripts:     &PluginScripts{Posix: "dr-test.sh", Windows: ""},
+			wantErrText: "no windows script",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+
+			manifest := PluginManifest{
+				BasicPluginManifest: BasicPluginManifest{
+					Name:           "test",
+					Version:        "1.0.0",
+					Description:    "Test plugin",
+					Authentication: true,
+				},
+				Scripts: tt.scripts,
+			}
+
+			// Both declared scripts exist on disk; the empty entry is the only
+			// defect under test.
+			data, err := json.Marshal(manifest)
+			require.NoError(t, err)
+
+			writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.sh"), string(data))
+
+			writeManifestScriptAt(t, filepath.Join(tempDir, "dr-test.ps1"), string(data))
+
+			// An extensionless dr-* file the fallback scan would accept; the
+			// strict error must still win.
+			createScript(t, filepath.Join(tempDir, "dr-test-decoy"), "not a script")
+
+			licensePath := filepath.Join(tempDir, "LICENSE.txt")
+			err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+			require.NoError(t, err)
+
+			err = ValidatePluginScript(tempDir, manifest)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErrText)
+		})
+	}
+}
+
+func TestValidatePluginScript_OtherPlatformScriptMissing(t *testing.T) {
+	tempDir := t.TempDir()
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{
+			Name:           "test",
+			Version:        "1.0.0",
+			Description:    "Test plugin",
+			Authentication: true,
+		},
+		Scripts: &PluginScripts{
+			Posix:   "dr-test.sh",
+			Windows: "dr-test.ps1",
+		},
+	}
+
+	// Only the current platform's script is on disk. The package is a single
+	// platform-agnostic artifact, so packaging must fail even though the
+	// current platform would validate fine.
+	current := filepath.Join(tempDir, "dr-test.sh")
+
+	if runtime.GOOS == "windows" {
+		current = filepath.Join(tempDir, "dr-test.ps1")
+	}
+
+	data, err := json.Marshal(manifest)
+	require.NoError(t, err)
+
+	writeManifestScriptAt(t, current, string(data))
+
+	licensePath := filepath.Join(tempDir, "LICENSE.txt")
+	err = os.WriteFile(licensePath, []byte("Apache License 2.0"), 0o644)
+	require.NoError(t, err)
+
+	err = ValidatePluginScript(tempDir, manifest)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manifest.json declares script")
+}
