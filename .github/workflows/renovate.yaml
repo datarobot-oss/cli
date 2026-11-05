@@ -1,0 +1,46 @@
+name: Renovate
+
+# Self-hosted Renovate via GitHub Actions.
+#
+# Reads renovate.json from the default branch and files PRs for version pins
+# that Dependabot cannot see (Go directive, Taskfile tool versions).
+#
+# Uses the built-in GITHUB_TOKEN. PRs created by GITHUB_TOKEN do not trigger
+# downstream CI workflows — switch to a PAT or GitHub App token if CI on
+# Renovate PRs is needed.
+#
+# See: https://datarobot.atlassian.net/wiki/spaces/CFX/pages/7950729316
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # Daily at 6am UTC
+  workflow_dispatch: # Manual trigger for testing
+
+# S5: deny all by default; job opts in to what it needs.
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Renovate needs to create branches and PRs.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Run Renovate
+        run: |
+          docker run --rm \
+            -e RENOVATE_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e RENOVATE_PLATFORM=github \
+            -e RENOVATE_REPOSITORIES="${{ github.repository }}" \
+            -e RENOVATE_ONBOARDING=false \
+            -e LOG_LEVEL=info \
+            renovate/renovate:latest
