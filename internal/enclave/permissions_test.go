@@ -223,12 +223,13 @@ func TestCollectionAccessPath(t *testing.T) {
 	// Pin has its own endpoint; it is not a field on createAccess.
 	assert.Equal(t, "/api/v2/enclaves/createAccess", collectionAccessPath(PermissionCreate))
 	assert.Equal(t, "/api/v2/enclaves/pinAccess", collectionAccessPath(PermissionPin))
-	// Hub access is only served on the shared endpoint, with the permission as a parameter.
+	// The Hub permission is only served on the shared endpoint, with the permission as a
+	// parameter.
 	assert.Equal(t, "/api/v2/enclaves/access", collectionAccessPath(PermissionHub))
 }
 
 func TestHubPermission_UsersAndGroupsOnly(t *testing.T) {
-	// The server refuses organization recipients for Hub access, and the endpoint takes
+	// The server refuses organization recipients for the Hub permission, and the endpoint takes
 	// an id; fail before sending the request, naming the flags that work.
 	for _, r := range []Recipient{
 		{Type: RecipientOrg, ID: "org-1"},

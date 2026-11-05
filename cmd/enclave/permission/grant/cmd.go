@@ -45,8 +45,9 @@ The permissions are:
            is still required. A group grant lets its members pin. Pin and create
            are independent: neither implies the other.
   hub      run workloads on the Hub (users and groups, not organizations).
-           Checked only when the organization requires a use case: a workload
-           in a use case without Enclaves runs on the Hub and needs it.
+           Checked only when the organization requires it
+           (WORKLOAD_REQUIRE_HUB_PERMISSION): a workload with no use case, or
+           a use case without Enclaves, runs on the Hub and needs it.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id

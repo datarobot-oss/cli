@@ -38,7 +38,7 @@ const pinAccessPath = "/pinAccess"
 
 // accessPath is the one endpoint for every collection-level permission, picked by a
 // permission parameter: GET /api/v2/enclaves/access?permission=hub and PATCH
-// /api/v2/enclaves/access with "permission" in the body. Hub access is only served
+// /api/v2/enclaves/access with "permission" in the body. The Hub permission is only served
 // there; create and pin still use their own paths, so the CLI keeps working against
 // servers that predate it.
 const accessPath = "/access"
@@ -62,9 +62,9 @@ const PermissionPin = "pin"
 
 // PermissionHub is the user-facing name of the permission that allows running
 // workloads on the Hub (server: CAN_DEPLOY on hub_collection). The server only checks
-// it when the organization requires a use case (WORKLOAD_REQUIRE_USE_CASE): a workload
-// in a use case without Enclaves runs on the Hub and needs it. Like pin, it is granted
-// to users and groups, not organizations.
+// it when the organization requires it (WORKLOAD_REQUIRE_HUB_PERMISSION): a workload
+// with no use case, or a use case without Enclaves, runs on the Hub and needs it. Like
+// pin, it is granted to users and groups, not organizations.
 const PermissionHub = "hub"
 
 // createAccessUpdate is the PATCH body (server EnclaveCreateAccessRequest, and
@@ -186,13 +186,13 @@ func updatePinAccess(operation string, r Recipient) error {
 	return err
 }
 
-// updateHubAccess PATCHes a grant or revoke of Hub access. Like pin it is granted to
+// updateHubAccess PATCHes a grant or revoke of the Hub permission. Like pin it is granted to
 // users and groups, by id; the server refuses organizations with a 422, so fail before
 // sending the request.
 func updateHubAccess(operation string, r Recipient) error {
 	if (r.Type != RecipientUser && r.Type != RecipientGroup) || r.ID == "" {
 		return errors.New(
-			"Hub access is granted to users and groups only: use --user-id or --group")
+			"the Hub permission is granted to users and groups only: use --user-id or --group")
 	}
 
 	return updateCollectionAccess(PermissionHub, operation, r)
@@ -228,11 +228,11 @@ var errPinUnsupported = errors.New(
 	"this server doesn't support the enclave pin permission yet; " +
 		"it needs a covalent-cloud-server with /api/v2/enclaves/pinAccess")
 
-// errHubUnsupported explains a server that predates /enclaves/access, where Hub
-// access is served: there the path reads as an enclave id, so a list gets a 422 about
+// errHubUnsupported explains a server that predates /enclaves/access, where the Hub
+// permission is served: there the path reads as an enclave id, so a list gets a 422 about
 // enclave_id and a grant or revoke a 405 (or a plain 404 from a proxy).
 var errHubUnsupported = errors.New(
-	"this server doesn't support Hub access yet; " +
+	"this server doesn't support the Hub permission yet; " +
 		"it needs a covalent-cloud-server with /api/v2/enclaves/access")
 
 // hubUnsupportedHint adds errHubUnsupported to the answers an older server gives for
@@ -327,14 +327,14 @@ func RevokePinPermission(r Recipient) error {
 }
 
 // GrantHubPermission allows the user, or a group's members, to run workloads on the
-// Hub when their organization requires a use case.
+// Hub when their organization requires the Hub permission.
 func GrantHubPermission(r Recipient) error {
 	return updateHubAccess(operationGrant, r)
 }
 
-// RevokeHubPermission withdraws the recipient's Hub access. A no-op server-side when
+// RevokeHubPermission withdraws the recipient's Hub permission. A no-op server-side when
 // the recipient doesn't hold it. A group member who also holds a grant of their own
-// keeps Hub access.
+// keeps the Hub permission.
 func RevokeHubPermission(r Recipient) error {
 	return updateHubAccess(operationRevoke, r)
 }
