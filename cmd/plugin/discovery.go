@@ -17,9 +17,11 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/datarobot/cli/cmd/plugin/shared"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/log"
 	internalPlugin "github.com/datarobot/cli/internal/plugin"
 	"github.com/datarobot/cli/internal/telemetry"
@@ -121,7 +123,15 @@ func createPluginCommand(p internalPlugin.DiscoveredPlugin) *cobra.Command {
 		Run: func(pluginCmd *cobra.Command, args []string) {
 			shared.CheckAndPromptPluginUpdate(pluginName, manifest.Version, pluginPath)
 
-			fmt.Println(tui.InfoStyle.Render("🔌 Running plugin: " + pluginName))
+			if !cli.SuppressNotices(pluginCmd, args) {
+				// The banner goes to stderr so stdout stays reserved for the
+				// plugin's own output (e.g. under --output-format json). It is
+				// styled for stderr, not with the package style, which probes
+				// stdout: otherwise `2> file` from a terminal would capture
+				// escape codes.
+				fmt.Fprintln(os.Stderr, tui.StylesFor(os.Stderr).Info.Render("🔌 Running plugin: "+pluginName))
+			}
+
 			log.Debug("Executing plugin", "name", pluginName, "executable", executable)
 
 			exitCode := internalPlugin.ExecutePlugin(pluginCmd.Context(), manifest, executable, args, pluginCmd.Root().PersistentFlags())
