@@ -13,10 +13,8 @@ vars:
   GOLANGCI_LINT_VERSION: "v2.14.0"
   LEFTHOOK_VERSION: "v2.1.10"
   JSCPD_VERSION: "5.0.12"
-  # Duplicate-code ratchet: hard cap on clones found by `task dupcheck`.
-  # The 5% threshold in .jscpd.json dilutes as the codebase grows; this cap
-  # does not. Lower it as clones are removed; never raise it without a
-  # justifying comment.
+  # Duplicate-code ratchet: hard cap on clones found by `task dupcheck`. Lower
+  # it as clones are removed; never raise it.
   JSCPD_CLONE_LIMIT: "200"
   GORELEASER_VERSION: "v2.17.1"
   # Keep this in sync with the GOOS lists in goreleaser.yaml.
@@ -294,9 +292,7 @@ tasks:
     deps: [install-tools]
     cmds:
       - "{{.BIN_DIR}}/jscpd --no-tips --config .jscpd.json ."
-      # Ratchet on absolute clone count (jscpd v5 has no --limit option, so
-      # read the count from the JSON reporter's statistics.total). sed is used
-      # instead of jq so the task has no extra local dependencies.
+      # jscpd v5 has no --limit flag; read the count from the JSON reporter (sed avoids a jq dependency).
       - |
         CLONES=$(sed -n 's/^      "clones": \([0-9]*\),$/\1/p' tmp/jscpd-report/jscpd-report.json)
         if [ -z "$CLONES" ]; then

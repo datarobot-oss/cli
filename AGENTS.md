@@ -131,14 +131,9 @@ Bypass with `LEFTHOOK=0 git commit` (use sparingly). The configured hook:
 The hook reuses a Taskfile task so there is a single source of truth for quality checks.
 Configuration lives in `lefthook.yml` at the repository root.
 
-**`task dupcheck`** (duplicate code detection via jscpd) is deliberately **not**
-part of the commit hook — CI is its enforcement point. The lint job in
-`.github/workflows/pr-checks.yaml` runs it on every PR that touches Go code,
-`.jscpd.json`, or the Taskfile, and uploads the HTML report as a workflow
-artifact. It fails on the duplication percentage in `.jscpd.json` or when the
-clone count exceeds `JSCPD_CLONE_LIMIT` in `Taskfile.yaml` — that limit is a
-ratchet: lower it as clones are removed, never raise it. Run it locally with
-`task dupcheck` (report: `tmp/jscpd-report/jscpd-report.html`).
+CI-only checks (not commit hooks):
+
+- **`task dupcheck`**: jscpd duplicate-code detection; fails on the `.jscpd.json` threshold or when clones exceed `JSCPD_CLONE_LIMIT` in `Taskfile.yaml` (a ratchet: lower as clones are removed, never raise). The HTML report is a CI artifact; local copy at `tmp/jscpd-report/`.
 
 ### Updating golangci-lint
 
