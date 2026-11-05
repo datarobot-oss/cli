@@ -48,7 +48,7 @@ import (
 // SupportedPythonVersions are the interpreter versions the pipelines-api accepts
 // for --python-version. Mirrors SUPPORTED_PYTHON_VERSIONS in the pipelines-api
 // image schema (the set proven build-to-READY); widen only when the server does.
-var SupportedPythonVersions = []string{"3.10", "3.11", "3.12", "3.13"}
+var SupportedPythonVersions = []string{"3.11", "3.12", "3.13"}
 
 // ValidatePythonVersion rejects a --python-version value the API would reject,
 // giving the user immediate feedback instead of a server round-trip. An empty
