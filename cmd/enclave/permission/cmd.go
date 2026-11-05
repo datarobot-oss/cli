@@ -40,8 +40,9 @@ There are three, and they are independent (none implies another):
            organization). A group grant lets its members pin. A system
            administrator also needs a pin grant to pin.
   hub      the right to run workloads on the Hub. Checked only when the
-           organization requires a use case: a workload in a use case without
-           Enclaves runs on the Hub and needs it. Granted like pin: to users and
+           organization requires it (WORKLOAD_REQUIRE_HUB_PERMISSION): a workload
+           with no use case, or a use case without Enclaves, runs on the Hub and
+           needs it. Granted like pin: to users and
            groups, by a system administrator or an org admin in their own
            organization.
 

@@ -32,7 +32,7 @@ func Cmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List who holds a collection-level enclave permission.",
 		Long: `List who has been granted an enclave permission: create by default, pin with
---permission pin, or Hub access with --permission hub. Create lists users,
+--permission pin, or the Hub permission with --permission hub. Create lists users,
 groups, and organizations; pin and hub list the users and groups in your
 organization.
 

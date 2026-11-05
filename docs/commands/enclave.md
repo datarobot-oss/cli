@@ -24,7 +24,7 @@ DataRobot system administrators bypass both and always have full access.
 > [!NOTE]
 > The `enclave` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_ENCLAVE=true` before running any `dr enclave` subcommand. See [Feature gates](../development/feature-gates.md) for details.
 >
-> The access and permission subcommands need `ENCLAVE_RBAC_ENABLED` on the server. Where it is off, grants and revokes are accepted as no-ops and every caller shows as fully permitted, except Hub access: its grants and revokes are refused (409), because the server can't keep them.
+> The access and permission subcommands need `ENCLAVE_RBAC_ENABLED` on the server. Where it is off, grants and revokes are accepted as no-ops and every caller shows as fully permitted, except the Hub permission: its grants and revokes are refused (409), because the server can't keep them.
 
 ## Quick start
 
@@ -218,7 +218,7 @@ dr enclave access show <enclave-id> --user-id <datarobot-user-id>
 - `create`: register new enclaves. Recipients are named by id: `--user-id`, `--group`, or `--org`.
 - `pin`: pin a workload to one chosen enclave with `dr workload create --enclave`, overriding the scheduler. Granted to users (`--user-id`) and groups (`--group`), not organizations. A group grant lets every member pin. The enclave must still be linked to the workload's use case, and the user still needs deploy access to it.
 
-- `hub`: run workloads on the Hub. The server checks it only when the organization requires a use case (`WORKLOAD_REQUIRE_USE_CASE`): every new workload then needs one, and a workload in a use case without Enclaves runs on the Hub and needs Hub access, or its create is refused with 403 `HUB_ACCESS_REQUIRED`. Granted to users (`--user-id`) and groups (`--group`), not organizations. A group grant gives every member Hub access.
+- `hub`: run workloads on the Hub. The server checks it only when the organization requires it (`WORKLOAD_REQUIRE_HUB_PERMISSION`): a new workload with no use case, or a use case without Enclaves, runs on the Hub and needs the Hub permission, or its create is refused with 403 `HUB_PERMISSION_REQUIRED`. This is independent of `WORKLOAD_REQUIRE_USE_CASE`, which only requires a use case on every new workload. Granted to users (`--user-id`) and groups (`--group`), not organizations. A group grant gives every member the Hub permission.
 
 The three are independent: none of them implies another. A system administrator may create without a grant but needs a `pin` grant to pin.
 
@@ -241,7 +241,7 @@ dr enclave permission grant --permission hub --user-id <datarobot-user-id>   # t
 dr enclave permission grant --permission hub --group <group-id>              # every member of the group may
 ```
 
-Hub access is served on the server's `/api/v2/enclaves/access` endpoint. A server that predates it refuses the request, and the CLI says the server needs to be upgraded.
+The Hub permission is served on the server's `/api/v2/enclaves/access` endpoint. A server that predates it refuses the request, and the CLI says the server needs to be upgraded.
 
 A server that still grants pin to users only refuses `--group` with a 422; the CLI says the server needs to be upgraded. Revoking a group's grant doesn't affect a member who also holds a grant of their own.
 
