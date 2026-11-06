@@ -43,6 +43,99 @@ func TestCheckCLICredentials_QuotedEndpointNamesEndpointNotToken(t *testing.T) {
 	assert.NotContains(t, buf.String(), "DATAROBOT_API_TOKEN environment variable is invalid or expired")
 }
 
+// The stored-credentials leg must say whose credentials it is evaluating
+// (root-level vs an explicitly selected profile) and keep that selection in
+// the suggested recovery commands, so the advice can be copied verbatim
+// (ALIFE-735). The viper values stand in for the profile overlay that
+// applyProfile installs in the real flow.
+func TestCheckCLICredentials_NamesSelectionInAdvice(t *testing.T) {
+	cases := []struct {
+		name            string
+		profile         string
+		endpoint        string
+		token           string
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name: "omitted selection names the root-level credentials with bare advice",
+			wantContains: []string{
+				"root-level",
+				"dr auth set-url to configure",
+				"dr auth login to authenticate",
+			},
+			wantNotContains: []string{"--profile"},
+		},
+		{
+			name:     "endpoint-only profile is named with a login --profile suggestion",
+			profile:  "endpoint-only",
+			endpoint: "https://east.dummy.invalid/api/v2",
+			wantContains: []string{
+				`profile "endpoint-only"`,
+				"dr auth login --profile endpoint-only",
+			},
+		},
+		{
+			name:    "token-only profile is named with a set-url --profile suggestion",
+			profile: "west",
+			token:   "stored-token",
+			wantContains: []string{
+				`profile "west"`,
+				"dr auth set-url --profile west",
+			},
+		},
+		{
+			name:    "explicit default suggests login --profile default",
+			profile: "default",
+			wantContains: []string{
+				`profile "default"`,
+				"dr auth login --profile default",
+			},
+		},
+		{
+			name:    "profile name is normalized in output and advice",
+			profile: " East ",
+			wantContains: []string{
+				`profile "east"`,
+				"dr auth login --profile east",
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("DATAROBOT_ENDPOINT", "")
+			t.Setenv("DATAROBOT_API_ENDPOINT", "")
+			t.Setenv("DATAROBOT_API_TOKEN", "")
+
+			viperx.Reset()
+
+			viperx.Set(config.DataRobotURL, c.endpoint)
+			viperx.Set(config.DataRobotAPIKey, c.token)
+
+			if c.profile != "" {
+				viperx.Set(config.ProfileKey, c.profile)
+			}
+
+			t.Cleanup(viperx.Reset)
+
+			var buf bytes.Buffer
+
+			valid := checkCLICredentials(&buf)
+
+			require.False(t, valid)
+
+			for _, want := range c.wantContains {
+				assert.Contains(t, buf.String(), want)
+			}
+
+			for _, notWant := range c.wantNotContains {
+				assert.NotContains(t, buf.String(), notWant)
+			}
+		})
+	}
+}
+
 // The stored-profile leg blames the token only on a real 401; 403 reports the
 // account lacking access, and other statuses blame the instance.
 func TestCheckCLICredentials_ClassifiesStoredProfileStatus(t *testing.T) {

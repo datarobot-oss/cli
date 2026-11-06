@@ -53,6 +53,8 @@ dr auth login
 3. You log in to DataRobot (if not already logged in) and authorize the CLI.
 4. DataRobot redirects back to the local server with your API key.
 5. The CLI stores the API key in your configuration file.
+6. The CLI confirms what was saved: the profile (root-level, or the named
+   profile chosen with `--profile`) and the config file path.
 
 > [!NOTE]
 > Despite the name, this is not an OAuth grant: there is no `client_id`, no PKCE, and
@@ -362,6 +364,12 @@ $ dr auth set-url https://app.datarobot.com
 $ dr auth set-url https://my-company.datarobot.com
 ```
 
+A successful `set-url` (and `login`) announces where the credentials landed:
+one notice naming the saved profile — `default (root-level)` when no profile
+was selected, otherwise the named profile — and the actual config file path.
+Under `--output-format json` the notice goes to stderr, so stdout stays valid
+JSON.
+
 **Validation:**
 
 ```bash
@@ -379,53 +387,112 @@ Error: Invalid URL format
 
 ### `profile`
 
-Inspect the named profiles stored in `drconfig.yaml`. Read-only: there is no `create` or
-`delete` subcommand. A profile is created the first time `dr --profile <name> auth login`
-(or `auth set-url`) is run for a name that doesn't exist yet; remove one by editing
-`drconfig.yaml` directly.
+Inspect and manage the named profiles stored in `drconfig.yaml`:
 
 ```bash
 dr auth profile list
 dr auth profile show [name]
+dr auth profile delete <name>   # alias: rm
 ```
 
-**`profile list`** shows the default profile plus every named profile, marking the active
-one (selected via `--profile` or `DATAROBOT_CLI_PROFILE`):
+There is no `create` subcommand: a profile is created the first time
+`dr --profile <name> auth login` (or `auth set-url`) is run for a name that
+doesn't exist yet.
+
+**`profile list`** shows the root-level credentials plus every named profile, marking the
+active one (selected via `--profile` or `DATAROBOT_CLI_PROFILE`). The root-level row is
+labelled `default (root-level)` so it cannot be confused with an explicit
+`profiles.default` section, which is listed as a normal named profile:
 
 ```bash
 $ dr auth profile list
 DataRobot Profiles
 ──────────────────
-╭───────────┬───────────────────────────────────────┬───────┬────────╮
-│ NAME      │ ENDPOINT                               │ TOKEN │ ACTIVE │
-├───────────┼───────────────────────────────────────┼───────┼────────┤
-│ default   │ https://app.datarobot.com/api/v2       │ set   │ ✓      │
-│ eu-mtsaas │ https://app.eu.datarobot.com/api/v2    │ set   │        │
-╰───────────┴───────────────────────────────────────┴───────┴────────╯
+╭──────────────────────┬─────────────────────────────────────┬───────┬────────╮
+│ NAME                 │ ENDPOINT                            │ TOKEN │ ACTIVE │
+├──────────────────────┼─────────────────────────────────────┼───────┼────────┤
+│ default (root-level) │ https://app.datarobot.com/api/v2    │ set   │ ✓      │
+│ eu-mtsaas            │ https://app.eu.datarobot.com/api/v2 │ set   │        │
+╰──────────────────────┴─────────────────────────────────────┴───────┴────────╯
 ```
 
-**`profile show [name]`** shows one profile's resolved settings &mdash; its own values, falling
-back to the default profile's for anything it doesn't define. Defaults to the active
-profile when no name is given; pass `default` to see the top-level profile explicitly. The
-token value itself is never printed, only whether one is set.
+When no explicit profiles are defined, `list` also prints a creation hint
+(`dr auth login --profile <name>` / `dr auth set-url --profile <name>`) on
+stderr. Under `--output-format json` the output is pure JSON on stdout; note
+that the root-level row and an explicit `profiles.default` row can both carry
+the name `default` in distinct entries — use the `active` flag and row order
+to tell them apart.
+
+**`profile show [name]`** shows one profile's resolved settings &mdash; its own values,
+falling back to the root-level credentials' values for anything it doesn't
+define (except its endpoint/token pair, which is never split — see
+[Named profiles](../user-guide/configuration.md#named-profiles)). With no
+name it shows the active profile; the positional name `default` shows the
+explicit `profiles.default` section when one is defined and falls back to the
+root-level credentials otherwise. The token value itself is never printed,
+only whether one is set, and the human output names the config file that was
+read.
 
 ```bash
 $ dr auth profile show eu-mtsaas
 eu-mtsaas
 ─────────
+  config file: /Users/you/.config/datarobot/drconfig.yaml
   endpoint: https://app.eu.datarobot.com/api/v2
   token: set
-  ca-cert: - (inherited from default)
+  ca-cert: - (inherited from the root-level credentials)
 ```
 
-Both support `--output-format json`. To work against a specific profile with any command,
-not just `auth profile`, use `--profile <name>` or `DATAROBOT_CLI_PROFILE=<name>`:
+A profile that defines an endpoint but no token (or the reverse) also gets a
+plain-language explanation that it does **not** use the root-level value for
+the missing half:
+
+```text
+  This profile has its own endpoint and no token of its own; it does not use the root-level token (endpoint and token are always paired).
+```
+
+Under `--output-format json` the document always includes `ca_cert` (an empty
+string when no CA is configured), alongside the existing `name`, `active`,
+`endpoint`, `endpoint_own`, `has_token`, `has_token_own`, and `ca_cert_own`
+fields. The `*_own` fields describe ownership of the endpoint/token *pair*,
+not each key individually.
+
+**`profile delete <name>`** (alias `rm`) removes that profile's section from
+`drconfig.yaml`, keeping everything else: root-level credentials, other
+profiles, global settings, and unrelated comments survive, and the file's
+`0600` permissions are preserved. Names normalize like `--profile` names, so
+`rm " staging "` targets the `staging` section. There is no confirmation
+prompt, and the success output names the deleted profile:
+
+```bash
+$ dr auth profile rm staging
+Deleted profile "staging".
+```
+
+The reserved name `default` cannot be deleted — it addresses the root-level
+credentials whenever no explicit `profiles.default` section is defined, and
+those are cleared by `dr auth logout` instead. The refusal says so and leaves
+the file untouched. An explicit `profiles.default` section is likewise
+protected from `delete`.
+
+To work against a specific profile with any command, not just `auth profile`,
+use `--profile <name>` or `DATAROBOT_CLI_PROFILE=<name>`:
 
 ```bash
 dr --profile eu-mtsaas auth login
 dr --profile eu-mtsaas templates list
 DATAROBOT_CLI_PROFILE=eu-mtsaas dr templates list
 ```
+
+Omitting the selection uses the root-level credentials and never activates a
+`profiles.default` section; `--profile default` (and `DATAROBOT_CLI_PROFILE=default`)
+select *only* an explicitly defined `profiles.default`. Profile names also
+complete in your shell for `--profile` and for the `show`/`delete` arguments
+(see [Shell completions](../user-guide/shell-completions.md)); `default` is
+suggested only when it is explicitly defined.
+
+For a hands-on tour of all of this, including a safe offline scratch setup,
+see the [auth profiles walkthrough](../demos/auth-profiles.md).
 
 See [Named profiles](../user-guide/configuration.md#named-profiles) for the full
 `drconfig.yaml` shape and precedence rules.

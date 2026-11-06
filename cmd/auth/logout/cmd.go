@@ -25,10 +25,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func RunE(_ *cobra.Command, _ []string) error {
+func RunE(cmd *cobra.Command, _ []string) error {
 	viperx.Set(config.DataRobotAPIKey, "")
 
-	err := auth.WriteConfigFile()
+	err := auth.WriteConfigFile(cmd)
 	if err != nil {
 		log.Error(fmt.Errorf("failed to write config: %w", err))
 

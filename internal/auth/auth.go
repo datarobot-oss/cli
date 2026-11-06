@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 	"github.com/datarobot/cli/tui/hostpicker"
 	"github.com/spf13/cobra"
@@ -459,13 +460,26 @@ func WriteConfigFileSilent() error {
 	return nil
 }
 
-func WriteConfigFile() error {
+// WriteConfigFile persists the config file and prints a success line. The
+// line follows the command's output-format contract: under
+// --output-format json it goes to stderr so stdout stays a parseable
+// channel, mirroring the save notice the auth commands emit after a
+// successful login/set-url write.
+func WriteConfigFile(cmd *cobra.Command) error {
 	err := WriteConfigFileSilent()
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Config file written successfully.")
+	successLine := "Config file written successfully."
+
+	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
+		fmt.Fprintln(cmd.ErrOrStderr(), successLine)
+
+		return nil
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), successLine)
 
 	return nil
 }
@@ -647,7 +661,9 @@ func printURLUnchanged() {
 		fmt.Print(tui.BaseTextStyle.Render("Set one non-interactively with "))
 	}
 
-	fmt.Println(tui.InfoStyle.Render("dr auth set-url <url>"))
+	// The suggestion retraces the active selection so it targets the
+	// credentials the user is actually configuring, not the root ones.
+	fmt.Println(tui.InfoStyle.Render("dr auth set-url" + config.SelectedProfileFlagSuffix() + " <url>"))
 	fmt.Print(tui.BaseTextStyle.Render("or export "))
 	fmt.Print(tui.InfoStyle.Render("DATAROBOT_ENDPOINT"))
 	fmt.Print(tui.BaseTextStyle.Render(" and "))
