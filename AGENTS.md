@@ -124,13 +124,16 @@ Lefthook enforces quality checks before each commit. It is a Go binary installed
 automatically by `task install-tools` and wired up by `task dev-init`.
 
 Hooks run automatically on `git commit`. Run manually with `task precommit`.
-Bypass with `LEFTHOOK=0 git commit` (use sparingly). Configured hooks:
+Bypass with `LEFTHOOK=0 git commit` (use sparingly). The configured hook:
 
 - **`task precommit`**: formats via gofumpt, verifies Go files are formatted, runs `go mod tidy`, `go vet`, and `golangci-lint run --new-from-rev HEAD` (new changes only, host GOOS only — see [Cross-Platform Linting](#cross-platform-linting)), verifies golangci-lint config, and checks go.mod/go.sum are tidy
-- **`task dupcheck`**: duplicate code detection via jscpd (threshold and exclusions in `.jscpd.json`)
 
-Both hooks reuse Taskfile tasks so there is a single source of truth for quality checks.
+The hook reuses a Taskfile task so there is a single source of truth for quality checks.
 Configuration lives in `lefthook.yml` at the repository root.
+
+CI-only checks (not commit hooks):
+
+- **`task dupcheck`**: jscpd duplicate-code detection; fails on the `.jscpd.json` threshold or when clones exceed `JSCPD_CLONE_LIMIT` in `Taskfile.yaml` (a ratchet: lower as clones are removed, never raise). The HTML report is a CI artifact; local copy at `tmp/jscpd-report/`.
 
 ### Updating golangci-lint
 

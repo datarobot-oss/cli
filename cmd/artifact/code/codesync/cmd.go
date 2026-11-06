@@ -307,6 +307,7 @@ func runSync(cmd *cobra.Command, outputFormat outputformat.OutputFormat, deps De
 	format.StateNotice(cmd.ErrOrStderr(), engine.LockedNotice())
 	format.StateNotice(cmd.ErrOrStderr(), divergenceSummaryNotice(flags, plan, engine.Divergences()))
 	format.StateNotice(cmd.ErrOrStderr(), skippedSymlinkSummaryNotice(engine.SkippedSymlinks()))
+	format.StateNotice(cmd.ErrOrStderr(), replacedRemoteNotice(plan.ReplacedRemote))
 
 	if engine.StaleRollbackRestored() {
 		fmt.Fprintln(cmd.ErrOrStderr(), tui.DimStyle.Render("Recovered from interrupted sync. Working tree restored."))
@@ -391,11 +392,25 @@ func skippedSymlinkSummaryNotice(symlinks []sync.SkippedSymlink) string {
 			kind = "directory"
 		}
 
-		parts[i] = fmt.Sprintf("%s (%s)", s.Path, kind)
+		parts[i] = fmt.Sprintf("%s (%s, %s)", s.Path, kind, s.Why())
 	}
 
 	return fmt.Sprintf("%d symlink(s) were not uploaded or synced: %s.",
 		len(sorted), boundedList(parts, sync.SymlinkNoticeBound))
+}
+
+// replacedRemoteNotice is the one-line account of the server changes the plan
+// replaces because their paths are reached through a symlink.
+func replacedRemoteNotice(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+
+	sorted := append([]string(nil), paths...)
+	sort.Strings(sorted)
+
+	return fmt.Sprintf("%d file(s) changed on the server are reached through a symlink, so the local copy replaces them: %s.",
+		len(sorted), boundedList(sorted, sync.SymlinkNoticeBound))
 }
 
 // boundedList joins up to bound items and counts the rest.

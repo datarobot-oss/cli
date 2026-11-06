@@ -29,6 +29,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRunE_SkipAuthReturnsErrSilent covers the --skip-auth short circuit, the one
+// login failure path that needs no network or config access. RunE logs the reason
+// itself, so it must return cli.ErrSilent; a plain error would have executeRoot print
+// the same thing again (CFX-6924).
+func TestRunE_SkipAuthReturnsErrSilent(t *testing.T) {
+	viperx.Set(config.SkipAuthKey, true)
+	t.Cleanup(func() { viperx.Set(config.SkipAuthKey, false) })
+
+	err := RunE(&cobra.Command{}, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrSilent,
+		"the reason is already logged, so the error must not be printed again")
+}
+
+// TestCmd_SilenceErrors documents that the command still opts out of cobra's
+// printing. Reporting is centralized in executeRoot via cmd.ReportError, which honours
+// cli.ErrSilent; this flag keeps cobra from adding a line of its own.
+func TestCmd_SilenceErrors(t *testing.T) {
+	assert.True(t, Cmd().SilenceErrors)
+}
+
 // newLoginCmd returns a login command aimed at a dead endpoint, with no browser
 // and the given --timeout.
 func newLoginCmd(t *testing.T, timeout string) *cobra.Command {

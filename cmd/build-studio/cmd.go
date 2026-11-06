@@ -22,7 +22,6 @@ import (
 	plugininstall "github.com/datarobot/cli/cmd/plugin/install"
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/cli"
-	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
@@ -69,8 +68,6 @@ to dr xp.`,
 	// Registered for help output only: with flag parsing disabled, cobra
 	// never parses it — parseArgs consumes it from the raw args instead.
 	cmd.Flags().BoolP(cli.YesFlagName, "y", false, `Assume "yes" when prompted to install plugin dependencies.`)
-
-	features.SetGate(cmd, "build-studio")
 
 	telemetry.Track(cmd)
 

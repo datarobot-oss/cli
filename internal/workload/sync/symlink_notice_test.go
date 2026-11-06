@@ -39,15 +39,11 @@ func TestPhase2_SymlinkNotice_EmittedFromPhase2(t *testing.T) {
 
 	// A file symlink and a directory symlink.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "realfile.py"), []byte("x"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realfile.py"),
-		filepath.Join(dir, "link_to_file.py")))
+	require.NoError(t, os.Symlink(outsideFile(t, "realfile.py"), filepath.Join(dir, "link_to_file.py")))
 
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "realdir"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "realdir", "inner.py"), []byte("y"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realdir"),
-		filepath.Join(dir, "link_to_dir")))
+	require.NoError(t, os.Symlink(outsideDir(t, "realdir", "inner.py"), filepath.Join(dir, "link_to_dir")))
 
 	e := lockfileEngine(t, dir, noLockfileRunner)
 
@@ -92,9 +88,7 @@ func TestPhase2_SymlinkNotice_SurvivesLaterPhaseFailure(t *testing.T) {
 	})
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "realfile.py"), []byte("x"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realfile.py"),
-		filepath.Join(dir, "link_to_file.py")))
+	require.NoError(t, os.Symlink(outsideFile(t, "realfile.py"), filepath.Join(dir, "link_to_file.py")))
 
 	// Make a file unreadable so hashEntries fails after the walk and the
 	// log.Warn emission. The walk (filepath.WalkDir) only needs directory
@@ -140,9 +134,7 @@ func TestPhase2_SymlinkNotice_BoundedAtFive(t *testing.T) {
 	// Create 7 file symlinks (exceeding the bound of 5).
 	for i := 0; i < 7; i++ {
 		name := "link" + string(rune('a'+i)) + ".py"
-		require.NoError(t, os.Symlink(
-			filepath.Join(dir, "real.py"),
-			filepath.Join(dir, name)))
+		require.NoError(t, os.Symlink(outsideFile(t, "real.py"), filepath.Join(dir, name)))
 	}
 
 	e := lockfileEngine(t, dir, noLockfileRunner)
@@ -210,9 +202,7 @@ func TestPhase2_SymlinkNotice_DeterministicOrder(t *testing.T) {
 
 	// Create symlinks in non-sorted order of creation.
 	for _, name := range []string{"z_link.py", "a_link.py", "m_link.py"} {
-		require.NoError(t, os.Symlink(
-			filepath.Join(dir, "real.py"),
-			filepath.Join(dir, name)))
+		require.NoError(t, os.Symlink(outsideFile(t, "real.py"), filepath.Join(dir, name)))
 	}
 
 	e := lockfileEngine(t, dir, noLockfileRunner)

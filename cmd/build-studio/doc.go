@@ -15,5 +15,5 @@
 // Package buildstudio implements `dr build-studio`: it makes sure the xp and
 // opencode plugins are installed (installing them from the plugin registry
 // on first use) and then launches the xp dashboard with the Assist tab
-// enabled. The command is behind the build-studio feature gate.
+// enabled.
 package buildstudio

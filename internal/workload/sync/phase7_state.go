@@ -244,6 +244,7 @@ func (e *Engine) populateResult(versionForState string) {
 		Duration:           e.nowFn().Sub(e.startedAt),
 
 		ExecutableNotice: e.execNotice,
+		SkippedSymlinks:  e.skippedSymlinks,
 	}
 
 	// "Old" should be the version BEFORE Phase 7 overwrote config.

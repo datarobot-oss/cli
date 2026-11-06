@@ -79,9 +79,11 @@ Ambiguous or mixed? Present the evidence and let the user pick. Do not silently 
 **Notes and announcement:**
 
 10. Rewrite the GitHub release notes after promotion — see Output Contract for the required
-    shape, including `## Brought to you by` via the compare API (exclude bots and coding agents).
+    shape, including `## Brought to you by` from author logins and `Co-authored-by:` trailers
+    (exclude bots and coding agents).
 11. Draft the #dr-cli announcement per `references/announcement-style.md`. Verify every
-    flag/command example and every thanked person against the commit-author list before posting.
+    flag/command example and every thanked person against the author and co-author lists
+    before posting.
 12. New announcement-style learnings go into `references/announcement-style.md` via a follow-up
     PR — not into agent-local memory.
 
@@ -96,7 +98,9 @@ Return:
 - Final release URL and `isPrerelease` state; anything that stayed pre-release, and why.
 - Release notes shape: readable sections (not commit bullets), major highlights, feature-gate
   status, operational notes for new functionality, full stable-to-stable range, and
-  `## Brought to you by` listing human authors:
+  `## Brought to you by` listing human authors **and human co-authors** (the compare API below
+  only sees authors; check `Co-authored-by:` trailers too — see
+  `references/announcement-style.md` for both commands):
 
 ```sh
 gh api repos/datarobot-oss/cli/compare/<old>...<new> --jq \
@@ -107,9 +111,11 @@ gh api repos/datarobot-oss/cli/compare/<old>...<new> --jq \
 
 ## References
 
-- `references/version-decision.md` — how to classify a diff into a semver bump.
+- `references/version-decision.md` — how to classify a diff into a semver bump; the mechanical
+  dual-number presentation and the burned-tag rule.
 - `references/pipeline.md` — what runs after the tag push; failure modes and rollback.
-- `references/announcement-style.md` — the #dr-cli Slack announcement structure, tone, and
+- `references/announcement-style.md` — the #dr-cli Slack announcement structure, tone,
+  attribution (authors + co-authors), mention mechanics, draft-file coordination, and
   verification checklist.
 - `references/worked-examples.md` — anonymized end-to-end release runs.
 - `../../../docs/development/releasing.md` — the full human-facing release doc.

@@ -10,6 +10,11 @@ The system enables:
 - Platform-agnostic plugin packages containing both Posix and Windows scripts
 - Python-based plugins wrapped in shell scripts using `uv run`
 
+**Package model (important):** one platform-agnostic archive per version — the registry has a single `url` and `sha256` per version and no per-OS entries. OS selection happens at runtime: the CLI reads the manifest's `scripts` block and executes the script for the current platform, and that wrapper picks the right bundled binary. Two conventions keep packages healthy:
+
+- Entry scripts are `dr-<name>.sh` (Posix) and `dr-<name>.ps1` (Windows); the manifest's `scripts` block points at them, and packaging validation executes exactly the declared script (a declared-but-missing script is a hard error, not a reason to fall back to the directory scan).
+- Bundled binaries must not be `dr-`-prefixed and extensionless — the CLI's fallback scan (for plugins without a `scripts` block) treats any such file as a candidate entry point and can execute the wrong one. Name binaries `<name>-<os>-<arch>` instead (the `opencode` plugin follows this).
+
 ## Architecture
 
 ### Plugin Registry (`index.json`)

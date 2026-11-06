@@ -53,6 +53,35 @@ func writePluginManifestScript(t *testing.T, dir, name, manifestJSON string) str
 	return scriptPath
 }
 
+// writeManifestScriptAt creates a cross-platform executable at the exact path
+// given that responds to --dr-plugin-manifest by echoing manifestJSON. Unlike
+// writePluginManifestScript it does not derive the filename, so tests can
+// exercise manifest-declared script names such as dr-test.sh. Returns the
+// script path.
+func writeManifestScriptAt(t *testing.T, path, manifestJSON string) string {
+	t.Helper()
+
+	var scriptContent string
+
+	if runtime.GOOS == "windows" {
+		scriptContent = "#!/usr/bin/env pwsh\n" +
+			"if ($args[0] -eq '--dr-plugin-manifest') {\n" +
+			"  Write-Output '" + manifestJSON + "'\n" +
+			"}\n"
+	} else {
+		scriptContent = "#!/bin/sh\n" +
+			"if [ \"$1\" = \"--dr-plugin-manifest\" ]; then\n" +
+			"  echo '" + manifestJSON + "'\n" +
+			"else\n" +
+			"  exit 0\n" +
+			"fi\n"
+	}
+
+	createScript(t, path, scriptContent)
+
+	return path
+}
+
 // writeExitScript creates a cross-platform script that exits with the given
 // code. On Windows it emits a .ps1 (which buildPluginCommand wraps in
 // PowerShell); elsewhere a POSIX shell script. Returns the script path.

@@ -61,8 +61,9 @@ func PrintPlan(w io.Writer, plan *sync.SyncPlan) error {
 	return printGroup(w, skippedHeader, plan.Skipped, markerForDownload)
 }
 
-// skippedHeader labels the remote-side changes a push-only run leaves alone.
-const skippedHeader = "↷ LEFT ALONE (push-only)"
+// skippedHeader labels the remote-side changes a run leaves alone: all of
+// them under --push-only, and any that would write through a link.
+const skippedHeader = "↷ LEFT ALONE (not pulled)"
 
 // PrintEmptyPlanRepair writes the one-line stdout account of an applying
 // run whose plan is empty but whose --verify findings force the manifest
