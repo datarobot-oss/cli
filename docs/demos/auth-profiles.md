@@ -251,6 +251,7 @@ Expected output:
 {
   "profile": {
     "name": "work",
+    "root": false,
     "active": false,
     "endpoint": "https://work.acme-demo.invalid/api/v2",
     "endpoint_own": true,
@@ -266,6 +267,9 @@ Expected output:
 
 - `ca_cert` is always present in show JSON — an empty string when no
   certificate is configured. Scripts can rely on the key existing.
+- `root` distinguishes the root-level credentials from an explicit
+  `profiles.default` section: both are addressed as `"name": "default"`, and
+  only this key tells a script which credentials the row stands for.
 - `endpoint_own` and `has_token_own` describe ownership of the endpoint/token
   *pair*, not each key individually: `work` defines the endpoint half of the
   pair, so both ownership flags are true even though `has_token` is false.
