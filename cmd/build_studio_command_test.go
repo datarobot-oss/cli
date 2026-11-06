@@ -21,29 +21,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuildStudioGatedByDefault verifies that `dr build-studio` stays out of
-// the command tree until the build-studio feature gate is enabled. The env var
-// is neutralized so an ambient value (e.g. from the repo's .env) cannot leak in.
-func TestBuildStudioGatedByDefault(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_BUILD_STUDIO", "")
-
-	root := newIsolatedRootCmd()
-
-	assert.Nil(t, findCommandByPath(root.Command, "dr build-studio"),
-		"build-studio command should be hidden while the build-studio gate is off")
-}
-
-// TestBuildStudioPresentWhenGateEnabled verifies that enabling the
-// build-studio gate registers `dr build-studio` as a top-level core command,
-// and that the earlier `dr build studio` spelling is not registered.
-func TestBuildStudioPresentWhenGateEnabled(t *testing.T) {
-	t.Setenv("DATAROBOT_CLI_FEATURE_BUILD_STUDIO", "true")
-
+// TestBuildStudioRegistered verifies that `dr build-studio` is registered as a
+// top-level core command, and that the earlier `dr build studio` spelling is
+// not registered.
+func TestBuildStudioRegistered(t *testing.T) {
 	root := newIsolatedRootCmd()
 
 	studioCmd := findCommandByPath(root.Command, "dr build-studio")
 
-	require.NotNil(t, studioCmd, "build-studio command should be present with the build-studio gate on")
+	require.NotNil(t, studioCmd, "build-studio command should be registered")
 	assert.Equal(t, "core", studioCmd.GroupID)
 	assert.NotNil(t, studioCmd.Flags().Lookup("yes"), "build-studio should expose the --yes flag")
 
