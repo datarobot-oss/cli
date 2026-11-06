@@ -62,3 +62,22 @@ Version proposed and approved: minor. After promotion:
 
 The one shipped defect worth copying: the bolded headline was proofread last and shipped with
 a missing apostrophe. Proofread the headline first.
+
+## 5. Attribution from the author list alone
+
+A patch release's `## Brought to you by` was built from the compare API's author logins alone.
+The list was right by luck: a maintainer later asked why a contributor who co-committed on
+recent plugin work was missing — the co-commit had shipped in the *previous* stable range, and
+only as a `Co-authored-by:` trailer, which the compare API never surfaces. The release notes
+needed no correction, but the method did. Encoded in `announcement-style.md` (Attribution):
+check trailers in addition to author logins, always; bots are excluded from both.
+
+## 6. The version tension, three times
+
+Three consecutive feature releases went out with the generic-rule MINOR number while the
+runbook pre-1.0 mapping said PATCH; in every case the conflict surfaced only after the tag was
+pushed, and in every case the maintainer chose to let the tag ride rather than abort a running
+goreleaser. What changed was not the outcome but the timing of the choice: the skill now
+requires presenting both numbers — with the runbook mapping named — at the *first*
+recommendation, so the maintainer decides the tension knowingly instead of discovering it
+mid-run.
