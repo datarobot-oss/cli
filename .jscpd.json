@@ -1,6 +1,6 @@
 {
   "threshold": 5,
-  "reporters": ["console"],
+  "reporters": ["console", "json", "html"],
   "ignore": [
     "**/*_test.go",
     "**/vendor/**",

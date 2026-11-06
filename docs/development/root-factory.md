@@ -14,6 +14,12 @@ Production code (via `main`) uses the singleton built in `init()`. Tests use
 `NewRootFactory(...)` directly with stubbed dependencies, or
 `NewIsolatedRootFactory()` for an all-no-op preset.
 
+`ExecuteContext` routes failures through `executeRoot`, which silences cobra and
+reports each unhandled error once on stderr: text via `ReportError`, or a JSON
+error envelope under `--output-format json`. Commands that already reported their
+failure return `cli.ErrSilent`. This also covers config and TLS failures raised
+before a self-silencing child command runs.
+
 ## Diagrams
 
 ### Factory structure

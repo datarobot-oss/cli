@@ -8,3 +8,5 @@ docs/commands/pipeline*.md @datarobot-oss/inference-platform
 cmd/enclave/ @datarobot-oss/inference-platform
 internal/enclave/ @datarobot-oss/inference-platform
 docs/commands/enclave.md @datarobot-oss/inference-platform
+cmd/build-studio/ @datarobot-oss/agent-ecosystem
+cmd/build_studio_command_test.go @datarobot-oss/agent-ecosystem

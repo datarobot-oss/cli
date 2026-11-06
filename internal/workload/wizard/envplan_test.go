@@ -64,6 +64,22 @@ func TestEnvPlan_SortsEveryVariableIntoWhatHappensToIt(t *testing.T) {
 	assert.Contains(t, shown.String(), "remove")
 }
 
+// A manifest that already declares the endpoint keeps it: .env still names it,
+// so a sync neither imports a new value nor reads it as gone.
+func TestEnvPlan_EndpointInManifestIsNotRemovedOrRewritten(t *testing.T) {
+	credentialStore(t)
+
+	dir := configured(t, "DATAROBOT_ENDPOINT=https://internal/api/v2\nGREETING=hello\n")
+	writeEnvFile(t, dir, "DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2\nGREETING=hello\n")
+
+	shown := &bytes.Buffer{}
+
+	_, err := Run(asking(dir, false, shown))
+	require.NoError(t, err)
+
+	assert.NotContains(t, shown.String(), "DATAROBOT_ENDPOINT")
+}
+
 // A refusal is a decision, not a failure: neither file is touched, nothing
 // reaches the tenant, and the run carries on.
 func TestConfirmEnvPlan_RefusalChangesNothing(t *testing.T) {

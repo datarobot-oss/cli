@@ -43,8 +43,12 @@ While below `v1.0.0`, a breaking change is conventionally released as a MINOR bu
 `v1.0.0`. Confirm with the user rather than assuming they are ready to declare 1.0.
 
 `docs/development/releasing.md` pre-1.0 mapping additionally treats new features as PATCH; the
-maintainer's practice has been MINOR for new public commands and GA enablement. When the range
-is small and feature-only, present both at the approval step.
+generic semver rule says MINOR. **Always present both numbers at the first version
+recommendation, naming the runbook mapping explicitly** — do not resolve the conflict silently
+in either direction. For a bugfix-only range the two rules agree and a single PATCH proposal is
+fine. This is mechanical, not judgment: the tension surfaced only after the tag was up in three
+separate releases (v0.15.0, v0.16.0, v0.18.0) before the rule was made unconditional, and each
+time the maintainer chose to let the already-pushed tag ride.
 
 ## 4. Present evidence, then stop
 
@@ -57,3 +61,11 @@ Produce a table before proposing anything:
 
 Then state the proposed version and the single rule that drove it. Wait for approval. The user
 decides; the table is what lets them decide quickly.
+
+## 5. A pushed tag is burned
+
+Once the tag is up and goreleaser is running, "let it ride" beats abort-and-retag — a
+half-published release cannot be cleanly walked back, and re-tagging re-runs notarization and
+Homebrew on an ambiguous ref. If the number turns out to be debatable, finish the release and
+record the disagreement for the next one. Never retag the same commit with a different number
+(see `pipeline.md`); the version string in shipped binaries comes from `git describe`.

@@ -63,6 +63,27 @@ func TestRunE_SymlinkNotice_ReachesStderrOnly(t *testing.T) {
 		"symlink prose must stay off the data stream")
 }
 
+// The engine runs quietly, so a server change the local copy of a linked path
+// replaces is named here, on stderr.
+func TestRunE_ReplacedRemoteNotice_ReachesStderrOnly(t *testing.T) {
+	dir := t.TempDir()
+	linkProject(t, dir)
+
+	fe := &fakeEngine{plan: &sync.SyncPlan{
+		Uploads:        []sync.FileAction{{Path: "lib/util.py", Action: sync.ActUploadModify}},
+		ReplacedRemote: []string{"lib/util.py"},
+	}}
+
+	flags := map[string]string{"dir": dir, "yes": "true", "dry-run": "true"}
+
+	_, stdout, stderr, err := runWithDeps(t, fakeEngineDeps(fe), flags)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr.String(),
+		"1 file(s) changed on the server are reached through a symlink, so the local copy replaces them: lib/util.py.")
+	assert.NotContains(t, stdout.String(), "reached through a symlink")
+}
+
 // Under --output-format json the symlink data flows into the plan document
 // as a structured field, and every trace of the prose stays on stderr so
 // stdout decodes as JSON to EOF.

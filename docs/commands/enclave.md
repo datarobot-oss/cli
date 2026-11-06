@@ -17,14 +17,14 @@ An **enclave** is a Kubernetes cluster registered with your DataRobot tenant tha
 Two separate things govern who can do what:
 
 - **Per-enclave access** (`dr enclave access`) — the `owner`, `user`, and `consumer` roles on one enclave. Deploying a workload onto an enclave requires at least the `user` role.
-- **Collection-level permissions** (`dr enclave permission`) — who may create enclaves at all, and who may pin a workload to a chosen enclave, independent of any single one.
+- **Collection-level permissions** (`dr enclave permission`): who may create enclaves at all, who may pin a workload to a chosen enclave, and who may run workloads on the Hub, independent of any single enclave.
 
 DataRobot system administrators bypass both and always have full access.
 
 > [!NOTE]
 > The `enclave` command is currently behind a feature gate. Enable it by exporting `DATAROBOT_CLI_FEATURE_ENCLAVE=true` before running any `dr enclave` subcommand. See [Feature gates](../development/feature-gates.md) for details.
 >
-> The access and permission subcommands need `ENCLAVE_RBAC_ENABLED` on the server. Where it is off, grants and revokes are accepted as no-ops and every caller shows as fully permitted.
+> The access and permission subcommands need `ENCLAVE_RBAC_ENABLED` on the server. Where it is off, grants and revokes are accepted as no-ops and every caller shows as fully permitted, except the Hub permission: its grants and revokes are refused (409), because the server can't keep them.
 
 ## Quick start
 
@@ -66,6 +66,9 @@ Pin a workload to an enclave with [`dr workload create --enclave <name>`](worklo
 | `dr enclave permission revoke --permission pin` | `PATCH  /api/v2/enclaves/pinAccess` | Stop a user from pinning workloads.    |
 | `dr enclave permission list`   | `GET    /api/v2/enclaves/createAccess`            | List who may create enclaves.                    |
 | `dr enclave permission list --permission pin` | `GET    /api/v2/enclaves/pinAccess` | List who may pin, in your organization.  |
+| `dr enclave permission grant --permission hub` | `PATCH  /api/v2/enclaves/access` (`"permission": "hub"`) | Allow a user or group to run workloads on the Hub. |
+| `dr enclave permission revoke --permission hub` | `PATCH  /api/v2/enclaves/access` (`"permission": "hub"`) | Stop a user or group from running workloads on the Hub. |
+| `dr enclave permission list --permission hub` | `GET    /api/v2/enclaves/access?permission=hub` | List who may use the Hub, in your organization. |
 | `dr enclave permission show`   | `GET    /api/v2/enclaves/permissions`             | Show your own collection-level permissions.      |
 
 All paths are served at the root of your DataRobot host. They are new: the API
@@ -208,14 +211,16 @@ dr enclave access show <enclave-id>
 dr enclave access show <enclave-id> --user-id <datarobot-user-id>
 ```
 
-## Permissions to create enclaves and to pin workloads
+## Permissions to create enclaves, pin workloads and use the Hub
 
-`dr enclave permission` governs two capabilities that target no single enclave, so these commands take no enclave id:
+`dr enclave permission` governs three capabilities that target no single enclave, so these commands take no enclave id:
 
 - `create`: register new enclaves. Recipients are named by id: `--user-id`, `--group`, or `--org`.
 - `pin`: pin a workload to one chosen enclave with `dr workload create --enclave`, overriding the scheduler. Granted to users (`--user-id`) and groups (`--group`), not organizations. A group grant lets every member pin. The enclave must still be linked to the workload's use case, and the user still needs deploy access to it.
 
-The two are independent: holding `create` does not allow pinning, and holding `pin` does not allow creating. A system administrator may create without a grant but needs a `pin` grant to pin.
+- `hub`: run workloads on the Hub. The server checks it only when the organization requires it (`WORKLOAD_REQUIRE_HUB_PERMISSION`): a new workload with no use case, or a use case without Enclaves, runs on the Hub and needs the Hub permission, or its create is refused with 403 `HUB_PERMISSION_REQUIRED`. This is independent of `WORKLOAD_REQUIRE_USE_CASE`, which only requires a use case on every new workload. Granted to users (`--user-id`) and groups (`--group`), not organizations. A group grant gives every member the Hub permission.
+
+The three are independent: none of them implies another. A system administrator may create without a grant but needs a `pin` grant to pin.
 
 Who may grant, revoke and list:
 
@@ -223,6 +228,7 @@ Who may grant, revoke and list:
 | ---------- | -------------------- | --------- | ----------- |
 | `create`   | yes                  | no        | no          |
 | `pin`      | yes, any user or group in any organization | yes, users and groups in their own organization only (another organization's recipient: 403) | no (403), including users who hold `pin` |
+| `hub`      | yes, any user or group in any organization | yes, users and groups in their own organization only (another organization's recipient: 403) | no (403), including users who hold `hub` |
 
 ### `permission grant`
 
@@ -231,13 +237,17 @@ dr enclave permission grant --permission create --org <org-id>
 dr enclave permission grant --permission create --user-id <datarobot-user-id>
 dr enclave permission grant --permission pin --user-id <datarobot-user-id>   # sys admin, or an org admin for a user in their org
 dr enclave permission grant --permission pin --group <group-id>              # every member of the group may pin
+dr enclave permission grant --permission hub --user-id <datarobot-user-id>   # the user may run workloads on the Hub
+dr enclave permission grant --permission hub --group <group-id>              # every member of the group may
 ```
+
+The Hub permission is served on the server's `/api/v2/enclaves/access` endpoint. A server that predates it refuses the request, and the CLI says the server needs to be upgraded.
 
 A server that still grants pin to users only refuses `--group` with a 422; the CLI says the server needs to be upgraded. Revoking a group's grant doesn't affect a member who also holds a grant of their own.
 
 | Flag           | Description                                  |
 | -------------- | -------------------------------------------- |
-| `--permission` | Permission to grant: `create` or `pin` (required). |
+| `--permission` | Permission to grant: `create`, `pin` or `hub` (required). |
 | `--user-id`    | Grant a user by DataRobot user id.           |
 | `--group`      | Grant a group by id.                         |
 | `--org`        | Grant an entire organization by id.          |
@@ -248,15 +258,18 @@ A server that still grants pin to users only refuses `--group` with a 422; the C
 dr enclave permission revoke --permission create --org <org-id>
 dr enclave permission revoke --permission pin --user-id <datarobot-user-id>
 dr enclave permission revoke --permission pin --group <group-id>
+dr enclave permission revoke --permission hub --user-id <datarobot-user-id>
+dr enclave permission revoke --permission hub --group <group-id>
 ```
 
 ### `permission list`
 
-List the recipients who have been granted the create permission, or with `--permission pin` the users and groups in your organization that hold pin. An empty result means nobody holds it; system administrators do not appear in the create list, because they bypass that permission rather than holding it.
+List the recipients who have been granted the create permission, or with `--permission pin` or `--permission hub` the users and groups in your organization that hold it. An empty result means nobody holds it; system administrators do not appear in the create list, because they bypass that permission rather than holding it.
 
 ```bash
 dr enclave permission list
 dr enclave permission list --permission pin
+dr enclave permission list --permission hub
 ```
 
 ### `permission show`

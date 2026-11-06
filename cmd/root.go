@@ -82,13 +82,11 @@ func init() {
 
 // ExecuteContext executes the root command with the given context.
 // This is called by main.main(). It only needs to happen once per process.
+// executeRoot owns error reporting, so return its error without adding a
+// process-boundary wrapper to the message already shown to the user.
 func ExecuteContext(ctx context.Context) error {
 	parseLeadingGlobalFlags(RootCmd.Command, os.Args[1:])
 	productionFactory.RegisterPlugins(RootCmd)
 
-	if err := executeRoot(ctx, RootCmd.Command, os.Args[1:]); err != nil {
-		return fmt.Errorf("execute root command: %w", err)
-	}
-
-	return nil
+	return executeRoot(ctx, RootCmd.Command, os.Args[1:])
 }

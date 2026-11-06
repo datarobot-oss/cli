@@ -243,18 +243,9 @@ func TestPhase2_Symlink_ReportedWithIsDir(t *testing.T) {
 		"app.py": "print('hi')\n",
 	})
 
-	// realfile.py and a file symlink to it.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "realfile.py"), []byte("x"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realfile.py"),
-		filepath.Join(dir, "link_to_file.py")))
-
-	// realdir with a child and a directory symlink to it.
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "realdir"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "realdir", "inner.py"), []byte("y"), 0o644))
-	require.NoError(t, os.Symlink(
-		filepath.Join(dir, "realdir"),
-		filepath.Join(dir, "link_to_dir")))
+	// A file symlink and a directory symlink out of the project.
+	require.NoError(t, os.Symlink(outsideFile(t, "realfile.py"), filepath.Join(dir, "link_to_file.py")))
+	require.NoError(t, os.Symlink(outsideDir(t, "realdir", "inner.py"), filepath.Join(dir, "link_to_dir")))
 
 	e := lockfileEngine(t, dir, noLockfileRunner)
 
@@ -275,10 +266,34 @@ func TestPhase2_Symlink_ReportedWithIsDir(t *testing.T) {
 	assert.True(t, symlinkIsDir(skipped, "link_to_dir"),
 		"directory symlink must report isDir true")
 
-	// The real files are still in the plan.
 	assert.Contains(t, uploadPaths, "app.py")
-	assert.Contains(t, uploadPaths, "realfile.py")
-	assert.Contains(t, uploadPaths, "realdir/inner.py")
+}
+
+// A link into the project uploads what it points at under the link's path,
+// and the engine remembers it so the plan never pulls through it.
+func TestPhase2_LinkInsideTheProjectIsFollowed(t *testing.T) {
+	dir := initProject(t, map[string]string{
+		"app.py":           "print('hi')\n",
+		"shared/config.py": "x = 1\n",
+		"shared/util.py":   "y = 2\n",
+	})
+
+	if err := os.Symlink(filepath.Join(dir, "shared"), filepath.Join(dir, "lib")); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+
+	require.NoError(t, os.Symlink(filepath.Join("shared", "config.py"), filepath.Join(dir, "config.py")))
+
+	e := lockfileEngine(t, dir, noLockfileRunner)
+
+	plan, err := e.Plan()
+	require.NoError(t, err)
+
+	assert.Subset(t, uploadPathsOf(plan), []string{
+		"app.py", "shared/config.py", "shared/util.py", "lib/config.py", "lib/util.py", "config.py",
+	})
+	assert.ElementsMatch(t, []string{"config.py", "lib"}, e.linkedPaths)
+	assert.Empty(t, e.skippedSymlinks)
 }
 
 // TestPhase2_Symlink_DanglingReported verifies that a dangling symlink is

@@ -16,6 +16,7 @@ package sync
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/datarobot/cli/internal/log"
@@ -49,13 +50,36 @@ func warnSkippedSymlinks(e *Engine) {
 			break
 		}
 
-		log.Warn(skippedSymlinkNotice(s))
+		log.Warn(s.Notice())
 	}
 
 	if len(e.skippedSymlinks) > SymlinkNoticeBound {
 		log.Warn(fmt.Sprintf(
 			"skipped symlink: and %d more symlink(s) were not uploaded or synced (see the plan JSON for the full list)",
 			len(e.skippedSymlinks)-SymlinkNoticeBound))
+	}
+}
+
+// warnReplacedRemoteEdits says which server changes the plan replaces because
+// the path is reached through a link, up to SymlinkNoticeBound of them.
+func warnReplacedRemoteEdits(e *Engine, plan *SyncPlan) {
+	if e.opts.Quiet {
+		return
+	}
+
+	sort.Strings(plan.ReplacedRemote)
+
+	for i, path := range plan.ReplacedRemote {
+		if i == SymlinkNoticeBound {
+			log.Warn(fmt.Sprintf("linked path: and %d more server change(s) under symlinks are replaced by the local copy",
+				len(plan.ReplacedRemote)-i))
+
+			return
+		}
+
+		log.Warn(fmt.Sprintf(
+			"linked path: %s changed on the server, but it is reached through a symlink, so the local copy replaces that change",
+			path))
 	}
 }
 
@@ -81,32 +105,22 @@ func phase2Manifests(e *Engine) error {
 
 	warnIfLockfileIgnored(e, matcher)
 
-	// The walk's symlink arm returns before the ignore check (walk.go tests
-	// ModeSymlink before calling ignore), so filtering must happen here rather
-	// than in the walker. Without it, a symlink the user deliberately .drignore'd
-	// or that is system-excluded (e.g. named .git) would still be announced — the
-	// classic unfiltered-warning trap. matcher.Match applies both the user's
-	// .drignore patterns and the hardcoded system excludes, with the same
-	// case-folding rules used for regular files.
-	walkOnSymlink := func(rel, _ string, isDir, dangling bool) {
-		matched := matcher.Match(rel, isDir)
+	onLink := func(link fileops.Link) {
+		if link.Outcome == fileops.LinkFollowed {
+			e.linkedPaths = append(e.linkedPaths, link.RelPath)
 
-		// A dangling link's kind is unknowable, so a directory-only pattern
-		// ("node_modules/") cannot match through the isDir=false branch.
-		// Treat it as excluded when either spelling matches so a dangling
-		// node_modules link is still filtered rather than warned about.
-		if dangling {
-			matched = matcher.Match(rel, false) || matcher.Match(rel, true)
-		}
-
-		if matched {
 			return
 		}
 
-		e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: rel, IsDir: isDir})
+		e.unfollowedLinks = append(e.unfollowedLinks, link.RelPath)
+
+		// The user excluded an ignored link, so it is not news.
+		if link.Outcome != fileops.LinkIgnored {
+			e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: link.RelPath, IsDir: link.IsDir, Reason: link.Outcome})
+		}
 	}
 
-	entries, err := fileops.Walk(e.projectDir, matcher.Match, walkOnSymlink)
+	entries, err := fileops.Walk(e.projectDir, matcher.Match, onLink)
 	if err != nil {
 		return fmt.Errorf("walk project directory: %w", err)
 	}
@@ -119,6 +133,7 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	e.local = local
+	e.aliases = aliasesOf(e.projectDir, entries, e.linkedPaths, local)
 
 	if cs := caseCollisionsFromManifest(local); len(cs) > 0 {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
@@ -217,6 +232,40 @@ func hashEntries(entries []fileops.Entry) (LocalManifest, error) {
 	}
 
 	return out, nil
+}
+
+// aliasesOf maps each entry listed under one of links to the path local lists
+// the same file under in its own right, where it does.
+func aliasesOf(projectDir string, entries []fileops.Entry, links []string, local LocalManifest) map[string]string {
+	if len(links) == 0 {
+		return nil
+	}
+
+	root, err := filepath.EvalSymlinks(projectDir)
+	if err != nil {
+		return nil
+	}
+
+	out := map[string]string{}
+
+	for _, ent := range entries {
+		if !underLink(ent.RelPath, links) {
+			continue
+		}
+
+		rel, err := filepath.Rel(root, ent.AbsPath)
+		if err != nil {
+			continue
+		}
+
+		if own := fileops.NormalizePath(rel); own != ent.RelPath {
+			if _, ok := local[own]; ok {
+				out[ent.RelPath] = own
+			}
+		}
+	}
+
+	return out
 }
 
 func caseCollisionsFromManifest(m LocalManifest) []fileops.CaseCollision {

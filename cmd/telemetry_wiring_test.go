@@ -46,6 +46,7 @@ var expectedTrackedCommands = []string{
 	"dr plugin install",
 	"dr plugin uninstall",
 	"dr plugin update",
+	"dr build-studio",
 
 	// Pipelines, workloads and artifacts are GA, so no feature gate hides them
 	// from the live RootCmd and they need no separate standalone list.
