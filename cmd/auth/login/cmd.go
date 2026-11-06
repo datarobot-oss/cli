@@ -113,7 +113,10 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	viperx.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
 
-	err = auth.WriteConfigFile(cmd)
+	// The write succeeded or the error is returned; on success the single
+	// save notice names the profile and the config file the credentials
+	// landed in.
+	err = auth.WriteConfigFileAndAnnounce(cmd)
 	if err != nil {
 		log.Error(err)
 
@@ -121,9 +124,6 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 		return err
 	}
-
-	// The write succeeded, so announce where the credentials landed, once.
-	auth.AnnounceCredentialsSavedForCommand(cmd)
 
 	return nil
 }

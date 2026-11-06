@@ -275,6 +275,27 @@ func TestUpdateConfigFile_ReusesExistingMixedCaseProfileSection(t *testing.T) {
 	assert.False(t, hasLowercase, "a second lowercase profile section must not be created when the existing section uses a different case")
 }
 
+// TestUpdateConfigFile_RefusesMultiDocumentStream covers the shared reader's
+// multi-document guard on the write path: the editor decodes only a stream's
+// first document, so a rewrite would silently discard every later one. The
+// write is refused and the second document survives.
+func TestUpdateConfigFile_RefusesMultiDocumentStream(t *testing.T) {
+	configFile := setupWriteTest(t)
+
+	initial := "endpoint: https://app.datarobot.com/api/v2\n---\nother: unrelated-second-document\n"
+	require.NoError(t, os.WriteFile(configFile, []byte(initial), 0o600))
+	require.NoError(t, ReadConfigFile(""))
+
+	viper.Set(DataRobotURL, "https://new.example.com/api/v2")
+
+	require.Error(t, UpdateConfigFile(DataRobotURL))
+
+	after, err := os.ReadFile(configFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(after), "unrelated-second-document",
+		"the later document must be retained")
+}
+
 // TestUpdateConfigFile_ExplicitDefaultSectionWritten covers login/set-url
 // creating profiles.default: the section is a legal write target now, the
 // root-level credentials are untouched, and the root token is not copied

@@ -15,12 +15,8 @@
 package config
 
 import (
-	"errors"
 	"os"
-	"path/filepath"
 	"sort"
-
-	"github.com/spf13/viper"
 )
 
 // configEnvVar is the environment variable the config initializer resolves
@@ -44,12 +40,12 @@ func CompletionConfigPath(explicitConfig string) string {
 		return env
 	}
 
-	dir, err := GetConfigDir()
+	path, err := defaultConfigFilePath()
 	if err != nil {
 		return ""
 	}
 
-	return filepath.Join(dir, configFileName)
+	return path
 }
 
 // ProfileNamesFromFile returns the explicit profile names defined in the
@@ -69,16 +65,8 @@ func ProfileNamesFromFile(path string) ([]string, error) {
 		return nil, nil
 	}
 
-	v := viper.New()
-	v.SetConfigFile(path)
-	v.SetConfigType("yaml")
-
-	err := v.ReadInConfig()
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-
+	v, err := readIsolatedConfig(path)
+	if err != nil || v == nil {
 		return nil, err
 	}
 
@@ -86,7 +74,10 @@ func ProfileNamesFromFile(path string) ([]string, error) {
 }
 
 // normalizedProfileNames normalizes raw section names for completion and
-// drops duplicates that normalize together, keeping the result sorted.
+// error-candidate lists: it drops names that normalize to nothing, names
+// ValidateProfileName rejects (a section like "a.b" can never be selected by
+// --profile, so offering it would suggest an unusable name), duplicates that
+// normalize together, and keeps the result sorted.
 func normalizedProfileNames(raw []string) []string {
 	seen := make(map[string]struct{}, len(raw))
 
@@ -95,7 +86,7 @@ func normalizedProfileNames(raw []string) []string {
 	for _, rawName := range raw {
 		name := NormalizeProfileName(rawName)
 
-		if name == "" {
+		if name == "" || ValidateProfileName(name) != nil {
 			continue
 		}
 

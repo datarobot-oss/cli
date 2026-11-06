@@ -468,12 +468,12 @@ func WriteConfigFile(cmd *cobra.Command) error {
 	successLine := "Config file written successfully."
 
 	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
-		fmt.Fprintln(os.Stderr, successLine)
+		fmt.Fprintln(cmd.ErrOrStderr(), successLine)
 
 		return nil
 	}
 
-	fmt.Println(successLine)
+	fmt.Fprintln(cmd.OutOrStdout(), successLine)
 
 	return nil
 }
@@ -655,7 +655,9 @@ func printURLUnchanged() {
 		fmt.Print(tui.BaseTextStyle.Render("Set one non-interactively with "))
 	}
 
-	fmt.Println(tui.InfoStyle.Render("dr auth set-url <url>"))
+	// The suggestion retraces the active selection so it targets the
+	// credentials the user is actually configuring, not the root ones.
+	fmt.Println(tui.InfoStyle.Render("dr auth set-url" + config.SelectedProfileFlagSuffix() + " <url>"))
 	fmt.Print(tui.BaseTextStyle.Render("or export "))
 	fmt.Print(tui.InfoStyle.Render("DATAROBOT_ENDPOINT"))
 	fmt.Print(tui.BaseTextStyle.Render(" and "))

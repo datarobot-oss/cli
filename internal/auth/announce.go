@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// AnnounceCredentialsSaved writes the single save notice shown after a
+// announceCredentialsSaved writes the single save notice shown after a
 // successful `dr auth login` or `dr auth set-url` persistence. The notice
 // names whose credentials were saved -- the root-level credentials when the
 // profile selection is omitted, otherwise the normalized profile name,
@@ -35,8 +35,27 @@ import (
 // describes has succeeded, and on the error stream: --output-format json
 // keeps stdout reserved for the command's machine-readable output. The
 // notice never includes credential values.
-func AnnounceCredentialsSaved(w io.Writer, profileName, configPath string) {
+func announceCredentialsSaved(w io.Writer, profileName, configPath string) {
 	fmt.Fprintf(w, "Saved %s to %s\n", config.ProfileDescription(profileName), configPath)
+}
+
+// WriteConfigFileAndAnnounce persists the allowlisted config keys and, only
+// after the write succeeded, emits the single save notice naming the saved
+// profile and the actual config file. Both `auth login` and `auth set-url`
+// end through here so a successful save prints one notice, never two
+// overlapping ones.
+//
+// A write failure is returned (and logged by WriteConfigFileSilent); the
+// caller reports it and skips authentication, so a failed write is never
+// followed by a success claim or a notice.
+func WriteConfigFileAndAnnounce(cmd *cobra.Command) error {
+	if err := WriteConfigFileSilent(); err != nil {
+		return err
+	}
+
+	AnnounceCredentialsSavedForCommand(cmd)
+
+	return nil
 }
 
 // AnnounceCredentialsSavedForCommand resolves the just-saved profile from the
@@ -54,5 +73,5 @@ func AnnounceCredentialsSavedForCommand(cmd *cobra.Command) {
 		return
 	}
 
-	AnnounceCredentialsSaved(cmd.ErrOrStderr(), config.ActiveProfile(), configPath)
+	announceCredentialsSaved(cmd.ErrOrStderr(), config.ActiveProfile(), configPath)
 }

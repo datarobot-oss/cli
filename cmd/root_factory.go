@@ -548,7 +548,7 @@ func (f *RootFactory) reportConfigInitError(cmd *cobra.Command, err error) error
 	}
 
 	if cmd.SilenceErrors {
-		fmt.Fprintln(cmd.ErrOrStderr(), cmd.ErrPrefix(), err.Error())
+		cmd.PrintErrln(cmd.ErrPrefix(), err.Error())
 	}
 
 	// Commands that do not silence errors are reported by cobra as usual.

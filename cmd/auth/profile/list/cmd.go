@@ -31,15 +31,15 @@ import (
 const defaultProfileLabel = config.DefaultProfileLabel
 
 // profileOutput is the JSON representation of one profile for
-// --output-format json. isRoot distinguishes the root row from an explicit
-// profiles.default row in human output only; encoding/json skips it.
+// --output-format json. root distinguishes the root row from an explicit
+// profiles.default row: both are addressed as "default", and only this key
+// tells a machine consumer which credentials each row stands for.
 type profileOutput struct {
 	Name     string `json:"name"`
+	Root     bool   `json:"root"`
 	Endpoint string `json:"endpoint"`
 	HasToken bool   `json:"has_token"`
 	Active   bool   `json:"active"`
-
-	isRoot bool
 }
 
 func Cmd() *cobra.Command {
@@ -99,11 +99,10 @@ func runList(cmd *cobra.Command, _ []string) error {
 func toProfileOutput(name string, info config.ProfileInfo, active, isRoot bool) profileOutput {
 	return profileOutput{
 		Name:     name,
+		Root:     isRoot,
 		Endpoint: info.Endpoint,
 		HasToken: info.HasToken,
 		Active:   active,
-
-		isRoot: isRoot,
 	}
 }
 
@@ -133,12 +132,7 @@ func printProfilesTable(outputs []profileOutput) {
 		// render as two indistinguishable "default" rows: root gets a
 		// "(root-level)" label and the explicit section "(explicit)", so a
 		// reader can always tell which credentials each row stands for.
-		name := o.Name
-		if o.isRoot {
-			name += " (root-level)"
-		} else if name == defaultProfileLabel {
-			name += " (explicit)"
-		}
+		name := config.ProfileDisplayLabel(o.Name, o.Root)
 
 		endpoint := o.Endpoint
 		if endpoint == "" {

@@ -17,6 +17,7 @@ package show
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	authcompletion "github.com/datarobot/cli/cmd/auth/profile/completion"
 	"github.com/datarobot/cli/internal/config"
@@ -32,9 +33,13 @@ const defaultProfileLabel = config.DefaultProfileLabel
 // profileDetail is the JSON representation of a single profile's resolved
 // settings for --output-format json. ca_cert is always emitted (the empty
 // string when unset) so consumers can rely on the key being present; the
-// remaining fields keep their original meaning.
+// remaining fields keep their original meaning. root distinguishes the
+// root-level profile from an explicit profiles.default section: both are
+// addressed as "default", and only this key tells a machine consumer which
+// credentials a row stands for.
 type profileDetail struct {
 	Name        string `json:"name"`
+	Root        bool   `json:"root"`
 	Active      bool   `json:"active"`
 	Endpoint    string `json:"endpoint"`
 	EndpointOwn bool   `json:"endpoint_own"`
@@ -125,13 +130,7 @@ func runShow(cmd *cobra.Command, args []string) error {
 // profileListed reports whether profiles contains a section with the given
 // normalized name. The root profile is never listed; its name is "".
 func profileListed(profiles []config.ProfileInfo, name string) bool {
-	for _, p := range profiles {
-		if p.Name == name {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(profileNames(profiles), name)
 }
 
 // resolveOwnSection returns the named profile's own section, or def when
@@ -166,7 +165,7 @@ func profileNames(profiles []config.ProfileInfo) []string {
 // explicit profiles.default section is an ordinary profile here: it inherits
 // from root exactly like any other named profile.
 func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active bool) profileDetail {
-	detail := profileDetail{Name: name, Active: active}
+	detail := profileDetail{Name: name, Root: isRoot, Active: active}
 
 	// config.applyProfile merges endpoint and token atomically, so a profile
 	// that defines either one owns both and never inherits the other; the
@@ -206,13 +205,7 @@ func resolveDetail(name string, isRoot bool, own, def config.ProfileInfo, active
 // were read from (empty when it could not be resolved), and own is the
 // inspected section's own settings, which drive the unpairing explanation.
 func printDetail(d profileDetail, isRoot bool, configPath string, own config.ProfileInfo) {
-	title := d.Name
-
-	if isRoot {
-		title += " (root-level)"
-	} else if d.Name == defaultProfileLabel {
-		title += " (explicit)"
-	}
+	title := config.ProfileDisplayLabel(d.Name, isRoot)
 
 	if d.Active {
 		title += " (active)"
@@ -226,11 +219,10 @@ func printDetail(d profileDetail, isRoot bool, configPath string, own config.Pro
 
 	// The credential pair resolves as a unit: whenever the profile owns
 	// either key it owns both resolutions, so a missing half is absent, not
-	// inherited. Only a profile that owns neither borrows from root.
-	pairOwn := isRoot || d.EndpointOwn || d.HasTokenOwn
-
-	printField("endpoint", valueOrDash(d.Endpoint), !isRoot && !pairOwn)
-	printField("token", tokenStatus(d.HasToken), !isRoot && !pairOwn)
+	// inherited. EndpointOwn (like HasTokenOwn) already folds in the root's
+	// always-owns rule, so the inherited flag is simply its negation.
+	printField("endpoint", valueOrDash(d.Endpoint), !d.EndpointOwn)
+	printField("token", tokenStatus(d.HasToken), !d.EndpointOwn)
 	printField("ca-cert", valueOrDash(d.CACert), !d.CACertOwn)
 
 	printUnpairingExplanation(isRoot, own.Endpoint != "", own.HasToken)

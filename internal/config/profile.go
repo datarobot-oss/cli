@@ -175,6 +175,24 @@ func SelectedProfileFlagSuffix() string {
 	return ""
 }
 
+// ProfileDisplayLabel renders a profile name for human output so the two
+// identities "default" can address stay distinguishable: the root-level
+// credentials read "default (root-level)", an explicit profiles.default
+// section reads "default (explicit)", and any other name passes through.
+// `auth profile list` and `auth profile show` share it so their wording
+// cannot drift.
+func ProfileDisplayLabel(name string, isRoot bool) string {
+	if isRoot {
+		return name + " (root-level)"
+	}
+
+	if name == DefaultProfileLabel {
+		return name + " (explicit)"
+	}
+
+	return name
+}
+
 // profileSection returns the raw sub-map for a profile as loaded from the
 // config file, and whether it exists. name must already be normalized.
 func profileSection(name string) (map[string]any, bool) {
@@ -279,6 +297,30 @@ type ProfileInfo struct {
 	CACert   string
 }
 
+// readIsolatedConfig reads the YAML file at path into a fresh viper
+// instance, leaving the process-global config layer untouched. A missing
+// file maps to a nil instance with no error (the callers' "nothing
+// configured" state); any other read or parse error is returned.
+func readIsolatedConfig(path string) (*viper.Viper, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
+	// SetConfigFile bypasses viper's search, so a missing file surfaces as a
+	// plain os.ErrNotExist rather than viper.ConfigFileNotFoundError. Treat
+	// it as "no profiles configured".
+	err := v.ReadInConfig()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return v, nil
+}
+
 // LoadProfiles re-reads the config file drconfig.yaml is currently pointed
 // at into an isolated viper instance and returns the default profile's own
 // settings plus every named profile's own settings, sorted by name.
@@ -295,19 +337,8 @@ func LoadProfiles() (ProfileInfo, []ProfileInfo, error) {
 		return ProfileInfo{}, nil, nil
 	}
 
-	v := viper.New()
-	v.SetConfigFile(configFile)
-	v.SetConfigType("yaml")
-
-	// SetConfigFile bypasses viper's search, so a missing file surfaces as a
-	// plain os.ErrNotExist rather than viper.ConfigFileNotFoundError. Treat it
-	// as "no profiles configured" so a config deleted mid-session still lists.
-	err := v.ReadInConfig()
-	if err != nil && errors.Is(err, os.ErrNotExist) {
-		return ProfileInfo{}, nil, nil
-	}
-
-	if err != nil {
+	v, err := readIsolatedConfig(configFile)
+	if err != nil || v == nil {
 		return ProfileInfo{}, nil, err
 	}
 

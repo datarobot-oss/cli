@@ -23,6 +23,7 @@ import (
 
 	authcompletion "github.com/datarobot/cli/cmd/auth/profile/completion"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +57,9 @@ The profile is deleted immediately; there is no confirmation prompt.`,
 
 // runDelete normalizes the requested name, hands the deletion to the config
 // package's comment-preserving YAML-node editor, and confirms the normalized
-// name of the profile actually removed.
+// name of the profile actually removed. Text mode writes the confirmation to
+// stdout; --output-format json replaces it with a machine-readable envelope
+// so stdout stays a single parseable document.
 func runDelete(cmd *cobra.Command, args []string) error {
 	name := config.NormalizeProfileName(args[0])
 
@@ -64,7 +67,14 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Deleted profile %q.\n", name)
+	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
+		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "profile", map[string]any{
+			"name":    name,
+			"deleted": true,
+		})
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Deleted profile %q.\n", name)
 
 	return nil
 }

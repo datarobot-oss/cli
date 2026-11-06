@@ -15,7 +15,7 @@
 package del
 
 import (
-	"io"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -101,21 +102,10 @@ func runVerb(t *testing.T, verb string, args ...string) (string, error) {
 
 	var out strings.Builder
 
-	orig := os.Stdout
-
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-
-	os.Stdout = w
+	root.SetOut(&out)
+	root.SetErr(&out)
 
 	cmdErr := root.Execute()
-
-	os.Stdout = orig
-
-	require.NoError(t, w.Close())
-
-	_, err = io.Copy(&out, r)
-	require.NoError(t, err)
 
 	return out.String(), cmdErr
 }
@@ -229,4 +219,36 @@ func TestDelete_RequiresExactlyOneArgument(t *testing.T) {
 		_, cmdErr := runDeleteCmd(t, args...)
 		require.Error(t, cmdErr, "argv %v must be rejected as a usage error", args)
 	}
+}
+
+// TestDelete_JSONOutputKeepsStdoutPure covers the JSON contract: the
+// confirmation becomes a machine-readable envelope on stdout, and no human
+// "Deleted" line leaks into it. Text mode keeps the plain confirmation.
+func TestDelete_JSONOutputKeepsStdoutPure(t *testing.T) {
+	configFile := writeTestConfig(t)
+
+	root := &cobra.Command{Use: "test"}
+
+	var format outputformat.OutputFormat
+
+	outputformat.AddPersistentFlag(root, &format)
+	root.AddCommand(Cmd())
+	root.SetArgs([]string{"delete", "--output-format", "json", "beta"})
+
+	var out strings.Builder
+
+	root.SetOut(&out)
+	root.SetErr(&out)
+
+	require.NoError(t, root.Execute())
+
+	stdout := out.String()
+
+	assert.True(t, json.Valid([]byte(stdout)), "JSON-mode stdout must be valid JSON, got %q", stdout)
+	assert.Contains(t, stdout, `"deleted": true`, "the envelope must report the deletion")
+	assert.Contains(t, stdout, `"name": "beta"`, "the envelope must name the deleted profile")
+	assert.NotContains(t, stdout, "Deleted profile", "no human confirmation may leak into JSON stdout")
+
+	profiles := readConfigProfiles(t, configFile)
+	assert.NotContains(t, profiles, "beta", "the deletion must still have happened")
 }

@@ -15,11 +15,7 @@
 package config
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -88,13 +84,10 @@ func DeleteProfile(name string) error {
 		return err
 	}
 
-	// The document count is checked before anything is parsed for editing:
-	// readYAMLNode decodes only a stream's first document, so a multi-document
-	// file would otherwise lose every later document on rewrite.
-	if err := refuseMultiDocumentStream(configFile); err != nil {
-		return err
-	}
-
+	// profilesSectionForEdit's shared reader refuses multi-document streams
+	// before anything is edited: readYAMLNode decodes only a stream's first
+	// document, so a multi-document file would otherwise lose every later
+	// document on rewrite.
 	rootNode, profilesNode, err := profilesSectionForEdit(configFile)
 	if err != nil {
 		return err
@@ -207,49 +200,6 @@ func duplicateProfileSectionError(configFile string, profilesNode *yaml.Node, ma
 	)
 }
 
-// refuseMultiDocumentStream rejects YAML files containing more than one
-// document. readYAMLNode decodes only a stream's first document, so a
-// deletion that edited and rewrote a multi-document file would silently
-// discard every later document; the delete path refuses such files instead.
-func refuseMultiDocumentStream(configFile string) error {
-	data, err := os.ReadFile(configFile)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-
-		return fmt.Errorf("%s: failed to read config file: %w", configFile, err)
-	}
-
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-
-	documents := 0
-
-	for {
-		var node yaml.Node
-
-		err := decoder.Decode(&node)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-
-		if err != nil {
-			return fmt.Errorf("%s: failed to parse config file: %w", configFile, err)
-		}
-
-		documents++
-	}
-
-	if documents > 1 {
-		return fmt.Errorf(
-			"%s: config file contains %d YAML documents; refusing to edit it because deleting a profile would discard the later documents",
-			configFile, documents,
-		)
-	}
-
-	return nil
-}
-
 // refuseOrphanedAliases rejects deleting a section whose key node or value
 // subtree defines YAML anchors that surviving parts of the document alias.
 // yaml.v3 re-encodes alias nodes as references to their anchor, so removing
@@ -322,18 +272,11 @@ func documentAliasesAnchor(node *yaml.Node, skipKey, skipValue *yaml.Node, ancho
 // profilesNode, sorted, for unknown-profile guidance after a refused
 // deletion. The root profile is not a section here and never appears.
 func profileNamesFromNode(profilesNode *yaml.Node) []string {
-	names := make([]string, 0, len(profilesNode.Content)/2)
+	raw := make([]string, 0, len(profilesNode.Content)/2)
 
 	for i := 0; i+1 < len(profilesNode.Content); i += 2 {
-		name := NormalizeProfileName(profilesNode.Content[i].Value)
-		if name == "" {
-			continue
-		}
-
-		names = append(names, name)
+		raw = append(raw, profilesNode.Content[i].Value)
 	}
 
-	sort.Strings(names)
-
-	return names
+	return normalizedProfileNames(raw)
 }

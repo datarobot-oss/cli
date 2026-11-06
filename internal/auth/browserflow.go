@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/assets"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
@@ -166,14 +167,15 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 
 // FprintLoginTimeoutHelp writes recovery steps after a browser login timed out:
 // retry (with a longer --timeout for a slow SSO or MFA sign-in), or use the env-var
-// credentials.
+// credentials. The retry command retraces the active profile selection so it
+// targets the credentials the user was logging in for.
 func FprintLoginTimeoutHelp(w io.Writer) {
 	base, info := writerStyles(w)
 
 	fmt.Fprintln(w, base.Render("❌ No authorization came back from the browser."))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, base.Render("Try again, or give a slow SSO or MFA sign-in more time:"))
-	fmt.Fprintln(w, info.Render("  dr auth login --timeout 10m"))
+	fmt.Fprintln(w, info.Render("  dr auth login"+config.SelectedProfileFlagSuffix()+" --timeout 10m"))
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, base.Render("Or set DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN (from Developer Tools),"))
 	fmt.Fprintln(w, base.Render("then run any other dr command, which skips the browser."))

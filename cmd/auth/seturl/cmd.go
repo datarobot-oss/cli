@@ -41,8 +41,8 @@ func RunE(cmd *cobra.Command, args []string) error {
 			return cli.ErrSilent
 		}
 
-		if err := persistAndAnnounce(cmd); err != nil {
-			return err
+		if err := auth.WriteConfigFileAndAnnounce(cmd); err != nil {
+			return cli.ErrSilent
 		}
 
 		_ = auth.EnsureAuthenticatedE(cmd, args)
@@ -51,33 +51,12 @@ func RunE(cmd *cobra.Command, args []string) error {
 	}
 
 	if auth.SetURLAction() {
-		if err := persistAndAnnounce(cmd); err != nil {
-			return err
+		if err := auth.WriteConfigFileAndAnnounce(cmd); err != nil {
+			return cli.ErrSilent
 		}
 
 		_ = auth.EnsureAuthenticatedE(cmd, args)
 	}
-
-	return nil
-}
-
-// persistAndAnnounce writes the allowlisted config keys and, only after the
-// write succeeded, emits the single save notice naming the saved profile and
-// the actual config file. The notice goes to the error stream, so
-// --output-format json keeps stdout a parseable channel.
-//
-// A write failure is reported once -- by WriteConfigFileSilent's own error
-// logging -- and returned as the silent sentinel, matching how this command
-// reports its other RunE errors; the subsequent authentication step is
-// skipped so a failed write is never followed by a success claim.
-func persistAndAnnounce(cmd *cobra.Command) error {
-	if err := auth.WriteConfigFileSilent(); err != nil {
-		// Already reported by WriteConfigFileSilent; log again and this
-		// failure would appear twice.
-		return cli.ErrSilent
-	}
-
-	auth.AnnounceCredentialsSavedForCommand(cmd)
 
 	return nil
 }

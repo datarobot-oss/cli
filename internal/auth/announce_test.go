@@ -62,7 +62,7 @@ func TestAnnounceCredentialsSaved_WritesSingleLine(t *testing.T) {
 
 	var out bytes.Buffer
 
-	AnnounceCredentialsSaved(&out, "work", configPath)
+	announceCredentialsSaved(&out, "work", configPath)
 
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 

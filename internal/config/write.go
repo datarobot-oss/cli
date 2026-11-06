@@ -15,8 +15,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,6 +110,18 @@ func writeYAMLNode(path string, rootNode *yaml.Node) error {
 	return nil
 }
 
+// defaultConfigFilePath joins the default config directory with the config
+// file name. resolveConfigFilePath, CreateConfigFileDirIfNotExists and
+// CompletionConfigPath share it so the default location is spelled once.
+func defaultConfigFilePath() (string, error) {
+	dir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, configFileName), nil
+}
+
 // resolveConfigFilePath returns the active drconfig.yaml path, falling back
 // to the default location if viper has not yet recorded a config file used.
 func resolveConfigFilePath() (string, error) {
@@ -115,12 +129,7 @@ func resolveConfigFilePath() (string, error) {
 		return configFile, nil
 	}
 
-	dir, err := GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dir, configFileName), nil
+	return defaultConfigFilePath()
 }
 
 // ConfigFilePath returns the absolute path of the drconfig.yaml the CLI is
@@ -144,6 +153,11 @@ func ConfigFilePath() (string, error) {
 // readYAMLNode reads a YAML file into a *yaml.Node, preserving comments and
 // structure. If the file does not exist or is empty, an empty map node is returned.
 // Returns the root mapping node (unwrapping the document node if necessary).
+//
+// A multi-document stream is refused, not truncated: the editor below decodes
+// only a stream's first document, so silently accepting one would make the
+// next rewrite discard every later document. One read and one decode serve
+// both the guard and the edit, so there is no check-then-edit gap either.
 func readYAMLNode(path string) (*yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -158,9 +172,37 @@ func readYAMLNode(path string) (*yaml.Node, error) {
 		return &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}, nil
 	}
 
+	node, err := decodeYAMLNode(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
+// decodeYAMLNode decodes the first document of data into its root node,
+// unwrapping the document node if present, and treats an empty stream as an
+// empty mapping. A second document is an error: every caller edits and
+// rewrites the file, which would silently drop the later documents.
+func decodeYAMLNode(data []byte) (*yaml.Node, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+
 	doc := &yaml.Node{}
-	if err := yaml.Unmarshal(data, doc); err != nil {
+
+	err := decoder.Decode(doc)
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	var extra yaml.Node
+
+	err = decoder.Decode(&extra)
+	if !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+
+		return nil, errors.New("config file contains more than one YAML document; refusing to edit it because a rewrite would discard the later documents")
 	}
 
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
