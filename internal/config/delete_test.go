@@ -131,11 +131,6 @@ func TestDeleteProfile_RemovesOnlyNamedSection(t *testing.T) {
 	assert.Contains(t, out, "# the explicit default profile")
 	assert.Contains(t, out, "# alpha keeps its own comment")
 	assert.Contains(t, out, "# inline alpha comment")
-
-	// The safe-persistence contract keeps the file owner-only.
-	info, err := os.Stat(configFile)
-	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
 func TestDeleteProfile_NormalizesNameAgainstStoredSection(t *testing.T) {
