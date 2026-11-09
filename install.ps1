@@ -256,6 +256,11 @@ function Install-Binary {
             Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
             $ProgressPreference = 'Continue'
         } catch {
+            # The exception text embeds the status code, e.g. "(504) Gateway Timeout".
+            if ("$_" -match '504') {
+                Write-ErrorMsg "Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly."
+            }
+
             Write-ErrorMsg "Failed to download binary. Please check the version exists: https://github.com/$REPO/releases"
         }
 

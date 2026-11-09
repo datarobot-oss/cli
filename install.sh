@@ -284,11 +284,21 @@ download_and_install() {
 
         # Download archive
         if command -v curl >/dev/null 2>&1; then
-            if ! curl --fail --location --progress-bar "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE_NAME"; then
-                error "Failed to download binary. Please check the version exists: https://github.com/$REPO/releases"
+            # No --fail here: we want the response code, not just a failed exit,
+            # so the error message can tell a 504 apart from a missing version.
+            HTTP_CODE=$(curl --location --progress-bar --output "$TMP_DIR/$ARCHIVE_NAME" --write-out '%{http_code}' "$DOWNLOAD_URL" || true)
+
+            if [ "$HTTP_CODE" = "504" ]; then
+                error "Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly."
+            fi
+
+            if [ "$HTTP_CODE" != "200" ]; then
+                error "Failed to download binary (HTTP $HTTP_CODE). Please check the version exists: https://github.com/$REPO/releases"
             fi
         else
-            if ! wget --show-progress -q "$DOWNLOAD_URL" -O "$TMP_DIR/$ARCHIVE_NAME"; then
+            # No -q: wget's "ERROR 504: Gateway Time-out." must reach the user's
+            # terminal so gateway timeouts are visible (dr self update parses it).
+            if ! wget --show-progress "$DOWNLOAD_URL" -O "$TMP_DIR/$ARCHIVE_NAME"; then
                 error "Failed to download binary. Please check the version exists: https://github.com/$REPO/releases"
             fi
         fi

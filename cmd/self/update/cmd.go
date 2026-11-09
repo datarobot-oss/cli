@@ -157,7 +157,10 @@ with your default shell.
 					}
 				}
 
-				if http504(stderr.String()) {
+				// The install script (fetched fresh on every update) prints its own
+				// 504 remedy containing "githubstatus.com"; only fall back to ours
+				// when that is missing (e.g. a stale CDN copy of the script).
+				if http504(stderr.String()) && !strings.Contains(stderr.String(), "githubstatus.com") {
 					return errors.New("download failed: gateway timeout (HTTP 504) — the download service or GitHub may be down; check https://www.githubstatus.com and try again shortly")
 				}
 
