@@ -67,6 +67,27 @@ func TestResolveInstallDirFollowsSymlink(t *testing.T) {
 	assert.NotEqual(t, linkDir, filepath.Dir(resolved))
 }
 
+func TestHttp504(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"curl", "curl: (56) The requested URL returned error: 504", true},
+		{"wget", "ERROR 504: Gateway Time-out.", true},
+		{"powershell", "The remote server returned an error: (504) Gateway Timeout.", true},
+		{"other 500", "curl: (56) The requested URL returned error: 500", false},
+		{"no error", "Downloading binary...", false},
+		{"504 lookalike in version", "installing v0.50.4", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, http504(tt.out))
+		})
+	}
+}
+
 func TestNormalizeAndValidateVersion(t *testing.T) {
 	tests := []struct {
 		name    string

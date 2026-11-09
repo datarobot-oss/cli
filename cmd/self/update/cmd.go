@@ -15,7 +15,10 @@
 package update
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,7 +131,11 @@ with your default shell.
 			}
 
 			execCmd.Stdout = os.Stdout
-			execCmd.Stderr = os.Stderr
+			// Mirror installer stderr to a buffer so failures like an HTTP 504
+			// from the download step can be detected after Run.
+			var stderr bytes.Buffer
+
+			execCmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 
 			// The install scripts (install.sh, install.ps1) default INSTALL_DIR to
 			// ~/.local/bin or %LOCALAPPDATA%\Programs\dr, ignoring where dr is
@@ -150,6 +157,10 @@ with your default shell.
 					}
 				}
 
+				if http504(stderr.String()) {
+					return errors.New("download failed: gateway timeout (HTTP 504) — the download service or GitHub may be down; check https://www.githubstatus.com and try again shortly")
+				}
+
 				return fmt.Errorf("command execution failed: %w", err)
 			}
 
@@ -162,6 +173,16 @@ with your default shell.
 
 	return cmd
 }
+
+// http504 reports whether captured installer output shows an HTTP 504
+// gateway timeout from the download step (curl, wget, or PowerShell).
+func http504(out string) bool {
+	return strings.Contains(out, "error: 504") || // curl
+		strings.Contains(out, "504: Gateway") || // wget
+		strings.Contains(out, "(504)") // PowerShell
+}
+
+// normalizeAndValidateVersion
 
 // normalizeAndValidateVersion validates s as a strict semantic version
 // (vMAJOR.MINOR.PATCH, optionally without the leading "v", optionally with a
