@@ -157,9 +157,8 @@ with your default shell.
 					}
 				}
 
-				// updateFailureErr falls back to the 504 backstop only when the
-				// script (fetched fresh on every update) did not already print
-				// its own remedy containing "githubstatus.com".
+				// updateFailureErr defers to the script's own 504 remedy when the
+				// freshly fetched script printed one.
 				return updateFailureErr(err, stderr.String())
 			}
 
@@ -173,14 +172,22 @@ with your default shell.
 	return cmd
 }
 
+// scriptRemedyMarker appears in the gateway-timeout remedy that both install
+// scripts print (they cannot import Go constants), so updateFailureErr can
+// tell a script that already explained a 504 from one that did not.
+const scriptRemedyMarker = "githubstatus.com"
+
 // updateFailureErr builds the error returned when the update command fails.
 // If the captured installer output shows a 504 that the script did not
-// already explain (the fresh script's remedy mentions githubstatus.com),
-// return the specific gateway-timeout backstop; otherwise wrap the exec
-// error as before.
+// already explain, return the specific gateway-timeout backstop; otherwise
+// wrap the exec error as before. The backstop also covers the wget path
+// (install.sh prints no remedy there) and the Windows case where the outer
+// `irm ... | iex` itself times out before the script runs. Note the Windows
+// script's Write-ErrorMsg lands on stdout, so the defer branch is effective
+// on POSIX only.
 func updateFailureErr(err error, stderr string) error {
-	if http504(stderr) && !strings.Contains(stderr, "githubstatus.com") {
-		return errors.New("download failed: gateway timeout (HTTP 504) — the download service or GitHub may be down; check https://www.githubstatus.com and try again shortly")
+	if http504(stderr) && !strings.Contains(stderr, scriptRemedyMarker) {
+		return errors.New("Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www." + scriptRemedyMarker + " and try again shortly.")
 	}
 
 	return fmt.Errorf("command execution failed: %w", err)
@@ -196,8 +203,6 @@ func http504(out string) bool {
 		strings.Contains(out, "504: Gateway") || // wget
 		strings.Contains(out, "(504)") // PowerShell
 }
-
-// normalizeAndValidateVersion
 
 // normalizeAndValidateVersion validates s as a strict semantic version
 // (vMAJOR.MINOR.PATCH, optionally without the leading "v", optionally with a

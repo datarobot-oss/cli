@@ -256,8 +256,10 @@ function Install-Binary {
             Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
             $ProgressPreference = 'Continue'
         } catch {
-            # The exception text embeds the status code, e.g. "(504) Gateway Timeout".
-            if ("$_" -match '504') {
+            # The exception text embeds the status code, e.g. "(504) Gateway
+            # Timeout". Anchored to the parenthesized form so a release asset
+            # whose version contains "504" (e.g. v0.2.504) cannot false-match.
+            if ("$_" -match '\(504\)') {
                 Write-ErrorMsg "Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly."
             }
 

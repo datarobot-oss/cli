@@ -15,7 +15,7 @@
 package update
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,10 +74,10 @@ func TestHttp504(t *testing.T) {
 		out  string
 		want bool
 	}{
-		{"curl", "curl: (56) The requested URL returned error: 504", true},
+		{"curl", "curl: (22) The requested URL returned error: 504", true},
 		{"wget", "ERROR 504: Gateway Time-out.", true},
 		{"powershell", "The remote server returned an error: (504) Gateway Timeout.", true},
-		{"other 500", "curl: (56) The requested URL returned error: 500", false},
+		{"other 500", "curl: (22) The requested URL returned error: 500", false},
 		{"no error", "Downloading binary...", false},
 		{"504 lookalike in version", "installing v0.50.4", false},
 	}
@@ -90,44 +90,73 @@ func TestHttp504(t *testing.T) {
 }
 
 func TestUpdateFailureErr(t *testing.T) {
-	backstop := "download failed: gateway timeout (HTTP 504)"
-	scriptRemedy := "Error: Download failed: gateway timeout (HTTP 504). ... check https://www.githubstatus.com and try again shortly."
+	execErr := errors.New("exit status 1")
 
 	tests := []struct {
-		name    string
-		stderr  string
-		want    string
-		wantErr string // substring expected in the returned error
+		name   string
+		stderr string
+		want   string // exact expected error message
+		wraps  bool   // true when the exec error must be preserved (%w)
 	}{
 		{
-			// e.g. a stale CDN copy of install.sh, or the outer curl to
-			// cli.datarobot.com itself 504ing before the script runs.
-			name:    "504 without script remedy uses backstop",
-			stderr:  "curl: (56) The requested URL returned error: 504",
-			want:    "504",
-			wantErr: backstop,
+			// e.g. a stale CDN copy of install.sh, or the outer `irm | iex`
+			// itself 504ing on Windows before the script runs.
+			name:   "504 without script remedy uses backstop",
+			stderr: "curl: (22) The requested URL returned error: 504",
+			want:   "Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly.",
 		},
 		{
 			// Fresh script printed its own remedy: Go defers to it.
-			name:    "504 with script remedy defers to script",
-			stderr:  "curl: (56) The requested URL returned error: 504\n" + scriptRemedy,
-			want:    "504",
-			wantErr: "command execution failed",
+			name:   "504 with script remedy defers to script",
+			stderr: "curl: (22) The requested URL returned error: 504\n" + "Error: Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly.",
+			want:   "command execution failed: exit status 1",
+			wraps:  true,
 		},
 		{
-			name:    "non-504 failure wraps exec error",
-			stderr:  "curl: (56) The requested URL returned error: 500",
-			want:    "500",
-			wantErr: "command execution failed",
+			name:   "windows outer irm 504 uses backstop",
+			stderr: "The remote server returned an error: (504) Gateway Timeout.",
+			want:   "Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly.",
+		},
+		{
+			name:   "non-504 failure wraps exec error",
+			stderr: "curl: (22) The requested URL returned error: 500",
+			want:   "command execution failed: exit status 1",
+			wraps:  true,
+		},
+		{
+			name:   "empty stderr wraps exec error",
+			stderr: "",
+			want:   "command execution failed: exit status 1",
+			wraps:  true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := updateFailureErr(fmt.Errorf("exit status %s", tt.want), tt.stderr)
+			err := updateFailureErr(execErr, tt.stderr)
 
-			assert.ErrorContains(t, err, tt.wantErr)
+			assert.Equal(t, tt.want, err.Error())
+
+			if tt.wraps {
+				assert.ErrorIs(t, err, execErr)
+			} else {
+				assert.NotErrorIs(t, err, execErr)
+			}
 		})
+	}
+}
+
+// TestScriptRemedyMarker pins the cross-language coupling: both install
+// scripts must print the githubstatus.com remedy that updateFailureErr's
+// defer gate keys on, otherwise dr self update would print the backstop
+// message on top of the script's.
+func TestScriptRemedyMarker(t *testing.T) {
+	for _, script := range []string{"../../../install.sh", "../../../install.ps1"} {
+		content, err := os.ReadFile(script)
+
+		require.NoError(t, err, script)
+
+		assert.Contains(t, string(content), scriptRemedyMarker, script)
 	}
 }
 
