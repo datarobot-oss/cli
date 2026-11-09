@@ -157,14 +157,10 @@ with your default shell.
 					}
 				}
 
-				// The install script (fetched fresh on every update) prints its own
-				// 504 remedy containing "githubstatus.com"; only fall back to ours
-				// when that is missing (e.g. a stale CDN copy of the script).
-				if http504(stderr.String()) && !strings.Contains(stderr.String(), "githubstatus.com") {
-					return errors.New("download failed: gateway timeout (HTTP 504) — the download service or GitHub may be down; check https://www.githubstatus.com and try again shortly")
-				}
-
-				return fmt.Errorf("command execution failed: %w", err)
+				// updateFailureErr falls back to the 504 backstop only when the
+				// script (fetched fresh on every update) did not already print
+				// its own remedy containing "githubstatus.com".
+				return updateFailureErr(err, stderr.String())
 			}
 
 			return nil
@@ -175,6 +171,19 @@ with your default shell.
 	cmd.Flags().StringVar(&targetVersion, "version", "", "Install a specific released version instead of latest (e.g. v0.12.3)")
 
 	return cmd
+}
+
+// updateFailureErr builds the error returned when the update command fails.
+// If the captured installer output shows a 504 that the script did not
+// already explain (the fresh script's remedy mentions githubstatus.com),
+// return the specific gateway-timeout backstop; otherwise wrap the exec
+// error as before.
+func updateFailureErr(err error, stderr string) error {
+	if http504(stderr) && !strings.Contains(stderr, "githubstatus.com") {
+		return errors.New("download failed: gateway timeout (HTTP 504) — the download service or GitHub may be down; check https://www.githubstatus.com and try again shortly")
+	}
+
+	return fmt.Errorf("command execution failed: %w", err)
 }
 
 // http504 reports whether captured installer output shows an HTTP 504

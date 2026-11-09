@@ -15,6 +15,7 @@
 package update
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,6 +85,48 @@ func TestHttp504(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, http504(tt.out))
+		})
+	}
+}
+
+func TestUpdateFailureErr(t *testing.T) {
+	backstop := "download failed: gateway timeout (HTTP 504)"
+	scriptRemedy := "Error: Download failed: gateway timeout (HTTP 504). ... check https://www.githubstatus.com and try again shortly."
+
+	tests := []struct {
+		name    string
+		stderr  string
+		want    string
+		wantErr string // substring expected in the returned error
+	}{
+		{
+			// e.g. a stale CDN copy of install.sh, or the outer curl to
+			// cli.datarobot.com itself 504ing before the script runs.
+			name:    "504 without script remedy uses backstop",
+			stderr:  "curl: (56) The requested URL returned error: 504",
+			want:    "504",
+			wantErr: backstop,
+		},
+		{
+			// Fresh script printed its own remedy: Go defers to it.
+			name:    "504 with script remedy defers to script",
+			stderr:  "curl: (56) The requested URL returned error: 504\n" + scriptRemedy,
+			want:    "504",
+			wantErr: "command execution failed",
+		},
+		{
+			name:    "non-504 failure wraps exec error",
+			stderr:  "curl: (56) The requested URL returned error: 500",
+			want:    "500",
+			wantErr: "command execution failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := updateFailureErr(fmt.Errorf("exit status %s", tt.want), tt.stderr)
+
+			assert.ErrorContains(t, err, tt.wantErr)
 		})
 	}
 }
