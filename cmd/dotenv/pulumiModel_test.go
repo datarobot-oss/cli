@@ -32,38 +32,32 @@ import (
 
 // stubPulumiOnPath places a minimal fake `pulumi` binary on PATH for the
 // duration of the test. needsPulumiSetup only checks binary presence via
-// exec.LookPath, so the stub needs no behavior. Without it these tests
-// silently depended on the GitHub runner image preinstalling pulumi; the
-// 26.04 image (ubuntu-latest rollout, Oct-Nov 2026) dropped it and broke
-// PR Checks for every branch (ALIFE-1278).
+// exec.LookPath, so the stub needs no behavior: without it these tests
+// silently depended on the GitHub runner image preinstalling pulumi, which
+// the 26.04 runner image no longer does.
 func stubPulumiOnPath(t *testing.T) {
 	t.Helper()
 
 	dir := t.TempDir()
 
-	name := "pulumi"
+	name, script := "pulumi", "#!/bin/sh\nexit 0\n"
 
-	script := "#!/bin/sh\nexit 0\n"
+	// The PATH policy for the test: on POSIX the stub dir alone scopes the
+	// test to the fake binary; on Windows keep the rest of PATH so
+	// powershell.exe stays resolvable.
+	pathEnv := dir
 
 	if runtime.GOOS == "windows" {
-		// LookPath resolves .bat via PATHEXT on Windows; content never runs
-		// in these tests, existence is all that is checked.
-		name = "pulumi.bat"
+		// LookPath resolves .bat via PATHEXT; the content never runs, the
+		// tests only check binary existence.
+		name, script = "pulumi.bat", "@echo off\r\nexit 0\r\n"
 
-		script = "@echo off\r\nexit 0\r\n"
+		pathEnv = dir + string(os.PathListSeparator) + os.Getenv("PATH")
 	}
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755))
 
-	// On Windows keep the rest of PATH so powershell.exe stays resolvable;
-	// on POSIX the stub dir alone scopes the test to the fake binary.
-	if runtime.GOOS == "windows" {
-		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-		return
-	}
-
-	t.Setenv("PATH", dir)
+	t.Setenv("PATH", pathEnv)
 }
 
 func TestNeedsPulumiSetup_NoPulumiPrompt(t *testing.T) {
