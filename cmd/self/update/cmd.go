@@ -162,6 +162,15 @@ with your default shell.
 				return updateFailureErr(err, stderr.String())
 			}
 
+			// POSIX pipefail gap: `curl … | sh` exits 0 when the outer curl 504s
+			// (sh succeeds on empty stdin), so Run reports success with the real
+			// error only in stderr. A 504 marker after a nominally successful run
+			// can only mean that fetch failed: the scripts print a remedy only on
+			// failure, which exits non-zero.
+			if http504(stderr.String()) {
+				return gatewayTimeoutErr()
+			}
+
 			return nil
 		},
 	}
@@ -187,10 +196,16 @@ const scriptRemedyMarker = "githubstatus.com"
 // on POSIX only.
 func updateFailureErr(err error, stderr string) error {
 	if http504(stderr) && !strings.Contains(stderr, scriptRemedyMarker) {
-		return errors.New("Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www." + scriptRemedyMarker + " and try again shortly.")
+		return gatewayTimeoutErr()
 	}
 
 	return fmt.Errorf("command execution failed: %w", err)
+}
+
+// gatewayTimeoutErr is the user-facing backstop for an HTTP 504 the installer
+// output shows but the script could not have explained itself.
+func gatewayTimeoutErr() error {
+	return errors.New("Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www." + scriptRemedyMarker + " and try again shortly.")
 }
 
 // http504 reports whether captured installer output shows an HTTP 504
