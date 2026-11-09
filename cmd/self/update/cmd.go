@@ -179,6 +179,9 @@ with your default shell.
 
 // http504 reports whether captured installer output shows an HTTP 504
 // gateway timeout from the download step (curl, wget, or PowerShell).
+//
+// TODO(ALIFE-1277): extend detection to the 502/503 gateway family here and
+// in the install scripts; the ticket scoped the fix to 504 only.
 func http504(out string) bool {
 	return strings.Contains(out, "error: 504") || // curl
 		strings.Contains(out, "504: Gateway") || // wget
