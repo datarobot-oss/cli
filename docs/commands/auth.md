@@ -452,7 +452,9 @@ the missing half:
 ```
 
 Under `--output-format json` the document always includes `ca_cert` (an empty
-string when no CA is configured), alongside the existing `name`, `active`,
+string when no CA is configured) and `root` (true only for the root-level
+credentials, which share the `"default"` name with an explicit
+`profiles.default` section), alongside the existing `name`, `active`,
 `endpoint`, `endpoint_own`, `has_token`, `has_token_own`, and `ca_cert_own`
 fields. The `*_own` fields describe ownership of the endpoint/token *pair*,
 not each key individually.
@@ -461,13 +463,24 @@ not each key individually.
 `drconfig.yaml`, keeping everything else: root-level credentials, other
 profiles, global settings, and unrelated comments survive, and the file's
 `0600` permissions are preserved. Names normalize like `--profile` names, so
-`rm " staging "` targets the `staging` section. There is no confirmation
-prompt, and the success output names the deleted profile:
+`rm " staging "` targets the `staging` section. The deletion removes the
+profile's stored API token, so without `--yes` (or
+`DATAROBOT_CLI_NON_INTERACTIVE=1`) the command asks for confirmation first,
+and declining it leaves the config untouched and exits 0:
 
 ```bash
 $ dr auth profile rm staging
+Delete profile "staging"? [y/N] y
+Deleted profile "staging".
+
+$ dr auth profile rm staging --yes
 Deleted profile "staging".
 ```
+
+Under `--output-format json`, a decline is reported as
+`{"profile": {"name": ..., "deleted": false, "reason": "aborted"}}` with exit
+code 0, so scripts can tell it from a real deletion the same way the enclave
+delete verb does.
 
 The reserved name `default` cannot be deleted — it addresses the root-level
 credentials whenever no explicit `profiles.default` section is defined, and

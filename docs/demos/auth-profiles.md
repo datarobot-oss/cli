@@ -315,9 +315,10 @@ verbatim; recovery does not require re-deriving the syntax.
 ## Deleting profiles
 
 ```bash
-# delete and its rm alias do the same thing
-dr auth profile delete staging
-dr auth profile rm work
+# delete and its rm alias do the same thing; --yes skips the confirmation
+# prompt (the tour runs non-interactively, so --yes is required)
+dr auth profile delete staging --yes
+dr auth profile rm work --yes
 ```
 
 Expected output, once per command:
@@ -327,9 +328,14 @@ Deleted profile "staging".
 Deleted profile "work".
 ```
 
+Without `--yes` the command asks first (`Delete profile "staging"? [y/N] `);
+declining leaves the config untouched and exits 0. In a non-interactive
+shell without a terminal on stdin, the command refuses to guess and asks
+for `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) instead.
+
 Only the named section is removed: root-level credentials, other profiles,
 global settings, and unrelated comments are kept. Names normalize like
-`--profile` names, so `rm " staging "` would also have worked.
+`--profile` names, so `rm " staging " --yes` would also have worked.
 
 The reserved name `default` is refused:
 
