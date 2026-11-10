@@ -157,21 +157,34 @@ func resolveCredentials() (credentials, error) {
 // printCredentialError explains on stderr why nothing was exported. stdout is
 // left empty so that `eval "$(dr auth export)"` cannot evaluate a partial or
 // non-executable result. creds carries the credential source so the user can
-// locate a bad value; sh selects a shell-appropriate remediation hint.
+// locate a bad value; sh selects a shell-appropriate remediation hint. The
+// active selection is named (root-level vs the selected profile) and kept in
+// the suggested commands so they retrace it; env-sourced problems keep their
+// own advice, since no profile command can heal environment variables.
 func printCredentialError(w io.Writer, err error, creds credentials, sh internalShell.Shell) {
 	switch {
 	case errors.Is(err, errNoEndpoint):
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot URL configured."))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot URL configured for "+
+			config.SelectedCredentialsDescription()+"."))
 		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
-		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"))
+		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"+config.SelectedProfileFlagSuffix()))
 		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to configure your DataRobot URL."))
 	case errors.Is(err, errNoToken), errors.Is(err, errNoCredentials):
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot credentials found."))
+		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ No DataRobot credentials found for "+
+			config.SelectedCredentialsDescription()+"."))
 		fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
-		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth login"))
+		fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth login"+config.SelectedProfileFlagSuffix()))
 		fmt.Fprintln(w, tui.BaseTextStyle.Render(" to authenticate."))
 	default:
-		fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Invalid DataRobot URL from "+creds.Source+": "+err.Error()))
+		// A config-sourced URL problem is attributed to the active selection
+		// (root-level vs the selected profile); env-sourced ones already name
+		// the environment variable through creds.Source.
+		if creds.Source == sourceEnv {
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Invalid DataRobot URL from "+creds.Source+": "+err.Error()))
+		} else {
+			fmt.Fprintln(w, tui.BaseTextStyle.Render("❌ Invalid DataRobot URL from "+
+				config.SelectedCredentialsDescription()+" (in "+creds.Source+"): "+err.Error()))
+		}
 
 		// The most common cause of a quoted DATAROBOT_ENDPOINT is running
 		// `$(dr auth export)` instead of `eval "$(dr auth export)"`: command
@@ -193,7 +206,7 @@ func printCredentialError(w io.Writer, err error, creds credentials, sh internal
 			fmt.Fprintln(w, tui.BaseTextStyle.Render(" on Windows)"))
 		} else {
 			fmt.Fprint(w, tui.BaseTextStyle.Render("Run "))
-			fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"))
+			fmt.Fprint(w, tui.InfoStyle.Render(version.CliName+" auth set-url"+config.SelectedProfileFlagSuffix()))
 			fmt.Fprintln(w, tui.BaseTextStyle.Render(" to fix it."))
 		}
 	}

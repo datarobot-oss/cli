@@ -15,12 +15,15 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -72,6 +75,14 @@ func UpdateConfigFile(keys ...string) error {
 
 	applyAllowedKeysToNode(rootNode, keys)
 
+	return writeYAMLNode(configFile, rootNode)
+}
+
+// writeYAMLNode marshals rootNode (wrapped as a document, preserving its
+// comments and structure) back to path and re-tightens the file mode. Shared
+// by UpdateConfigFile and DeleteProfile so every persistence path keeps the
+// same safe-write behavior.
+func writeYAMLNode(path string, rootNode *yaml.Node) error {
 	docNode := &yaml.Node{
 		Kind:    yaml.DocumentNode,
 		Content: []*yaml.Node{rootNode},
@@ -82,7 +93,12 @@ func UpdateConfigFile(keys ...string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(configFile, out, configFileMode); err != nil {
+	// Atomic rename, not a truncate-in-place write: this file holds every
+	// profile's token, and a crash or full disk mid-write must never leave it
+	// empty or cut off. The temp file is created 0600 and fsynced before the
+	// rename, and the existing file's mode is preserved across the rename
+	// (the chmod below re-tightens it on every path).
+	if err := fsutil.AtomicWriteFile(path, out); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -93,11 +109,23 @@ func UpdateConfigFile(keys ...string) error {
 	// Best effort: on Windows os.Chmod only toggles the read-only bit, and a config
 	// owned by another user is not ours to re-permission. Neither case should fail
 	// the write, so log and carry on.
-	if err := os.Chmod(configFile, configFileMode); err != nil {
-		log.Debugf("Could not set %s to %#o: %v", configFile, configFileMode, err)
+	if err := os.Chmod(path, configFileMode); err != nil {
+		log.Debugf("Could not set %s to %#o: %v", path, configFileMode, err)
 	}
 
 	return nil
+}
+
+// defaultConfigFilePath joins the default config directory with the config
+// file name. resolveConfigFilePath, CreateConfigFileDirIfNotExists and
+// CompletionConfigPath share it so the default location is spelled once.
+func defaultConfigFilePath() (string, error) {
+	dir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, configFileName), nil
 }
 
 // resolveConfigFilePath returns the active drconfig.yaml path, falling back
@@ -107,17 +135,32 @@ func resolveConfigFilePath() (string, error) {
 		return configFile, nil
 	}
 
-	dir, err := GetConfigDir()
+	return defaultConfigFilePath()
+}
+
+// ConfigFilePath returns the absolute path of the drconfig.yaml the CLI is
+// currently using. Save announcements after successful login/set-url writes
+// use it to name the file the data actually landed in, so the notice must be
+// absolute even when the config was pointed at a relative path.
+func ConfigFilePath() (string, error) {
+	configFile, err := resolveConfigFilePath()
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(dir, configFileName), nil
+	// Abs fails only when the working directory cannot be determined, which
+	// is worth reporting rather than silently downgrading to a relative path.
+	return filepath.Abs(configFile)
 }
 
 // readYAMLNode reads a YAML file into a *yaml.Node, preserving comments and
 // structure. If the file does not exist or is empty, an empty map node is returned.
 // Returns the root mapping node (unwrapping the document node if necessary).
+//
+// A multi-document stream is refused, not truncated: the editor below decodes
+// only a stream's first document, so silently accepting one would make the
+// next rewrite discard every later document. One read and one decode serve
+// both the guard and the edit, so there is no check-then-edit gap either.
 func readYAMLNode(path string) (*yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -132,9 +175,37 @@ func readYAMLNode(path string) (*yaml.Node, error) {
 		return &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}, nil
 	}
 
+	node, err := decodeYAMLNode(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
+// decodeYAMLNode decodes the first document of data into its root node,
+// unwrapping the document node if present, and treats an empty stream as an
+// empty mapping. A second document is an error: every caller edits and
+// rewrites the file, which would silently drop the later documents.
+func decodeYAMLNode(data []byte) (*yaml.Node, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+
 	doc := &yaml.Node{}
-	if err := yaml.Unmarshal(data, doc); err != nil {
+
+	err := decoder.Decode(doc)
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	var extra yaml.Node
+
+	err = decoder.Decode(&extra)
+	if !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+
+		return nil, errors.New("config file contains more than one YAML document; refusing to edit it because a rewrite would discard the later documents")
 	}
 
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {

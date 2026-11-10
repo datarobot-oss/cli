@@ -23,6 +23,44 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// RunE configures the DataRobot endpoint, persists it, and then continues
+// into authentication. A successful persistence announces where the
+// credentials landed; a failed one is reported instead of being ignored, so
+// the command never claims a write that did not happen.
+func RunE(cmd *cobra.Command, args []string) error {
+	var url string
+	if len(args) > 0 {
+		url = args[0]
+	}
+
+	// A bad explicit arg is reported, not silently replaced by the picker.
+	if url != "" {
+		if err := config.SetURLToConfig(url); err != nil {
+			log.Error(err.Error())
+
+			return cli.ErrSilent
+		}
+
+		if err := auth.WriteConfigFileAndAnnounce(cmd); err != nil {
+			return cli.ErrSilent
+		}
+
+		_ = auth.EnsureAuthenticatedE(cmd, args)
+
+		return nil
+	}
+
+	if auth.SetURLAction() {
+		if err := auth.WriteConfigFileAndAnnounce(cmd); err != nil {
+			return cli.ErrSilent
+		}
+
+		_ = auth.EnsureAuthenticatedE(cmd, args)
+	}
+
+	return nil
+}
+
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "set-url [url]",
@@ -42,33 +80,7 @@ This command helps you choose the correct DataRobot environment:
 			// set-url is expected to create a not-yet-existing --profile.
 			config.ProfileCreateAnnotationKey: "true",
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var url string
-			if len(args) > 0 {
-				url = args[0]
-			}
-
-			// A bad explicit arg is reported, not silently replaced by the picker.
-			if url != "" {
-				if err := config.SetURLToConfig(url); err != nil {
-					log.Error(err.Error())
-
-					return cli.ErrSilent
-				}
-
-				_ = auth.WriteConfigFileSilent()
-				_ = auth.EnsureAuthenticatedE(cmd, args)
-
-				return nil
-			}
-
-			if auth.SetURLAction() {
-				_ = auth.WriteConfigFileSilent()
-				_ = auth.EnsureAuthenticatedE(cmd, args)
-			}
-
-			return nil
-		},
+		RunE: RunE,
 	}
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

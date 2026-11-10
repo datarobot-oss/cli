@@ -90,3 +90,18 @@ func TestUpdateConfigFile_TightensPreExistingLoosePermissions(t *testing.T) {
 func TestConfigFileMode_IsOwnerOnly(t *testing.T) {
 	assert.Zero(t, configFileMode&0o077, "no group or other permission bits may be set")
 }
+
+func TestDeleteProfile_PreservesOwnerOnlyMode(t *testing.T) {
+	// The delete path shares the safe-persistence write (writeYAMLNode) with
+	// the update path, so a deletion must leave the token file owner-only too.
+	// The delete fixture is written 0600 and the write re-chmods it.
+	configFile := writeDeleteFixture(t)
+
+	require.NoError(t, DeleteProfile("beta"))
+
+	info, err := os.Stat(configFile)
+	require.NoError(t, err)
+
+	assert.Equal(t, os.FileMode(configFileMode), info.Mode().Perm(),
+		"deleting a profile must leave the config owner-only")
+}
