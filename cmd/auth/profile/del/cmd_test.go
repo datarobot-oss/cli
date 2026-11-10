@@ -23,6 +23,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
@@ -92,13 +93,15 @@ func readConfigProfiles(t *testing.T, path string) map[string]any {
 
 // runVerb executes the delete command (via the given verb: "delete" or its
 // "rm" alias) in a minimal cobra tree, capturing stdout, and returns the
-// captured output plus the command error.
+// captured output plus the command error. Tests are non-interactive (stdin
+// is not a terminal), so --yes is appended unless the caller is exercising
+// the confirmation gate itself.
 func runVerb(t *testing.T, verb string, args ...string) (string, error) {
 	t.Helper()
 
 	root := &cobra.Command{Use: "test"}
 	root.AddCommand(Cmd())
-	root.SetArgs(append([]string{verb}, args...))
+	root.SetArgs(append(append([]string{verb}, args...), "--yes"))
 
 	var out strings.Builder
 
@@ -233,7 +236,7 @@ func TestDelete_JSONOutputKeepsStdoutPure(t *testing.T) {
 
 	outputformat.AddPersistentFlag(root, &format)
 	root.AddCommand(Cmd())
-	root.SetArgs([]string{"delete", "--output-format", "json", "beta"})
+	root.SetArgs([]string{"delete", "--output-format", "json", "--yes", "beta"})
 
 	var out strings.Builder
 
@@ -251,4 +254,101 @@ func TestDelete_JSONOutputKeepsStdoutPure(t *testing.T) {
 
 	profiles := readConfigProfiles(t, configFile)
 	assert.NotContains(t, profiles, "beta", "the deletion must still have happened")
+}
+
+// runDeleteRaw executes `delete` with exactly the given arguments (no --yes
+// appended), for tests that exercise the confirmation gate itself.
+func runDeleteRaw(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+
+	root := &cobra.Command{Use: "test"}
+	root.AddCommand(Cmd())
+	root.SetArgs(append([]string{"delete"}, args...))
+
+	var out strings.Builder
+
+	root.SetOut(&out)
+	root.SetErr(&out)
+
+	cmdErr := root.Execute()
+
+	return out.String(), cmdErr
+}
+
+// TestDelete_RequiresYesWhenNonInteractive pins the confirmation gate: tests
+// (and any other non-TTY caller) have no terminal stdin, so without --yes or
+// DATAROBOT_CLI_NON_INTERACTIVE the command must stop with the
+// confirmation-required guidance before the config is touched.
+func TestDelete_RequiresYesWhenNonInteractive(t *testing.T) {
+	configFile := writeTestConfig(t)
+
+	before := readConfigBytes(t, configFile)
+
+	out, cmdErr := runDeleteRaw(t, "beta")
+	require.Error(t, cmdErr)
+	assert.Contains(t, cmdErr.Error(), "confirmation required")
+	assert.Contains(t, cmdErr.Error(), "--yes")
+
+	assert.Equal(t, before, readConfigBytes(t, configFile), "a refused deletion must not touch the file")
+	assert.NotContains(t, out, "Deleted profile")
+}
+
+// TestDelete_EnvVarBypassesPrompt covers the env path: setting
+// DATAROBOT_CLI_NON_INTERACTIVE counts as consent, like the artifact and
+// enclave delete verbs.
+func TestDelete_EnvVarBypassesPrompt(t *testing.T) {
+	configFile := writeTestConfig(t)
+
+	t.Setenv(reader.NonInteractiveEnv, "1")
+
+	out, cmdErr := runDeleteRaw(t, "beta")
+	require.NoError(t, cmdErr)
+	assert.Contains(t, out, "beta")
+
+	profiles := readConfigProfiles(t, configFile)
+	assert.NotContains(t, profiles, "beta")
+}
+
+// TestDelete_JSONAbortEnvelope covers the declined-prompt shape: the command
+// exits 0 as a no-op, and JSON mode distinguishes it from a real deletion by
+// "deleted": false plus the reason, mirroring the enclave delete verb. The
+// interactive decline itself needs a terminal stdin, which tests lack; the
+// gate is covered by TestDelete_RequiresYesWhenNonInteractive, so the abort
+// rendering is driven directly.
+func TestDelete_JSONAbortEnvelope(t *testing.T) {
+	configFile := writeTestConfig(t)
+
+	root := &cobra.Command{Use: "test"}
+
+	var format outputformat.OutputFormat
+
+	outputformat.AddPersistentFlag(root, &format)
+	root.AddCommand(Cmd())
+
+	var out strings.Builder
+
+	root.SetOut(&out)
+
+	// renderDeletion takes the resolved format; the synthetic root's flag
+	// value is not parsed by Execute here, so set the JSON mode explicitly.
+	format = outputformat.OutputFormatJSON
+
+	require.NoError(t, renderDeletion(root, format, "beta", false, deletionReasonAborted))
+
+	var envelope struct {
+		Profile struct {
+			Name    string `json:"name"`
+			Deleted bool   `json:"deleted"`
+			Reason  string `json:"reason"`
+		} `json:"profile"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(out.String()), &envelope))
+
+	assert.Equal(t, "beta", envelope.Profile.Name)
+	assert.False(t, envelope.Profile.Deleted, "an abort must not claim a deletion")
+	assert.Equal(t, "aborted", envelope.Profile.Reason)
+
+	profiles := readConfigProfiles(t, configFile)
+	assert.Contains(t, profiles, "beta", "an abort must not touch the config")
 }

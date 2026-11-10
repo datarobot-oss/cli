@@ -19,11 +19,17 @@
 package del
 
 import (
+	"errors"
 	"fmt"
 
 	authcompletion "github.com/datarobot/cli/cmd/auth/profile/completion"
+	"github.com/datarobot/cli/cmd/helpers"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
+	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +49,13 @@ The reserved name "default" cannot be deleted: it addresses the root-level
 credentials whenever no explicit profiles.default section is defined, and
 those are cleared by 'dr auth logout' instead.
 
-The profile is deleted immediately; there is no confirmation prompt.`,
+Without --yes the command asks for confirmation. The deletion removes the
+profile's stored API token, which cannot be recovered without logging in
+again.
+
+Example:
+  dr auth profile delete staging
+  dr auth profile rm staging --yes`,
 		Args: cobra.ExactArgs(1),
 		RunE: runDelete,
 		// Offer only the deletable (non-reserved) profile names for the one
@@ -52,26 +64,87 @@ The profile is deleted immediately; there is no confirmation prompt.`,
 		ValidArgsFunction: authcompletion.PositionalCompletion(false),
 	}
 
+	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip the confirmation prompt.")
+
+	// Bind only the env var to viper. The --yes flag itself is read directly
+	// from cmd.Flags() so an explicit --yes does not leak into
+	// viper.AllSettings() and persist to drconfig.yaml.
+	_ = viperx.BindEnv(cli.YesFlagName, reader.NonInteractiveEnv)
+
 	return cmd
 }
 
-// runDelete normalizes the requested name, hands the deletion to the config
-// package's comment-preserving YAML-node editor, and confirms the normalized
-// name of the profile actually removed. Text mode writes the confirmation to
-// stdout; --output-format json replaces it with a machine-readable envelope
-// so stdout stays a single parseable document.
+// runDelete hands the raw name to the config package's comment-preserving
+// YAML-node editor, which owns the normalization (matching --profile
+// selection semantics). The prompt and confirmation use the same idempotent
+// normalization so the user sees the name that would go, and the one that
+// went.
 func runDelete(cmd *cobra.Command, args []string) error {
+	format := outputformat.GetFormat(cmd)
 	name := config.NormalizeProfileName(args[0])
 
-	if err := config.DeleteProfile(name); err != nil {
+	confirmed, err := confirmDelete(cmd, name)
+	if err != nil {
 		return err
 	}
 
-	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
-		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "profile", map[string]any{
+	if !confirmed {
+		return renderDeletion(cmd, format, name, false, deletionReasonAborted)
+	}
+
+	if err := config.DeleteProfile(args[0]); err != nil {
+		return err
+	}
+
+	return renderDeletion(cmd, format, name, true, "")
+}
+
+// confirmDelete returns (true, nil) when the deletion may proceed: either
+// --yes / DATAROBOT_CLI_NON_INTERACTIVE was given, or the user confirmed
+// interactively. A declined prompt is (false, nil) so the command exits 0
+// without touching the file, the same contract the artifact and enclave
+// delete verbs follow.
+func confirmDelete(cmd *cobra.Command, name string) (bool, error) {
+	if cli.IsNonInteractive(cmd) {
+		return true, nil
+	}
+
+	if !reader.IsStdinTerminal() {
+		return false, errors.New("confirmation required: pass --yes (or set DATAROBOT_CLI_NON_INTERACTIVE=1) to delete without a prompt")
+	}
+
+	confirmed, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(),
+		fmt.Sprintf("Delete profile %q? [y/N] ", name))
+
+	return confirmed, err
+}
+
+// deletionReasonAborted marks the JSON envelope of a declined confirmation.
+const deletionReasonAborted = "aborted"
+
+// renderDeletion reports the outcome once. Text mode prints the
+// confirmation, or the abort note for a declined prompt; --output-format
+// json replaces both with a machine-readable envelope so stdout stays a
+// single parseable document. An abort exits 0 as a no-op, distinguished in
+// JSON by "deleted": false and the reason.
+func renderDeletion(cmd *cobra.Command, format outputformat.OutputFormat, name string, deleted bool, reason string) error {
+	if format == outputformat.OutputFormatJSON {
+		payload := map[string]any{
 			"name":    name,
-			"deleted": true,
-		})
+			"deleted": deleted,
+		}
+
+		if reason != "" {
+			payload["reason"] = reason
+		}
+
+		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "profile", payload)
+	}
+
+	if !deleted {
+		fmt.Fprintln(cmd.OutOrStdout(), tui.DimStyle.Render("Aborted."))
+
+		return nil
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Deleted profile %q.\n", name)
