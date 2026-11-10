@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -92,7 +93,12 @@ func writeYAMLNode(path string, rootNode *yaml.Node) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, out, configFileMode); err != nil {
+	// Atomic rename, not a truncate-in-place write: this file holds every
+	// profile's token, and a crash or full disk mid-write must never leave it
+	// empty or cut off. The temp file is created 0600 and fsynced before the
+	// rename, and the existing file's mode is preserved across the rename
+	// (the chmod below re-tightens it on every path).
+	if err := fsutil.AtomicWriteFile(path, out); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -142,12 +148,9 @@ func ConfigFilePath() (string, error) {
 		return "", err
 	}
 
-	absolute, err := filepath.Abs(configFile)
-	if err != nil {
-		return configFile, nil
-	}
-
-	return absolute, nil
+	// Abs fails only when the working directory cannot be determined, which
+	// is worth reporting rather than silently downgrading to a relative path.
+	return filepath.Abs(configFile)
 }
 
 // readYAMLNode reads a YAML file into a *yaml.Node, preserving comments and

@@ -164,16 +164,15 @@ func isNullNode(node *yaml.Node) bool {
 }
 
 // matchingProfileSectionIndices returns the content indices (of key nodes;
-// each value follows at i+1) of the profiles entries whose key matches name
-// exactly or after normalization (a section stored as "Beta" is matched by
-// "beta").
+// each value follows at i+1) of the profiles entries whose key matches the
+// already-normalized name after normalization (a section stored as "Beta" is
+// matched by "beta"). Normalizing is idempotent, so a key stored under the
+// normalized spelling matches the same comparison.
 func matchingProfileSectionIndices(profilesNode *yaml.Node, name string) []int {
 	matches := []int{}
 
 	for i := 0; i+1 < len(profilesNode.Content); i += 2 {
-		keyNode := profilesNode.Content[i]
-
-		if keyNode.Value != name && NormalizeProfileName(keyNode.Value) != name {
+		if NormalizeProfileName(profilesNode.Content[i].Value) != name {
 			continue
 		}
 

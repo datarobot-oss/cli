@@ -84,13 +84,9 @@ func completeProfileNames(cmd *cobra.Command, toComplete string, omitDefault boo
 // and returns its defined profile names, dropping the reserved "default" when
 // omitDefault is set. Any read problem yields no candidates.
 func profileCandidates(cmd *cobra.Command, omitDefault bool) []string {
-	explicitConfig, err := cmd.Flags().GetString("config")
-	if err != nil {
-		// The --config flag is always registered on the root, so this only
-		// guards commands built without it; an empty value falls through to
-		// env/default resolution.
-		explicitConfig = ""
-	}
+	// The --config flag is always registered on the root; an absent flag
+	// yields "" and falls through to env/default resolution.
+	explicitConfig, _ := cmd.Flags().GetString("config")
 
 	names, err := config.ProfileNamesFromFile(config.CompletionConfigPath(explicitConfig))
 	if err != nil {

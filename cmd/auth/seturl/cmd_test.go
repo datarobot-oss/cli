@@ -192,13 +192,22 @@ func TestSetURL_InvalidURL_NeverAnnouncesOrWrites(t *testing.T) {
 // the write failure is reported exactly once and names the config path, no
 // save notice appears, and the file is left byte-identical.
 func TestSetURL_WriteFailure_ReportedOnceWithoutAnnouncement(t *testing.T) {
+	testutil.SkipIfWindows(t, "os.Chmod on Windows only toggles the read-only bit, so a directory cannot be made unwritable")
+
 	configFile := seedSetURLConfig(t, "work")
 
 	before, err := os.ReadFile(configFile)
 	require.NoError(t, err)
 
-	require.NoError(t, os.Chmod(configFile, 0o444))
-	t.Cleanup(func() { _ = os.Chmod(configFile, 0o600) })
+	// The config write is atomic (sibling temp file + rename), so the
+	// unwritable boundary is the config's directory, not the file's own
+	// mode bits: a read-only file is replaced by rename and re-tightened.
+	require.NoError(t, os.Chmod(filepath.Dir(configFile), 0o500))
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(configFile), 0o700) })
+
+	if os.Geteuid() == 0 {
+		t.Skip("root can write an unwritable directory; the permission boundary does not apply")
+	}
 
 	// log.Error writes to the process stderr logger, not the command's error
 	// writer, so both are captured for the report-once assertion.

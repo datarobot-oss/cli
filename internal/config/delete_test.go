@@ -324,23 +324,49 @@ func TestDeleteProfile_ProfilesNullCountsAsUndefined(t *testing.T) {
 	assert.Equal(t, before, readDeleteFixtureBytes(t, configFile))
 }
 
-func TestDeleteProfile_UnwritableFileIsLeftUntouched(t *testing.T) {
-	configFile := writeDeleteFixture(t)
+// The atomic write replaces the file by rename, so the unwritable boundary
+// is the config's directory (the temp file cannot be created there), not the
+// file's own mode bits: os.Chmod on Windows cannot make a directory
+// unwritable, so the permission boundary does not exist on that platform.
+func TestDeleteProfile_UnwritableDirectoryIsLeftUntouched(t *testing.T) {
+	testutil.SkipIfWindows(t, "os.Chmod on Windows only toggles the read-only bit, so a directory cannot be made unwritable")
 
-	require.NoError(t, os.Chmod(configFile, 0o400))
-	t.Cleanup(func() { _ = os.Chmod(configFile, 0o600) })
+	configFile := writeDeleteFixture(t)
+	configDir := filepath.Dir(configFile)
+
+	require.NoError(t, os.Chmod(configDir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(configDir, 0o700) })
 
 	if os.Geteuid() == 0 {
-		t.Skip("root can write a read-only file; the permission boundary does not apply")
+		t.Skip("root can write an unwritable directory; the permission boundary does not apply")
 	}
 
 	before := readDeleteFixtureBytes(t, configFile)
 
 	err := DeleteProfile("alpha")
-	require.Error(t, err, "an unwritable config must fail rather than claim success")
+	require.Error(t, err, "an unwritable config directory must fail rather than claim success")
 	assert.Contains(t, err.Error(), "failed to write config file")
 
 	assert.Equal(t, before, readDeleteFixtureBytes(t, configFile))
+}
+
+// A read-only config file is not a boundary for the atomic write: the file
+// is replaced by rename (fsutil clears a Windows read-only attribute for
+// exactly this, golang/go#38287) and the chmod re-tightens the mode. The
+// deletion must still be sound: only the named section goes.
+func TestDeleteProfile_ReadOnlyFileIsReplacedAtomically(t *testing.T) {
+	configFile := writeDeleteFixture(t)
+
+	require.NoError(t, os.Chmod(configFile, 0o400))
+	t.Cleanup(func() { _ = os.Chmod(configFile, 0o600) })
+
+	require.NoError(t, DeleteProfile("alpha"))
+
+	raw := readRawYAML(t, configFile)
+	profiles := raw["profiles"].(map[string]any)
+
+	assert.NotContains(t, profiles, "alpha")
+	assert.Equal(t, "root-token", raw["token"], "the root token must survive")
 }
 
 func TestDeleteProfile_UnreadableConfigFailsWithoutChanges(t *testing.T) {
