@@ -151,10 +151,7 @@ with your default shell.
 			if err := execCmd.Run(); err != nil {
 				if runtime.GOOS == "windows" {
 					// rename back if update failed
-					revertErr := os.Rename(backup, executable)
-					if revertErr != nil {
-						log.Errorf("Could not revert executable from backup: %s\n", backup)
-					}
+					revertFromBackup(backup, executable)
 				}
 
 				// updateFailureErr defers to the script's own 504 remedy when the
@@ -168,6 +165,12 @@ with your default shell.
 			// can only mean that fetch failed: the scripts print a remedy only on
 			// failure, which exits non-zero.
 			if http504(stderr.String()) {
+				if runtime.GOOS == "windows" {
+					// The update is failing after the binary was renamed aside;
+					// restore it like the error path above does.
+					revertFromBackup(backup, executable)
+				}
+
 				return gatewayTimeoutErr()
 			}
 
@@ -179,6 +182,16 @@ with your default shell.
 	cmd.Flags().StringVar(&targetVersion, "version", "", "Install a specific released version instead of latest (e.g. v0.12.3)")
 
 	return cmd
+}
+
+// revertFromBackup restores the pre-update binary on Windows after a failed
+// update: backupExecutable renamed it aside before the installer ran, and any
+// failure past that point must put it back or leave no dr executable at all.
+func revertFromBackup(backup, executable string) {
+	revertErr := os.Rename(backup, executable)
+	if revertErr != nil {
+		log.Errorf("Could not revert executable from backup: %s\n", backup)
+	}
 }
 
 // scriptRemedyMarker appears in the gateway-timeout remedy that both install
