@@ -50,13 +50,28 @@ jobs:
 
       # Node.js is the one template prerequisite the CLI cannot auto-install
       # (no install command for it on any platform), so it must be provisioned
-      # here. uv / task / pulumi are auto-installed by `dr start --yes`.
+      # here. uv / task are auto-installed by `dr start --yes`; pulumi is
+      # provisioned below for the same reason (see that step's comment).
       # NOTE: keep this version in sync with the Agentic Starter template's
       # required Node version (currently 24).
       - name: Set up Node.js (template prerequisite)
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+
+      # Pulumi is no longer preinstalled on the ubuntu-26.04 runner image, so
+      # `dr start --yes` now runs its auto-install: `curl ... | sh` drops the
+      # binary in ~/.pulumi/bin, which the non-interactive shells that run the
+      # immediately following prerequisite installs (the DataRobot Pulumi
+      # resource plugin) cannot see, failing them with exit 127. Provision it
+      # here and export the bin dir on GITHUB_PATH so the template's
+      # prerequisites resolve end to end.
+      # Stopgap: the proper fix is PATH propagation in the CLI's dependency
+      # installer (see ALIFE-1317).
+      - name: Set up Pulumi (template prerequisite)
+        run: |
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
 
       - name: Set up Go and Task
         uses: ./.github/actions/setup
