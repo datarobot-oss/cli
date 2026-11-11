@@ -515,61 +515,74 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 
 	shellExe := powerShellExeForProfile()
 
-	installFunc := func(rootCmd *cobra.Command) (retErr error) {
+	installFunc := func(rootCmd *cobra.Command) error {
 		// Ensure the directory exists
-		profileDir := filepath.Dir(profilePath)
-
-		if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(profilePath), 0o755); err != nil {
 			return fmt.Errorf("Failed to create PowerShell profile directory: %w", err)
 		}
 
-		// Read existing profile content to detect which blocks are already installed.
-		var existingContent string
-
-		if fsutil.FileExists(profilePath) {
-			data, err := os.ReadFile(profilePath)
-			if err != nil {
-				return fmt.Errorf("Failed to read PowerShell profile: %w", err)
-			}
-
-			existingContent = string(data)
+		changed, err := updatePowerShellProfile(profilePath)
+		if err != nil {
+			return err
 		}
 
-		updatedContent, migrated := migrateLegacyPowerShellBlocks(existingContent)
-		missingScript := missingPowerShellBlocks(updatedContent)
-
-		if !migrated && missingScript == "" {
-			return nil // Already fully installed
+		if changed {
+			warnIfExecutionPolicyRestricted(shellExe)
 		}
-
-		if migrated {
-			// A profile written by an earlier release holds the legacy command, so rewrite it.
-			if err := rewritePowerShellProfile(profilePath, updatedContent+missingScript); err != nil {
-				return err
-			}
-		} else {
-			// Append missing blocks to profile
-			f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-			if err != nil {
-				return fmt.Errorf("Failed to open PowerShell profile: %w", err)
-			}
-			defer func() {
-				if closeErr := f.Close(); retErr == nil && closeErr != nil {
-					retErr = fmt.Errorf("Failed to close PowerShell profile: %w", closeErr)
-				}
-			}()
-
-			if _, err = f.WriteString(missingScript); err != nil {
-				return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
-			}
-		}
-
-		warnIfExecutionPolicyRestricted(shellExe)
 
 		return nil
 	}
 
 	return profilePath, installFunc
+}
+
+// updatePowerShellProfile adds the completion blocks the profile lacks and reports whether it
+// changed the file. A profile written by an earlier release holds the legacy command, so it is
+// rewritten in place. Any other profile only gets the missing blocks appended.
+func updatePowerShellProfile(profilePath string) (bool, error) {
+	// Read existing profile content to detect which blocks are already installed.
+	var existingContent string
+
+	if fsutil.FileExists(profilePath) {
+		data, err := os.ReadFile(profilePath)
+		if err != nil {
+			return false, fmt.Errorf("Failed to read PowerShell profile: %w", err)
+		}
+
+		existingContent = string(data)
+	}
+
+	updatedContent, migrated := migrateLegacyPowerShellBlocks(existingContent)
+	missingScript := missingPowerShellBlocks(updatedContent)
+
+	switch {
+	case migrated:
+		return true, rewritePowerShellProfile(profilePath, updatedContent+missingScript)
+	case missingScript == "":
+		return false, nil // Already fully installed
+	default:
+		return true, appendToPowerShellProfile(profilePath, missingScript)
+	}
+}
+
+// appendToPowerShellProfile appends content to the profile and reports a failed close.
+func appendToPowerShellProfile(profilePath, content string) (err error) {
+	f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("Failed to open PowerShell profile: %w", err)
+	}
+
+	defer func() {
+		if closeErr := f.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("Failed to close PowerShell profile: %w", closeErr)
+		}
+	}()
+
+	if _, err = f.WriteString(content); err != nil {
+		return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
+	}
+
+	return nil
 }
 
 // rewritePowerShellProfile replaces the profile content and keeps the file's permissions.
@@ -579,7 +592,8 @@ func rewritePowerShellProfile(profilePath, content string) error {
 		return fmt.Errorf("Failed to read PowerShell profile: %w", err)
 	}
 
-	if err := os.WriteFile(profilePath, []byte(content), info.Mode().Perm()); err != nil {
+	// The path is the user's own PowerShell profile, resolved from their home directory.
+	if err := os.WriteFile(profilePath, []byte(content), info.Mode().Perm()); err != nil { //nolint:gosec // G703: profilePath comes from powerShellProfilePath, not from input
 		return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
 	}
 

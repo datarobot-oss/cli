@@ -623,7 +623,11 @@ func TestMigrateLegacyPowerShellBlocks(t *testing.T) {
 	})
 }
 
-func TestInstallPowerShellMigratesALegacyProfileOnce(t *testing.T) {
+// installOverLegacyProfile installs completion over a profile an earlier release wrote and returns
+// the profile path and the install function.
+func installOverLegacyProfile(t *testing.T) (string, func(*cobra.Command) error) {
+	t.Helper()
+
 	rootCmd := &cobra.Command{Use: "dr", Short: "DataRobot CLI."}
 
 	testutil.SetTestHomeDir(t, t.TempDir())
@@ -640,36 +644,51 @@ func TestInstallPowerShellMigratesALegacyProfileOnce(t *testing.T) {
 	}
 
 	if err := installFn(rootCmd); err != nil {
-		t.Fatalf("first install failed: %v", err)
+		t.Fatalf("install failed: %v", err)
 	}
 
-	first, err := os.ReadFile(profilePath)
+	return profilePath, installFn
+}
+
+func readProfile(t *testing.T, profilePath string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(profilePath)
 	if err != nil {
 		t.Fatalf("failed to read profile: %v", err)
 	}
 
-	if contains(string(first), "dr completion powershell") {
-		t.Errorf("legacy command must be gone, got: %s", first)
+	return string(data)
+}
+
+func TestInstallPowerShellMigratesALegacyProfile(t *testing.T) {
+	profilePath, _ := installOverLegacyProfile(t)
+
+	got := readProfile(t, profilePath)
+
+	if contains(got, "dr completion powershell") {
+		t.Errorf("legacy command must be gone, got: %s", got)
 	}
 
-	if !contains(string(first), "Set-Alias ll Get-ChildItem") {
-		t.Errorf("the user's own lines must stay, got: %s", first)
+	if !contains(got, "Set-Alias ll Get-ChildItem") {
+		t.Errorf("the user's own lines must stay, got: %s", got)
 	}
 
-	if strings.Count(string(first), "# dr completion\n") != 1 {
-		t.Errorf("the dr block must not be duplicated, got: %s", first)
+	if strings.Count(got, "# dr completion\n") != 1 {
+		t.Errorf("the dr block must not be duplicated, got: %s", got)
 	}
+}
 
-	if err := installFn(rootCmd); err != nil {
+func TestInstallPowerShellOverAMigratedProfileChangesNothing(t *testing.T) {
+	profilePath, installFn := installOverLegacyProfile(t)
+
+	first := readProfile(t, profilePath)
+
+	if err := installFn(&cobra.Command{Use: "dr"}); err != nil {
 		t.Fatalf("second install failed: %v", err)
 	}
 
-	second, err := os.ReadFile(profilePath)
-	if err != nil {
-		t.Fatalf("failed to read profile: %v", err)
-	}
-
-	if string(second) != string(first) {
+	if second := readProfile(t, profilePath); second != first {
 		t.Errorf("a second install must not change the profile, got: %s", second)
 	}
 }
