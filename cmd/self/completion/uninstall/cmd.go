@@ -394,8 +394,10 @@ func removePowerShellCompletionFromProfile(profilePath string) bool {
 		return false
 	}
 
-	// Check if completion is configured
-	if !strings.Contains(string(content), version.CliName+" completion powershell") {
+	// Check if completion is configured, in the current form or the legacy form that earlier
+	// releases wrote.
+	if !strings.Contains(string(content), version.CliName+" self completion powershell") &&
+		!strings.Contains(string(content), version.CliName+" completion powershell") {
 		return false
 	}
 

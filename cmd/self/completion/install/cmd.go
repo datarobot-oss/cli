@@ -469,13 +469,28 @@ func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 	return installPath, installFunc
 }
 
+// Commands a PowerShell profile runs to load completion. Earlier releases wrote the legacy form,
+// which is not a command, so every PowerShell session printed an error.
+var (
+	powerShellCompletionCommand       = version.CliName + " self completion powershell"
+	legacyPowerShellCompletionCommand = version.CliName + " completion powershell"
+)
+
+// migrateLegacyPowerShellBlocks replaces the legacy completion command that earlier releases wrote
+// into a profile, and reports whether it changed anything.
+func migrateLegacyPowerShellBlocks(existingContent string) (string, bool) {
+	migrated := strings.ReplaceAll(existingContent, legacyPowerShellCompletionCommand, powerShellCompletionCommand)
+
+	return migrated, migrated != existingContent
+}
+
 func missingPowerShellBlocks(existingContent string) string {
 	var sb strings.Builder
 
-	if !strings.Contains(existingContent, version.CliName+" completion powershell") {
+	if !strings.Contains(existingContent, powerShellCompletionCommand) {
 		fmt.Fprintf(&sb, "\n# %s completion\n", version.CliName)
 		fmt.Fprintf(&sb, "if (Get-Command %s -ErrorAction SilentlyContinue) {\n", version.CliName)
-		fmt.Fprintf(&sb, "    %s completion powershell | Out-String | Invoke-Expression\n", version.CliName)
+		fmt.Fprintf(&sb, "    %s | Out-String | Invoke-Expression\n", powerShellCompletionCommand)
 		sb.WriteString("}\n")
 	}
 
@@ -483,7 +498,7 @@ func missingPowerShellBlocks(existingContent string) string {
 		if !strings.Contains(existingContent, fmt.Sprintf("# %s alias completion", alias)) {
 			fmt.Fprintf(&sb, "\n# %s alias completion\n", alias)
 			fmt.Fprintf(&sb, "if (Get-Command %s -ErrorAction SilentlyContinue) {\n", alias)
-			fmt.Fprintf(&sb, "    $__drCompletionScript = (%s completion powershell | Out-String)\n", version.CliName)
+			fmt.Fprintf(&sb, "    $__drCompletionScript = (%s | Out-String)\n", powerShellCompletionCommand)
 			fmt.Fprintf(&sb, "    Invoke-Expression ($__drCompletionScript -replace \"CommandName '%s'\", \"CommandName '%s'\")\n", version.CliName, alias)
 			sb.WriteString("}\n")
 		}
@@ -520,21 +535,29 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 			existingContent = string(data)
 		}
 
-		missingScript := missingPowerShellBlocks(existingContent)
+		updatedContent, migrated := migrateLegacyPowerShellBlocks(existingContent)
+		missingScript := missingPowerShellBlocks(updatedContent)
 
-		if missingScript == "" {
+		if !migrated && missingScript == "" {
 			return nil // Already fully installed
 		}
 
-		// Append missing blocks to profile
-		f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			return fmt.Errorf("Failed to open PowerShell profile: %w", err)
-		}
-		defer f.Close()
+		if migrated {
+			// A profile written by an earlier release holds the legacy command, so rewrite it.
+			if err := rewritePowerShellProfile(profilePath, updatedContent+missingScript); err != nil {
+				return err
+			}
+		} else {
+			// Append missing blocks to profile
+			f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err != nil {
+				return fmt.Errorf("Failed to open PowerShell profile: %w", err)
+			}
+			defer f.Close()
 
-		if _, err = f.WriteString(missingScript); err != nil {
-			return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
+			if _, err = f.WriteString(missingScript); err != nil {
+				return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
+			}
 		}
 
 		warnIfExecutionPolicyRestricted(shellExe)
@@ -543,6 +566,20 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 	}
 
 	return profilePath, installFunc
+}
+
+// rewritePowerShellProfile replaces the profile content and keeps the file's permissions.
+func rewritePowerShellProfile(profilePath, content string) error {
+	info, err := os.Stat(profilePath)
+	if err != nil {
+		return fmt.Errorf("Failed to read PowerShell profile: %w", err)
+	}
+
+	if err := os.WriteFile(profilePath, []byte(content), info.Mode().Perm()); err != nil {
+		return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
+	}
+
+	return nil
 }
 
 // powerShellExeForProfile returns the PowerShell binary name that matches the

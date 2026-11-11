@@ -437,3 +437,56 @@ func TestUninstallFish(t *testing.T) {
 		t.Error("completion file still exists after uninstall")
 	}
 }
+
+func TestRemovePowerShellCompletionFromProfile(t *testing.T) {
+	const keep = "Set-Alias ll Get-ChildItem\n"
+
+	tests := []struct {
+		name        string
+		profile     string
+		wantRemoved bool
+	}{
+		{
+			name:        "current block is removed",
+			profile:     keep + "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr self completion powershell | Out-String | Invoke-Expression\n}\n",
+			wantRemoved: true,
+		},
+		{
+			name:        "legacy block written by an earlier release is removed",
+			profile:     keep + "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n",
+			wantRemoved: true,
+		},
+		{
+			name:        "profile without a completion block is untouched",
+			profile:     keep,
+			wantRemoved: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profilePath := filepath.Join(t.TempDir(), "profile.ps1")
+
+			if err := os.WriteFile(profilePath, []byte(tt.profile), 0o644); err != nil {
+				t.Fatalf("failed to write profile: %v", err)
+			}
+
+			if got := removePowerShellCompletionFromProfile(profilePath); got != tt.wantRemoved {
+				t.Errorf("removed = %v, want %v", got, tt.wantRemoved)
+			}
+
+			data, err := os.ReadFile(profilePath)
+			if err != nil {
+				t.Fatalf("failed to read profile: %v", err)
+			}
+
+			if !strings.Contains(string(data), keep) {
+				t.Errorf("the user's own lines must stay, got: %q", data)
+			}
+
+			if tt.wantRemoved && strings.Contains(string(data), "completion powershell") {
+				t.Errorf("the completion block must be gone, got: %q", data)
+			}
+		})
+	}
+}

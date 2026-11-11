@@ -484,7 +484,7 @@ func TestEnsureSourceInBashrcNotFound(t *testing.T) {
 func TestMissingPowerShellBlocks(t *testing.T) {
 	t.Run("empty content returns all blocks", func(t *testing.T) {
 		result := missingPowerShellBlocks("")
-		if !contains(result, "dr completion powershell") {
+		if !contains(result, "dr self completion powershell") {
 			t.Error("expected dr completion block")
 		}
 
@@ -494,7 +494,7 @@ func TestMissingPowerShellBlocks(t *testing.T) {
 	})
 
 	t.Run("existing dr block skips dr but includes alias", func(t *testing.T) {
-		existing := "dr completion powershell | Out-String | Invoke-Expression\n"
+		existing := "dr self completion powershell | Out-String | Invoke-Expression\n"
 
 		result := missingPowerShellBlocks(existing)
 		if contains(result, "# dr completion") {
@@ -514,13 +514,13 @@ func TestMissingPowerShellBlocks(t *testing.T) {
 			t.Error("should not include datarobot alias block when already present")
 		}
 
-		if !contains(result, "dr completion powershell") {
+		if !contains(result, "dr self completion powershell") {
 			t.Error("expected dr completion block")
 		}
 	})
 
 	t.Run("all blocks present returns empty", func(t *testing.T) {
-		existing := "dr completion powershell | Out-String | Invoke-Expression\n# datarobot alias completion\n"
+		existing := "dr self completion powershell | Out-String | Invoke-Expression\n# datarobot alias completion\n"
 
 		result := missingPowerShellBlocks(existing)
 		if result != "" {
@@ -568,8 +568,109 @@ func TestInstallPowerShell(t *testing.T) {
 
 	content := string(data)
 
-	if !contains(content, "dr completion powershell") {
+	if !contains(content, "dr self completion powershell") {
 		t.Error("profile should contain dr completion block")
+	}
+}
+
+func TestMigrateLegacyPowerShellBlocks(t *testing.T) {
+	t.Run("legacy dr block is replaced", func(t *testing.T) {
+		existing := "# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+
+		got, migrated := migrateLegacyPowerShellBlocks(existing)
+
+		if !migrated {
+			t.Error("expected the legacy block to be migrated")
+		}
+
+		if !contains(got, "dr self completion powershell | Out-String | Invoke-Expression") {
+			t.Errorf("expected the current command, got: %s", got)
+		}
+
+		if contains(got, "dr completion powershell") {
+			t.Errorf("legacy command must be gone, got: %s", got)
+		}
+	})
+
+	t.Run("legacy alias block is replaced", func(t *testing.T) {
+		existing := "    $__drCompletionScript = (dr completion powershell | Out-String)\n"
+
+		got, migrated := migrateLegacyPowerShellBlocks(existing)
+
+		if !migrated || !contains(got, "(dr self completion powershell | Out-String)") {
+			t.Errorf("expected the alias block to use the current command, got: %s", got)
+		}
+	})
+
+	t.Run("current block is left alone", func(t *testing.T) {
+		existing := "dr self completion powershell | Out-String | Invoke-Expression\n"
+
+		got, migrated := migrateLegacyPowerShellBlocks(existing)
+
+		if migrated || got != existing {
+			t.Errorf("expected no change, got migrated=%v content=%q", migrated, got)
+		}
+	})
+
+	t.Run("unrelated profile content is left alone", func(t *testing.T) {
+		existing := "Set-Alias ll Get-ChildItem\n"
+
+		got, migrated := migrateLegacyPowerShellBlocks(existing)
+
+		if migrated || got != existing {
+			t.Errorf("expected no change, got migrated=%v content=%q", migrated, got)
+		}
+	})
+}
+
+func TestInstallPowerShellMigratesALegacyProfileOnce(t *testing.T) {
+	rootCmd := &cobra.Command{Use: "dr", Short: "DataRobot CLI."}
+
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, installFn := installPowerShell(rootCmd, false)
+
+	if err := os.MkdirAll(filepath.Dir(profilePath), 0o755); err != nil {
+		t.Fatalf("failed to create profile dir: %v", err)
+	}
+
+	legacy := "Set-Alias ll Get-ChildItem\n\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	if err := os.WriteFile(profilePath, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("failed to write profile: %v", err)
+	}
+
+	if err := installFn(rootCmd); err != nil {
+		t.Fatalf("first install failed: %v", err)
+	}
+
+	first, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("failed to read profile: %v", err)
+	}
+
+	if contains(string(first), "dr completion powershell") {
+		t.Errorf("legacy command must be gone, got: %s", first)
+	}
+
+	if !contains(string(first), "Set-Alias ll Get-ChildItem") {
+		t.Errorf("the user's own lines must stay, got: %s", first)
+	}
+
+	if strings.Count(string(first), "# dr completion\n") != 1 {
+		t.Errorf("the dr block must not be duplicated, got: %s", first)
+	}
+
+	if err := installFn(rootCmd); err != nil {
+		t.Fatalf("second install failed: %v", err)
+	}
+
+	second, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("failed to read profile: %v", err)
+	}
+
+	if string(second) != string(first) {
+		t.Errorf("a second install must not change the profile, got: %s", second)
 	}
 }
 
