@@ -515,7 +515,7 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 
 	shellExe := powerShellExeForProfile()
 
-	installFunc := func(rootCmd *cobra.Command) error {
+	installFunc := func(rootCmd *cobra.Command) (retErr error) {
 		// Ensure the directory exists
 		profileDir := filepath.Dir(profilePath)
 
@@ -553,7 +553,11 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 			if err != nil {
 				return fmt.Errorf("Failed to open PowerShell profile: %w", err)
 			}
-			defer f.Close()
+			defer func() {
+				if closeErr := f.Close(); retErr == nil && closeErr != nil {
+					retErr = fmt.Errorf("Failed to close PowerShell profile: %w", closeErr)
+				}
+			}()
 
 			if _, err = f.WriteString(missingScript); err != nil {
 				return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
