@@ -588,10 +588,7 @@ func TestValidateManifests_ShutdownGraceSeconds(t *testing.T) {
 }
 
 func TestExecPluginManifest_ShutdownGraceSeconds(t *testing.T) {
-	script := filepath.Join(t.TempDir(), "dr-grace.sh")
-	createScript(t, script, `#!/bin/sh
-echo '{"name":"grace","shutdownGraceSeconds":30}'
-`)
+	script := writePluginManifestScript(t, t.TempDir(), "dr-grace", `{"name":"grace","shutdownGraceSeconds":30}`)
 
 	manifest, err := ExecPluginManifest(script)
 
