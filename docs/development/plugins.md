@@ -100,6 +100,7 @@ The CLI currently understands the following fields:
   - Defaults to `false` if omitted.
 - `scripts` (object): For registry-published (managed) plugins, maps platforms to entry script paths inside the package (`posix` / `windows`). Both entries are required when the block is present, and the CLI executes the script declared for the current platform, both during packaging validation and at discovery time; a missing entry or a declared script that is absent from the package is a hard error. Omit for PATH-style plugins.
 - `minCLIVersion` (string): Minimum CLI version the plugin supports (informational, used with managed plugins).
+- `shutdownGraceSeconds` (integer, 1 to 300): How long the plugin gets to exit after Ctrl-C before the CLI kills it. On Ctrl-C the CLI sends the plugin SIGTERM, then SIGKILL once this time has passed. Defaults to 5. Set it for a plugin that must finish work on shutdown, such as a push or a lock release, and keep it as short as that work allows, because a plugin that ignores SIGTERM holds the terminal for the full time.
 
 ### Notes / recommendations
 

@@ -776,3 +776,116 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 	assert.Equal(t, 0, exitCode)
 	assert.True(t, authContacted, "auth server should be contacted when --skip-auth is not set")
 }
+
+// TestPluginManifestShutdownGrace verifies how the manifest value maps to the
+// grace period between SIGTERM and SIGKILL.
+func TestPluginManifestShutdownGrace(t *testing.T) {
+	tests := []struct {
+		name    string
+		seconds int
+		want    time.Duration
+	}{
+		{"omitted uses the default", 0, DefaultShutdownGrace},
+		{"negative uses the default", -3, DefaultShutdownGrace},
+		{"explicit value", 30, 30 * time.Second},
+		{"at the cap", MaxShutdownGraceSeconds, MaxShutdownGraceSeconds * time.Second},
+		{"above the cap is capped", MaxShutdownGraceSeconds + 1, MaxShutdownGraceSeconds * time.Second},
+		{"far above the cap is capped", 10000, MaxShutdownGraceSeconds * time.Second},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := PluginManifest{ShutdownGraceSeconds: tc.seconds}
+
+			assert.Equal(t, tc.want, m.ShutdownGrace())
+		})
+	}
+}
+
+// TestBuildPluginCommandAppliesGrace verifies the grace reaches exec.Cmd.WaitDelay.
+func TestBuildPluginCommandAppliesGrace(t *testing.T) {
+	cmd := buildPluginCommand(context.Background(), "dr-example", nil, false, nil, 42*time.Second)
+
+	assert.Equal(t, 42*time.Second, cmd.WaitDelay)
+}
+
+// TestExecutePluginShutdownGraceLetsSlowHandlerFinish verifies a manifest grace
+// longer than the default lets a plugin finish a slow SIGTERM handler with its own
+// exit code, where the default would have killed it after 5 seconds.
+func TestExecutePluginShutdownGraceLetsSlowHandlerFinish(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGTERM handling is Unix-specific")
+	}
+
+	markerFile := filepath.Join(t.TempDir(), "cleanup-done")
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
+trap 'sleep 6; touch %s; exit 56' TERM
+touch %s
+while true; do sleep 0.1; done
+`, markerFile, readyFile)
+
+	scriptPath := filepath.Join(t.TempDir(), "slow-term.sh")
+	createScript(t, scriptPath, script)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	manifest := PluginManifest{ShutdownGraceSeconds: 15}
+	done := make(chan int, 1)
+
+	go func() {
+		done <- ExecutePlugin(ctx, manifest, scriptPath, []string{}, nil)
+	}()
+
+	waitForFile(t, readyFile)
+	cancel()
+
+	select {
+	case exitCode := <-done:
+		assert.Equal(t, 56, exitCode, "plugin should finish its handler and exit with its own code")
+
+		_, err := os.Stat(markerFile)
+		require.NoError(t, err, "cleanup marker should exist")
+	case <-time.After(20 * time.Second):
+		t.Fatal("plugin did not exit within 20 seconds of context cancellation")
+	}
+}
+
+// TestExecutePluginShutdownGraceStillKillsUnresponsive verifies a short manifest
+// grace kills a plugin that ignores SIGTERM well before the default would.
+func TestExecutePluginShutdownGraceStillKillsUnresponsive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGTERM handling is Unix-specific")
+	}
+
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
+trap '' TERM
+touch %s
+while true; do sleep 0.1; done
+`, readyFile)
+
+	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
+	createScript(t, scriptPath, script)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	manifest := PluginManifest{ShutdownGraceSeconds: 1}
+	done := make(chan int, 1)
+
+	go func() {
+		done <- ExecutePlugin(ctx, manifest, scriptPath, []string{}, nil)
+	}()
+
+	waitForFile(t, readyFile)
+
+	start := time.Now()
+
+	cancel()
+
+	select {
+	case exitCode := <-done:
+		assert.NotEqual(t, 0, exitCode, "killed plugin should not report success")
+		assert.Less(t, time.Since(start), DefaultShutdownGrace, "a 1 second grace should kill before the default 5 seconds")
+	case <-time.After(10 * time.Second):
+		t.Fatal("plugin was not killed within 10 seconds of context cancellation")
+	}
+}

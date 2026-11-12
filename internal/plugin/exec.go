@@ -121,12 +121,12 @@ func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable stri
 		}
 	}
 
-	return executePluginCommand(ctx, executable, args, manifest.Authentication, rootFlags)
+	return executePluginCommand(ctx, executable, args, manifest.Authentication, rootFlags, manifest.ShutdownGrace())
 }
 
 // executePluginCommand runs the actual plugin command.
-func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) int {
-	cmd := buildPluginCommand(ctx, executable, args, requireAuth, rootFlags)
+func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet, grace time.Duration) int {
+	cmd := buildPluginCommand(ctx, executable, args, requireAuth, rootFlags, grace)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -165,14 +165,14 @@ func pluginCommandArgsFor(goos, executable string, args ...string) (string, []st
 
 // buildPluginCommand creates the appropriate exec.Cmd for the given executable.
 // On Windows, .ps1 files are executed via PowerShell.
-// ctx cancellation sends SIGTERM to the process, with a 5-second grace
-// period before SIGKILL.
-func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) *exec.Cmd {
+// ctx cancellation sends SIGTERM to the process, with the grace period
+// before SIGKILL.
+func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet, grace time.Duration) *exec.Cmd {
 	name, cmdArgs := pluginCommandArgs(executable, args...)
 
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = grace
 	cmd.Env = buildPluginEnv(executable, requireAuth, rootFlags)
 
 	return cmd
