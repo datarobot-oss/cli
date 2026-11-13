@@ -188,7 +188,9 @@ Assert-CleanSession "powershell.exe" "after the uninstall"
 Pass "both shells are clean after the uninstall"
 
 # uninstall.ps1 removes the binary, so it runs against a copy, and it asks for a confirmation that a
-# piped "y" answers. It must leave both profiles loading cleanly.
+# piped "y" answers. It runs the way its usage line says, as text through Invoke-Expression: the file
+# holds non-ASCII characters and no byte order mark, which Windows PowerShell 5.1 misreads when it
+# loads the file itself. It must leave both profiles loading cleanly.
 function Test-UninstallScript([string]$Shell) {
     Write-Host "== uninstall.ps1 under $Shell"
 
@@ -202,14 +204,15 @@ function Test-UninstallScript([string]$Shell) {
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     Copy-Item (Get-Command dr).Source (Join-Path $installDir "dr.exe")
 
-    $script = Join-Path $PSScriptRoot "..\..\uninstall.ps1"
+    $script = (Resolve-Path (Join-Path $PSScriptRoot "..\..\uninstall.ps1")).Path
+    $command = "Invoke-Expression ([IO.File]::ReadAllText('$script', [Text.Encoding]::UTF8))"
     $previousInstallDir = $env:INSTALL_DIR
     $previousPreference = $ErrorActionPreference
 
     $env:INSTALL_DIR = $installDir
     $ErrorActionPreference = "Continue"
 
-    $output = ("y" | & $Shell -NoProfile -ExecutionPolicy Bypass -File $script 2>&1 | Out-String)
+    $output = ("y" | & $Shell -NoProfile -ExecutionPolicy Bypass -Command $command 2>&1 | Out-String)
     $exitCode = $LASTEXITCODE
 
     $ErrorActionPreference = $previousPreference
