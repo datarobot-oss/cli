@@ -18,14 +18,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/self/completion/powershell"
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/version"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDetectShell(t *testing.T) {
@@ -143,7 +147,7 @@ func TestGetInstallFunc(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, fn, err := getInstallFunc(rootCmd, tt.shell, tt.force)
+			installer, err := getInstaller(rootCmd, tt.shell, tt.force)
 
 			if tt.expectError {
 				if err == nil {
@@ -159,12 +163,8 @@ func TestGetInstallFunc(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if path == "" {
+			if installer.Path() == "" {
 				t.Error("expected non-empty path")
-			}
-
-			if fn == nil {
-				t.Error("expected non-nil install function")
 			}
 		})
 	}
@@ -481,52 +481,16 @@ func TestEnsureSourceInBashrcNotFound(t *testing.T) {
 	}
 }
 
-func TestMissingPowerShellBlocks(t *testing.T) {
-	t.Run("empty content returns all blocks", func(t *testing.T) {
-		result := missingPowerShellBlocks("")
-		if !contains(result, "dr completion powershell") {
-			t.Error("expected dr completion block")
-		}
+const testCompletionCommand = "dr self completion powershell"
 
-		if !contains(result, "# datarobot alias completion") {
-			t.Error("expected datarobot alias block")
-		}
-	})
+// powerShellInstall returns the profile path and the install function of the PowerShell installer.
+func powerShellInstall(t *testing.T) (string, func(*cobra.Command) error) {
+	t.Helper()
 
-	t.Run("existing dr block skips dr but includes alias", func(t *testing.T) {
-		existing := "dr completion powershell | Out-String | Invoke-Expression\n"
+	installer, err := newPowerShellInstaller(testCompletionCommand)
+	require.NoError(t, err)
 
-		result := missingPowerShellBlocks(existing)
-		if contains(result, "# dr completion") {
-			t.Error("should not include dr block header when already present")
-		}
-
-		if !contains(result, "# datarobot alias completion") {
-			t.Error("expected datarobot alias block")
-		}
-	})
-
-	t.Run("existing alias block skips alias", func(t *testing.T) {
-		existing := "# datarobot alias completion\nif (Get-Command datarobot -ErrorAction SilentlyContinue) {\n"
-
-		result := missingPowerShellBlocks(existing)
-		if contains(result, "# datarobot alias completion") {
-			t.Error("should not include datarobot alias block when already present")
-		}
-
-		if !contains(result, "dr completion powershell") {
-			t.Error("expected dr completion block")
-		}
-	})
-
-	t.Run("all blocks present returns empty", func(t *testing.T) {
-		existing := "dr completion powershell | Out-String | Invoke-Expression\n# datarobot alias completion\n"
-
-		result := missingPowerShellBlocks(existing)
-		if result != "" {
-			t.Errorf("expected empty result when all blocks present, got: %s", result)
-		}
-	})
+	return installer.Path(), installer.Install
 }
 
 func TestInstallPowerShell(t *testing.T) {
@@ -543,7 +507,7 @@ func TestInstallPowerShell(t *testing.T) {
 
 	testutil.SetTestHomeDir(t, tmpDir)
 
-	profilePath, installFn := installPowerShell(rootCmd, false)
+	profilePath, installFn := powerShellInstall(t)
 
 	if profilePath == "" {
 		t.Error("expected non-empty profile path")
@@ -568,9 +532,344 @@ func TestInstallPowerShell(t *testing.T) {
 
 	content := string(data)
 
-	if !contains(content, "dr completion powershell") {
+	if !contains(content, "dr self completion powershell") {
 		t.Error("profile should contain dr completion block")
 	}
+}
+
+// installOverLegacyProfile installs completion over a profile an earlier release wrote and returns
+// the profile path and the install function.
+func installOverLegacyProfile(t *testing.T) (string, func(*cobra.Command) error) {
+	t.Helper()
+
+	rootCmd := &cobra.Command{Use: "dr", Short: "DataRobot CLI."}
+
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, installFn := powerShellInstall(t)
+
+	if err := os.MkdirAll(filepath.Dir(profilePath), 0o755); err != nil {
+		t.Fatalf("failed to create profile dir: %v", err)
+	}
+
+	legacy := "Set-Alias ll Get-ChildItem\n\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	if err := os.WriteFile(profilePath, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("failed to write profile: %v", err)
+	}
+
+	if err := installFn(rootCmd); err != nil {
+		t.Fatalf("install failed: %v", err)
+	}
+
+	return profilePath, installFn
+}
+
+func readProfile(t *testing.T, profilePath string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("failed to read profile: %v", err)
+	}
+
+	return string(data)
+}
+
+func TestInstallPowerShellMigratesALegacyProfile(t *testing.T) {
+	profilePath, _ := installOverLegacyProfile(t)
+
+	got := readProfile(t, profilePath)
+
+	if contains(got, "dr completion powershell") {
+		t.Errorf("legacy command must be gone, got: %s", got)
+	}
+
+	if !contains(got, "Set-Alias ll Get-ChildItem") {
+		t.Errorf("the user's own lines must stay, got: %s", got)
+	}
+
+	if strings.Count(got, "# dr completion\n") != 1 {
+		t.Errorf("the dr block must not be duplicated, got: %s", got)
+	}
+}
+
+func TestInstallPowerShellOverAMigratedProfileChangesNothing(t *testing.T) {
+	profilePath, installFn := installOverLegacyProfile(t)
+
+	first := readProfile(t, profilePath)
+
+	if err := installFn(&cobra.Command{Use: "dr"}); err != nil {
+		t.Fatalf("second install failed: %v", err)
+	}
+
+	if second := readProfile(t, profilePath); second != first {
+		t.Errorf("a second install must not change the profile, got: %s", second)
+	}
+}
+
+func TestPowerShellInstallerInstalled(t *testing.T) {
+	legacy := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	onlyDr := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr self completion powershell | Out-String | Invoke-Expression\n}\n"
+
+	tests := []struct {
+		name    string
+		profile []byte // nil leaves no profile on disk
+		want    bool
+	}{
+		{"no profile", nil, false},
+		{"a profile without completion", []byte("Set-Alias ll Get-ChildItem\n"), false},
+		{"a profile from an earlier release", []byte(legacy), false},
+		{"a profile with only the dr block", []byte(onlyDr), false},
+		{"a profile that is not UTF-8", []byte{0xFF, 0xFE, '#', 0}, false},
+		{"a profile with every current block", []byte(onlyDr + powershell.MissingBlocks(onlyDr, testCompletionCommand)), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testutil.SetTestHomeDir(t, t.TempDir())
+
+			installer, err := newPowerShellInstaller(testCompletionCommand)
+			require.NoError(t, err)
+
+			if tt.profile != nil {
+				require.NoError(t, os.MkdirAll(filepath.Dir(installer.Path()), 0o755))
+				require.NoError(t, os.WriteFile(installer.Path(), tt.profile, 0o600))
+			}
+
+			assert.Equal(t, tt.want, installer.Installed())
+		})
+	}
+}
+
+func TestPowerShellInstallerInstalledAcrossProfiles(t *testing.T) {
+	dir := t.TempDir()
+	legacy := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	current := strings.ReplaceAll(legacy, "dr completion powershell", testCompletionCommand) + powershell.MissingBlocks(strings.ReplaceAll(legacy, "dr completion powershell", testCompletionCommand), testCompletionCommand)
+
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+		return path
+	}
+
+	installer := powerShellInstaller{path: write("primary.ps1", current), command: testCompletionCommand}
+
+	assert.True(t, installer.installedAcross([]string{installer.path, filepath.Join(dir, "missing.ps1")}), "a current profile and no other profile")
+	assert.True(t, installer.installedAcross([]string{installer.path, write("other-current.ps1", current)}), "a current profile and a current one")
+	assert.False(t, installer.installedAcross([]string{installer.path, write("other-legacy.ps1", legacy)}), "the other profile still runs the legacy command")
+}
+
+func TestPowerShellInstallerIsInstalledAfterInstall(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	installer, err := newPowerShellInstaller(testCompletionCommand)
+	require.NoError(t, err)
+
+	require.NoError(t, installer.Install(&cobra.Command{Use: "dr"}))
+
+	assert.True(t, installer.Installed())
+}
+
+// wiredInstallCmd returns an install command inside the shipped command tree.
+func wiredInstallCmd() *cobra.Command {
+	cmd := Cmd()
+	testutil.WireCompletionCommandPath(cmd)
+
+	return cmd
+}
+
+func TestInstallForShellMigratesALegacyProfileWithoutForce(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, _ := powerShellInstall(t)
+	legacy := "Set-Alias ll Get-ChildItem\n\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(profilePath), 0o755))
+	require.NoError(t, os.WriteFile(profilePath, []byte(legacy), 0o600))
+
+	cmd := wiredInstallCmd()
+
+	testutil.CaptureStdout(t, func() {
+		require.NoError(t, installForShell(cmd, "powershell", internalShell.PowerShell, false, true, false))
+	})
+
+	migrated := readProfile(t, profilePath)
+
+	assert.NotContains(t, migrated, "dr completion powershell")
+	assert.Contains(t, migrated, "dr self completion powershell")
+
+	out := testutil.CaptureStdout(t, func() {
+		require.NoError(t, installForShell(cmd, "powershell", internalShell.PowerShell, false, true, false))
+	})
+
+	assert.Contains(t, out, "already installed", "a migrated profile counts as installed")
+	assert.Equal(t, migrated, readProfile(t, profilePath), "a second install changes nothing")
+}
+
+func TestInstallForShellBuildsTheProfileLineFromTheCommandTree(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	root := &cobra.Command{Use: "tool"}
+	completion := &cobra.Command{Use: "completion"}
+	cmd := Cmd()
+
+	completion.AddCommand(cmd)
+	root.AddCommand(completion)
+
+	testutil.CaptureStdout(t, func() {
+		require.NoError(t, installForShell(cmd, "powershell", internalShell.PowerShell, false, true, false))
+	})
+
+	profilePath, _ := powerShellInstall(t)
+	got := readProfile(t, profilePath)
+
+	assert.Contains(t, got, "    tool completion powershell | Out-String | Invoke-Expression\n")
+	assert.NotContains(t, got, "dr self completion powershell")
+}
+
+// installOverProfile writes a profile into a fresh home, installs PowerShell completion over it and
+// returns the profile path and the install error.
+func installOverProfile(t *testing.T, content []byte) (string, error) {
+	t.Helper()
+
+	rootCmd := &cobra.Command{Use: "dr", Short: "DataRobot CLI."}
+
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, installFn := powerShellInstall(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(profilePath), 0o755))
+	require.NoError(t, os.WriteFile(profilePath, content, 0o600))
+
+	return profilePath, installFn(rootCmd)
+}
+
+// hasBareLineFeed reports whether text holds a line feed that no carriage return precedes.
+func hasBareLineFeed(text string) bool {
+	return strings.Contains(strings.ReplaceAll(text, "\r\n", ""), "\n")
+}
+
+func TestInstallPowerShellKeepsCRLFLineEndings(t *testing.T) {
+	t.Run("appended blocks use CRLF", func(t *testing.T) {
+		profilePath, err := installOverProfile(t, []byte("Set-Alias ll Get-ChildItem\r\n"))
+		require.NoError(t, err)
+
+		got := readProfile(t, profilePath)
+
+		assert.Contains(t, got, "dr self completion powershell")
+		assert.False(t, hasBareLineFeed(got), "the profile holds a bare line feed: %q", got)
+	})
+
+	t.Run("a migrated profile keeps CRLF", func(t *testing.T) {
+		legacy := "Set-Alias ll Get-ChildItem\r\n\r\n# dr completion\r\nif (Get-Command dr -ErrorAction SilentlyContinue) {\r\n    dr completion powershell | Out-String | Invoke-Expression\r\n}\r\n"
+
+		profilePath, err := installOverProfile(t, []byte(legacy))
+		require.NoError(t, err)
+
+		got := readProfile(t, profilePath)
+
+		assert.NotContains(t, got, "dr completion powershell")
+		assert.Contains(t, got, "# datarobot alias completion", "the alias block the profile lacked is added")
+		assert.False(t, hasBareLineFeed(got), "the profile holds a bare line feed: %q", got)
+	})
+}
+
+func TestInstallPowerShellRefusesAProfileItCannotEdit(t *testing.T) {
+	utf16 := []byte{0xFF, 0xFE, 'S', 0, 'e', 0, 't', 0, '-', 0, 'A', 0, 'l', 0, 'i', 0, 'a', 0, 's', 0, '\r', 0, '\n', 0}
+
+	profilePath, err := installOverProfile(t, utf16)
+
+	require.ErrorIs(t, err, powershell.ErrNotUTF8)
+	assert.Equal(t, string(utf16), readProfile(t, profilePath), "a refused profile must stay as it was")
+}
+
+func TestInstallPowerShellMigratesOnlyTheBlockItWrote(t *testing.T) {
+	existing := "mydr completion powershell\n# run dr completion powershell by hand\n\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+
+	profilePath, err := installOverProfile(t, []byte(existing))
+	require.NoError(t, err)
+
+	got := readProfile(t, profilePath)
+
+	assert.Contains(t, got, "mydr completion powershell\n", "a similar command the user wrote must stay")
+	assert.Contains(t, got, "# run dr completion powershell by hand\n", "a comment the user wrote must stay")
+	assert.Contains(t, got, "    dr self completion powershell | Out-String | Invoke-Expression\n")
+}
+
+func TestInstallPowerShellKeepsTheProfileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX file modes")
+	}
+
+	profilePath, _ := installOverLegacyProfile(t)
+
+	info, err := os.Stat(profilePath)
+	require.NoError(t, err)
+
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
+
+func TestInstallPowerShellWritesThroughASymlinkedProfile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating a symlink needs a privilege on Windows")
+	}
+
+	rootCmd := &cobra.Command{Use: "dr", Short: "DataRobot CLI."}
+
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, installFn := powerShellInstall(t)
+	target := filepath.Join(t.TempDir(), "dotfiles-profile.ps1")
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(profilePath), 0o755))
+	require.NoError(t, os.WriteFile(target, []byte("\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"), 0o600))
+	require.NoError(t, os.Symlink(target, profilePath))
+
+	require.NoError(t, installFn(rootCmd))
+
+	info, err := os.Lstat(profilePath)
+	require.NoError(t, err)
+
+	assert.NotZero(t, info.Mode()&os.ModeSymlink, "the profile must stay a symlink")
+	assert.Contains(t, readProfile(t, target), "dr self completion powershell", "the link target holds the migrated profile")
+}
+
+func TestMigrateProfiles(t *testing.T) {
+	dir := t.TempDir()
+	legacy := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	current := strings.ReplaceAll(legacy, "dr completion powershell", "dr self completion powershell")
+	utf16 := string([]byte{0xFF, 0xFE, '#', 0, ' ', 0})
+
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+		return path
+	}
+
+	installed := write("installed.ps1", legacy)
+	other := write("other.ps1", legacy)
+	already := write("already.ps1", current)
+	refused := write("utf16.ps1", utf16)
+	missing := filepath.Join(dir, "missing.ps1")
+
+	changed, err := migrateProfiles([]string{installed, other, already, refused, missing}, installed, testCompletionCommand)
+
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, current, readProfile(t, other), "the other profile is migrated")
+	assert.Equal(t, legacy, readProfile(t, installed), "the installed profile is left to its own update")
+	assert.Equal(t, current, readProfile(t, already), "a current profile stays")
+	assert.Equal(t, utf16, readProfile(t, refused), "a UTF-16 profile is skipped, not corrupted")
+	assert.NoFileExists(t, missing)
+
+	changed, err = migrateProfiles([]string{other, already, missing}, installed, testCompletionCommand)
+
+	require.NoError(t, err)
+	assert.False(t, changed, "a second pass changes nothing")
 }
 
 // Helper function.

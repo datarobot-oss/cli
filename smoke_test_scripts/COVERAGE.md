@@ -8,6 +8,7 @@ This document tracks what is covered by smoke tests across all platforms. Use it
 |--------|----------|---------|
 | `run_smoke_test.sh` | Unix (Linux / macOS) | `task smoke-test` |
 | `windows/run_smoke_test.ps1` | Windows | `task smoke-test-windows` |
+| `windows/run_powershell_profile_test.ps1` | Windows | PR check `completion-tests-windows` + nightly Windows run |
 | `run_plugin_update_smoke_test.sh` | Unix | `task smoke-test` |
 | `run_self_update_smoke_test.sh` | Unix (macOS for brew tests) | manual / CI |
 | `run_pre_release_smoke_test.sh` | Unix (Linux / macOS) | `task smoke-test-pre-release` (gates release promotion) |
@@ -39,6 +40,7 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | `dr self completion bash` generates file | ✅ | ❌ | Checks `__start_dr()` function |
 | `dr self completion powershell` generates file | ❌ | ✅ | Checks `Register-ArgumentCompleter` |
 | Completion install / uninstall (interactive) | ✅ | ❌ | Uses `expect` |
+| PowerShell profile install, legacy migration, and uninstall load cleanly | ❌ | ✅ | PowerShell 7, Windows PowerShell 5.1, and both together (`run_powershell_profile_test.ps1`) |
 | **Task / Run** | | | |
 | `dr run` outside template shows informative message | ✅ | ✅ | |
 | **Auth** | | | |
