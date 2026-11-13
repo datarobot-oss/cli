@@ -555,3 +555,43 @@ func TestValidatePluginScript_OtherPlatformScriptMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "manifest.json declares script")
 }
+
+func TestValidateManifests_ShutdownGraceSeconds(t *testing.T) {
+	base := BasicPluginManifest{Name: "apps", Version: "1.0.0"}
+
+	tests := []struct {
+		name    string
+		seconds int
+		wantErr bool
+	}{
+		{"omitted", 0, false},
+		{"minimum", 1, false},
+		{"maximum", 300, false},
+		{"above maximum", 301, true},
+		{"negative", -1, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := PluginManifest{BasicPluginManifest: base, ShutdownGraceSeconds: tc.seconds}
+
+			err := validateManifests(PluginManifest{BasicPluginManifest: base}, actual)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "shutdownGraceSeconds")
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestExecPluginManifest_ShutdownGraceSeconds(t *testing.T) {
+	script := writePluginManifestScript(t, t.TempDir(), "dr-grace", `{"name":"grace","shutdownGraceSeconds":30}`)
+
+	manifest, err := ExecPluginManifest(script)
+
+	require.NoError(t, err)
+	assert.Equal(t, 30, manifest.ShutdownGraceSeconds)
+}

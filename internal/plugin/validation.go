@@ -106,9 +106,10 @@ var createManifestValidatorOnce = sync.OnceValue(func() *validator.Validate {
 })
 
 // validateManifests validates the script output manifest and checks that the
-// core BasicPluginManifest fields match expected. Scripts and MinCLIVersion
-// are intentionally ignored — they are optional managed-plugin fields that
-// PATH plugins do not output.
+// core BasicPluginManifest fields match expected. Scripts, MinCLIVersion and
+// ShutdownGraceSeconds are intentionally not compared — they are optional
+// managed-plugin fields that PATH plugins do not output. ShutdownGraceSeconds
+// is still range-checked by the struct validation.
 //
 // The field-by-field comparison below could be replaced with go-cmp, but was
 // written out explicitly to avoid adding that dependency.
