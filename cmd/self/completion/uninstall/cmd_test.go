@@ -441,6 +441,8 @@ func TestUninstallFish(t *testing.T) {
 	}
 }
 
+const command = "dr self completion powershell"
+
 func TestRemovePowerShellCompletionFromProfile(t *testing.T) {
 	const keep = "Set-Alias ll Get-ChildItem\n"
 
@@ -455,7 +457,7 @@ func TestRemovePowerShellCompletionFromProfile(t *testing.T) {
 	}{
 		{
 			name:        "the blocks the installer writes are removed in full, alias block included",
-			profile:     keep + powershell.MissingBlocks(keep),
+			profile:     keep + powershell.MissingBlocks(keep, command),
 			wantProfile: keep,
 			wantRemoved: true,
 		},
@@ -467,13 +469,13 @@ func TestRemovePowerShellCompletionFromProfile(t *testing.T) {
 		},
 		{
 			name:        "a CRLF profile is removed without bare line feeds",
-			profile:     strings.ReplaceAll(keep+powershell.MissingBlocks(keep), "\n", "\r\n"),
+			profile:     strings.ReplaceAll(keep+powershell.MissingBlocks(keep, command), "\n", "\r\n"),
 			wantProfile: strings.ReplaceAll(keep, "\n", "\r\n"),
 			wantRemoved: true,
 		},
 		{
 			name:        "lines the user wrote around the blocks stay",
-			profile:     keep + powershell.MissingBlocks(keep) + "Set-Alias gs git-status\n",
+			profile:     keep + powershell.MissingBlocks(keep, command) + "Set-Alias gs git-status\n",
 			wantProfile: keep + "Set-Alias gs git-status\n",
 			wantRemoved: true,
 		},
@@ -553,7 +555,7 @@ func TestRemovePowerShellCompletionFromProfileKeepsTheModeAndTheLink(t *testing.
 	target := filepath.Join(dir, "dotfiles-profile.ps1")
 	link := filepath.Join(dir, "profile.ps1")
 
-	require.NoError(t, os.WriteFile(target, []byte("Set-Alias ll Get-ChildItem\n"+powershell.MissingBlocks("")), 0o600))
+	require.NoError(t, os.WriteFile(target, []byte("Set-Alias ll Get-ChildItem\n"+powershell.MissingBlocks("", command)), 0o600))
 	require.NoError(t, os.Symlink(target, link))
 
 	testutil.CaptureStdout(t, func() {

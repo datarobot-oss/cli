@@ -36,13 +36,20 @@ const profileFileName = "Microsoft.PowerShell_profile.ps1"
 // file that `echo > $PROFILE` writes in Windows PowerShell 5.1.
 var ErrNotUTF8 = errors.New("profile is not UTF-8 text")
 
-var (
-	// Command is what a profile block runs to load completion.
-	Command = version.CliName + " self completion powershell"
-	// LegacyCommand is what earlier releases wrote. It is not a command, so every session that
-	// loaded such a profile printed an error.
-	LegacyCommand = version.CliName + " completion powershell"
-)
+// LegacyCommand is what earlier releases wrote into the profile. It is not a command, so every
+// session that loaded such a profile printed an error. The current command comes from the command
+// tree, so callers pass it in.
+var LegacyCommand = version.CliName + " completion powershell"
+
+// printsScript ends every command that prints the PowerShell completion script, in the current and
+// in the legacy form.
+const printsScript = " completion powershell"
+
+// LoadsCompletion reports whether the profile content runs a command that prints the completion
+// script, whoever wrote the line.
+func LoadsCompletion(content string) bool {
+	return strings.Contains(content, printsScript)
+}
 
 // ProfilePaths returns every profile file a PowerShell session can load for the user. Windows has
 // one for PowerShell 7 and one for Windows PowerShell 5.1. Other platforms have one.
@@ -110,14 +117,15 @@ func guardLine(name string) string {
 	return fmt.Sprintf("if (Get-Command %s -ErrorAction SilentlyContinue) {", name)
 }
 
-// MissingBlocks returns the completion blocks the profile content lacks.
-func MissingBlocks(existingContent string) string {
+// MissingBlocks returns the completion blocks the profile content lacks. The blocks run command,
+// for example `dr self completion powershell`.
+func MissingBlocks(existingContent, command string) string {
 	var sb strings.Builder
 
-	if !strings.Contains(existingContent, Command) {
+	if !strings.Contains(existingContent, command) {
 		fmt.Fprintf(&sb, "\n%s\n", marker(version.CliName))
 		fmt.Fprintf(&sb, "%s\n", guardLine(version.CliName))
-		fmt.Fprintf(&sb, "    %s | Out-String | Invoke-Expression\n", Command)
+		fmt.Fprintf(&sb, "    %s | Out-String | Invoke-Expression\n", command)
 		sb.WriteString("}\n")
 	}
 
@@ -125,7 +133,7 @@ func MissingBlocks(existingContent string) string {
 		if !strings.Contains(existingContent, aliasMarker(alias)) {
 			fmt.Fprintf(&sb, "\n%s\n", aliasMarker(alias))
 			fmt.Fprintf(&sb, "%s\n", guardLine(alias))
-			fmt.Fprintf(&sb, "    $__drCompletionScript = (%s | Out-String)\n", Command)
+			fmt.Fprintf(&sb, "    $__drCompletionScript = (%s | Out-String)\n", command)
 			fmt.Fprintf(&sb, "    Invoke-Expression ($__drCompletionScript -replace \"CommandName '%s'\", \"CommandName '%s'\")\n", version.CliName, alias)
 			sb.WriteString("}\n")
 		}
@@ -167,9 +175,9 @@ func markerName(line string) (string, bool) {
 	return "", false
 }
 
-// MigrateLegacy replaces the legacy command inside the blocks the CLI wrote and reports whether it
-// changed anything. Text outside those blocks stays as it is.
-func MigrateLegacy(content string) (string, bool) {
+// MigrateLegacy replaces the legacy command inside the blocks the CLI wrote with command and
+// reports whether it changed anything. Text outside those blocks stays as it is.
+func MigrateLegacy(content, command string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	changed := false
 
@@ -180,7 +188,7 @@ func MigrateLegacy(content string) (string, bool) {
 		}
 
 		for j := i; j < end; j++ {
-			if migrated := strings.ReplaceAll(lines[j], LegacyCommand, Command); migrated != lines[j] {
+			if migrated := strings.ReplaceAll(lines[j], LegacyCommand, command); migrated != lines[j] {
 				lines[j] = migrated
 				changed = true
 			}

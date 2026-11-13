@@ -411,7 +411,7 @@ func removePowerShellCompletionFromProfile(profilePath string) bool {
 // warnIfCompletionLeft tells the user when a profile still loads completion through a line the CLI
 // did not write, so "uninstalled" does not leave them with an active completion.
 func warnIfCompletionLeft(profilePath, content string) {
-	if strings.Contains(content, powershell.Command) || strings.Contains(content, powershell.LegacyCommand) {
+	if powershell.LoadsCompletion(content) {
 		fmt.Printf("%s %s loads completion with a line the CLI did not write. Remove that line by hand.\n", warnStyle.Render("⚠"), profilePath)
 	}
 }

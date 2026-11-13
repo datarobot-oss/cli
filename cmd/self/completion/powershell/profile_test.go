@@ -27,13 +27,14 @@ import (
 )
 
 const (
+	command     = "dr self completion powershell"
 	userLine    = "Set-Alias ll Get-ChildItem\n"
 	legacyBlock = "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
 )
 
 func TestMissingBlocks(t *testing.T) {
 	t.Run("empty content returns every block", func(t *testing.T) {
-		got := MissingBlocks("")
+		got := MissingBlocks("", command)
 
 		assert.Contains(t, got, "# dr completion")
 		assert.Contains(t, got, "dr self completion powershell | Out-String | Invoke-Expression")
@@ -41,21 +42,21 @@ func TestMissingBlocks(t *testing.T) {
 	})
 
 	t.Run("an existing dr block skips dr but keeps the alias", func(t *testing.T) {
-		got := MissingBlocks("dr self completion powershell | Out-String | Invoke-Expression\n")
+		got := MissingBlocks("dr self completion powershell | Out-String | Invoke-Expression\n", command)
 
 		assert.NotContains(t, got, "# dr completion")
 		assert.Contains(t, got, "# datarobot alias completion")
 	})
 
 	t.Run("an existing alias block skips the alias", func(t *testing.T) {
-		got := MissingBlocks("# datarobot alias completion\n")
+		got := MissingBlocks("# datarobot alias completion\n", command)
 
 		assert.NotContains(t, got, "# datarobot alias completion")
 		assert.Contains(t, got, "dr self completion powershell")
 	})
 
 	t.Run("every block present returns nothing", func(t *testing.T) {
-		got := MissingBlocks("dr self completion powershell | Out-String | Invoke-Expression\n# datarobot alias completion\n")
+		got := MissingBlocks("dr self completion powershell | Out-String | Invoke-Expression\n# datarobot alias completion\n", command)
 
 		assert.Empty(t, got)
 	})
@@ -63,7 +64,7 @@ func TestMissingBlocks(t *testing.T) {
 
 func TestMigrateLegacy(t *testing.T) {
 	t.Run("a legacy dr block is migrated", func(t *testing.T) {
-		got, migrated := MigrateLegacy(userLine + legacyBlock)
+		got, migrated := MigrateLegacy(userLine+legacyBlock, command)
 
 		assert.True(t, migrated)
 		assert.Contains(t, got, "    dr self completion powershell | Out-String | Invoke-Expression\n")
@@ -74,7 +75,7 @@ func TestMigrateLegacy(t *testing.T) {
 	t.Run("a legacy alias block is migrated", func(t *testing.T) {
 		content := "\n# datarobot alias completion\nif (Get-Command datarobot -ErrorAction SilentlyContinue) {\n    $__drCompletionScript = (dr completion powershell | Out-String)\n    Invoke-Expression ($__drCompletionScript -replace \"CommandName 'dr'\", \"CommandName 'datarobot'\")\n}\n"
 
-		got, migrated := MigrateLegacy(content)
+		got, migrated := MigrateLegacy(content, command)
 
 		assert.True(t, migrated)
 		assert.Contains(t, got, "(dr self completion powershell | Out-String)")
@@ -82,7 +83,7 @@ func TestMigrateLegacy(t *testing.T) {
 	})
 
 	t.Run("a CRLF block keeps its line endings", func(t *testing.T) {
-		got, migrated := MigrateLegacy(strings.ReplaceAll(legacyBlock, "\n", "\r\n"))
+		got, migrated := MigrateLegacy(strings.ReplaceAll(legacyBlock, "\n", "\r\n"), command)
 
 		assert.True(t, migrated)
 		assert.Equal(t, strings.ReplaceAll(strings.ReplaceAll(legacyBlock, "dr completion powershell", "dr self completion powershell"), "\n", "\r\n"), got)
@@ -102,7 +103,7 @@ func TestMigrateLegacy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, migrated := MigrateLegacy(tt.content)
+			got, migrated := MigrateLegacy(tt.content, command)
 
 			assert.False(t, migrated)
 			assert.Equal(t, tt.content, got)
@@ -110,9 +111,31 @@ func TestMigrateLegacy(t *testing.T) {
 	}
 }
 
+func TestMissingBlocksRunsTheCommandItIsGiven(t *testing.T) {
+	got := MissingBlocks("", "tool sub completion powershell")
+
+	assert.Contains(t, got, "    tool sub completion powershell | Out-String | Invoke-Expression\n")
+	assert.Contains(t, got, "$__drCompletionScript = (tool sub completion powershell | Out-String)")
+	assert.NotContains(t, got, "dr self completion powershell")
+}
+
+func TestMigrateLegacyWritesTheCommandItIsGiven(t *testing.T) {
+	got, migrated := MigrateLegacy(userLine+legacyBlock, "tool sub completion powershell")
+
+	assert.True(t, migrated)
+	assert.Contains(t, got, "    tool sub completion powershell | Out-String | Invoke-Expression\n")
+	assert.NotContains(t, got, "dr completion powershell")
+}
+
+func TestLoadsCompletion(t *testing.T) {
+	assert.True(t, LoadsCompletion("dr self completion powershell | Out-String | Invoke-Expression\n"), "the current form")
+	assert.True(t, LoadsCompletion("dr completion powershell | Out-String | Invoke-Expression\n"), "the legacy form")
+	assert.False(t, LoadsCompletion(userLine), "an unrelated profile")
+}
+
 func TestRemoveBlocks(t *testing.T) {
 	t.Run("the blocks MissingBlocks wrote are removed in full, alias block included", func(t *testing.T) {
-		installed := userLine + MissingBlocks(userLine)
+		installed := userLine + MissingBlocks(userLine, command)
 
 		assert.Equal(t, userLine, RemoveBlocks(installed))
 	})
@@ -134,7 +157,7 @@ func TestRemoveBlocks(t *testing.T) {
 	})
 
 	t.Run("a CRLF profile is removed without bare line feeds", func(t *testing.T) {
-		installed := strings.ReplaceAll(userLine+MissingBlocks(userLine), "\n", "\r\n")
+		installed := strings.ReplaceAll(userLine+MissingBlocks(userLine, command), "\n", "\r\n")
 
 		assert.Equal(t, strings.ReplaceAll(userLine, "\n", "\r\n"), RemoveBlocks(installed))
 	})
