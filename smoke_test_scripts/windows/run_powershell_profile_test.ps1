@@ -1,7 +1,8 @@
 # DataRobot CLI - PowerShell profile completion test
 # Installs completion into the PowerShell profile and checks that a new PowerShell session loads it
 # without printing anything. Runs for PowerShell 7 (pwsh), for Windows PowerShell 5.1 (powershell.exe)
-# and for a machine that has both. Then uninstalls and checks that the profile still loads.
+# and for a machine that has both. Then uninstalls, with `dr` and with uninstall.ps1, and checks that the
+# profile still loads.
 # Needs `dr` on PATH and both shells. No API token is needed.
 # Replaces the PowerShell profiles, so it runs only where CI is set (a CI runner or a throwaway machine).
 # Usage: .\run_powershell_profile_test.ps1
@@ -185,5 +186,53 @@ Assert-CleanSession "pwsh" "after the uninstall"
 Assert-CleanSession "powershell.exe" "after the uninstall"
 
 Pass "both shells are clean after the uninstall"
+
+# uninstall.ps1 removes the binary, so it runs against a copy, and it asks for a confirmation that a
+# piped "y" answers. It must leave both profiles loading cleanly.
+function Test-UninstallScript([string]$Shell) {
+    Write-Host "== uninstall.ps1 under $Shell"
+
+    Reset-Profiles
+    New-Item -ItemType Directory -Force -Path $pwshDir, $windowsPsDir | Out-Null
+
+    Install-Completion
+    Copy-Item $pwshProfile $windowsPsProfile
+
+    $installDir = Join-Path ([IO.Path]::GetTempPath()) "dr-uninstall-test"
+    New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+    Copy-Item (Get-Command dr).Source (Join-Path $installDir "dr.exe")
+
+    $script = Join-Path $PSScriptRoot "..\..\uninstall.ps1"
+    $previousInstallDir = $env:INSTALL_DIR
+    $previousPreference = $ErrorActionPreference
+
+    $env:INSTALL_DIR = $installDir
+    $ErrorActionPreference = "Continue"
+
+    $output = ("y" | & $Shell -NoProfile -ExecutionPolicy Bypass -File $script 2>&1 | Out-String)
+    $exitCode = $LASTEXITCODE
+
+    $ErrorActionPreference = $previousPreference
+    $env:INSTALL_DIR = $previousInstallDir
+
+    Write-Host $output
+
+    if ($exitCode -ne 0) { Fail "uninstall.ps1 exited with $exitCode under $Shell" }
+    if (Test-Path (Join-Path $installDir "dr.exe")) { Fail "uninstall.ps1 left the binary behind" }
+
+    foreach ($profilePath in @($pwshProfile, $windowsPsProfile)) {
+        $content = Get-Content -Raw $profilePath
+
+        if ($content -match 'completion') { Fail "uninstall.ps1 left completion in $profilePath`: $content" }
+    }
+
+    Assert-CleanSession "pwsh" "after uninstall.ps1 under $Shell"
+    Assert-CleanSession "powershell.exe" "after uninstall.ps1 under $Shell"
+
+    Pass "uninstall.ps1 under $Shell leaves both profiles clean"
+}
+
+Test-UninstallScript "pwsh"
+Test-UninstallScript "powershell.exe"
 
 exit 0

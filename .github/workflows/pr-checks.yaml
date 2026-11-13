@@ -44,6 +44,7 @@ jobs:
               - 'cmd/self/completion/**'
               - 'goreleaser.yaml'  # Homebrew post-install hook runs `dr self completion install`
               - 'smoke_test_scripts/windows/run_powershell_profile_test.ps1'
+              - 'uninstall.ps1'
             dotenv:
               - 'cmd/dotenv/**'
             templates:

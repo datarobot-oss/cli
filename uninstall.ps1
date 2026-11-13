@@ -146,53 +146,31 @@ function Remove-FromPath {
 # Remove shell completions
 function Remove-Completions {
     $removed = $false
+    $binaryPath = Join-Path $INSTALL_DIR "$BINARY_NAME.exe"
 
-    # PowerShell completion - check profile
+    # PowerShell completion - the CLI removes the blocks it wrote from every PowerShell profile
+    # (PowerShell 7 and Windows PowerShell), so this runs before the binary is deleted.
     $profilePath = $PROFILE
-    if (Test-Path $profilePath) {
-        $content = Get-Content $profilePath -Raw
 
-        # Check if profile has dr completion reference
-        if ($content -match [regex]::Escape("$BINARY_NAME completion powershell")) {
-            Write-Step "Found completion reference in PowerShell profile"
+    if (Test-Path $binaryPath) {
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
 
-            try {
-                # Create backup
-                $backupPath = "$profilePath.bak.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-                Copy-Item $profilePath $backupPath
+        try {
+            $output = (& $binaryPath self completion uninstall powershell --yes 2>&1 | Out-String)
+            $exitCode = $LASTEXITCODE
+        } catch {
+            $output = "$_"
+            $exitCode = 1
+        } finally {
+            $ErrorActionPreference = $previousPreference
+        }
 
-                # Remove completion blocks using the same block-aware logic as the Go uninstaller.
-                # When a marker comment is found (e.g. "# dr completion" or "# datarobot alias completion"),
-                # skip that line plus the next 3 lines (if (...) {, body, }) and trim any preceding blank line.
-                $lines = $content -split "`n"
-                $newLines = [System.Collections.Generic.List[string]]::new()
-                $skipCount = 0
-
-                foreach ($line in $lines) {
-                    if ($skipCount -gt 0) {
-                        $skipCount--
-                        continue
-                    }
-
-                    $isMarker = ($line -match "# $BINARY_NAME completion") -or ($line -match "# datarobot alias completion")
-                    if ($isMarker) {
-                        $skipCount = 3
-                        if ($newLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($newLines[$newLines.Count - 1])) {
-                            $newLines.RemoveAt($newLines.Count - 1)
-                        }
-                        continue
-                    }
-
-                    $newLines.Add($line)
-                }
-
-                $newContent = $newLines -join "`n"
-                Set-Content -Path $profilePath -Value $newContent
-                Write-Success "Removed completion from PowerShell profile"
-                $removed = $true
-            } catch {
-                Write-Warn "Failed to remove completion from profile: $_"
-            }
+        if ($exitCode -ne 0) {
+            Write-Warn "Failed to remove completion from the PowerShell profile: $output"
+        } elseif ($output -match 'Removed completion from') {
+            Write-Success "Removed completion from the PowerShell profile"
+            $removed = $true
         }
     }
 
@@ -236,16 +214,17 @@ function Uninstall-DataRobotCLI {
     Confirm-Uninstall
     Write-Host ""
 
+    # Completions go first: the CLI's own uninstall command removes them from the profiles.
+    Write-Info "Removing shell completions..."
+    Remove-Completions
+
+    Write-Host ""
     Write-Info "Removing DataRobot CLI..."
     Remove-Binary
 
     Write-Host ""
     Write-Info "Checking PATH environment variables..."
     Remove-FromPath
-
-    Write-Host ""
-    Write-Info "Removing shell completions..."
-    Remove-Completions
 
     Write-Host ""
     Write-Info "Uninstallation complete!"
