@@ -116,6 +116,10 @@ func addComponents(repoURLs []string, componentConfig *config.ComponentDefaults,
 			repoURL = component.RepoURL
 		}
 
+		// Replace any known DataRobot GitHub base URL with APPLICATION_TEMPLATE_GIT_BASE_URL
+		// if that variable is set.
+		repoURL = copier.ApplyGitBaseURL(repoURL)
+
 		_, repoErr := vcsurl.Parse(repoURL)
 		if repoErr != nil {
 			log.Errorf("Skipping component \"%s\": invalid url (%s)", repoURL, repoErr)
