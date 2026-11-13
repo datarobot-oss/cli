@@ -21,10 +21,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/self/completion/powershell"
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/testutil"
 	"github.com/datarobot/cli/internal/version"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFindExistingCompletions(t *testing.T) {
@@ -441,25 +444,48 @@ func TestUninstallFish(t *testing.T) {
 func TestRemovePowerShellCompletionFromProfile(t *testing.T) {
 	const keep = "Set-Alias ll Get-ChildItem\n"
 
+	legacyBlock := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	handWritten := "dr self completion powershell | Out-String | Invoke-Expression\n"
+
 	tests := []struct {
 		name        string
 		profile     string
+		wantProfile string
 		wantRemoved bool
 	}{
 		{
-			name:        "current block is removed",
-			profile:     keep + "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr self completion powershell | Out-String | Invoke-Expression\n}\n",
+			name:        "the blocks the installer writes are removed in full, alias block included",
+			profile:     keep + powershell.MissingBlocks(keep),
+			wantProfile: keep,
 			wantRemoved: true,
 		},
 		{
-			name:        "legacy block written by an earlier release is removed",
-			profile:     keep + "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n",
+			name:        "a legacy block written by an earlier release is removed",
+			profile:     keep + legacyBlock,
+			wantProfile: keep,
 			wantRemoved: true,
 		},
 		{
-			name:        "profile without a completion block is untouched",
+			name:        "a CRLF profile is removed without bare line feeds",
+			profile:     strings.ReplaceAll(keep+powershell.MissingBlocks(keep), "\n", "\r\n"),
+			wantProfile: strings.ReplaceAll(keep, "\n", "\r\n"),
+			wantRemoved: true,
+		},
+		{
+			name:        "lines the user wrote around the blocks stay",
+			profile:     keep + powershell.MissingBlocks(keep) + "Set-Alias gs git-status\n",
+			wantProfile: keep + "Set-Alias gs git-status\n",
+			wantRemoved: true,
+		},
+		{
+			name:        "a profile without a completion block is untouched",
 			profile:     keep,
-			wantRemoved: false,
+			wantProfile: keep,
+		},
+		{
+			name:        "a completion line the user wrote is untouched and not reported as removed",
+			profile:     keep + handWritten,
+			wantProfile: keep + handWritten,
 		},
 	}
 
@@ -467,26 +493,85 @@ func TestRemovePowerShellCompletionFromProfile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			profilePath := filepath.Join(t.TempDir(), "profile.ps1")
 
-			if err := os.WriteFile(profilePath, []byte(tt.profile), 0o644); err != nil {
-				t.Fatalf("failed to write profile: %v", err)
-			}
+			require.NoError(t, os.WriteFile(profilePath, []byte(tt.profile), 0o600))
 
-			if got := removePowerShellCompletionFromProfile(profilePath); got != tt.wantRemoved {
-				t.Errorf("removed = %v, want %v", got, tt.wantRemoved)
-			}
+			var removed bool
+
+			testutil.CaptureStdout(t, func() {
+				removed = removePowerShellCompletionFromProfile(profilePath)
+			})
+
+			assert.Equal(t, tt.wantRemoved, removed)
 
 			data, err := os.ReadFile(profilePath)
-			if err != nil {
-				t.Fatalf("failed to read profile: %v", err)
-			}
+			require.NoError(t, err)
 
-			if !strings.Contains(string(data), keep) {
-				t.Errorf("the user's own lines must stay, got: %q", data)
-			}
-
-			if tt.wantRemoved && strings.Contains(string(data), "completion powershell") {
-				t.Errorf("the completion block must be gone, got: %q", data)
-			}
+			assert.Equal(t, tt.wantProfile, string(data))
 		})
 	}
+}
+
+func TestRemovePowerShellCompletionFromProfileWarnsAboutALineItDidNotWrite(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "profile.ps1")
+
+	require.NoError(t, os.WriteFile(profilePath, []byte("dr self completion powershell | Out-String | Invoke-Expression\n"), 0o600))
+
+	out := testutil.CaptureStdout(t, func() {
+		removePowerShellCompletionFromProfile(profilePath)
+	})
+
+	assert.Contains(t, out, "Remove that line by hand")
+	assert.NotContains(t, out, "Removed completion")
+}
+
+func TestRemovePowerShellCompletionFromProfileSkipsAProfileItCannotEdit(t *testing.T) {
+	utf16 := []byte{0xFF, 0xFE, '#', 0, ' ', 0, 'd', 0, 'r', 0}
+	profilePath := filepath.Join(t.TempDir(), "profile.ps1")
+
+	require.NoError(t, os.WriteFile(profilePath, utf16, 0o600))
+
+	var removed bool
+
+	out := testutil.CaptureStdout(t, func() {
+		removed = removePowerShellCompletionFromProfile(profilePath)
+	})
+
+	data, err := os.ReadFile(profilePath)
+	require.NoError(t, err)
+
+	assert.False(t, removed)
+	assert.Equal(t, utf16, data, "a UTF-16 profile must stay as it was")
+	assert.Contains(t, out, "UTF-8")
+}
+
+func TestRemovePowerShellCompletionFromProfileKeepsTheModeAndTheLink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX file modes, and creating a symlink needs a privilege there")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles-profile.ps1")
+	link := filepath.Join(dir, "profile.ps1")
+
+	require.NoError(t, os.WriteFile(target, []byte("Set-Alias ll Get-ChildItem\n"+powershell.MissingBlocks("")), 0o600))
+	require.NoError(t, os.Symlink(target, link))
+
+	testutil.CaptureStdout(t, func() {
+		assert.True(t, removePowerShellCompletionFromProfile(link))
+	})
+
+	info, err := os.Lstat(link)
+	require.NoError(t, err)
+
+	assert.NotZero(t, info.Mode()&os.ModeSymlink, "the profile must stay a symlink")
+
+	targetInfo, err := os.Stat(target)
+	require.NoError(t, err)
+
+	assert.Equal(t, os.FileMode(0o600), targetInfo.Mode().Perm(), "the profile keeps its mode")
+
+	data, err := os.ReadFile(target)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Set-Alias ll Get-ChildItem\n", string(data))
 }

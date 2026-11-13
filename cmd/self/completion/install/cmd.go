@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/cmd/self/completion/powershell"
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalShell "github.com/datarobot/cli/internal/shell"
@@ -469,46 +470,8 @@ func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 	return installPath, installFunc
 }
 
-// Commands a PowerShell profile runs to load completion. Earlier releases wrote the legacy form,
-// which is not a command, so every PowerShell session printed an error.
-var (
-	powerShellCompletionCommand       = version.CliName + " self completion powershell"
-	legacyPowerShellCompletionCommand = version.CliName + " completion powershell"
-)
-
-// migrateLegacyPowerShellBlocks replaces the legacy completion command that earlier releases wrote
-// into a profile, and reports whether it changed anything.
-func migrateLegacyPowerShellBlocks(existingContent string) (string, bool) {
-	migrated := strings.ReplaceAll(existingContent, legacyPowerShellCompletionCommand, powerShellCompletionCommand)
-
-	return migrated, migrated != existingContent
-}
-
-func missingPowerShellBlocks(existingContent string) string {
-	var sb strings.Builder
-
-	if !strings.Contains(existingContent, powerShellCompletionCommand) {
-		fmt.Fprintf(&sb, "\n# %s completion\n", version.CliName)
-		fmt.Fprintf(&sb, "if (Get-Command %s -ErrorAction SilentlyContinue) {\n", version.CliName)
-		fmt.Fprintf(&sb, "    %s | Out-String | Invoke-Expression\n", powerShellCompletionCommand)
-		sb.WriteString("}\n")
-	}
-
-	for _, alias := range version.CliAliases {
-		if !strings.Contains(existingContent, fmt.Sprintf("# %s alias completion", alias)) {
-			fmt.Fprintf(&sb, "\n# %s alias completion\n", alias)
-			fmt.Fprintf(&sb, "if (Get-Command %s -ErrorAction SilentlyContinue) {\n", alias)
-			fmt.Fprintf(&sb, "    $__drCompletionScript = (%s | Out-String)\n", powerShellCompletionCommand)
-			fmt.Fprintf(&sb, "    Invoke-Expression ($__drCompletionScript -replace \"CommandName '%s'\", \"CommandName '%s'\")\n", version.CliName, alias)
-			sb.WriteString("}\n")
-		}
-	}
-
-	return sb.String()
-}
-
 func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	profilePath, err := powerShellProfilePath()
+	profilePath, err := powershell.InstallProfilePath()
 	if err != nil {
 		return "", func(*cobra.Command) error { return err }
 	}
@@ -526,7 +489,12 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 			return err
 		}
 
-		if changed {
+		migratedOthers, err := migrateOtherPowerShellProfiles(profilePath)
+		if err != nil {
+			return err
+		}
+
+		if changed || migratedOthers {
 			warnIfExecutionPolicyRestricted(shellExe)
 		}
 
@@ -534,6 +502,20 @@ func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) e
 	}
 
 	return profilePath, installFunc
+}
+
+// readEditableProfile reads a profile and refuses one that byte-level edits would corrupt.
+func readEditableProfile(profilePath string) ([]byte, error) {
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read PowerShell profile: %w", err)
+	}
+
+	if err := powershell.CheckEditable(data); err != nil {
+		return nil, fmt.Errorf("Refusing to edit %s: %w. Save it as UTF-8 and run the command again.", profilePath, err)
+	}
+
+	return data, nil
 }
 
 // updatePowerShellProfile adds the completion blocks the profile lacks and reports whether it
@@ -544,25 +526,73 @@ func updatePowerShellProfile(profilePath string) (bool, error) {
 	var existingContent string
 
 	if fsutil.FileExists(profilePath) {
-		data, err := os.ReadFile(profilePath)
+		data, err := readEditableProfile(profilePath)
 		if err != nil {
-			return false, fmt.Errorf("Failed to read PowerShell profile: %w", err)
+			return false, err
 		}
 
 		existingContent = string(data)
 	}
 
-	updatedContent, migrated := migrateLegacyPowerShellBlocks(existingContent)
-	missingScript := missingPowerShellBlocks(updatedContent)
+	updatedContent, migrated := powershell.MigrateLegacy(existingContent)
+	missingScript := powershell.MatchLineEndings(updatedContent, powershell.MissingBlocks(updatedContent))
 
 	switch {
 	case migrated:
-		return true, rewritePowerShellProfile(profilePath, updatedContent+missingScript)
+		return true, writePowerShellProfile(profilePath, updatedContent+missingScript)
 	case missingScript == "":
 		return false, nil // Already fully installed
 	default:
 		return true, appendToPowerShellProfile(profilePath, missingScript)
 	}
+}
+
+// migrateOtherPowerShellProfiles replaces the legacy command in the profiles of the other
+// PowerShell, which keep printing an error in every session until they are migrated too. It
+// leaves a profile that holds no legacy block alone.
+func migrateOtherPowerShellProfiles(installedPath string) (bool, error) {
+	paths, err := powershell.ProfilePaths()
+	if err != nil {
+		return false, err
+	}
+
+	return migrateProfiles(paths, installedPath)
+}
+
+func migrateProfiles(paths []string, installedPath string) (bool, error) {
+	var changed bool
+
+	for _, path := range paths {
+		if path == installedPath || !fsutil.FileExists(path) {
+			continue
+		}
+
+		data, err := readEditableProfile(path)
+		if errors.Is(err, powershell.ErrNotUTF8) {
+			fmt.Printf("%s %s\n", warnStyle.Render("Warning:"), err)
+
+			continue
+		}
+
+		if err != nil {
+			return changed, err
+		}
+
+		migrated, ok := powershell.MigrateLegacy(string(data))
+		if !ok {
+			continue
+		}
+
+		if err := writePowerShellProfile(path, migrated); err != nil {
+			return changed, err
+		}
+
+		fmt.Printf("%s Completion command updated in: %s\n", successStyle.Render("✓"), path)
+
+		changed = true
+	}
+
+	return changed, nil
 }
 
 // appendToPowerShellProfile appends content to the profile and reports a failed close.
@@ -585,15 +615,10 @@ func appendToPowerShellProfile(profilePath, content string) (err error) {
 	return nil
 }
 
-// rewritePowerShellProfile replaces the profile content and keeps the file's permissions.
-func rewritePowerShellProfile(profilePath, content string) error {
-	info, err := os.Stat(profilePath)
-	if err != nil {
-		return fmt.Errorf("Failed to read PowerShell profile: %w", err)
-	}
-
-	// The path is the user's own PowerShell profile, resolved from their home directory.
-	if err := os.WriteFile(profilePath, []byte(content), info.Mode().Perm()); err != nil { //nolint:gosec // G703: profilePath comes from powerShellProfilePath, not from input
+// writePowerShellProfile replaces the profile through a temporary file, so a failed write leaves
+// the user's profile as it was. The write keeps the file's mode and follows a symlinked profile.
+func writePowerShellProfile(profilePath, content string) error {
+	if err := fsutil.AtomicWriteFile(profilePath, []byte(content)); err != nil {
 		return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
 	}
 
@@ -601,7 +626,7 @@ func rewritePowerShellProfile(profilePath, content string) error {
 }
 
 // powerShellExeForProfile returns the PowerShell binary name that matches the
-// profile path chosen by powerShellProfilePath. PS Core (pwsh) and Windows
+// profile path chosen by powershell.InstallProfilePath. PS Core (pwsh) and Windows
 // PowerShell (powershell) maintain separate execution policy settings, so the
 // warning check must query the same shell that will actually load the profile.
 func powerShellExeForProfile() string {
@@ -619,26 +644,6 @@ func powerShellExeForProfile() string {
 	}
 
 	return "powershell"
-}
-
-func powerShellProfilePath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("get user home dir: %w", err)
-	}
-
-	if runtime.GOOS != "windows" {
-		return filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"), nil
-	}
-
-	documentsPath := filepath.Join(homeDir, "Documents")
-
-	psCorePath := filepath.Join(documentsPath, "PowerShell")
-	if fsutil.DirExists(psCorePath) {
-		return filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1"), nil
-	}
-
-	return filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"), nil
 }
 
 func showActivationInstructions(shell internalShell.Shell) {
