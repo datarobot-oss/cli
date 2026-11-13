@@ -247,10 +247,16 @@ func MigrateLegacy(content, command string) (string, bool) {
 }
 
 // RemoveBlocks drops the blocks the CLI wrote, each from its marker through its closing brace, and
-// the blank line before it. Text outside those blocks stays as it is.
+// the blank line before it, and gives back the profile as it was before they were added. Text
+// outside those blocks stays as it is.
 func RemoveBlocks(content string) string {
 	lines := strings.Split(content, "\n")
 	kept := make([]string, 0, len(lines))
+
+	// keptAfterRemoval is len(kept) right after the last removed block. It tells a run of adjacent
+	// blocks from blocks that user text separates.
+	keptAfterRemoval := -1
+	runFollowsText := false
 
 	for i := 0; i < len(lines); i++ {
 		end := blockEnd(lines, i)
@@ -260,11 +266,26 @@ func RemoveBlocks(content string) string {
 			continue
 		}
 
-		if len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == "" {
+		popped := len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == ""
+		if popped {
 			kept = kept[:len(kept)-1]
 		}
 
+		if len(kept) != keptAfterRemoval {
+			// Install writes a blank line before its first block. A block that follows text with no
+			// blank line began on a profile whose last line had no line break, so the break is part of
+			// what install added.
+			runFollowsText = !popped && len(kept) > 0
+		}
+
+		keptAfterRemoval = len(kept)
 		i = end - 1
+	}
+
+	// The blocks end the profile when only the final line break follows the last one.
+	if runFollowsText && len(kept) == keptAfterRemoval+1 && kept[len(kept)-1] == "" {
+		kept = kept[:len(kept)-1]
+		kept[len(kept)-1] = strings.TrimSuffix(kept[len(kept)-1], "\r")
 	}
 
 	return strings.Join(kept, "\n")

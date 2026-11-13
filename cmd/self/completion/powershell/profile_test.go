@@ -214,6 +214,38 @@ func TestRemoveBlocks(t *testing.T) {
 	})
 }
 
+// TestRemoveBlocksRestoresTheProfileInstallStartedFrom guards the pair: whatever profile install
+// began with, removing the blocks it wrote gives that profile back, byte for byte.
+func TestRemoveBlocksRestoresTheProfileInstallStartedFrom(t *testing.T) {
+	profiles := map[string]string{
+		"an empty profile":                       "",
+		"a lone line break":                      "\n",
+		"text with a final line break":           "foo\n",
+		"text without a final line break":        "foo",
+		"two lines without a final line break":   "a\nfoo",
+		"a blank line at the end":                "foo\n\n",
+		"CRLF text with a final line break":      "a\r\nfoo\r\n",
+		"CRLF text without a final line break":   "a\r\nfoo",
+		"a UTF-8 byte order mark and text":       "\xef\xbb\xbffoo",
+		"text that already runs another command": "kubectl completion powershell | Out-String | Invoke-Expression\n",
+	}
+
+	for name, profile := range profiles {
+		t.Run(name, func(t *testing.T) {
+			installed := profile + MatchLineEndings(profile, MissingBlocks(profile, command))
+
+			assert.Equal(t, profile, RemoveBlocks(installed))
+		})
+	}
+}
+
+func TestRemoveBlocksKeepsTheLineBreakWhenUserTextFollowsTheBlocks(t *testing.T) {
+	profile := "foo"
+	installed := profile + MissingBlocks(profile, command) + "Set-Alias gs git-status"
+
+	assert.Equal(t, "foo\nSet-Alias gs git-status", RemoveBlocks(installed), "the user's last line keeps its place")
+}
+
 func TestCheckEditable(t *testing.T) {
 	tests := []struct {
 		name    string
