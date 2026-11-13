@@ -577,3 +577,37 @@ func TestRemovePowerShellCompletionFromProfileKeepsTheModeAndTheLink(t *testing.
 
 	assert.Equal(t, "Set-Alias ll Get-ChildItem\n", string(data))
 }
+
+func TestRemovePowerShellCompletionFromProfileReportsAFailedWrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX directory modes")
+	}
+
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.ps1")
+	profile := "Set-Alias ll Get-ChildItem\n" + powershell.MissingBlocks("", command)
+
+	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
+	require.NoError(t, os.Chmod(dir, 0o500))
+
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if err := os.WriteFile(filepath.Join(dir, "probe"), nil, 0o600); err == nil {
+		t.Skip("the directory stays writable, as it does for root")
+	}
+
+	var removed bool
+
+	out := testutil.CaptureStdout(t, func() {
+		removed = removePowerShellCompletionFromProfile(profilePath)
+	})
+
+	assert.False(t, removed)
+	assert.Contains(t, out, "Failed to update")
+	assert.Contains(t, out, "permission denied", "the message names the cause")
+
+	data, err := os.ReadFile(profilePath)
+	require.NoError(t, err)
+
+	assert.Equal(t, profile, string(data), "a failed write leaves the profile as it was")
+}

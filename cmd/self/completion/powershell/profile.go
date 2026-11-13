@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -41,14 +42,15 @@ var ErrNotUTF8 = errors.New("profile is not UTF-8 text")
 // tree, so callers pass it in.
 var LegacyCommand = version.CliName + " completion powershell"
 
-// printsScript ends every command that prints the PowerShell completion script, in the current and
-// in the legacy form.
-const printsScript = " completion powershell"
+// printsScript matches the CLI's command that prints the PowerShell completion script, in the
+// current and in the legacy form. It does not match another tool's `... completion powershell`,
+// such as `kubectl completion powershell`.
+var printsScript = regexp.MustCompile(`(?m)(?:^|[^\w-])` + regexp.QuoteMeta(version.CliName) + `(?: self)? completion powershell\b`)
 
-// LoadsCompletion reports whether the profile content runs a command that prints the completion
-// script, whoever wrote the line.
+// LoadsCompletion reports whether the profile content runs the CLI's command that prints the
+// completion script, whoever wrote the line.
 func LoadsCompletion(content string) bool {
-	return strings.Contains(content, printsScript)
+	return printsScript.MatchString(content)
 }
 
 // ProfilePaths returns every profile file a PowerShell session can load for the user. Windows has
@@ -122,7 +124,7 @@ func guardLine(name string) string {
 func MissingBlocks(existingContent, command string) string {
 	var sb strings.Builder
 
-	if !strings.Contains(existingContent, command) {
+	if !strings.Contains(withoutAliasBlocks(existingContent), command) {
 		fmt.Fprintf(&sb, "\n%s\n", marker(version.CliName))
 		fmt.Fprintf(&sb, "%s\n", guardLine(version.CliName))
 		fmt.Fprintf(&sb, "    %s | Out-String | Invoke-Expression\n", command)
@@ -142,22 +144,66 @@ func MissingBlocks(existingContent, command string) string {
 	return sb.String()
 }
 
+// bodyShape returns the prefix and suffix of each body line MissingBlocks writes in a block. The
+// command in the middle varies, so a line is matched by its ends.
+func bodyShape(name string) [][2]string {
+	if name == version.CliName {
+		return [][2]string{{"    ", " | Out-String | Invoke-Expression"}}
+	}
+
+	return [][2]string{
+		{"    $__drCompletionScript = (", " | Out-String)"},
+		{"    Invoke-Expression ($__drCompletionScript -replace ", ")"},
+	}
+}
+
 // blockEnd returns the index after the closing brace of the block that starts at lines[start], or
-// -1 when the lines there are not a block MissingBlocks wrote. It matches the marker and the guard
-// line exactly, so a comment or a line the user wrote is never mistaken for a block.
+// -1 when the lines there are not a block MissingBlocks wrote. The marker, the guard line, every
+// body line and the closing brace must sit where MissingBlocks puts them, so a comment, a re-indented
+// brace or a line the user wrote is never mistaken for a block, and a search never runs on into the
+// user's code.
 func blockEnd(lines []string, start int) int {
 	name, ok := markerName(strings.TrimSpace(lines[start]))
-	if !ok || start+1 >= len(lines) || strings.TrimRight(lines[start+1], "\r") != guardLine(name) {
+	if !ok {
 		return -1
 	}
 
-	for i := start + 2; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "}" {
-			return i + 1
+	shape := bodyShape(name)
+	end := start + 2 + len(shape) + 1
+
+	if end > len(lines) || strings.TrimRight(lines[start+1], "\r") != guardLine(name) || strings.TrimRight(lines[end-1], "\r") != "}" {
+		return -1
+	}
+
+	for i, affixes := range shape {
+		line := strings.TrimRight(lines[start+2+i], "\r")
+		if !strings.HasPrefix(line, affixes[0]) || !strings.HasSuffix(line, affixes[1]) {
+			return -1
 		}
 	}
 
-	return -1
+	return end
+}
+
+// withoutAliasBlocks drops the alias blocks. Their body runs the command too, so a check for the
+// main block must not see it.
+func withoutAliasBlocks(content string) string {
+	lines := strings.Split(content, "\n")
+	kept := make([]string, 0, len(lines))
+
+	for i := 0; i < len(lines); i++ {
+		if name, ok := markerName(strings.TrimSpace(lines[i])); ok && name != version.CliName {
+			if end := blockEnd(lines, i); end > 0 {
+				i = end - 1
+
+				continue
+			}
+		}
+
+		kept = append(kept, lines[i])
+	}
+
+	return strings.Join(kept, "\n")
 }
 
 // markerName returns the command a marker line belongs to.

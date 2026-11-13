@@ -398,7 +398,7 @@ func removePowerShellCompletionFromProfile(profilePath string) bool {
 	}
 
 	if err := fsutil.AtomicWriteFile(profilePath, []byte(newContent)); err != nil {
-		fmt.Printf("%s Failed to update: %s\n", warnStyle.Render("⚠"), profilePath)
+		fmt.Printf("%s Failed to update %s: %v\n", warnStyle.Render("⚠"), profilePath, err)
 
 		return false
 	}

@@ -130,7 +130,36 @@ func TestMigrateLegacyWritesTheCommandItIsGiven(t *testing.T) {
 func TestLoadsCompletion(t *testing.T) {
 	assert.True(t, LoadsCompletion("dr self completion powershell | Out-String | Invoke-Expression\n"), "the current form")
 	assert.True(t, LoadsCompletion("dr completion powershell | Out-String | Invoke-Expression\n"), "the legacy form")
+	assert.True(t, LoadsCompletion("if ($x) { dr completion powershell | iex }\n"), "the command after other text")
 	assert.False(t, LoadsCompletion(userLine), "an unrelated profile")
+	assert.False(t, LoadsCompletion("kubectl completion powershell | Out-String | Invoke-Expression\n"), "another tool's completion")
+	assert.False(t, LoadsCompletion("mydr completion powershell\n"), "a command that only ends in dr")
+	assert.False(t, LoadsCompletion("my-dr self completion powershell\n"), "a hyphenated command that ends in dr")
+}
+
+const aliasBlock = "\n# datarobot alias completion\nif (Get-Command datarobot -ErrorAction SilentlyContinue) {\n    $__drCompletionScript = (dr self completion powershell | Out-String)\n    Invoke-Expression ($__drCompletionScript -replace \"CommandName 'dr'\", \"CommandName 'datarobot'\")\n}\n"
+
+func TestMissingBlocksAddsTheDrBlockToAProfileWithOnlyTheAliasBlock(t *testing.T) {
+	got := MissingBlocks(userLine+aliasBlock, command)
+
+	assert.Contains(t, got, "# dr completion")
+	assert.NotContains(t, got, "# datarobot alias completion")
+}
+
+func TestBlocksWithAnEditedShapeAreLeftAlone(t *testing.T) {
+	reindented := "# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n    }\nfunction Prompt {\n    'PS> '\n}\n" + userLine
+	extraBody := "# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    Write-Host 'mine'\n    dr completion powershell | Out-String | Invoke-Expression\n}\n" + userLine
+
+	for name, content := range map[string]string{"a re-indented closing brace": reindented, "an extra body line": extraBody} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, content, RemoveBlocks(content), "removal must keep the user's code")
+
+			migrated, changed := MigrateLegacy(content, command)
+
+			assert.False(t, changed)
+			assert.Equal(t, content, migrated)
+		})
+	}
 }
 
 func TestRemoveBlocks(t *testing.T) {

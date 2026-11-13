@@ -641,6 +641,26 @@ func TestPowerShellInstallerInstalled(t *testing.T) {
 	}
 }
 
+func TestPowerShellInstallerInstalledAcrossProfiles(t *testing.T) {
+	dir := t.TempDir()
+	legacy := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	current := strings.ReplaceAll(legacy, "dr completion powershell", testCompletionCommand) + powershell.MissingBlocks(strings.ReplaceAll(legacy, "dr completion powershell", testCompletionCommand), testCompletionCommand)
+
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+		return path
+	}
+
+	installer := powerShellInstaller{path: write("primary.ps1", current), command: testCompletionCommand}
+
+	assert.True(t, installer.installedAcross([]string{installer.path, filepath.Join(dir, "missing.ps1")}), "a current profile and no other profile")
+	assert.True(t, installer.installedAcross([]string{installer.path, write("other-current.ps1", current)}), "a current profile and a current one")
+	assert.False(t, installer.installedAcross([]string{installer.path, write("other-legacy.ps1", legacy)}), "the other profile still runs the legacy command")
+}
+
 func TestPowerShellInstallerIsInstalledAfterInstall(t *testing.T) {
 	testutil.SetTestHomeDir(t, t.TempDir())
 

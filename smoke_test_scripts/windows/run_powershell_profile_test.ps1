@@ -108,8 +108,8 @@ function Test-Shell([string]$Name, [string]$ProfileDir, [string]$ProfilePath, [s
 
     Pass "the legacy profile prints an error in $Shell"
 
-    # A profile file counts as installed, so replacing the legacy command takes --force.
-    Install-Completion -Force
+    # A profile that runs the legacy command does not count as installed, so a plain install migrates it.
+    Install-Completion
 
     $content = Get-Content -Raw $ProfilePath
 
@@ -120,8 +120,11 @@ function Test-Shell([string]$Name, [string]$ProfileDir, [string]$ProfilePath, [s
 
     Pass "the migration replaces the legacy command in place and $Shell is clean"
 
-    Write-Host "== $Name`: a second forced install changes nothing"
+    Write-Host "== $Name`: a second install changes nothing, forced or not"
     $before = $content
+
+    Install-Completion
+    if ((Get-Content -Raw $ProfilePath) -ne $before) { Fail "a second plain install changed the profile" }
 
     Install-Completion -Force
 
@@ -157,7 +160,7 @@ Set-Content -Path $windowsPsProfile -Value $legacyBlock -NoNewline
 Assert-BrokenSession "pwsh"
 Assert-BrokenSession "powershell.exe"
 
-Install-Completion -Force
+Install-Completion
 
 foreach ($profilePath in @($pwshProfile, $windowsPsProfile)) {
     $content = Get-Content -Raw $profilePath

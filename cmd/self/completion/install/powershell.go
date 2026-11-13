@@ -46,21 +46,42 @@ func (p powerShellInstaller) Path() string {
 	return p.path
 }
 
-// Installed reports whether the profile holds every block and none of them runs the legacy
+// Installed reports whether the profile holds every block and no PowerShell profile runs the legacy
 // command. A profile written by an earlier release is not installed, so an install migrates it.
 func (p powerShellInstaller) Installed() bool {
-	data, err := os.ReadFile(p.path)
+	paths, err := powershell.ProfilePaths()
 	if err != nil {
 		return false
 	}
 
-	content := string(data)
+	return p.installedAcross(paths)
+}
 
-	if _, legacy := powershell.MigrateLegacy(content, p.command); legacy {
+func (p powerShellInstaller) installedAcross(paths []string) bool {
+	data, err := os.ReadFile(p.path)
+	if err != nil || powershell.MissingBlocks(string(data), p.command) != "" {
 		return false
 	}
 
-	return powershell.MissingBlocks(content, p.command) == ""
+	for _, path := range paths {
+		if holdsLegacyBlock(path, p.command) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// holdsLegacyBlock reports whether the profile has a block that runs the legacy command.
+func holdsLegacyBlock(profilePath, command string) bool {
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return false
+	}
+
+	_, legacy := powershell.MigrateLegacy(string(data), command)
+
+	return legacy
 }
 
 func (p powerShellInstaller) Install(*cobra.Command) error {
