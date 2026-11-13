@@ -62,3 +62,7 @@ jobs:
         env:
           DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test the PowerShell profile
+        shell: pwsh
+        run: ./smoke_test_scripts/windows/run_powershell_profile_test.ps1
