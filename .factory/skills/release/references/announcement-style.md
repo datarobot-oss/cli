@@ -34,6 +34,29 @@ voice: first person, direct, no marketing tone.
   a simplified thread reply under the previous release's main post: one short paragraph leading
   with the biggest fix in *bold*, no example block, Release link last. Same-day patches get a
   standalone main post.
+- A patch that ships **before** the previous release is announced (the announcement was
+  deferred) goes in the last reply of that release's thread as one line, not in a second post.
+
+## Feature walkthrough threads
+
+A headline feature can carry a longer thread: a main post plus one reply per real-life use case.
+The v0.8.0 and v0.20.0 auth-profile threads are the references.
+
+- **Plan before drafting.** Show the maintainer the main post plus a one-line summary of each
+  reply, then agree on the use cases and on the example names (profile, environment, PR) before
+  writing anything. Real situations beat generic ones: an agent misreading "the default
+  profile", checking which environment you're pointed at before `dr workload up`, cleaning up
+  after a pre-merge deployment.
+- **One use case per reply**, each with a short code block of commands or real output. Put
+  script and JSON notes in their own reply instead of the main post.
+- End the main post with "Real-life use cases and a hands-on tour in :thread:" before the
+  Release link.
+- **Correct earlier announcements in the thread.** When a release makes an older post's claim
+  inaccurate, say so plainly in the reply that covers it.
+- **Link demo docs by tag**, e.g. `https://github.com/datarobot-oss/cli/blob/vX.Y.Z/docs/demos/<page>.md`,
+  even when the page isn't in the docs navigation. A tag link doesn't move.
+- Use profile and environment **names** in examples, never internal hostnames or URLs. Use
+  placeholders such as `<URL from the bot comment>` or `https://datarobot.acme.example` instead.
 
 ## Feature gates
 
@@ -77,6 +100,13 @@ voice: first person, direct, no marketing tone.
   blocks; only the plain-text fallback shows `&lt;…&gt;`.
 - `*bold*`, `` `code` ``, fenced blocks, and bare links all render correctly as plain mrkdwn text.
 
+## Posting with the Claude.ai Slack connector
+
+- `slack_send_message` takes standard markdown (`**bold**`, fenced blocks with a language tag)
+  and converts it; don't hand-convert to mrkdwn.
+- Post the main post first, take its `message_ts`, then send each reply with that value as
+  `thread_ts`. Send replies **one at a time** so they keep their order.
+
 ## Draft-file coordination
 
 - Compose the announcement draft (and the release-notes draft) as files in the repo's `tmp/`
@@ -98,6 +128,14 @@ voice: first person, direct, no marketing tone.
 ## Verification checklist before posting
 
 - Verify every flag and command example against the release notes or docs.
+- For quoted terminal output, build the released tag (`git archive vX.Y.Z | tar -x -C <scratch>`,
+  then `go build`) and run each command against an offline scratch config with `.invalid`
+  endpoints (`HOME`, `XDG_CONFIG_HOME`, and `DATAROBOT_CLI_CONFIG` all pointing into the
+  scratch directory). Keep the scratch file's name different from `drconfig.yaml`, because
+  local agent hooks may block commands that mention it. If you edit an output for the post
+  (renaming a profile or URL), tell the maintainer.
+- Test interactive-only commands (confirmations, prompts) with and without `--yes` and
+  `</dev/null`. Gaps found this way become bugs under the feature's epic, not caveats in the post.
 - Cross-check every thanked person against the **author and co-author list** (see Attribution
   above). Do not invent a thanks.
 - Proofread the bolded headline hardest — it is the one line everyone reads.
