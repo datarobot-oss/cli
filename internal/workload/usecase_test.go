@@ -15,7 +15,6 @@
 package workload
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -94,7 +93,7 @@ func TestLinkWorkloadToUseCase_RefusalKeepsTheStatus(t *testing.T) {
 
 	var httpErr *drapi.HTTPError
 
-	require.True(t, errors.As(err, &httpErr))
+	require.ErrorAs(t, err, &httpErr)
 	assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode)
 	assert.Contains(t, err.Error(), "ENCLAVE_TARGETING_REQUIRED")
 }

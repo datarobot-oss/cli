@@ -361,9 +361,12 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 
 	var err error
 
-	if plan.Empty() {
+	switch {
+	case plan.Empty():
 		result, err = lockOnly(loaded, live, result, opts)
-	} else {
+	case plan.Action() == ActionLinked:
+		result, err = linkOnly(loaded, live, plan, result, opts)
+	default:
 		result, err = apply(ctx, loaded, live, plan, result, opts)
 	}
 
@@ -1366,35 +1369,11 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 		return result, err
 	}
 
-	// Pulled before anything is started or rolled, so a directory that turns
-	// out to hold the wrong thing is refused before the run has touched the
-	// workload.
-	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
-		return result, err
-	}
-
 	report := newReporter(opts.Stderr, opts.Spinner)
 
-	// Everything that can refuse this run goes first, because a start is a
-	// mutation and the branch below performs one. The order used to be
-	// academic: a stopped workload with drift was turned away here, so nothing
-	// could refuse after something had already changed.
-	lock, err := beforeAnything(loaded, live, plan, result, opts)
+	lock, err := prepare(loaded, live, plan, result, opts, report)
 	if err != nil {
 		return result, err
-	}
-
-	// The link goes first: the platform checks a rollout against the
-	// workload's Use Case links, and a link is no reason to start, build or
-	// roll anything, so a plan that only links stops here.
-	if err := relink(plan, live.WorkloadID, report); err != nil {
-		return result, err
-	}
-
-	if plan.Action() == ActionLinked {
-		result.Action = ActionLinked
-
-		return lockOnly(loaded, live, result, opts)
 	}
 
 	// A stopped workload is started before anything else. Everything below
@@ -1447,6 +1426,43 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 	}
 
 	return create(ctx, loaded, loaded.Compiled.Payload, result, opts, report)
+}
+
+// prepare is what an apply does before it starts, rolls or resizes anything.
+//
+// The seed is pulled first, so a directory that turns out to hold the wrong
+// thing is refused before the run has touched the workload. Then everything
+// that can refuse this run, because a start is a mutation and the apply
+// performs one. The Use Case link comes last of the three and before the
+// rest: the platform checks a rollout against the workload's links.
+func prepare(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (bool, error) {
+	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
+		return false, err
+	}
+
+	lock, err := beforeAnything(loaded, live, plan, result, opts)
+	if err != nil {
+		return false, err
+	}
+
+	return lock, relink(plan, live.WorkloadID, report)
+}
+
+// linkOnly is the whole of a run whose only change is the Use Case link: a
+// link is no reason to start, build or roll anything. --promote still locks
+// what is serving, as it does on a run with nothing to do.
+func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
+	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
+		return result, err
+	}
+
+	if err := relink(plan, live.WorkloadID, newReporter(opts.Stderr, opts.Spinner)); err != nil {
+		return result, err
+	}
+
+	result.Action = ActionLinked
+
+	return lockOnly(loaded, live, result, opts)
 }
 
 // beforeAnything runs every check that can still refuse, and settles the one
