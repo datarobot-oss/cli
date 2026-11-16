@@ -207,6 +207,7 @@ func diffActionLines(s Summary, plan Plan) ([]string, error) {
 	}
 
 	out = append(out, code...)
+	out = append(out, useCaseLines(plan)...)
 	out = append(out, lockLines(plan)...)
 	out = append(out, artifactEntry(plan)...)
 
@@ -442,9 +443,42 @@ func lines(s Summary, plan Plan) []string {
 		out = append(out, entry("~", "code", codeDetail(plan.Code)))
 	}
 
+	out = append(out, useCaseLines(plan)...)
 	out = append(out, lockLines(plan)...)
 	out = append(out, artifactLines(plan)...)
 	out = append(out, runtimeLines(plan)...)
+
+	return out
+}
+
+// useCaseLines says what the run does about the workload's Use Case links.
+// A link that already holds is not a change and says nothing, so a repeat
+// run is still "already up to date". The links live beside the workload,
+// not in its spec, so they are entries rather than diff rows in either mode.
+func useCaseLines(plan Plan) []string {
+	uc := plan.UseCase
+	if uc == nil {
+		return nil
+	}
+
+	if plan.Creates {
+		return []string{entry("+", "use case", "linked to "+uc.ID+" when the workload is created")}
+	}
+
+	var out []string
+
+	if !uc.Linked {
+		out = append(out, entry("+", "use case", "linked to "+uc.ID+"; nothing is built or rolled for it"))
+	}
+
+	for _, old := range uc.Unlink {
+		out = append(out, entry("-", "use case", "unlinked from "+old+", so the workload is in "+uc.ID+" alone"))
+	}
+
+	if uc.Partial && len(out) > 0 {
+		out = append(out, "      "+tui.HintStyle.Render(
+			"The workload has more Use Case links than one read returns; only those read are unlinked."))
+	}
 
 	return out
 }
@@ -871,6 +905,9 @@ type PlanJSON struct {
 	// the file names, and the reason the run was refused. "" otherwise.
 	Incompatible string `json:"incompatible"`
 
+	// UseCase is the Use Case link the run asks for, null when none is.
+	UseCase *UseCaseJSON `json:"useCase"`
+
 	Code     CodeJSON `json:"code"`
 	Artifact []string `json:"artifact"`
 	Runtime  []string `json:"runtime"`
@@ -954,6 +991,38 @@ type CodeJSON struct {
 	LinkLocked bool `json:"linkLocked"`
 }
 
+// UseCaseJSON is the plan's Use Case link in machine-readable form.
+type UseCaseJSON struct {
+	ID string `json:"id"`
+	// Linked reports the workload is already linked, so nothing is added.
+	Linked bool `json:"linked"`
+	// Link reports the run adds the link, by its own request or, on a
+	// create, in the create payload.
+	Link bool `json:"link"`
+	// Unlink is the other Use Cases the run removes the workload from.
+	Unlink []string `json:"unlink"`
+	// Partial reports that the links read may not be all of them.
+	Partial bool `json:"partial"`
+}
+
+// useCaseJSON projects the plan's Use Case link, nil when there is none.
+func (p Plan) useCaseJSON() *UseCaseJSON {
+	if p.UseCase == nil {
+		return nil
+	}
+
+	unlink := make([]string, 0, len(p.UseCase.Unlink))
+	unlink = append(unlink, p.UseCase.Unlink...)
+
+	return &UseCaseJSON{
+		ID:      p.UseCase.ID,
+		Linked:  p.UseCase.Linked,
+		Link:    !p.UseCase.Linked,
+		Unlink:  unlink,
+		Partial: p.UseCase.Partial,
+	}
+}
+
 // JSON projects the plan into its machine-readable shape.
 func (p Plan) JSON() PlanJSON {
 	// Both lock facts are gated on the same question the printed plan asks, so
@@ -975,6 +1044,7 @@ func (p Plan) JSON() PlanJSON {
 		Reroll:       p.Reroll,
 		Unbuildable:  p.Unbuildable,
 		Incompatible: p.Incompatible,
+		UseCase:      p.useCaseJSON(),
 		Code: CodeJSON{
 			Applies:     p.Code.Applies,
 			Changed:     p.Code.Changed(),

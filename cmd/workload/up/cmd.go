@@ -36,6 +36,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/usecase"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -78,6 +79,10 @@ type upResult struct {
 	Action     string      `json:"action"`
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
+
+	// UseCaseID is the Use Case the workload is linked to by this run, null
+	// when none was asked for.
+	UseCaseID *string `json:"useCaseId"`
 	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
 	// these a run that re-sent a secret is indistinguishable from one that
@@ -150,6 +155,17 @@ func envLiterals(names []string) []string {
 	return names
 }
 
+// useCaseID is the envelope's Use Case, null when the run asked for none.
+func useCaseID(plan up.Plan) *string {
+	if plan.UseCase == nil {
+		return nil
+	}
+
+	id := plan.UseCase.ID
+
+	return &id
+}
+
 // buildID is the envelope's build reference: the id when a build ran, null
 // when none did. An empty string would read as a build that produced nothing.
 func buildID(id string) *string {
@@ -171,6 +187,8 @@ type flags struct {
 	force    bool
 	syncEnv  bool
 	specFile string
+
+	useCaseID string
 
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
@@ -265,10 +283,20 @@ something new to run: a code change, a change to the file, or --force-build,
 which is the fix when the registry no longer has the image. The plan names the
 platform's reason for the failure. With nothing new to deploy the run is refused.
 
+--use-case-id <id> links the workload to a Use Case, as useCaseId at the top
+of .datarobot.yaml does; when both are set they have to agree. A first deploy
+sends it with the create. On a workload that exists the link is checked and,
+if it is missing, added, and the workload is unlinked from any other Use Case,
+so it ends up in the one named. A link alone builds and rolls nothing, and a
+workload already linked is up to date. A Use Case with Enclaves needs
+runtime.enclaveSelectionPolicy in the file, or the platform refuses with
+ENCLAVE_TARGETING_REQUIRED.
+
 Examples:
   dr workload up
   dr workload up --dry-run
-  dr workload up --yes --output-format json`,
+  dr workload up --yes --output-format json
+  dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -288,14 +316,16 @@ Examples:
 		nonInteractive := cli.IsNonInteractive(cmd)
 
 		props := map[string]any{
-			"yes":           nonInteractive,
-			"dry_run":       f.dryRun,
-			"diff":          f.diff,
-			"confirm":       f.confirm,
-			"detach":        f.detach,
-			"promote":       f.promote,
-			"force_build":   f.force,
-			"output_format": string(outputFormat),
+			"yes":         nonInteractive,
+			"dry_run":     f.dryRun,
+			"diff":        f.diff,
+			"confirm":     f.confirm,
+			"detach":      f.detach,
+			"promote":     f.promote,
+			"force_build": f.force,
+			// Whether it was given, never the id.
+			"use_case_id_provided": cmd.Flags().Changed("use-case-id"),
+			"output_format":        string(outputFormat),
 		}
 
 		maps.Copy(props, synced.Properties())
@@ -349,6 +379,10 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 		"On a first deploy, take the setup's answers from a prepared artifact or workload spec (JSON or YAML) "+
 			"instead of the wizard; .datarobot.yaml is written from it. Refused once a manifest exists. An artifact "+
 			"spec names no workload, so without a terminal set it up with 'dr workload config --spec-file ... --name ...' first.")
+
+	cmd.Flags().StringVar(&f.useCaseID, "use-case-id", "",
+		"Link the workload to this Use Case: in the create on a first deploy, by adding the link (and removing "+
+			"any other) on a workload that exists. Must agree with useCaseId in .datarobot.yaml when that is set.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -410,6 +444,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		ForceBuild:     f.force,
 		SyncEnv:        f.syncEnv,
 		SpecFile:       f.specFile,
+		UseCaseID:      f.useCaseID,
 		// The flag alone, not cli.IsNonInteractive: the environment variable
 		// that suppresses wizards in CI is not consent to overwrite a value on
 		// the tenant, which is the line `dr workload delete` already draws.
@@ -542,6 +577,13 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 			return fmt.Errorf(
 				"--%s is not a flag of this command: which workload a project deploys to is recorded in "+
 					".datarobot.yaml. Use 'dr workload config --%s ...' to set it", flag, flag)
+		}
+	}
+
+	// Before anything, the setup wizard included, so a typo costs nothing.
+	if cmd.Flags().Changed("use-case-id") {
+		if _, err := usecase.ParseID(f.useCaseID); err != nil {
+			return fmt.Errorf("invalid --use-case-id: %w", err)
 		}
 	}
 
@@ -768,6 +810,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Action:     result.Action,
 			Locked:     result.Locked,
 			Plan:       planEnvelope(result.Plan, f.diff),
+			UseCaseID:  useCaseID(result.Plan),
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,
 				ValuesUpdated:  result.Env.ValuesUpdated,

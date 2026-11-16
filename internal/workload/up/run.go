@@ -188,6 +188,11 @@ type Options struct {
 
 	// Spinner is true only when Stderr is the terminal the user is watching.
 	Spinner bool
+
+	// UseCaseID is --use-case-id as typed, "" when it was not passed. The
+	// workload is linked to it, or to the manifest's useCaseId without it;
+	// the two have to agree when both are set.
+	UseCaseID string
 }
 
 // Result is what happened, and the material for the JSON envelope.
@@ -265,6 +270,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// Before any request, so a typo or a disagreement with the file costs
+	// nothing.
+	loaded, useCaseID, err := withUseCase(loaded, opts.UseCaseID)
+	if err != nil {
+		return Result{ProjectDir: loaded.ProjectDir, Env: loaded.Env}, err
+	}
+
 	// What a failure between here and the plan still has to report. The
 	// binding travels because losing the id is how a deploy becomes
 	// unfindable; the .env counts travel because that edit has already
@@ -286,6 +298,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	noteIgnoreFile(code, opts)
 
 	plan, err := planFor(loaded, live, code, opts)
+	if err != nil {
+		return early, err
+	}
+
+	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID)
 	if err != nil {
 		return early, err
 	}
@@ -1367,6 +1384,19 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 		return result, err
 	}
 
+	// The link goes first: the platform checks a rollout against the
+	// workload's Use Case links, and a link is no reason to start, build or
+	// roll anything, so a plan that only links stops here.
+	if err := relink(plan, live.WorkloadID, report); err != nil {
+		return result, err
+	}
+
+	if plan.Action() == ActionLinked {
+		result.Action = ActionLinked
+
+		return lockOnly(loaded, live, result, opts)
+	}
+
 	// A stopped workload is started before anything else. Everything below
 	// changes a workload that has to be running to receive it: a rollout
 	// promotes onto something serving, and a settings change is followed by a
@@ -1482,7 +1512,8 @@ func beforeAnything(loaded Loaded, live Live, plan Plan, result Result, opts Opt
 // come up. Every remaining run either builds a version out of the references or
 // starts a container that reads them, so it verifies.
 func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
-	if plan.SendsNoEnvironment() {
+	// A plan that only moves the Use Case link sends no environment either.
+	if plan.SendsNoEnvironment() || plan.Action() == ActionLinked {
 		return nil
 	}
 
@@ -1715,7 +1746,7 @@ func create(
 	err := report.run("Creating workload", func() error {
 		wl, createErr := createWorkloadFn(payload)
 		if createErr != nil {
-			return nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded))
+			return enclaveRefusal(nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded)))
 		}
 
 		created = wl
