@@ -5,6 +5,12 @@ pipelines service. The `dr pipeline` group is a thin CLI wrapper over
 the pipelines REST API: every subcommand maps directly to a single
 endpoint.
 
+> [!NOTE]
+> AI Pipelines are in Private Preview. Behavior and the command surface may
+> change, and preview functionality is not covered by Support SLA agreements.
+> The **Pipelines** tab in the DataRobot UI is shown only for organizations
+> with the feature enabled; contact your DataRobot representative.
+
 ## Synopsis
 
 ```bash
