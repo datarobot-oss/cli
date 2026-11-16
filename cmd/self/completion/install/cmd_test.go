@@ -23,6 +23,8 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/self/completion/powershell"
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/fsutil"
 	internalShell "github.com/datarobot/cli/internal/shell"
 	"github.com/datarobot/cli/internal/testutil"
@@ -37,6 +39,12 @@ func TestDetectShell(t *testing.T) {
 	// In the test environment, the parent is the test runner (e.g., "go")
 	// so we can't easily test the $SHELL fallback without process mocking.
 	// This test verifies that DetectShell returns a non-empty result.
+	// Mirror the root config initializer, which binds SHELL for the fallback.
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	_ = viperx.BindEnv(config.ShellKey, "SHELL")
+
 	shell, err := internalShell.DetectShell()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

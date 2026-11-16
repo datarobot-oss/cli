@@ -32,6 +32,10 @@ const (
 	// either an LLM Gateway model id or a DataRobot deployment id.
 	DefaultLLMID = "default-llm-id"
 
+	// ShellKey is the viper key for the user's login shell, bound to $SHELL in
+	// the root config initializer. Shell detection reads it as its fallback.
+	ShellKey = "shell"
+
 	// ProfileKey is the viper key behind the --profile persistent flag and the
 	// DATAROBOT_CLI_PROFILE env var. It must match the flag name exactly (see
 	// the SkipAuthKey comment above for why). Empty means the default

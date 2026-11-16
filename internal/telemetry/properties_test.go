@@ -344,6 +344,12 @@ func TestCollectCommonProperties_DetectsShell(t *testing.T) {
 }
 
 func TestDetectShell_ReturnsNonEmpty(t *testing.T) {
+	// Mirror the root config initializer, which binds SHELL for the fallback.
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	_ = viperx.BindEnv(config.ShellKey, "SHELL")
+
 	shell := DetectShell()
 
 	assert.NotEmpty(t, shell)
