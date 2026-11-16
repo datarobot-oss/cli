@@ -57,7 +57,7 @@ These flags are available for all commands:
 | [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (private preview).   |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (Private Preview).   |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
 | [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
@@ -97,7 +97,7 @@ dr
 ├── llm-gateway        LLM model management (alias: llm, llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
-├── pipeline           Pipelines API management (alias: pipelines)
+├── pipeline           Pipelines API management (alias: pipelines; Private Preview)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines
 │   ├── get            Display pipeline details and versions

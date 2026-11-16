@@ -29,6 +29,7 @@ func TestCmd_BasicMetadata(t *testing.T) {
 	assert.Equal(t, "core", cmd.GroupID)
 	assert.NotEmpty(t, cmd.Short)
 	assert.NotEmpty(t, cmd.Long)
+	assert.Contains(t, cmd.Long, "Private Preview")
 }
 
 func TestCmd_HasAlias(t *testing.T) {
@@ -40,12 +41,13 @@ func TestCmd_HasAlias(t *testing.T) {
 func TestCmd_NotFeatureGated(t *testing.T) {
 	cmd := Cmd()
 
-	// Pipelines went GA: the command must carry no feature-gate annotation, or
+	// The command stays ungated while the platform feature is in Private Preview:
+	// it must carry no feature-gate annotation, or
 	// cli.CommandAdder drops it from the root command tree unless an env var is
 	// set. See TestPipelineCommandPresentByDefault in cmd/root_test.go for the
 	// end-to-end guard.
 	_, ok := cmd.Annotations[features.AnnotationKey]
-	assert.False(t, ok, "pipeline is GA and must not carry a %q annotation", features.AnnotationKey)
+	assert.False(t, ok, "pipeline is ungated and must not carry a %q annotation", features.AnnotationKey)
 }
 
 func TestCmd_IsGroupOnly(t *testing.T) {

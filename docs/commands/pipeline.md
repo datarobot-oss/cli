@@ -6,10 +6,11 @@ the pipelines REST API: every subcommand maps directly to a single
 endpoint.
 
 > [!NOTE]
-> AI Pipelines are in Private Preview. Behavior and the command surface may
-> change, and preview functionality is not covered by Support SLA agreements.
-> The **Pipelines** tab in the DataRobot UI is shown only for organizations
-> with the feature enabled; contact your DataRobot representative.
+> On DataRobot 11.15 and later, AI Pipelines are in Private Preview: behavior
+> may change, and preview functionality is not covered by Support SLA
+> agreements. `dr pipeline` and the API work regardless of the feature flag,
+> which gates only the **Pipelines** tab in the DataRobot UI. Contact your
+> DataRobot representative to enable the tab for your organization.
 
 ## Synopsis
 

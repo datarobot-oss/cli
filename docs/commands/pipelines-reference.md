@@ -1,5 +1,11 @@
 # `dr pipeline` command reference
 
+> [!NOTE]
+> On DataRobot 11.15 and later, AI Pipelines are in Private Preview: behavior
+> may change, and preview functionality is not covered by Support SLA
+> agreements. `dr pipeline` and the API work regardless of the feature flag,
+> which gates only the **Pipelines** tab in the DataRobot UI.
+
 Complete cross-reference of every `dr pipeline …` subcommand, the
 `pipelines-api` endpoint each one calls, sample invocations, and the
 inputs (positional args, flags, request body fields) each command
