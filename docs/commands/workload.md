@@ -403,12 +403,12 @@ dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55 --dry-run  # show the link
 ```
 
 - **First deploy:** `useCaseId` goes in the create payload, as `create --use-case-id` sends it.
-- **Existing workload:** the run reads the workload's Use Case links. A missing link is added, and the workload is unlinked from any other Use Case, so it ends up in the one named. A workload already linked only there is up to date, so a repeat run prints `Already up to date`.
-- A link alone builds and rolls nothing; the plan's action is `linked`. When the run also rolls or resizes, the link is made first, because the platform checks a rollout against the workload's links, and the other links are removed only once that deploy has gone through: a deploy that fails leaves the workload in both Use Cases, and the next run finishes the move.
-- The plan shows the link as a `use case` line, in `--dry-run` and `--diff` as well. Under `--output-format json` the plan carries `useCase` (`id`, `linked`, `link`, `unlink`, `partial`) and the envelope carries `useCaseId`; both are `null` when no Use Case was asked for. `partial` is `true` when the workload has more links than one read returns (over 100), and only the links read are removed.
-- **Enclaves:** placement is unchanged by the link. If the Use Case has Enclaves and the file sets no `runtime.enclaveSelectionPolicy`, the platform refuses with `ENCLAVE_TARGETING_REQUIRED`, and the error says to set `runtime.enclaveSelectionPolicy: availability` in `.datarobot.yaml`. See [Use Case and Enclave placement](#use-case-and-enclave-placement).
+- **Existing workload:** the run reads the workload's Use Case links, and adds the link if it is missing. Links to other Use Cases are left as they are, including ones made in the UI: a workload can be in several Use Cases, and `up` only ever adds a link. A workload already linked there is up to date, so a repeat run prints `Already up to date`.
+- A link alone builds and rolls nothing; the plan's action is `linked`. When the run also rolls or resizes, the link is made first, because the platform checks a rollout against the workload's links.
+- The plan shows the link as a `use case` line, in `--dry-run` and `--diff` as well. Under `--output-format json` the plan carries `useCase` (`id`, `linked`, `link`, `partial`) and the envelope carries `useCaseId`; both are `null` when no Use Case was asked for. `partial` is `true` when the workload has more links than one read returns (over 100); the run then links anyway, which changes nothing if the link already exists.
+- **Enclaves:** placement is unchanged by the link, and the rule `create` follows applies. If the Use Case has Enclaves and the file sets no `runtime.enclaveSelectionPolicy`, the run is refused with `ENCLAVE_TARGETING_REQUIRED`, and the error says to set `runtime.enclaveSelectionPolicy: availability` in `.datarobot.yaml`. On a first deploy the platform refuses the create; on an existing workload the run reads the Use Case and refuses before linking. See [Use Case and Enclave placement](#use-case-and-enclave-placement).
 
-Removing `useCaseId` from the file, and dropping the flag, stops managing the link rather than removing it.
+Removing `useCaseId` from the file, and dropping the flag, stops managing the link rather than removing it. To take a workload out of a Use Case, remove it there.
 
 ### CI, scripts, and agents
 

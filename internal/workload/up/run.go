@@ -270,8 +270,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
-	// Before any request, so a typo or a disagreement with the file costs
-	// nothing.
+	// Before any request. On a project that already has its file, load ran
+	// the same check before --sync-env re-sent anything, so a disagreement
+	// with the file costs nothing there either.
 	loaded, useCaseID, err := withUseCase(loaded, opts.UseCaseID)
 	if err != nil {
 		return Result{ProjectDir: loaded.ProjectDir, Env: loaded.Env}, err
@@ -302,7 +303,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return early, err
 	}
 
-	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID)
+	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID, loaded.Compiled.Payload)
 	if err != nil {
 		return early, err
 	}
@@ -368,9 +369,6 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 		result, err = linkOnly(loaded, live, plan, result, opts)
 	default:
 		result, err = apply(ctx, loaded, live, plan, result, opts)
-		if err == nil {
-			err = unlinkOthers(plan, result.WorkloadID, newReporter(opts.Stderr, opts.Spinner))
-		}
 	}
 
 	// After either path, failed or not: a roll moves result.ArtifactID onto the
@@ -1044,6 +1042,13 @@ func load(dir string, opts Options) (Loaded, error) {
 				"edit that file, or delete it to start over", manifest.FileName)
 		}
 
+		// A --use-case-id that disagrees with the file is refused before
+		// --sync-env re-sends a secret. Run applies the flag afterwards, on
+		// whichever file the run ends up reading.
+		if _, _, err := withUseCase(loaded, opts.UseCaseID); err != nil {
+			return loaded, err
+		}
+
 		return opts.editEnv(loaded)
 	}
 
@@ -1437,8 +1442,7 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 // thing is refused before the run has touched the workload. Then everything
 // that can refuse this run, because a start is a mutation and the apply
 // performs one. The Use Case link comes last of the three and before the
-// rest: the platform checks a rollout against the workload's links. Taking
-// the workload out of its other Use Cases waits for the apply to succeed.
+// rest: the platform checks a rollout against the workload's links.
 func prepare(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (bool, error) {
 	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
 		return false, err
@@ -1464,18 +1468,7 @@ func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 
 	report := newReporter(opts.Stderr, opts.Spinner)
 
-	linked, err := link(plan, live.WorkloadID, report)
-	if err != nil {
-		return result, err
-	}
-
-	// Set as soon as anything changed, so a failed unlink after a link that
-	// went through is not reported as a run that did nothing.
-	if linked {
-		result.Action = ActionLinked
-	}
-
-	if err := unlinkOthers(plan, live.WorkloadID, report); err != nil {
+	if _, err := link(plan, live.WorkloadID, report); err != nil {
 		return result, err
 	}
 

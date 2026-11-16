@@ -121,7 +121,7 @@ type envJSON struct {
 // in the store, under a summary that says the workload is up to date. It is,
 // about the manifest, which is why this says the other half out loud.
 func warnSecretStillServing(stderr io.Writer, result up.Result, f flags) {
-	if f.dryRun || result.Env.SecretsRotated == 0 || result.Action != up.ActionUnchanged {
+	if f.dryRun || result.Env.SecretsRotated == 0 || !up.ReplacesNothing(result.Action) {
 		return
 	}
 
@@ -287,11 +287,10 @@ platform's reason for the failure. With nothing new to deploy the run is refused
 --use-case-id <id> links the workload to a Use Case, as useCaseId at the top
 of .datarobot.yaml does; when both are set they have to agree. A first deploy
 sends it with the create. On a workload that exists the link is checked and,
-if it is missing, added, and the workload is unlinked from any other Use Case
-once the deploy has gone through, so it ends up in the one named. A link alone builds and rolls nothing, and a
-workload already linked is up to date. A Use Case with Enclaves needs
-runtime.enclaveSelectionPolicy in the file, or the platform refuses with
-ENCLAVE_TARGETING_REQUIRED.
+if it is missing, added; links to other Use Cases are left as they are. A link
+alone builds and rolls nothing, and a workload already linked is up to date.
+A Use Case with Enclaves needs runtime.enclaveSelectionPolicy in the file, or
+the run is refused with ENCLAVE_TARGETING_REQUIRED, as a create is.
 
 Examples:
   dr workload up
@@ -382,8 +381,8 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"spec names no workload, so without a terminal set it up with 'dr workload config --spec-file ... --name ...' first.")
 
 	cmd.Flags().StringVar(&f.useCaseID, "use-case-id", "",
-		"Link the workload to this Use Case: in the create on a first deploy, by adding the link (and removing "+
-			"any other) on a workload that exists. Must agree with useCaseId in .datarobot.yaml when that is set.")
+		"Link the workload to this Use Case: in the create on a first deploy, by adding the link on a workload "+
+			"that exists. Other links are kept. Must agree with useCaseId in .datarobot.yaml when that is set.")
 
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
@@ -940,7 +939,7 @@ func draftWording(result up.Result, f flags) (headline, remedy string) {
 	promote := "dr workload promote" + projectAt(f.dir, result.ProjectDir)
 	command := "Run '" + promote + "' to version the artifact and make it permanent."
 
-	if !f.dryRun && f.detach && result.Action != up.ActionUnchanged {
+	if !f.dryRun && f.detach && !up.ReplacesNothing(result.Action) {
 		command = "When this deploy finishes, run '" + promote + "' to version the artifact and make it permanent."
 	}
 

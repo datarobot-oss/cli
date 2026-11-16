@@ -28,7 +28,7 @@ import (
 var (
 	workloadUseCasesFn = workload.WorkloadUseCases
 	linkUseCaseFn      = workload.LinkWorkloadToUseCase
-	unlinkUseCaseFn    = workload.UnlinkWorkloadFromUseCase
+	useCaseEnclavesFn  = workload.UseCaseEnclaveCount
 )
 
 // enclaveTargetingRequired is the code the platform refuses a workload with
@@ -115,7 +115,11 @@ func manifestUseCase(payload json.RawMessage) (string, error) {
 // the run changes about them. A create has nothing to read: the link goes in
 // its payload. The read runs on a dry run too, because without it the plan
 // cannot say whether there is anything to link.
-func planUseCase(plan Plan, workloadID, desired string) (*UseCasePlan, error) {
+//
+// A link is only ever added. Other Use Cases the workload is in stay: up has
+// no record of which links it made, so removing the rest would also remove
+// links made in the UI or by a teammate, and the access that came with them.
+func planUseCase(plan Plan, workloadID, desired string, payload json.RawMessage) (*UseCasePlan, error) {
 	if desired == "" {
 		return nil, nil //nolint:nilnil // no Use Case asked for is not an error
 	}
@@ -131,20 +135,64 @@ func planUseCase(plan Plan, workloadID, desired string) (*UseCasePlan, error) {
 
 	out := &UseCasePlan{ID: desired, Linked: links.Has(desired), Partial: links.More}
 
-	for _, id := range links.IDs {
-		if id != desired {
-			out.Unlink = append(out.Unlink, id)
+	if !out.Linked {
+		if err := checkEnclaves(workloadID, desired, payload); err != nil {
+			return nil, err
 		}
 	}
 
 	return out, nil
 }
 
+// checkEnclaves keeps create's placement rule when an existing workload is
+// linked. The platform refuses to create a workload in a Use Case with
+// Enclaves unless it names a selection policy, because accepting it would put
+// it on the Hub without a word; the link route makes no such check, so the
+// run makes it before linking anything.
+func checkEnclaves(workloadID, useCaseID string, payload json.RawMessage) error {
+	policy, err := enclavePolicy(payload)
+	if err != nil || policy != "" {
+		return err
+	}
+
+	count, err := useCaseEnclavesFn(useCaseID)
+	if err != nil {
+		return fmt.Errorf("cannot read Use Case %s to check its Enclaves: %w", useCaseID, err)
+	}
+
+	if count == 0 {
+		return nil
+	}
+
+	return enclaveRefusal(fmt.Errorf("nothing was deployed: workload %s cannot be linked to Use Case %s (%s)",
+		workloadID, useCaseID, enclaveTargetingRequired))
+}
+
+// enclavePolicy is runtime.enclaveSelectionPolicy in the compiled payload,
+// "" when the file sets none.
+func enclavePolicy(payload json.RawMessage) (string, error) {
+	var doc struct {
+		Runtime struct {
+			Policy *string `json:"enclaveSelectionPolicy"`
+		} `json:"runtime"`
+	}
+
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		return "", fmt.Errorf("cannot read the compiled manifest: %w", err)
+	}
+
+	if doc.Runtime.Policy == nil {
+		return "", nil
+	}
+
+	return strings.TrimSpace(*doc.Runtime.Policy), nil
+}
+
 // link adds the link the plan asks for, and reports whether it sent one. It
 // runs before anything is started or rolled, because the platform checks a
 // rollout against the workload's links.
 func link(plan Plan, workloadID string, report *reporter) (bool, error) {
-	if !plan.relinks() || plan.UseCase.Linked {
+	if !plan.relinks() {
 		return false, nil
 	}
 
@@ -154,42 +202,16 @@ func link(plan Plan, workloadID string, report *reporter) (bool, error) {
 		return linkUseCaseFn(uc.ID, workloadID)
 	})
 	if err != nil {
-		return false, enclaveRefusal(fmt.Errorf("nothing was deployed: workload %s could not be linked to Use Case %s: %w",
-			workloadID, uc.ID, err))
+		return false, fmt.Errorf("nothing was deployed: workload %s could not be linked to Use Case %s: %w",
+			workloadID, uc.ID, err)
 	}
 
 	return true, nil
 }
 
-// unlinkOthers takes the workload out of every other Use Case the plan read.
-// It runs only once the rest of the deploy has gone through, so a run that
-// fails or is interrupted halfway leaves the workload where it was as well
-// as where it is going, never moved off the old Use Case with nothing new
-// deployed; the next run finishes the move.
-func unlinkOthers(plan Plan, workloadID string, report *reporter) error {
-	if !plan.relinks() {
-		return nil
-	}
-
-	uc := plan.UseCase
-
-	for _, old := range uc.Unlink {
-		err := report.run("Unlinking from Use Case "+old, func() error {
-			return unlinkUseCaseFn(old, workloadID)
-		})
-		if err != nil {
-			return fmt.Errorf("workload %s is linked to Use Case %s, but could not be unlinked from %s: %w",
-				workloadID, uc.ID, old, err)
-		}
-	}
-
-	return nil
-}
-
-// enclaveRefusal adds the remedy to the platform's refusal of a workload
-// whose Use Case has Enclaves and which names no selection policy. The client
-// cannot tell beforehand whether a Use Case has Enclaves without asking, so
-// the server's refusal is the check, and this is what makes it actionable.
+// enclaveRefusal adds the remedy to a refusal of a workload whose Use Case
+// has Enclaves and which names no selection policy: the platform's, on a
+// create, or checkEnclaves', on a link.
 func enclaveRefusal(err error) error {
 	if err == nil || !strings.Contains(err.Error(), enclaveTargetingRequired) {
 		return err

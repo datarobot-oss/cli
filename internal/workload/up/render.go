@@ -465,19 +465,16 @@ func useCaseLines(plan Plan) []string {
 		return []string{entry("+", "use case", "linked to "+uc.ID+" when the workload is created")}
 	}
 
-	var out []string
-
-	if !uc.Linked {
-		out = append(out, entry("+", "use case", "linked to "+uc.ID+"; nothing is built or rolled for it"))
+	if uc.Linked {
+		return nil
 	}
 
-	for _, old := range uc.Unlink {
-		out = append(out, entry("-", "use case", "unlinked from "+old+", so the workload is in "+uc.ID+" alone"))
-	}
+	out := []string{entry("+", "use case", "linked to "+uc.ID+"; nothing is built or rolled for it")}
 
-	if uc.Partial && len(out) > 0 {
+	if uc.Partial {
 		out = append(out, "      "+tui.HintStyle.Render(
-			"The workload has more Use Case links than one read returns; only those read are unlinked."))
+			"The workload has more Use Case links than one read returns, so it may be linked already; "+
+				"linking again changes nothing."))
 	}
 
 	return out
@@ -999,8 +996,6 @@ type UseCaseJSON struct {
 	// Link reports the run adds the link, by its own request or, on a
 	// create, in the create payload.
 	Link bool `json:"link"`
-	// Unlink is the other Use Cases the run removes the workload from.
-	Unlink []string `json:"unlink"`
 	// Partial reports that the links read may not be all of them.
 	Partial bool `json:"partial"`
 }
@@ -1011,14 +1006,10 @@ func (p Plan) useCaseJSON() *UseCaseJSON {
 		return nil
 	}
 
-	unlink := make([]string, 0, len(p.UseCase.Unlink))
-	unlink = append(unlink, p.UseCase.Unlink...)
-
 	return &UseCaseJSON{
 		ID:      p.UseCase.ID,
 		Linked:  p.UseCase.Linked,
 		Link:    !p.UseCase.Linked,
-		Unlink:  unlink,
 		Partial: p.UseCase.Partial,
 	}
 }

@@ -212,22 +212,34 @@ func TestRun_ManifestUseCaseIsLinkedOnAnExistingWorkload(t *testing.T) {
 	assert.Equal(t, ActionLinked, result.Action)
 }
 
-func TestRun_OtherUseCasesAreUnlinkedAfterTheNewLink(t *testing.T) {
-	var order []string
+func TestRun_OtherUseCasesAreKept(t *testing.T) {
+	var linked []string
 
 	f := liveFakes(t)
 	f.useCases = func(string) (workload.UseCaseLinks, error) {
 		return workload.UseCaseLinks{IDs: []string{useCaseB}}, nil
 	}
 	f.linkUC = func(uc, _ string) error {
-		order = append(order, "link:"+uc)
+		linked = append(linked, uc)
 
 		return nil
 	}
-	f.unlinkUC = func(uc, _ string) error {
-		order = append(order, "unlink:"+uc)
 
-		return nil
+	// install fails the test on any other Use Case write.
+	install(t, f)
+
+	result, stderr, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{useCaseA}, linked)
+	assert.Equal(t, ActionLinked, result.Action)
+	assert.NotContains(t, stderr, useCaseB, "a link made elsewhere is not the run's to show or touch")
+}
+
+func TestRun_AlreadyLinkedAndAlsoElsewhereIsUpToDate(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) {
+		return workload.UseCaseLinks{IDs: []string{useCaseB, useCaseA}}, nil
 	}
 
 	install(t, f)
@@ -235,33 +247,8 @@ func TestRun_OtherUseCasesAreUnlinkedAfterTheNewLink(t *testing.T) {
 	result, stderr, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"link:" + useCaseA, "unlink:" + useCaseB}, order,
-		"the workload is never left in no Use Case")
-	assert.Equal(t, ActionLinked, result.Action)
-	assert.Contains(t, stderr, "unlinked from "+useCaseB)
-	assert.Equal(t, []string{useCaseB}, result.Plan.JSON().UseCase.Unlink)
-}
-
-func TestRun_AlreadyLinkedButAlsoElsewhereOnlyUnlinks(t *testing.T) {
-	var unlinked []string
-
-	f := liveFakes(t)
-	f.useCases = func(string) (workload.UseCaseLinks, error) {
-		return workload.UseCaseLinks{IDs: []string{useCaseB, useCaseA}}, nil
-	}
-	f.unlinkUC = func(uc, _ string) error {
-		unlinked = append(unlinked, uc)
-
-		return nil
-	}
-
-	install(t, f)
-
-	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{useCaseB}, unlinked)
-	assert.Equal(t, ActionLinked, result.Action)
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Contains(t, stderr, "Already up to date")
 }
 
 func TestRun_LinkComesBeforeTheResize(t *testing.T) {
@@ -317,7 +304,6 @@ func TestRun_DryRunReadsTheLinksAndWritesNone(t *testing.T) {
 
 		assert.Equal(t, ActionLinked, result.Action)
 		assert.Contains(t, stderr, "linked to "+useCaseA)
-		assert.Contains(t, stderr, "unlinked from "+useCaseB)
 	}
 }
 
@@ -333,7 +319,6 @@ func TestRun_PartialLinkListLinksAnywayAndSaysSo(t *testing.T) {
 
 		return nil
 	}
-	f.unlinkUC = func(string, string) error { return nil }
 
 	install(t, f)
 
@@ -342,7 +327,7 @@ func TestRun_PartialLinkListLinksAnywayAndSaysSo(t *testing.T) {
 
 	assert.True(t, linked)
 	assert.True(t, result.Plan.JSON().UseCase.Partial)
-	assert.Contains(t, stderr, "more Use Case links than one read returns")
+	assert.Contains(t, stderr, "more Use Case links than one read returns, so it may be linked already")
 }
 
 func TestRun_EnclaveRefusalOnCreateNamesTheRemedy(t *testing.T) {
@@ -358,19 +343,55 @@ func TestRun_EnclaveRefusalOnCreateNamesTheRemedy(t *testing.T) {
 	assert.Contains(t, err.Error(), "runtime.enclaveSelectionPolicy: availability")
 }
 
-func TestRun_EnclaveRefusalOnLinkNamesTheRemedy(t *testing.T) {
+func TestRun_EnclaveUseCaseIsRefusedBeforeLinkingAnExistingWorkload(t *testing.T) {
 	f := liveFakes(t)
 	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
-	f.linkUC = func(string, string) error {
-		return errors.New("refused (ENCLAVE_TARGETING_REQUIRED)")
+	f.enclaves = func(uc string) (int, error) {
+		assert.Equal(t, useCaseA, uc)
+
+		return 2, nil
 	}
+
+	// install fails the test if the link is sent.
+	install(t, f)
+
+	for _, dryRun := range []bool{false, true} {
+		_, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, DryRun: dryRun, UseCaseID: useCaseA})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "nothing was deployed")
+		assert.Contains(t, err.Error(), "ENCLAVE_TARGETING_REQUIRED")
+		assert.Contains(t, err.Error(), "runtime.enclaveSelectionPolicy: availability")
+	}
+}
+
+func TestPlanUseCase_AFileThatNamesAPolicySkipsTheEnclaveCheck(t *testing.T) {
+	payload := json.RawMessage(`{"runtime":{"enclaveSelectionPolicy":"availability"}}`)
+
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.enclaves = func(string) (int, error) {
+		t.Fatal("a file that names a policy needs no Enclave check")
+
+		return 0, nil
+	}
+
+	install(t, f)
+
+	uc, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, payload)
+	require.NoError(t, err)
+	assert.False(t, uc.Linked)
+}
+
+func TestRun_UnreadableUseCaseStopsTheLink(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.enclaves = func(string) (int, error) { return 0, errors.New("forbidden") }
 
 	install(t, f)
 
 	_, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "nothing was deployed")
-	assert.Contains(t, err.Error(), "runtime.enclaveSelectionPolicy: availability")
+	assert.Contains(t, err.Error(), "to check its Enclaves")
 }
 
 func TestRun_UnreadableLinksStopTheRun(t *testing.T) {
@@ -412,14 +433,12 @@ func TestPlan_LinkOnlyActionAndEmpty(t *testing.T) {
 func TestRender_UseCaseLines(t *testing.T) {
 	var b bytes.Buffer
 
-	plan := Plan{State: StateRunning, UseCase: &UseCasePlan{ID: useCaseA, Unlink: []string{useCaseB}}}
+	plan := Plan{State: StateRunning, UseCase: &UseCasePlan{ID: useCaseA}}
 	require.NoError(t, Render(&b, Summary{Name: "app", WorkloadID: "wl-1", Status: "running"}, plan))
 
 	out := b.String()
-	assert.Contains(t, out, "use case")
 	assert.Contains(t, out, "linked to "+useCaseA)
-	assert.Contains(t, out, "unlinked from "+useCaseB)
-	assert.Equal(t, 2, strings.Count(out, "use case"))
+	assert.Equal(t, 1, strings.Count(out, "use case"))
 }
 
 // resizeFakes is the running workload with a resize that lands, recording
@@ -433,11 +452,6 @@ func resizeFakes(t *testing.T, order *[]string, settingsErr error) fakes {
 	}
 	f.linkUC = func(string, string) error {
 		*order = append(*order, "link")
-
-		return nil
-	}
-	f.unlinkUC = func(string, string) error {
-		*order = append(*order, "unlink")
 
 		return nil
 	}
@@ -466,18 +480,7 @@ func resizeFakes(t *testing.T, order *[]string, settingsErr error) fakes {
 	return f
 }
 
-func TestRun_OtherUseCasesAreUnlinkedOnlyOnceTheDeployLands(t *testing.T) {
-	var order []string
-
-	install(t, resizeFakes(t, &order, nil))
-
-	_, _, err := runIn(t, resizedManifest(), Options{NonInteractive: true, UseCaseID: useCaseA})
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{"link", "settings", "unlink"}, order)
-}
-
-func TestRun_AFailedDeployKeepsTheOldUseCase(t *testing.T) {
+func TestRun_AFailedResizeAfterTheLinkSendsNothingMore(t *testing.T) {
 	var order []string
 
 	install(t, resizeFakes(t, &order, errors.New("refused")))
@@ -486,22 +489,5 @@ func TestRun_AFailedDeployKeepsTheOldUseCase(t *testing.T) {
 	require.Error(t, err)
 
 	assert.Equal(t, []string{"link", "settings"}, order,
-		"the workload is not moved off its Use Case by a deploy that did not land")
-}
-
-func TestRun_AFailedUnlinkAfterALinkStillReportsTheLink(t *testing.T) {
-	f := liveFakes(t)
-	f.useCases = func(string) (workload.UseCaseLinks, error) {
-		return workload.UseCaseLinks{IDs: []string{useCaseB}}, nil
-	}
-	f.linkUC = func(string, string) error { return nil }
-	f.unlinkUC = func(string, string) error { return errors.New("forbidden") }
-
-	install(t, f)
-
-	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
-	require.Error(t, err)
-
-	assert.Equal(t, ActionLinked, result.Action, "the link went through, so the run did change something")
-	assert.Contains(t, err.Error(), "could not be unlinked from "+useCaseB)
+		"the link is made before the resize, and nothing else is sent")
 }

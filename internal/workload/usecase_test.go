@@ -98,17 +98,31 @@ func TestLinkWorkloadToUseCase_RefusalKeepsTheStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "ENCLAVE_TARGETING_REQUIRED")
 }
 
-func TestUnlinkWorkloadFromUseCase_DeletesTheLinkRoute(t *testing.T) {
+func TestUseCaseEnclaveCount_ReadsTheUseCase(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/v2/useCases/uc-1/workloads/wl-1/", r.URL.Path)
-		w.WriteHeader(http.StatusNoContent)
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v2/useCases/uc-1/", r.URL.Path)
+		fmt.Fprint(w, `{"id":"uc-1","enclavesCount":2}`)
 	}))
 
-	require.NoError(t, UnlinkWorkloadFromUseCase("uc-1", "wl-1"))
+	count, err := UseCaseEnclaveCount("uc-1")
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
+func TestUseCaseEnclaveCount_MissingOrNullIsNone(t *testing.T) {
+	for _, body := range []string{`{"id":"uc-1"}`, `{"id":"uc-1","enclavesCount":null}`} {
+		serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprint(w, body)
+		}))
+
+		count, err := UseCaseEnclaveCount("uc-1")
+		require.NoError(t, err)
+		assert.Zero(t, count, body)
+	}
 }
 
 func TestUseCaseLinkRequest_NeedsBothIDs(t *testing.T) {
 	require.Error(t, LinkWorkloadToUseCase("", "wl-1"))
-	require.Error(t, UnlinkWorkloadFromUseCase("uc-1", " "))
+	require.Error(t, LinkWorkloadToUseCase("uc-1", " "))
 }

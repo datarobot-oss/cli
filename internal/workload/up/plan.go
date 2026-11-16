@@ -192,7 +192,7 @@ type Plan struct {
 	UseCase *UseCasePlan
 }
 
-// UseCasePlan is what a run does about the workload's Use Case links. The
+// UseCasePlan is what a run does about the workload's Use Case link. The
 // links live beside the workload rather than in it, so they are read and
 // written through their own route, and a change to them builds and rolls
 // nothing.
@@ -204,25 +204,23 @@ type UseCasePlan struct {
 	// where the link travels in the create payload instead.
 	Linked bool
 
-	// Unlink is the other Use Cases the workload is linked to. A link is
-	// moved rather than added, the way the Terraform provider moves it, so
-	// the workload ends up in the one Use Case the deploy names.
-	Unlink []string
-
 	// Partial reports that the platform holds more links than one read
-	// returns, so Unlink may be missing some and Linked may be wrong. The
-	// run links anyway: a link that already exists is not an error.
+	// returns, so Linked may be wrong. The run links anyway: a link that
+	// already exists is not an error.
 	Partial bool
 }
 
-// relinks reports that the run has a link to add or remove on a workload
-// that already exists. A create carries its link in the payload instead.
-func (p Plan) relinks() bool {
-	if p.Creates || p.UseCase == nil {
-		return false
-	}
+// ReplacesNothing reports that a run with this action started, rolled and
+// resized nothing: a container serving before the run is still serving.
+func ReplacesNothing(action string) bool {
+	return action == ActionUnchanged || action == ActionLinked
+}
 
-	return !p.UseCase.Linked || len(p.UseCase.Unlink) > 0
+// relinks reports that the run has a link to add to a workload that already
+// exists. A create carries its link in the payload instead. Links to other
+// Use Cases are left alone: see planUseCase.
+func (p Plan) relinks() bool {
+	return !p.Creates && p.UseCase != nil && !p.UseCase.Linked
 }
 
 // Empty reports that the live state already matches the file and there is

@@ -1100,6 +1100,19 @@ func TestCmd_TextWarnsThatTheOldSecretIsServing(t *testing.T) {
 	assert.Contains(t, stderr, "still serves the value it started with")
 }
 
+// A run whose only change was a Use Case link replaced no container either,
+// so a secret it re-sent is still not being served.
+func TestCmd_LinkOnlyRunStillWarnsThatTheOldSecretIsServing(t *testing.T) {
+	result := rotatedNothingElse()
+	result.Action = up.ActionLinked
+
+	stubRun(t, result, nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "still serves the value it started with")
+}
+
 // The envelope carries the names `dr workload config` reports under
 // envLiterals, and carries them as a list: a consumer that iterates should not
 // have to guard for null on the run that wrote nothing.

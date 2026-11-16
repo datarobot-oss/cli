@@ -103,10 +103,34 @@ func LinkWorkloadToUseCase(useCaseID, workloadID string) error {
 	return err
 }
 
-// UnlinkWorkloadFromUseCase removes a workload from a Use Case. The workload
-// itself is untouched.
-func UnlinkWorkloadFromUseCase(useCaseID, workloadID string) error {
-	return useCaseLinkRequest(http.MethodDelete, useCaseID, workloadID)
+// UseCaseEnclaveCount reads how many Enclaves a Use Case has. The platform
+// refuses to create a workload in a Use Case with Enclaves unless the
+// workload says how it is placed on them, but it does not check that when an
+// existing workload is linked, so a caller linking one asks first.
+func UseCaseEnclaveCount(useCaseID string) (int, error) {
+	if strings.TrimSpace(useCaseID) == "" {
+		return 0, errors.New("reading a Use Case needs its id")
+	}
+
+	target, err := drapi.EndpointURL("/useCases/"+escapeID(useCaseID)+"/", nil)
+	if err != nil {
+		return 0, err
+	}
+
+	var uc struct {
+		// Missing or null reads as none, as the platform reads it.
+		EnclavesCount *int `json:"enclavesCount"`
+	}
+
+	if err := drapi.GetJSON(target, "use case", &uc); err != nil {
+		return 0, apiclient.LiftDetail(err)
+	}
+
+	if uc.EnclavesCount == nil {
+		return 0, nil
+	}
+
+	return *uc.EnclavesCount, nil
 }
 
 // useCaseLinkRequest sends the link route a bodiless request and accepts any
