@@ -232,6 +232,11 @@ type fakes struct {
 
 	// settings is the in-place path: a change that moved only the sizing.
 	settings func(string, json.RawMessage) (*workload.Replacement, error)
+
+	// The Use Case link track: read the links, add one, remove one.
+	useCases func(string) (workload.UseCaseLinks, error)
+	linkUC   func(string, string) error
+	unlinkUC func(string, string) error
 }
 
 // install swaps in the seams the test supplied and restores them afterwards.
@@ -382,6 +387,26 @@ func install(t *testing.T, f fakes) {
 	swap(t, &startReplacementFn, f.replace)
 	swap(t, &waitReplacementFn, f.waitReplace)
 	swap(t, &updateSettingsFn, f.settings)
+
+	// No run reaches the Use Case routes unless the test asked for a link.
+	force(t, &workloadUseCasesFn, func(id string) (workload.UseCaseLinks, error) {
+		t.Fatalf("the run read the Use Case links of workload %s, which this test did not wire", id)
+
+		return workload.UseCaseLinks{}, nil
+	})
+	force(t, &linkUseCaseFn, func(uc, id string) error {
+		t.Fatalf("the run linked workload %s to Use Case %s, which this test did not wire", id, uc)
+
+		return nil
+	})
+	force(t, &unlinkUseCaseFn, func(uc, id string) error {
+		t.Fatalf("the run unlinked workload %s from Use Case %s, which this test did not wire", id, uc)
+
+		return nil
+	})
+	swap(t, &workloadUseCasesFn, f.useCases)
+	swap(t, &linkUseCaseFn, f.linkUC)
+	swap(t, &unlinkUseCaseFn, f.unlinkUC)
 }
 
 // servingLabel renders what a wait was asked to confirm, so a trace shows the

@@ -1281,3 +1281,59 @@ func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
 		})
 	}
 }
+
+func TestCmd_UseCaseIDIsPassedThrough(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--use-case-id", "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", seen.UseCaseID)
+}
+
+// A typo is refused before the deploy runs, the setup wizard included.
+func TestCmd_InvalidUseCaseIDIsRefusedBeforeTheDeploy(t *testing.T) {
+	stubRun(t, deployed(), errors.New("the deploy must not run"))
+
+	_, _, err := runCmd(t, "--use-case-id", "nope")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid --use-case-id")
+}
+
+func TestCmd_JSONEnvelopeCarriesTheUseCase(t *testing.T) {
+	linked := deployed()
+	linked.Action = up.ActionLinked
+	linked.Plan.UseCase = &up.UseCasePlan{ID: "68b0aa11bb22cc33dd44ee55"}
+
+	stubRun(t, linked, nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
+	assert.Equal(t, "linked", body["action"])
+
+	plan, _ := body["plan"].(map[string]any)
+	useCase, _ := plan["useCase"].(map[string]any)
+	assert.Equal(t, true, useCase["link"])
+}
+
+func TestCmd_JSONEnvelopeUseCaseIsNullWithoutOne(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	value, present := body["useCaseId"]
+	assert.True(t, present)
+	assert.Nil(t, value)
+}
