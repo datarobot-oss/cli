@@ -16,6 +16,7 @@ package workload
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -131,7 +132,7 @@ func useCaseLinkRequest(method, useCaseID, workloadID string) error {
 		return err
 	}
 
-	resp, err := drapi.NewHTTPClient(0).Do(req)
+	resp, err := drapi.Do(req, 0)
 	if err != nil {
 		return err
 	}
@@ -139,6 +140,9 @@ func useCaseLinkRequest(method, useCaseID, workloadID string) error {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return apiclient.LiftDetail(drapi.ErrFromResp(resp, target))
 	}
+
+	// Drained, so the connection is reused for the next link request.
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.Body.Close()
 }

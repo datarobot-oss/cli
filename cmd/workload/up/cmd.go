@@ -80,8 +80,9 @@ type upResult struct {
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
 
-	// UseCaseID is the Use Case the workload is linked to by this run, null
-	// when none was asked for.
+	// UseCaseID is the Use Case this run was asked to link the workload to,
+	// null when none was. It is what was asked, as plan.useCase is; whether
+	// the link was made is in action and the error.
 	UseCaseID *string `json:"useCaseId"`
 	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
@@ -286,8 +287,8 @@ platform's reason for the failure. With nothing new to deploy the run is refused
 --use-case-id <id> links the workload to a Use Case, as useCaseId at the top
 of .datarobot.yaml does; when both are set they have to agree. A first deploy
 sends it with the create. On a workload that exists the link is checked and,
-if it is missing, added, and the workload is unlinked from any other Use Case,
-so it ends up in the one named. A link alone builds and rolls nothing, and a
+if it is missing, added, and the workload is unlinked from any other Use Case
+once the deploy has gone through, so it ends up in the one named. A link alone builds and rolls nothing, and a
 workload already linked is up to date. A Use Case with Enclaves needs
 runtime.enclaveSelectionPolicy in the file, or the platform refuses with
 ENCLAVE_TARGETING_REQUIRED.

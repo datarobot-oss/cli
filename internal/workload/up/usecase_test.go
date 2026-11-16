@@ -421,3 +421,87 @@ func TestRender_UseCaseLines(t *testing.T) {
 	assert.Contains(t, out, "unlinked from "+useCaseB)
 	assert.Equal(t, 2, strings.Count(out, "use case"))
 }
+
+// resizeFakes is the running workload with a resize that lands, recording
+// each mutation in order.
+func resizeFakes(t *testing.T, order *[]string, settingsErr error) fakes {
+	t.Helper()
+
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) {
+		return workload.UseCaseLinks{IDs: []string{useCaseB}}, nil
+	}
+	f.linkUC = func(string, string) error {
+		*order = append(*order, "link")
+
+		return nil
+	}
+	f.unlinkUC = func(string, string) error {
+		*order = append(*order, "unlink")
+
+		return nil
+	}
+	f.settings = func(id string, _ json.RawMessage) (*workload.Replacement, error) {
+		*order = append(*order, "settings")
+
+		if settingsErr != nil {
+			return nil, settingsErr
+		}
+
+		return &workload.Replacement{ID: "rep-1", WorkloadID: id}, nil
+	}
+	f.waitReplace = func(_ context.Context, _ string, started *workload.Replacement, _, _ time.Duration,
+		_ func(*workload.Replacement),
+	) (*workload.Replacement, error) {
+		started.Status = workload.ReplacementStatusCompleted
+
+		return started, nil
+	}
+	f.wait = func(_ context.Context, id string, _ workload.Serving, _, _ time.Duration,
+		_ func(*workload.Workload),
+	) (*workload.Workload, error) {
+		return running(id), nil
+	}
+
+	return f
+}
+
+func TestRun_OtherUseCasesAreUnlinkedOnlyOnceTheDeployLands(t *testing.T) {
+	var order []string
+
+	install(t, resizeFakes(t, &order, nil))
+
+	_, _, err := runIn(t, resizedManifest(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"link", "settings", "unlink"}, order)
+}
+
+func TestRun_AFailedDeployKeepsTheOldUseCase(t *testing.T) {
+	var order []string
+
+	install(t, resizeFakes(t, &order, errors.New("refused")))
+
+	_, _, err := runIn(t, resizedManifest(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.Error(t, err)
+
+	assert.Equal(t, []string{"link", "settings"}, order,
+		"the workload is not moved off its Use Case by a deploy that did not land")
+}
+
+func TestRun_AFailedUnlinkAfterALinkStillReportsTheLink(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) {
+		return workload.UseCaseLinks{IDs: []string{useCaseB}}, nil
+	}
+	f.linkUC = func(string, string) error { return nil }
+	f.unlinkUC = func(string, string) error { return errors.New("forbidden") }
+
+	install(t, f)
+
+	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.Error(t, err)
+
+	assert.Equal(t, ActionLinked, result.Action, "the link went through, so the run did change something")
+	assert.Contains(t, err.Error(), "could not be unlinked from "+useCaseB)
+}

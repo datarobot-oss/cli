@@ -368,6 +368,9 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 		result, err = linkOnly(loaded, live, plan, result, opts)
 	default:
 		result, err = apply(ctx, loaded, live, plan, result, opts)
+		if err == nil {
+			err = unlinkOthers(plan, result.WorkloadID, newReporter(opts.Stderr, opts.Spinner))
+		}
 	}
 
 	// After either path, failed or not: a roll moves result.ArtifactID onto the
@@ -1434,7 +1437,8 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 // thing is refused before the run has touched the workload. Then everything
 // that can refuse this run, because a start is a mutation and the apply
 // performs one. The Use Case link comes last of the three and before the
-// rest: the platform checks a rollout against the workload's links.
+// rest: the platform checks a rollout against the workload's links. Taking
+// the workload out of its other Use Cases waits for the apply to succeed.
 func prepare(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (bool, error) {
 	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
 		return false, err
@@ -1445,7 +1449,9 @@ func prepare(loaded Loaded, live Live, plan Plan, result Result, opts Options, r
 		return false, err
 	}
 
-	return lock, relink(plan, live.WorkloadID, report)
+	_, err = link(plan, live.WorkloadID, report)
+
+	return lock, err
 }
 
 // linkOnly is the whole of a run whose only change is the Use Case link: a
@@ -1456,7 +1462,20 @@ func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 		return result, err
 	}
 
-	if err := relink(plan, live.WorkloadID, newReporter(opts.Stderr, opts.Spinner)); err != nil {
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	linked, err := link(plan, live.WorkloadID, report)
+	if err != nil {
+		return result, err
+	}
+
+	// Set as soon as anything changed, so a failed unlink after a link that
+	// went through is not reported as a run that did nothing.
+	if linked {
+		result.Action = ActionLinked
+	}
+
+	if err := unlinkOthers(plan, live.WorkloadID, report); err != nil {
 		return result, err
 	}
 
@@ -1528,8 +1547,7 @@ func beforeAnything(loaded Loaded, live Live, plan Plan, result Result, opts Opt
 // come up. Every remaining run either builds a version out of the references or
 // starts a container that reads them, so it verifies.
 func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
-	// A plan that only moves the Use Case link sends no environment either.
-	if plan.SendsNoEnvironment() || plan.Action() == ActionLinked {
+	if plan.SendsNoEnvironment() {
 		return nil
 	}
 

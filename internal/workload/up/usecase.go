@@ -140,27 +140,38 @@ func planUseCase(plan Plan, workloadID, desired string) (*UseCasePlan, error) {
 	return out, nil
 }
 
-// relink moves the workload's link onto the Use Case the plan names: the
-// new link first, then the old ones taken away. It runs before anything is
-// started or rolled, because the platform checks a rollout against the
-// workload's links, and adding before removing means the workload is never
-// left in no Use Case by a run that fails halfway.
-func relink(plan Plan, workloadID string, report *reporter) error {
+// link adds the link the plan asks for, and reports whether it sent one. It
+// runs before anything is started or rolled, because the platform checks a
+// rollout against the workload's links.
+func link(plan Plan, workloadID string, report *reporter) (bool, error) {
+	if !plan.relinks() || plan.UseCase.Linked {
+		return false, nil
+	}
+
+	uc := plan.UseCase
+
+	err := report.run("Linking to Use Case "+uc.ID, func() error {
+		return linkUseCaseFn(uc.ID, workloadID)
+	})
+	if err != nil {
+		return false, enclaveRefusal(fmt.Errorf("nothing was deployed: workload %s could not be linked to Use Case %s: %w",
+			workloadID, uc.ID, err))
+	}
+
+	return true, nil
+}
+
+// unlinkOthers takes the workload out of every other Use Case the plan read.
+// It runs only once the rest of the deploy has gone through, so a run that
+// fails or is interrupted halfway leaves the workload where it was as well
+// as where it is going, never moved off the old Use Case with nothing new
+// deployed; the next run finishes the move.
+func unlinkOthers(plan Plan, workloadID string, report *reporter) error {
 	if !plan.relinks() {
 		return nil
 	}
 
 	uc := plan.UseCase
-
-	if !uc.Linked {
-		err := report.run("Linking to Use Case "+uc.ID, func() error {
-			return linkUseCaseFn(uc.ID, workloadID)
-		})
-		if err != nil {
-			return enclaveRefusal(fmt.Errorf("nothing was deployed: workload %s could not be linked to Use Case %s: %w",
-				workloadID, uc.ID, err))
-		}
-	}
 
 	for _, old := range uc.Unlink {
 		err := report.run("Unlinking from Use Case "+old, func() error {
