@@ -46,9 +46,12 @@ sleep 1
 expect "Agentic Starter"
 send -- "\r\n"
 
-# Accept the default clone directory (datarobot-agent-application)
-sleep 1
-expect "datarobot-agent-application"
+# Accept the default clone directory (datarobot-agent-application). Wait for text
+# only the clone screen renders: the directory name is also part of the repository
+# URL in the template list, and expect matches against output it has already
+# buffered, so waiting for the name can send this Enter while the list is still
+# handling the previous one.
+expect "Enter the destination directory"
 send -- "\r\n"
 
 # Drive whatever setup screens appear after selecting the template, accepting
