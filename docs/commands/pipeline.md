@@ -8,9 +8,12 @@ endpoint.
 > [!NOTE]
 > On DataRobot 11.15 and later, AI Pipelines are in Private Preview: behavior
 > may change, and preview functionality is not covered by Support SLA
-> agreements. `dr pipeline` and the API work regardless of the feature flag,
-> which gates only the **Pipelines** tab in the DataRobot UI. Contact your
-> DataRobot representative to enable the tab for your organization.
+> agreements. The `dr pipeline` group is behind a CLI feature gate: export
+> `DATAROBOT_CLI_FEATURE_PIPELINE=true` before running any subcommand (see
+> [Feature gates](../development/feature-gates.md)). Once enabled, the commands
+> and the API work regardless of the platform feature flag, which gates only the
+> **Pipelines** tab in the DataRobot UI. Contact your DataRobot representative to
+> enable the tab for your organization.
 
 ## Synopsis
 
