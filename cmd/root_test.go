@@ -437,19 +437,17 @@ func TestWorkloadUpConfigPromotePresentByDefault(t *testing.T) {
 	}
 }
 
-// TestPipelineCommandPresentByDefault verifies that pipeline is present in the
-// default command tree. Pipelines went GA, so the command carries no
-// feature-gate annotation and cli.CommandAdder must not filter it out. The env
-// var is neutralized so the test proves the command is there on its own
-// merits, not because DATAROBOT_CLI_FEATURE_PIPELINE happens to be set in the
-// ambient environment.
-func TestPipelineCommandPresentByDefault(t *testing.T) {
+// TestPipelineCommandNotPresentByDefault verifies that pipeline is hidden from
+// the default command tree while AI Pipelines are in Private Preview, and shown
+// once DATAROBOT_CLI_FEATURE_PIPELINE is set.
+func TestPipelineCommandNotPresentByDefault(t *testing.T) {
 	t.Setenv("DATAROBOT_CLI_FEATURE_PIPELINE", "")
+	assert.Nil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr pipeline"),
+		"pipeline command should not be present when the feature gate is not enabled")
 
-	root := newIsolatedRootCmd()
-
-	assert.NotNil(t, findCommandByPath(root.Command, "dr pipeline"),
-		"pipeline command should be present by default now that pipelines are GA")
+	t.Setenv("DATAROBOT_CLI_FEATURE_PIPELINE", "true")
+	assert.NotNil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr pipeline"),
+		"pipeline command should be present with DATAROBOT_CLI_FEATURE_PIPELINE=true")
 }
 
 // TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-CA TLS flags

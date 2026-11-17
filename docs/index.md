@@ -56,7 +56,7 @@ Detailed documentation for each command:
 - [self](commands/self.md)&mdash;CLI utility commands (version, update &mdash; including installing a specific released version, config, completion, and plugin authoring: add, publish, package).
 - [plugins](commands/plugins.md)&mdash;plugin system documentation.
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
-- [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines; see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.
+- [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines (Private Preview on DataRobot 11.15 and later, behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`); see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.
 - [artifact](commands/artifact.md): build and manage the container artifacts that back workloads (register a spec, sync code, build images, lock).
 - [workload](commands/workload.md): deploy and operate workloads created from artifacts (alias `wl`), from create through start, stop, status, endpoint and logs.
 - [artifact and workload spec](commands/workload-spec.md): every field the two spec files accept, environment variables and secrets, and one walkthrough from source code to a running URL.
