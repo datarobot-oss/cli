@@ -393,6 +393,26 @@ dr workload up --confirm         # plan, ask, then apply
 
 `--confirm` asks `? Apply this deploy? (y/N)` on stderr after the plan and deploys only on `y`; anything else, an empty answer included, declines, exits nonzero and deploys nothing. What the run did before showing the plan stands: a manifest the setup wrote, or a secret `--sync-env` re-sent, which the run still warns about. It is suppressed, not refused, when the run is non-interactive (`--yes`, `--output-format json`, `DATAROBOT_CLI_NON_INTERACTIVE`, or a stdin or stderr that is not a terminal), so a scripted run with the flag behaves as if it was not given. The typed confirmation for rolling a locked version is still asked on top of it.
 
+### Linking to a Use Case
+
+`dr workload up --use-case-id <id>` links the workload to a Use Case. The top-level `useCaseId` in `.datarobot.yaml` does the same, and is the source when the flag is not passed. When both are set they have to agree, or the run is refused before any request. The flag is never written back to the file.
+
+```bash
+dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55            # link, and deploy anything else that differs
+dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55 --dry-run  # show the link in the plan, change nothing
+```
+
+- **First deploy:** `useCaseId` goes in the create payload, as `create --use-case-id` sends it.
+- **Existing workload:** the run reads the workload's Use Case links, and adds the link if it is missing. Links to other Use Cases are left as they are, including ones made in the UI: a workload can be in several Use Cases, and `up` only ever adds a link. A workload already linked there is up to date, so a repeat run prints `Already up to date`.
+- A link alone builds and rolls nothing; the plan's action is `linked`. When the run also rolls or resizes, the link is made first, because the platform checks a rollout against the workload's links.
+- The plan shows the link as a `use case` line, in `--dry-run` and `--diff` as well. Under `--output-format json` the plan carries `useCase` (`id`, `linked`, `link`, `unknown`) and the envelope carries `useCaseId`, even when the run fails before its plan; both are `null` when no Use Case was asked for. The envelope's `useCaseLinked` is `true` when the run added the link to an existing workload, even if it then failed to build or roll.
+- **When the link can't be made:** the link is part of what the file asks for, so a run that can't make sure of it stops before anything is started, built or rolled, as Terraform or Pulumi stop short of a partial apply. That covers a refused link (for example, no edit permission on the Use Case), a Use Case that no longer exists, and a failed read of the links or the Use Case. A Use Case the platform answers 403 or 404 for is reported as one that doesn't exist or that you can't access, and is refused on `--dry-run` too. A `--dry-run` changes nothing, so any other failed read there is a warning: the plan shows the link as `~ use case`, JSON sets `unknown` to `true`, and the deploy reads again. An errored workload can still be linked, because the link touches nothing it runs, but not with `--promote`: locking can't be undone, so that run is refused before the link, as it is without one. The same goes for a `--promote` run while a rollout is in flight.
+- **Enclaves:** placement is unchanged by the link, and the rule `create` follows applies. If the Use Case has Enclaves and the file sets no `runtime.enclaveSelectionPolicy`, the run is refused with `ENCLAVE_TARGETING_REQUIRED`, and the error says to set `runtime.enclaveSelectionPolicy: availability` in `.datarobot.yaml`. On a first deploy the platform refuses the create; on an existing workload the run reads the Use Case and refuses before linking. See [Use Case and Enclave placement](#use-case-and-enclave-placement).
+
+Removing `useCaseId` from the file, and dropping the flag, stops managing the link rather than removing it. To take a workload out of a Use Case, remove it there.
+
+> **Behaviour change.** Earlier releases read `useCaseId` in `.datarobot.yaml` only on the first deploy and ignored it afterwards. Now every `up` checks it: an invalid id refuses the run, and a link that can't be made stops the deploy, as described above. To keep the old behaviour, remove `useCaseId` from the file.
+
 ### CI, scripts, and agents
 
 **`dr workload up --yes` asks nothing, including on a project that has never deployed.** With no manifest it answers the setup from the project, writes `.datarobot.yaml`, prints the path and the contents, and deploys. The file is written before anything is deployed, so what was inferred is on disk to read and to commit; nothing is deployed from a guess that leaves no trace.

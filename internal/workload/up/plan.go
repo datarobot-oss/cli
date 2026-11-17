@@ -30,6 +30,7 @@ const (
 	ActionRolled    = "rolled"
 	ActionUpdated   = "updated"
 	ActionStarted   = "started"
+	ActionLinked    = "linked"
 	ActionUnchanged = "unchanged"
 )
 
@@ -185,6 +186,41 @@ type Plan struct {
 	// Reason is the platform's account of why the workload is errored, "" for
 	// every other state, printed beside the state and named in the refusal.
 	Reason string
+
+	// UseCase is the Use Case link this run asks for, nil when neither
+	// --use-case-id nor the manifest's useCaseId names one.
+	UseCase *UseCasePlan
+}
+
+// UseCasePlan is what a run does about the workload's Use Case link. The
+// links live beside the workload rather than in it, so they are read and
+// written through their own route, and a change to them builds and rolls
+// nothing.
+type UseCasePlan struct {
+	// ID is the Use Case the workload should be linked to.
+	ID string
+
+	// Linked reports that the workload already is. Always false on a create,
+	// where the link travels in the create payload instead.
+	Linked bool
+
+	// Unknown is why the links could not be read, "" when they were. Only a
+	// dry run gets this far without them: it previews the link as if it were
+	// missing and warns, where a deploy stops before changing anything.
+	Unknown string
+}
+
+// ReplacesNothing reports that a run with this action started, rolled and
+// resized nothing: a container serving before the run is still serving.
+func ReplacesNothing(action string) bool {
+	return action == ActionUnchanged || action == ActionLinked
+}
+
+// relinks reports that the run has a link to add to a workload that already
+// exists. A create carries its link in the payload instead. Links to other
+// Use Cases are left alone: see planUseCase.
+func (p Plan) relinks() bool {
+	return !p.Creates && p.UseCase != nil && !p.UseCase.Linked
 }
 
 // Empty reports that the live state already matches the file and there is
@@ -200,7 +236,8 @@ func (p Plan) Empty() bool {
 		len(p.Runtime) == 0 &&
 		!p.forcesBuild() &&
 		p.Reroll == "" &&
-		!p.actsOnState()
+		!p.actsOnState() &&
+		!p.relinks()
 }
 
 // forcesBuild reports that --force-build has an image to act on: only a project
@@ -423,6 +460,8 @@ func (p Plan) Action() string {
 		return ActionUpdated
 	case p.State == StateStopped:
 		return ActionStarted
+	case p.relinks():
+		return ActionLinked
 	default:
 		return ActionUnchanged
 	}

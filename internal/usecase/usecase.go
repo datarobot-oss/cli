@@ -31,7 +31,8 @@ var objectID = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
 
 // ParseID trims raw and checks that it is a Use Case id. It rejects a blank
 // value and anything that is not a 24-character hexadecimal ObjectId, so a
-// typo fails before any request is sent.
+// typo fails before any request is sent. The id comes back in lower case, as
+// the platform writes ObjectIds, so it compares equal to the ids it returns.
 func ParseID(raw string) (ID, error) {
 	id := strings.TrimSpace(raw)
 	if id == "" {
@@ -42,5 +43,5 @@ func ParseID(raw string) (ID, error) {
 		return "", fmt.Errorf("%q is not a Use Case id: expected 24 hexadecimal characters", id)
 	}
 
-	return ID(id), nil
+	return ID(strings.ToLower(id)), nil
 }

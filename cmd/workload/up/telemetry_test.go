@@ -104,3 +104,41 @@ func TestCmd_TelemetryReportsNoSync(t *testing.T) {
 	assert.NotContains(t, props, "sync_uploads")
 	assert.NotContains(t, props, "sync_limit_hit")
 }
+
+// Whether the flag was given travels, never the id.
+func TestCmd_TelemetryReportsTheUseCaseFlagNotTheID(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	props, err := executeAndTrack(t, "--yes", "--use-case-id", "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+
+	assert.Equal(t, true, props["use_case_id_provided"])
+
+	for key, value := range props {
+		assert.NotEqual(t, "68b0aa11bb22cc33dd44ee55", value, key)
+	}
+}
+
+// A run driven by useCaseId in the file asks for a Use Case without the flag,
+// and the event says so.
+func TestCmd_TelemetryReportsAUseCaseFromTheFile(t *testing.T) {
+	result := deployed()
+	result.UseCaseID = "68b0aa11bb22cc33dd44ee55"
+
+	stubRun(t, result, nil)
+
+	props, err := executeAndTrack(t, "--yes")
+	require.NoError(t, err)
+
+	assert.Equal(t, false, props["use_case_id_provided"])
+	assert.Equal(t, true, props["use_case_requested"])
+}
+
+func TestCmd_TelemetryReportsNoUseCase(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	props, err := executeAndTrack(t, "--yes")
+	require.NoError(t, err)
+
+	assert.Equal(t, false, props["use_case_requested"])
+}

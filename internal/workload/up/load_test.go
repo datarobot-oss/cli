@@ -314,6 +314,23 @@ func TestLoad_SyncEnvCarriesTheRotationCount(t *testing.T) {
 	assert.Equal(t, 0, loaded.Env.KeysAdded)
 }
 
+// A --use-case-id that disagrees with the file is refused before --sync-env
+// re-sends anything: a refused run should have sent no secret.
+func TestLoad_UseCaseDisagreementIsRefusedBeforeSyncEnv(t *testing.T) {
+	dir := t.TempDir()
+	writeManifest(t, dir, "useCaseId: 68b0aa11bb22cc33dd44ee66\n"+boundManifest)
+
+	swap(t, &runWizardFn, func(wizard.Options) (wizard.Result, error) {
+		t.Fatal("--sync-env ran before the Use Case was checked")
+
+		return wizard.Result{}, nil
+	})
+
+	_, err := load(dir, Options{SyncEnv: true, UseCaseID: "68b0aa11bb22cc33dd44ee55"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already sets useCaseId")
+}
+
 // Without the flags nothing edits .env or the manifest, which is what keeps a
 // deploy a function of the committed repo: a fresh CI clone has no .env at
 // all. The notice below reads the file; the wizard, which is what would act on

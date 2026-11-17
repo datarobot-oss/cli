@@ -36,6 +36,7 @@ import (
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
+	"github.com/datarobot/cli/internal/usecase"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/sync"
@@ -78,6 +79,14 @@ type upResult struct {
 	Action     string      `json:"action"`
 	Locked     bool        `json:"locked"`
 	Plan       up.PlanJSON `json:"plan"`
+
+	// UseCaseID is the Use Case this run was asked to link the workload to,
+	// null when none was. It is what was asked, as plan.useCase is; whether
+	// the link was made is in action and the error.
+	UseCaseID *string `json:"useCaseId"`
+	// UseCaseLinked is true when this run added the link to a workload that
+	// already existed, including a run that then failed to build or roll.
+	UseCaseLinked bool `json:"useCaseLinked"`
 	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
 	// these a run that re-sent a secret is indistinguishable from one that
@@ -115,7 +124,7 @@ type envJSON struct {
 // in the store, under a summary that says the workload is up to date. It is,
 // about the manifest, which is why this says the other half out loud.
 func warnSecretStillServing(stderr io.Writer, result up.Result, f flags) {
-	if f.dryRun || result.Env.SecretsRotated == 0 || result.Action != up.ActionUnchanged {
+	if f.dryRun || result.Env.SecretsRotated == 0 || !up.ReplacesNothing(result.Action) {
 		return
 	}
 
@@ -150,6 +159,17 @@ func envLiterals(names []string) []string {
 	return names
 }
 
+// useCaseID is the envelope's Use Case, null when the run asked for none. It
+// comes from the result rather than the plan, so a run that failed before its
+// plan still names the id it was asked for.
+func useCaseID(id string) *string {
+	if id == "" {
+		return nil
+	}
+
+	return &id
+}
+
 // buildID is the envelope's build reference: the id when a build ran, null
 // when none did. An empty string would read as a build that produced nothing.
 func buildID(id string) *string {
@@ -172,6 +192,8 @@ type flags struct {
 	syncEnv  bool
 	specFile string
 
+	useCaseID string
+
 	// bindingFlags exist only to be refused. Cobra's own "unknown flag"
 	// message would leave the user guessing where binding lives, and these
 	// two are the obvious things to reach for.
@@ -184,7 +206,7 @@ func Cmd() *cobra.Command {
 		outputFormat outputformat.OutputFormat
 		f            flags
 		poll         pollflags.Set
-		synced       sync.Size
+		facts        runFacts
 	)
 
 	cmd := &cobra.Command{
@@ -263,19 +285,31 @@ version.
 An errored workload is rolled onto like any other when the deploy gives it
 something new to run: a code change, a change to the file, or --force-build,
 which is the fix when the registry no longer has the image. The plan names the
-platform's reason for the failure. With nothing new to deploy the run is refused.
+platform's reason for the failure. With nothing new to deploy the run is refused,
+unless the one change is a Use Case link, which touches nothing it runs.
+
+--use-case-id <id> links the workload to a Use Case, as useCaseId at the top
+of .datarobot.yaml does; when both are set they have to agree. A first deploy
+sends it with the create. On a workload that exists the link is checked and,
+if it is missing, added; links to other Use Cases are left as they are. A link
+alone builds and rolls nothing, and a workload already linked is up to date.
+A Use Case with Enclaves needs runtime.enclaveSelectionPolicy in the file, or
+the run is refused with ENCLAVE_TARGETING_REQUIRED, as a create is. When the
+links or the Use Case cannot be read, or the link is refused, the run stops
+before changing anything; --dry-run warns and previews the link instead.
 
 Examples:
   dr workload up
   dr workload up --dry-run
-  dr workload up --yes --output-format json`,
+  dr workload up --yes --output-format json
+  dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			return run(cmd, f, poll, outputFormat, &synced)
+			return run(cmd, f, poll, outputFormat, &facts)
 		},
 	}
 
@@ -288,17 +322,22 @@ Examples:
 		nonInteractive := cli.IsNonInteractive(cmd)
 
 		props := map[string]any{
-			"yes":           nonInteractive,
-			"dry_run":       f.dryRun,
-			"diff":          f.diff,
-			"confirm":       f.confirm,
-			"detach":        f.detach,
-			"promote":       f.promote,
-			"force_build":   f.force,
-			"output_format": string(outputFormat),
+			"yes":         nonInteractive,
+			"dry_run":     f.dryRun,
+			"diff":        f.diff,
+			"confirm":     f.confirm,
+			"detach":      f.detach,
+			"promote":     f.promote,
+			"force_build": f.force,
+			// Whether it was given, never the id.
+			"use_case_id_provided": cmd.Flags().Changed("use-case-id"),
+			// Whether a Use Case was asked for at all, by the flag or by
+			// useCaseId in the file, never the id.
+			"use_case_requested": facts.useCaseRequested,
+			"output_format":      string(outputFormat),
 		}
 
-		maps.Copy(props, synced.Properties())
+		maps.Copy(props, facts.synced.Properties())
 
 		return props
 	})
@@ -350,6 +389,10 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"instead of the wizard; .datarobot.yaml is written from it. Refused once a manifest exists. An artifact "+
 			"spec names no workload, so without a terminal set it up with 'dr workload config --spec-file ... --name ...' first.")
 
+	cmd.Flags().StringVar(&f.useCaseID, "use-case-id", "",
+		"Link the workload to this Use Case: in the create on a first deploy, by adding the link on a workload "+
+			"that exists. Other links are kept. Must agree with useCaseId in .datarobot.yaml when that is set.")
+
 	cmd.Flags().StringVar(&f.workloadID, "workload-id", "", "")
 	cmd.Flags().StringVar(&f.name, "name", "", "")
 	_ = cmd.Flags().MarkHidden("workload-id")
@@ -364,10 +407,18 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"before giving up. Giving up ends the wait, not the deploy.")
 }
 
-// run deploys and leaves the size of the code sync it ran in synced, for the
-// telemetry event.
-func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat, synced *sync.Size) error {
-	*synced = sync.Size{}
+// runFacts is what a run leaves behind for the telemetry event.
+type runFacts struct {
+	// synced is the size of the code sync the run ran.
+	synced sync.Size
+
+	// useCaseRequested reports that the run was asked to link a Use Case.
+	useCaseRequested bool
+}
+
+// run deploys and leaves what the telemetry event needs in facts.
+func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat, facts *runFacts) error {
+	*facts = runFacts{}
 
 	if err := checkFlags(cmd, f); err != nil {
 		return err
@@ -410,6 +461,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		ForceBuild:     f.force,
 		SyncEnv:        f.syncEnv,
 		SpecFile:       f.specFile,
+		UseCaseID:      f.useCaseID,
 		// The flag alone, not cli.IsNonInteractive: the environment variable
 		// that suppresses wizards in CI is not consent to overwrite a value on
 		// the tenant, which is the line `dr workload delete` already draws.
@@ -443,7 +495,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Spinner:      !json && !nonInteractive,
 	})
 
-	*synced = result.Sync
+	*facts = runFacts{synced: result.Sync, useCaseRequested: result.UseCaseID != ""}
 
 	return report(cmd, f, format, result, runErr)
 }
@@ -542,6 +594,13 @@ func checkFlags(cmd *cobra.Command, f flags) error {
 			return fmt.Errorf(
 				"--%s is not a flag of this command: which workload a project deploys to is recorded in "+
 					".datarobot.yaml. Use 'dr workload config --%s ...' to set it", flag, flag)
+		}
+	}
+
+	// Before anything, the setup wizard included, so a typo costs nothing.
+	if cmd.Flags().Changed("use-case-id") {
+		if _, err := usecase.ParseID(f.useCaseID); err != nil {
+			return fmt.Errorf("invalid --use-case-id: %w", err)
 		}
 	}
 
@@ -759,15 +818,17 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
-			WorkloadID: result.WorkloadID,
-			Name:       result.Name,
-			Status:     result.Status,
-			Endpoint:   result.Endpoint,
-			ArtifactID: result.ArtifactID,
-			BuildID:    buildID(result.BuildID),
-			Action:     result.Action,
-			Locked:     result.Locked,
-			Plan:       planEnvelope(result.Plan, f.diff),
+			WorkloadID:    result.WorkloadID,
+			Name:          result.Name,
+			Status:        result.Status,
+			Endpoint:      result.Endpoint,
+			ArtifactID:    result.ArtifactID,
+			BuildID:       buildID(result.BuildID),
+			Action:        result.Action,
+			Locked:        result.Locked,
+			Plan:          planEnvelope(result.Plan, f.diff),
+			UseCaseID:     useCaseID(result.UseCaseID),
+			UseCaseLinked: result.UseCaseLinked,
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,
 				ValuesUpdated:  result.Env.ValuesUpdated,
@@ -896,7 +957,7 @@ func draftWording(result up.Result, f flags) (headline, remedy string) {
 	promote := "dr workload promote" + projectAt(f.dir, result.ProjectDir)
 	command := "Run '" + promote + "' to version the artifact and make it permanent."
 
-	if !f.dryRun && f.detach && result.Action != up.ActionUnchanged {
+	if !f.dryRun && f.detach && !up.ReplacesNothing(result.Action) {
 		command = "When this deploy finishes, run '" + promote + "' to version the artifact and make it permanent."
 	}
 

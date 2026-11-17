@@ -188,6 +188,11 @@ type Options struct {
 
 	// Spinner is true only when Stderr is the terminal the user is watching.
 	Spinner bool
+
+	// UseCaseID is --use-case-id as typed, "" when it was not passed. The
+	// workload is linked to it, or to the manifest's useCaseId without it;
+	// the two have to agree when both are set.
+	UseCaseID string
 }
 
 // Result is what happened, and the material for the JSON envelope.
@@ -225,6 +230,17 @@ type Result struct {
 	// Sync is the size of the code sync this run ran, zero when it ran none.
 	// It is for telemetry, which sizes the sync limits from it.
 	Sync sync.Size
+
+	// UseCaseID is the Use Case the run was asked to link the workload to, by
+	// --use-case-id or by the manifest's useCaseId, "" when it was asked for
+	// none. It is set before the first request, so a run that fails before
+	// its plan still reports what it was asked for.
+	UseCaseID string
+
+	// UseCaseLinked reports that this run added the link to a workload that
+	// already existed. It is set as soon as the link is made, so a run that
+	// then failed to build or roll still says the link is in place.
+	UseCaseLinked bool
 }
 
 // EnvEdit is the .env re-entry's side of a deploy.
@@ -265,13 +281,26 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// Before any request. On a project that already has its file, load ran
+	// the same check before --sync-env re-sent anything, so a disagreement
+	// with the file costs nothing there either.
+	loaded, useCaseID, err := withUseCase(loaded, opts.UseCaseID)
+	if err != nil {
+		return Result{ProjectDir: loaded.ProjectDir, Env: loaded.Env}, err
+	}
+
 	// What a failure between here and the plan still has to report. The
 	// binding travels because losing the id is how a deploy becomes
 	// unfindable; the .env counts travel because that edit has already
 	// happened. A rotation in particular leaves no file behind, so a failure
 	// that dropped it would let the next bare run call the workload up to date
 	// while it goes on serving the old value.
-	early := Result{WorkloadID: loaded.WorkloadID(), ProjectDir: loaded.ProjectDir, Env: loaded.Env}
+	early := Result{
+		WorkloadID: loaded.WorkloadID(),
+		ProjectDir: loaded.ProjectDir,
+		Env:        loaded.Env,
+		UseCaseID:  useCaseID,
+	}
 
 	live, err := lookSettled(ctx, loaded.WorkloadID(), opts)
 	if err != nil {
@@ -286,6 +315,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	noteIgnoreFile(code, opts)
 
 	plan, err := planFor(loaded, live, code, opts)
+	if err != nil {
+		return early, err
+	}
+
+	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID, loaded.Compiled.Payload, opts.DryRun)
 	if err != nil {
 		return early, err
 	}
@@ -309,6 +343,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		// secret and found nothing else to do can say so: that edit changes no
 		// file and appears in no plan.
 		Env: loaded.Env,
+
+		UseCaseID: useCaseID,
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
@@ -344,9 +380,12 @@ func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result R
 
 	var err error
 
-	if plan.Empty() {
+	switch {
+	case plan.Empty():
 		result, err = lockOnly(loaded, live, result, opts)
-	} else {
+	case plan.Action() == ActionLinked:
+		result, err = linkOnly(loaded, live, plan, result, opts)
+	default:
 		result, err = apply(ctx, loaded, live, plan, result, opts)
 	}
 
@@ -600,23 +639,40 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 		return result, nil
 	}
 
-	// loaded is threaded through for the remedy a refusal names: a terminated
-	// workload is cleared by `dr workload delete`, and that command only finds
-	// this project's manifest if the message carries the same --dir the deploy
-	// was given.
-	if err := deployable(live, result.Plan, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := lockGuards(loaded, live, result); err != nil {
 		return result, err
+	}
+
+	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+}
+
+// lockGuards is every check that can refuse a lock on a run that rolls
+// nothing. A run that also links runs them before the link, so a lock they
+// refuse leaves the workload as it was.
+func lockGuards(loaded Loaded, live Live, result Result) error {
+	if err := lockable(loaded, live, result); err != nil {
+		return err
 	}
 
 	// A rollout in flight is about to move the workload off the artifact this
 	// would make permanent, and locking cannot be undone. deployable does not
 	// cover it: the workload reports itself running for the whole of a swap,
 	// so the only way to know is to ask.
-	if err := guardRollout(live.WorkloadID, "the artifact was left as it is"); err != nil {
-		return result, err
-	}
+	return guardRollout(live.WorkloadID, "nothing was changed")
+}
 
-	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+// lockable is deployable as a lock sees it. A link-only plan lets an errored
+// workload through deployable, because the link touches nothing it runs; a
+// lock does, and cannot be undone, so it judges the plan without the link.
+// loaded is threaded through for the remedy a refusal names: a terminated
+// workload is cleared by `dr workload delete`, and that command only finds
+// this project's manifest if the message carries the same --dir the deploy
+// was given.
+func lockable(loaded Loaded, live Live, result Result) error {
+	judged := result.Plan
+	judged.UseCase = nil
+
+	return deployable(live, judged, result.Name, dirFlagFor(loaded))
 }
 
 // guardRollout refuses to act while a swap is already under way, and gives a
@@ -1021,6 +1077,13 @@ func load(dir string, opts Options) (Loaded, error) {
 				"edit that file, or delete it to start over", manifest.FileName)
 		}
 
+		// A --use-case-id that disagrees with the file is refused before
+		// --sync-env re-sends a secret. Run applies the flag afterwards, on
+		// whichever file the run ends up reading.
+		if _, _, err := withUseCase(loaded, opts.UseCaseID); err != nil {
+			return loaded, err
+		}
+
 		return opts.editEnv(loaded)
 	}
 
@@ -1349,20 +1412,9 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 		return result, err
 	}
 
-	// Pulled before anything is started or rolled, so a directory that turns
-	// out to hold the wrong thing is refused before the run has touched the
-	// workload.
-	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
-		return result, err
-	}
-
 	report := newReporter(opts.Stderr, opts.Spinner)
 
-	// Everything that can refuse this run goes first, because a start is a
-	// mutation and the branch below performs one. The order used to be
-	// academic: a stopped workload with drift was turned away here, so nothing
-	// could refuse after something had already changed.
-	lock, err := beforeAnything(loaded, live, plan, result, opts)
+	lock, err := prepare(loaded, live, plan, &result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -1417,6 +1469,64 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 	}
 
 	return create(ctx, loaded, loaded.Compiled.Payload, result, opts, report)
+}
+
+// prepare is what an apply does before it starts, rolls or resizes anything.
+//
+// The seed is pulled first, so a directory that turns out to hold the wrong
+// thing is refused before the run has touched the workload. Then everything
+// that can refuse this run, because a start is a mutation and the apply
+// performs one. The Use Case link comes last of the three and before the
+// rest: the platform checks a rollout against the workload's links. A link it
+// makes is recorded on result at once, so a run that fails later says so.
+func prepare(loaded Loaded, live Live, plan Plan, result *Result, opts Options, report *reporter) (bool, error) {
+	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
+		return false, err
+	}
+
+	lock, err := beforeAnything(loaded, live, plan, *result, opts)
+	if err != nil {
+		return false, err
+	}
+
+	result.UseCaseLinked, err = link(plan, live.WorkloadID, report)
+
+	return lock, err
+}
+
+// linkOnly is the whole of a run whose only change is the Use Case link: a
+// link is no reason to start, build or roll anything. --promote still locks
+// what is serving, as it does on a run with nothing to do, and every check
+// on that lock runs before the link is made, so a lock it would refuse
+// changes nothing.
+func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
+	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
+		return result, err
+	}
+
+	locks := opts.Lock && !result.Locked
+	if locks {
+		if err := lockGuards(loaded, live, result); err != nil {
+			return result, err
+		}
+	}
+
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	sent, err := link(plan, live.WorkloadID, report)
+	result.UseCaseLinked = sent
+
+	if err != nil {
+		return result, err
+	}
+
+	result.Action = ActionLinked
+
+	if !locks {
+		return result, nil
+	}
+
+	return lock(result, report)
 }
 
 // beforeAnything runs every check that can still refuse, and settles the one
@@ -1603,7 +1713,9 @@ func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bo
 //
 // Errored is refused only for a plan that replaces nothing: a roll or a resize
 // is the recovery, with no serving generation for the swap to endanger, while
-// a run with nothing new to deploy could only put the same failure back.
+// a run with nothing new to deploy could only put the same failure back. A
+// plan whose only change is the Use Case link is let through as well: the link
+// touches nothing the workload runs, so there is no failure for it to repeat.
 func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 	switch live.State {
 	case StateTerminated:
@@ -1613,7 +1725,7 @@ func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
-		if plan.Replaces() {
+		if plan.Replaces() || plan.Action() == ActionLinked {
 			return nil
 		}
 
@@ -1715,7 +1827,7 @@ func create(
 	err := report.run("Creating workload", func() error {
 		wl, createErr := createWorkloadFn(payload)
 		if createErr != nil {
-			return nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded))
+			return enclaveRefusal(nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded)))
 		}
 
 		created = wl
