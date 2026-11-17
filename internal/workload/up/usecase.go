@@ -175,9 +175,14 @@ var errEnclaveRead = errors.New("cannot read the Use Case")
 // Enclaves unless it names a selection policy, because accepting it would put
 // it on the Hub without a word; the link route makes no such check, so the
 // run makes it before linking anything.
+//
+// The Use Case is read even when the file names a policy, so a wrong id is
+// refused on a dry run whatever the file says. Only that answer counts then:
+// the count is not needed, and any other failed read is left to the link,
+// which reports its own.
 func checkEnclaves(workloadID, useCaseID string, payload json.RawMessage) error {
 	policy, err := enclavePolicy(payload)
-	if err != nil || policy != "" {
+	if err != nil {
 		return err
 	}
 
@@ -186,6 +191,10 @@ func checkEnclaves(workloadID, useCaseID string, payload json.RawMessage) error 
 		// Not a read to retry: the id is wrong or the caller cannot see it,
 		// so a dry run refuses as the deploy would.
 		return fmt.Errorf("nothing was deployed: %w", err)
+	}
+
+	if policy != "" {
+		return nil
 	}
 
 	if err != nil {

@@ -159,13 +159,13 @@ func envLiterals(names []string) []string {
 	return names
 }
 
-// useCaseID is the envelope's Use Case, null when the run asked for none.
-func useCaseID(plan up.Plan) *string {
-	if plan.UseCase == nil {
+// useCaseID is the envelope's Use Case, null when the run asked for none. It
+// comes from the result rather than the plan, so a run that failed before its
+// plan still names the id it was asked for.
+func useCaseID(id string) *string {
+	if id == "" {
 		return nil
 	}
-
-	id := plan.UseCase.ID
 
 	return &id
 }
@@ -495,7 +495,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Spinner:      !json && !nonInteractive,
 	})
 
-	*facts = runFacts{synced: result.Sync, useCaseRequested: result.UseCaseRequested}
+	*facts = runFacts{synced: result.Sync, useCaseRequested: result.UseCaseID != ""}
 
 	return report(cmd, f, format, result, runErr)
 }
@@ -827,7 +827,7 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 			Action:        result.Action,
 			Locked:        result.Locked,
 			Plan:          planEnvelope(result.Plan, f.diff),
-			UseCaseID:     useCaseID(result.Plan),
+			UseCaseID:     useCaseID(result.UseCaseID),
 			UseCaseLinked: result.UseCaseLinked,
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,

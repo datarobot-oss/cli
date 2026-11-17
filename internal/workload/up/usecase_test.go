@@ -211,7 +211,7 @@ func TestRun_ManifestUseCaseIsLinkedOnAnExistingWorkload(t *testing.T) {
 
 	assert.Equal(t, useCaseA, linked, "the file's useCaseId is the source, not only the create's")
 	assert.Equal(t, ActionLinked, result.Action)
-	assert.True(t, result.UseCaseRequested, "telemetry counts the file as well as the flag")
+	assert.Equal(t, useCaseA, result.UseCaseID, "telemetry counts the file as well as the flag")
 }
 
 func TestRun_OtherUseCasesAreKept(t *testing.T) {
@@ -372,6 +372,51 @@ func TestRun_ErroredWorkloadLinkOnlyWithPromoteIsRefused(t *testing.T) {
 	assert.False(t, result.UseCaseLinked)
 }
 
+// A rollout in flight refuses the lock before the link is made, so a
+// link-only --promote run that cannot lock changes nothing.
+func TestRun_LinkOnlyPromoteDuringARolloutLinksNothing(t *testing.T) {
+	linked, locked := false, false
+
+	f := liveFakes(t)
+	f.artifactD = func(string) (workload.Document, error) { return draftArtifact(t), nil }
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.linkUC = func(string, string) error {
+		linked = true
+
+		return nil
+	}
+	f.guard = func(id string) error {
+		return fmt.Errorf("workload %s: %w", id, workload.ErrReplacementInFlight)
+	}
+	f.lock = func(string) (*workload.Artifact, error) {
+		locked = true
+
+		return &workload.Artifact{}, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, Lock: true, UseCaseID: useCaseA})
+	require.ErrorIs(t, err, workload.ErrReplacementInFlight)
+	assert.False(t, linked, "nothing is linked when the lock is refused")
+	assert.False(t, locked)
+	assert.False(t, result.UseCaseLinked)
+}
+
+// A deploy that cannot read the links fails before its plan, and still says
+// which Use Case it was asked for.
+func TestRun_EarlyFailureKeepsTheUseCaseID(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, errors.New("boom") }
+
+	install(t, f)
+
+	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.Error(t, err)
+	assert.Equal(t, useCaseA, result.UseCaseID)
+	assert.Nil(t, result.Plan.UseCase)
+}
+
 // A link made before a failed resize is still reported.
 func TestRun_LinkMadeBeforeAFailureIsReported(t *testing.T) {
 	var order []string
@@ -469,19 +514,43 @@ func TestRun_EnclaveUseCaseIsRefusedBeforeLinkingAnExistingWorkload(t *testing.T
 func TestPlanUseCase_AFileThatNamesAPolicySkipsTheEnclaveCheck(t *testing.T) {
 	payload := json.RawMessage(`{"runtime":{"enclaveSelectionPolicy":"availability"}}`)
 
+	for name, read := range map[string]func(string) (int, error){
+		"Enclaves":    func(string) (int, error) { return 2, nil },
+		"failed read": func(string) (int, error) { return 0, errors.New("boom") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := liveFakes(t)
+			f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+			f.enclaves = read
+
+			install(t, f)
+
+			uc, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, payload, false)
+			require.NoError(t, err)
+			assert.False(t, uc.Linked)
+			assert.Empty(t, uc.Unknown)
+		})
+	}
+}
+
+// A file that names a policy still has its Use Case read, so a wrong id is
+// refused on a dry run as the docs say.
+func TestPlanUseCase_MissingUseCaseIsRefusedWhenTheFileNamesAPolicy(t *testing.T) {
+	payload := json.RawMessage(`{"runtime":{"enclaveSelectionPolicy":"availability"}}`)
+
 	f := liveFakes(t)
 	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
-	f.enclaves = func(string) (int, error) {
-		t.Fatal("a file that names a policy needs no Enclave check")
-
-		return 0, nil
+	f.enclaves = func(id string) (int, error) {
+		return 0, fmt.Errorf("the Use Case %s %w (HTTP 404)", id, workload.ErrUseCaseUnavailable)
 	}
 
 	install(t, f)
 
-	uc, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, payload, false)
-	require.NoError(t, err)
-	assert.False(t, uc.Linked)
+	for _, dryRun := range []bool{true, false} {
+		_, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, payload, dryRun)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "doesn't exist or you don't have access to it")
+	}
 }
 
 func TestRun_UnreadableUseCaseStopsTheLink(t *testing.T) {
@@ -568,7 +637,7 @@ func TestRun_NoUseCaseReadsNoLinks(t *testing.T) {
 
 	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true})
 	require.NoError(t, err)
-	assert.False(t, result.UseCaseRequested)
+	assert.Empty(t, result.UseCaseID)
 	assert.Nil(t, result.Plan.UseCase)
 	assert.Nil(t, result.Plan.JSON().UseCase)
 }

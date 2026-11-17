@@ -1316,6 +1316,7 @@ func TestCmd_JSONEnvelopeCarriesTheUseCase(t *testing.T) {
 	linked := deployed()
 	linked.Action = up.ActionLinked
 	linked.Plan.UseCase = &up.UseCasePlan{ID: "68b0aa11bb22cc33dd44ee55"}
+	linked.UseCaseID = "68b0aa11bb22cc33dd44ee55"
 
 	stubRun(t, linked, nil)
 
@@ -1333,6 +1334,25 @@ func TestCmd_JSONEnvelopeCarriesTheUseCase(t *testing.T) {
 	plan, _ := body["plan"].(map[string]any)
 	useCase, _ := plan["useCase"].(map[string]any)
 	assert.Equal(t, true, useCase["link"])
+}
+
+// A run that fails before its plan, such as one that cannot read the links,
+// still names the Use Case it was asked for.
+func TestCmd_JSONEnvelopeCarriesTheUseCaseOnAnEarlyFailure(t *testing.T) {
+	early := up.Result{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", UseCaseID: "68b0aa11bb22cc33dd44ee55"}
+
+	stubRun(t, early, errors.New("cannot read which Use Cases workload 68b0c1d2e3f4a5b6c7d8e9f0 is linked to"))
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.Error(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
+	assert.Equal(t, false, body["useCaseLinked"])
 }
 
 func TestCmd_JSONEnvelopeUseCaseIsNullWithoutOne(t *testing.T) {

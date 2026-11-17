@@ -231,10 +231,11 @@ type Result struct {
 	// It is for telemetry, which sizes the sync limits from it.
 	Sync sync.Size
 
-	// UseCaseRequested reports that the run was asked to link a Use Case, by
-	// --use-case-id or by the manifest's useCaseId. It is for telemetry,
-	// which never sees the id.
-	UseCaseRequested bool
+	// UseCaseID is the Use Case the run was asked to link the workload to, by
+	// --use-case-id or by the manifest's useCaseId, "" when it was asked for
+	// none. It is set before the first request, so a run that fails before
+	// its plan still reports what it was asked for.
+	UseCaseID string
 
 	// UseCaseLinked reports that this run added the link to a workload that
 	// already existed. It is set as soon as the link is made, so a run that
@@ -295,10 +296,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// that dropped it would let the next bare run call the workload up to date
 	// while it goes on serving the old value.
 	early := Result{
-		WorkloadID:       loaded.WorkloadID(),
-		ProjectDir:       loaded.ProjectDir,
-		Env:              loaded.Env,
-		UseCaseRequested: useCaseID != "",
+		WorkloadID: loaded.WorkloadID(),
+		ProjectDir: loaded.ProjectDir,
+		Env:        loaded.Env,
+		UseCaseID:  useCaseID,
 	}
 
 	live, err := lookSettled(ctx, loaded.WorkloadID(), opts)
@@ -343,7 +344,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		// file and appears in no plan.
 		Env: loaded.Env,
 
-		UseCaseRequested: useCaseID != "",
+		UseCaseID: useCaseID,
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
@@ -638,19 +639,26 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 		return result, nil
 	}
 
-	if err := lockable(loaded, live, result); err != nil {
+	if err := lockGuards(loaded, live, result); err != nil {
 		return result, err
+	}
+
+	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+}
+
+// lockGuards is every check that can refuse a lock on a run that rolls
+// nothing. A run that also links runs them before the link, so a lock they
+// refuse leaves the workload as it was.
+func lockGuards(loaded Loaded, live Live, result Result) error {
+	if err := lockable(loaded, live, result); err != nil {
+		return err
 	}
 
 	// A rollout in flight is about to move the workload off the artifact this
 	// would make permanent, and locking cannot be undone. deployable does not
 	// cover it: the workload reports itself running for the whole of a swap,
 	// so the only way to know is to ask.
-	if err := guardRollout(live.WorkloadID, "the artifact was left as it is"); err != nil {
-		return result, err
-	}
-
-	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+	return guardRollout(live.WorkloadID, "nothing was changed")
 }
 
 // lockable is deployable as a lock sees it. A link-only plan lets an errored
@@ -1488,15 +1496,17 @@ func prepare(loaded Loaded, live Live, plan Plan, result *Result, opts Options, 
 
 // linkOnly is the whole of a run whose only change is the Use Case link: a
 // link is no reason to start, build or roll anything. --promote still locks
-// what is serving, as it does on a run with nothing to do, and is judged
-// before the link is made, so a lock it would refuse changes nothing.
+// what is serving, as it does on a run with nothing to do, and every check
+// on that lock runs before the link is made, so a lock it would refuse
+// changes nothing.
 func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
-	if opts.Lock && !result.Locked {
-		if err := lockable(loaded, live, result); err != nil {
+	locks := opts.Lock && !result.Locked
+	if locks {
+		if err := lockGuards(loaded, live, result); err != nil {
 			return result, err
 		}
 	}
@@ -1512,7 +1522,11 @@ func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 
 	result.Action = ActionLinked
 
-	return lockOnly(loaded, live, result, opts)
+	if !locks {
+		return result, nil
+	}
+
+	return lock(result, report)
 }
 
 // beforeAnything runs every check that can still refuse, and settles the one

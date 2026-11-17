@@ -123,7 +123,7 @@ func TestCmd_TelemetryReportsTheUseCaseFlagNotTheID(t *testing.T) {
 // and the event says so.
 func TestCmd_TelemetryReportsAUseCaseFromTheFile(t *testing.T) {
 	result := deployed()
-	result.UseCaseRequested = true
+	result.UseCaseID = "68b0aa11bb22cc33dd44ee55"
 
 	stubRun(t, result, nil)
 
