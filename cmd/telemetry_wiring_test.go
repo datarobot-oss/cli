@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/enclave"
+	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,47 +49,8 @@ var expectedTrackedCommands = []string{
 	"dr plugin update",
 	"dr build-studio",
 
-	// Pipelines, workloads and artifacts are GA, so no feature gate hides them
-	// from the live RootCmd and they need no separate standalone list.
-	"dr pipeline create",
-	"dr pipeline get",
-	"dr pipeline clone",
-	"dr pipeline list",
-	"dr pipeline update",
-	"dr pipeline delete",
-	"dr pipeline lock",
-	"dr pipeline version get",
-	"dr pipeline version list",
-	"dr pipeline graph",
-	"dr pipeline source",
-	"dr pipeline task get",
-	"dr pipeline input create",
-	"dr pipeline input get",
-	"dr pipeline input list",
-	"dr pipeline input update",
-	"dr pipeline input delete",
-	"dr pipeline run create",
-	"dr pipeline run get",
-	"dr pipeline run list",
-	"dr pipeline run status",
-	"dr pipeline run cancel",
-	"dr pipeline run task get",
-	"dr pipeline run task list",
-	"dr pipeline run task logs",
-	"dr pipeline run task result",
-	"dr pipeline schedule create",
-	"dr pipeline schedule get",
-	"dr pipeline schedule list",
-	"dr pipeline schedule update",
-	"dr pipeline schedule delete",
-	"dr pipeline image create",
-	"dr pipeline image get",
-	"dr pipeline image list",
-	"dr pipeline image update",
-	"dr pipeline image delete",
-	"dr pipeline image version delete",
-	"dr pipeline image version logs",
-
+	// Workloads and artifacts are GA, so no feature gate hides them from the
+	// live RootCmd and they need no separate standalone list.
 	"dr workload create",
 	"dr workload get",
 	"dr workload list",
@@ -134,7 +96,6 @@ var expectedTrackedCommands = []string{
 var trackedSubtrees = []string{
 	"dr workload",
 	"dr artifact",
-	"dr pipeline",
 }
 
 // TestTelemetryWiring_AllCoreCommandsTracked walks the static command tree
@@ -228,6 +189,18 @@ func TestTelemetryWiring_AllEnclaveCommandsTracked(t *testing.T) {
 
 			assert.Containsf(t, cmd.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
+		})
+	}
+}
+
+// TestTelemetryWiring_EveryPipelineLeafTracked walks the pipeline subtree built
+// via pipeline.Cmd(), because cli.CommandAdder hides `dr pipeline` from the live
+// RootCmd unless DATAROBOT_CLI_FEATURE_PIPELINE is set (the default in CI).
+func TestTelemetryWiring_EveryPipelineLeafTracked(t *testing.T) {
+	for _, leaf := range leafCommands(pipeline.Cmd()) {
+		t.Run("dr "+leaf.CommandPath(), func(t *testing.T) {
+			assert.Containsf(t, leaf.Annotations, "telemetry",
+				"command %q must be wired to telemetry via telemetry.Track / TrackWith", leaf.CommandPath())
 		})
 	}
 }
