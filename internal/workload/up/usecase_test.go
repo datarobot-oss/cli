@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -331,6 +332,89 @@ func TestRun_ErroredWorkloadCanBeLinked(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, ActionLinked, result.Action)
 		assert.Equal(t, !dryRun, linked)
+	}
+}
+
+// --promote on a link-only run judges the lock without the link's errored
+// exemption: a lock cannot be undone, and the promote route does not check
+// the workload's status. It refuses before the link is made.
+func TestRun_ErroredWorkloadLinkOnlyWithPromoteIsRefused(t *testing.T) {
+	linked, locked, promoted := false, false, false
+
+	f := liveIn(t, workload.WorkloadStatusErrored)
+	f.artifactD = func(string) (workload.Document, error) { return draftArtifact(t), nil }
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.linkUC = func(string, string) error {
+		linked = true
+
+		return nil
+	}
+	f.lock = func(string) (*workload.Artifact, error) {
+		locked = true
+
+		return &workload.Artifact{}, nil
+	}
+	f.promote = func(string) (*workload.Workload, error) {
+		promoted = true
+
+		return &workload.Workload{}, nil
+	}
+
+	install(t, f)
+
+	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, Lock: true, UseCaseID: useCaseA})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is errored")
+	assert.False(t, linked, "nothing is linked when the lock is refused")
+	assert.False(t, locked)
+	assert.False(t, promoted)
+	assert.False(t, result.Locked)
+	assert.False(t, result.UseCaseLinked)
+}
+
+// A link made before a failed resize is still reported.
+func TestRun_LinkMadeBeforeAFailureIsReported(t *testing.T) {
+	var order []string
+
+	install(t, resizeFakes(t, &order, errors.New("refused")))
+
+	result, _, err := runIn(t, resizedManifest(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.Error(t, err)
+	assert.True(t, result.UseCaseLinked)
+}
+
+func TestRun_UpperCaseUseCaseIDMatchesTheLink(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) {
+		return workload.UseCaseLinks{IDs: []string{useCaseA}}, nil
+	}
+	f.linkUC = func(string, string) error {
+		t.Fatal("an id that differs only in case is already linked")
+
+		return nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: strings.ToUpper(useCaseA)})
+	require.NoError(t, err)
+	assert.Equal(t, ActionUnchanged, result.Action)
+	assert.Contains(t, stderr, "Already up to date")
+}
+
+func TestRun_MissingUseCaseIsRefusedOnADryRunToo(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.enclaves = func(id string) (int, error) {
+		return 0, fmt.Errorf("the Use Case %s %w (HTTP 404)", id, workload.ErrUseCaseUnavailable)
+	}
+
+	install(t, f)
+
+	for _, dryRun := range []bool{true, false} {
+		_, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, DryRun: dryRun, UseCaseID: useCaseA})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "doesn't exist or you don't have access to it")
 	}
 }
 

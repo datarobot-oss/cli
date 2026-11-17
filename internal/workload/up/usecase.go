@@ -182,6 +182,12 @@ func checkEnclaves(workloadID, useCaseID string, payload json.RawMessage) error 
 	}
 
 	count, err := useCaseEnclavesFn(useCaseID)
+	if errors.Is(err, workload.ErrUseCaseUnavailable) {
+		// Not a read to retry: the id is wrong or the caller cannot see it,
+		// so a dry run refuses as the deploy would.
+		return fmt.Errorf("nothing was deployed: %w", err)
+	}
+
 	if err != nil {
 		return fmt.Errorf("%w %s to check its Enclaves: %w", errEnclaveRead, useCaseID, err)
 	}

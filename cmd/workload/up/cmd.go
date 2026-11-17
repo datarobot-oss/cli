@@ -84,6 +84,9 @@ type upResult struct {
 	// null when none was. It is what was asked, as plan.useCase is; whether
 	// the link was made is in action and the error.
 	UseCaseID *string `json:"useCaseId"`
+	// UseCaseLinked is true when this run added the link to a workload that
+	// already existed, including a run that then failed to build or roll.
+	UseCaseLinked bool `json:"useCaseLinked"`
 	// Env is what --sync-env did before the plan was
 	// computed. A rotation edits no file and shows in no plan, so without
 	// these a run that re-sent a secret is indistinguishable from one that
@@ -815,16 +818,17 @@ func render(cmd *cobra.Command, f flags, format outputformat.OutputFormat, resul
 
 	if format == outputformat.OutputFormatJSON {
 		return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "up", upResult{
-			WorkloadID: result.WorkloadID,
-			Name:       result.Name,
-			Status:     result.Status,
-			Endpoint:   result.Endpoint,
-			ArtifactID: result.ArtifactID,
-			BuildID:    buildID(result.BuildID),
-			Action:     result.Action,
-			Locked:     result.Locked,
-			Plan:       planEnvelope(result.Plan, f.diff),
-			UseCaseID:  useCaseID(result.Plan),
+			WorkloadID:    result.WorkloadID,
+			Name:          result.Name,
+			Status:        result.Status,
+			Endpoint:      result.Endpoint,
+			ArtifactID:    result.ArtifactID,
+			BuildID:       buildID(result.BuildID),
+			Action:        result.Action,
+			Locked:        result.Locked,
+			Plan:          planEnvelope(result.Plan, f.diff),
+			UseCaseID:     useCaseID(result.Plan),
+			UseCaseLinked: result.UseCaseLinked,
 			Env: envJSON{
 				KeysAdded:      result.Env.KeysAdded,
 				ValuesUpdated:  result.Env.ValuesUpdated,

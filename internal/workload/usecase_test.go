@@ -182,6 +182,22 @@ func TestLinkWorkloadToUseCase_RefusalKeepsTheStatus(t *testing.T) {
 	assert.Contains(t, err.Error(), "ENCLAVE_TARGETING_REQUIRED")
 }
 
+func TestUseCaseRoutes_NotFoundOrForbiddenNamesTheUseCase(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+			fmt.Fprint(w, `{"message":"Not found"}`)
+		}))
+
+		_, err := UseCaseEnclaveCount("uc-1")
+		require.ErrorIs(t, err, ErrUseCaseUnavailable, status)
+		assert.Contains(t, err.Error(), "the Use Case uc-1 doesn't exist or you don't have access to it")
+
+		err = LinkWorkloadToUseCase("uc-1", "wl-1")
+		require.ErrorIs(t, err, ErrUseCaseUnavailable, status)
+	}
+}
+
 func TestUseCaseEnclaveCount_ReadsTheUseCase(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)

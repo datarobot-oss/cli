@@ -119,6 +119,27 @@ func useCaseLinkPageAt(workloadID string, offset int) ([]string, *int, error) {
 	return ids, page.TotalCount, nil
 }
 
+// ErrUseCaseUnavailable marks a Use Case the platform answered 403 or 404 for.
+// The monolith's Use Case routes put their reason in a body the client does
+// not lift, so without this the user would read a bare HTTP status, which
+// looks like a transient failure rather than a wrong id or missing access.
+var ErrUseCaseUnavailable = errors.New("doesn't exist or you don't have access to it")
+
+// useCaseUnavailable names a 403 or 404 from a Use Case route for what it is,
+// and passes any other error through as it came.
+func useCaseUnavailable(useCaseID string, err error) error {
+	var httpErr *drapi.HTTPError
+	if !errors.As(err, &httpErr) {
+		return err
+	}
+
+	if httpErr.StatusCode != http.StatusNotFound && httpErr.StatusCode != http.StatusForbidden {
+		return err
+	}
+
+	return fmt.Errorf("the Use Case %s %w (HTTP %d)", useCaseID, ErrUseCaseUnavailable, httpErr.StatusCode)
+}
+
 // LinkWorkloadToUseCase adds a workload to a Use Case. Linking one that is
 // already linked can store a second link record, so a caller checks
 // WorkloadUseCases first, which reads every link.
@@ -146,7 +167,7 @@ func UseCaseEnclaveCount(useCaseID string) (int, error) {
 	}
 
 	if err := drapi.GetJSON(target, "use case", &uc); err != nil {
-		return 0, apiclient.LiftDetail(err)
+		return 0, useCaseUnavailable(useCaseID, apiclient.LiftDetail(err))
 	}
 
 	if uc.EnclavesCount == nil {
@@ -185,7 +206,7 @@ func useCaseLinkRequest(method, useCaseID, workloadID string) error {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return apiclient.LiftDetail(drapi.ErrFromResp(resp, target))
+		return useCaseUnavailable(useCaseID, apiclient.LiftDetail(drapi.ErrFromResp(resp, target)))
 	}
 
 	// Drained, so the connection is reused for the next link request.

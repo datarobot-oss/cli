@@ -235,6 +235,11 @@ type Result struct {
 	// --use-case-id or by the manifest's useCaseId. It is for telemetry,
 	// which never sees the id.
 	UseCaseRequested bool
+
+	// UseCaseLinked reports that this run added the link to a workload that
+	// already existed. It is set as soon as the link is made, so a run that
+	// then failed to build or roll still says the link is in place.
+	UseCaseLinked bool
 }
 
 // EnvEdit is the .env re-entry's side of a deploy.
@@ -633,11 +638,7 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 		return result, nil
 	}
 
-	// loaded is threaded through for the remedy a refusal names: a terminated
-	// workload is cleared by `dr workload delete`, and that command only finds
-	// this project's manifest if the message carries the same --dir the deploy
-	// was given.
-	if err := deployable(live, result.Plan, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := lockable(loaded, live, result); err != nil {
 		return result, err
 	}
 
@@ -650,6 +651,20 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 	}
 
 	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+}
+
+// lockable is deployable as a lock sees it. A link-only plan lets an errored
+// workload through deployable, because the link touches nothing it runs; a
+// lock does, and cannot be undone, so it judges the plan without the link.
+// loaded is threaded through for the remedy a refusal names: a terminated
+// workload is cleared by `dr workload delete`, and that command only finds
+// this project's manifest if the message carries the same --dir the deploy
+// was given.
+func lockable(loaded Loaded, live Live, result Result) error {
+	judged := result.Plan
+	judged.UseCase = nil
+
+	return deployable(live, judged, result.Name, dirFlagFor(loaded))
 }
 
 // guardRollout refuses to act while a swap is already under way, and gives a
@@ -1391,7 +1406,7 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 
 	report := newReporter(opts.Stderr, opts.Spinner)
 
-	lock, err := prepare(loaded, live, plan, result, opts, report)
+	lock, err := prepare(loaded, live, plan, &result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -1454,33 +1469,44 @@ func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Resu
 // thing is refused before the run has touched the workload. Then everything
 // that can refuse this run, because a start is a mutation and the apply
 // performs one. The Use Case link comes last of the three and before the
-// rest: the platform checks a rollout against the workload's links.
-func prepare(loaded Loaded, live Live, plan Plan, result Result, opts Options, report *reporter) (bool, error) {
+// rest: the platform checks a rollout against the workload's links. A link it
+// makes is recorded on result at once, so a run that fails later says so.
+func prepare(loaded Loaded, live Live, plan Plan, result *Result, opts Options, report *reporter) (bool, error) {
 	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
 		return false, err
 	}
 
-	lock, err := beforeAnything(loaded, live, plan, result, opts)
+	lock, err := beforeAnything(loaded, live, plan, *result, opts)
 	if err != nil {
 		return false, err
 	}
 
-	_, err = link(plan, live.WorkloadID, report)
+	result.UseCaseLinked, err = link(plan, live.WorkloadID, report)
 
 	return lock, err
 }
 
 // linkOnly is the whole of a run whose only change is the Use Case link: a
 // link is no reason to start, build or roll anything. --promote still locks
-// what is serving, as it does on a run with nothing to do.
+// what is serving, as it does on a run with nothing to do, and is judged
+// before the link is made, so a lock it would refuse changes nothing.
 func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
 		return result, err
 	}
 
+	if opts.Lock && !result.Locked {
+		if err := lockable(loaded, live, result); err != nil {
+			return result, err
+		}
+	}
+
 	report := newReporter(opts.Stderr, opts.Spinner)
 
-	if _, err := link(plan, live.WorkloadID, report); err != nil {
+	sent, err := link(plan, live.WorkloadID, report)
+	result.UseCaseLinked = sent
+
+	if err != nil {
 		return result, err
 	}
 
