@@ -203,7 +203,7 @@ func Cmd() *cobra.Command {
 		outputFormat outputformat.OutputFormat
 		f            flags
 		poll         pollflags.Set
-		synced       sync.Size
+		facts        runFacts
 	)
 
 	cmd := &cobra.Command{
@@ -282,7 +282,8 @@ version.
 An errored workload is rolled onto like any other when the deploy gives it
 something new to run: a code change, a change to the file, or --force-build,
 which is the fix when the registry no longer has the image. The plan names the
-platform's reason for the failure. With nothing new to deploy the run is refused.
+platform's reason for the failure. With nothing new to deploy the run is refused,
+unless the one change is a Use Case link, which touches nothing it runs.
 
 --use-case-id <id> links the workload to a Use Case, as useCaseId at the top
 of .datarobot.yaml does; when both are set they have to agree. A first deploy
@@ -290,7 +291,9 @@ sends it with the create. On a workload that exists the link is checked and,
 if it is missing, added; links to other Use Cases are left as they are. A link
 alone builds and rolls nothing, and a workload already linked is up to date.
 A Use Case with Enclaves needs runtime.enclaveSelectionPolicy in the file, or
-the run is refused with ENCLAVE_TARGETING_REQUIRED, as a create is.
+the run is refused with ENCLAVE_TARGETING_REQUIRED, as a create is. When the
+links or the Use Case cannot be read, or the link is refused, the run stops
+before changing anything; --dry-run warns and previews the link instead.
 
 Examples:
   dr workload up
@@ -303,7 +306,7 @@ Examples:
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			return run(cmd, f, poll, outputFormat, &synced)
+			return run(cmd, f, poll, outputFormat, &facts)
 		},
 	}
 
@@ -325,10 +328,13 @@ Examples:
 			"force_build": f.force,
 			// Whether it was given, never the id.
 			"use_case_id_provided": cmd.Flags().Changed("use-case-id"),
-			"output_format":        string(outputFormat),
+			// Whether a Use Case was asked for at all, by the flag or by
+			// useCaseId in the file, never the id.
+			"use_case_requested": facts.useCaseRequested,
+			"output_format":      string(outputFormat),
 		}
 
-		maps.Copy(props, synced.Properties())
+		maps.Copy(props, facts.synced.Properties())
 
 		return props
 	})
@@ -398,10 +404,18 @@ func addFlags(cmd *cobra.Command, f *flags, poll *pollflags.Set) {
 			"before giving up. Giving up ends the wait, not the deploy.")
 }
 
-// run deploys and leaves the size of the code sync it ran in synced, for the
-// telemetry event.
-func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat, synced *sync.Size) error {
-	*synced = sync.Size{}
+// runFacts is what a run leaves behind for the telemetry event.
+type runFacts struct {
+	// synced is the size of the code sync the run ran.
+	synced sync.Size
+
+	// useCaseRequested reports that the run was asked to link a Use Case.
+	useCaseRequested bool
+}
+
+// run deploys and leaves what the telemetry event needs in facts.
+func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.OutputFormat, facts *runFacts) error {
+	*facts = runFacts{}
 
 	if err := checkFlags(cmd, f); err != nil {
 		return err
@@ -478,7 +492,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 		Spinner:      !json && !nonInteractive,
 	})
 
-	*synced = result.Sync
+	*facts = runFacts{synced: result.Sync, useCaseRequested: result.UseCaseRequested}
 
 	return report(cmd, f, format, result, runErr)
 }

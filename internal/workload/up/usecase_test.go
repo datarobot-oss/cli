@@ -210,6 +210,7 @@ func TestRun_ManifestUseCaseIsLinkedOnAnExistingWorkload(t *testing.T) {
 
 	assert.Equal(t, useCaseA, linked, "the file's useCaseId is the source, not only the create's")
 	assert.Equal(t, ActionLinked, result.Action)
+	assert.True(t, result.UseCaseRequested, "telemetry counts the file as well as the flag")
 }
 
 func TestRun_OtherUseCasesAreKept(t *testing.T) {
@@ -307,14 +308,17 @@ func TestRun_DryRunReadsTheLinksAndWritesNone(t *testing.T) {
 	}
 }
 
-func TestRun_PartialLinkListLinksAnywayAndSaysSo(t *testing.T) {
+// An errored workload can be linked: the link touches nothing it runs, so
+// the refusal that keeps a run from putting the same failure back does not
+// apply, and nothing is built, rolled or started for it.
+func TestRun_ErroredWorkloadCanBeLinked(t *testing.T) {
 	linked := false
 
-	f := liveFakes(t)
-	f.useCases = func(string) (workload.UseCaseLinks, error) {
-		return workload.UseCaseLinks{IDs: []string{useCaseB}, More: true}, nil
-	}
-	f.linkUC = func(string, string) error {
+	f := liveIn(t, workload.WorkloadStatusErrored)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.linkUC = func(uc, wid string) error {
+		assert.Equal(t, useCaseA, uc)
+
 		linked = true
 
 		return nil
@@ -322,12 +326,26 @@ func TestRun_PartialLinkListLinksAnywayAndSaysSo(t *testing.T) {
 
 	install(t, f)
 
-	result, stderr, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
-	require.NoError(t, err)
+	for _, dryRun := range []bool{true, false} {
+		result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, DryRun: dryRun, UseCaseID: useCaseA})
+		require.NoError(t, err)
+		assert.Equal(t, ActionLinked, result.Action)
+		assert.Equal(t, !dryRun, linked)
+	}
+}
 
-	assert.True(t, linked)
-	assert.True(t, result.Plan.JSON().UseCase.Partial)
-	assert.Contains(t, stderr, "more Use Case links than one read returns, so it may be linked already")
+// An errored workload with nothing to link is still refused as before.
+func TestRun_ErroredWorkloadAlreadyLinkedIsStillRefused(t *testing.T) {
+	f := liveIn(t, workload.WorkloadStatusErrored)
+	f.useCases = func(string) (workload.UseCaseLinks, error) {
+		return workload.UseCaseLinks{IDs: []string{useCaseA}}, nil
+	}
+
+	install(t, f)
+
+	_, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, UseCaseID: useCaseA})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is errored")
 }
 
 func TestRun_EnclaveRefusalOnCreateNamesTheRemedy(t *testing.T) {
@@ -377,7 +395,7 @@ func TestPlanUseCase_AFileThatNamesAPolicySkipsTheEnclaveCheck(t *testing.T) {
 
 	install(t, f)
 
-	uc, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, payload)
+	uc, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, payload, false)
 	require.NoError(t, err)
 	assert.False(t, uc.Linked)
 }
@@ -405,12 +423,68 @@ func TestRun_UnreadableLinksStopTheRun(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot read which Use Cases")
 }
 
+// A dry run that cannot read the links previews the link as missing and
+// warns, rather than failing: it changes nothing either way.
+func TestRun_DryRunWithUnreadableLinksWarns(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, errors.New("boom") }
+	f.enclaves = func(string) (int, error) {
+		t.Fatal("no Enclave check without the links")
+
+		return 0, nil
+	}
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, DryRun: true, UseCaseID: useCaseA})
+	require.NoError(t, err)
+
+	assert.Equal(t, ActionLinked, result.Action)
+	assert.Contains(t, stderr, "cannot read which Use Cases")
+	assert.Contains(t, stderr, "A deploy reads this again")
+
+	uc := result.Plan.JSON().UseCase
+	require.NotNil(t, uc)
+	assert.True(t, uc.Unknown)
+	assert.False(t, uc.Linked)
+}
+
+func TestRun_DryRunWithUnreadableUseCaseWarns(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, nil }
+	f.enclaves = func(string) (int, error) { return 0, errors.New("forbidden") }
+
+	install(t, f)
+
+	result, stderr, err := runIn(t, boundUpToDate(), Options{NonInteractive: true, DryRun: true, UseCaseID: useCaseA})
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "to check its Enclaves")
+	assert.True(t, result.Plan.JSON().UseCase.Unknown)
+}
+
+// An Enclave refusal is not a failed read: a dry run still shows it.
+func TestPlanUseCase_UnknownOnlyOnADryRun(t *testing.T) {
+	f := liveFakes(t)
+	f.useCases = func(string) (workload.UseCaseLinks, error) { return workload.UseCaseLinks{}, errors.New("boom") }
+
+	install(t, f)
+
+	_, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, json.RawMessage(`{}`), false)
+	require.Error(t, err)
+
+	uc, err := planUseCase(Plan{State: StateRunning}, "wl-1", useCaseA, json.RawMessage(`{}`), true)
+	require.NoError(t, err)
+	assert.Contains(t, uc.Unknown, "boom")
+}
+
 func TestRun_NoUseCaseReadsNoLinks(t *testing.T) {
 	// install fails the test if the links are read.
 	install(t, liveFakes(t))
 
 	result, _, err := runIn(t, boundUpToDate(), Options{NonInteractive: true})
 	require.NoError(t, err)
+	assert.False(t, result.UseCaseRequested)
 	assert.Nil(t, result.Plan.UseCase)
 	assert.Nil(t, result.Plan.JSON().UseCase)
 }

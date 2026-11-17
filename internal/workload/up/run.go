@@ -230,6 +230,11 @@ type Result struct {
 	// Sync is the size of the code sync this run ran, zero when it ran none.
 	// It is for telemetry, which sizes the sync limits from it.
 	Sync sync.Size
+
+	// UseCaseRequested reports that the run was asked to link a Use Case, by
+	// --use-case-id or by the manifest's useCaseId. It is for telemetry,
+	// which never sees the id.
+	UseCaseRequested bool
 }
 
 // EnvEdit is the .env re-entry's side of a deploy.
@@ -284,7 +289,12 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// happened. A rotation in particular leaves no file behind, so a failure
 	// that dropped it would let the next bare run call the workload up to date
 	// while it goes on serving the old value.
-	early := Result{WorkloadID: loaded.WorkloadID(), ProjectDir: loaded.ProjectDir, Env: loaded.Env}
+	early := Result{
+		WorkloadID:       loaded.WorkloadID(),
+		ProjectDir:       loaded.ProjectDir,
+		Env:              loaded.Env,
+		UseCaseRequested: useCaseID != "",
+	}
 
 	live, err := lookSettled(ctx, loaded.WorkloadID(), opts)
 	if err != nil {
@@ -303,7 +313,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return early, err
 	}
 
-	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID, loaded.Compiled.Payload)
+	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID, loaded.Compiled.Payload, opts.DryRun)
 	if err != nil {
 		return early, err
 	}
@@ -327,6 +337,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		// secret and found nothing else to do can say so: that edit changes no
 		// file and appears in no plan.
 		Env: loaded.Env,
+
+		UseCaseRequested: useCaseID != "",
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
@@ -1661,7 +1673,9 @@ func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bo
 //
 // Errored is refused only for a plan that replaces nothing: a roll or a resize
 // is the recovery, with no serving generation for the swap to endanger, while
-// a run with nothing new to deploy could only put the same failure back.
+// a run with nothing new to deploy could only put the same failure back. A
+// plan whose only change is the Use Case link is let through as well: the link
+// touches nothing the workload runs, so there is no failure for it to repeat.
 func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 	switch live.State {
 	case StateTerminated:
@@ -1671,7 +1685,7 @@ func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
-		if plan.Replaces() {
+		if plan.Replaces() || plan.Action() == ActionLinked {
 			return nil
 		}
 

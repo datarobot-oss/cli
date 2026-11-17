@@ -16,6 +16,7 @@ package up
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -119,7 +120,12 @@ func manifestUseCase(payload json.RawMessage) (string, error) {
 // A link is only ever added. Other Use Cases the workload is in stay: up has
 // no record of which links it made, so removing the rest would also remove
 // links made in the UI or by a teammate, and the access that came with them.
-func planUseCase(plan Plan, workloadID, desired string, payload json.RawMessage) (*UseCasePlan, error) {
+//
+// A deploy that cannot read what it needs stops here, before anything is
+// changed: the file asks for the link, and a run that cannot make sure of it
+// does not apply the rest without it. A dry run changes nothing either way,
+// so it previews the link as missing and says why it could not tell.
+func planUseCase(plan Plan, workloadID, desired string, payload json.RawMessage, dryRun bool) (*UseCasePlan, error) {
 	if desired == "" {
 		return nil, nil //nolint:nilnil // no Use Case asked for is not an error
 	}
@@ -130,19 +136,39 @@ func planUseCase(plan Plan, workloadID, desired string, payload json.RawMessage)
 
 	links, err := workloadUseCasesFn(workloadID)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read which Use Cases workload %s is linked to: %w", workloadID, err)
+		err = fmt.Errorf("cannot read which Use Cases workload %s is linked to: %w", workloadID, err)
+
+		return unknownUseCase(desired, err, dryRun)
 	}
 
-	out := &UseCasePlan{ID: desired, Linked: links.Has(desired), Partial: links.More}
+	out := &UseCasePlan{ID: desired, Linked: links.Has(desired)}
 
 	if !out.Linked {
 		if err := checkEnclaves(workloadID, desired, payload); err != nil {
+			if errors.Is(err, errEnclaveRead) {
+				return unknownUseCase(desired, err, dryRun)
+			}
+
 			return nil, err
 		}
 	}
 
 	return out, nil
 }
+
+// unknownUseCase is a read that failed: the error on a deploy, and on a dry
+// run a link previewed as missing, with the reason.
+func unknownUseCase(desired string, err error, dryRun bool) (*UseCasePlan, error) {
+	if !dryRun {
+		return nil, err
+	}
+
+	return &UseCasePlan{ID: desired, Unknown: err.Error()}, nil
+}
+
+// errEnclaveRead marks a failed read of the Use Case's Enclaves, which a dry
+// run previews rather than fails on.
+var errEnclaveRead = errors.New("cannot read the Use Case")
 
 // checkEnclaves keeps create's placement rule when an existing workload is
 // linked. The platform refuses to create a workload in a Use Case with
@@ -157,7 +183,7 @@ func checkEnclaves(workloadID, useCaseID string, payload json.RawMessage) error 
 
 	count, err := useCaseEnclavesFn(useCaseID)
 	if err != nil {
-		return fmt.Errorf("cannot read Use Case %s to check its Enclaves: %w", useCaseID, err)
+		return fmt.Errorf("%w %s to check its Enclaves: %w", errEnclaveRead, useCaseID, err)
 	}
 
 	if count == 0 {

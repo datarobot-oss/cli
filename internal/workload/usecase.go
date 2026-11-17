@@ -16,6 +16,7 @@ package workload
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,21 +27,18 @@ import (
 	"github.com/datarobot/cli/internal/workload/apiclient"
 )
 
-// useCaseLinkPage is how many linked Use Cases one read asks for. The list
-// is read one page only (see WorkloadUseCases), so this is also the most a
-// caller can see.
+// useCaseLinkPage is how many linked Use Cases one request asks for.
 const useCaseLinkPage = 100
+
+// useCaseLinkPages bounds the pages one read follows, so a server that keeps
+// answering full pages cannot hold a deploy forever. It is far past any
+// workload's real number of links.
+const useCaseLinkPages = 100
 
 // UseCaseLinks is what the platform says a workload is linked to.
 type UseCaseLinks struct {
-	// IDs are the Use Cases on the one page read, in the order returned.
+	// IDs are the Use Cases the workload is linked to, in the order returned.
 	IDs []string
-
-	// More reports that the platform has more links than the page held. The
-	// list's next link drops the entity filter, so following it would return
-	// Use Cases unrelated to the workload; a caller treats More as "the
-	// answer may be incomplete" instead.
-	More bool
 }
 
 // Has reports whether id is among the links read.
@@ -54,53 +52,78 @@ func (l UseCaseLinks) Has(id string) bool {
 	return false
 }
 
-// WorkloadUseCases reads the Use Cases a workload is linked to. The workload
+// WorkloadUseCases reads every Use Case a workload is linked to. The workload
 // document does not carry its links, which the platform stores beside it, so
 // this is the only way to know them.
+//
+// The list pages by offset. Its next link drops the entity filter, so instead
+// of following it each page is asked for again with the filter and the next
+// offset, until a page comes back short or totalCount is reached.
 func WorkloadUseCases(workloadID string) (UseCaseLinks, error) {
+	var links UseCaseLinks
+
+	for page := range useCaseLinkPages {
+		data, total, err := useCaseLinkPageAt(workloadID, page*useCaseLinkPage)
+		if err != nil {
+			return UseCaseLinks{}, err
+		}
+
+		for _, id := range data {
+			if id != "" {
+				links.IDs = append(links.IDs, id)
+			}
+		}
+
+		read := page*useCaseLinkPage + len(data)
+
+		if len(data) < useCaseLinkPage || (total != nil && read >= *total) {
+			return links, nil
+		}
+	}
+
+	return UseCaseLinks{}, fmt.Errorf(
+		"workload %s has more than %d Use Case links; stopped reading them", workloadID, useCaseLinkPage*useCaseLinkPages)
+}
+
+// useCaseLinkPageAt reads one page of a workload's links from offset, and the
+// total the platform reports, nil when it reports none.
+func useCaseLinkPageAt(workloadID string, offset int) ([]string, *int, error) {
 	query := url.Values{}
 	query.Set("entityId", workloadID)
 	query.Set("entityType", "workload")
 	query.Set("limit", strconv.Itoa(useCaseLinkPage))
+	query.Set("offset", strconv.Itoa(offset))
 
 	pageURL, err := drapi.EndpointURL("/useCases/", query)
 	if err != nil {
-		return UseCaseLinks{}, err
+		return nil, nil, err
 	}
 
 	var page struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
-		Next *string `json:"next"`
+		TotalCount *int `json:"totalCount"`
 	}
 
 	if err := drapi.GetJSON(pageURL, "use cases", &page); err != nil {
-		return UseCaseLinks{}, apiclient.LiftDetail(err)
+		return nil, nil, apiclient.LiftDetail(err)
 	}
 
-	links := UseCaseLinks{More: page.Next != nil && *page.Next != ""}
+	ids := make([]string, 0, len(page.Data))
 
 	for _, item := range page.Data {
-		if item.ID != "" {
-			links.IDs = append(links.IDs, item.ID)
-		}
+		ids = append(ids, item.ID)
 	}
 
-	return links, nil
+	return ids, page.TotalCount, nil
 }
 
 // LinkWorkloadToUseCase adds a workload to a Use Case. Linking one that is
 // already linked can store a second link record, so a caller checks
-// WorkloadUseCases first; a refusal that says the link already exists is
-// success, which covers the case where the check could not see every link.
+// WorkloadUseCases first, which reads every link.
 func LinkWorkloadToUseCase(useCaseID, workloadID string) error {
-	err := useCaseLinkRequest(http.MethodPost, useCaseID, workloadID)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "already linked") {
-		return nil
-	}
-
-	return err
+	return useCaseLinkRequest(http.MethodPost, useCaseID, workloadID)
 }
 
 // UseCaseEnclaveCount reads how many Enclaves a Use Case has. The platform

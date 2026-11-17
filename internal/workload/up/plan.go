@@ -204,10 +204,10 @@ type UseCasePlan struct {
 	// where the link travels in the create payload instead.
 	Linked bool
 
-	// Partial reports that the platform holds more links than one read
-	// returns, so Linked may be wrong. The run links anyway: a link that
-	// already exists is not an error.
-	Partial bool
+	// Unknown is why the links could not be read, "" when they were. Only a
+	// dry run gets this far without them: it previews the link as if it were
+	// missing and warns, where a deploy stops before changing anything.
+	Unknown string
 }
 
 // ReplacesNothing reports that a run with this action started, rolled and

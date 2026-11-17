@@ -118,3 +118,27 @@ func TestCmd_TelemetryReportsTheUseCaseFlagNotTheID(t *testing.T) {
 		assert.NotEqual(t, "68b0aa11bb22cc33dd44ee55", value, key)
 	}
 }
+
+// A run driven by useCaseId in the file asks for a Use Case without the flag,
+// and the event says so.
+func TestCmd_TelemetryReportsAUseCaseFromTheFile(t *testing.T) {
+	result := deployed()
+	result.UseCaseRequested = true
+
+	stubRun(t, result, nil)
+
+	props, err := executeAndTrack(t, "--yes")
+	require.NoError(t, err)
+
+	assert.Equal(t, false, props["use_case_id_provided"])
+	assert.Equal(t, true, props["use_case_requested"])
+}
+
+func TestCmd_TelemetryReportsNoUseCase(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	props, err := executeAndTrack(t, "--yes")
+	require.NoError(t, err)
+
+	assert.Equal(t, false, props["use_case_requested"])
+}

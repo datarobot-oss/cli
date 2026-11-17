@@ -469,15 +469,15 @@ func useCaseLines(plan Plan) []string {
 		return nil
 	}
 
-	out := []string{entry("+", "use case", "linked to "+uc.ID+"; nothing is built or rolled for it")}
-
-	if uc.Partial {
-		out = append(out, "      "+tui.HintStyle.Render(
-			"The workload has more Use Case links than one read returns, so it may be linked already; "+
-				"linking again changes nothing."))
+	if uc.Unknown != "" {
+		return []string{
+			entry("~", "use case", "linked to "+uc.ID+" unless it already is"),
+			"      " + tui.WarnStyle.Render("⚠ "+uc.Unknown+
+				". A deploy reads this again, and stops before changing anything if it still cannot."),
+		}
 	}
 
-	return out
+	return []string{entry("+", "use case", "linked to "+uc.ID+"; nothing is built or rolled for it")}
 }
 
 // stateLine is what the live state puts in a plan, empty when the state is not
@@ -996,8 +996,10 @@ type UseCaseJSON struct {
 	// Link reports the run adds the link, by its own request or, on a
 	// create, in the create payload.
 	Link bool `json:"link"`
-	// Partial reports that the links read may not be all of them.
-	Partial bool `json:"partial"`
+	// Unknown reports that a dry run could not read the links, so Linked and
+	// Link say what a deploy would do if the link were missing. A deploy
+	// that cannot read them stops instead.
+	Unknown bool `json:"unknown"`
 }
 
 // useCaseJSON projects the plan's Use Case link, nil when there is none.
@@ -1010,7 +1012,7 @@ func (p Plan) useCaseJSON() *UseCaseJSON {
 		ID:      p.UseCase.ID,
 		Linked:  p.UseCase.Linked,
 		Link:    !p.UseCase.Linked,
-		Partial: p.UseCase.Partial,
+		Unknown: p.UseCase.Unknown != "",
 	}
 }
 
