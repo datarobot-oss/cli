@@ -259,6 +259,22 @@ func TestRegisterPlugins_RegistersEveryBuiltTree(t *testing.T) {
 	assert.NotNil(t, findCommandByPath(second.Command, "dr deferred-plugin"))
 }
 
+func TestConfigInitializer_BindsShellEnv(t *testing.T) {
+	writeProfileConfig(t)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	t.Setenv("SHELL", "/usr/local/bin/fish")
+
+	root := buildProfileAwareTree()
+	addNoopStub(root)
+
+	root.SetArgs([]string{"stub"})
+	require.NoError(t, root.Execute())
+
+	assert.Equal(t, "/usr/local/bin/fish", viperx.GetString(config.ShellKey))
+}
+
 func TestProfileFlag_RegisteredAndUniversal(t *testing.T) {
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)

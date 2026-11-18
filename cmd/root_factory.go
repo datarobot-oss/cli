@@ -722,6 +722,9 @@ func defaultConfigInitializer(cmd *cobra.Command) error {
 
 	_ = viperx.BindEnv("external-editor", "VISUAL", "EDITOR")
 
+	// Map SHELL to the shell key used as shell detection's fallback.
+	_ = viperx.BindEnv(config.ShellKey, "SHELL")
+
 	// API consumer tracking is enabled by default; operators can opt out with
 	// DATAROBOT_API_CONSUMER_TRACKING_ENABLED=false (matches the Python SDK).
 	viperx.SetDefault(config.APIConsumerTrackingEnabled, true)
