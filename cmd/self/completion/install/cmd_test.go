@@ -672,6 +672,66 @@ func TestPowerShellInstallerIsInstalledAfterInstall(t *testing.T) {
 	assert.True(t, installer.Installed())
 }
 
+func TestInstallPowerShellWarnsWhenAnEditedLegacyBlockSurvives(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, installFn := powerShellInstall(t)
+	edited := "Set-Alias ll Get-ChildItem\n\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    Write-Host hi\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(profilePath), 0o755))
+	require.NoError(t, os.WriteFile(profilePath, []byte(edited), 0o600))
+
+	out := testutil.CaptureStdout(t, func() {
+		require.NoError(t, installFn(&cobra.Command{Use: "dr"}))
+	})
+
+	assert.Contains(t, out, "Warning: "+profilePath+" still runs `dr completion powershell`")
+	assert.Contains(t, readProfile(t, profilePath), "    Write-Host hi\n    dr completion powershell", "the edited block stays as the user left it")
+}
+
+func TestInstallPowerShellDoesNotWarnAfterMigratingAnUneditedLegacyBlock(t *testing.T) {
+	testutil.SetTestHomeDir(t, t.TempDir())
+
+	profilePath, installFn := powerShellInstall(t)
+	legacy := "Set-Alias ll Get-ChildItem\n\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(profilePath), 0o755))
+	require.NoError(t, os.WriteFile(profilePath, []byte(legacy), 0o600))
+
+	out := testutil.CaptureStdout(t, func() {
+		require.NoError(t, installFn(&cobra.Command{Use: "dr"}))
+	})
+
+	assert.NotContains(t, out, "still runs")
+}
+
+func TestWarnLegacyCommandLeftNamesEveryProfileThatStillRunsIt(t *testing.T) {
+	dir := t.TempDir()
+	legacy := "\n# dr completion\nif (Get-Command dr -ErrorAction SilentlyContinue) {\n    dr completion powershell | Out-String | Invoke-Expression\n}\n"
+	current := strings.ReplaceAll(legacy, "dr completion powershell", testCompletionCommand)
+
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+		return path
+	}
+
+	stale := write("stale.ps1", legacy)
+	alsoStale := write("also-stale.ps1", "Set-Alias ll Get-ChildItem\n"+legacy)
+	migrated := write("migrated.ps1", current)
+
+	out := testutil.CaptureStdout(t, func() {
+		warnLegacyCommandLeft([]string{stale, migrated, filepath.Join(dir, "missing.ps1"), alsoStale}, testCompletionCommand)
+	})
+
+	assert.Contains(t, out, stale)
+	assert.Contains(t, out, alsoStale)
+	assert.NotContains(t, out, migrated)
+	assert.NotContains(t, out, "missing.ps1")
+}
+
 // wiredInstallCmd returns an install command inside the shipped command tree.
 func wiredInstallCmd() *cobra.Command {
 	cmd := Cmd()

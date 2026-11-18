@@ -53,6 +53,15 @@ func LoadsCompletion(content string) bool {
 	return printsScript.MatchString(content)
 }
 
+// runsLegacyCommand matches only the legacy form of printsScript, with the same word-boundary guard.
+var runsLegacyCommand = regexp.MustCompile(`(?m)(?:^|[^\w-])` + regexp.QuoteMeta(LegacyCommand) + `\b`)
+
+// RunsLegacyCommand reports whether the profile content runs the legacy command, in a block the CLI
+// wrote or in text the user changed.
+func RunsLegacyCommand(content string) bool {
+	return runsLegacyCommand.MatchString(content)
+}
+
 // ProfilePaths returns every profile file a PowerShell session can load for the user. Windows has
 // one for PowerShell 7 and one for Windows PowerShell 5.1. Other platforms have one.
 func ProfilePaths() ([]string, error) {
