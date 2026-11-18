@@ -78,7 +78,11 @@ func run(cmd *cobra.Command, rawArgs []string) error {
 	args := parseArgs(rawArgs)
 
 	if args.help {
-		return cmd.Help()
+		if err := cmd.Help(); err != nil {
+			return err
+		}
+
+		return printForwardedHelp(cmd)
 	}
 
 	exitCode, err := runStudio(cmd, args)
@@ -90,6 +94,30 @@ func run(cmd *cobra.Command, rawArgs []string) error {
 	// os.Exit skips the OnFinalize hook that normally fires it. Error paths
 	// return above and reach the hook as usual.
 	telemetry.ExitCommand(cmd, rawArgs, exitCode)
+
+	return nil
+}
+
+// printForwardedHelp appends dr xp's own help to this command's, since every
+// flag except -y/--yes and -h/--help is forwarded there. It never installs the
+// plugin just to render help: when xp is not available yet, it points at
+// `dr xp --help` instead.
+func printForwardedHelp(cmd *cobra.Command) error {
+	xp, err := resolveInstalled(xpPluginName)
+	if err != nil || xp == nil {
+		fmt.Println()
+		fmt.Println(tui.DimStyle.Render(
+			"All other flags are forwarded to dr xp. Run `dr xp --help` to see them\n" +
+				"(the xp plugin is installed on the first `dr build-studio` run)."))
+
+		return nil
+	}
+
+	fmt.Println()
+	fmt.Println(tui.SubTitleStyle.Render("Flags forwarded to dr xp:"))
+	fmt.Println()
+
+	executePlugin(cmd.Context(), xp.Manifest, xp.Executable, []string{"--help"}, cmd.Root().PersistentFlags())
 
 	return nil
 }

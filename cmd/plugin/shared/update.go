@@ -101,14 +101,22 @@ func isManagedPlugin(pluginPath string) bool {
 	return false
 }
 
-// performPluginUpdate runs the backup → install → validate cycle for a plugin update.
+// performPluginUpdate runs the backup → install → validate cycle for a plugin
+// update behind a spinner, since the download and extraction can take a while
+// and would otherwise leave the terminal silent.
 func performPluginUpdate(result *plugin.UpdateCheckResult) {
-	err := RunPluginUpdate(
-		result.PluginName,
-		result.InstalledVersion,
-		result.RegistryPlugin,
-		*result.LatestVersion,
-		result.BaseURL,
+	err := tui.RunWithSpinner(
+		fmt.Sprintf("Updating %s from %s to %s…",
+			result.PluginName, result.InstalledVersion, result.LatestVersion.Version),
+		func() error {
+			return RunPluginUpdate(
+				result.PluginName,
+				result.InstalledVersion,
+				result.RegistryPlugin,
+				*result.LatestVersion,
+				result.BaseURL,
+			)
+		},
 	)
 	if err != nil {
 		fmt.Println(tui.ErrorStyle.Render(fmt.Sprintf("✗ Failed to update %s: %v", result.PluginName, err)))
