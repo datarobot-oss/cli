@@ -114,7 +114,9 @@ tasks:
     silent: true
     desc: "Format markdown tables"
     cmds:
-      - sh -c 'cd tools/mdformat && go run . ../../..'
+      # ../.. reaches the repo root from tools/mdformat; a third level would
+      # walk and rewrite markdown outside this repository.
+      - sh -c 'cd tools/mdformat && go run . ../..'
 
   uninstall-tools:
     silent: true

@@ -54,21 +54,40 @@ func processPath(path string, checkMode bool) error {
 	}
 
 	if info.IsDir() {
-		return filepath.Walk(path, func(filePath string, fileInfo os.FileInfo, err error) error {
+		// Collect every unformatted file rather than aborting at the first:
+		// a check that reports one offender per run sends CI into a
+		// fix-one-rerun loop.
+		var unformatted []string
+
+		walkErr := filepath.Walk(path, func(filePath string, fileInfo os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
 
-			// Skip .factory and node_modules directories
-			if fileInfo.IsDir() && (fileInfo.Name() == ".factory" || fileInfo.Name() == "node_modules") {
+			// Skip .factory, node_modules, and tmp directories: the first
+			// two are tool state, and tmp is the repo's gitignored scratch
+			// space, whose files are nobody's output.
+			if fileInfo.IsDir() && (fileInfo.Name() == ".factory" || fileInfo.Name() == "node_modules" || fileInfo.Name() == "tmp") {
 				return filepath.SkipDir
 			}
 
 			if !fileInfo.IsDir() && strings.HasSuffix(fileInfo.Name(), ".md") {
-				return processFile(filePath, checkMode)
+				if err := processFile(filePath, checkMode); err != nil {
+					unformatted = append(unformatted, filePath)
+				}
 			}
+
 			return nil
 		})
+		if walkErr != nil {
+			return walkErr
+		}
+
+		if len(unformatted) > 0 {
+			return fmt.Errorf("%d file(s) need formatting", len(unformatted))
+		}
+
+		return nil
 	}
 
 	return processFile(path, checkMode)
