@@ -60,6 +60,16 @@ func SetLiveFnsForTest(getWorkload, getArtifact func(string) (workload.Document,
 	return func() { getWorkloadFn, getArtifactFn = originalWorkload, originalArtifact }
 }
 
+// SetListWorkloadsFnForTest replaces the workload listing that finds the
+// workloads running an artifact, so a command-level test can resolve one
+// without a network.
+func SetListWorkloadsFnForTest(list func(limit, offset int, statuses []string, enclave string) ([]workload.Workload, error)) func() {
+	original := listWorkloadsFn
+	listWorkloadsFn = list
+
+	return func() { listWorkloadsFn = original }
+}
+
 // Test seams: the wizard's tests replace these to keep the flow off the
 // network and off the terminal.
 var (

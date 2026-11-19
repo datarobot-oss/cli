@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
@@ -34,6 +35,36 @@ type PortableManifest struct {
 	CredentialsPending int
 
 	content []byte
+}
+
+// workloadPageSize is the server's ceiling for one page of the workload list.
+const workloadPageSize = 100
+
+// WorkloadsRunning lists the workloads whose artifact is exactly artifactID.
+//
+// The workload list cannot be filtered by artifact, so this reads every page
+// and compares client-side. More than one match is possible because a locked
+// artifact can back several workloads, and none is possible for an artifact
+// that was never deployed, so the caller decides what each answer means.
+func WorkloadsRunning(artifactID string) ([]workload.Workload, error) {
+	var matches []workload.Workload
+
+	for offset := 0; ; offset += workloadPageSize {
+		page, err := listWorkloadsFn(workloadPageSize, offset, nil, "")
+		if err != nil {
+			return nil, fmt.Errorf("cannot list workloads to find the one that runs artifact %s: %w", artifactID, err)
+		}
+
+		for _, w := range page {
+			if w.ArtifactID == artifactID {
+				matches = append(matches, w)
+			}
+		}
+
+		if len(page) < workloadPageSize {
+			return matches, nil
+		}
+	}
 }
 
 // PreparePortable downloads a workload and renders its definition for another

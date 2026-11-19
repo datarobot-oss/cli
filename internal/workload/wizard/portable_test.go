@@ -16,9 +16,11 @@ package wizard
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"testing"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,4 +105,51 @@ func TestPortableManifest_WriteNeverReplacesAManifest(t *testing.T) {
 	kept, err := os.ReadFile(manifest.Path(dir))
 	require.NoError(t, err)
 	assert.Equal(t, "name: mine\n", string(kept))
+}
+
+func TestWorkloadsRunning_ReadsEveryPageAndMatchesTheArtifactExactly(t *testing.T) {
+	all := make([]workload.Workload, 250)
+	for i := range all {
+		all[i] = workload.Workload{ID: fmt.Sprintf("w%03d", i), ArtifactID: "art-other"}
+	}
+
+	all[5].ArtifactID = "art-1"
+	all[205].ArtifactID = "art-1"
+
+	var offsets []int
+
+	t.Cleanup(SetListWorkloadsFnForTest(func(limit, offset int, _ []string, _ string) ([]workload.Workload, error) {
+		offsets = append(offsets, offset)
+
+		return all[offset:min(offset+limit, len(all))], nil
+	}))
+
+	found, err := WorkloadsRunning("art-1")
+	require.NoError(t, err)
+
+	require.Len(t, found, 2)
+	assert.Equal(t, []string{"w005", "w205"}, []string{found[0].ID, found[1].ID})
+	assert.Equal(t, []int{0, 100, 200}, offsets, "a match on the last page is found")
+}
+
+func TestWorkloadsRunning_NoMatchIsNotAnError(t *testing.T) {
+	t.Cleanup(SetListWorkloadsFnForTest(func(int, int, []string, string) ([]workload.Workload, error) {
+		return []workload.Workload{{ID: "w1", ArtifactID: "art-other"}}, nil
+	}))
+
+	found, err := WorkloadsRunning("art-1")
+
+	require.NoError(t, err)
+	assert.Empty(t, found)
+}
+
+func TestWorkloadsRunning_ListFailureNamesTheArtifact(t *testing.T) {
+	t.Cleanup(SetListWorkloadsFnForTest(func(int, int, []string, string) ([]workload.Workload, error) {
+		return nil, assert.AnError
+	}))
+
+	_, err := WorkloadsRunning("art-1")
+
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Contains(t, err.Error(), "art-1")
 }
