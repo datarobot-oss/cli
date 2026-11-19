@@ -33,6 +33,7 @@ import (
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
+	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -229,11 +230,12 @@ func TestRunE_LockedArtifact(t *testing.T) {
 
 	cmd := newTestCmd(t, tmp, true, []string{"art-locked-001"})
 
-	err := cmd.Execute()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "artifact is locked")
+	_, stderr, err := runCapture(t, cmd)
+	require.NoError(t, err)
 
-	assert.False(t, wapi.Exists(tmp), "state dir must not be created when artifact is locked")
+	assert.True(t, wapi.Exists(tmp), "a locked artifact can be linked to read its code")
+	assert.Contains(t, stderr, "dr artifact code checkout")
+	assert.NotContains(t, stderr, "dr artifact code sync")
 }
 
 func TestRunE_NotFound(t *testing.T) {
@@ -1152,4 +1154,154 @@ func TestMakeInitRelinkConfirm_NoTerminalNeedsYes(t *testing.T) {
 	consenting.SetErr(&stderr)
 
 	assert.True(t, makeInitRelinkConfirm(consenting)("this replaces config.json"))
+}
+
+const manifestWorkloadDoc = `{"name": "canvas-agent", "artifactId": "art-run-1",
+	"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+		"containers": [{"name": "primary", "resourceAllocation": {"cpu": 0.5, "memory": "512MB"}}]}]}}`
+
+const manifestArtifactDoc = `{"name": "canvas-agent-artifact", "type": "service", "artifactRepositoryId": "repo-1",
+	"spec": {"containerGroups": [{"name": "default", "containers": [{
+		"name": "primary", "primary": true, "port": 8080,
+		"imageBuildConfig": {"dockerfile": {"source": "provided", "path": "./Dockerfile"}},
+		"environmentVars": [
+			{"name": "TOKEN", "source": "dr-credential", "drCredentialId": "68f0cccc0000000000000003", "key": "apiToken"}
+		]}]}]}}`
+
+func withFakeLive(t *testing.T, workloadRaw, artifactRaw string) {
+	t.Helper()
+
+	decode := func(raw string) func(string) (workload.Document, error) {
+		return func(string) (workload.Document, error) {
+			var doc workload.Document
+
+			return doc, json.Unmarshal([]byte(raw), &doc)
+		}
+	}
+
+	t.Cleanup(wizard.SetLiveFnsForTest(decode(workloadRaw), decode(artifactRaw)))
+}
+
+func fakeLineageArtifact(id string) *workload.Artifact {
+	art := fakeArtifact(id, "canvas-agent-artifact", "DRAFT", nil)
+	art.ArtifactRepositoryID = "repo-1"
+
+	return art
+}
+
+func TestRunE_WithManifest_WritesAnUnboundManifestBesideTheLink(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
+	withFakeLive(t, manifestWorkloadDoc, manifestArtifactDoc)
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest", "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	_, stderr, err := runCapture(t, cmd)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "Wrote ")
+	assert.Contains(t, stderr, "1 credential reference name PLACEHOLDER")
+
+	written, err := os.ReadFile(filepath.Join(tmp, manifest.FileName))
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(written), "workloadId")
+	assert.NotContains(t, string(written), "68f0cccc0000000000000003")
+	assert.Contains(t, string(written), "PLACEHOLDER")
+
+	cfg, err := wapi.LoadConfig(tmp)
+	require.NoError(t, err)
+	assert.Equal(t, "art-abc-123", cfg.ArtifactID)
+}
+
+func TestRunE_WithManifest_JSONReportsTheFile(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
+	withFakeLive(t, manifestWorkloadDoc, manifestArtifactDoc)
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest", "68b0c1d2e3f4a5b6c7d8e9f0", "--output-format", "json"})
+
+	out := captureStdout(t, func() { require.NoError(t, cmd.Execute()) })
+
+	var result map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	assert.Equal(t, filepath.Join(tmp, manifest.FileName), result["manifestPath"])
+	assert.InDelta(t, 1, result["manifestCredentialsPending"], 0)
+}
+
+func TestRunE_WithoutManifest_JSONShapeIsUnchanged(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeArtifact(id, "blank", "DRAFT", nil), nil })
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--output-format", "json"})
+
+	out := captureStdout(t, func() { require.NoError(t, cmd.Execute()) })
+
+	assert.NotContains(t, out, "manifestPath")
+	assert.NotContains(t, out, "manifestCredentialsPending")
+}
+
+func TestRunE_WithManifest_UnknownWorkloadLinksNothing(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
+
+	t.Cleanup(wizard.SetLiveFnsForTest(
+		func(string) (workload.Document, error) { return nil, errors.New("not found") },
+		func(string) (workload.Document, error) { return nil, nil }))
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest", "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	_, _, err := runCapture(t, cmd)
+
+	require.Error(t, err)
+	assert.False(t, wapi.Exists(tmp), "a workload id that does not resolve must not leave a link behind")
+	assert.NoFileExists(t, filepath.Join(tmp, manifest.FileName))
+}
+
+func TestRunE_WithManifest_KeepsAnExistingManifest(t *testing.T) {
+	tmp := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, manifest.FileName), []byte("name: mine\n"), 0o600))
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
+	withFakeLive(t, manifestWorkloadDoc, manifestArtifactDoc)
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest", "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	_, stderr, err := runCapture(t, cmd)
+
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "already exists and was left as it is")
+
+	kept, err := os.ReadFile(filepath.Join(tmp, manifest.FileName))
+	require.NoError(t, err)
+	assert.Equal(t, "name: mine\n", string(kept))
+	assert.True(t, wapi.Exists(tmp), "the link is still made")
+}
+
+func TestRunE_WithManifest_LockedArtifactPointsAtCheckoutAndHowToDeployElsewhere(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		art := fakeLineageArtifact(id)
+		art.Status = "LOCKED"
+
+		return art, nil
+	})
+	withFakeLive(t, manifestWorkloadDoc, manifestArtifactDoc)
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest", "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	_, stderr, err := runCapture(t, cmd)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "dr artifact code checkout")
+	assert.Contains(t, stderr, "To deploy this to another install, delete")
+	assert.True(t, wapi.Exists(tmp))
+	assert.FileExists(t, filepath.Join(tmp, manifest.FileName))
 }

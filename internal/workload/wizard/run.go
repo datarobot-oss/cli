@@ -51,6 +51,15 @@ func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Dr
 	return func() { runInteractiveFlowFn = original }
 }
 
+// SetLiveFnsForTest replaces the two fetches that download a workload and the
+// artifact it runs, so a command-level test can bind to one without a network.
+func SetLiveFnsForTest(getWorkload, getArtifact func(string) (workload.Document, error)) func() {
+	originalWorkload, originalArtifact := getWorkloadFn, getArtifactFn
+	getWorkloadFn, getArtifactFn = getWorkload, getArtifact
+
+	return func() { getWorkloadFn, getArtifactFn = originalWorkload, originalArtifact }
+}
+
 // Test seams: the wizard's tests replace these to keep the flow off the
 // network and off the terminal.
 var (

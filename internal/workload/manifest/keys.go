@@ -38,6 +38,7 @@ const (
 // prevent, so they are named here rather than inline in either.
 const (
 	keyA2AEnabled     = "a2aEnabled"
+	keyArtifactRepoID = "artifactRepositoryId"
 	keyCPU            = "cpu"
 	keyLivenessProbe  = "livenessProbe"
 	keyPath           = "path"

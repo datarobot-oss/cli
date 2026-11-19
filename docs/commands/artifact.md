@@ -211,14 +211,15 @@ dr artifact build logs   [<artifact-id>] <build-id> [--level debug|info|warn|err
 Synchronize a local project directory with an artifact's source code. Run `init` once to link a directory, then `sync` to push and pull changes.
 
 ```bash
-dr artifact code init     [<artifact-id>] [--dir <path>] [--yes]
+dr artifact code init     [<artifact-id>] [--dir <path>] [--with-manifest <workload-id>] [--yes]
 dr artifact code sync     [--dir <path>] [--dry-run | --diff] [--accept-remote | --push-only] [--verify] [--yes]
 dr artifact code versions [--dir <path>] [--limit N]
 dr artifact code checkout [<ver>] [--dir <path>] [--clean]
 dr artifact code doctor   [--dir <path>] [--output-format text|json] [--fix | --relink <artifact-id>]
 ```
 
-- `init` creates the `.datarobot/workload/` state directory and binds it to an existing draft artifact. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle. It also drops a starter `.drignore` at the project root, in gitignore syntax, listing what `sync` should leave out. Edit it and commit it. A project that already has an ignore file under either name keeps it, and no new one is written.
+- `init` creates the `.datarobot/workload/` state directory and binds it to an existing artifact, draft or locked. A locked artifact cannot be synced into, so read its code with `code checkout`. The artifact must already exist (`dr artifact create` or the DataRobot UI); these commands manage an artifact's code, not its lifecycle. It also drops a starter `.drignore` at the project root, in gitignore syntax, listing what `sync` should leave out. Edit it and commit it. A project that already has an ignore file under either name keeps it, and no new one is written.
+- `init --with-manifest <workload-id>` also writes the `.datarobot.yaml` that `dr workload up` deploys from, taken from that workload's running definition. It is for moving a workload to another install (see [Move a workload to another install](#move-a-workload-to-another-install)). The file binds no workload, because a workload id belongs to the install that issued it, and every credential reference names `PLACEHOLDER`, because credential ids do too and the platform never returns a stored value. Replace each with a credential id from the target install before deploying. Environment variables that hold a plain value are copied as they are, so check ones that point at the source install, such as `DATAROBOT_ENDPOINT`. The workload is read before anything is linked, so an id that does not resolve changes nothing. A `.datarobot.yaml` that already exists is left as it is. A running workload runs a locked artifact, so that is the usual one to link. A workload that runs a different artifact lineage than the one you are linking is still used, with a warning. `--output-format json` adds `manifestPath` and `manifestCredentialsPending` to the result.
 - Projects created before the file was renamed have a `.wapiignore` instead. It is still read when there is no `.drignore` beside it, and `sync` says so once per run, but the name is deprecated: rename the file when convenient. If both are present, `.drignore` is the one that applies and `sync` warns that the other file's patterns are not in effect. Merge them and delete the old one: two ignore files at a project root is a state where patterns you wrote silently stop filtering. The ignore file is uploaded with your code, so if you work with others, agree on the rename rather than doing it alone.
 - `sync` computes a three-way diff against the last synced state and applies it in one versioned step. A file changed both locally and on the remote is a conflict: an interactive run asks before the remote copy is pulled over yours, and a non-interactive run (`--yes`, `DATAROBOT_CLI_NON_INTERACTIVE=1`, or no terminal) is refused unless you pass `--accept-remote`, so an automated sync fails loudly instead of overwriting your edits. A plain pull of a remote change you had not touched still applies without prompting. Whenever the remote wins, your version is kept as a `<path>.LOCAL.<timestamp>` file, and those copies are excluded from the next sync. Preview with `--dry-run`, or use `--diff` to also see per-file diffs. Both exit before any remote write.
 - `sync --push-only` uploads your changes and leaves every file the remote changed as it is, on both sides: nothing is downloaded or removed locally, those files are listed as left alone, and the next plain `sync` still sees them. A conflict is refused in this mode, since neither side may win silently; run a plain `sync` to settle it. This is the mode for a working copy you do not want touched, such as a git checkout.
@@ -259,6 +260,29 @@ dr artifact code init <artifact-id>
 dr artifact code sync                       # upload your code
 dr artifact build create --wait             # build the image, wait for it
 dr artifact lock <artifact-id>              # freeze it for deployment
+```
+
+### Move a workload to another install
+
+Pull the code and the workload's definition from the source install, then deploy to the target. `dr workload up` uploads the code itself, so nothing is synced against the target first.
+
+```bash
+# Source install: link a directory to the artifact the workload runs, and write the definition
+dr artifact code init <artifact-id> --with-manifest <workload-id> --profile source --yes
+
+# A locked artifact cannot be synced, so read its code (the version marked * in
+# `code versions`) and copy it into the project
+dr artifact code checkout <version-id> --profile source
+rsync -a --exclude .checkout-meta.json --exclude /.datarobot.yaml \
+  .datarobot/workload/.checkouts/<version-id>/ ./
+
+# The link names an artifact on the source install; the target has no such artifact
+rm -rf .datarobot/workload
+
+# Target install: put the credentials in place, then deploy
+dr dotenv update --profile target
+dr workload config --sync-env --profile target
+dr workload up --promote --profile target
 ```
 
 ### Inspect builds and logs

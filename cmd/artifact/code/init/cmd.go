@@ -17,6 +17,7 @@ package initcmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
@@ -29,7 +30,9 @@ import (
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
+	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/spf13/cobra"
 )
 
@@ -54,6 +57,16 @@ and pull remote changes.
 The artifact must already exist before running 'init'. Create it via
 'dr artifact create' or in the DataRobot UI.
 
+With --with-manifest <workload-id>, init also writes the .datarobot.yaml that
+'dr workload up' deploys from, taken from that workload's running definition.
+It is for moving a workload to another install: run init and sync against the
+source (--profile), then 'dr workload up' against the target. The file binds
+no workload, because a workload id belongs to the install that issued it, and
+every credential reference names PLACEHOLDER, because credential ids do too
+and the platform never returns a stored value. Replace each with a credential
+id from the target install before deploying. An existing .datarobot.yaml is
+left as it is.
+
 By default, output is human-readable. Use --output-format json for
 machine-parseable output.
 
@@ -61,7 +74,8 @@ Example:
   dr artifact code init art-abc-123                  # interactive: prompt for dir
   dr artifact code init art-abc-123 --yes            # non-interactive: cwd
   dr artifact code init art-abc-123 --dir ./service  # link ./service
-  dr artifact code init art-abc-123 --yes --output-format json`,
+  dr artifact code init art-abc-123 --yes --output-format json
+  dr artifact code init art-abc-123 --with-manifest 68b0c1d2e3f4a5b6c7d8e9f0`,
 		Args:    cobra.MaximumNArgs(1),
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,6 +89,9 @@ Example:
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; use defaults.")
+	c.Flags().String("with-manifest", "",
+		"Also write .datarobot.yaml from this workload's definition, unbound and with credential "+
+			"references left to fill in, so the code can be deployed to another install.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() in runInit so an explicit
@@ -87,6 +104,7 @@ Example:
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
 			"yes":           yes,
+			"with_manifest": cmd.Flags().Changed("with-manifest"),
 			"output_format": string(outputFormat),
 		}
 	})
@@ -114,7 +132,16 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
+	workloadID, _ := cmd.Flags().GetString("with-manifest")
+
 	art, err := fetchArtifact(artifactID)
+	if err != nil {
+		return err
+	}
+
+	// Before the link, so a workload id that does not resolve fails with
+	// nothing changed.
+	portable, err := prepareManifest(cmd.ErrOrStderr(), workloadID, art)
 	if err != nil {
 		return err
 	}
@@ -130,7 +157,78 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
-	return renderInitResult(cmd.ErrOrStderr(), outputFormat, newInitResult(*art, dir))
+	return finishInit(cmd, dir, *art, portable, outputFormat)
+}
+
+// finishInit writes the portable manifest, when one was asked for, and
+// reports the link.
+func finishInit(
+	cmd *cobra.Command, dir string, art workload.Artifact, portable *wizard.PortableManifest,
+	outputFormat outputformat.OutputFormat,
+) error {
+	result := newInitResult(art, dir)
+
+	if portable != nil {
+		if err := writeManifest(cmd.ErrOrStderr(), dir, *portable, &result); err != nil {
+			return err
+		}
+	}
+
+	if portable != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"To deploy this to another install, delete %s first: it names this install's artifact.\n",
+			wapi.Dir(dir))
+	}
+
+	return renderInitResult(cmd.ErrOrStderr(), outputFormat, result)
+}
+
+// prepareManifest downloads the workload named by --with-manifest and renders
+// its definition for another install. It returns nil when the flag was not
+// given.
+func prepareManifest(stderr io.Writer, workloadID string, art *workload.Artifact) (*wizard.PortableManifest, error) {
+	if workloadID == "" {
+		return nil, nil //nolint:nilnil // no manifest asked for is not an error
+	}
+
+	portable, err := wizard.PreparePortable(workloadID, art.ArtifactRepositoryID, stderr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &portable, nil
+}
+
+// writeManifest puts the portable manifest beside the link. The link is
+// already made by now, so a failure says so rather than reading as if init
+// did nothing. A manifest that is already there is the user's: it is left
+// alone and said so, which is not a failure.
+func writeManifest(stderr io.Writer, dir string, portable wizard.PortableManifest, result *initResult) error {
+	path, err := portable.Write(dir)
+	if errors.Is(err, manifest.ErrExists) {
+		fmt.Fprintf(stderr, "%s already exists and was left as it is; edit it directly or delete it and run init with --with-manifest again.\n",
+			wizard.ShortPath(path))
+
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("linked the artifact, but could not write the manifest: %w", err)
+	}
+
+	pending := portable.CredentialsPending
+	result.ManifestPath = path
+	result.ManifestCredentialsPending = &pending
+
+	fmt.Fprintf(stderr, "✓ Wrote %s from workload %s (%s), with no workload binding.\n",
+		wizard.ShortPath(path), portable.Name, portable.WorkloadID)
+
+	if pending > 0 {
+		fmt.Fprintf(stderr, "  %d credential %s name %s: replace each with a credential id from the install you deploy to.\n",
+			pending, wizard.Plural(pending, "reference", "references"), manifest.CredentialPlaceholder)
+	}
+
+	return nil
 }
 
 func fetchArtifact(artifactID string) (*workload.Artifact, error) {
@@ -142,10 +240,6 @@ func fetchArtifact(artifactID string) (*workload.Artifact, error) {
 		}
 
 		return nil, err
-	}
-
-	if art.IsLocked() {
-		return nil, errors.New("artifact is locked (immutable); cannot init on a registered artifact")
 	}
 
 	return art, nil
