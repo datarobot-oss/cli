@@ -102,11 +102,31 @@ func (p powerShellInstaller) Install(*cobra.Command) error {
 		return err
 	}
 
+	paths, err := powershell.ProfilePaths()
+	if err != nil {
+		return err
+	}
+
+	warnLegacyCommandLeft(paths, p.command)
+
 	if changed || migratedOthers {
 		warnIfExecutionPolicyRestricted(shellExe)
 	}
 
 	return nil
+}
+
+// warnLegacyCommandLeft names each profile that still runs the legacy command. The migration leaves
+// a block the user edited alone, so that profile prints an error in every session until it is fixed.
+func warnLegacyCommandLeft(paths []string, command string) {
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil || !powershell.RunsLegacyCommand(string(data)) {
+			continue
+		}
+
+		fmt.Printf("%s %s still runs `%s`, which is not a command. Change it to `%s` or delete the block.\n", warnStyle.Render("Warning:"), path, powershell.LegacyCommand, command)
+	}
 }
 
 // readEditableProfile reads a profile and refuses one that byte-level edits would corrupt.

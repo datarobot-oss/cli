@@ -137,6 +137,20 @@ func TestLoadsCompletion(t *testing.T) {
 	assert.False(t, LoadsCompletion("my-dr self completion powershell\n"), "a hyphenated command that ends in dr")
 }
 
+func TestRunsLegacyCommand(t *testing.T) {
+	editedLegacyBlock := strings.Replace(legacyBlock, "    dr completion", "    Write-Host hi\n    dr completion", 1)
+
+	assert.True(t, RunsLegacyCommand(userLine+legacyBlock), "a legacy block")
+	assert.True(t, RunsLegacyCommand(userLine+editedLegacyBlock), "a legacy block the user edited")
+	assert.True(t, RunsLegacyCommand("if ($x) { dr completion powershell | iex }\n"), "the command after other text")
+	assert.False(t, RunsLegacyCommand("dr self completion powershell | Out-String | Invoke-Expression\n"), "the current form")
+	assert.False(t, RunsLegacyCommand(userLine), "an unrelated profile")
+	assert.False(t, RunsLegacyCommand(""), "an empty profile")
+	assert.False(t, RunsLegacyCommand("kubectl completion powershell | Out-String | Invoke-Expression\n"), "another tool's completion")
+	assert.False(t, RunsLegacyCommand("mydr completion powershell\n"), "a command that only ends in dr")
+	assert.False(t, RunsLegacyCommand("my-dr completion powershell\n"), "a hyphenated command that ends in dr")
+}
+
 const aliasBlock = "\n# datarobot alias completion\nif (Get-Command datarobot -ErrorAction SilentlyContinue) {\n    $__drCompletionScript = (dr self completion powershell | Out-String)\n    Invoke-Expression ($__drCompletionScript -replace \"CommandName 'dr'\", \"CommandName 'datarobot'\")\n}\n"
 
 func TestMissingBlocksAddsTheDrBlockToAProfileWithOnlyTheAliasBlock(t *testing.T) {
