@@ -6,6 +6,12 @@ updates:
       interval: daily
     commit-message:
       prefix: "⬆️ SEC(Deps): "
+    groups:
+      spf13-cli-stack:
+        patterns:
+          - "github.com/spf13/viper"
+          - "github.com/spf13/cobra"
+          - "github.com/spf13/pflag"
 
   - package-ecosystem: "github-actions"
     directory: "/"
