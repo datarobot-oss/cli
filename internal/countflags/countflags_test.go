@@ -67,9 +67,10 @@ func TestPositiveInt_RejectsGarbage(t *testing.T) {
 
 	cmd.Flags().Var(PositiveInt(&limit, 100), "limit", "usage")
 
-	// Non-numeric input keeps pflag's underlying strconv error.
+	// Non-numeric input uses the same wording as pflag's built-in int flag.
 	err := cmd.ParseFlags([]string{"--limit", "abc"})
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be an integer")
 }
 
 func TestPositiveInt_RejectsOutOfRangeValues(t *testing.T) {
@@ -79,10 +80,12 @@ func TestPositiveInt_RejectsOutOfRangeValues(t *testing.T) {
 
 	cmd.Flags().Var(PositiveInt(&limit, 100), "limit", "usage")
 
-	// Beyond the int64 range strconv.ParseInt itself reports "value out of
-	// range"; nothing is truncated or silently clamped.
+	// Beyond the int64 range nothing is truncated or silently clamped, and the
+	// message says the number is too large rather than that it is not a number.
 	err := cmd.ParseFlags([]string{"--limit", "99999999999999999999"})
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "value is out of range")
+	assert.NotContains(t, err.Error(), "must be an integer")
 }
 
 func TestNonNegativeInt_AllowsZero(t *testing.T) {
