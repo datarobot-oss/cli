@@ -105,45 +105,63 @@ func formatMarkdown(content string) string {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	var result strings.Builder
 	var tableLines []string
-	inTable := false
+	inFence := false
+
+	// flush writes out a pending line group: as a formatted table only when it
+	// really is one (a separator row directly under the header), verbatim
+	// otherwise, so prose that merely contains pipes is never rearranged.
+	flush := func() {
+		if len(tableLines) > 1 && isSeparatorRow(parseCells(tableLines[1])) {
+			for _, fmtLine := range formatTable(tableLines) {
+				result.WriteString(fmtLine)
+				result.WriteString("\n")
+			}
+		} else {
+			for _, line := range tableLines {
+				result.WriteString(line)
+				result.WriteString("\n")
+			}
+		}
+
+		tableLines = nil
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
 
-		if isTableLine(line) {
-			if !inTable {
-				inTable = true
-			}
-			tableLines = append(tableLines, line)
-		} else {
-			if inTable && len(tableLines) > 0 {
-				formatted := formatTable(tableLines)
-				for _, fmtLine := range formatted {
-					result.WriteString(fmtLine)
-					result.WriteString("\n")
-				}
-				tableLines = nil
-				inTable = false
-			}
+		// Fenced code is opaque: pipes there are shell pipelines, literals,
+		// or ASCII layouts, never table syntax this tool may rewrite.
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			flush()
+			inFence = !inFence
 			result.WriteString(line)
 			result.WriteString("\n")
+
+			continue
 		}
+
+		if !inFence && isTableLine(line) {
+			tableLines = append(tableLines, line)
+
+			continue
+		}
+
+		flush()
+		result.WriteString(line)
+		result.WriteString("\n")
 	}
 
-	if inTable && len(tableLines) > 0 {
-		formatted := formatTable(tableLines)
-		for _, fmtLine := range formatted {
-			result.WriteString(fmtLine)
-			result.WriteString("\n")
-		}
-	}
+	flush()
 
 	return result.String()
 }
 
+// isTableLine reports whether the line could belong to a table: GitHub table
+// syntax starts the row with a pipe, and everything else with a pipe in it
+// (prose, bullet text, inline command alternatives) is left alone.
 func isTableLine(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	return strings.Contains(trimmed, "|")
+	return strings.HasPrefix(strings.TrimSpace(line), "|")
 }
 
 func formatTable(lines []string) []string {

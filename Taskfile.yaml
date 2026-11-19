@@ -164,7 +164,10 @@ tasks:
     cmds:
       - echo "🧹 Checking markdown tables…"
       - mkdir -p {{.BIN_DIR}}
-      - sh -c 'cd tools/mdformat && go build -o ../../{{.BIN_DIR}}/mdformat main.go'
+      # BIN_DIR is "$PWD/tmp/bin", so the build must not cd first: a subshell cd
+      # re-expands $PWD and the binary lands inside tools/mdformat. -C switches
+      # the build to the tool's module while output and cwd stay at the root.
+      - go build -C tools/mdformat -o {{.BIN_DIR}}/mdformat main.go
       - "{{.BIN_DIR}}/mdformat -check ."
       - echo "🧹 Checking go.mod…"
       - go mod tidy -diff
