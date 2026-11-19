@@ -75,11 +75,11 @@ To run larger Factory Missions on a Droid Computer, the persistent environment m
 
 The devcontainer uses three lifecycle hooks that run in order during container creation:
 
-| Hook | Command | Purpose |
-| --- | --- | --- |
+| Hook                   | Command                         | Purpose                                                    |
+| ---------------------- | ------------------------------- | ---------------------------------------------------------- |
 | `updateContentCommand` | `bash .devcontainer/sync-go.sh` | Upgrades Go to match `go.mod` if the image version differs |
-| `postCreateCommand` | `task bootstrap` | Installs tools, sets up git hooks, builds the CLI |
-| `waitFor` | `postCreateCommand` | Tools wait for bootstrap to finish before connecting |
+| `postCreateCommand`    | `task bootstrap`                | Installs tools, sets up git hooks, builds the CLI          |
+| `waitFor`              | `postCreateCommand`             | Tools wait for bootstrap to finish before connecting       |
 
 The `waitFor` property ensures the terminal is not available until all setup is complete.
 

@@ -40,20 +40,20 @@ Starting from source code rather than from a spec you already have? The [spec re
 
 ## Command groups
 
-| Command                | Endpoint                                  | Purpose                                        |
-| ---------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `dr workload create`   | `POST   /api/v2/workloads/`               | Deploy a workload from a spec.                 |
-| `dr workload get`      | `GET    /api/v2/workloads/{id}/`          | Show a single workload.                        |
-| `dr workload list`     | `GET    /api/v2/workloads/`               | List workloads, optionally filtered by status. |
-| `dr workload delete`   | `DELETE /api/v2/workloads/{id}/`          | Delete a workload.                             |
-| `dr workload start`    | `POST   /api/v2/workloads/{id}/start`     | Start a stopped workload.                      |
-| `dr workload stop`     | `POST   /api/v2/workloads/{id}/stop`      | Stop a running workload.                       |
+| Command                | Endpoint                                     | Purpose                                             |
+| ---------------------- | -------------------------------------------- | --------------------------------------------------- |
+| `dr workload create`   | `POST   /api/v2/workloads/`                  | Deploy a workload from a spec.                      |
+| `dr workload get`      | `GET    /api/v2/workloads/{id}/`             | Show a single workload.                             |
+| `dr workload list`     | `GET    /api/v2/workloads/`                  | List workloads, optionally filtered by status.      |
+| `dr workload delete`   | `DELETE /api/v2/workloads/{id}/`             | Delete a workload.                                  |
+| `dr workload start`    | `POST   /api/v2/workloads/{id}/start`        | Start a stopped workload.                           |
+| `dr workload stop`     | `POST   /api/v2/workloads/{id}/stop`         | Stop a running workload.                            |
 | `dr workload settings` | `GET/PATCH /api/v2/workloads/{id}/settings/` | Show or change replicas, autoscaling and resources. |
-| `dr workload status`   | `GET    /api/v2/workloads/{id}/`          | Print the bare status value.                   |
-| `dr workload diagnose` | `GET    /api/v2/workloads/{id}/protons/…` | Explain why a workload is in its state.        |
-| `dr workload endpoint` | `GET    /api/v2/workloads/{id}/`          | Print the endpoint URL.                        |
-| `dr workload logs`     | `GET    /api/v2/otel/workload/{id}/logs/` | Show a workload's container logs.              |
-| `dr workload events`   | `GET    /api/v2/workloads/{id}/events/`   | Show a workload's lifecycle events.            |
+| `dr workload status`   | `GET    /api/v2/workloads/{id}/`             | Print the bare status value.                        |
+| `dr workload diagnose` | `GET    /api/v2/workloads/{id}/protons/…`    | Explain why a workload is in its state.             |
+| `dr workload endpoint` | `GET    /api/v2/workloads/{id}/`             | Print the endpoint URL.                             |
+| `dr workload logs`     | `GET    /api/v2/otel/workload/{id}/logs/`    | Show a workload's container logs.                   |
+| `dr workload events`   | `GET    /api/v2/workloads/{id}/events/`      | Show a workload's lifecycle events.                 |
 
 ## Subcommands
 
@@ -78,11 +78,11 @@ Both placement flags refuse to override a spec that already sets the field they 
 
 Enclave placement is opt-in per workload, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload linked to that Use Case can be placed on them. Three shapes cover it:
 
-| You want | Spec or flags |
-|---|---|
+| You want                                             | Spec or flags                                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | A workload linked to a Use Case that has no Enclaves | `--use-case-id <id>` alone, or `useCaseId` in the spec. If the Use Case has Enclaves, this is refused with `ENCLAVE_TARGETING_REQUIRED`; use one of the rows below |
-| DataRobot to pick among the Use Case's Enclaves | `useCaseId` plus `runtime.enclaveSelectionPolicy: "availability"` in the spec |
-| One specific Enclave | `--use-case-id <id> --enclave <name>`, which sets the policy to `manual` |
+| DataRobot to pick among the Use Case's Enclaves      | `useCaseId` plus `runtime.enclaveSelectionPolicy: "availability"` in the spec                                                                                      |
+| One specific Enclave                                 | `--use-case-id <id> --enclave <name>`, which sets the policy to `manual`                                                                                           |
 
 ```bash
 dr workload create --spec-file workload.yaml --use-case-id 68b0aa11bb22cc33dd44ee55
@@ -492,12 +492,12 @@ dr workload delete <workload-id>
 
 ## Error handling
 
-| Status | Cause                                                                                                       |
-| ------ | ----------------------------------------------------------------------------------------------------------- |
-| `403`  | Starting the workload would exceed your concurrent workload limits, or the Workload API is not enabled for your account (see below). |
-| `404`  | The workload does not exist.                                                                                |
-| `409`  | The workload must finish its current transition first (for example a `start` while it is still `stopping`). |
-| `422`  | The spec failed server validation; the response names the offending JSON path (for example `maxReplicaCount` below 1). |
+| Status | Cause                                                                                                                                                     |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `403`  | Starting the workload would exceed your concurrent workload limits, or the Workload API is not enabled for your account (see below).                      |
+| `404`  | The workload does not exist.                                                                                                                              |
+| `409`  | The workload must finish its current transition first (for example a `start` while it is still `stopping`).                                               |
+| `422`  | The spec failed server validation; the response names the offending JSON path (for example `maxReplicaCount` below 1).                                    |
 | `502`  | The installation routes the Workload API but the backing service is switched off. This is an operator setting, not something a flag on your side changes. |
 
 ### Every command answers `403`

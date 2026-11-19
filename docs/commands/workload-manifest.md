@@ -51,11 +51,11 @@ After the first write the file is yours. `config` leaves an existing manifest al
 
 Each container builds its image one of three ways. `config` asks, preselecting the first when `./Dockerfile` exists; without a terminal the Dockerfile is chosen for you, and with no Dockerfile the flags have to say which.
 
-| Build mode | In the file | `config` flags |
-| --- | --- | --- |
-| Your own Dockerfile | `imageBuildConfig.dockerfile.source: provided` | none needed when `./Dockerfile` exists |
+| Build mode                            | In the file                                                                                                                         | `config` flags                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Your own Dockerfile                   | `imageBuildConfig.dockerfile.source: provided`                                                                                      | none needed when `./Dockerfile` exists                                     |
 | A DataRobot base image plus your code | `imageBuildConfig.dockerfile.source: generated`, with `executionEnvironmentId`, `executionEnvironmentVersionId` and an `entrypoint` | `--build-mode generated --execution-environment <name> --entrypoint "..."` |
-| An image you already published | `imageUri` | `--build-mode image --image <uri>` |
+| An image you already published        | `imageUri`                                                                                                                          | `--build-mode image --image <uri>`                                         |
 
 The first two make `up` push the working tree and wait for a platform build on the first deploy, and again whenever the code changes. The third deploys in one call and never syncs code. A container carries `imageUri` or `imageBuildConfig`, never both.
 
@@ -95,11 +95,11 @@ When nothing differs the plan is `✓ Already up to date`.
 
 Three kinds of change, each applied one way:
 
-| Change | How it is detected | What `up` does |
-| --- | --- | --- |
-| **Code** (only when the file builds the image) | the working tree is compared with what was last pushed to the artifact, and a deploy from this checkout that pushed code and never saw it serve is finished; code pushed by `dr artifact code sync` but never built is rebuilt when the run rolls for another reason, or on its own with `--force-build` | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it |
-| **Artifact spec** (environment variables, port, probes, image) | the file's `artifact` block is compared with the artifact the workload runs | mints a new artifact version and rolls the workload onto it; a change that does not affect the image keeps the running image, so no rebuild. When the artifact is a draft and the image is kept, the change is written to that artifact in place and the workload rolled onto it again, so no new version |
-| **Runtime** (replicas, CPU, memory) | the file's `runtime` block is compared with the live runtime | a settings update in place, with no new version; when a roll is happening anyway, the sizing rides along on it |
+| Change                                                         | How it is detected                                                                                                                                                                                                                                                                                       | What `up` does                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Code** (only when the file builds the image)                 | the working tree is compared with what was last pushed to the artifact, and a deploy from this checkout that pushed code and never saw it serve is finished; code pushed by `dr artifact code sync` but never built is rebuilt when the run rolls for another reason, or on its own with `--force-build` | pushes the changed files with the sync engine, builds a new image, mints a new artifact version and rolls the workload onto it                                                                                                                                                                            |
+| **Artifact spec** (environment variables, port, probes, image) | the file's `artifact` block is compared with the artifact the workload runs                                                                                                                                                                                                                              | mints a new artifact version and rolls the workload onto it; a change that does not affect the image keeps the running image, so no rebuild. When the artifact is a draft and the image is kept, the change is written to that artifact in place and the workload rolled onto it again, so no new version |
+| **Runtime** (replicas, CPU, memory)                            | the file's `runtime` block is compared with the live runtime                                                                                                                                                                                                                                             | a settings update in place, with no new version; when a roll is happening anyway, the sizing rides along on it                                                                                                                                                                                            |
 
 A workload that does not exist yet is created from the file in one call. A stopped one is started. An errored one is rolled when the file has something new to roll onto it; when nothing differs the run refuses and says why, since deploying the same thing again would only fail again (`--force-build` rebuilds a platform-built image). A file whose live state matches it prints `Already up to date` and exits 0 without touching anything.
 
@@ -109,13 +109,13 @@ A roll swaps the workload onto a version, new or the same one rewritten; the end
 
 `up` keeps machine-managed state beside the code, never in the manifest, under `.datarobot/workload/`:
 
-| File | What it holds |
-| --- | --- |
-| `config.json` | which artifact and code catalog this checkout pushes to, the last synced and last built versions, and a version a deploy linked and has not yet seen serve |
-| `manifest.json` | the sync engine's index of what was last pushed, used to diff the next sync |
-| `history.log` | one line per sync |
-| `.checkouts/` | versions downloaded with `dr artifact code checkout` |
-| `.rollback/` | copies of files a sync is about to overwrite, removed when the sync succeeds |
+| File            | What it holds                                                                                                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.json`   | which artifact and code catalog this checkout pushes to, the last synced and last built versions, and a version a deploy linked and has not yet seen serve |
+| `manifest.json` | the sync engine's index of what was last pushed, used to diff the next sync                                                                                |
+| `history.log`   | one line per sync                                                                                                                                          |
+| `.checkouts/`   | versions downloaded with `dr artifact code checkout`                                                                                                       |
+| `.rollback/`    | copies of files a sync is about to overwrite, removed when the sync succeeds                                                                               |
 
 ### Rollback
 
@@ -147,14 +147,14 @@ Everything else is the server's to check; a rejected deploy comes back as a `422
 
 The failures people hit most. `up` prints the platform's reason beside the errored state; re-running `up` after the fact shows it again in the plan.
 
-| Failure | What it means | What to do |
-| --- | --- | --- |
-| `getpwuid(): uid not found` | containers run as a non-root user with no password-database entry, so anything calling `getpwuid` dies | set `USER` and `HOME` in the Dockerfile, or avoid the lookup |
-| `exec format error` | the image has no `linux/amd64` manifest, the standard Apple-silicon mistake | build with `--platform linux/amd64` |
-| endless restart during startup | liveness with no startup probe, or a startup budget shorter than the model load | add a `startupProbe`, or lengthen it |
-| readiness never passes | port declared but not listened on, or the wrong path | check the port the app listens on and the probe path |
-| `ImagePullBackOff` | the registry is not reachable from the platform, or a bad tag | check the registry and the tag |
-| pod never schedules | bundle shape unavailable in the cluster | pick a smaller resource bundle |
+| Failure                        | What it means                                                                                          | What to do                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `getpwuid(): uid not found`    | containers run as a non-root user with no password-database entry, so anything calling `getpwuid` dies | set `USER` and `HOME` in the Dockerfile, or avoid the lookup |
+| `exec format error`            | the image has no `linux/amd64` manifest, the standard Apple-silicon mistake                            | build with `--platform linux/amd64`                          |
+| endless restart during startup | liveness with no startup probe, or a startup budget shorter than the model load                        | add a `startupProbe`, or lengthen it                         |
+| readiness never passes         | port declared but not listened on, or the wrong path                                                   | check the port the app listens on and the probe path         |
+| `ImagePullBackOff`             | the registry is not reachable from the platform, or a bad tag                                          | check the registry and the tag                               |
+| pod never schedules            | bundle shape unavailable in the cluster                                                                | pick a smaller resource bundle                               |
 
 ## See also
 

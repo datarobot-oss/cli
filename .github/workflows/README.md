@@ -7,12 +7,12 @@ actions under [`.github/actions/`](../actions/).
 
 ## Naming convention
 
-| Prefix | Kind | Trigger | Sorts as |
-| --- | --- | --- | --- |
-| `_` | **Reusable** building block | `workflow_call` only | grouped at top |
-| `pr-` | **PR entrypoint** | `pull_request` | grouped together |
-| `manual-` | **Manual entrypoint** | `workflow_dispatch` | grouped together |
-| none | **Event entrypoint** | push / schedule / tag | — |
+| Prefix    | Kind                        | Trigger               | Sorts as         |
+| --------- | --------------------------- | --------------------- | ---------------- |
+| `_`       | **Reusable** building block | `workflow_call` only  | grouped at top   |
+| `pr-`     | **PR entrypoint**           | `pull_request`        | grouped together |
+| `manual-` | **Manual entrypoint**       | `workflow_dispatch`   | grouped together |
+| none      | **Event entrypoint**        | push / schedule / tag | —                |
 
 > **Important: reference composite actions with the local path (`./`).**
 >
@@ -50,30 +50,30 @@ One extension everywhere: **`.yaml`**.
 
 **Reusables (`_*.yaml`)** — called by entrypoints, never triggered directly:
 
-| File | Purpose |
-| --- | --- |
-| `_build.yaml` | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. `trusted-actions` runs the `setup` composite from upstream main (fork lane). |
-| `_smoke.yaml` | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. `trusted-actions` runs the composites from upstream main (fork lane). |
-| `_smoke-windows.yaml` | Windows smoke tests against a downloaded prebuilt binary artifact. No trusted-actions lane — it uses no local composite actions. |
-| `_install-tests.yaml` | Installation-script tests across Linux/macOS/Windows. |
-| `_pre-release-smoke.yaml` | Heavier end-to-end smoke tests that gate release promotion. |
-| `_workload-acceptance.yaml` | Live workload/artifact acceptance scenarios. Nightly + manual only; never gates releases. |
+| File                        | Purpose                                                                                                                                                                                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_build.yaml`               | Cross-compile all targets on Ubuntu via GoReleaser; uploads the Windows binary artifact. `trusted-actions` runs the `setup` composite from upstream main (fork lane).                                                                                     |
+| `_smoke.yaml`               | Parameterized smoke-test scaffold. Caller picks prep steps (`install-deps`, `setup`, `install-bin`, `build`, `needs-token`, `debug-brew`) and passes the command via `test-script`. `trusted-actions` runs the composites from upstream main (fork lane). |
+| `_smoke-windows.yaml`       | Windows smoke tests against a downloaded prebuilt binary artifact. No trusted-actions lane — it uses no local composite actions.                                                                                                                          |
+| `_install-tests.yaml`       | Installation-script tests across Linux/macOS/Windows.                                                                                                                                                                                                     |
+| `_pre-release-smoke.yaml`   | Heavier end-to-end smoke tests that gate release promotion.                                                                                                                                                                                               |
+| `_workload-acceptance.yaml` | Live workload/artifact acceptance scenarios. Nightly + manual only; never gates releases.                                                                                                                                                                 |
 
 **Entrypoints:**
 
-| File | Trigger | Purpose |
-| --- | --- | --- |
-| `pr-checks.yaml` | `pull_request → main` | Lint, test, copyright, code-gen, cross-compile build, auto-label; conditional deps/install/completion tests. |
-| `pr-security.yaml` | `pull_request`, `push → main` | Trivy scan, govulncheck, dependency-review, CodeQL (Go) analysis (`analyze` job, non-blocking until Phase 5). |
-| `smoke-gate.yaml` | `pull_request → main` | Sets the required **Smoke Tests** commit status (see below). |
-| `smoke-on-demand.yaml` | `pull_request [labeled]` | Label-triggered smoke tests for **non-fork** PRs. |
-| `comment-commands.yaml` | `issue_comment` | Slash-commands (trigger/approve/skip smoke & install tests). |
-| `fork-smoke-tests.yaml` | `workflow_dispatch` | Maintainer-approved fork smoke tests with a security pre-scan. |
-| `manual-smoke.yaml` | `workflow_dispatch` | Manual deps / install-integration / installation smoke suites, plus the `acceptance` suite (live workload/artifact scenarios) on demand (`suite` input). |
-| `nightly-smoke.yaml` | `push → main`, `schedule`, `dispatch` | Full smoke matrix + workload/artifact acceptance suite + install/self-update tests + Slack on failure. |
-| `release.yaml` | `push tags v*` | GoReleaser release → verify-installation → pre-release smoke → promote. On release-job failure, diagnoses known infrastructure failures and posts the fix to Slack. |
-| `dev-image.yaml` | `push → main`, `dispatch` | Build and push a floating multi-arch `ghcr.io/datarobot-oss/cli:dev` Docker image. |
-| `pages.yaml` | `push → main`, `dispatch` | Build and deploy the MkDocs site to GitHub Pages. |
+| File                    | Trigger                                 | Purpose                                                                                                                                                                   |
+| ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-checks.yaml`        | `pull_request → main`                   | Lint, test, copyright, code-gen, cross-compile build, auto-label; conditional deps/install/completion tests.                                                              |
+| `pr-security.yaml`      | `pull_request`, `push → main`           | Trivy scan, govulncheck, dependency-review, CodeQL (Go) analysis (`analyze` job, non-blocking until Phase 5).                                                             |
+| `smoke-gate.yaml`       | `pull_request → main`                   | Sets the required **Smoke Tests** commit status (see below).                                                                                                              |
+| `smoke-on-demand.yaml`  | `pull_request [labeled]`                | Label-triggered smoke tests for **non-fork** PRs.                                                                                                                         |
+| `comment-commands.yaml` | `issue_comment`                         | Slash-commands (trigger/approve/skip smoke & install tests).                                                                                                              |
+| `fork-smoke-tests.yaml` | `workflow_dispatch`                     | Maintainer-approved fork smoke tests with a security pre-scan.                                                                                                            |
+| `manual-smoke.yaml`     | `workflow_dispatch`                     | Manual deps / install-integration / installation smoke suites, plus the `acceptance` suite (live workload/artifact scenarios) on demand (`suite` input).                  |
+| `nightly-smoke.yaml`    | `push → main`, `schedule`, `dispatch`   | Full smoke matrix + workload/artifact acceptance suite + install/self-update tests + Slack on failure.                                                                    |
+| `release.yaml`          | `push tags v*`                          | GoReleaser release → verify-installation → pre-release smoke → promote. On release-job failure, diagnoses known infrastructure failures and posts the fix to Slack.       |
+| `dev-image.yaml`        | `push → main`, `dispatch`               | Build and push a floating multi-arch `ghcr.io/datarobot-oss/cli:dev` Docker image.                                                                                        |
+| `pages.yaml`            | `push → main`, `dispatch`               | Build and deploy the MkDocs site to GitHub Pages.                                                                                                                         |
 
 ## Composite actions
 
