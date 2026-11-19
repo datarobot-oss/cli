@@ -66,7 +66,15 @@ func NonNegativeInt(p *int, value int) pflag.Value {
 func (v *boundedIntValue) Set(s string) error {
 	parsed, err := strconv.ParseInt(s, 0, 64)
 	if err != nil {
-		return err
+		// Same wording as pflag's built-in int flag, so a typo reads the same
+		// on every command. Out of range stays distinct: pflag reports a
+		// well-formed but oversized number as "must be an integer", which
+		// sends the user hunting for a typo that is not there.
+		if errors.Is(err, strconv.ErrRange) {
+			return errors.New("value is out of range")
+		}
+
+		return errors.New("must be an integer")
 	}
 
 	if parsed < int64(v.min) || parsed > math.MaxInt {

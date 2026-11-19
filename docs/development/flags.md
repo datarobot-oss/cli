@@ -73,6 +73,10 @@ Invalid input fails at parse time with cobra's standard wrapping:
 Error: invalid argument "0" for "--limit" flag: must be a positive integer
 ```
 
+Non-numeric input reads `must be an integer` and an oversized number reads
+`value is out of range`, matching the wording of pflag's built-in `int` flag.
+`pollflags` does the same for durations (`must be a duration like "30s" or "5m"`).
+
 so `RunE` stays free of flag-shape checks. Keep library-level argument
 validation in `internal/...` as defense in depth for non-CLI callers. The
 pattern follows `cmd/internal/pollflags`, which does the same for durations.

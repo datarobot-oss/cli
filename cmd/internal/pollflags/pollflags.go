@@ -68,7 +68,9 @@ func PositiveDuration(p *time.Duration, value time.Duration) pflag.Value {
 func (v *positiveDurationValue) Set(s string) error {
 	parsed, err := time.ParseDuration(s)
 	if err != nil {
-		return err
+		// Same wording as pflag's built-in duration flag, so a typo reads the
+		// same on every command.
+		return errors.New(`must be a duration like "30s" or "5m"`)
 	}
 
 	if parsed <= 0 {
