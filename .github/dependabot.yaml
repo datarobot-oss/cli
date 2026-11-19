@@ -6,8 +6,6 @@ updates:
       interval: daily
     commit-message:
       prefix: "⬆️ SEC(Deps): "
-    # viper and cobra both resolve flag handling through pflag, so a bump to
-    # one can need a matching bump to the others. Grouping keeps them in one PR.
     groups:
       spf13-cli-stack:
         patterns:
