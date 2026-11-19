@@ -125,8 +125,6 @@ homebrew_casks:
             end
           end
     binaries: [ dr ]
-    # `url.verified` is gone: Homebrew deprecated it (brew#23280) and goreleaser
-    # v2.18.1+ no longer writes it into the cask; default URL verification applies.
     url:
       template: "https://github.com/datarobot-oss/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     homepage: "https://www.datarobot.com"
