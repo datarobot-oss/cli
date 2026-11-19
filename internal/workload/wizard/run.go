@@ -1728,6 +1728,12 @@ func FetchLive(workloadID string) (manifest.Live, error) {
 	return manifest.NewLive(workloadID, workloadDoc, artifactDoc)
 }
 
+// CheckLive checks a manifest rendered from a running workload, before a
+// directory exists for it to be read against.
+func CheckLive(content []byte) error {
+	return checkRendered(content, "", authorLive)
+}
+
 // checkRendered parses and validates what is about to be written, so a file
 // this CLI would refuse to read is never left on disk.
 //

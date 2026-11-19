@@ -82,14 +82,8 @@ func buildManifest(stderr io.Writer, workloadID string, art *workload.Artifact) 
 		return nil, err
 	}
 
-	// No directory: the code, and so the Dockerfile, arrives after this runs.
-	parsed, err := manifest.Parse(content, "")
-	if err == nil {
-		err = parsed.Validate()
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("workload %s: %w", workloadID, err)
+	if err := wizard.CheckLive(content); err != nil {
+		return nil, err
 	}
 
 	wizard.WarnSecretLiterals(stderr, live, live.Name, "the manifest")
