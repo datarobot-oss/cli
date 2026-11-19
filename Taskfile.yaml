@@ -16,7 +16,9 @@ vars:
   # Duplicate-code ratchet: hard cap on clones found by `task dupcheck`. Lower
   # it as clones are removed; never raise it.
   JSCPD_CLONE_LIMIT: "200"
-  GORELEASER_VERSION: "v2.17.1"
+  # v2.19+ is required to parse homebrew_casks install_steps/uninstall_steps
+  # (goreleaser.yaml migrated to the declarative cask DSL in ALIFE-1897).
+  GORELEASER_VERSION: "v2.20.2"
   # Keep this in sync with the GOOS lists in goreleaser.yaml.
   LINT_GOOS_TARGETS: "linux darwin windows"
 
