@@ -51,23 +51,12 @@ func SetInteractiveFlowForTest(flow func(Options, Detected) ([]byte, manifest.Dr
 	return func() { runInteractiveFlowFn = original }
 }
 
-// SetLiveFnsForTest replaces the two fetches that download a workload and the
-// artifact it runs, so a command-level test can bind to one without a network.
+// SetLiveFnsForTest replaces the workload and artifact fetches, for command-level tests.
 func SetLiveFnsForTest(getWorkload, getArtifact func(string) (workload.Document, error)) func() {
 	originalWorkload, originalArtifact := getWorkloadFn, getArtifactFn
 	getWorkloadFn, getArtifactFn = getWorkload, getArtifact
 
 	return func() { getWorkloadFn, getArtifactFn = originalWorkload, originalArtifact }
-}
-
-// SetListWorkloadsFnForTest replaces the workload listing that finds the
-// workloads running an artifact, so a command-level test can resolve one
-// without a network.
-func SetListWorkloadsFnForTest(list func(limit, offset int, statuses []string, enclave string) ([]workload.Workload, error)) func() {
-	original := listWorkloadsFn
-	listWorkloadsFn = list
-
-	return func() { listWorkloadsFn = original }
 }
 
 // Test seams: the wizard's tests replace these to keep the flow off the
@@ -1506,7 +1495,7 @@ func (o Options) storeSecrets(
 // spec is downloaded and the flags are applied on top, so a headless bind is
 // the same operation the picker performs.
 func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft, error) {
-	live, err := fetchLive(o.Answers.WorkloadID)
+	live, err := FetchLive(o.Answers.WorkloadID)
 	if err != nil {
 		return nil, manifest.Draft{}, err
 	}
@@ -1551,7 +1540,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// Read off the workload as it arrived, not off applied: the point is what
 	// the platform was already serving in the clear, and a run that failed
 	// above has no file to warn about.
-	warnSecretLiterals(o.Stderr, live, live.Name, "binding")
+	WarnSecretLiterals(o.Stderr, live, live.Name, "binding")
 
 	return content, draft, nil
 }
@@ -1717,10 +1706,10 @@ func (a Answers) explicitBuild() bool {
 	return a.BuildMode != "" || a.Image != "" || a.ExecutionEnvironment != "" || a.Entrypoint != ""
 }
 
-// fetchLive downloads a workload and the artifact it runs. The workload is
+// FetchLive downloads a workload and the artifact it runs. The workload is
 // fetched by id, so a typo fails here, at setup, rather than at the first
 // deploy.
-func fetchLive(workloadID string) (manifest.Live, error) {
+func FetchLive(workloadID string) (manifest.Live, error) {
 	workloadDoc, err := getWorkloadFn(workloadID)
 	if err != nil {
 		return manifest.Live{}, fmt.Errorf("cannot bind to workload %s: %w", workloadID, err)
@@ -1902,7 +1891,7 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 		detected.EnvErr, manifest.FileName)
 }
 
-// warnSecretLiterals names the variables a bound workload or a spec file
+// WarnSecretLiterals names the variables a bound workload or a spec file
 // already declares in the clear whose values say what they are.
 //
 // The .env import classifies what it carries and writes a secret as a
@@ -1924,7 +1913,7 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 //
 // subject is what declared the values, the workload or the spec file, and
 // actor is what copies them across.
-func warnSecretLiterals(stderr io.Writer, live manifest.Live, subject, actor string) {
+func WarnSecretLiterals(stderr io.Writer, live manifest.Live, subject, actor string) {
 	if stderr == nil {
 		return
 	}

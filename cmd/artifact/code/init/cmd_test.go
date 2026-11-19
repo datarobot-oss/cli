@@ -1306,19 +1306,24 @@ func TestRunE_WithManifest_LockedArtifactPointsAtCheckoutAndHowToDeployElsewhere
 	assert.FileExists(t, filepath.Join(tmp, manifest.FileName))
 }
 
-// withFakeList serves the given workloads as the workload list, in pages, so
-// the lookup of the workload that runs an artifact needs no network.
-func withFakeList(t *testing.T, list ...workload.Workload) {
+// withFakeFind answers the lookup of workloads by artifact with those that match.
+func withFakeFind(t *testing.T, all ...workload.Workload) {
 	t.Helper()
 
-	t.Cleanup(wizard.SetListWorkloadsFnForTest(
-		func(limit, offset int, _ []string, _ string) ([]workload.Workload, error) {
-			if offset >= len(list) {
-				return nil, nil
-			}
+	orig := findWorkloadsFn
+	findWorkloadsFn = func(artifactID string) ([]workload.Workload, error) {
+		var found []workload.Workload
 
-			return list[offset:min(offset+limit, len(list))], nil
-		}))
+		for _, w := range all {
+			if w.ArtifactID == artifactID {
+				found = append(found, w)
+			}
+		}
+
+		return found, nil
+	}
+
+	t.Cleanup(func() { findWorkloadsFn = orig })
 }
 
 func TestRunE_BareWithManifest_UsesTheWorkloadThatRunsTheArtifact(t *testing.T) {
@@ -1326,7 +1331,7 @@ func TestRunE_BareWithManifest_UsesTheWorkloadThatRunsTheArtifact(t *testing.T) 
 
 	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
 	withFakeLive(t, manifestWorkloadDoc, manifestArtifactDoc)
-	withFakeList(t,
+	withFakeFind(t,
 		workload.Workload{ID: "68b0000000000000000000a1", Name: "other", ArtifactID: "art-other"},
 		workload.Workload{ID: "68b0c1d2e3f4a5b6c7d8e9f0", Name: "canvas-agent", Status: "running", ArtifactID: "art-abc-123"})
 
@@ -1344,7 +1349,7 @@ func TestRunE_BareWithManifest_NoWorkloadStillLinks(t *testing.T) {
 	tmp := t.TempDir()
 
 	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
-	withFakeList(t, workload.Workload{ID: "68b0000000000000000000a1", ArtifactID: "art-other"})
+	withFakeFind(t, workload.Workload{ID: "68b0000000000000000000a1", ArtifactID: "art-other"})
 
 	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest"})
 
@@ -1361,7 +1366,7 @@ func TestRunE_BareWithManifest_SeveralWorkloadsStopBeforeLinking(t *testing.T) {
 	tmp := t.TempDir()
 
 	withFakeArtifact(t, func(id string) (*workload.Artifact, error) { return fakeLineageArtifact(id), nil })
-	withFakeList(t,
+	withFakeFind(t,
 		workload.Workload{ID: "68b0000000000000000000a1", Name: "first", Status: "running", ArtifactID: "art-abc-123"},
 		workload.Workload{ID: "68b0000000000000000000a2", Name: "second", Status: "stopped", ArtifactID: "art-abc-123"})
 
@@ -1388,4 +1393,24 @@ func TestRunE_WorkloadIDWithoutWithManifestIsRefused(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--workload-id only applies with --with-manifest")
 	assert.False(t, wapi.Exists(tmp))
+}
+
+func TestRunE_WithManifest_WarnsWhenTheWorkloadRunsAnotherLineage(t *testing.T) {
+	tmp := t.TempDir()
+
+	withFakeArtifact(t, func(id string) (*workload.Artifact, error) {
+		art := fakeLineageArtifact(id)
+		art.ArtifactRepositoryID = "repo-other"
+
+		return art, nil
+	})
+	withFakeLive(t, manifestWorkloadDoc, manifestArtifactDoc)
+
+	cmd := newTestCmd(t, tmp, true, []string{"art-abc-123", "--with-manifest", "--workload-id", "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	_, stderr, err := runCapture(t, cmd)
+	require.NoError(t, err)
+
+	assert.Contains(t, stderr, "different artifact lineage")
+	assert.FileExists(t, filepath.Join(tmp, manifest.FileName))
 }

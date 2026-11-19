@@ -36,9 +36,7 @@ type initResult struct {
 	CatalogVersionID *string `json:"catalogVersionId"`
 	Dir              string  `json:"dir"`
 
-	// ManifestPath and ManifestCredentialsPending describe the file
-	// --with-manifest wrote. Both are absent when it was not asked for or the
-	// file already existed, so the shape is unchanged for every other run.
+	// Set only when --with-manifest wrote a file.
 	ManifestPath               string `json:"manifestPath,omitempty"`
 	ManifestCredentialsPending *int   `json:"manifestCredentialsPending,omitempty"`
 }
@@ -106,8 +104,7 @@ func renderInitResult(stderr io.Writer, format outputformat.OutputFormat, result
 		step.Description = "Upload your files"
 	}
 
-	// A locked artifact is immutable, so sync cannot write to it: reading its
-	// code is the step that works.
+	// Sync cannot write to a locked artifact.
 	if strings.EqualFold(result.Status, "locked") {
 		step = tui.NextStep{
 			Command:     "dr artifact code checkout" + manifest.DirFlag(result.Dir),

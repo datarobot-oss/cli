@@ -1162,3 +1162,49 @@ func TestWaitForWorkload_RidesOutATransientPollError(t *testing.T) {
 	require.NoError(t, err, "a 502 between polls must not fail a deploy that is going fine")
 	assert.Equal(t, "art-2", wl.ArtifactID)
 }
+
+func TestFindWorkloadsByArtifact_ReadsEveryPage(t *testing.T) {
+	installSkipAuth(t)
+
+	var srv *httptest.Server
+
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("offset") == "0" {
+			next := srv.URL + "/api/v2/workloads/?limit=100&offset=100"
+			fmt.Fprint(w, workloadListPage(next,
+				serverWorkloadDocOn("wl-1", "a", "running", "art-1"),
+				serverWorkloadDocOn("wl-2", "b", "running", "art-other")))
+
+			return
+		}
+
+		fmt.Fprint(w, workloadListPage("", serverWorkloadDocOn("wl-3", "c", "stopped", "art-1")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	found, err := FindWorkloadsByArtifact("art-1")
+	require.NoError(t, err)
+
+	require.Len(t, found, 2)
+	assert.Equal(t, []string{"wl-1", "wl-3"}, []string{found[0].ID, found[1].ID})
+}
+
+func TestFindWorkloadsByArtifact_NoMatch(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, workloadListPage("", serverWorkloadDocOn("wl-1", "a", "running", "art-other")))
+	}))
+
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	found, err := FindWorkloadsByArtifact("art-1")
+
+	require.NoError(t, err)
+	assert.Empty(t, found)
+}

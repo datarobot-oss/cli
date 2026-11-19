@@ -14,17 +14,9 @@
 
 package manifest
 
-// Portable is the live view as it can be written for a different install: it
-// binds no workload, and every credential reference names CredentialPlaceholder.
-//
-// A workload id and a credential id are both issued by one install, and the
-// platform never returns a stored credential value, so nothing carried across
-// would resolve on the other side. The placeholder is what a freshly written
-// manifest already uses for a secret nobody has stored yet, so the deploy
-// refuses it by name instead of failing on an id the target has never seen.
-//
-// The second value is how many references were reset, for the caller to say
-// how many are left to fill in.
+// Portable returns the live view for another install: no workload binding, and
+// every credential reference reset to CredentialPlaceholder, since both are
+// issued per install. The second value is how many references were reset.
 func (l Live) Portable() (Live, int) {
 	portable := l
 	portable.WorkloadID = ""
@@ -34,9 +26,7 @@ func (l Live) Portable() (Live, int) {
 	return portable, resetCredentialIDs(portable.Spec) + resetCredentialIDs(portable.Runtime)
 }
 
-// resetCredentialIDs walks every environmentVars list under node and points
-// each credential-backed entry at CredentialPlaceholder, reporting how many it
-// changed.
+// resetCredentialIDs resets every credential-backed environment variable under node.
 func resetCredentialIDs(node any) int {
 	reset := 0
 

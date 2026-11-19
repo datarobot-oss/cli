@@ -17,9 +17,7 @@ package initcmd
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 
 	"github.com/datarobot/cli/cmd/artifact/code/internal/dirprompt"
 	"github.com/datarobot/cli/cmd/artifact/code/internal/format"
@@ -31,9 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
 	wldoctor "github.com/datarobot/cli/internal/workload/doctor"
-	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
-	"github.com/datarobot/cli/internal/workload/wizard"
 	"github.com/spf13/cobra"
 )
 
@@ -58,18 +54,10 @@ and pull remote changes.
 The artifact must already exist before running 'init'. Create it via
 'dr artifact create' or in the DataRobot UI.
 
-With --with-manifest, init also writes the .datarobot.yaml that 'dr workload up'
-deploys from, taken from the running definition of the workload that runs the
-artifact. It is for moving a workload to another install: run init and sync or
-checkout against the source (--profile), then 'dr workload up' against the
-target. The workload is the one whose artifact is exactly the one being linked.
-When no workload runs it, init links the directory and writes no file; when
-several do (a locked artifact can back many), init stops and lists them, and
---workload-id picks one. The file binds no workload, because a workload id
-belongs to the install that issued it, and every credential reference names
-PLACEHOLDER, because credential ids do too and the platform never returns a
-stored value. Replace each with a credential id from the target install before
-deploying. An existing .datarobot.yaml is left as it is.
+With --with-manifest, init also writes a .datarobot.yaml from the workload that
+runs the artifact, for deploying the code to another install. The file binds no
+workload, and its credential references name PLACEHOLDER. Pass --workload-id to
+choose the workload when none or several run the artifact.
 
 By default, output is human-readable. Use --output-format json for
 machine-parseable output.
@@ -95,10 +83,8 @@ Example:
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; use defaults.")
 	c.Flags().Bool("with-manifest", false,
-		"Also write .datarobot.yaml from the running definition of the workload that runs the artifact, "+
-			"unbound and with credential references left to fill in, so the code can be deployed to another install.")
-	c.Flags().String("workload-id", "",
-		"With --with-manifest, take the definition from this workload instead of looking up the one that runs the artifact.")
+		"Also write .datarobot.yaml from the workload that runs the artifact, to deploy the code to another install.")
+	c.Flags().String("workload-id", "", "With --with-manifest, use this workload instead of looking one up.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() in runInit so an explicit
@@ -144,9 +130,8 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
-	// Before the link, so a workload id that does not resolve fails with
-	// nothing changed.
-	portable, err := prepareManifest(cmd, art)
+	// Before the link, so a failure here leaves nothing behind.
+	portable, err := getManifest(cmd, art)
 	if err != nil {
 		return err
 	}
@@ -165,119 +150,23 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 	return finishInit(cmd, dir, *art, portable, outputFormat)
 }
 
-// finishInit writes the portable manifest, when one was asked for, and
-// reports the link.
 func finishInit(
-	cmd *cobra.Command, dir string, art workload.Artifact, portable *wizard.PortableManifest,
+	cmd *cobra.Command, dir string, art workload.Artifact, portable *portableManifest,
 	outputFormat outputformat.OutputFormat,
 ) error {
 	result := newInitResult(art, dir)
 
 	if portable != nil {
-		if err := writeManifest(cmd.ErrOrStderr(), dir, *portable, &result); err != nil {
+		if err := portable.write(cmd.ErrOrStderr(), dir, &result); err != nil {
 			return err
 		}
-	}
 
-	if portable != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(),
 			"To deploy this to another install, delete %s first: it names this install's artifact.\n",
 			wapi.Dir(dir))
 	}
 
 	return renderInitResult(cmd.ErrOrStderr(), outputFormat, result)
-}
-
-// prepareManifest finds the workload for --with-manifest and renders its
-// definition for another install. It returns nil when no manifest is asked
-// for, or when the artifact has no workload to take one from.
-func prepareManifest(cmd *cobra.Command, art *workload.Artifact) (*wizard.PortableManifest, error) {
-	withManifest, _ := cmd.Flags().GetBool("with-manifest")
-	workloadID, _ := cmd.Flags().GetString("workload-id")
-
-	if workloadID != "" && !withManifest {
-		return nil, errors.New("--workload-id only applies with --with-manifest")
-	}
-
-	if !withManifest {
-		return nil, nil //nolint:nilnil // no manifest asked for is not an error
-	}
-
-	if workloadID == "" {
-		found, err := workloadFor(cmd.ErrOrStderr(), art)
-		if err != nil || found == "" {
-			return nil, err
-		}
-
-		workloadID = found
-	}
-
-	portable, err := wizard.PreparePortable(workloadID, art.ArtifactRepositoryID, cmd.ErrOrStderr())
-	if err != nil {
-		return nil, err
-	}
-
-	return &portable, nil
-}
-
-// workloadFor is the workload that runs the artifact, "" when none does. Several
-// is an error that names them: choosing silently would write the wrong file.
-func workloadFor(stderr io.Writer, art *workload.Artifact) (string, error) {
-	found, err := wizard.WorkloadsRunning(art.ID)
-	if err != nil {
-		return "", err
-	}
-
-	switch len(found) {
-	case 0:
-		fmt.Fprintf(stderr, "No workload runs artifact %s, so no %s was written. "+
-			"To take one from a workload that runs another version, pass --workload-id.\n",
-			art.ID, manifest.FileName)
-
-		return "", nil
-	case 1:
-		return found[0].ID, nil
-	}
-
-	lines := make([]string, 0, len(found))
-	for _, w := range found {
-		lines = append(lines, fmt.Sprintf("  %s  %s (%s)", w.ID, w.Name, w.Status))
-	}
-
-	return "", fmt.Errorf("%d workloads run artifact %s; pass --workload-id to choose one:\n%s",
-		len(found), art.ID, strings.Join(lines, "\n"))
-}
-
-// writeManifest puts the portable manifest beside the link. The link is
-// already made by now, so a failure says so rather than reading as if init
-// did nothing. A manifest that is already there is the user's: it is left
-// alone and said so, which is not a failure.
-func writeManifest(stderr io.Writer, dir string, portable wizard.PortableManifest, result *initResult) error {
-	path, err := portable.Write(dir)
-	if errors.Is(err, manifest.ErrExists) {
-		fmt.Fprintf(stderr, "%s already exists and was left as it is; edit it directly or delete it and run init with --with-manifest again.\n",
-			wizard.ShortPath(path))
-
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("linked the artifact, but could not write the manifest: %w", err)
-	}
-
-	pending := portable.CredentialsPending
-	result.ManifestPath = path
-	result.ManifestCredentialsPending = &pending
-
-	fmt.Fprintf(stderr, "✓ Wrote %s from workload %s (%s), with no workload binding.\n",
-		wizard.ShortPath(path), portable.Name, portable.WorkloadID)
-
-	if pending > 0 {
-		fmt.Fprintf(stderr, "  %d credential %s name %s: replace each with a credential id from the install you deploy to.\n",
-			pending, wizard.Plural(pending, "reference", "references"), manifest.CredentialPlaceholder)
-	}
-
-	return nil
 }
 
 func fetchArtifact(artifactID string) (*workload.Artifact, error) {

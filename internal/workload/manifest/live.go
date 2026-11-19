@@ -52,9 +52,7 @@ type Live struct {
 	// ArtifactType is the artifact's kind, which the platform keeps beside the
 	// spec rather than inside it.
 	ArtifactType string
-	// RepositoryID is the lineage the artifact belongs to. A workload runs a
-	// locked version while a checkout links a draft, so lineage is the only
-	// thing the two share.
+	// RepositoryID is the artifact lineage.
 	RepositoryID string
 	Spec         map[string]any
 	Runtime      map[string]any
