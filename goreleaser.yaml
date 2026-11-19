@@ -97,21 +97,32 @@ dockers_v2:
 
 homebrew_casks:
   - name: dr-cli
+    # `{{ "{{HOMEBREW_PREFIX}}" }}` is goreleaser's escape for Homebrew's own
+    # `{{HOMEBREW_PREFIX}}` token, which shares the Go template delimiters.
+    # Do not use `{{bin}}`: Homebrew does not resolve it in a cask context.
+    #
+    # Steps run in Homebrew's cask sandbox, so every path `dr self completion
+    # install|uninstall` touches must be listed in `writable_paths`; otherwise
+    # the writes fail silently because `must_succeed: false` hides the error.
+    # Keep in sync with cmd/self/completion/{install,uninstall}/cmd.go.
+    # `writable_paths` does not glob, so the best-effort `~/.zcompdump*` cache
+    # cleanup done by `dr` is intentionally not listed (it ignores that failure).
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/bin/ln", args: ["-sf", "#{HOMEBREW_PREFIX}/bin/dr", "#{HOMEBREW_PREFIX}/bin/datarobot"]
-            system_command "xattr", args: ["-dr", "com.apple.quarantine", "#{HOMEBREW_PREFIX}/bin/datarobot"]
-            system_command "xattr", args: ["-dr", "com.apple.quarantine", "#{HOMEBREW_PREFIX}/bin/dr"]
-            system_command "#{HOMEBREW_PREFIX}/bin/dr", args: ["self", "completion", "install", "--yes"], must_succeed: false
+        install_steps: |
+          on_macos do
+            symlink '{{ "{{HOMEBREW_PREFIX}}" }}/bin/dr', '{{ "{{HOMEBREW_PREFIX}}" }}/bin/datarobot', overwrite: true
+            run "xattr", args: ["-dr", "com.apple.quarantine", '{{ "{{HOMEBREW_PREFIX}}" }}/bin/datarobot']
+            run "xattr", args: ["-dr", "com.apple.quarantine", '{{ "{{HOMEBREW_PREFIX}}" }}/bin/dr']
+            run '{{ "{{HOMEBREW_PREFIX}}" }}/bin/dr', args: ["self", "completion", "install", "--yes"], must_succeed: false, writable_paths: ["~/.zshrc", "~/.zsh/completions", "~/.oh-my-zsh/custom/completions", "~/.bashrc", "~/.bash_completions", "~/.config/fish/completions"]
           end
       pre:
-        uninstall: |
-          if OS.mac?
-            system_command "#{HOMEBREW_PREFIX}/bin/dr", args: ["self", "completion", "uninstall", "--yes"], must_succeed: false
-            symlink = Pathname.new("#{HOMEBREW_PREFIX}/bin/datarobot")
-            symlink.delete if symlink.symlink?
+        uninstall_steps: |
+          on_macos do
+            run '{{ "{{HOMEBREW_PREFIX}}" }}/bin/dr', args: ["self", "completion", "uninstall", "--yes"], must_succeed: false, writable_paths: ["~/.zshrc", "~/.zsh/completions", "~/.oh-my-zsh/custom/completions", "~/.bashrc", "~/.bash_completions", "~/.config/fish/completions"]
+            if_path_exists '{{ "{{HOMEBREW_PREFIX}}" }}/bin/datarobot' do
+              remove '{{ "{{HOMEBREW_PREFIX}}" }}/bin/datarobot'
+            end
           end
     binaries: [ dr ]
     url:
