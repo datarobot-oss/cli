@@ -37,7 +37,8 @@ import (
 type ExecOption func(*execOptions)
 
 type execOptions struct {
-	depsConsent bool
+	depsConsent   bool
+	skipPreflight bool
 }
 
 // WithDepsConsent pre-approves the dependency-install prompt, as if the user
@@ -46,6 +47,14 @@ type execOptions struct {
 // without the plugin binary rejecting an unknown flag.
 func WithDepsConsent() ExecOption {
 	return func(o *execOptions) { o.depsConsent = true }
+}
+
+// WithoutPreflight skips the dependency and authentication checks before the
+// plugin runs. Use it for non-functional invocations such as rendering the
+// plugin's --help: those must never open an interactive prompt (login wizard,
+// dependency install), which would hang when the output is piped.
+func WithoutPreflight() ExecOption {
+	return func(o *execOptions) { o.skipPreflight = true }
 }
 
 // checkAndInstallPluginDeps checks and installs the plugin's declared dependencies
@@ -106,18 +115,20 @@ func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable stri
 		opt(&options)
 	}
 
-	if !checkAndInstallPluginDeps(manifest, args, options.depsConsent) {
-		return 1
-	}
-
-	skipAuth := viperx.GetBool(config.SkipAuthKey)
-
-	if manifest.Authentication && !skipAuth {
-		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
-		authCtx := config.WithUserAgent(ctx, userAgent)
-
-		if !auth.EnsureAuthenticated(authCtx) {
+	if !options.skipPreflight {
+		if !checkAndInstallPluginDeps(manifest, args, options.depsConsent) {
 			return 1
+		}
+
+		skipAuth := viperx.GetBool(config.SkipAuthKey)
+
+		if manifest.Authentication && !skipAuth {
+			userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
+			authCtx := config.WithUserAgent(ctx, userAgent)
+
+			if !auth.EnsureAuthenticated(authCtx) {
+				return 1
+			}
 		}
 	}
 

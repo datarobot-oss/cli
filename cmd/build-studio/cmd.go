@@ -117,7 +117,10 @@ func printForwardedHelp(cmd *cobra.Command) error {
 	fmt.Println(tui.SubTitleStyle.Render("Flags forwarded to dr xp:"))
 	fmt.Println()
 
-	executePlugin(cmd.Context(), xp.Manifest, xp.Executable, []string{"--help"}, cmd.Root().PersistentFlags())
+	// WithoutPreflight: rendering help must never open the login wizard or a
+	// dependency-install prompt (xp's manifest requires authentication), which
+	// would hang when the output is piped.
+	executePlugin(cmd.Context(), xp.Manifest, xp.Executable, []string{"--help"}, cmd.Root().PersistentFlags(), plugin.WithoutPreflight())
 
 	return nil
 }
