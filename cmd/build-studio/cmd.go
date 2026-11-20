@@ -17,8 +17,12 @@ package buildstudio
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	plugininstall "github.com/datarobot/cli/cmd/plugin/install"
 	"github.com/datarobot/cli/cmd/plugin/shared"
 	"github.com/datarobot/cli/internal/cli"
@@ -39,12 +43,26 @@ const (
 // touch the network, or install anything. Discovery in particular is cached
 // process-wide behind a sync.Once, which test order must not consume.
 var (
-	getPlugins          = plugin.GetPlugins
-	loadManagedPlugin   = plugin.LoadManagedPlugin
-	installPluginByName = installViaPluginInstall
-	executePlugin       = plugin.ExecutePlugin
-	checkPluginUpdate   = shared.CheckAndPromptPluginUpdate
+	getPlugins                    = plugin.GetPlugins
+	loadManagedPlugin             = plugin.LoadManagedPlugin
+	installPluginByName           = installViaPluginInstall
+	executePlugin                 = plugin.ExecutePlugin
+	checkPluginUpdate             = shared.CheckAndPromptPluginUpdate
+	stderr              io.Writer = os.Stderr
 )
+
+// xpFeature is a Build Studio feature and the first xp version that has it.
+type xpFeature struct {
+	name       string
+	minVersion *semver.Version
+}
+
+// xpFeatures lists what Build Studio needs from xp, oldest first. The last
+// entry's version is the minimum below which dr build-studio warns.
+var xpFeatures = []xpFeature{
+	{name: "Assist", minVersion: semver.MustParse("2.3.0")},
+	{name: "Analyze trace", minVersion: semver.MustParse("2.5.0")},
+}
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -154,9 +172,13 @@ func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 		checkPluginUpdate(p.Manifest.Name, p.Manifest.Version, p.Executable)
 	}
 
-	// The banner goes to stderr so stdout stays reserved for xp's own output
-	// (e.g. under --output-format json).
-	fmt.Fprintln(os.Stderr, tui.InfoStyle.Render("🔌 Running plugin: "+xpPluginName))
+	// Warnings and the banner go to stderr so stdout stays reserved for xp's
+	// own output (e.g. under --output-format json).
+	if msg := xpVersionWarning(xpVersionAtLaunch(xp)); msg != "" {
+		fmt.Fprintln(stderr, tui.WarnStyle.Render(msg))
+	}
+
+	fmt.Fprintln(stderr, tui.InfoStyle.Render("🔌 Running plugin: "+xpPluginName))
 	log.Debug("Executing plugin", "name", xpPluginName, "executable", xp.Executable)
 
 	var execOpts []plugin.ExecOption
@@ -166,6 +188,46 @@ func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 	}
 
 	return executePlugin(cmd.Context(), xp.Manifest, xp.Executable, args.passthrough, cmd.Root().PersistentFlags(), execOpts...), nil
+}
+
+// xpVersionAtLaunch returns the version of xp that is about to run. The
+// update check may have replaced a managed xp in place, so its manifest is
+// read again when it is the same installation (the same plugin directory);
+// any other xp keeps the version it was discovered with.
+func xpVersionAtLaunch(xp *plugin.DiscoveredPlugin) string {
+	p, err := loadManagedPlugin(xpPluginName)
+	if err != nil || p == nil || filepath.Dir(p.Executable) != filepath.Dir(xp.Executable) {
+		return xp.Manifest.Version
+	}
+
+	return p.Manifest.Version
+}
+
+// xpVersionWarning returns a warning naming the Build Studio features the
+// installed xp version is too old for, or "" when it has them all or its
+// version can't be parsed (e.g. a development build).
+func xpVersionWarning(installed string) string {
+	v, err := semver.NewVersion(installed)
+	if err != nil {
+		log.Debug("Cannot parse xp version, skipping minimum version check", "version", installed, "error", err)
+
+		return ""
+	}
+
+	var missing []string
+
+	for _, f := range xpFeatures {
+		if v.LessThan(f.minVersion) {
+			missing = append(missing, f.name+" needs "+f.minVersion.String())
+		}
+	}
+
+	if len(missing) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("⚠ xp %s is older than Build Studio needs: %s. Update with: dr plugin update %s",
+		installed, strings.Join(missing, ", "), xpPluginName)
 }
 
 // ensureStudioPlugins makes sure both plugins Build Studio needs are
