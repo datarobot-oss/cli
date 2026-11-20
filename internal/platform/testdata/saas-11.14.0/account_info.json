@@ -1,0 +1,9 @@
+{
+  "seatLicenses": {
+    "NON_BUILDER_USER": false
+  },
+  "limits": {
+    "maxConcurrentWorkloads": 500,
+    "maxWorkloadReplicas": 3
+  }
+}

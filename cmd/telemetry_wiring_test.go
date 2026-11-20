@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/datarobot/cli/cmd/enclave"
+	"github.com/datarobot/cli/cmd/info"
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -191,6 +192,14 @@ func TestTelemetryWiring_AllEnclaveCommandsTracked(t *testing.T) {
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", path)
 		})
 	}
+}
+
+// TestTelemetryWiring_GatedInfoCommandTracked checks `dr info`, which
+// cli.CommandAdder leaves out of the live RootCmd while
+// DATAROBOT_CLI_FEATURE_PLATFORM_INFO is unset, so the test builds it directly.
+func TestTelemetryWiring_GatedInfoCommandTracked(t *testing.T) {
+	assert.Containsf(t, info.Cmd().Annotations, "telemetry",
+		"command %q must be wired to telemetry via telemetry.Track / TrackWith", "dr info")
 }
 
 // TestTelemetryWiring_EveryPipelineLeafTracked walks the pipeline subtree built

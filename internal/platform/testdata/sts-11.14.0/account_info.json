@@ -1,0 +1,7 @@
+{
+  "seatLicenses": {},
+  "limits": {
+    "maxConcurrentWorkloads": 50,
+    "maxWorkloadReplicas": 3
+  }
+}
