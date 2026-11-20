@@ -50,6 +50,7 @@
       "properties": {
         "scope": {"enum": ["platform", "caller"], "description": "Who the answer is true for: platform means any caller, caller means it depends on who asks."},
         "status": {"enum": ["ok", "degraded", "unavailable"]},
+        "httpStatus": {"type": "integer", "description": "The status of the one HTTP response that made the section unavailable. Absent when no response came, and for a section that several responses decided."},
         "message": {"type": "string"}
       },
       "if": {"properties": {"status": {"enum": ["degraded", "unavailable"]}}, "required": ["status"]},

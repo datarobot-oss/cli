@@ -17,6 +17,7 @@ package platform
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -240,7 +241,23 @@ func TestSeatsSection_IsUnavailableWithTheRouteBody(t *testing.T) {
 
 	assert.Equal(t, StatusUnavailable, section.Status)
 	assert.Equal(t, `HTTP 403: {"message":"nope"}`, section.Message)
+	assert.Equal(t, http.StatusForbidden, section.HTTPStatus)
 	assert.Nil(t, section.Data)
+}
+
+func TestSectionOf_LeavesTheHTTPStatusUnsetWhenNoResponseCame(t *testing.T) {
+	section := sectionOf(nil, errors.New("dial tcp: connection refused"))
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, "dial tcp: connection refused", section.Message)
+	assert.Zero(t, section.HTTPStatus)
+}
+
+func TestSectionOf_LeavesTheHTTPStatusUnsetForASectionThatIsOK(t *testing.T) {
+	section := sectionOf(Seats{SeatLicenses: map[string]bool{}}, nil)
+
+	assert.Zero(t, section.HTTPStatus)
+	assert.NotContains(t, jsonOf(t, section), "httpStatus")
 }
 
 func TestExecutionEnvironmentsSection_KeepsEnvironmentsThatShareAName(t *testing.T) {
@@ -349,6 +366,7 @@ func TestResourceBundlesSection_IsUnavailableWhenALaterPageFails(t *testing.T) {
 
 	assert.Equal(t, StatusUnavailable, section.Status)
 	assert.Equal(t, "HTTP 500: boom", section.Message)
+	assert.Equal(t, http.StatusInternalServerError, section.HTTPStatus)
 }
 
 func TestWorkloadAPISection_ReportsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
@@ -422,6 +440,7 @@ func TestWorkloadAPISection_IsUnavailableWithTheBodyOfTheRefusal(t *testing.T) {
 
 			assert.Equal(t, StatusUnavailable, section.Status)
 			assert.Equal(t, tt.message, section.Message)
+			assert.Equal(t, tt.status, section.HTTPStatus)
 			assert.Nil(t, section.Data)
 		})
 	}

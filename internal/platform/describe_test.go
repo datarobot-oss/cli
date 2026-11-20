@@ -106,6 +106,7 @@ func TestDescribe_ASourceThatFailsDoesNotStopTheOthers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, StatusUnavailable, report.Sections[SectionResourceBundles].Status)
 	assert.Equal(t, `HTTP 403: {"message":"no bundles feature"}`, report.Sections[SectionResourceBundles].Message)
+	assert.Equal(t, http.StatusForbidden, report.Sections[SectionResourceBundles].HTTPStatus)
 	assert.Equal(t, StatusOK, report.Sections[SectionExecutionEnvironments].Status)
 	assert.Equal(t, StatusOK, report.Sections[SectionSeats].Status)
 	require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))

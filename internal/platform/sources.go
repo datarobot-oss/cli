@@ -81,10 +81,10 @@ func readAPIVersion(ctx context.Context) (string, error) {
 }
 
 // sectionOf turns a read into a section: the data when it succeeded, the
-// reason when it did not.
+// status and reason when it did not.
 func sectionOf(data any, err error) Section {
 	if err != nil {
-		return Section{Status: StatusUnavailable, Message: reason(err)}
+		return Section{Status: StatusUnavailable, HTTPStatus: statusOf(err), Message: reason(err)}
 	}
 
 	return Section{Status: StatusOK, Data: data}

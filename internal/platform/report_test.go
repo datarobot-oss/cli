@@ -17,6 +17,7 @@ package platform
 import (
 	"bytes"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/datarobot/cli/internal/outputformat"
@@ -63,7 +64,7 @@ func sampleReport() Report {
 			SectionExecutionEnvironments: {Scope: ScopeCaller, Status: StatusOK, Data: ExecutionEnvironments{Items: []ExecutionEnvironment{
 				{ID: "env-1", Name: "Python", UseCases: []string{"customApplication"}, HasSuccessfulVersion: true, BuildStatus: "success"},
 			}}},
-			SectionResourceBundles: {Scope: ScopeCaller, Status: StatusUnavailable, Message: "HTTP 403: forbidden"},
+			SectionResourceBundles: {Scope: ScopeCaller, Status: StatusUnavailable, HTTPStatus: 403, Message: "HTTP 403: forbidden"},
 			SectionWorkloadAPI:     {Scope: ScopeCaller, Status: StatusOK, Data: WorkloadAPI{TotalCount: &workloads}},
 		},
 	}
@@ -103,6 +104,19 @@ func TestSchema_RejectsAnUnavailableWorkloadAPIWithoutAMessage(t *testing.T) {
 	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusUnavailable}
 
 	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
+}
+
+func TestRenderedReport_CarriesTheHTTPStatusOfARefusedSection(t *testing.T) {
+	assert.Contains(t, string(renderJSON(t, sampleReport())), `"httpStatus": 403`)
+}
+
+func TestSchema_RejectsAnHTTPStatusThatIsNotAnInteger(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionResourceBundles] = Section{Scope: ScopeCaller, Status: StatusUnavailable, Message: "HTTP 403: forbidden"}
+
+	raw := strings.Replace(string(renderJSON(t, report)), `"status": "unavailable"`, `"status": "unavailable", "httpStatus": "403"`, 1)
+
+	assert.Error(t, validateJSON(t, compileSchema(t), []byte(raw)))
 }
 
 func TestSchema_RejectsAMissingSchemaVersion(t *testing.T) {

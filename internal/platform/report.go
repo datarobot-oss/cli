@@ -82,12 +82,16 @@ type Server struct {
 }
 
 // Section is one source's result. Data is absent when the source is
-// unavailable; Message is present then, and for a degraded section.
+// unavailable; Message is present then, and for a degraded section. HTTPStatus
+// is the status of the one response that made the section unavailable, so a
+// reader need not take it from the message. It is absent when no response came,
+// and for a section that several responses decided, such as entitlements.
 type Section struct {
-	Scope   Scope  `json:"scope"`
-	Status  Status `json:"status"`
-	Message string `json:"message,omitempty"`
-	Data    any    `json:"data,omitempty"`
+	Scope      Scope  `json:"scope"`
+	Status     Status `json:"status"`
+	HTTPStatus int    `json:"httpStatus,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Data       any    `json:"data,omitempty"`
 }
 
 // Install carries the install-wide switches from the public /config route. A

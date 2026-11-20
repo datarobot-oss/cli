@@ -60,14 +60,14 @@ Every section carries a `scope` that says who its answer is true for. `platform`
         {"id": "5f1a...", "name": "[DataRobot] Python 3.12 Applications Base", "programmingLanguage": "python",
          "useCases": ["customApplication"], "hasSuccessfulVersion": true, "buildStatus": "success"}
       ]}},
-      "resourceBundles": {"scope": "caller", "status": "unavailable", "message": "HTTP 403: {\"message\": \"...\"}"},
+      "resourceBundles": {"scope": "caller", "status": "unavailable", "httpStatus": 403, "message": "HTTP 403: {\"message\": \"...\"}"},
       "workloadApi": {"scope": "caller", "status": "ok", "data": {"totalCount": 7}}
     }
   }
 }
 ```
 
-Statuses are `ok`, `degraded`, and `unavailable`. While the command is gated the shape can change. After the gate comes off, changes are additive and a breaking change bumps `schemaVersion`. Readers ignore fields and sections they do not know.
+Statuses are `ok`, `degraded`, and `unavailable`. An `unavailable` section carries `httpStatus`, the status of the one response that made it unavailable, so a reader does not parse it out of `message`. The field is absent when no response came, such as a failed connection, and for `entitlements`, which several responses decide. While the command is gated the shape can change. After the gate comes off, changes are additive and a breaking change bumps `schemaVersion`. Readers ignore fields and sections they do not know.
 
 ## Examples
 
@@ -86,5 +86,5 @@ dr info --output-format json \
 
 # Why the Workload API refuses the caller, when it does.
 dr info --output-format json \
-  | jq -r '.platform.sections.workloadApi | select(.status == "unavailable") | .message'
+  | jq -r '.platform.sections.workloadApi | select(.status == "unavailable") | "\(.httpStatus) \(.message)"'
 ```
