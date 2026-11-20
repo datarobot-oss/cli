@@ -27,6 +27,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -377,6 +378,36 @@ func TestEntitlementsFor_AnUnknownNameDegradesInsteadOfLosingTheRest(t *testing.
 	assert.Equal(t, map[string]bool{"ENABLE_A": true, "ENABLE_B": true}, section.Data)
 	assert.Contains(t, section.Message, "ENABLE_NOT_ON_THIS_INSTALL")
 	assert.Contains(t, section.Message, "HTTP 422")
+}
+
+func TestEntitlementsFor_AFlagTheRouteLeavesOutIsNotReportedAsOff(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{fn: func(body string) (int, string) {
+		if strings.Count(body, `"name"`) > 1 {
+			return http.StatusUnprocessableEntity, `{"message":"unknown entitlement"}`
+		}
+
+		return http.StatusOK, `{"entitlements":[]}`
+	}})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B"})
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+	assert.Contains(t, section.Message, "ENABLE_A: the route returned no value")
+	assert.Contains(t, section.Message, "ENABLE_B: the route returned no value")
+}
+
+func TestReason_ShowsABodyOnOneLineWithoutControlCharacters(t *testing.T) {
+	err := &drapi.HTTPError{StatusCode: http.StatusBadGateway, Body: []byte("\x1b[31mBad gateway\x1b[0m\r\nline two\ttab")}
+
+	assert.Equal(t, "HTTP 502: [31mBad gateway[0m line two tab", reason(err))
+}
+
+func TestReason_KeepsAPlainBodyAsItIs(t *testing.T) {
+	err := &drapi.HTTPError{StatusCode: http.StatusForbidden, Body: []byte(`{"message":"no bundles feature"}`)}
+
+	assert.Equal(t, `HTTP 403: {"message":"no bundles feature"}`, reason(err))
 }
 
 func TestEntitlementsFor_IsUnavailableWhenNoNameCanBeRead(t *testing.T) {

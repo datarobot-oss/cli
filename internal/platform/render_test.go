@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/datarobot/cli/internal/outputformat"
@@ -75,6 +76,30 @@ func TestRenderTo_TextListsEnvironmentsForCustomApplicationsByID(t *testing.T) {
 	assert.Contains(t, out, "env-python ")
 	assert.Contains(t, out, "env-python-unbuilt ")
 	assert.NotContains(t, out, "env-model", "an environment without the customApplication use case is not listed")
+}
+
+// failsOnce rejects its first write and accepts every later one.
+type failsOnce struct{ writes int }
+
+func (w *failsOnce) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes == 1 {
+		return 0, errors.New("disk full")
+	}
+
+	return len(p), nil
+}
+
+func TestRenderTo_TextReturnsAWriteErrorEvenWhenLaterWritesSucceed(t *testing.T) {
+	err := RenderTo(&failsOnce{}, outputformat.OutputFormatText, sampleReport())
+
+	assert.ErrorContains(t, err, "disk full")
+}
+
+func TestRenderTo_TextReturnsNoErrorForAHealthyWriter(t *testing.T) {
+	var out bytes.Buffer
+
+	assert.NoError(t, RenderTo(&out, outputformat.OutputFormatText, sampleReport()))
 }
 
 func TestRenderTo_TextShowsWhyASectionIsUnavailable(t *testing.T) {

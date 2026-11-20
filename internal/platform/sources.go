@@ -238,7 +238,14 @@ func evaluateBatch(ctx context.Context, batch []string) (map[string]bool, map[st
 			continue
 		}
 
-		values[name] = one[name]
+		value, answered := one[name]
+		if !answered {
+			failed[name] = "the route returned no value"
+
+			continue
+		}
+
+		values[name] = value
 	}
 
 	return values, failed

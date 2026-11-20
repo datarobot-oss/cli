@@ -52,25 +52,32 @@ func Describe(ctx context.Context) (*Report, error) {
 	}
 
 	var (
-		cfg                                publicConfig
-		cfgErr                             error
-		seats, entitlements, envs, bundles Section
-		wg                                 sync.WaitGroup
+		cfg                                         publicConfig
+		install, seats, entitlements, envs, bundles Section
+		wg                                          sync.WaitGroup
 	)
 
-	for _, read := range []func(){
-		func() { cfg, cfgErr = readConfig(ctx) },
-		func() { seats = seatsSection(ctx) },
-		func() { entitlements = entitlementsSection(ctx) },
-		func() { envs = executionEnvironmentsSection(ctx) },
-		func() { bundles = resourceBundlesSection(ctx) },
+	for _, source := range []struct {
+		section *Section
+		read    func()
+	}{
+		{&install, func() {
+			var cfgErr error
+
+			cfg, cfgErr = readConfig(ctx)
+			install = installSection(cfg, cfgErr)
+		}},
+		{&seats, func() { seats = seatsSection(ctx) }},
+		{&entitlements, func() { entitlements = entitlementsSection(ctx) }},
+		{&envs, func() { envs = executionEnvironmentsSection(ctx) }},
+		{&bundles, func() { bundles = resourceBundlesSection(ctx) }},
 	} {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
 
-			read()
+			guard(source.section, source.read)
 		}()
 	}
 
@@ -85,13 +92,25 @@ func Describe(ctx context.Context) (*Report, error) {
 			CanonicalURL: cfg.ExternalWebServerURL,
 		},
 		Sections: map[string]Section{
-			SectionInstall:               scoped(ScopePlatform, installSection(cfg, cfgErr)),
+			SectionInstall:               scoped(ScopePlatform, install),
 			SectionSeats:                 scoped(ScopeCaller, seats),
 			SectionEntitlements:          scoped(ScopeCaller, entitlements),
 			SectionExecutionEnvironments: scoped(ScopeCaller, envs),
 			SectionResourceBundles:       scoped(ScopeCaller, bundles),
 		},
 	}, nil
+}
+
+// guard runs read. When read panics, the section becomes an unavailable one, so
+// a broken source costs only its own section.
+func guard(section *Section, read func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			*section = Section{Status: StatusUnavailable, Message: fmt.Sprintf("internal error: %v", r)}
+		}
+	}()
+
+	read()
 }
 
 // scoped marks who the section's answer is true for, whether or not the read

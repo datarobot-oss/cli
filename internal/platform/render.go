@@ -54,8 +54,12 @@ func RenderTo(w io.Writer, format outputformat.OutputFormat, report Report) erro
 func renderText(w io.Writer, report Report) error {
 	var err error
 
-	// Writes to w are checked once, on the last one: a writer that fails stays failed.
+	// say keeps the first write error, so a later write that succeeds does not hide it.
 	say := func(format string, args ...any) {
+		if err != nil {
+			return
+		}
+
 		_, err = fmt.Fprintf(w, format+"\n", args...)
 	}
 

@@ -33,8 +33,7 @@ func fixClock(t *testing.T) {
 	t.Cleanup(func() { now = prev })
 }
 
-// Every recorded install must produce a report the schema accepts: that is the
-// contract held against two releases.
+// Every recorded install must produce a report the schema accepts.
 func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 	fixClock(t)
 
@@ -144,6 +143,36 @@ func TestDescribe_StopsWhenTheCredentialsAreRejected(t *testing.T) {
 	assert.Nil(t, report)
 	assert.Contains(t, err.Error(), "rejected the credentials")
 	assert.Contains(t, err.Error(), "HTTP 401")
+}
+
+func TestDescribe_NamesAnAnswerThatIsNotJSON(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/version/", route{body: `<html>Sign in to continue</html>`})
+
+	report, err := Describe(context.Background())
+
+	require.Error(t, err)
+	assert.Nil(t, report)
+	assert.Contains(t, err.Error(), "the response is not JSON")
+	assert.Contains(t, err.Error(), "login or proxy page")
+}
+
+func TestGuard_TurnsAPanicIntoAnUnavailableSection(t *testing.T) {
+	var section Section
+
+	guard(&section, func() { panic("boom") })
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Contains(t, section.Message, "boom")
+}
+
+func TestGuard_KeepsTheSectionAReadProduced(t *testing.T) {
+	var section Section
+
+	guard(&section, func() { section = Section{Status: StatusDegraded, Message: "one flag missing"} })
+
+	assert.Equal(t, StatusDegraded, section.Status)
+	assert.Equal(t, "one flag missing", section.Message)
 }
 
 func TestDescribe_StopsWhenTheInstallIsUnreachable(t *testing.T) {

@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
@@ -94,7 +95,17 @@ func call(ctx context.Context, method, url string, authorize bool, in, out any) 
 
 	defer resp.Body.Close()
 
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err = json.NewDecoder(resp.Body).Decode(out); err != nil {
+		var syntax *json.SyntaxError
+
+		if errors.As(err, &syntax) || errors.Is(err, io.EOF) {
+			return fmt.Errorf("the response is not JSON (a login or proxy page?): %w", err)
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // listAll reads a paged list to the end, following each page's next cursor.
@@ -135,12 +146,29 @@ func reason(err error) string {
 		return err.Error()
 	}
 
-	body := strings.TrimSpace(string(httpErr.Body))
+	body := oneLine(string(httpErr.Body))
 	if body == "" {
 		return fmt.Sprintf("HTTP %d", httpErr.StatusCode)
 	}
 
 	return fmt.Sprintf("HTTP %d: %s", httpErr.StatusCode, body)
+}
+
+// oneLine joins a response body into one line and drops control characters, so
+// an error page from a proxy cannot rewrite the terminal.
+func oneLine(s string) string {
+	spaced := strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsSpace(r):
+			return ' '
+		case unicode.IsControl(r):
+			return -1
+		}
+
+		return r
+	}, s)
+
+	return strings.Join(strings.Fields(spaced), " ")
 }
 
 // statusOf returns the HTTP status of a failed call, or zero when no response
