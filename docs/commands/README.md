@@ -45,23 +45,23 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command                           | Description                                                 |
-| --------------------------------- | ----------------------------------------------------------- |
-| [`auth`](auth.md)                 | Authenticate with DataRobot.                                |
-| `component`                       | Manage template components.                                 |
-| `templates`                       | Manage application templates.                               |
-| [`start`](start.md)               | Run the application quickstart process.                     |
-| [`run`](run.md)                   | Execute application tasks.                                  |
-| [`task`](task.md)                 | Manage Taskfile composition and task execution.             |
-| [`dotenv`](dotenv.md)             | Manage environment variables.                               |
-| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
-| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
+| Command                           | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| [`auth`](auth.md)                 | Authenticate with DataRobot.                                 |
+| `component`                       | Manage template components.                                  |
+| `templates`                       | Manage application templates.                                |
+| [`start`](start.md)               | Run the application quickstart process.                      |
+| [`run`](run.md)                   | Execute application tasks.                                   |
+| [`task`](task.md)                 | Manage Taskfile composition and task execution.              |
+| [`dotenv`](dotenv.md)             | Manage environment variables.                                |
+| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).  |
+| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).     |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
-| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
-| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                  |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).     |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).          |
 
 ### Command tree
 
@@ -451,7 +451,7 @@ EDITOR                              # External editor for file editing (fallback
 ## Exit codes
 
 | Code | Meaning               |
-|------|-----------------------|
+| ---- | --------------------- |
 | 0    | Success.              |
 | 1    | General error.        |
 | 2    | Command usage error.  |

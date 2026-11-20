@@ -8,15 +8,15 @@ DataRobot CLI (`dr`) - A Go-based command-line interface for managing DataRobot 
 
 Use Taskfile tasks rather than raw Go commands:
 
-| Command         | Description                                 |
-| --------------- | ------------------------------------------- |
-| `task bootstrap`| Set up complete dev environment (Go check, tools, hooks, build) |
-| `task build`    | Build the CLI binary (outputs to ./dist/dr) |
-| `task lint`     | Check for lint issues (read-only)           |
-| `task delint`   | Fix lint and formatting issues              |
-| `task test`     | Run tests with race detection and coverage  |
-| `task dev-init` | Initialize development environment          |
-| `task run`      | Run CLI directly via `go run`               |
+| Command          | Description                                                     |
+| ---------------- | --------------------------------------------------------------- |
+| `task bootstrap` | Set up complete dev environment (Go check, tools, hooks, build) |
+| `task build`     | Build the CLI binary (outputs to ./dist/dr)                     |
+| `task lint`      | Check for lint issues (read-only)                               |
+| `task delint`    | Fix lint and formatting issues                                  |
+| `task test`      | Run tests with race detection and coverage                      |
+| `task dev-init`  | Initialize development environment                              |
+| `task run`       | Run CLI directly via `go run`                                   |
 
 ## Testing
 

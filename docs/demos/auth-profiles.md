@@ -17,10 +17,10 @@ By the end you will be able to:
 
 `drconfig.yaml` has two layers of credentials:
 
-| Layer | Where it lives | How it is selected |
-|---|---|---|
-| Root-level credentials | Top-level `endpoint:`/`token:` keys | **Omitting** `--profile` — the ordinary, default behavior |
-| A named profile | A section under `profiles:` | `--profile <name>` or `DATAROBOT_CLI_PROFILE=<name>` |
+| Layer                  | Where it lives                      | How it is selected                                          |
+| ---------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| Root-level credentials | Top-level `endpoint:`/`token:` keys | **Omitting** `--profile` — the ordinary, default behavior   |
+| A named profile        | A section under `profiles:`         | `--profile <name>` or `DATAROBOT_CLI_PROFILE=<name>`        |
 
 One name deserves special care: `default`.
 

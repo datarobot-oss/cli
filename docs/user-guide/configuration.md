@@ -10,7 +10,7 @@ The DataRobot CLI stores your authentication credentials and preferences in conf
 The CLI automatically stores configuration files in a standard location based on your operating system:
 
 | Platform | Location                                        |
-|----------|-------------------------------------------------|
+| -------- | ----------------------------------------------- |
 | Linux    | `~/.config/datarobot/drconfig.yaml`             |
 | macOS    | `~/.config/datarobot/drconfig.yaml`             |
 | Windows  | `%USERPROFILE%\.config\datarobot\drconfig.yaml` |
@@ -50,9 +50,9 @@ The CLI maintains a separate state file alongside `drconfig.yaml`:
 
 This file tracks runtime state that persists between CLI invocations:
 
-| Key | Description |
-|---|---|
-| `plugin_update_checks` | Map of plugin name → timestamp of the last update check |
+| Key                    | Description                                               |
+| ---------------------- | --------------------------------------------------------- |
+| `plugin_update_checks` | Map of plugin name → timestamp of the last update check   |
 
 Example `state.yaml`:
 
@@ -344,10 +344,10 @@ export DR_TEMPLATES_DIR=~/workspace/datarobot
 
 The CLI supports two verbosity levels controlled by global flags or config keys:
 
-| Flag | Config key | Level | Use for |
-|---|---|---|---|
-| `--verbose` | `verbose: true` | INFO | Operational detail (e.g., HTTP request summary, progress) |
-| `--debug` | `debug: true` | DEBUG | Full execution tracing (e.g., request/response bodies, internal state) |
+| Flag        | Config key      | Level | Use for                                                                |
+| ----------- | --------------- | ----- | ---------------------------------------------------------------------- |
+| `--verbose` | `verbose: true` | INFO  | Operational detail (e.g., HTTP request summary, progress)              |
+| `--debug`   | `debug: true`   | DEBUG | Full execution tracing (e.g., request/response bodies, internal state) |
 
 Set permanently in your config file:
 
