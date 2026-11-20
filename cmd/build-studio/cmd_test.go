@@ -37,6 +37,12 @@ import (
 func stubSeams(t *testing.T) {
 	t.Helper()
 
+	// runStudio exports the consent env var with --yes; start every test with
+	// it unset and let t.Setenv's cleanup restore the pre-test value, so one
+	// test's consent cannot leak into the next (the shuffler found this).
+	t.Setenv(reader.NonInteractiveEnv, "")
+	os.Unsetenv(reader.NonInteractiveEnv)
+
 	origGetPlugins := getPlugins
 	origLoadManaged := loadManagedPlugin
 	origInstall := installPluginByName
@@ -220,9 +226,6 @@ func TestRunStudio_YesExportsNonInteractiveConsent(t *testing.T) {
 
 		return 0
 	}
-
-	t.Setenv(reader.NonInteractiveEnv, "")
-	os.Unsetenv(reader.NonInteractiveEnv)
 
 	_, err := runStudio(Cmd(), studioArgs{})
 
