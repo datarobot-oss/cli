@@ -34,6 +34,7 @@ var sectionOrder = []string{
 	SectionEntitlements,
 	SectionExecutionEnvironments,
 	SectionResourceBundles,
+	SectionWorkloadAPI,
 }
 
 // jsonEnvelopeKey is the top-level key the report sits under in JSON output.
@@ -99,6 +100,8 @@ func renderData(say func(string, ...any), data any) {
 		renderEnvironments(say, d)
 	case ResourceBundles:
 		renderBundles(say, d)
+	case WorkloadAPI:
+		renderWorkloadAPI(say, d)
 	}
 }
 
@@ -156,6 +159,12 @@ func renderBundles(say func(string, ...any), bundles ResourceBundles) {
 
 	for _, bundle := range usable {
 		say("  %s  %s  %.4g GiB", bundle.ID, bundle.Name, float64(bundle.MemoryBytes)/(1<<30))
+	}
+}
+
+func renderWorkloadAPI(say func(string, ...any), api WorkloadAPI) {
+	if api.TotalCount != nil {
+		say("  workloads visible to you: %d", *api.TotalCount)
 	}
 }
 

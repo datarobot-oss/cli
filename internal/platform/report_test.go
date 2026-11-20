@@ -50,6 +50,7 @@ func validateJSON(t *testing.T, schema *jsonschema.Schema, raw []byte) error {
 
 func sampleReport() Report {
 	enterprise := true
+	workloads := 7
 
 	return Report{
 		GeneratedAt: "2026-10-06T20:00:00Z",
@@ -63,6 +64,7 @@ func sampleReport() Report {
 				{ID: "env-1", Name: "Python", UseCases: []string{"customApplication"}, HasSuccessfulVersion: true, BuildStatus: "success"},
 			}}},
 			SectionResourceBundles: {Scope: ScopeCaller, Status: StatusUnavailable, Message: "HTTP 403: forbidden"},
+			SectionWorkloadAPI:     {Scope: ScopeCaller, Status: StatusOK, Data: WorkloadAPI{TotalCount: &workloads}},
 		},
 	}
 }
@@ -85,6 +87,20 @@ func TestRenderedReport_MatchesTheSchema(t *testing.T) {
 func TestSchema_RejectsAnUnknownStatus(t *testing.T) {
 	report := sampleReport()
 	report.Sections[SectionSeats] = Section{Scope: ScopeCaller, Status: "weird", Data: Seats{SeatLicenses: map[string]bool{}}}
+
+	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
+}
+
+func TestSchema_RejectsAWorkloadCountThatIsNotAnInteger(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]any{"totalCount": "seven"}}
+
+	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
+}
+
+func TestSchema_RejectsAnUnavailableWorkloadAPIWithoutAMessage(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusUnavailable}
 
 	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
 }

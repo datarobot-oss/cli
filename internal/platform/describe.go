@@ -52,9 +52,9 @@ func Describe(ctx context.Context) (*Report, error) {
 	}
 
 	var (
-		cfg                                         publicConfig
-		install, seats, entitlements, envs, bundles Section
-		wg                                          sync.WaitGroup
+		cfg                                                      publicConfig
+		install, seats, entitlements, envs, bundles, workloadAPI Section
+		wg                                                       sync.WaitGroup
 	)
 
 	for _, source := range []struct {
@@ -71,6 +71,7 @@ func Describe(ctx context.Context) (*Report, error) {
 		{&entitlements, func() { entitlements = entitlementsSection(ctx) }},
 		{&envs, func() { envs = executionEnvironmentsSection(ctx) }},
 		{&bundles, func() { bundles = resourceBundlesSection(ctx) }},
+		{&workloadAPI, func() { workloadAPI = workloadAPISection(ctx) }},
 	} {
 		wg.Add(1)
 
@@ -97,6 +98,7 @@ func Describe(ctx context.Context) (*Report, error) {
 			SectionEntitlements:          scoped(ScopeCaller, entitlements),
 			SectionExecutionEnvironments: scoped(ScopeCaller, envs),
 			SectionResourceBundles:       scoped(ScopeCaller, bundles),
+			SectionWorkloadAPI:           scoped(ScopeCaller, workloadAPI),
 		},
 	}, nil
 }

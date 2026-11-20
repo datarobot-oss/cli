@@ -56,6 +56,7 @@ const (
 	SectionEntitlements          = "entitlements"
 	SectionExecutionEnvironments = "executionEnvironments"
 	SectionResourceBundles       = "resourceBundles"
+	SectionWorkloadAPI           = "workloadApi"
 )
 
 // Report is the whole answer. It states facts the install reports and leaves
@@ -121,6 +122,14 @@ type ExecutionEnvironment struct {
 	HasSuccessfulVersion bool     `json:"hasSuccessfulVersion"`
 	BuildStatus          string   `json:"buildStatus,omitempty"`
 	SourceDockerImageURI string   `json:"sourceDockerImageUri,omitempty"`
+}
+
+// WorkloadAPI is what the Workload API's list route answers the caller with. A
+// refusal is not data: the section is unavailable and its message carries the
+// body of the service that refused, which names the cause. TotalCount stays
+// unset when the route does not return it.
+type WorkloadAPI struct {
+	TotalCount *int `json:"totalCount,omitempty"`
 }
 
 // ResourceBundles lists every resource bundle the caller can read.

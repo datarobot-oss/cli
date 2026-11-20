@@ -58,7 +58,7 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 				assert.Equal(t, StatusOK, section.Status, name)
 			}
 
-			assert.Len(t, report.Sections, 5)
+			assert.Len(t, report.Sections, 6)
 			require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
 		})
 	}
@@ -78,6 +78,7 @@ func TestDescribe_EverySectionStatesWhoItsAnswerIsTrueFor(t *testing.T) {
 		SectionEntitlements:          ScopeCaller,
 		SectionExecutionEnvironments: ScopeCaller,
 		SectionResourceBundles:       ScopeCaller,
+		SectionWorkloadAPI:           ScopeCaller,
 	}
 
 	for name, scope := range want {
@@ -106,6 +107,20 @@ func TestDescribe_ASourceThatFailsDoesNotStopTheOthers(t *testing.T) {
 	assert.Equal(t, StatusUnavailable, report.Sections[SectionResourceBundles].Status)
 	assert.Equal(t, `HTTP 403: {"message":"no bundles feature"}`, report.Sections[SectionResourceBundles].Message)
 	assert.Equal(t, StatusOK, report.Sections[SectionExecutionEnvironments].Status)
+	assert.Equal(t, StatusOK, report.Sections[SectionSeats].Status)
+	require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
+}
+
+func TestDescribe_ARefusedWorkloadAPIShowsWhyAndKeepsTheRest(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{status: http.StatusForbidden, body: "Required feature flag WORKLOAD_API_CONTAINERS is not enabled."})
+
+	report, err := Describe(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, StatusUnavailable, report.Sections[SectionWorkloadAPI].Status)
+	assert.Equal(t, ScopeCaller, report.Sections[SectionWorkloadAPI].Scope)
+	assert.Equal(t, "HTTP 403: Required feature flag WORKLOAD_API_CONTAINERS is not enabled.", report.Sections[SectionWorkloadAPI].Message)
 	assert.Equal(t, StatusOK, report.Sections[SectionSeats].Status)
 	require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
 }

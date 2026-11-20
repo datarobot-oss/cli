@@ -38,7 +38,8 @@
             "seats": {"$ref": "#/$defs/seatsSection"},
             "entitlements": {"$ref": "#/$defs/entitlementsSection"},
             "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
-            "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"}
+            "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"},
+            "workloadApi": {"$ref": "#/$defs/workloadApiSection"}
           }
         }
       }
@@ -121,6 +122,15 @@
               "cpuCount": {"type": "number"}
             }
           }}}
+        }}}
+      ]
+    },
+    "workloadApiSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "properties": {"totalCount": {"type": "integer"}}
         }}}
       ]
     }

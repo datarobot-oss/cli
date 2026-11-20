@@ -183,6 +183,28 @@ func resourceBundlesSection(ctx context.Context) Section {
 	return sectionOf(ResourceBundles{Items: items}, nil)
 }
 
+// workloadProbeLimit is the page size of the workloads probe. One item proves
+// the route answers; the section reads the total, not the list.
+const workloadProbeLimit = "1"
+
+// workloadAPISection asks the route that creating a workload also depends on
+// whether it answers the caller. The monolith proxy and the Workload API check
+// the feature flag and the seat license on every request, and each refuses
+// with a body that names the cause, so the section passes the body on without
+// reading it.
+func workloadAPISection(ctx context.Context) Section {
+	var page struct {
+		TotalCount *int `json:"totalCount"`
+	}
+
+	target, err := apiURL("/workloads/", url.Values{"limit": {workloadProbeLimit}})
+	if err == nil {
+		err = call(ctx, http.MethodGet, target, true, nil, &page)
+	}
+
+	return sectionOf(WorkloadAPI{TotalCount: page.TotalCount}, err)
+}
+
 func entitlementsSection(ctx context.Context) Section {
 	return entitlementsFor(ctx, entitlementNames)
 }

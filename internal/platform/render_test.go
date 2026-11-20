@@ -59,7 +59,7 @@ func TestRenderTo_TextNamesTheInstallAndEverySection(t *testing.T) {
 	assert.Contains(t, out, "https://dr.example.com")
 	assert.Contains(t, out, "11.12.0")
 
-	for _, section := range []string{SectionInstall, SectionSeats, SectionEntitlements, SectionExecutionEnvironments, SectionResourceBundles} {
+	for _, section := range []string{SectionInstall, SectionSeats, SectionEntitlements, SectionExecutionEnvironments, SectionResourceBundles, SectionWorkloadAPI} {
 		assert.Contains(t, out, section)
 	}
 }
@@ -76,6 +76,24 @@ func TestRenderTo_TextListsEnvironmentsForCustomApplicationsByID(t *testing.T) {
 	assert.Contains(t, out, "env-python ")
 	assert.Contains(t, out, "env-python-unbuilt ")
 	assert.NotContains(t, out, "env-model", "an environment without the customApplication use case is not listed")
+}
+
+func TestRenderTo_TextShowsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
+	out := renderFixture(t, "sts-11.12.0", outputformat.OutputFormatText)
+
+	assert.Contains(t, out, "workloads visible to you: 7")
+}
+
+func TestRenderTo_TextLeavesTheWorkloadCountOutWhenTheRouteGaveNone(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusOK, Data: WorkloadAPI{}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "workloadApi: ok")
+	assert.NotContains(t, out.String(), "workloads visible")
 }
 
 // failsOnce rejects its first write and accepts every later one.

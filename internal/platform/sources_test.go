@@ -42,11 +42,16 @@ type route struct {
 // fakeInstall serves recorded responses for the routes describe reads. A test
 // replaces a route to simulate a failing source.
 type fakeInstall struct {
-	mu     sync.Mutex
-	routes map[string]route
-	posts  []string
-	srv    *httptest.Server
+	mu      sync.Mutex
+	routes  map[string]route
+	queries map[string]string
+	posts   []string
+	srv     *httptest.Server
 }
+
+// workloadsPage is the shape the workloads route answers with, recorded from
+// staging on 2026-11-20 with the workload trimmed to its id and name.
+const workloadsPage = `{"count":1,"next":"{{BASE}}/api/v2/workloads/?offset=1&limit=1","previous":null,"totalCount":7,"data":[{"id":"w1","name":"demo"}]}`
 
 // newFakeInstall loads the recorded responses in testdata/<dir> and points the
 // CLI at the server. {{BASE}} in a recording becomes the server's address.
@@ -68,7 +73,8 @@ func newFakeInstall(t *testing.T, dir string) *fakeInstall {
 		"GET /api/v2/executionEnvironments/":          {body: read("environments.json")},
 		"GET /api/v2/mlops/compute/bundles/":          {body: read("bundles_page1.json")},
 		"GET /api/v2/mlops/compute/bundles/?offset=2": {body: read("bundles_page2.json")},
-	}}
+		"GET /api/v2/workloads/":                      {body: workloadsPage},
+	}, queries: map[string]string{}}
 
 	fake.srv = useServer(t, fake.serve)
 
@@ -94,6 +100,7 @@ func (f *fakeInstall) serve(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	rt, ok := f.routes[key]
+	f.queries[key] = r.URL.RawQuery
 	f.mu.Unlock()
 
 	if !ok {
@@ -119,6 +126,14 @@ func (f *fakeInstall) set(key string, rt route) {
 	defer f.mu.Unlock()
 
 	f.routes[key] = rt
+}
+
+// queryOf returns the raw query of the last request that matched key.
+func (f *fakeInstall) queryOf(key string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.queries[key]
 }
 
 func (f *fakeInstall) postBodies() []string {
@@ -334,6 +349,82 @@ func TestResourceBundlesSection_IsUnavailableWhenALaterPageFails(t *testing.T) {
 
 	assert.Equal(t, StatusUnavailable, section.Status)
 	assert.Equal(t, "HTTP 500: boom", section.Message)
+}
+
+func TestWorkloadAPISection_ReportsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := workloadAPISection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"totalCount":7}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadAPISection_AsksForOneWorkload(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+
+	workloadAPISection(context.Background())
+
+	assert.Equal(t, "limit=1", fake.queryOf("GET /api/v2/workloads/"))
+}
+
+func TestWorkloadAPISection_LeavesTheCountOutWhenTheRouteOmitsIt(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{body: `{"data":[]}`})
+
+	section := workloadAPISection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{}`, jsonOf(t, section.Data))
+}
+
+// The section carries the body of the service that refused, because that body
+// names the cause. The bodies below are the ones the monolith proxy sends.
+func TestWorkloadAPISection_IsUnavailableWithTheBodyOfTheRefusal(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		message string
+	}{
+		{
+			name:    "a missing seat",
+			status:  http.StatusForbidden,
+			body:    "Agentic, Predictive and Governance Seat License has not been granted to this user.",
+			message: "HTTP 403: Agentic, Predictive and Governance Seat License has not been granted to this user.",
+		},
+		{
+			name:    "a disabled feature flag",
+			status:  http.StatusForbidden,
+			body:    "Required feature flag WORKLOAD_API_CONTAINERS is not enabled.",
+			message: "HTTP 403: Required feature flag WORKLOAD_API_CONTAINERS is not enabled.",
+		},
+		{
+			name:    "a proxy that is switched off",
+			status:  http.StatusBadGateway,
+			body:    `{"message":"Backend service is deactivated."}`,
+			message: `HTTP 502: {"message":"Backend service is deactivated."}`,
+		},
+		{
+			name:    "an install without the route",
+			status:  http.StatusNotFound,
+			body:    "not found",
+			message: "HTTP 404: not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := newFakeInstall(t, "sts-11.12.0")
+			fake.set("GET /api/v2/workloads/", route{status: tt.status, body: tt.body})
+
+			section := workloadAPISection(context.Background())
+
+			assert.Equal(t, StatusUnavailable, section.Status)
+			assert.Equal(t, tt.message, section.Message)
+			assert.Nil(t, section.Data)
+		})
+	}
 }
 
 // evaluate answers a batch with every name's value, and rejects the whole

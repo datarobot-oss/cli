@@ -37,6 +37,7 @@ The command exits zero when it prints a report, including one with unavailable s
 | `entitlements` | `/api/v2/entitlements/evaluate/` | The flags a Custom Application deploy depends on. Names the install does not know are listed in the message and the section is `degraded` |
 | `executionEnvironments` | `/api/v2/executionEnvironments/` | Every environment the caller can read: `id`, `name`, `programmingLanguage`, `useCases`, `hasSuccessfulVersion`, `buildStatus`, `sourceDockerImageUri`. `sourceDockerImageUri` is the address of the image of the environment's latest version, and an install that does not publish one leaves it out. Names are not unique, so pick by `id` and `hasSuccessfulVersion`. DataRobot marks a retired environment only in its name, with a `[Deprecated]` prefix. An environment is valid for applications when `useCases` lists `customApplication` |
 | `resourceBundles` | `/api/v2/mlops/compute/bundles/` | Every bundle the caller can read: `id`, `name`, `useCases`, `memoryBytes`, `cpuCount`. A bundle is valid for applications when `useCases` lists `customApplication` |
+| `workloadApi` | `/api/v2/workloads/?limit=1` | `totalCount`: how many workloads the caller can see, left out when the route does not return it. When the route refuses, the section is `unavailable` and the message carries the response body, which names the cause. A missing seat license and a disabled feature flag both answer 403 with different text, and a switched-off proxy answers 502 |
 
 Every section carries a `scope` that says who its answer is true for. `platform` means the same for any caller. `caller` means it depends on who asks: their permissions, seats, or organization. Run the command with the credentials the pipeline will use.
 
@@ -59,7 +60,8 @@ Every section carries a `scope` that says who its answer is true for. `platform`
         {"id": "5f1a...", "name": "[DataRobot] Python 3.12 Applications Base", "programmingLanguage": "python",
          "useCases": ["customApplication"], "hasSuccessfulVersion": true, "buildStatus": "success"}
       ]}},
-      "resourceBundles": {"scope": "caller", "status": "unavailable", "message": "HTTP 403: {\"message\": \"...\"}"}
+      "resourceBundles": {"scope": "caller", "status": "unavailable", "message": "HTTP 403: {\"message\": \"...\"}"},
+      "workloadApi": {"scope": "caller", "status": "ok", "data": {"totalCount": 7}}
     }
   }
 }
@@ -81,4 +83,8 @@ dr info --output-format json \
 # The base image address an install publishes, for a Dockerfile FROM.
 dr info --output-format json \
   | jq -r '.platform.sections.executionEnvironments.data.items[] | select(.name == "[DataRobot] Python 3.12 Applications Base") | select(.hasSuccessfulVersion) | select(.sourceDockerImageUri) | .sourceDockerImageUri'
+
+# Why the Workload API refuses the caller, when it does.
+dr info --output-format json \
+  | jq -r '.platform.sections.workloadApi | select(.status == "unavailable") | .message'
 ```
