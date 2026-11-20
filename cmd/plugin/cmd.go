@@ -15,6 +15,7 @@
 package plugin
 
 import (
+	"github.com/datarobot/cli/cmd/plugin/cache"
 	"github.com/datarobot/cli/cmd/plugin/install"
 	"github.com/datarobot/cli/cmd/plugin/list"
 	"github.com/datarobot/cli/cmd/plugin/uninstall"
@@ -38,6 +39,7 @@ func Cmd() *cobra.Command {
 		uninstall.Cmd(),
 		update.Cmd(),
 		version.Cmd(),
+		cache.Cmd(),
 	)
 
 	return cmd
