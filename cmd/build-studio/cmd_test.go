@@ -18,8 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 
+	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/plugin"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -195,6 +197,42 @@ func TestRunStudio_YesGrantsDepsConsent(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, gotOptCount, "--yes should pass the explicit deps-consent option")
+}
+
+// --yes must be exported as DATAROBOT_CLI_NON_INTERACTIVE before xp starts:
+// env is the only consent transport that survives the process chain down to
+// the `dr opencode serve` subprocess xp spawns (AECO-2370). Without --yes the
+// variable must stay unset — consent is converted, never fabricated.
+func TestRunStudio_YesExportsNonInteractiveConsent(t *testing.T) {
+	stubSeams(t)
+
+	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
+		return []plugin.DiscoveredPlugin{
+			discovered("xp", "/fake/xp.sh"),
+			discovered("opencode", "/fake/opencode.sh"),
+		}, nil
+	}
+
+	var envAtExec string
+
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, _ string, _ []string, _ *pflag.FlagSet, _ ...plugin.ExecOption) int {
+		envAtExec = os.Getenv(reader.NonInteractiveEnv)
+
+		return 0
+	}
+
+	t.Setenv(reader.NonInteractiveEnv, "")
+	os.Unsetenv(reader.NonInteractiveEnv)
+
+	_, err := runStudio(Cmd(), studioArgs{})
+
+	require.NoError(t, err)
+	assert.Empty(t, envAtExec, "no consent export without --yes")
+
+	_, err = runStudio(Cmd(), studioArgs{yes: true})
+
+	require.NoError(t, err)
+	assert.Equal(t, "1", envAtExec, "--yes must be exported for nested processes")
 }
 
 func TestRunStudio_InstallsMissing(t *testing.T) {
