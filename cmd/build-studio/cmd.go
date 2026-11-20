@@ -163,6 +163,18 @@ func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 
 	if args.consent() {
 		execOpts = append(execOpts, plugin.WithDepsConsent())
+
+		// Export the user's consent so it survives process boundaries: -y
+		// cannot be forwarded as a flag (xp rejects flags it does not know),
+		// but env is inherited down the whole chain — dr xp passes it on to
+		// the `dr opencode serve` subprocess it spawns, whose wrapper
+		// installs OpenCode without prompting only when this is set
+		// (AECO-2370). Consent is converted here, never fabricated: the
+		// variable is set only when the user passed -y/--yes or already set
+		// it themselves.
+		if err := os.Setenv(reader.NonInteractiveEnv, "1"); err != nil {
+			log.Debug("Failed to export non-interactive consent", "error", err)
+		}
 	}
 
 	return executePlugin(cmd.Context(), xp.Manifest, xp.Executable, args.passthrough, cmd.Root().PersistentFlags(), execOpts...), nil
