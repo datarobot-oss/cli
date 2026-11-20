@@ -42,7 +42,7 @@ $env:CI = "1"; .\smoke_test_scripts\windows\run_powershell_profile_test.ps1
 
 ## Build Studio Test
 
-`run_build_studio_test.ps1` checks that `dr build-studio --help` prints the command's help, then runs `dr build-studio --yes --port <free port>`: it installs the `xp` and `opencode` plugins from the public plugin registry into a temporary `XDG_CONFIG_HOME` and waits up to 4 minutes for Build Studio to answer HTTP 200 on that port. It stops the whole process tree and removes the sandbox afterwards, so your own plugins and config are untouched. `xp` requires DataRobot credentials: set `DATAROBOT_API_TOKEN` (or `DR_API_TOKEN`), and `DATAROBOT_ENDPOINT` for an instance other than `https://app.datarobot.com/api/v2`. Without a token, or when the registry or DataRobot is unreachable, the live part is skipped:
+`run_build_studio_test.ps1` checks that `dr build-studio --help` prints the command's help, then runs `dr build-studio --yes --port <free port>`: it installs the `xp` and `opencode` plugins from the public plugin registry into a temporary `XDG_CONFIG_HOME` and waits up to 4 minutes for Build Studio to answer HTTP 200 on that port. It stops the whole process tree and removes the sandbox afterwards, so your own plugins and config are untouched. `xp` requires DataRobot credentials: set `DATAROBOT_API_TOKEN` (or `DR_API_TOKEN`), and `DATAROBOT_ENDPOINT` for an instance other than `https://app.datarobot.com/api/v2`. Without a token the live part is skipped. When the registry or DataRobot is unreachable, it is skipped too, except under CI (`CI` set), where that fails the test:
 
 ```powershell
 $env:DR_API_TOKEN = "<token>"; .\smoke_test_scripts\windows\run_build_studio_test.ps1

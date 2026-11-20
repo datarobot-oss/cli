@@ -43,6 +43,7 @@ jobs:
           path: C:\temp\dr-bin
 
       - name: Move Binary to PATH
+        id: move-binary
         shell: powershell
         run: |
           $INSTALL_DIR = "$env:LOCALAPPDATA\Programs\dr"
@@ -69,9 +70,10 @@ jobs:
 
       # Installs the xp and opencode plugins from the public plugin registry
       # into a sandbox and starts Build Studio against app.datarobot.com. Runs
-      # even when an earlier smoke step failed, so each failure shows apart.
+      # even when an earlier smoke step failed, so each failure shows apart,
+      # but only when dr itself is on PATH.
       - name: Test dr build-studio
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.move-binary.outcome == 'success' }}
         shell: pwsh
         run: ./smoke_test_scripts/windows/run_build_studio_test.ps1
         env:

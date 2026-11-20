@@ -36,16 +36,6 @@ function Write-InfoMsg {
     Write-Host $Message
 }
 
-function Test-URLAccessible {
-    param([string]$Url)
-    try {
-        $null = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
-        return $true
-    } catch {
-        return $false
-    }
-}
-
 # Returns a TCP port that is free right now, by letting the OS pick one.
 function Get-FreePort {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -61,7 +51,7 @@ function Get-FreePort {
 function Get-HttpStatus {
     param([string]$Url)
     try {
-        $response = Invoke-WebRequest -Uri $Url -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri $Url -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop
         return [int]$response.StatusCode
     } catch {
         if ($_.Exception.Response) {
@@ -108,10 +98,19 @@ if ([string]::IsNullOrEmpty($token)) {
     exit 0
 }
 
+# Any HTTP answer, even an error status, means the host is reachable. In CI
+# an unreachable host fails the test instead of skipping it, so the step
+# can't pass without the live start having run.
 $endpointHost = ([System.Uri]$endpoint).GetLeftPart([System.UriPartial]::Authority)
-if (-not (Test-URLAccessible -Url $RegistryUrl) -or -not (Test-URLAccessible -Url $endpointHost)) {
-    Write-InfoMsg "Skipping the live start: $RegistryUrl or $endpointHost is not reachable."
-    exit 0
+foreach ($probe in @($RegistryUrl, $endpointHost)) {
+    if ((Get-HttpStatus -Url $probe) -eq 0) {
+        if ($env:CI) {
+            Write-ErrorMsg "$probe is not reachable, so the live start can't run."
+            exit 1
+        }
+        Write-InfoMsg "Skipping the live start: $probe is not reachable."
+        exit 0
+    }
 }
 
 $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("dr-build-studio-" + [System.Guid]::NewGuid().ToString("N"))
@@ -144,6 +143,8 @@ try {
         -RedirectStandardOutput $stdoutLog `
         -RedirectStandardError $stderrLog `
         -NoNewWindow -PassThru
+    # Caching the handle now keeps ExitCode readable after dr exits.
+    $null = $proc.Handle
 
     $deadline = (Get-Date).AddSeconds($StartTimeoutSec)
     $status = 0
@@ -182,11 +183,15 @@ try {
     $failed = $true
 } finally {
     # dr -> powershell -> xp server -> dr opencode -> powershell -> opencode:
-    # stop the whole tree, not just dr.
+    # stop the whole tree, not just dr. Plugin processes left behind by a dr
+    # that already exited run from the sandbox, so stop those by path.
     if ($proc -and -not $proc.HasExited) {
         & taskkill.exe /PID $proc.Id /T /F 2>&1 | Out-Null
         $null = $proc.WaitForExit(15000)
     }
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and $_.Path.StartsWith($sandbox, [System.StringComparison]::OrdinalIgnoreCase) } |
+        ForEach-Object { & taskkill.exe /PID $_.Id /T /F 2>&1 | Out-Null }
 
     if ($failed) {
         Show-Log -Title "dr build-studio stdout" -Path $stdoutLog

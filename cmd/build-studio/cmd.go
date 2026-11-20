@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -53,14 +54,14 @@ var (
 // xpFeature is a Build Studio feature and the first xp version that has it.
 type xpFeature struct {
 	name       string
-	minVersion string
+	minVersion *semver.Version
 }
 
 // xpFeatures lists what Build Studio needs from xp, oldest first. The last
 // entry's version is the minimum below which dr build-studio warns.
 var xpFeatures = []xpFeature{
-	{name: "Assist", minVersion: "2.3.0"},
-	{name: "Analyze trace", minVersion: "2.5.0"},
+	{name: "Assist", minVersion: semver.MustParse("2.3.0")},
+	{name: "Analyze trace", minVersion: semver.MustParse("2.5.0")},
 }
 
 func Cmd() *cobra.Command {
@@ -191,10 +192,11 @@ func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 
 // xpVersionAtLaunch returns the version of xp that is about to run. The
 // update check may have replaced a managed xp in place, so its manifest is
-// read again; any other xp keeps the version it was discovered with.
+// read again when it is the same installation (the same plugin directory);
+// any other xp keeps the version it was discovered with.
 func xpVersionAtLaunch(xp *plugin.DiscoveredPlugin) string {
 	p, err := loadManagedPlugin(xpPluginName)
-	if err != nil || p == nil || p.Executable != xp.Executable {
+	if err != nil || p == nil || filepath.Dir(p.Executable) != filepath.Dir(xp.Executable) {
 		return xp.Manifest.Version
 	}
 
@@ -215,8 +217,8 @@ func xpVersionWarning(installed string) string {
 	var missing []string
 
 	for _, f := range xpFeatures {
-		if v.LessThan(semver.MustParse(f.minVersion)) {
-			missing = append(missing, f.name+" needs "+f.minVersion)
+		if v.LessThan(f.minVersion) {
+			missing = append(missing, f.name+" needs "+f.minVersion.String())
 		}
 	}
 

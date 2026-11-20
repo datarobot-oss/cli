@@ -63,7 +63,7 @@ Legend: ✅ Covered · ⚠️ Partial · ❌ Not covered · ⏭️ Intentionally
 | `dr start` resolves start command exactly once (no loop) | ✅ | ⏭️ | Asserted via `$HOME/.dr-tui-debug.log` step count |
 | **Build Studio** (`windows/run_build_studio_test.ps1`) | | | |
 | `dr build-studio --help` prints the command's help | ❌ | ✅ | |
-| `dr build-studio --yes` installs `xp` and `opencode` into a clean config | ❌ | ✅ | From the public plugin registry; skipped when it or DataRobot is unreachable |
+| `dr build-studio --yes` installs `xp` and `opencode` into a clean config | ❌ | ✅ | From the public plugin registry; skipped locally when it or DataRobot is unreachable, fails in CI |
 | Build Studio answers HTTP on `--port` | ❌ | ✅ | Needs `DR_API_TOKEN`: `xp` requires authentication |
 | **Plugin Auto-Update** (`run_plugin_update_smoke_test.sh`) | | | |
 | Install plugin at pinned version | ✅ | ❌ | |

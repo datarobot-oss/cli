@@ -460,7 +460,8 @@ func TestRunStudio_NoWarningAfterAcceptedUpdate(t *testing.T) {
 			return nil, nil
 		}
 
-		p := discovered("xp", "/managed/xp.sh")
+		// The update may rename the entrypoint; the plugin directory stays.
+		p := discovered("xp", "/managed/xp.ps1")
 		p.Manifest.Version = "2.5.0"
 
 		return &p, nil
