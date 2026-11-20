@@ -256,6 +256,15 @@ function Install-Binary {
             Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing
             $ProgressPreference = 'Continue'
         } catch {
+            # The exception text embeds the status code, anchored to the
+            # parenthesized forms so a release asset whose version contains
+            # "504" (e.g. v0.2.504) cannot false-match. Windows PowerShell 5.1
+            # reports "(504) Gateway Timeout"; PowerShell 7 reports
+            # "504 (Gateway Timeout)".
+            if ("$_" -match '\(504\)|504 \(Gateway') {
+                Write-ErrorMsg "Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www.githubstatus.com and try again shortly."
+            }
+
             Write-ErrorMsg "Failed to download binary. Please check the version exists: https://github.com/$REPO/releases"
         }
 
