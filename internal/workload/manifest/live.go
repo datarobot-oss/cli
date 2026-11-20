@@ -370,6 +370,12 @@ func applyEnvVars(container map[string]any, vars []EnvVar) {
 			continue
 		}
 
+		if v.APIKey {
+			existing = append(existing, map[string]any{keyName: v.Name, keySource: sourceAPIKey})
+
+			continue
+		}
+
 		value := v.Value
 		if v.Secret {
 			value = CredentialShorthandPrefix + v.credentialID() + "/" + credentialKey
@@ -450,7 +456,12 @@ func declaredEnvNames(existing []any) map[string]bool {
 
 	for _, entry := range existing {
 		if typed, ok := entry.(map[string]any); ok {
-			declared[stringAt(typed, keyName)] = true
+			name := stringAt(typed, keyName)
+			if name == "" && stringAt(typed, keySource) == sourceAPIKey {
+				name = APIKeyEnvName // the platform's default for a nameless api-key entry
+			}
+
+			declared[name] = true
 		}
 	}
 
@@ -595,6 +606,12 @@ func (l Live) primaryContainerName() string {
 	}
 
 	return stringAt(container, keyName)
+}
+
+// HasPrimaryContainer reports whether the spec carries a container to write
+// the answers into, which Apply needs.
+func (l Live) HasPrimaryContainer() bool {
+	return l.primaryContainer() != nil
 }
 
 // applyReadiness writes the port and points the readiness probe wherever the
@@ -804,10 +821,15 @@ func (l Live) Render() ([]byte, error) {
 	// (schema.go) and shared with Draft.Render so both renderers emit the
 	// same key sequence.
 	values := map[string]*yaml.Node{
-		keyWorkloadID: scalar(l.WorkloadID),
 		keyName:       scalar(l.Name),
 		keyImportance: scalar(orDefaultString(l.Importance, DefaultImportance)),
 		keyArtifact:   mapping(artifact...),
+	}
+
+	// A document prepared from a spec file binds nothing yet; writing an
+	// empty binding would read as one.
+	if l.WorkloadID != "" {
+		values[keyWorkloadID] = scalar(l.WorkloadID)
 	}
 
 	if runtime != nil {

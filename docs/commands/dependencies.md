@@ -53,14 +53,14 @@ dr dependencies install [flags]
 
 **Flags:**
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--yes` | `-y` | Assume "yes" as answer to the install prompt &mdash; skip interactive confirmation. |
+| Flag    | Short | Description                                                                         |
+| ------- | ----- | ----------------------------------------------------------------------------------- |
+| `--yes` | `-y`  | Assume "yes" as answer to the install prompt &mdash; skip interactive confirmation. |
 
 **Environment variables:**
 
-| Variable | Description |
-|----------|-------------|
+| Variable                        | Description                                                                |
+| ------------------------------- | -------------------------------------------------------------------------- |
 | `DATAROBOT_CLI_NON_INTERACTIVE` | Equivalent to `--yes`. Set to any truthy value to skip the install prompt. |
 
 **Example — set for a single command:**
@@ -146,15 +146,15 @@ The CLI reads tool requirements from `.datarobot/cli/versions.yaml` in your repo
 
 **Field rules:**
 
-| Field | Required | Format | Notes |
-|-------|----------|--------|-------|
-| `name` | Yes | string | — |
-| `minimum-version` | Yes | semver | Must be a valid semantic version, e.g. `3.9.0` |
-| `command` | Yes | string | — |
-| `url` | Yes | string | — |
-| `install.macos` | Yes | string | — |
-| `install.linux` | Yes | string | — |
-| `install.windows` | No | string | Optional for Milestone 1 |
+| Field             | Required | Format | Notes                                          |
+| ----------------- | -------- | ------ | ---------------------------------------------- |
+| `name`            | Yes      | string | —                                              |
+| `minimum-version` | Yes      | semver | Must be a valid semantic version, e.g. `3.9.0` |
+| `command`         | Yes      | string | —                                              |
+| `url`             | Yes      | string | —                                              |
+| `install.macos`   | Yes      | string | —                                              |
+| `install.linux`   | Yes      | string | —                                              |
+| `install.windows` | No       | string | Optional for Milestone 1                       |
 
 **Validation behavior:**
 

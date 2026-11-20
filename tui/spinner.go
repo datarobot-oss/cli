@@ -38,6 +38,10 @@ type spinnerModel struct {
 	fn      func() error
 	done    bool
 
+	// styles are bound to the stream the spinner draws on; nil falls back to
+	// the package styles, which follow stdout.
+	styles *WriterStyles
+
 	// err is what fn returned, carried here by spinnerDoneMsg rather than
 	// assigned to a variable the caller closes over. The caller reads it off
 	// the final model, which is the only way to read it with a
@@ -85,18 +89,23 @@ func (m spinnerModel) View() string {
 	}
 
 	label := m.label
+	info, hint := InfoStyle, HintStyle
+
+	if m.styles != nil {
+		info, hint = m.styles.Info, m.styles.Hint
+	}
 
 	// A zero-valued model has no note; only RunWithSpinnerNote installs one.
 	if m.note != nil {
 		if note := m.note.Load(); note != nil && *note != "" {
-			label += " " + HintStyle.Render("("+*note+")")
+			label += " " + hint.Render("("+*note+")")
 		}
 	}
 
 	// The Dot frames carry their own trailing space, so nothing more goes
 	// between glyph and label: one column, the same gap the glyph-led lines
 	// around a spinner (a phase list's "✓ label") leave.
-	return m.prefix + InfoStyle.Render(m.spinner.View()) + label + "\n"
+	return m.prefix + info.Render(m.spinner.View()) + label + "\n"
 }
 
 // RunWithSpinner runs fn in the background while showing an animated spinner
@@ -133,14 +142,18 @@ func RunWithSpinnerPrefix(prefix, label string, fn func() error) error {
 // terminal, or a non-interactive run) fn runs inline, the Noter does
 // nothing, and interrupts are whatever fn's own context makes of them.
 func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
-	if !reader.IsStdinTerminal() {
-		return fn(func(string) {})
-	}
+	// Colors follow stderr, where the spinner and its fallback line go, not
+	// stdout, which the package styles probe.
+	styles := StylesFor(os.Stderr)
 
-	if reader.IsNonInteractive() {
-		fmt.Fprintln(os.Stderr, prefix+InfoStyle.Render("• ")+label)
+	switch spinnerModeFor(reader.IsStdinTerminal(), reader.IsStderrTerminal(), reader.IsNonInteractive()) {
+	case spinnerSilent:
+		return fn(func(string) {})
+	case spinnerLine:
+		fmt.Fprintln(os.Stderr, prefix+styles.Info.Render("• ")+label)
 
 		return fn(func(string) {})
+	case spinnerDrawn:
 	}
 
 	note := &atomic.Pointer[string]{}
@@ -150,12 +163,48 @@ func RunWithSpinnerNote(prefix, label string, fn func(note Noter) error) error {
 		label:   label,
 		prefix:  prefix,
 		note:    note,
+		styles:  &styles,
 		fn: func() error {
 			return fn(func(s string) { note.Store(&s) })
 		},
 	}
+	m.spinner.Spinner.Style = styles.Info
 
-	return spinnerVerdict(Run(m))
+	// On stderr, never stdout: stdout is the command's data, and a frame drawn
+	// there ends up in front of it whenever stdout is redirected.
+	return spinnerVerdict(Run(m, tea.WithOutput(os.Stderr)))
+}
+
+type spinnerMode int
+
+const (
+	// spinnerSilent runs fn with nothing shown: no terminal to answer
+	// keystrokes, so nothing is drawn.
+	spinnerSilent spinnerMode = iota
+	// spinnerLine prints the label once, for a run that must not animate or
+	// whose stderr is not a terminal.
+	spinnerLine
+	// spinnerDrawn animates the spinner on stderr.
+	spinnerDrawn
+)
+
+// SpinnerDrawn reports whether a spinner would animate on stderr, for a
+// caller that must show its label some other way when it would not.
+func SpinnerDrawn(stdinTerm, stderrTerm, nonInteractive bool) bool {
+	return spinnerModeFor(stdinTerm, stderrTerm, nonInteractive) == spinnerDrawn
+}
+
+// spinnerModeFor decides how a spinner shows: animated only when both the
+// keyboard and the screen it draws on are a terminal.
+func spinnerModeFor(stdinTerm, stderrTerm, nonInteractive bool) spinnerMode {
+	switch {
+	case !stdinTerm:
+		return spinnerSilent
+	case nonInteractive || !stderrTerm:
+		return spinnerLine
+	default:
+		return spinnerDrawn
+	}
 }
 
 // spinnerVerdict turns what Run handed back (the final model and its error)

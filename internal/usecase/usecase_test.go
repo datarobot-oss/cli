@@ -27,6 +27,12 @@ func TestParseID_TrimsAValidID(t *testing.T) {
 	assert.Equal(t, ID("68b0aa11bb22cc33dd44ee55"), id)
 }
 
+func TestParseID_LowersTheCase(t *testing.T) {
+	id, err := ParseID("68B0AA11BB22CC33DD44EE55")
+	require.NoError(t, err)
+	assert.Equal(t, ID("68b0aa11bb22cc33dd44ee55"), id)
+}
+
 func TestParseID_Rejects(t *testing.T) {
 	for name, raw := range map[string]string{
 		"blank":        "   ",

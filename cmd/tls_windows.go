@@ -17,10 +17,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/outputformat"
 	internaltls "github.com/datarobot/cli/internal/tls"
 	"github.com/spf13/cobra"
 )
@@ -54,6 +57,18 @@ func applyWindowsCerts(cmd *cobra.Command, caCert *string) error {
 	}
 
 	if err := internaltls.ExportWindowsCerts(dest); err != nil {
+		// Keep actionable text guidance below its error. JSON failures return to
+		// executeRoot instead, preserving the structured stderr envelope.
+		if errors.Is(err, internaltls.ErrNoWindowsCerts) &&
+			outputformat.GetFormat(cmd) != outputformat.OutputFormatJSON {
+			w := cmd.ErrOrStderr()
+
+			ReportError(w, fmt.Errorf("--export-windows-certs: %w", err))
+			fprintNoWindowsCertsHelp(w)
+
+			return cli.ErrSilent
+		}
+
 		return fmt.Errorf("--export-windows-certs: %w", err)
 	}
 

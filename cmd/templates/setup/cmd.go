@@ -30,12 +30,12 @@ var Cmd = &cobra.Command{
 	Long: `Launch the interactive template setup wizard to get started with DataRobot AI applications.
 
 🎯 This wizard will help you:
-  1️⃣  Choose an AI application template
-  2️⃣  Clone it to your computer
-  3️⃣  Configure your environment
-  4️⃣  Get you ready to build!
+  1. Choose an AI application template
+  2. Clone it to your computer
+  3. Configure your environment
+  4. Get you ready to build!
 
-⏱️ Takes about 3-5 minutes
+⌛ Takes about 3-5 minutes
 🎉 You'll have a working AI app at the end
 
 💡 Perfect for first-time users or someone starting a new project.`,

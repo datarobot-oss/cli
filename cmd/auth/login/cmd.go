@@ -17,6 +17,7 @@ package login
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/datarobot/cli/internal/auth"
@@ -24,6 +25,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/spf13/cobra"
 )
 
@@ -32,10 +34,16 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	// when authentication is intentionally disabled, say if the user is offline, or in
 	// a CI/CD environment, or in a script.
 	if viperx.GetBool(config.SkipAuthKey) {
-		err := errors.New("Login has been disabled via the '--skip-auth' flag.")
-		log.Error(err)
+		log.Error(errors.New("Login has been disabled via the '--skip-auth' flag."))
 
-		return err
+		return cli.ErrSilent
+	}
+
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	if timeout < 0 {
+		log.Errorf("--timeout must be zero or positive, got %s", timeout)
+
+		return cli.ErrSilent
 	}
 
 	var url string
@@ -44,9 +52,10 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	}
 
 	if url != "" {
-		err := config.SetURLToConfig(url)
-		if err != nil {
+		if err := config.SetURLToConfig(url); err != nil {
 			log.Error(err.Error())
+
+			return cli.ErrSilent
 		}
 	}
 
@@ -79,14 +88,23 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 	noBrowser, _ := cmd.Flags().GetBool("no-browser")
 
 	key, err := auth.RunBrowserLoginWith(cmd.Context(), datarobotHost, auth.LoginOptions{
-		NoBrowser: noBrowser,
+		NoBrowser:  noBrowser,
+		Timeout:    timeout,
+		JSONOutput: outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON,
 	})
 	if err != nil {
-		log.Error(err)
-
 		cmd.SilenceUsage = true
 
-		return err
+		if errors.Is(err, auth.ErrLoginTimedOut) {
+			auth.FprintLoginTimeoutHelp(os.Stderr)
+
+			return cli.ErrSilent
+		}
+
+		log.Error(err)
+
+		// The login flow already reported the failure; do not print it again.
+		return cli.ErrSilent
 	}
 
 	if key == "" {
@@ -95,13 +113,16 @@ func RunE(cmd *cobra.Command, args []string) error { //nolint: cyclop
 
 	viperx.Set(config.DataRobotAPIKey, strings.ReplaceAll(key, "\n", ""))
 
-	err = auth.WriteConfigFile()
+	// The write succeeded or the error is returned; on success the single
+	// save notice names the profile and the config file the credentials
+	// landed in.
+	err = auth.WriteConfigFileAndAnnounce(cmd)
 	if err != nil {
 		log.Error(err)
 
 		cmd.SilenceUsage = true
 
-		return err
+		return cli.ErrSilent
 	}
 
 	return nil
@@ -132,6 +153,7 @@ If the browser cannot be opened, the CLI prints a link to open yourself. Pass
 	// Read directly from cobra rather than binding to viper: this is a transient
 	// per-invocation flag and must never be persisted to drconfig.yaml.
 	cmd.Flags().Bool("no-browser", false, "print the login link instead of opening a browser")
+	cmd.Flags().Duration("timeout", 0, "how long to wait for the browser callback (default 5m)")
 
 	return cmd
 }

@@ -16,15 +16,57 @@ package seturl
 
 import (
 	"github.com/datarobot/cli/internal/auth"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
+// RunE configures the DataRobot endpoint, persists it, and then continues
+// into authentication. A successful persistence announces where the
+// credentials landed; a failed one is reported instead of being ignored, so
+// the command never claims a write that did not happen.
+func RunE(cmd *cobra.Command, args []string) error {
+	var url string
+	if len(args) > 0 {
+		url = args[0]
+	}
+
+	// A bad explicit arg is reported, not silently replaced by the picker.
+	if url != "" {
+		if err := config.SetURLToConfig(url); err != nil {
+			log.Error(err.Error())
+
+			return cli.ErrSilent
+		}
+
+		if err := auth.WriteConfigFileAndAnnounce(cmd); err != nil {
+			return cli.ErrSilent
+		}
+
+		_ = auth.EnsureAuthenticatedE(cmd, args)
+
+		return nil
+	}
+
+	if auth.SetURLAction() {
+		if err := auth.WriteConfigFileAndAnnounce(cmd); err != nil {
+			return cli.ErrSilent
+		}
+
+		_ = auth.EnsureAuthenticatedE(cmd, args)
+	}
+
+	return nil
+}
+
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set-url [url]",
-		Short: "🌐 Configure your DataRobot environment URL.",
+		Use:           "set-url [url]",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Short:         "🌐 Configure your DataRobot environment URL.",
 		Long: `Configure your DataRobot environment URL with an interactive selection.
 
 This command helps you choose the correct DataRobot environment:
@@ -38,29 +80,7 @@ This command helps you choose the correct DataRobot environment:
 			// set-url is expected to create a not-yet-existing --profile.
 			config.ProfileCreateAnnotationKey: "true",
 		},
-		Run: func(cmd *cobra.Command, args []string) {
-			var url string
-			if len(args) > 0 {
-				url = args[0]
-			}
-
-			if url != "" {
-				err := config.SetURLToConfig(url)
-				if err == nil {
-					_ = auth.WriteConfigFileSilent()
-					_ = auth.EnsureAuthenticatedE(cmd, args)
-
-					return
-				}
-			}
-
-			urlChanged := auth.SetURLAction()
-
-			if urlChanged {
-				_ = auth.WriteConfigFileSilent()
-				_ = auth.EnsureAuthenticatedE(cmd, args)
-			}
-		},
+		RunE: RunE,
 	}
 
 	telemetry.TrackWith(cmd, func(_ *cobra.Command, args []string) map[string]any {

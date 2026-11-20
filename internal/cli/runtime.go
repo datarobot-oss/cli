@@ -24,6 +24,7 @@ package cli
 import (
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/spf13/cobra"
 )
 
@@ -52,4 +53,18 @@ func IsNonInteractive(cmd *cobra.Command) bool {
 	}
 
 	return viperx.GetBool(YesFlagName)
+}
+
+// SuppressNotices reports whether human-facing status lines, such as the
+// "Running plugin" banner, should be skipped because the output is meant for a
+// machine: JSON output was requested, or the run is non-interactive.
+//
+// It is a predicate rather than a writer so each caller keeps its own policy.
+// Pass the command's raw args when it sets DisableFlagParsing (plugins), since
+// cobra never parses `--output-format` for it; nil is fine otherwise. A `--yes`
+// among those raw args belongs to the program being run and is not seen here,
+// so only DATAROBOT_CLI_NON_INTERACTIVE counts for such a command.
+func SuppressNotices(cmd *cobra.Command, args []string) bool {
+	return IsNonInteractive(cmd) ||
+		outputformat.GetFormatFromArgs(cmd, args) == outputformat.OutputFormatJSON
 }

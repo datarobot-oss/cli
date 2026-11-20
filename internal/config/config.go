@@ -17,6 +17,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -183,7 +184,8 @@ func configureViperSearchPath(filePath, defaultConfigFileDir string) error {
 }
 
 // printDebugConfigIfEnabled prints the effective viper configuration when
-// --debug is set.
+// --debug is set. On stderr, like every other diagnostic: stdout is a
+// command's data, one JSON document under --output-format json.
 func printDebugConfigIfEnabled() error {
 	if !viper.GetBool("debug") {
 		return nil
@@ -194,10 +196,13 @@ func printDebugConfigIfEnabled() error {
 		return fmt.Errorf("Failed to generate debug config output: %w", err)
 	}
 
-	fmt.Print(output)
+	fmt.Fprint(debugOut, output)
 
 	return nil
 }
+
+// debugOut is where the debug config dump goes; a test seam.
+var debugOut io.Writer = os.Stderr
 
 // This is a list of keys that we want to redact
 // when printing out the viper configuration for

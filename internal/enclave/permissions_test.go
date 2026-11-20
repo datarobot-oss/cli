@@ -16,8 +16,11 @@ package enclave
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,10 +33,26 @@ func TestParsePermission(t *testing.T) {
 	}
 }
 
+func TestParsePermission_Pin(t *testing.T) {
+	for _, in := range []string{"pin", "PIN", " Pin "} {
+		got, err := ParsePermission(in)
+		require.NoError(t, err)
+		assert.Equal(t, PermissionPin, got)
+	}
+}
+
+func TestParsePermission_Hub(t *testing.T) {
+	for _, in := range []string{"hub", "HUB", " Hub "} {
+		got, err := ParsePermission(in)
+		require.NoError(t, err)
+		assert.Equal(t, PermissionHub, got)
+	}
+}
+
 func TestParsePermission_RejectsUnknown(t *testing.T) {
 	_, err := ParsePermission("deploy")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "create")
+	assert.Contains(t, err.Error(), "create, pin and hub")
 }
 
 func TestResolveRecipientByID(t *testing.T) {
@@ -96,4 +115,393 @@ func TestRenderEnclavePermissions_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, true, back["rbacEnabled"])
 	assert.Equal(t, false, back["viaSysAdmin"])
 	assert.Len(t, back["permissions"], 2)
+}
+
+func TestPinPermission_UsersAndGroupsOnly(t *testing.T) {
+	// The server refuses organization recipients for pin, and the endpoint takes an
+	// id; fail before sending the request, naming the flags that work.
+	for _, r := range []Recipient{
+		{Type: RecipientOrg, ID: "org-1"},
+		{Type: RecipientUser, Username: "alice@corp.io"},
+		{Type: RecipientGroup},
+	} {
+		err := GrantPinPermission(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "users and groups only")
+		assert.Contains(t, err.Error(), "--user-id or --group")
+
+		err = RevokePinPermission(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "users and groups only")
+	}
+}
+
+func TestPinPermission_GroupRecipient(t *testing.T) {
+	// A group is sent to pinAccess as shareRecipientType group, for grant and revoke.
+	installSkipAuth(t)
+
+	var bodies []createAccessUpdate
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/enclaves/pinAccess", r.URL.Path)
+
+		var body createAccessUpdate
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		bodies = append(bodies, body)
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	group := Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcd"}
+
+	require.NoError(t, GrantPinPermission(group))
+	require.NoError(t, RevokePinPermission(group))
+
+	assert.Equal(t, []createAccessUpdate{
+		{Operation: operationGrant, ShareRecipientType: RecipientGroup, ID: group.ID},
+		{Operation: operationRevoke, ShareRecipientType: RecipientGroup, ID: group.ID},
+	}, bodies)
+}
+
+func TestPinPermission_GroupOnUsersOnlyServerHint(t *testing.T) {
+	// A server that predates group recipients refuses them with a 422 saying pin is
+	// for users only. Say what that means, and keep the HTTP error reachable.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"detail":[{"type":"value_error","loc":["body","shareRecipientType"],` +
+			`"msg":"Value error, the pin permission can be granted to users only, got group"}]}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	group := Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcd"}
+
+	for name, err := range map[string]error{
+		"grant":  GrantPinPermission(group),
+		"revoke": RevokePinPermission(group),
+	} {
+		require.ErrorIs(t, err, errPinGroupUnsupported, name)
+
+		var httpErr *drapi.HTTPError
+
+		require.ErrorAs(t, err, &httpErr, name)
+		assert.Equal(t, http.StatusUnprocessableEntity, httpErr.StatusCode, name)
+	}
+}
+
+func TestPinPermission_UnknownGroupHasNoHint(t *testing.T) {
+	// A 422 about the group itself is the server's answer to this request, not a
+	// missing feature, so it passes through unchanged.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"detail":"the recipient group id does not name a known group"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := GrantPinPermission(Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcd"})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errPinGroupUnsupported)
+	assert.Contains(t, err.Error(), "known group")
+}
+
+func TestCollectionAccessPath(t *testing.T) {
+	// Pin has its own endpoint; it is not a field on createAccess.
+	assert.Equal(t, "/api/v2/enclaves/createAccess", collectionAccessPath(PermissionCreate))
+	assert.Equal(t, "/api/v2/enclaves/pinAccess", collectionAccessPath(PermissionPin))
+	// The Hub permission is only served on the shared endpoint, with the permission as a
+	// parameter.
+	assert.Equal(t, "/api/v2/enclaves/access", collectionAccessPath(PermissionHub))
+}
+
+func TestHubPermission_UsersAndGroupsOnly(t *testing.T) {
+	// The server refuses organization recipients for the Hub permission, and the endpoint takes
+	// an id; fail before sending the request, naming the flags that work.
+	for _, r := range []Recipient{
+		{Type: RecipientOrg, ID: "org-1"},
+		{Type: RecipientUser, Username: "alice@corp.io"},
+		{Type: RecipientGroup},
+	} {
+		err := GrantHubPermission(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "users and groups only")
+		assert.Contains(t, err.Error(), "--user-id or --group")
+
+		err = RevokeHubPermission(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "users and groups only")
+	}
+}
+
+func TestHubPermission_GrantAndRevoke(t *testing.T) {
+	// Users and groups go to /enclaves/access with permission hub in the body.
+	installSkipAuth(t)
+
+	var bodies []createAccessUpdate
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPatch, r.Method)
+		assert.Equal(t, "/api/v2/enclaves/access", r.URL.Path)
+
+		var body createAccessUpdate
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		bodies = append(bodies, body)
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	user := Recipient{Type: RecipientUser, ID: "656f0000000000000000abce"}
+	group := Recipient{Type: RecipientGroup, ID: "656f0000000000000000abcf"}
+
+	require.NoError(t, GrantCollectionPermission(PermissionHub, user))
+	require.NoError(t, GrantCollectionPermission(PermissionHub, group))
+	require.NoError(t, RevokeCollectionPermission(PermissionHub, group))
+
+	assert.Equal(t, []createAccessUpdate{
+		{Permission: PermissionHub, Operation: operationGrant, ShareRecipientType: RecipientUser, ID: user.ID},
+		{Permission: PermissionHub, Operation: operationGrant, ShareRecipientType: RecipientGroup, ID: group.ID},
+		{Permission: PermissionHub, Operation: operationRevoke, ShareRecipientType: RecipientGroup, ID: group.ID},
+	}, bodies)
+}
+
+func TestPinAndCreate_SendNoPermissionField(t *testing.T) {
+	// Their own endpoints take no permission field; only /access does.
+	installSkipAuth(t)
+
+	var raw []map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+
+		raw = append(raw, body)
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	require.NoError(t, GrantPinPermission(Recipient{Type: RecipientUser, ID: "u-1"}))
+	require.NoError(t, GrantCreatePermission(Recipient{Type: RecipientOrg, ID: "org-1"}))
+
+	for _, body := range raw {
+		assert.NotContains(t, body, "permission")
+	}
+}
+
+func TestHubList(t *testing.T) {
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v2/enclaves/access", r.URL.Path)
+		assert.Equal(t, "hub", r.URL.Query().Get("permission"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"shareRecipientType": "user", "id": "u-1", "permissions": ["CAN_DEPLOY"]},
+			{"shareRecipientType": "group", "id": "g-1", "permissions": ["CAN_DEPLOY"]}
+		]`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	holders, err := ListCollectionAccess(PermissionHub)
+	require.NoError(t, err)
+	assert.Equal(t, []CreateAccessHolder{
+		{ShareRecipientType: "user", ID: "u-1", Permissions: []string{"CAN_DEPLOY"}},
+		{ShareRecipientType: "group", ID: "g-1", Permissions: []string{"CAN_DEPLOY"}},
+	}, holders)
+}
+
+func TestHubPermission_OlderServerHint(t *testing.T) {
+	// A server without /enclaves/access reads "access" as an enclave id: the list gets
+	// a 422 about enclave_id, a grant or revoke a 405, and a proxy may answer a bare
+	// 404. Say the server needs upgrading, and keep the HTTP error reachable.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(
+				`{"detail":[{"loc":["path","enclave_id"],"msg":"Input should be a valid UUID"}]}`))
+
+			return
+		}
+
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte(`{"detail":"Method Not Allowed"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	errs := map[string]error{
+		"grant":  GrantHubPermission(Recipient{Type: RecipientUser, ID: "u-1"}),
+		"revoke": RevokeHubPermission(Recipient{Type: RecipientGroup, ID: "g-1"}),
+	}
+	_, errs["list"] = ListCollectionAccess(PermissionHub)
+
+	for name, err := range errs {
+		require.Error(t, err, name)
+		require.ErrorIs(t, err, errHubUnsupported, name)
+		assert.Contains(t, err.Error(), "/api/v2/enclaves/access", name)
+
+		var httpErr *drapi.HTTPError
+
+		require.ErrorAs(t, err, &httpErr, name)
+	}
+}
+
+func TestHubPermission_ServerRefusalsHaveNoHint(t *testing.T) {
+	// A 403 (not an admin), a 422 about the recipient and a 409 (Enclave RBAC off) are
+	// the endpoint's own answers, so they pass through without the upgrade hint.
+	installSkipAuth(t)
+
+	for _, tc := range []struct {
+		status int
+		body   string
+	}{
+		{http.StatusForbidden, `{"detail":"only system and org admins may manage Hub access"}`},
+		{http.StatusUnprocessableEntity, `{"detail":"unknown user"}`},
+		{http.StatusConflict, `{"code":"enclave-rbac/disabled"}`},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(tc.body))
+		}))
+
+		installEndpoint(t, srv.URL)
+
+		err := GrantHubPermission(Recipient{Type: RecipientUser, ID: "u-1"})
+		require.Error(t, err, tc.status)
+		require.NotErrorIs(t, err, errHubUnsupported, tc.status)
+
+		srv.Close()
+	}
+}
+
+func TestPinPermission_OlderServerHint(t *testing.T) {
+	// A server without /enclaves/pinAccess answers FastAPI's default 404. Say
+	// so, and keep the HTTP error reachable for callers that branch on the status.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Not Found"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	errs := map[string]error{
+		"grant":  GrantPinPermission(Recipient{Type: RecipientUser, ID: "u-1"}),
+		"revoke": RevokePinPermission(Recipient{Type: RecipientUser, ID: "u-1"}),
+	}
+	_, errs["list"] = ListCollectionAccess(PermissionPin)
+
+	for name, err := range errs {
+		require.Error(t, err, name)
+		require.ErrorIs(t, err, errPinUnsupported, name)
+		assert.Contains(t, err.Error(), "pinAccess", name)
+
+		var httpErr *drapi.HTTPError
+
+		require.ErrorAs(t, err, &httpErr, name)
+		assert.Equal(t, http.StatusNotFound, httpErr.StatusCode, name)
+	}
+}
+
+func TestPinPermission_EndpointNotFoundHasNoHint(t *testing.T) {
+	// A 404 that the pin endpoint itself answered (its own detail) is about the
+	// request, not a missing route, so it passes through without the hint.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Enclave access control request failed (fetch account info)"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := GrantPinPermission(Recipient{Type: RecipientUser, ID: "u-1"})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errPinUnsupported)
+}
+
+func TestPinList_EndpointNotFoundHasNoHint(t *testing.T) {
+	// The list goes through drapi.Get, which must carry the body too: a 404 the
+	// pin endpoint answered itself is not a missing route.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Enclave access control request failed (fetch account info)"}`))
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	_, err := ListCollectionAccess(PermissionPin)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errPinUnsupported)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+}
+
+func TestRouteMissing(t *testing.T) {
+	assert.True(t, routeMissing([]byte(`{"detail":"Not Found"}`)))
+	assert.True(t, routeMissing(nil))
+	assert.True(t, routeMissing([]byte(`<html>404 Not Found</html>`)))
+	assert.True(t, routeMissing([]byte(`{"message":"no route"}`)))
+	assert.False(t, routeMissing([]byte(`{"detail":"user not found"}`)))
+	assert.False(t, routeMissing([]byte(`{"detail":[{"msg":"bad id"}]}`)))
+}
+
+func TestCreatePermission_NotFoundHasNoPinHint(t *testing.T) {
+	// The hint is for pin only; a 404 on createAccess passes through unchanged.
+	installSkipAuth(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	installEndpoint(t, srv.URL)
+
+	err := GrantCreatePermission(Recipient{Type: RecipientUser, ID: "u-1"})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errPinUnsupported)
 }

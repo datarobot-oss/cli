@@ -98,7 +98,7 @@ func drifted(remoteVer string, cfg wapi.Config) bool {
 func baseFromManifest(m wapi.Manifest) BaseManifest {
 	out := make(BaseManifest, len(m.Files))
 	for k, v := range m.Files {
-		out[k] = FileEntry{Hash: v.Hash, Size: v.Size}
+		out[k] = FileEntry{Hash: v.Hash, Size: v.Size, Executable: v.Executable}
 	}
 
 	return out

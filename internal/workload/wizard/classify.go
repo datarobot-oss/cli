@@ -177,7 +177,22 @@ func evidentSecret(value string) (string, bool) {
 	return "", false
 }
 
+// platformEndpointEnvName is the one the platform sets itself on the pod.
+const platformEndpointEnvName = "DATAROBOT_ENDPOINT"
+
 func classify(name, value string) EnvVar {
+	// Said here so the table tells the truth: the entry is written as the
+	// workload's own key, whatever the secret signals below would conclude.
+	if name == manifest.APIKeyEnvName {
+		return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "replaced by the workload's own key (source: api-key)"}
+	}
+
+	// The pod is given the platform's internal endpoint; the one a developer's
+	// machine reaches the platform through must not replace it.
+	if name == platformEndpointEnvName {
+		return EnvVar{Name: name, Kind: EnvLocal, Value: value, Reason: "the platform gives the pod its own endpoint"}
+	}
+
 	for _, signal := range secretValuePatterns {
 		if signal.pattern.MatchString(value) {
 			return EnvVar{Name: name, Kind: EnvSecret, Value: value, Reason: "looks like " + signal.reason}
@@ -378,7 +393,7 @@ func LiteralNames(vars []manifest.EnvVar) []string {
 	// moved in the file, but naming the variable twice reads as a fault in the
 	// report rather than in the file it is describing.
 	for _, v := range vars {
-		if v.Secret || seen[v.Name] {
+		if v.Secret || v.APIKey || seen[v.Name] {
 			continue
 		}
 

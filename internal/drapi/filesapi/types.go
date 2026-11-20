@@ -16,9 +16,11 @@ package filesapi
 
 // FileMeta is the per-file entry in a manifest: SHA-256 hex + byte size.
 // Shape matches wapi.FileMeta so manifests compare without conversion.
+// Executable is nil when the server does not report the bit.
 type FileMeta struct {
-	Hash string
-	Size int64
+	Hash       string
+	Size       int64
+	Executable *bool
 }
 
 // Overwrite modes for the stage and zip endpoints. The sync engine uses
@@ -125,6 +127,8 @@ type AllFilesItem struct {
 	FileType     string `json:"fileType,omitempty"`
 	FileSize     int64  `json:"fileSize"`
 	FileChecksum string `json:"fileChecksum"`
+	// Absent before API v2.49, which reads as unknown rather than false.
+	IsExecutable *bool `json:"isExecutable,omitempty"`
 }
 
 type DeleteFilesReq struct {

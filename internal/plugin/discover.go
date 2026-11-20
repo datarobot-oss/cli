@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"os/exec"
@@ -334,11 +335,11 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 	var manifest PluginManifest
 
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %w", ErrCorruptInstall, err)
 	}
 
 	if manifest.Name == "" {
-		return nil, nil, errMissingManifestField("name")
+		return nil, nil, fmt.Errorf("%w: %w", ErrCorruptInstall, errMissingManifestField("name"))
 	}
 
 	if seen[manifest.Name] {
@@ -361,7 +362,7 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 // resolvePlatformExecutable returns the appropriate script path for the current platform.
 func resolvePlatformExecutable(pluginDir string, manifest *PluginManifest) (string, error) {
 	if manifest.Scripts == nil {
-		return "", errors.New("managed plugin missing scripts configuration")
+		return "", fmt.Errorf("%w: missing scripts configuration", ErrCorruptInstall)
 	}
 
 	var scriptPath string
@@ -373,13 +374,18 @@ func resolvePlatformExecutable(pluginDir string, manifest *PluginManifest) (stri
 	}
 
 	if scriptPath == "" {
-		return "", errors.New("no script configured for platform: " + runtime.GOOS)
+		return "", fmt.Errorf("%w: no script configured for platform %s", ErrCorruptInstall, runtime.GOOS)
 	}
 
 	fullPath := filepath.Join(pluginDir, scriptPath)
 
-	// Verify script exists
+	// Verify the script exists. A missing script is a repairable corruption;
+	// any other stat failure (e.g. permission denied) is reported as-is.
 	if _, err := os.Stat(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("%w: %w", ErrCorruptInstall, err)
+		}
+
 		return "", err
 	}
 

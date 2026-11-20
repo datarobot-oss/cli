@@ -37,8 +37,17 @@ func Cmd() *cobra.Command {
 		Short: "Revoke a collection-level enclave permission from a recipient.",
 		Long: `Revoke a collection-level enclave permission from a single recipient.
 
-The permission is:
-  create   register new enclaves
+The permissions are:
+  create   register new enclaves (users, groups, or organizations)
+  pin      choose the one enclave a workload runs on, overriding the scheduler's
+           placement (users and groups, not organizations). The enclave must
+           still be allowed by the workload's use case, and deploy access to it
+           is still required. A group grant lets its members pin. Pin and create
+           are independent: neither implies the other.
+  hub      run workloads on the Hub (users and groups, not organizations).
+           Checked only when the organization requires it
+           (WORKLOAD_REQUIRE_HUB_PERMISSION): a workload with no use case, or
+           a use case without Enclaves, runs on the Hub and needs it.
 
 Choose exactly one recipient:
   --user-id <id>   a user, by DataRobot user id
@@ -50,12 +59,22 @@ Recipients are named by id only — unlike "dr enclave access", there is no
 enclaves they already own, nor any permission granted to them by way of a
 different subject (for example, an organization-wide grant).
 
-Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise the
-call succeeds but changes nothing. Revoking requires a system administrator.
+Takes effect only with ENCLAVE_RBAC_ENABLED=true on the server; otherwise create
+and pin succeed but change nothing, and hub is refused (409).
+
+Who may run it:
+  create   a system administrator.
+  pin, hub a system administrator, for any user or group; or an org admin, for
+           users and groups in their own organization. A recipient in another
+           organization, or any other caller, is refused with 403.
 
 Example:
   dr enclave permission revoke --permission create --org 656f0000000000000000abcd
-  dr enclave permission revoke --permission create --user-id 656f0000000000000000abce`,
+  dr enclave permission revoke --permission create --user-id 656f0000000000000000abce
+  dr enclave permission revoke --permission pin --user-id 656f0000000000000000abce
+  dr enclave permission revoke --permission pin --group 656f0000000000000000abcf
+  dr enclave permission revoke --permission hub --user-id 656f0000000000000000abce
+  dr enclave permission revoke --permission hub --group 656f0000000000000000abcf`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -72,7 +91,7 @@ Example:
 				return err
 			}
 
-			if err := enclave.RevokeCreatePermission(recipient); err != nil {
+			if err := enclave.RevokeCollectionPermission(name, recipient); err != nil {
 				return err
 			}
 
@@ -87,7 +106,7 @@ Example:
 
 	outputformat.AddFlag(cmd, &outputFormat)
 
-	cmd.Flags().StringVar(&permission, "permission", "", "Permission to revoke: create (required)")
+	cmd.Flags().StringVar(&permission, "permission", "", "Permission to revoke: create or pin (required)")
 	_ = cmd.MarkFlagRequired("permission")
 
 	cmd.Flags().StringVar(&userID, "user-id", "", "Revoke from a user by DataRobot user id")

@@ -28,6 +28,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// logSettleBudget is how long a failed build's tail waits for its last
+// lines; a var so tests do not spend it.
+var logSettleBudget = workload.BuildLogSettleTimeout
+
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
 
@@ -45,12 +49,15 @@ By default the command prints the new build IDs (one per line) and
 exits. With --wait it follows each build to a terminal status
 (COMPLETED, FAILED, or CANCELLED), streaming the build's own log lines
 and status transitions to stderr while it waits, then prints a summary
-with duration and resulting image_uri. On failure the tail of the
-build logs is dumped to stderr.
+with duration and resulting image_uri. A failed build's last log lines,
+the ones that say why, reach the stream after the build has ended, so
+on failure the command keeps reading for up to a minute until they
+arrive.
 
 JSON output emits one document:
   - without --wait: the raw trigger response {"buildIds":[...]}.
-  - with --wait: an array of BuildSummary objects, always an array.
+  - with --wait: an array of BuildSummary objects, always an array. A
+    failed build's last 50 log lines are in its logTail.
 
 Examples:
   dr artifact build create
@@ -157,17 +164,23 @@ func waitForAllBuilds(
 // waitOne follows one build to its end and summarises it. A failed build's
 // error names the logs only when there are some: lines the stream printed
 // count, and the summary says what its own fetch found.
+//
+// The summary's own tail is left out of text output only when the stream
+// printed the whole log, closing line included. A stream that printed some
+// lines and then gave up, or ran out of time, may have stopped short of the
+// cause, which the summary's separate read still has.
 func waitOne(cmd *cobra.Command, artifactID, buildID string, poll pollflags.Set) (workload.BuildSummary, error) {
-	build, logged, err := waitStreaming(cmd, artifactID, buildID, poll)
+	build, tail, err := waitStreaming(cmd, artifactID, buildID, poll)
 	if build == nil {
 		return workload.BuildSummary{BuildID: buildID, Status: workload.BuildStatusCLIUnknown}, err
 	}
 
 	summary, serr := workload.BuildSummaryFor(build, workload.DefaultBuildLogTail)
+	summary.LogTailShown = tail.Complete()
 
 	if workload.IsBuildErrorStatus(build.Status) {
 		logs := summary.LogEvidence()
-		if logged {
+		if tail.Emitted() {
 			logs = workload.LogsCaptured
 		}
 
@@ -189,10 +202,10 @@ func waitStreaming(
 	cmd *cobra.Command,
 	artifactID, buildID string,
 	poll pollflags.Set,
-) (build *workload.Build, logged bool, err error) {
+) (build *workload.Build, tail *workload.BuildLogTail, err error) {
 	out := cmd.ErrOrStderr()
 
-	tail := workload.NewBuildLogTail(artifactID, buildID,
+	tail = workload.NewBuildLogTail(artifactID, buildID,
 		func(e workload.WorkloadLogEntry) { fmt.Fprintln(out, "  "+workload.FormatBuildLogLine(e)) },
 		func(w string) { fmt.Fprintln(out, "  (log stream) "+w) })
 
@@ -213,8 +226,10 @@ func waitStreaming(
 		})
 
 	// The final catch-up: ingestion lags the build, so the last lines
-	// routinely land after the wait has already ended.
+	// routinely land after the wait has already ended. A failed build's are
+	// waited for, since they are the ones that say why.
+	tail.Settle(cmd.Context(), build, poll.Interval, logSettleBudget, func(note string) { fmt.Fprintln(out, "  "+note) })
 	tail.Finish()
 
-	return build, tail.Emitted(), err
+	return build, tail, err
 }

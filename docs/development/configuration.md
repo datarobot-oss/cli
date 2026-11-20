@@ -174,12 +174,12 @@ created on its first write.
 
 When adding a new flag, decide which category it falls into:
 
-| Category                                                  | Bind to viper?  | Persist to drconfig.yaml?            |
-| --------------------------------------------------------- | --------------- | ------------------------------------ |
-| Transient subcommand flag (e.g. `--yes`, `--all`)          | No              | No                                   |
-| Global transient root flag (e.g. `--output-format`)        | Yes (root only) | No                                   |
-| Sticky preference (e.g. `--ca-cert`)                        | Yes (root only) | Yes &mdash; add to `PersistableKeys` |
-| Connection credential (e.g. `--token`)                     | Yes             | Yes                                  |
+| Category                                            | Bind to viper?  | Persist to drconfig.yaml?            |
+| --------------------------------------------------- | --------------- | ------------------------------------ |
+| Transient subcommand flag (e.g. `--yes`, `--all`)   | No              | No                                   |
+| Global transient root flag (e.g. `--output-format`) | Yes (root only) | No                                   |
+| Sticky preference (e.g. `--ca-cert`)                | Yes (root only) | Yes &mdash; add to `PersistableKeys` |
+| Connection credential (e.g. `--token`)              | Yes             | Yes                                  |
 
 For transient subcommand flags:
 

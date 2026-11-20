@@ -40,7 +40,7 @@ jobs:
           ref: ${{ inputs.version }}
 
       - name: Install smoke-test dependencies
-        uses: datarobot-oss/cli/.github/actions/install-deps@main
+        uses: ./.github/actions/install-deps
 
       - name: MacOS - Install coreutils (gtimeout)
         if: matrix.sys.os == 'macos-latest'
@@ -50,59 +50,37 @@ jobs:
 
       # Node.js is the one template prerequisite the CLI cannot auto-install
       # (no install command for it on any platform), so it must be provisioned
-      # here. uv / task / pulumi are auto-installed by `dr start --yes`.
+      # here. uv / task are auto-installed by `dr start --yes`; pulumi is
+      # provisioned below for the same reason (see that step's comment).
       # NOTE: keep this version in sync with the Agentic Starter template's
       # required Node version (currently 24).
       - name: Set up Node.js (template prerequisite)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
 
+      # Pulumi is no longer preinstalled on the ubuntu-26.04 runner image, so
+      # `dr start --yes` now runs its auto-install: `curl ... | sh` drops the
+      # binary in ~/.pulumi/bin, which the non-interactive shells that run the
+      # immediately following prerequisite installs (the DataRobot Pulumi
+      # resource plugin) cannot see, failing them with exit 127. Provision it
+      # here and export the bin dir on GITHUB_PATH so the template's
+      # prerequisites resolve end to end.
+      # Stopgap: the proper fix is PATH propagation in the CLI's dependency
+      # installer (see ALIFE-1317).
+      - name: Set up Pulumi (template prerequisite)
+        run: |
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+
       - name: Set up Go and Task
-        uses: datarobot-oss/cli/.github/actions/setup@main
+        uses: ./.github/actions/setup
 
       - name: Build and Install the DR CLI Binary
-        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
+        uses: ./.github/actions/install-dr-bin
 
       - name: Run Pre-Release Smoke Tests
         env:
           DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
         run: |
           task smoke-test-pre-release DR_API_TOKEN="$DR_API_TOKEN"
-
-  # Its own job: the one above runs `dr start` under a 30-minute cap, and a
-  # stop->stopped wait of ~11 minutes would eat into that. Ubuntu only: this
-  # surface is not OS-sensitive.
-  workload-smoke-test:
-    runs-on: ubuntu-latest
-    name: Run Workload/Artifact Smoke Tests
-    timeout-minutes: 45
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.version }}
-
-      - name: Install smoke-test dependencies
-        uses: datarobot-oss/cli/.github/actions/install-deps@main
-
-      - name: Set up Go and Task
-        uses: datarobot-oss/cli/.github/actions/setup@main
-
-      - name: Build and Install the DR CLI Binary
-        uses: datarobot-oss/cli/.github/actions/install-dr-bin@main
-
-      - name: Run Workload/Artifact Smoke Tests
-        env:
-          DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
-        # Scenarios A/B/C/E + artifact-lifecycle. D (~20-30 min, two image
-        # builds) stays local/opt-in -- its cost is a bigger ask than this
-        # ticket's scope; revisit if/when the pre-release gate's total
-        # runtime budget can absorb it.
-        #
-        # lib.sh depends on jq throughout; it isn't installed explicitly by
-        # install-deps, only relied on as preinstalled on GitHub-hosted
-        # runner images. Low risk today, but worth knowing if this job ever
-        # starts failing at the very first `dr workload list` probe.
-        run: |
-          task smoke-test-workload -- a b c e artifact

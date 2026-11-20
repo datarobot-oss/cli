@@ -46,7 +46,7 @@ func TestPrintPlan_PushOnlyListsWhatItLeavesAlone(t *testing.T) {
 		Skipped: skipped,
 	}))
 	assert.Contains(t, buf.String(), "↑ UPLOAD (1)")
-	assert.Contains(t, buf.String(), "↷ LEFT ALONE (push-only) (1)")
+	assert.Contains(t, buf.String(), "↷ LEFT ALONE (not pulled) (1)")
 	assert.Contains(t, buf.String(), "theirs.py")
 
 	buf.Reset()

@@ -124,6 +124,20 @@ func TestDetect_ReadsEnvKeyNamesInOrder(t *testing.T) {
 	assert.True(t, detected.HasEnvFile())
 }
 
+// The pod runs against the platform's internal endpoint, so the one in .env is
+// held back as local, with a reason the table can show.
+func TestDetect_HoldsBackDataRobotEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	writeEnv(t, dir, "DATAROBOT_ENDPOINT=https://app.datarobot.com/api/v2\nLOG_LEVEL=debug\n")
+
+	detected := Detect(dir)
+
+	require.Len(t, detected.EnvVars, 2)
+	assert.Equal(t, "DATAROBOT_ENDPOINT", detected.EnvVars[0].Name)
+	assert.Equal(t, EnvLocal, detected.EnvVars[0].Kind)
+	assert.NotEmpty(t, detected.EnvVars[0].Reason)
+}
+
 func TestDetect_NoEnvFileIsSilent(t *testing.T) {
 	detected := Detect(t.TempDir())
 

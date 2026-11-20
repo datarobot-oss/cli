@@ -31,6 +31,7 @@ import (
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -258,7 +259,7 @@ func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 
 	locking := stubRun(t, deployed(), nil)
 
-	_, _, err = runCmd(t, "--lock")
+	_, _, err = runCmd(t, "--promote")
 	require.NoError(t, err)
 	assert.True(t, locking.Lock)
 }
@@ -269,9 +270,9 @@ func TestCmd_PassesTheFlagsThrough(t *testing.T) {
 func TestCmd_DetachAndLockCannotBeCombined(t *testing.T) {
 	stubRun(t, deployed(), nil)
 
-	_, _, err := runCmd(t, "--detach", "--lock")
+	_, _, err := runCmd(t, "--detach", "--promote")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--lock cannot be combined with --detach")
+	assert.Contains(t, err.Error(), "--promote cannot be combined with --detach")
 }
 
 // TestCmd_PollDefaultsApplyWithoutTheFlag guards the prototype's bug, where a
@@ -397,10 +398,11 @@ func TestCmd_ConfirmIsHandedToTheDeploy(t *testing.T) {
 func onATerminal(t *testing.T) {
 	t.Helper()
 
-	prev := isStdinTerminalFn
+	prev, prevAsk := isStdinTerminalFn, canAskFn
 	isStdinTerminalFn = func() bool { return true }
+	canAskFn = func(*cobra.Command) bool { return true }
 
-	t.Cleanup(func() { isStdinTerminalFn = prev })
+	t.Cleanup(func() { isStdinTerminalFn, canAskFn = prev, prevAsk })
 }
 
 // --yes is the answer, so there is nothing left to ask and the deploy is
@@ -460,9 +462,9 @@ const (
 // is still setting up needs that command once the deploy finishes; one the
 // previewed deploy would start needs only the flag on that deploy.
 const (
-	draftRunLock      = "Run 'dr workload up --lock'"
-	draftLockWhenDone = "When this deploy finishes, run 'dr workload up --lock'"
-	draftAddLock      = "Add --lock to version the artifact"
+	draftRunLock      = "Run 'dr workload promote'"
+	draftLockWhenDone = "When this deploy finishes, run 'dr workload promote'"
+	draftAddLock      = "Add --promote to version the artifact"
 )
 
 // draftWarned reports whether any shape reached the stream, for the tests that
@@ -485,7 +487,7 @@ func TestCmd_DraftDeploySaysItIsTemporary(t *testing.T) {
 
 	assert.Contains(t, stderr, draftHeadline)
 	assert.Contains(t, stderr, "stopped after 8 hours")
-	assert.Contains(t, stderr, "dr workload up --lock")
+	assert.Contains(t, stderr, "dr workload promote")
 
 	assert.Equal(t, "https://app.datarobot.com/workloads/68b0/\n", stdout,
 		"the warning is prose and belongs on stderr, so the endpoint stays pipeable")
@@ -520,7 +522,7 @@ func TestCmd_DraftDeployTradesStopForLock(t *testing.T) {
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
 
-	assert.Contains(t, stderr, "dr workload up --lock")
+	assert.Contains(t, stderr, "dr workload promote")
 	assert.NotContains(t, stderr, "dr workload stop")
 	assert.Contains(t, stderr, "dr workload logs", "the other two lines stay")
 	assert.Contains(t, stderr, "dr workload status")
@@ -573,16 +575,16 @@ func TestCmd_LockedDeploySaysNothingExtra(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, draftWarned(stderr))
-	assert.NotContains(t, stderr, "dr workload up --lock")
+	assert.NotContains(t, stderr, "dr workload promote")
 	assert.Contains(t, stderr, "dr workload stop")
 }
 
-// A --lock run is the remedy, so telling it about drafts would be telling it
+// A --promote run is the remedy, so telling it about drafts would be telling it
 // what it just did.
 func TestCmd_LockFlagSaysNothingAboutDrafts(t *testing.T) {
 	stubRun(t, deployed(), nil)
 
-	_, stderr, err := runCmd(t, "--lock")
+	_, stderr, err := runCmd(t, "--promote")
 	require.NoError(t, err)
 	assert.False(t, draftWarned(stderr))
 }
@@ -646,7 +648,7 @@ func TestCmd_DryRunAgainstAStoppedDraftSaysItWouldRun(t *testing.T) {
 func TestCmd_DryRunWithLockDoesNotWarn(t *testing.T) {
 	stubRun(t, up.Result{Action: up.ActionCreated}, nil)
 
-	_, stderr, err := runCmd(t, "--dry-run", "--lock")
+	_, stderr, err := runCmd(t, "--dry-run", "--promote")
 	require.NoError(t, err)
 	assert.False(t, draftWarned(stderr))
 }
@@ -841,13 +843,13 @@ func TestCmd_AnyFailureKeepsLogsAndStatusButNotStop(t *testing.T) {
 	assert.Contains(t, stderr, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.NotContains(t, stderr, "dr workload stop")
-	assert.NotContains(t, stderr, "dr workload up --lock",
+	assert.NotContains(t, stderr, "dr workload promote",
 		"a failed run is not advised to lock what it did not deploy")
 }
 
 // A deploy onto a stopped workload starts it before it rolls, so a run that
 // fails after that has itself put a draft on the air: draftIsServing says so,
-// and the warning prints. The list still does not offer --lock, because locking
+// and the warning prints. The list still does not offer --promote, because locking
 // a version this run could not finish is not the remedy; the warning names the
 // command inline for anyone who decides otherwise.
 func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
@@ -864,10 +866,10 @@ func TestCmd_FailureAfterAStartWarnsButOffersNoLock(t *testing.T) {
 	assert.Contains(t, stderr, "dr workload status 68b0c1d2e3f4a5b6c7d8e9f0")
 	assert.NotContains(t, stderr, "dr workload stop")
 
-	// Scoped to the block, since the warning above it names --lock as prose.
+	// Scoped to the block, since the warning above it names the promotion as prose.
 	_, next, found := strings.Cut(stderr, "Next:")
 	require.True(t, found)
-	assert.NotContains(t, next, "--lock")
+	assert.NotContains(t, next, "dr workload promote")
 }
 
 // A run that started a workload which then reached the end of its life warns
@@ -909,7 +911,8 @@ func TestCmd_IsRegisteredUnderWorkload(t *testing.T) {
 	assert.Equal(t, "up", cmd.Name())
 	assert.NotNil(t, cmd.Flags().Lookup("dry-run"))
 	assert.NotNil(t, cmd.Flags().Lookup("detach"))
-	assert.NotNil(t, cmd.Flags().Lookup("lock"))
+	assert.NotNil(t, cmd.Flags().Lookup("promote"))
+	assert.Nil(t, cmd.Flags().Lookup("lock"), "lock is the artifact's word; the workload is promoted")
 }
 
 // The poll flags are how a deploy's wait is bounded, so they are listed. The
@@ -961,13 +964,13 @@ func TestCmd_NextStepsCarryDirWhenTheDeployDid(t *testing.T) {
 	require.NotEmpty(t, at, "the deploy ran elsewhere, so there is a --dir to carry")
 
 	assert.Contains(t, stderr, "dr workload logs"+at)
-	assert.Contains(t, stderr, "dr workload up --lock"+at,
-		"every line in the block has to run as printed, --lock included")
+	assert.Contains(t, stderr, "dr workload promote"+at,
+		"every line in the block has to run as printed, --promote included")
 }
 
 // The setup wizard can write the project into a directory below the one the
 // command ran in, and the deploy follows it there. A search from here walks
-// upward and cannot see it, so the follow-ups, and the warning's --lock with
+// upward and cannot see it, so the follow-ups, and the warning's promote with
 // them, name the project the run actually deployed.
 func TestCmd_NextStepsFollowAProjectTheWizardMoved(t *testing.T) {
 	root := t.TempDir()
@@ -986,7 +989,7 @@ func TestCmd_NextStepsFollowAProjectTheWizardMoved(t *testing.T) {
 	require.NotEmpty(t, at)
 
 	assert.Contains(t, stderr, "dr workload logs"+at+"  ")
-	assert.Contains(t, stderr, "Run 'dr workload up --lock"+at+"' to version the artifact")
+	assert.Contains(t, stderr, "Run 'dr workload promote"+at+"' to version the artifact")
 }
 
 // A project at or above the directory the command ran in is found by the
@@ -1020,7 +1023,7 @@ func TestCmd_DryRunDraftWarningCarriesDir(t *testing.T) {
 	_, stderr, err := runCmd(t, "--dir", dir, "--dry-run")
 	require.NoError(t, err)
 
-	assert.Contains(t, ansi.Strip(stderr), "Run 'dr workload up --lock"+manifest.DirFlag(dir)+"' to version the artifact")
+	assert.Contains(t, ansi.Strip(stderr), "Run 'dr workload promote"+manifest.DirFlag(dir)+"' to version the artifact")
 }
 
 // The one shape where bare commands would not resolve: a workload was created
@@ -1036,9 +1039,9 @@ func TestCmd_FailedRunStillNamesTheWorkload(t *testing.T) {
 	assert.Contains(t, stderr, "68b0c1d2e3f4a5b6c7d8e9f0")
 }
 
-// --lock takes no id, so on a failed run it cannot be made to name the
-// workload, and that is the run whose manifest may hold no binding. Printed
-// bare it would create a second workload instead of locking this one.
+// A deploy that did not land is not promoted: locking a version this run
+// could not finish is not the remedy for it, so the promote line is left out
+// of the follow-ups on a failed run.
 func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	result := deployed()
 	result.Action = up.ActionStarted
@@ -1054,7 +1057,7 @@ func TestCmd_FailedDraftRunOmitsTheLockLine(t *testing.T) {
 	// Scoped to the block: the draft warning above it names the same command
 	// as prose, and says the same thing on the successful runs where it is
 	// sound. This is about the copy-and-run list.
-	assert.NotContains(t, next, "--lock")
+	assert.NotContains(t, next, "dr workload promote")
 	assert.Contains(t, next, "dr workload logs 68b0c1d2e3f4a5b6c7d8e9f0",
 		"the lines that can name the workload still do")
 }
@@ -1091,6 +1094,19 @@ func TestCmd_JSONStillWarnsThatTheOldSecretIsServing(t *testing.T) {
 // agree rather than assumed to.
 func TestCmd_TextWarnsThatTheOldSecretIsServing(t *testing.T) {
 	stubRun(t, rotatedNothingElse(), nil)
+
+	_, stderr, err := runCmd(t)
+	require.NoError(t, err)
+	assert.Contains(t, stderr, "still serves the value it started with")
+}
+
+// A run whose only change was a Use Case link replaced no container either,
+// so a secret it re-sent is still not being served.
+func TestCmd_LinkOnlyRunStillWarnsThatTheOldSecretIsServing(t *testing.T) {
+	result := rotatedNothingElse()
+	result.Action = up.ActionLinked
+
+	stubRun(t, result, nil)
 
 	_, stderr, err := runCmd(t)
 	require.NoError(t, err)
@@ -1277,4 +1293,80 @@ func TestUp_WithoutATerminalNothingIsReadFromStdin(t *testing.T) {
 			assert.False(t, spy.read, "something asked a question and waited for an answer")
 		})
 	}
+}
+
+func TestCmd_UseCaseIDIsPassedThrough(t *testing.T) {
+	seen := stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t, "--use-case-id", "68b0aa11bb22cc33dd44ee55")
+	require.NoError(t, err)
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", seen.UseCaseID)
+}
+
+// A typo is refused before the deploy runs, the setup wizard included.
+func TestCmd_InvalidUseCaseIDIsRefusedBeforeTheDeploy(t *testing.T) {
+	stubRun(t, deployed(), errors.New("the deploy must not run"))
+
+	_, _, err := runCmd(t, "--use-case-id", "nope")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid --use-case-id")
+}
+
+func TestCmd_JSONEnvelopeCarriesTheUseCase(t *testing.T) {
+	linked := deployed()
+	linked.Action = up.ActionLinked
+	linked.Plan.UseCase = &up.UseCasePlan{ID: "68b0aa11bb22cc33dd44ee55"}
+	linked.UseCaseID = "68b0aa11bb22cc33dd44ee55"
+
+	stubRun(t, linked, nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
+	assert.Equal(t, "linked", body["action"])
+
+	plan, _ := body["plan"].(map[string]any)
+	useCase, _ := plan["useCase"].(map[string]any)
+	assert.Equal(t, true, useCase["link"])
+}
+
+// A run that fails before its plan, such as one that cannot read the links,
+// still names the Use Case it was asked for.
+func TestCmd_JSONEnvelopeCarriesTheUseCaseOnAnEarlyFailure(t *testing.T) {
+	early := up.Result{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0", UseCaseID: "68b0aa11bb22cc33dd44ee55"}
+
+	stubRun(t, early, errors.New("cannot read which Use Cases workload 68b0c1d2e3f4a5b6c7d8e9f0 is linked to"))
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.Error(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	assert.Equal(t, "68b0aa11bb22cc33dd44ee55", body["useCaseId"])
+	assert.Equal(t, false, body["useCaseLinked"])
+}
+
+func TestCmd_JSONEnvelopeUseCaseIsNullWithoutOne(t *testing.T) {
+	stubRun(t, deployed(), nil)
+
+	stdout, _, err := runCmd(t, "--output-format", "json")
+	require.NoError(t, err)
+
+	var envelope map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &envelope))
+
+	body, _ := envelope["up"].(map[string]any)
+	value, present := body["useCaseId"]
+	assert.True(t, present)
+	assert.Nil(t, value)
 }

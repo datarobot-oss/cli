@@ -75,7 +75,12 @@ The CLI currently understands the following fields:
   "name": "my-plugin",
   "version": "1.2.3",
   "description": "Adds extra commands to dr",
-  "authentication": true
+  "authentication": true,
+  "scripts": {
+    "posix": "dr-myplugin.sh",
+    "windows": "dr-myplugin.ps1"
+  },
+  "minCLIVersion": "0.2.0"
 }
 ```
 
@@ -93,12 +98,16 @@ The CLI currently understands the following fields:
   - If no valid credentials exist, the user will be prompted to log in.
   - Respects the global `--skip-auth` flag.
   - Defaults to `false` if omitted.
+- `scripts` (object): For registry-published (managed) plugins, maps platforms to entry script paths inside the package (`posix` / `windows`). Both entries are required when the block is present, and the CLI executes the script declared for the current platform, both during packaging validation and at discovery time; a missing entry or a declared script that is absent from the package is a hard error. Omit for PATH-style plugins.
+- `minCLIVersion` (string): Minimum CLI version the plugin supports (informational, used with managed plugins).
+- `shutdownGraceSeconds` (integer, 1 to 300): How long the plugin gets to exit after Ctrl-C before the CLI kills it. On Ctrl-C the CLI sends the plugin SIGTERM, then SIGKILL once this time has passed. Defaults to 5. Set it for a plugin that must finish work on shutdown, such as a push or a lock release, and keep it as short as that work allows, because a plugin that ignores SIGTERM holds the terminal for the full time.
 
 ### Notes / recommendations
 
 - Keep manifest output small and fast; it is called during discovery.
 - The manifest should be deterministic and should not require network access.
 - The plugin should handle `--dr-plugin-manifest` before doing any other work (and should not print extra output in this mode).
+- For packaged/registry plugins, see [Plugin package requirements](#plugin-package-requirements): the `scripts` block is authoritative and bundled binaries have naming constraints.
 
 ## Plugin dependencies
 
@@ -195,11 +204,11 @@ CLI applies the TLS configuration to its own HTTP client and forwards the
 equivalent runtime configuration to your plugin subprocess via these environment
 variables:
 
-| Variable | Set when | Value |
-|---|---|---|
-| `NODE_TLS_REJECT_UNAUTHORIZED` | `--skip-certificate-check`/`-k` is used | `0` |
-| `NODE_EXTRA_CA_CERTS` | `--ca-cert <path>` is used | `<path>` |
-| `SSL_CERT_FILE` | `--ca-cert <path>` is used | `<path>` |
+| Variable                       | Set when                                | Value    |
+| ------------------------------ | --------------------------------------- | -------- |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | `--skip-certificate-check`/`-k` is used | `0`      |
+| `NODE_EXTRA_CA_CERTS`          | `--ca-cert <path>` is used              | `<path>` |
+| `SSL_CERT_FILE`                | `--ca-cert <path>` is used              | `<path>` |
 
 Plugins written in Node.js/Bun automatically honour `NODE_TLS_REJECT_UNAUTHORIZED`
 and `NODE_EXTRA_CA_CERTS` without any extra code. Other runtimes that respect
@@ -213,18 +222,18 @@ The CLI sets the following environment variables on the plugin subprocess. Your 
 
 #### Always present
 
-| Variable | Value | Description |
-|---|---|---|
-| `DR_PLUGIN_MODE` | `1` | Signals to the plugin that it was invoked by the `dr` CLI. |
-| `DR_PLUGIN_PATH` | `/path/to/dr-myplugin` | Absolute path to the plugin executable. |
-| `DATAROBOT_CONFIG` | `/path/to/drconfig.yaml` | Path to the active config file (if one is loaded). |
+| Variable           | Value                    | Description                                                |
+| ------------------ | ------------------------ | ---------------------------------------------------------- |
+| `DR_PLUGIN_MODE`   | `1`                      | Signals to the plugin that it was invoked by the `dr` CLI. |
+| `DR_PLUGIN_PATH`   | `/path/to/dr-myplugin`   | Absolute path to the plugin executable.                    |
+| `DATAROBOT_CONFIG` | `/path/to/drconfig.yaml` | Path to the active config file (if one is loaded).         |
 
 #### Present when `authentication: true`
 
-| Variable | Value | Description |
-|---|---|---|
-| `DATAROBOT_ENDPOINT` | `https://app.datarobot.com` | The DataRobot API endpoint. |
-| `DATAROBOT_API_TOKEN` | `<token>` | The user's API token, already validated. |
+| Variable              | Value                       | Description                              |
+| --------------------- | --------------------------- | ---------------------------------------- |
+| `DATAROBOT_ENDPOINT`  | `https://app.datarobot.com` | The DataRobot API endpoint.              |
+| `DATAROBOT_API_TOKEN` | `<token>`                   | The user's API token, already validated. |
 
 #### Universal CLI flags (`DATAROBOT_CLI_*`)
 
@@ -244,13 +253,13 @@ dr --debug myplugin [args...]
 dr myplugin --debug [args...]
 ```
 
-| CLI flag | Environment variable | Value |
-|---|---|---|
-| `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
-| `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
-| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
-| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
-| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
+| CLI flag                   | Environment variable                   | Value    |
+| -------------------------- | -------------------------------------- | -------- |
+| `--debug`                  | `DATAROBOT_CLI_DEBUG`                  | `1`      |
+| `--disable-telemetry`      | `DATAROBOT_CLI_DISABLE_TELEMETRY`      | `1`      |
+| `--verbose`                | `DATAROBOT_CLI_VERBOSE`                | `1`      |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1`      |
+| `--ca-cert <path>`         | `DATAROBOT_CLI_CA_CERT`                | `<path>` |
 
 The `DATAROBOT_CLI_` prefix is the canonical namespace for flags forwarded from
 the core CLI. As new universal flags are added, they follow the same convention:
@@ -333,6 +342,19 @@ If you run `dr <command>` expecting `<command>` to be provided by a plugin, but 
 ## Packaging and publishing plugins
 
 The CLI provides tools to help package and publish plugins to a plugin registry.
+
+### Plugin package requirements
+
+A plugin directory must satisfy all of the following for `dr self plugin package` and `dr self plugin publish` to succeed:
+
+- **`manifest.json`** with at least `name` and `version`. Registry-published (managed) plugins must also declare a `scripts` block (see [Manifest protocol](#manifest-protocol)).
+- **`LICENSE.txt`** at the root of the plugin directory.
+- **Round-trip consistency:** the entry script's `--dr-plugin-manifest` output must match the package's `manifest.json` exactly (`name`, `version`, `description`, `authentication`). Keep the manifest echoed inside the wrapper scripts in sync when bumping `manifest.json`; packaging validation fails on any mismatch (this is how a hand-edited release gets caught).
+- **Entry scripts** referenced by the manifest's `scripts` block, conventionally named `dr-<name>.sh` (Posix) and `dr-<name>.ps1` (Windows). When a `scripts` block is present, **both** `posix` and `windows` entries are required and **both files must exist in the package**. Validation enforces this on every host OS — packaging on Linux also verifies the Windows script is present, so a package that would be a corrupt managed plugin on Windows can never be published.
+- **Both platforms must actually work.** A registry-published plugin must run on Windows as well as Unix: the `.ps1` entry script is a real requirement, not a stub. There is no per-OS artifact to publish instead (see below), so a plugin that cannot support Windows today cannot be published to the registry; keep it PATH-style until it can.
+- **Bundled binaries must not be `dr-`-prefixed and extensionless.** When a manifest declares no `scripts` block, the CLI falls back to scanning the plugin directory for the first `dr-*` file, and any extensionless `dr-*` file is treated as a candidate entry point. An archive that bundles per-platform binaries (for example `myplugin-linux-amd64`) next to the entry script can therefore make validation execute the wrong file. Name binaries `<name>-<os>-<arch>` without the `dr-` prefix instead; the `opencode` plugin is the reference layout.
+
+The package is **one platform-agnostic archive per version**: the registry format (`index.json`) has a single `url` and `sha256` per version with no per-OS entries. OS selection happens at runtime — the CLI executes the script the manifest declares for the current platform (`scripts.posix` / `scripts.windows`), and that wrapper picks the right bundled binary. This is why both platform scripts are mandatory in a single package.
 
 ### Quick start: publish command (recommended)
 

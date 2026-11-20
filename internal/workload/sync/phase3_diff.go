@@ -16,12 +16,16 @@ package sync
 
 // phase3Diff turns the three manifests into a SyncPlan.
 func phase3Diff(e *Engine) error {
-	plan := Diff(e.base, e.local, e.remote)
+	plan := diff(e.base, e.local, e.remote, e.linkedPaths, e.aliases)
 	plan.OldVersionShort = ShortVer(ptrOrEmpty(e.config.LastSyncedVersionID))
 
 	if e.opts.PushOnly {
 		plan.pushOnly()
 	}
+
+	plan.skipPullsThrough(e.unfollowedLinks)
+	plan.planAliases(e.aliases, e.base, e.local, e.remote)
+	warnReplacedRemoteEdits(e, plan)
 
 	e.plan = plan
 

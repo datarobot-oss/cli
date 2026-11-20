@@ -143,7 +143,7 @@ function Test-DRCompletionInstallWithExecutionPolicy {
     }
 
     $profileContent = Get-Content $profilePath -Raw
-    if ($profileContent -notmatch "dr completion powershell") {
+    if ($profileContent -notmatch "dr self completion powershell") {
         Set-ExecutionPolicy $originalPolicy -Scope Process -Force -ErrorAction SilentlyContinue
         Write-ErrorMsg "Assertion failed: profile does not contain completion block"
     }

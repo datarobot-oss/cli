@@ -108,6 +108,12 @@ func ConfigPath(projectDir string) string {
 	return configPath(projectDir)
 }
 
+// ManifestPath is the project's manifest.json, exported for the same reason
+// as ConfigPath: diagnostics should name the real file, not re-derive it.
+func ManifestPath(projectDir string) string {
+	return manifestPath(projectDir)
+}
+
 func configPath(projectDir string) string {
 	return filepath.Join(Dir(projectDir), configFile)
 }
@@ -139,6 +145,22 @@ func ignorePath(projectDir string) string {
 // legacy location. False if the path is a file rather than a directory.
 func Exists(projectDir string) bool {
 	return fsutil.DirExists(Dir(projectDir))
+}
+
+// StateDirs is every state directory the project has, current and legacy,
+// for a caller removing the project's state rather than reading it: Dir
+// prefers the current one, and a legacy tree left beside it would be found
+// again once the current one is gone.
+func StateDirs(projectDir string) []string {
+	var dirs []string
+
+	for _, dir := range []string{filepath.Join(projectDir, RootDirName, StateDirName), legacyDir(projectDir)} {
+		if fsutil.DirExists(dir) {
+			dirs = append(dirs, dir)
+		}
+	}
+
+	return dirs
 }
 
 // CheckoutsDir is the parent directory holding read-only version snapshots

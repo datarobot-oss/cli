@@ -42,6 +42,11 @@ type version struct {
 
 	Fresh bool
 
+	// StatusRead says Locked is known, because the plan read the artifact
+	// the file names; a version it did not read is asked before locking.
+	StatusRead bool
+	Locked     bool
+
 	// BuildID names the image build this run ran, "" when it ran none. A
 	// failed build sets it: it is the way to the logs.
 	BuildID string
@@ -50,6 +55,9 @@ type version struct {
 
 	// HasCode reports that it points at the code its image was built from.
 	HasCode bool
+
+	// Sync is the code sync that made it, set on a failed sync too.
+	Sync sync.Size
 }
 
 // buildVersion produces the version a built project rolls onto: a new
@@ -83,6 +91,8 @@ func buildVersion(
 	}
 
 	synced, err := syncCode(loaded.ProjectDir, report)
+	made.Sync = sync.SizeOf(synced, err)
+
 	if err != nil {
 		return made, err
 	}
@@ -770,15 +780,21 @@ func sameArtifactTypeAs(wanted, running string) bool {
 // version last pushed to it are carried across untouched: they describe the
 // code store, which is shared, and clearing them would make the next sync
 // treat every file as new.
+//
+// The same write marks the version pending, and a run that sees it serving
+// clears the mark (clearServedRollout). A run that dies in between leaves it,
+// which is how the next one knows the deploy is its own to finish.
 func linkProject(projectDir string, made version, report *reporter) error {
 	// An artifact picked up from an earlier attempt is the one the project is
-	// already pointed at, which is how it was found.
+	// already pointed at, which is how it was found. It still needs the mark:
+	// the attempt may have been a deploy this checkout saw serve before
+	// someone else's replaced it, and this run is about to roll onto it again.
 	if !made.Fresh {
-		return nil
+		return markPending(projectDir, made.ID)
 	}
 
 	if !projectLinkedFn(projectDir) {
-		if err := initProjectFn(projectDir, wapi.InitOptions{ArtifactID: made.ID}); err != nil {
+		if err := initProjectFn(projectDir, wapi.InitOptions{ArtifactID: made.ID, RolloutPending: true}); err != nil {
 			return linkFailure(made.ID, projectDir, err)
 		}
 
@@ -795,12 +811,36 @@ func linkProject(projectDir string, made version, report *reporter) error {
 	}
 
 	cfg.ArtifactID = made.ID
+	cfg.PendingRolloutArtifactID = &made.ID
 
 	if err := saveProjectFn(projectDir, cfg); err != nil {
 		return relinkFailure(made.ID, projectDir, err)
 	}
 
 	report.say("  Project now pushes to artifact %s.\n", made.ID)
+
+	return nil
+}
+
+// markPending records the version the project is already linked to as the one
+// a roll is about to move the workload onto. A mark already there is left as
+// it is, so resuming the attempt that set it writes nothing.
+func markPending(projectDir, artifactID string) error {
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil {
+		return fmt.Errorf("cannot read which artifact %s is linked to: %w", projectDir, err)
+	}
+
+	if deref(cfg.PendingRolloutArtifactID) == artifactID {
+		return nil
+	}
+
+	cfg.PendingRolloutArtifactID = &artifactID
+
+	if err := saveProjectFn(projectDir, cfg); err != nil {
+		return fmt.Errorf("cannot record artifact %s as the one being rolled out in %s: %w",
+			artifactID, wapi.ConfigPath(projectDir), err)
+	}
 
 	return nil
 }

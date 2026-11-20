@@ -247,6 +247,33 @@ dr run <Tab>
 # Shows available tasks from Taskfile
 ```
 
+### Profile name completion
+
+Profile names complete for the global `--profile` flag and for the
+`auth profile show`/`delete` arguments:
+
+```bash
+# Type a command and --profile, then Tab
+dr --profile <Tab>
+# Shows the profiles explicitly defined under `profiles:` in your drconfig.yaml
+
+# Partial matching works too
+dr auth profile show e<Tab>
+# Completes to a defined profile starting with "e"
+```
+
+- Suggestions come from the config the command would use (`--config` or
+  `DATAROBOT_CLI_CONFIG` respected). Reading them never authenticates,
+  contacts DataRobot, or modifies the config file.
+- Only **explicitly defined** sections are suggested: `default` appears only
+  when a `profiles.default` section exists. Omitting `--profile` uses the
+  root-level credentials and never activates it (see
+  [Named profiles](configuration.md#named-profiles)).
+- `default` is never suggested for `auth profile delete` — the reserved name
+  cannot be deleted (see the [auth command](../commands/auth.md#profile)).
+- After one profile name, no further arguments are suggested, and file names
+  are not offered.
+
 ## Verification
 
 Test that completions are working:

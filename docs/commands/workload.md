@@ -40,20 +40,20 @@ Starting from source code rather than from a spec you already have? The [spec re
 
 ## Command groups
 
-| Command                | Endpoint                                  | Purpose                                        |
-| ---------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `dr workload create`   | `POST   /api/v2/workloads/`               | Deploy a workload from a spec.                 |
-| `dr workload get`      | `GET    /api/v2/workloads/{id}/`          | Show a single workload.                        |
-| `dr workload list`     | `GET    /api/v2/workloads/`               | List workloads, optionally filtered by status. |
-| `dr workload delete`   | `DELETE /api/v2/workloads/{id}/`          | Delete a workload.                             |
-| `dr workload start`    | `POST   /api/v2/workloads/{id}/start`     | Start a stopped workload.                      |
-| `dr workload stop`     | `POST   /api/v2/workloads/{id}/stop`      | Stop a running workload.                       |
+| Command                | Endpoint                                     | Purpose                                             |
+| ---------------------- | -------------------------------------------- | --------------------------------------------------- |
+| `dr workload create`   | `POST   /api/v2/workloads/`                  | Deploy a workload from a spec.                      |
+| `dr workload get`      | `GET    /api/v2/workloads/{id}/`             | Show a single workload.                             |
+| `dr workload list`     | `GET    /api/v2/workloads/`                  | List workloads, optionally filtered by status.      |
+| `dr workload delete`   | `DELETE /api/v2/workloads/{id}/`             | Delete a workload.                                  |
+| `dr workload start`    | `POST   /api/v2/workloads/{id}/start`        | Start a stopped workload.                           |
+| `dr workload stop`     | `POST   /api/v2/workloads/{id}/stop`         | Stop a running workload.                            |
 | `dr workload settings` | `GET/PATCH /api/v2/workloads/{id}/settings/` | Show or change replicas, autoscaling and resources. |
-| `dr workload status`   | `GET    /api/v2/workloads/{id}/`          | Print the bare status value.                   |
-| `dr workload diagnose` | `GET    /api/v2/workloads/{id}/protons/…` | Explain why a workload is in its state.        |
-| `dr workload endpoint` | `GET    /api/v2/workloads/{id}/`          | Print the endpoint URL.                        |
-| `dr workload logs`     | `GET    /api/v2/otel/workload/{id}/logs/` | Show a workload's container logs.              |
-| `dr workload events`   | `GET    /api/v2/workloads/{id}/events/`   | Show a workload's lifecycle events.            |
+| `dr workload status`   | `GET    /api/v2/workloads/{id}/`             | Print the bare status value.                        |
+| `dr workload diagnose` | `GET    /api/v2/workloads/{id}/protons/…`    | Explain why a workload is in its state.             |
+| `dr workload endpoint` | `GET    /api/v2/workloads/{id}/`             | Print the endpoint URL.                             |
+| `dr workload logs`     | `GET    /api/v2/otel/workload/{id}/logs/`    | Show a workload's container logs.                   |
+| `dr workload events`   | `GET    /api/v2/workloads/{id}/events/`      | Show a workload's lifecycle events.                 |
 
 ## Subcommands
 
@@ -78,11 +78,11 @@ Both placement flags refuse to override a spec that already sets the field they 
 
 Enclave placement is opt-in per workload, and it is governed by a Use Case: an administrator grants Enclaves to a Use Case, and a workload linked to that Use Case can be placed on them. Three shapes cover it:
 
-| You want | Spec or flags |
-|---|---|
+| You want                                             | Spec or flags                                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | A workload linked to a Use Case that has no Enclaves | `--use-case-id <id>` alone, or `useCaseId` in the spec. If the Use Case has Enclaves, this is refused with `ENCLAVE_TARGETING_REQUIRED`; use one of the rows below |
-| DataRobot to pick among the Use Case's Enclaves | `useCaseId` plus `runtime.enclaveSelectionPolicy: "availability"` in the spec |
-| One specific Enclave | `--use-case-id <id> --enclave <name>`, which sets the policy to `manual` |
+| DataRobot to pick among the Use Case's Enclaves      | `useCaseId` plus `runtime.enclaveSelectionPolicy: "availability"` in the spec                                                                                      |
+| One specific Enclave                                 | `--use-case-id <id> --enclave <name>`, which sets the policy to `manual`                                                                                           |
 
 ```bash
 dr workload create --spec-file workload.yaml --use-case-id 68b0aa11bb22cc33dd44ee55
@@ -181,18 +181,19 @@ dr workload list [--status <status>] [--enclave <name>] [--limit N] [--offset N]
 
 ### `delete`
 
-Delete a workload by id. A running workload is stopped first and then removed. The artifact it was created from is not deleted. You are asked to confirm unless `--yes` is set.
+Delete a workload by id. A running workload is stopped first and then removed. The artifact it was created from is not deleted unless you pass `--purge`. You are asked to confirm unless `--yes` is set.
 
 ```bash
-dr workload delete [<workload-id>] [--dir <path>] [--yes]
+dr workload delete [<workload-id>] [--dir <path>] [--purge] [--yes]
 ```
 
 **Flags:**
 
 - `--yes`, `-y`: skip the confirmation prompt. `DATAROBOT_CLI_NON_INTERACTIVE=1` stands in for it only when you passed the workload id; a workload whose id is specified in the manifest takes the explicit flag.
 - `--dir <path>`: project directory whose `.datarobot.yaml` names the workload, and holds the binding to clear, searched upward from there. Defaults to the current directory. Pass the same value you deployed with, since a manifest in a subdirectory is not visible from its parent.
+- `--purge`: also remove what the deploy created beside the workload, so the next `up` starts from scratch: the credentials this project minted (named `<workload>/<VARIABLE>` and referenced from the manifest), the artifact the workload ran when it is a draft no other workload references, and the `.datarobot/workload/` state directory. A locked artifact cannot be deleted and is named, and whenever the artifact survives the credentials stay with it, since whatever runs it may read them. A credential referenced by id but not minted by this project may be shared, so it is left and named too. The one case the name cannot tell apart is a second project set up under the same workload name and pointed at the same credential: it carries the minted name, so a purge of either project removes it. The manifest keeps its environment variables; each reference to a credential the purge removed is reset to the placeholder, which the next `--sync-env` fills with a fresh credential. The purge set is read while the workload still exists, so a binding the command cannot clear afterwards does not stop it. The confirmation names everything a purge removes; `--yes` alone never widens what a delete does. Without a manifest naming the workload, only the workload is deleted and the command says so.
 
-If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next deploy from this project creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. The artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
+If the manifest found from `--dir` is bound to the workload just deleted, the `workloadId` line the CLI wrote is removed with it, so the next deploy from this project creates a new workload instead of pointing at one that is gone. Only a manifest naming that exact id is touched. Without `--purge`, the artifact link under `.datarobot/` is left alone, because the artifact itself survives the deletion. The command names the artifact so the link is not left invisible, and names the state directory to remove if you want to unlink from it. These notes go to stderr, so stdout stays the command's result.
 
 A manifest this edit cannot make sound again is refused rather than rewritten, with the reason and the remedy: a binding whose value something else aliases, repeated `workloadId` keys that disagree, a file whose only recognized key is the binding, and a file carrying more than one YAML document.
 
@@ -208,6 +209,20 @@ dr workload stop  [<workload-id>] [--dir <path>] [--yes] [--output-format text|j
 ```
 
 A workload whose id is specified in the manifest rather than on the command line is confirmed first; `--yes` (or `DATAROBOT_CLI_NON_INTERACTIVE=1`) skips the question. A typed id is never questioned.
+
+### `promote`
+
+Make the version a workload is running permanent. The draft artifact it is serving is locked in place and given a version number; the workload keeps running it, and nothing is rebuilt or rolled.
+
+```bash
+dr workload promote [<workload-id>] [--dir <path>] [--yes] [--output-format text|json]
+```
+
+A workload whose id comes from the manifest rather than the command line is confirmed first, and only `--yes` skips that: as with `delete`, `DATAROBOT_CLI_NON_INTERACTIVE` is not consent to lock something nobody named. Locking is one-way: a locked artifact cannot be changed, so the next `dr workload up` of this workload mints a new version rather than editing this one. A workload already running a locked version, one with no running generation, or one with a rollout in flight is refused with the platform's reason, and only the artifact's owner can promote it. `dr workload up --promote` does the same at the end of a deploy.
+
+A locked version can be shared. Any number of workloads can run the same locked artifact: create another with `dr workload create` and `artifactId` in its spec, or point a manifest at it with `artifactId:`. Workloads sharing a version share its environment variables, since those belong to the artifact, and differ only in runtime: replicas, resources and importance. A draft, by contrast, serves one running workload at a time.
+
+Text output names the workload, the artifact and its version; JSON is `{"workloadId", "artifactId", "version"}`.
 
 ### `settings`
 
@@ -364,15 +379,39 @@ Because `stop`, `start` and `delete` change something, they ask for confirmation
 
 ## Deploying from a project: `config` and `up`
 
-> These two are still behind a feature gate. Set `DATAROBOT_CLI_FEATURE_WORKLOAD=true` to see them in `--help`.
-
 `dr workload config` writes the `.datarobot.yaml` that describes your project, and `dr workload up` deploys the difference between that file and what is running. Together they are the deploy loop for a repository, where `create` deploys an artifact you already have.
 
 ```bash
 dr workload config      # write .datarobot.yaml (a wizard, on a terminal)
 dr workload up          # plan, then apply
 dr workload up --dry-run  # plan and stop
+dr workload up --dry-run --diff  # the plan as a unified diff, then stop
+dr workload up --confirm         # plan, ask, then apply
 ```
+
+`--diff` renders the plan as a unified diff instead of the changed-fields list: every field the file names appears, a changed one as `-` old and `+` new, an unchanged one as context that collapses when it runs long, and nothing is truncated. A field the running workload carries that the file never names depends on what the deploy does: a roll or a resize sends the file's block whole and drops it, so it is shown as a `-` removal, and any other run leaves it alone and counts it on one line as unmanaged. Environment-variable values are redacted in the diff as everywhere else. Under `--output-format json` the plan carries a `diff` section with one entry per changing leaf, a dropped field carrying `"removed": true`, and the list of unmanaged fields. Every entry names its `block`, `artifact` for the spec or `runtime` for sizing, because a sidecar lives in both and a resize can drop its sizing while its spec stays.
+
+`--confirm` asks `? Apply this deploy? (y/N)` on stderr after the plan and deploys only on `y`; anything else, an empty answer included, declines, exits nonzero and deploys nothing. What the run did before showing the plan stands: a manifest the setup wrote, or a secret `--sync-env` re-sent, which the run still warns about. It is suppressed, not refused, when the run is non-interactive (`--yes`, `--output-format json`, `DATAROBOT_CLI_NON_INTERACTIVE`, or a stdin or stderr that is not a terminal), so a scripted run with the flag behaves as if it was not given. The typed confirmation for rolling a locked version is still asked on top of it.
+
+### Linking to a Use Case
+
+`dr workload up --use-case-id <id>` links the workload to a Use Case. The top-level `useCaseId` in `.datarobot.yaml` does the same, and is the source when the flag is not passed. When both are set they have to agree, or the run is refused before any request. The flag is never written back to the file.
+
+```bash
+dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55            # link, and deploy anything else that differs
+dr workload up --use-case-id 68b0aa11bb22cc33dd44ee55 --dry-run  # show the link in the plan, change nothing
+```
+
+- **First deploy:** `useCaseId` goes in the create payload, as `create --use-case-id` sends it.
+- **Existing workload:** the run reads the workload's Use Case links, and adds the link if it is missing. Links to other Use Cases are left as they are, including ones made in the UI: a workload can be in several Use Cases, and `up` only ever adds a link. A workload already linked there is up to date, so a repeat run prints `Already up to date`.
+- A link alone builds and rolls nothing; the plan's action is `linked`. When the run also rolls or resizes, the link is made first, because the platform checks a rollout against the workload's links.
+- The plan shows the link as a `use case` line, in `--dry-run` and `--diff` as well. Under `--output-format json` the plan carries `useCase` (`id`, `linked`, `link`, `unknown`) and the envelope carries `useCaseId`, even when the run fails before its plan; both are `null` when no Use Case was asked for. The envelope's `useCaseLinked` is `true` when the run added the link to an existing workload, even if it then failed to build or roll.
+- **When the link can't be made:** the link is part of what the file asks for, so a run that can't make sure of it stops before anything is started, built or rolled, as Terraform or Pulumi stop short of a partial apply. That covers a refused link (for example, no edit permission on the Use Case), a Use Case that no longer exists, and a failed read of the links or the Use Case. A Use Case the platform answers 403 or 404 for is reported as one that doesn't exist or that you can't access, and is refused on `--dry-run` too. A `--dry-run` changes nothing, so any other failed read there is a warning: the plan shows the link as `~ use case`, JSON sets `unknown` to `true`, and the deploy reads again. An errored workload can still be linked, because the link touches nothing it runs, but not with `--promote`: locking can't be undone, so that run is refused before the link, as it is without one. The same goes for a `--promote` run while a rollout is in flight.
+- **Enclaves:** placement is unchanged by the link, and the rule `create` follows applies. If the Use Case has Enclaves and the file sets no `runtime.enclaveSelectionPolicy`, the run is refused with `ENCLAVE_TARGETING_REQUIRED`, and the error says to set `runtime.enclaveSelectionPolicy: availability` in `.datarobot.yaml`. On a first deploy the platform refuses the create; on an existing workload the run reads the Use Case and refuses before linking. See [Use Case and Enclave placement](#use-case-and-enclave-placement).
+
+Removing `useCaseId` from the file, and dropping the flag, stops managing the link rather than removing it. To take a workload out of a Use Case, remove it there.
+
+> **Behaviour change.** Earlier releases read `useCaseId` in `.datarobot.yaml` only on the first deploy and ignored it afterwards. Now every `up` checks it: an invalid id refuses the run, and a link that can't be made stops the deploy, as described above. To keep the old behaviour, remove `useCaseId` from the file.
 
 ### CI, scripts, and agents
 
@@ -404,6 +443,18 @@ dr workload up --yes
 ```
 
 `--dry-run` on a project with no manifest writes nothing. It prints the `.datarobot.yaml` a real run would write, then the plan that run would carry out, so looking before deploying is one command on a fresh project too. A project the setup cannot read is refused the same way with or without `--dry-run`.
+
+### Starting from a spec you already have
+
+If you already hold an artifact spec, the document `dr artifact create --spec-file` takes, or a workload spec, the one `dr workload create --spec-file` takes, hand it to the setup and it asks only what the file leaves open:
+
+```bash
+dr workload config --spec-file my-artifact.yaml --name my-app   # headless: writes .datarobot.yaml at once
+dr workload config --spec-file my-artifact.yaml                 # on a terminal: a name if the file has none, the .env import, confirm
+dr workload up --spec-file my-workload.yaml --yes               # the same, then deploy
+```
+
+The spec file is input and is left alone; `.datarobot.yaml` is written beside your code and is the source of truth from then on, so `--spec-file` is refused once a manifest exists. An artifact spec becomes the `artifact` block with the default runtime; a workload spec is taken as it is, and the sizing question is skipped when it carries a `runtime` block. On `config`, the build-source flags (`--build-mode`, `--image`, `--execution-environment`, `--entrypoint`, `--dockerfile`, `--port`, `--health`, `--no-readiness-probe`), the kind flags (`--type`, `--a2a-enabled`) and `--workload-id` cannot be combined with it: the file is that answer. Neither can `--sync-env`: there is no manifest to reconcile yet, and the `.env` is carried into the one being written. `--name`, the sizing flags, `--importance` and `--skip-env` compose with it, and an explicit sizing flag wins over the file. `up` takes none of the setup flags, so with `--spec-file` it composes only with `--dry-run` and `--yes`. The same checks apply as to any other setup, headless and on a terminal: the file has to validate, a `provided` build needs `./Dockerfile`, and a `generated` build needs a project the platform can build from. `dr workload up` takes no `--name`, so an artifact spec, which names no workload, is set up with `dr workload config --spec-file <path> --name <name>` first when there is no terminal to ask on. Top-level keys the manifest does not model, such as `useCaseId`, are not carried over; add them to `.datarobot.yaml` afterwards.
 
 ## Shared flags
 
@@ -441,17 +492,17 @@ dr workload delete <workload-id>
 
 ## Error handling
 
-| Status | Cause                                                                                                       |
-| ------ | ----------------------------------------------------------------------------------------------------------- |
-| `403`  | Starting the workload would exceed your concurrent workload limits, or the Workload API is not enabled for your account (see below). |
-| `404`  | The workload does not exist.                                                                                |
-| `409`  | The workload must finish its current transition first (for example a `start` while it is still `stopping`). |
-| `422`  | The spec failed server validation; the response names the offending JSON path (for example `maxReplicaCount` below 1). |
+| Status | Cause                                                                                                                                                     |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `403`  | Starting the workload would exceed your concurrent workload limits, or the Workload API is not enabled for your account (see below).                      |
+| `404`  | The workload does not exist.                                                                                                                              |
+| `409`  | The workload must finish its current transition first (for example a `start` while it is still `stopping`).                                               |
+| `422`  | The spec failed server validation; the response names the offending JSON path (for example `maxReplicaCount` below 1).                                    |
 | `502`  | The installation routes the Workload API but the backing service is switched off. This is an operator setting, not something a flag on your side changes. |
 
 ### Every command answers `403`
 
-A `403` on the very first request, including a plain `dr workload list`, is usually about access rather than about the workload you asked for. The Workload API sits behind a platform entitlement, and the CLI's own feature gate is unrelated to it: `DATAROBOT_CLI_FEATURE_WORKLOAD` only decides which commands the binary registers, never what your account may call.
+A `403` on the very first request, including a plain `dr workload list`, is usually about access rather than about the workload you asked for. The Workload API sits behind a platform entitlement, and the CLI's own feature gates are unrelated to it: a `DATAROBOT_CLI_FEATURE_*` variable only decides which commands the binary registers, never what your account may call.
 
 The response body names the check that refused you. The two common ones are a feature flag (a message naming `WORKLOAD_API_CONTAINERS`, or saying the Workload API is disabled in feature flags) and a seat license (a message saying the Agentic, Predictive and Governance seat has not been granted to this user). Both are grants your DataRobot administrator makes; neither can be worked around from the CLI. Entitlements are cached per user on the platform for a few minutes, so a newly granted one can keep failing briefly after it is switched on.
 

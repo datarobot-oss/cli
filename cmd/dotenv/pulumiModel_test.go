@@ -15,6 +15,9 @@
 package dotenv
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -27,7 +30,39 @@ import (
 // --- needsPulumiSetup matrix ---
 // Full coverage of all login/passphrase/prompt combinations.
 
+// stubPulumiOnPath places a minimal fake `pulumi` binary on PATH for the
+// duration of the test. needsPulumiSetup only checks binary presence via
+// exec.LookPath, so the stub needs no behavior: without it these tests
+// silently depended on the GitHub runner image preinstalling pulumi, which
+// the 26.04 runner image no longer does.
+func stubPulumiOnPath(t *testing.T) {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	name, script := "pulumi", "#!/bin/sh\nexit 0\n"
+
+	// The PATH policy for the test: on POSIX the stub dir alone scopes the
+	// test to the fake binary; on Windows keep the rest of PATH so
+	// powershell.exe stays resolvable.
+	pathEnv := dir
+
+	if runtime.GOOS == "windows" {
+		// LookPath resolves .bat via PATHEXT; the content never runs, the
+		// tests only check binary existence.
+		name, script = "pulumi.bat", "@echo off\r\nexit 0\r\n"
+
+		pathEnv = dir + string(os.PathListSeparator) + os.Getenv("PATH")
+	}
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755))
+
+	t.Setenv("PATH", pathEnv)
+}
+
 func TestNeedsPulumiSetup_NoPulumiPrompt(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{
 		{Env: "DATAROBOT_ENDPOINT", Active: true},
 		{Env: "DATAROBOT_API_TOKEN", Active: true},
@@ -37,6 +72,8 @@ func TestNeedsPulumiSetup_NoPulumiPrompt(t *testing.T) {
 }
 
 func TestNeedsPulumiSetup_InactivePrompt(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{
 		{Env: "PULUMI_CONFIG_PASSPHRASE", Active: false},
 	}
@@ -45,6 +82,8 @@ func TestNeedsPulumiSetup_InactivePrompt(t *testing.T) {
 }
 
 func TestNeedsPulumiSetup_HiddenPrompt(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{
 		{Env: "PULUMI_CONFIG_PASSPHRASE", Active: true, Hidden: true},
 	}
@@ -53,24 +92,32 @@ func TestNeedsPulumiSetup_HiddenPrompt(t *testing.T) {
 }
 
 func TestNeedsPulumiSetup_NotLoggedIn_NoPassphrase(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{{Env: "PULUMI_CONFIG_PASSPHRASE", Active: true}}
 
 	assert.True(t, needsPulumiSetup(prompts, false, false), "not logged in + no passphrase → needs setup")
 }
 
 func TestNeedsPulumiSetup_NotLoggedIn_PassphraseSet(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{{Env: "PULUMI_CONFIG_PASSPHRASE", Active: true}}
 
 	assert.True(t, needsPulumiSetup(prompts, false, true), "not logged in + passphrase set → still needs setup (login required)")
 }
 
 func TestNeedsPulumiSetup_LoggedIn_NoPassphrase(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{{Env: "PULUMI_CONFIG_PASSPHRASE", Active: true}}
 
 	assert.True(t, needsPulumiSetup(prompts, true, false), "logged in + no passphrase → needs setup")
 }
 
 func TestNeedsPulumiSetup_LoggedIn_PassphraseSet(t *testing.T) {
+	stubPulumiOnPath(t)
+
 	prompts := []envbuilder.UserPrompt{{Env: "PULUMI_CONFIG_PASSPHRASE", Active: true}}
 
 	assert.False(t, needsPulumiSetup(prompts, true, true), "logged in + passphrase set → no setup needed")

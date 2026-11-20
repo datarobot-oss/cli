@@ -31,8 +31,8 @@ import (
 // returns a map of archive-path → uncompressed content bytes. This is the
 // genuine read-back assertion: we open the archive that buildZip produced
 // and hash the extracted entries, rather than re-hashing the source files.
-// The assertion is "the archive contains what we claimed," not "we hashed
-// something.".
+// The assertion is "the archive contains what we claimed," rather than a
+// bare claim that something was hashed.
 func readZipEntries(t *testing.T, zipPath string) map[string][]byte {
 	t.Helper()
 
@@ -104,7 +104,7 @@ func TestZipBuild_HashesStreamedBytes(t *testing.T) {
 
 	actions := fileActionsFrom(files)
 
-	zipPath, sent, err := buildZip(dir, actions)
+	zipPath, sent, err := buildZip(dir, actions, true)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(zipPath) })
@@ -175,7 +175,7 @@ func TestZipBuild_SameSizeContentChange(t *testing.T) {
 		LocalSize: plannedSize,
 	}}
 
-	zipPath, sent, err := buildZip(dir, actions)
+	zipPath, sent, err := buildZip(dir, actions, true)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = os.Remove(zipPath) })
@@ -258,7 +258,7 @@ func TestZipBuild_SizeChange(t *testing.T) {
 				LocalSize: plannedSize,
 			}}
 
-			zipPath, sent, err := buildZip(dir, actions)
+			zipPath, sent, err := buildZip(dir, actions, true)
 			require.NoError(t, err, "upload must not fail due to a size change")
 
 			t.Cleanup(func() { _ = os.Remove(zipPath) })

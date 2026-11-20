@@ -145,6 +145,9 @@ Three rules matter when changing this code:
   CLI-to-CLI port handover in `listenReclaimingPort` uses a Go `http.Client`, which sends
   no fetch metadata, so rejecting absent would deadlock two concurrent logins. Do not
   gate on `Sec-Fetch-Site`: the genuine callback is legitimately cross-site.
+- **Surface the timeout, don't leak the raw error.** `Wait` returns `ErrLoginTimedOut`
+  after `DefaultLoginTimeout` (override with `LoginOptions.Timeout`, i.e. `--timeout`).
+  Callers print `FprintLoginTimeoutHelp` to stderr; the setup wizard renders its own line.
 
 `auth.RunBrowserLoginWith` accepts `LoginOptions{NoBrowser: true}` for `--no-browser`,
 which renders the link prominently without reporting a failure.
@@ -166,8 +169,17 @@ at `0644` by an older CLI would otherwise stay world-readable forever.
 
 - `WriteConfigFileSilent()`&mdash;writes only allowlisted keys
   (`config.PersistableKeys`) back to `drconfig.yaml` and returns an error.
-- `WriteConfigFile()`&mdash;writes the config file, prints a success
-  message, and returns an error.
+- `WriteConfigFile(cmd)`&mdash;writes the config file and prints a success
+  message before returning an error. The message follows the command's
+  output-format contract: stdout in human mode, stderr under
+  `--output-format json` so stdout stays a parseable channel.
+- `AnnounceCredentialsSavedForCommand(cmd)`&mdash;after a successful
+  `dr auth login` or `dr auth set-url` write, emits a single notice on the
+  command's error stream naming the saved credentials (the root-level
+  credentials when selection is omitted, otherwise the normalized profile,
+  including an explicit "default") and the actual `drconfig.yaml` path
+  (`config.ConfigFilePath`). It never includes credential values, and it is
+  only called after the persistence it describes has succeeded.
 - `SetURLAction()`&mdash;asks for a DataRobot URL and returns whether it changed. On an
   interactive terminal it runs the `tui/hostpicker` list; otherwise it falls back to a
   plain-text stdin prompt so piped input and the expect-based smoke tests keep working.
@@ -178,3 +190,7 @@ at `0644` by an older CLI would otherwise stay world-readable forever.
 When attaching credentials to an absolute URL returned by a server response,
 first check it with `drapi.URLMatchesConfiguredBase()`. URLs built locally with
 `config.GetEndpointURL()` already stay on the configured DataRobot host.
+
+For how the bearer token is attached to outgoing requests once you have
+it&mdash;and the timeout/error-handling conventions for any new authenticated
+API call&mdash;see [drapi client conventions](drapi-client.md).

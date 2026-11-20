@@ -154,6 +154,11 @@ func wiredRoll(tr *track) fakes {
 
 			return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
 		},
+		promote: func(id string) (*workload.Workload, error) {
+			tr.steps = append(tr.steps, "promote:"+id)
+
+			return &workload.Workload{ID: id}, nil
+		},
 		replace: func(workloadID, artifactID string, runtime json.RawMessage) (*workload.Replacement, error) {
 			tr.steps = append(tr.steps, "replace:"+artifactID)
 			tr.rolledRuntime = runtime
@@ -239,6 +244,13 @@ func TestRun_RollUsesTheArtifactTheFileNames(t *testing.T) {
 
 		return nil, nil
 	}
+	// The plan reads the named artifact once, to know the swap is one the
+	// platform takes.
+	f.getArtifact = func(id string) (*workload.Artifact, error) {
+		tr.steps = append(tr.steps, "read:"+id)
+
+		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+	}
 
 	install(t, f)
 
@@ -247,7 +259,7 @@ func TestRun_RollUsesTheArtifactTheFileNames(t *testing.T) {
 	result, _, err := runIn(t, named, Options{NonInteractive: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"guard", "guard", "replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain"}, tr.steps)
+	assert.Equal(t, []string{"read:68b0bbbb0000000000000002", "guard", "guard", "replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain"}, tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }
 
@@ -321,9 +333,9 @@ func TestRun_LockedProductionRollsAfterTheNameIsTyped(t *testing.T) {
 }
 
 // A file naming an artifact by id is the one way to reach matchLock with a
-// candidate this run did not create, so it is the only path that asks the
-// platform whether the successor is locked already. Locking twice is not a
-// no-op there, which is what the question is for.
+// candidate this run did not create. The plan has already read it to judge
+// the swap, so the roll takes the answer from there: locking twice is not a
+// no-op, and reading twice is one call too many.
 func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 	var tr track
 
@@ -349,9 +361,9 @@ func TestRun_LockedRollDoesNotRelockAnArtifactTheFileNamed(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"guard", "guard", "read:68b0bbbb0000000000000002",
+		"read:68b0bbbb0000000000000002", "guard", "guard",
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
-	}, tr.steps, "an artifact already locked is read, not locked again")
+	}, tr.steps, "an artifact already locked is read once by the plan, not locked again")
 	assert.True(t, result.Locked)
 }
 
@@ -378,7 +390,7 @@ func TestRun_LockedRollLocksANamedDraft(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
-		"guard", "guard", "read:68b0bbbb0000000000000002", "lock:68b0bbbb0000000000000002",
+		"read:68b0bbbb0000000000000002", "guard", "guard", "lock:68b0bbbb0000000000000002",
 		"replace:68b0bbbb0000000000000002", "await-rollout", "settle:68b0bbbb0000000000000002+drain",
 	}, tr.steps)
 	assert.True(t, result.Locked)
@@ -492,7 +504,7 @@ func TestRun_JSONOutputStillAsksBeforeRollingProduction(t *testing.T) {
 	assert.NotContains(t, tr.steps, "replace:art-2")
 }
 
-// --lock and a locked predecessor both lock, and locking twice is not a
+// --promote and a locked predecessor both lock, and locking twice is not a
 // no-op at the platform.
 func TestRun_LockFlagDoesNotLockTheVersionTwice(t *testing.T) {
 	var tr track
@@ -560,11 +572,11 @@ func TestRun_TheTwoRollWaitsShareOnePollBudget(t *testing.T) {
 		"the second wait may not start a fresh copy of the budget the first one was already spending")
 }
 
-// The sharpest consequence of a wait that could settle early. On a draft
-// workload --lock is applied after the swap, to result.ArtifactID, which is
-// whatever the wait last saw. A wait that returned on the version being rolled
-// off locked the wrong artifact, and locking is one-way.
-func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
+// On a draft workload --promote is applied after the swap, through the
+// workload's promote route, which locks whatever the workload is serving by
+// then. The wait has to finish first: promoting before the swap lands would
+// lock the version being rolled off, and locking is one-way.
+func TestRun_DraftRollPromotesAfterTheSwap(t *testing.T) {
 	var tr track
 
 	install(t, wiredRoll(&tr))
@@ -575,9 +587,9 @@ func TestRun_DraftRollLocksTheVersionItRolledOnto(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"guard", "create-artifact", "guard", "replace:art-2",
-			"await-rollout", "settle:art-2+drain", "lock:art-2",
+			"await-rollout", "settle:art-2+drain", "promote:68b0c1d2e3f4a5b6c7d8e9f0",
 		}, tr.steps,
-		"the lock follows the wait, so the wait is what decides which artifact becomes permanent")
+		"the promotion follows the wait, so the wait is what decides which artifact becomes permanent")
 	assert.NotContains(t, tr.steps, "lock:68a0000000000000000000a1",
 		"locking the version being rolled off cannot be undone")
 	assert.Equal(t, "art-2", result.ArtifactID)
@@ -816,8 +828,15 @@ func TestRun_StoppedRollLocksOnlyTheVersionItLeavesServing(t *testing.T) {
 	result, _, err := runIn(t, newImage(), Options{NonInteractive: true, Lock: true})
 	require.NoError(t, err)
 
-	assert.Equal(t, []string{"lock:art-2"}, locks(tr.steps),
-		"one lock, on the version the run left running")
+	assert.Equal(t, []string{"promote:68b0c1d2e3f4a5b6c7d8e9f0"}, locks(tr.steps),
+		"one promotion, so the version rolled off is never made permanent")
+
+	// The order is the whole point: the promote route locks whatever the
+	// workload serves when it is called, so it must come after the swap.
+	promoted := slices.Index(tr.steps, "promote:68b0c1d2e3f4a5b6c7d8e9f0")
+	replaced := slices.Index(tr.steps, "replace:art-2")
+	require.NotEqual(t, -1, replaced)
+	assert.Greater(t, promoted, replaced, "promoted before the swap would lock the version being rolled off: %v", tr.steps)
 	assert.True(t, result.Locked)
 }
 
@@ -1118,7 +1137,7 @@ func TestRun_StoppedWorkloadThatStartsErroredIsStillRolled(t *testing.T) {
 // errored is that attempt, and it disqualifies the copy for the same reason an
 // already-errored workload never inherits: the image the copy carries forward
 // is the one that just failed, and the roll would promote it, permanently under
-// --lock.
+// --promote.
 func TestRun_StartThatComesUpErroredDropsTheInheritedImage(t *testing.T) {
 	var tr track
 
@@ -1212,7 +1231,7 @@ func locks(steps []string) []string {
 	var out []string
 
 	for _, step := range steps {
-		if strings.HasPrefix(step, "lock:") {
+		if strings.HasPrefix(step, "lock:") || strings.HasPrefix(step, "promote:") {
 			out = append(out, step)
 		}
 	}
@@ -1337,6 +1356,7 @@ func TestRun_RollsABuiltProjectOntoAFreshlyBuiltVersion(t *testing.T) {
 		[]string{"guard", "create-artifact", "relink", "sync", "build", "guard", "replace:art-2", "await-rollout", "settle:art-2+drain"},
 		tr.steps)
 	assert.Equal(t, "art-2", tr.savedCfg.ArtifactID, "the sync has to land in the new version, not the live one")
+	assert.Equal(t, ptr("art-2"), tr.savedCfg.PendingRolloutArtifactID, "pending until a run sees it serve")
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Equal(t, "bld-2", result.BuildID, "the envelope has to be able to name the build")
 	assert.Equal(t, "68b0c1d2e3f4a5b6c7d8e9f0", result.WorkloadID)
@@ -1415,11 +1435,107 @@ func TestRun_RollReusesTheVersionAnEarlierAttemptLeft(t *testing.T) {
 	result, stderr, err := runIn(t, builtDrift(), Options{NonInteractive: true})
 	require.NoError(t, err)
 
+	// The leftover carries no mark, as one an earlier release left or a version
+	// this checkout saw serve before someone else's replaced it would not. The
+	// one write before the sync is the mark, so an interruption from here on is
+	// resumed.
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "relink", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
 		tr.steps)
+	assert.Equal(t, "art-abandoned", tr.savedCfg.ArtifactID, "the link stays where it is")
+	assert.Equal(t, ptr("art-abandoned"), tr.savedCfg.PendingRolloutArtifactID)
 	assert.Equal(t, ActionRolled, result.Action)
 	assert.Contains(t, stderr, "earlier attempt")
+}
+
+// The attempt that left the draft died after the push. The tree matches the
+// push and the file matches the workload, which is the run that used to print
+// "Already up to date" over an endpoint still serving the old code. It
+// finishes the deploy instead: on the image the attempt's build made when that
+// build finished, and on a new one when the draft's image predates its code,
+// which a second interrupted attempt whose build then failed leaves behind.
+func TestRun_ResumesADeployThatDiedAfterThePush(t *testing.T) {
+	cases := []struct {
+		name      string
+		builtFrom string
+		rebuilds  bool
+	}{
+		{name: "its build finished", builtFrom: "ver2"},
+		{name: "its image is of older code", builtFrom: "ver1", rebuilds: true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var (
+				tr       track
+				recorded int
+				saved    []wapi.Config
+			)
+
+			catalog, pushed := "cat1", "ver2"
+
+			f := builtRoll(&tr)
+			f.code = func(Loaded, Live) (CodeChange, error) { return CodeChange{Applies: true, Unserved: true}, nil }
+			f.sync = emptySync(&tr)
+			f.linked = func(string) bool { return true }
+			f.project = func(string) (wapi.Config, error) {
+				return wapi.Config{
+					ArtifactID: "art-abandoned", CatalogID: &catalog, LastSyncedVersionID: &pushed,
+					PendingRolloutArtifactID: ptr("art-abandoned"),
+				}, nil
+			}
+			f.save = func(_ string, cfg wapi.Config) error {
+				saved = append(saved, cfg)
+
+				return nil
+			}
+			f.getArtifact = func(id string) (*workload.Artifact, error) {
+				return &workload.Artifact{ID: id, Status: workload.ArtifactStatusDraft}, nil
+			}
+
+			docs := artifactDocs("art-abandoned", 8000)
+			f.artifactD = func(id string) (workload.Document, error) {
+				d, err := docs(id)
+				if id == "art-abandoned" {
+					stampBuild(primaryOf(d), pushed, c.builtFrom)
+				}
+
+				return d, err
+			}
+			f.builds = func(string, int) ([]workload.Build, error) {
+				return []workload.Build{{ID: "bld-2", Status: workload.BuildStatusFailed}}, nil
+			}
+			f.recordBuilt = func(string) { recorded++ }
+
+			install(t, f)
+
+			bound := "workloadId: 68b0c1d2e3f4a5b6c7d8e9f0\n" + boundLiveManifest
+
+			result, stderr, err := runIn(t, bound, Options{NonInteractive: true})
+			require.NoError(t, err)
+
+			steps := []string{
+				"guard", "sync", "carry-code", "guard", "replace:art-abandoned", "await-rollout",
+				"settle:art-abandoned+drain",
+			}
+
+			if c.rebuilds {
+				steps = slices.Insert(steps, 3, "build")
+			}
+
+			assert.Equal(t, steps, tr.steps)
+			assert.Equal(t, []string{"art-abandoned", "cat1", "ver2"}, tr.carried)
+			assert.Equal(t, ActionRolled, result.Action)
+			assert.Equal(t, 1, recorded, "the next run measures the image against this record")
+			assert.NotContains(t, stderr, "Already up to date")
+			assert.Contains(t, stderr, "already pushed, but not what the workload is running")
+			assert.Contains(t, stderr, "earlier attempt")
+			assert.Equal(t, !c.rebuilds, strings.Contains(stderr, "no rebuild needed"))
+
+			require.Len(t, saved, 1, "the only write is the mark coming off")
+			assert.Nil(t, saved[0].PendingRolloutArtifactID, "the version it named is serving now")
+		})
+	}
 }
 
 // The same reuse against the shape the platform actually answers with. The
@@ -1469,7 +1585,7 @@ func TestRun_LeftoverDraftIsReusedWhenThePlatformHoistsTheType(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t,
-		[]string{"guard", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
+		[]string{"guard", "relink", "sync", "build", "guard", "replace:art-abandoned", "await-rollout", "settle:art-abandoned+drain"},
 		tr.steps)
 	assert.Equal(t, ActionRolled, result.Action)
 }

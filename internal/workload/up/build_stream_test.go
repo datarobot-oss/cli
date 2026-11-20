@@ -226,12 +226,17 @@ func TestReporter_StreamWindowNeverOutgrowsTheViewport(t *testing.T) {
 // the attach path is reachable from.
 func unchangedSync() *sync.Result { return &sync.Result{} }
 
+// unbuiltLeftover is a leftover with no finished build of its code, which is
+// what sends the question on to the build history.
+func unbuiltLeftover(string) (workload.Document, error) { return builtDoc("ver2", ""), nil }
+
 func TestMaybeBuild_AttachesToRunningBuildWhenCodeUnchanged(t *testing.T) {
 	fixedClock(t, time.Second)
 
 	// Newest build is still running and nothing has ever completed: the code
 	// on the artifact is being built right now, so a second trigger would be
 	// a duplicate.
+	force(t, &getArtifactDocFn, unbuiltLeftover)
 	force(t, &listBuildsFn, func(string, int) ([]workload.Build, error) {
 		return []workload.Build{{ID: "bld-running", Status: "IN_PROGRESS"}}, nil
 	})
@@ -275,6 +280,7 @@ func TestMaybeBuild_TriggersInsteadOfAttachingToAWedgedBuild(t *testing.T) {
 	// the whole timeout on it, while a fresh trigger supersedes it.
 	stale := time.Date(2026, time.August, 12, 9, 0, 0, 0, time.UTC) // 3h before fixedClock's base
 
+	force(t, &getArtifactDocFn, unbuiltLeftover)
 	force(t, &listBuildsFn, func(string, int) ([]workload.Build, error) {
 		return []workload.Build{{ID: "bld-wedged", Status: "IN_PROGRESS", CreatedAt: stale}}, nil
 	})

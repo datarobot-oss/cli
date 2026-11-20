@@ -14,6 +14,12 @@ Production code (via `main`) uses the singleton built in `init()`. Tests use
 `NewRootFactory(...)` directly with stubbed dependencies, or
 `NewIsolatedRootFactory()` for an all-no-op preset.
 
+`ExecuteContext` routes failures through `executeRoot`, which silences cobra and
+reports each unhandled error once on stderr: text via `ReportError`, or a JSON
+error envelope under `--output-format json`. Commands that already reported their
+failure return `cli.ErrSilent`. This also covers config and TLS failures raised
+before a self-silencing child command runs.
+
 ## Diagrams
 
 ### Factory structure
@@ -235,15 +241,15 @@ root := cmd.NewIsolatedRootFactory().Build()
 through process-global state. Knowing exactly what remains shared tells you
 which test topologies are safe.
 
-| Shared global | Touched when | Effect |
-| --- | --- | --- |
-| viper flag bindings | every `Build()` (default `ViperBinder`) | bindings re-point at the newest tree; only the last-built tree's flags resolve via `viperx.Get*` |
-| viper config contents | `Execute()` via `ReadInConfig`, read at `Build()` by plugin discovery | parsed file contents persist in the global instance until the next read or `viperx.Reset()` |
-| `cobra.EnableCaseInsensitive` | every `Build()` | idempotent global write |
-| `cobra.OnFinalize` list | every Execute | append-only and replayed on every Execute; the factory's generation guard neutralizes stale replays |
-| `http.DefaultTransport` | Execute (TLS setup) | last-executed tree's TLS config wins |
-| `log` package logger | Execute (`log.Start` / `log.Stop`) | single global logger |
-| `config.SetAPIConsumerTrace` | Execute | last-executed tree's trace string wins |
+| Shared global                 | Touched when                                                          | Effect                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| viper flag bindings           | every `Build()` (default `ViperBinder`)                               | bindings re-point at the newest tree; only the last-built tree's flags resolve via `viperx.Get*`    |
+| viper config contents         | `Execute()` via `ReadInConfig`, read at `Build()` by plugin discovery | parsed file contents persist in the global instance until the next read or `viperx.Reset()`         |
+| `cobra.EnableCaseInsensitive` | every `Build()`                                                       | idempotent global write                                                                             |
+| `cobra.OnFinalize` list       | every Execute                                                         | append-only and replayed on every Execute; the factory's generation guard neutralizes stale replays |
+| `http.DefaultTransport`       | Execute (TLS setup)                                                   | last-executed tree's TLS config wins                                                                |
+| `log` package logger          | Execute (`log.Start` / `log.Stop`)                                    | single global logger                                                                                |
+| `config.SetAPIConsumerTrace`  | Execute                                                               | last-executed tree's trace string wins                                                              |
 
 The practical rules:
 

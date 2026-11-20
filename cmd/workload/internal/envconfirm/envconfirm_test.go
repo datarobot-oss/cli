@@ -94,3 +94,36 @@ func TestAsk_NoTerminalWithoutYesRefuses(t *testing.T) {
 	assert.Contains(t, err.Error(), "--yes", "the refusal names the way out of it")
 	assert.Contains(t, err.Error(), "credential store", "and what it was protecting")
 }
+
+// --yes agrees to the sync, not to destroying a stored copy of a token.
+func TestAskDelete_OnlyAsksOnATerminal(t *testing.T) {
+	assert.Nil(t, AskDelete(&strings.Builder{}, strings.NewReader("y\n"), Policy{Yes: true, Interactive: true}))
+	assert.Nil(t, AskDelete(&strings.Builder{}, strings.NewReader("y\n"), Policy{DryRun: true, Interactive: true}))
+	assert.Nil(t, AskDelete(&strings.Builder{}, strings.NewReader("y\n"), Policy{}))
+
+	ask := AskDelete(&strings.Builder{}, strings.NewReader("y\n"), Policy{Interactive: true})
+	require.NotNil(t, ask)
+	assert.True(t, ask("cred"))
+}
+
+func TestAskDelete_AnythingButYesKeepsIt(t *testing.T) {
+	for _, answer := range []string{"\n", "n\n", ""} {
+		assert.False(t, AskDelete(&strings.Builder{}, strings.NewReader(answer), Policy{Interactive: true})("cred"))
+	}
+}
+
+func TestAskReuseNilWhenNothingToAsk(t *testing.T) {
+	for _, policy := range []Policy{{Yes: true, Interactive: true}, {DryRun: true, Interactive: true}, {}} {
+		assert.Nil(t, AskReuse(&strings.Builder{}, strings.NewReader("y\n"), policy))
+	}
+}
+
+func TestAskReuseParsesAnswers(t *testing.T) {
+	for answer, want := range map[string]bool{"y\n": true, "YES\n": true, "n\n": false, "\n": false, "": false} {
+		out := &strings.Builder{}
+		got := AskReuse(out, strings.NewReader(answer), Policy{Interactive: true})("API_TOKEN", "my-cred", "abc123")
+
+		assert.Equal(t, want, got, "answer %q", answer)
+		assert.Contains(t, out.String(), "abc123")
+	}
+}

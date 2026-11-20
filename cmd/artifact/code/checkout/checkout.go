@@ -307,7 +307,7 @@ func downloadAll(c filesapi.Client, catalogID, versionID, checkoutDir string, fi
 	}
 
 	for _, path := range paths {
-		if err := downloadOne(c, catalogID, versionID, checkoutDir, path); err != nil {
+		if err := downloadOne(c, catalogID, versionID, checkoutDir, path, files[path].Executable); err != nil {
 			return err
 		}
 	}
@@ -316,7 +316,7 @@ func downloadAll(c filesapi.Client, catalogID, versionID, checkoutDir string, fi
 }
 
 // Server-side hashes are not re-verified: TLS covers transit corruption and the snapshot is read-only.
-func downloadOne(c filesapi.Client, catalogID, versionID, checkoutDir, path string) error {
+func downloadOne(c filesapi.Client, catalogID, versionID, checkoutDir, path string, executable *bool) error {
 	dst := filepath.Join(checkoutDir, filepath.FromSlash(path))
 
 	if err := os.MkdirAll(filepath.Dir(dst), checkoutDirPerm); err != nil {
@@ -337,6 +337,10 @@ func downloadOne(c filesapi.Client, catalogID, versionID, checkoutDir, path stri
 		_ = os.Remove(dst)
 
 		return fmt.Errorf("download %s: %w", path, err)
+	}
+
+	if err := fileops.ApplyExecutable(dst, executable); err != nil {
+		return fmt.Errorf("set executable bit on %s: %w", path, err)
 	}
 
 	return nil

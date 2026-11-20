@@ -38,14 +38,14 @@ dr llm ls               # shortest alias
 
 **Output columns (table):**
 
-| Column     | Description                                      |
-|------------|--------------------------------------------------|
-| `ID`       | LLM identifier — a gateway model id or a deployment id. Prefixed with `*` if selected, `  ` otherwise. |
-| `NAME`     | Human-readable model name (a deployment's label for deployed LLMs). |
-| `SOURCE`   | `gateway` for LLM Gateway catalog models, `deployed` for DataRobot-deployed LLMs. |
-| `PROVIDER` | Provider (e.g. `azure`, `anthropic`, `google`). `-` for deployed LLMs. |
-| `MODEL`    | Underlying model identifier. `-` for deployed LLMs (the deployment id in `ID` is the routing key). |
-| `CONTEXT`  | Context-window size in tokens. `-` when not reported (always `-` for deployed LLMs). |
+| Column     | Description                                                                                              |
+| ---------- | -------------------------------------------------------------------------------------------------------- |
+| `ID`       | LLM identifier — a gateway model id or a deployment id. Prefixed with `*` if selected, `  ` otherwise.   |
+| `NAME`     | Human-readable model name (a deployment's label for deployed LLMs).                                      |
+| `SOURCE`   | `gateway` for LLM Gateway catalog models, `deployed` for DataRobot-deployed LLMs.                        |
+| `PROVIDER` | Provider (e.g. `azure`, `anthropic`, `google`). `-` for deployed LLMs.                                   |
+| `MODEL`    | Underlying model identifier. `-` for deployed LLMs (the deployment id in `ID` is the routing key).       |
+| `CONTEXT`  | Context-window size in tokens. `-` when not reported (always `-` for deployed LLMs).                     |
 
 The table width is content-driven and capped at the terminal width to prevent overflow. `description` is omitted from the table (it is long enough to wrap unreadably across a full catalog) and appears in JSON output only.
 

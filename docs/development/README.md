@@ -25,6 +25,7 @@ If you're new to developing the CLI, start here:
 - **[Tool registry](tool-registry.md)**&mdash;how install-hint strategies and manager detection work; how to add a new tool or package manager.
 - **[Plugins](plugins.md)**&mdash;develop and test CLI plugins, understand the plugin system architecture.
 - **[Remote plugins](remote-plugins.md)**&mdash;create and distribute remote plugins, plugin registry management.
+- **[drapi client conventions](drapi-client.md)**&mdash;how to wire in a new authenticated API call: timeout clamping, the `HTTPError`/`errors.As` contract, and origin-safety checks before attaching credentials to a server-supplied URL.
 - **[Workload state directory validation](workload-wapi-validation.md)**&mdash;reference for `validator/v10` tags and cross-field rules for workload local state.
 - **[Editing user-owned files](editing-user-files.md)**&mdash;rules for in-place edits to `.datarobot.yaml` and `.env`: comment preservation, round-trip symmetry, and when a refusal beats a rewrite.
 - **[Releasing](releasing.md)**&mdash;release process, versioning strategy, and GoReleaser configuration.

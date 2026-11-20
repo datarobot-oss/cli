@@ -30,6 +30,7 @@ import (
 	"github.com/datarobot/cli/cmd/pipeline/task"
 	"github.com/datarobot/cli/cmd/pipeline/update"
 	"github.com/datarobot/cli/cmd/pipeline/version"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/spf13/cobra"
 )
 
@@ -38,13 +39,21 @@ func Cmd() *cobra.Command {
 		Use:     "pipeline",
 		Aliases: []string{"pipelines"},
 		GroupID: "core",
-		Short:   "Pipelines API management commands",
+		Short:   "🔀 Pipelines API management commands",
 		Long: `Manage AI/ML pipelines orchestrated by Covalent.
+
+NOTE: On DataRobot 11.15 and later, AI Pipelines are in Private Preview:
+behavior may change, and preview functionality is not covered by Support SLA
+agreements. These commands work regardless of the platform feature flag, which
+gates only the Pipelines tab in the DataRobot UI. The command group itself is
+shown when DATAROBOT_CLI_FEATURE_PIPELINE=true is set.
 
 Create, list, inspect, and update pipelines registered with the
 DataRobot pipelines service. Sub-commands are also available for managing
 input payloads, runs, and recurring schedules.`,
 	}
+
+	features.SetGate(cmd, "pipeline")
 
 	cmd.AddCommand(
 		create.Cmd(),

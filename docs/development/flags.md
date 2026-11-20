@@ -73,6 +73,10 @@ Invalid input fails at parse time with cobra's standard wrapping:
 Error: invalid argument "0" for "--limit" flag: must be a positive integer
 ```
 
+Non-numeric input reads `must be an integer` and an oversized number reads
+`value is out of range`, matching the wording of pflag's built-in `int` flag.
+`pollflags` does the same for durations (`must be a duration like "30s" or "5m"`).
+
 so `RunE` stays free of flag-shape checks. Keep library-level argument
 validation in `internal/...` as defense in depth for non-CLI callers. The
 pattern follows `cmd/internal/pollflags`, which does the same for durations.
@@ -154,6 +158,28 @@ Concretely:
 - Return errors from `RunE` so cobra routes them to stderr; do not print errors to stdout.
 - If you need to emit a deprecation/notice alongside JSON output, write it to `cmd.ErrOrStderr()`.
 
+### JSON errors
+
+When a command fails in JSON mode, the root execution path (`executeRoot` in `cmd/root_errors.go`) suppresses cobra's plaintext `Error:` line and the usage text, and writes one JSON object on a single line to **stderr** instead:
+
+```json
+{"error":{"message":"create workload: HTTP 422 Unprocessable Entity: name is required (url: https://app.datarobot.com/api/v2/workloads/)","statusCode":422,"url":"https://app.datarobot.com/api/v2/workloads/","detail":"name is required"}}
+```
+
+| Field        | Present                                      | Source                              |
+| ------------ | -------------------------------------------- | ----------------------------------- |
+| `message`    | Always                                       | The error's text, without `Error: ` |
+| `statusCode` | When the error chain has a `drapi.HTTPError` | `HTTPError.StatusCode`              |
+| `url`        | When the error chain has a `drapi.HTTPError` | `HTTPError.URL`                     |
+| `detail`     | When that `HTTPError` has a `Detail`         | `HTTPError.Detail`                  |
+
+stdout gets nothing new and the exit code stays non-zero, so the exit code is still how a caller tells failure from success. Text mode is unchanged.
+
+- JSON mode is read from `--output-format` in the arguments, then `DATAROBOT_CLI_OUTPUT_FORMAT`, before cobra parses anything, so flag and argument errors get the envelope too. An `output-format` set only in `drconfig.yaml` is picked up once the config is read, so it covers runtime errors but not flag errors.
+- Return a wrapped error rather than a formatted string when the failure came from the API, so `errors.As` can still find the `HTTPError` and fill the HTTP fields.
+- A command that renders its own failure and returns `cli.ErrSilent` gets no envelope.
+- `dr task run` (and `dr run`) and plugin commands leave through `telemetry.ExitWithContext` to pass on the subprocess's exit code, so they never return to `executeRoot` and get no envelope either.
+
 ## Universal flags (forwarded to plugins)
 
 Some root flags must be forwarded to plugin subprocesses as `DATAROBOT_CLI_*` environment variables so plugins can honour them (e.g. `--debug` → `DATAROBOT_CLI_DEBUG=1`). These are called **universal flags**.
@@ -164,9 +190,9 @@ Current universal flags: `debug`, `disable-telemetry`, `verbose`, `skip-certific
 
 Separation of concerns is strict:
 
-| Layer | Responsibility |
-|---|---|
-| `cmd/root.go` | Declares which flags are universal and what env var suffix they map to |
+| Layer             | Responsibility                                                         |
+| ----------------- | ---------------------------------------------------------------------- |
+| `cmd/root.go`     | Declares which flags are universal and what env var suffix they map to |
 | `internal/plugin` | Reads the annotations and injects env vars when launching a subprocess |
 
 The two sides share only one thing: the annotation key constant `plugin.UniversalAnnotationKey = "plugin-universal"`.

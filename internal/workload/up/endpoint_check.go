@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/tui"
 )
 
@@ -40,6 +42,38 @@ const (
 	endpointCheckAuthenticated endpointCheckAuthMode = "authenticated"
 	workloadEndpointPathPrefix                       = config.DRAPIURLSuffix + "/endpoints/workloads/"
 )
+
+// keyProbePath is the route a probe asks, inside readinessProbe.
+const keyProbePath = "path"
+
+// Why the check asks / rather than a readiness probe path, each finishing the
+// sentence "The check asked for / because ...".
+const (
+	fallbackNoProbe = "the served artifact declares no readiness probe path"
+	fallbackUnread  = "it could not read the served artifact for its readiness probe"
+	fallbackRefused = "the readiness probe path would not stay under the endpoint"
+)
+
+// maxUnescapes bounds how many layers of percent-encoding climbsOut peels. A
+// path still changing after that many is refused rather than trusted.
+const maxUnescapes = 3
+
+// checkTarget is what the closing GET asks of the endpoint.
+type checkTarget struct {
+	// url is what the GET requests.
+	url string
+
+	// probePath is the readiness probe path url asks, "" when it asks /.
+	probePath string
+
+	// fallback is why the GET asks / instead of a probe path, "" when it asks
+	// one.
+	fallback string
+}
+
+// servedArtifactFn reads the artifact the workload ended up serving, for the
+// readiness probe it declares. Swapped by tests.
+var servedArtifactFn = workload.GetArtifactDocument
 
 // checkEndpointFn performs the GET, swapped by tests. The request is
 // anonymous for direct workload URLs and authenticated for the DataRobot public
@@ -89,6 +123,13 @@ var checkEndpointFn = func(rawURL string) (int, error) {
 // nothing ends in a green tick and the discovery is left to whoever the URL
 // was shared with.
 //
+// The GET asks the readiness probe's path when the artifact now serving
+// declares one that stays under the endpoint, and / otherwise. The probe path
+// is the route the app's author named as answering, and the one the
+// platform's readiness gate asks inside the cluster before it reports
+// running, so asking it here adds the hop that gate skips: the public gateway
+// in front of the container. An app need not serve / at all.
+//
 // It reports and never fails the run, whatever comes back. The probe default
 // was removed because a wrong guess about an app's routes kills a healthy
 // deploy; failing the deploy on the same guess here would be the same
@@ -115,6 +156,7 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 	}
 
 	var (
+		check  checkTarget
 		status int
 		err    error
 	)
@@ -126,7 +168,8 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 	// it found; failing the run over what this observes is the one thing it
 	// must never do.
 	phaseErr := report.run("Checking the endpoint", func() error {
-		status, err = checkEndpointFn(result.Endpoint)
+		check = targetFor(result.Endpoint, servedArtifact(result.ArtifactID))
+		status, err = checkEndpointFn(check.url)
 
 		return nil
 	})
@@ -156,8 +199,29 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 		return false
 	}
 
+	// Read off the URL actually sent, the way checkEndpointFn reads it, so the
+	// line never names a mode the request did not use.
+	if mode, modeErr := endpointCheckAuthForURL(check.url); modeErr == nil {
+		authMode = mode
+	}
+
+	asked := "/"
+	if check.probePath != "" {
+		asked = check.probePath + ", the readiness probe's path,"
+	}
+
 	report.say("  %s\n", tui.HintStyle.Render(
-		"Endpoint check: an "+string(authMode)+" GET answered HTTP "+httpStatusLabel(status)+"."))
+		"Endpoint check: an "+string(authMode)+" GET of "+asked+" answered HTTP "+httpStatusLabel(status)+"."))
+
+	// Said only of /, with the reason / was asked: an app need not serve it,
+	// and a bare 404 under a green tick reads as a broken deploy. The reason
+	// matters, because an artifact that could not be read may still declare a
+	// probe. A 404 on a probe path is a real finding and stays bare.
+	if check.fallback != "" && status == http.StatusNotFound {
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The check asked for / because "+check.fallback+"; "+
+				"a 404 there only means the app serves nothing at /."))
+	}
 
 	// Said only when the wait could not confirm the handover, and carrying the
 	// reason, because they are not the same problem: an install without the
@@ -172,6 +236,124 @@ func verifyEndpoint(result Result, unconfirmed string, report *reporter) (interr
 	}
 
 	return false
+}
+
+// servedArtifact reads the artifact the workload ended up serving, nil when
+// there is none to read or the read fails. The check then asks /, which is
+// what it asked before it read probes at all, so a failed read costs the
+// better route and nothing else.
+func servedArtifact(artifactID string) workload.Document {
+	if artifactID == "" {
+		return nil
+	}
+
+	doc, err := servedArtifactFn(artifactID)
+	if err != nil {
+		log.Debug("endpoint check: cannot read the served artifact, asking /",
+			"artifact", artifactID,
+			"error", err)
+
+		return nil
+	}
+
+	return doc
+}
+
+// targetFor picks what the closing GET asks of endpoint: the served artifact's
+// readiness probe path under it, or the endpoint itself with the reason the
+// check falls back to /. served is nil when the artifact could not be read.
+func targetFor(endpoint string, served workload.Document) checkTarget {
+	if served == nil {
+		return checkTarget{url: endpoint, fallback: fallbackUnread}
+	}
+
+	path := readinessPath(served)
+	if path == "" {
+		return checkTarget{url: endpoint, fallback: fallbackNoProbe}
+	}
+
+	target, ok := probeURL(endpoint, path)
+	if !ok {
+		return checkTarget{url: endpoint, fallback: fallbackRefused}
+	}
+
+	return checkTarget{url: target, probePath: path}
+}
+
+// readinessPath is the readiness probe path of the doc's primary container,
+// "" when it declares none, with the leading slash a path is sent with. The
+// probe's port, scheme and host are not read, because the platform's
+// readiness gate does not read them either: it asks the path on the
+// container's own port, which is the port the endpoint reaches.
+func readinessPath(doc workload.Document) string {
+	probe, _ := workload.PrimaryContainerInDocument(doc)[keyReadinessProbe].(map[string]any)
+	path, _ := probe[keyProbePath].(string)
+
+	path = strings.TrimSpace(path)
+	if path != "" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	return path
+}
+
+// probeURL is the endpoint with path under it, ok false when path could leave
+// the endpoint. A query in the probe path is split off first, since JoinPath
+// would escape its "?" into the path, and the endpoint's own query, which a
+// proton-pinned URL carries, is kept.
+func probeURL(endpoint, path string) (string, bool) {
+	route, query, _ := strings.Cut(path, "?")
+	if climbsOut(route) {
+		return "", false
+	}
+
+	base, err := url.Parse(endpoint)
+	if err != nil {
+		return "", false
+	}
+
+	target := base.JoinPath(route)
+
+	if query != "" {
+		target.RawQuery = strings.TrimPrefix(target.RawQuery+"&"+query, "&")
+	}
+
+	return target.String(), true
+}
+
+// climbsOut reports whether route has a "." or ".." segment, as written or
+// under any layer of percent-encoding. JoinPath resolves the plain form but
+// sends %2e%2e as written, and a proxy in front of the gateway may decode and
+// resolve that one, which would carry the token from the endpoint to any path
+// on the host. A backslash counts as a separator, since some servers read it
+// as one.
+func climbsOut(route string) bool {
+	for range maxUnescapes {
+		if slices.ContainsFunc(strings.FieldsFunc(route, isPathSeparator), isDotSegment) {
+			return true
+		}
+
+		decoded, err := url.PathUnescape(route)
+		if err != nil {
+			return true
+		}
+
+		if decoded == route {
+			return false
+		}
+
+		route = decoded
+	}
+
+	return true
+}
+
+func isPathSeparator(r rune) bool {
+	return r == '/' || r == '\\'
+}
+
+func isDotSegment(segment string) bool {
+	return segment == "." || segment == ".."
 }
 
 // endpointCheckAuthForURL keeps the credential-safety decision next to the

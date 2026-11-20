@@ -45,24 +45,24 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command                           | Description                                                 |
-| --------------------------------- | ----------------------------------------------------------- |
-| [`auth`](auth.md)                 | Authenticate with DataRobot.                                |
-| `component`                       | Manage template components.                                 |
-| `templates`                       | Manage application templates.                               |
-| [`start`](start.md)               | Run the application quickstart process.                     |
-| [`run`](run.md)                   | Execute application tasks.                                  |
-| [`task`](task.md)                 | Manage Taskfile composition and task execution.             |
-| [`dotenv`](dotenv.md)             | Manage environment variables.                               |
-| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin). |
-| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                             |
+| Command                           | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| [`auth`](auth.md)                 | Authenticate with DataRobot.                                 |
+| `component`                       | Manage template components.                                  |
+| `templates`                       | Manage application templates.                                |
+| [`start`](start.md)               | Run the application quickstart process.                      |
+| [`run`](run.md)                   | Execute application tasks.                                   |
+| [`task`](task.md)                 | Manage Taskfile composition and task execution.              |
+| [`dotenv`](dotenv.md)             | Manage environment variables.                                |
+| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).  |
+| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API.                     |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts.                        |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                 |
-| [`info`](info.md)                 | Report what an install supports (feature-gated).            |
-| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).    |
-| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).         |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                  |
+| [`info`](info.md)                 | Report what an install supports (feature-gated).             |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).     |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).          |
 
 ### Command tree
 
@@ -99,7 +99,7 @@ dr
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
 ├── info               Report what the install supports (feature-gated)
-├── pipeline           Pipelines API management (alias: pipelines)
+├── pipeline           Pipelines API management (alias: pipelines, feature-gated)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines
 │   ├── get            Display pipeline details and versions
@@ -161,7 +161,8 @@ dr
 │       ├── init       Link a directory to an artifact
 │       ├── sync       Push and pull code changes
 │       ├── versions   List catalog versions
-│       └── checkout   Download a version snapshot
+│       ├── checkout   Download a version snapshot
+│       └── doctor     Diagnose and repair the local sync state
 ├── workload           Workload management (alias: wl)
 │   ├── create         Create (deploy) a workload
 │   ├── get            Display details of a workload
@@ -407,7 +408,7 @@ For detailed documentation on each command, see:
 - **[artifact](artifact.md)**&mdash;build and manage the container artifacts that back workloads.
   - `create` / `get` / `list` / `lock` / `delete`&mdash;the draft-to-locked artifact lifecycle.
   - `build`&mdash;`create` / `get` / `list` / `logs` for container image builds.
-  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory.
+  - `code`&mdash;`init` / `sync` / `versions` / `checkout` to sync local code with an artifact via a `.datarobot/workload/` state directory, plus `doctor` to diagnose and repair that state.
 
 - **[workload](workload.md)**&mdash;deploy and operate workloads created from artifacts (alias `wl`).
   - `create` / `get` / `list` / `delete`&mdash;the workload lifecycle.
@@ -452,11 +453,21 @@ EDITOR                              # External editor for file editing (fallback
 ## Exit codes
 
 | Code | Meaning               |
-|------|-----------------------|
+| ---- | --------------------- |
 | 0    | Success.              |
 | 1    | General error.        |
 | 2    | Command usage error.  |
 | 130  | Interrupted (Ctrl+C). |
+
+With `--output-format json` (or `DATAROBOT_CLI_OUTPUT_FORMAT=json`), a failing command writes its error to stderr as one line of JSON instead of an `Error:` line:
+
+```json
+{"error":{"message":"HTTP 404 Not Found: workload not found (url: https://app.datarobot.com/api/v2/workloads/abc/)","statusCode":404,"url":"https://app.datarobot.com/api/v2/workloads/abc/","detail":"workload not found"}}
+```
+
+`message` is always there. `statusCode`, `url` and `detail` appear when the failure was an API response. stdout gets nothing new on failure, and the exit code is still non-zero.
+
+Two kinds of command report their own failures and get no envelope. `dr run` (`dr task run`) and plugin commands pass on the exit code of the task or plugin they ran, with its own output. A command that has already printed its failure keeps that output, which may be on stdout, and still exits non-zero.
 
 ## See also
 

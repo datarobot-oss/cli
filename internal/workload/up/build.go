@@ -59,8 +59,19 @@ func buildAndCreate(ctx context.Context, loaded Loaded, code CodeChange, result 
 	artifactID, fresh := made.ID, made.Fresh
 
 	synced, err := syncCode(loaded.ProjectDir, report)
+
+	// Recorded before the error check: a plan refused for its size is the
+	// outcome telemetry most needs to hear about.
+	result.Sync = sync.SizeOf(synced, err)
+
 	if err != nil {
 		return result, err
+	}
+
+	// A first deploy sizes nothing beforehand, so no pass has named the links
+	// the sync skipped yet.
+	if code.FirstDeploy {
+		reportSkippedSymlinks(synced, report)
 	}
 
 	// Asked unconditionally, exactly as the roll path asks it. A sync that
@@ -300,7 +311,31 @@ func syncCode(projectDir string, report *reporter) (*sync.Result, error) {
 			result.ConflictCount, result.ConflictCopies)
 	}
 
+	// Said here rather than logged: the progress display silences the stderr
+	// logger while the sync runs.
+	if result != nil && result.ExecutableNotice != "" {
+		report.say("  Warning: %s\n", result.ExecutableNotice)
+	}
+
 	return result, nil
+}
+
+// reportSkippedSymlinks names the links a sync did not follow, up to
+// sync.SymlinkNoticeBound of them.
+func reportSkippedSymlinks(synced *sync.Result, report *reporter) {
+	if synced == nil {
+		return
+	}
+
+	for i, s := range synced.SkippedSymlinks {
+		if i == sync.SymlinkNoticeBound {
+			report.say("  Warning: %d more symlink(s) were not uploaded.\n", len(synced.SkippedSymlinks)-i)
+
+			return
+		}
+
+		report.say("  Warning: %s\n", s.Notice())
+	}
 }
 
 // maybeBuild spends a build only when there is a reason to, and names the
@@ -324,6 +359,11 @@ func maybeBuild(
 		if built {
 			report.say("  Image is up to date; no rebuild needed.\n")
 
+			// The image in hand was built from the code last synced, whoever
+			// watched the build. Left unrecorded, a deploy resumed on a
+			// leftover's finished build would read as stale to every later run.
+			recordBuiltFn(projectDir)
+
 			return "", nil
 		}
 
@@ -346,6 +386,12 @@ func maybeBuild(
 // imageInHand reports whether the candidate already has something to run, and
 // hands back the build history when it had to be fetched. Only a leftover
 // reaches the platform: a copy carries its image and a create has none.
+//
+// A leftover's image counts only when the platform says it was built from the
+// code the leftover now points at. A completed build anywhere in its history
+// is not enough: a deploy interrupted twice, the second time with a build that
+// then failed, leaves the first one's image under newer code, and rolling it
+// out would report a deploy of code the endpoint does not serve.
 func imageInHand(made version) (bool, []workload.Build, error) {
 	if made.ImageURI != "" {
 		return true, nil, nil
@@ -355,16 +401,26 @@ func imageInHand(made version) (bool, []workload.Build, error) {
 		return false, nil, nil
 	}
 
-	builds, err := listBuildsFn(made.ID, buildHistoryLimit)
+	doc, err := getArtifactDocFn(made.ID)
 	if err != nil {
 		return false, nil, fmt.Errorf("cannot tell whether artifact %s has been built: %w", made.ID, err)
 	}
 
-	return hasImage(builds), builds, nil
+	if workload.ImageBuiltFromItsCode(workload.PrimaryContainerInDocument(doc)) {
+		return true, nil, nil
+	}
+
+	// Fetched only for a build already running, which the caller attaches to.
+	builds, err := listBuildsFn(made.ID, buildHistoryLimit)
+	if err != nil {
+		return false, nil, fmt.Errorf("cannot tell whether artifact %s is being built: %w", made.ID, err)
+	}
+
+	return false, builds, nil
 }
 
-// buildAndRecord builds and notes what the image was made from, the one fact
-// nothing on the platform keeps.
+// buildAndRecord builds and notes what the image was made from, which the
+// platform forgets as soon as the artifact's code moves on.
 func buildAndRecord(ctx context.Context, projectDir, artifactID, attachTo string, opts Options,
 	report *reporter,
 ) (string, error) {
@@ -406,7 +462,8 @@ func attachMaxAge(opts Options) time.Duration {
 }
 
 // recordBuiltVersion notes the code version the image was built from, which
-// nothing on the platform holds. Best effort: not writing it costs a build.
+// the platform forgets once the artifact's code moves on. Best effort: not
+// writing it costs a build.
 func recordBuiltVersion(projectDir string) {
 	if !projectLinkedFn(projectDir) {
 		return
@@ -437,23 +494,9 @@ func changed(code CodeChange, synced *sync.Result) bool {
 	return synced.UploadedCount > 0 || synced.DeletedCount > 0
 }
 
-// hasImage reports whether the artifact has ever built successfully. Any
-// completed build answers it, whichever is newest: this is only asked when the
-// working tree matches what was last synced. Code pushed by `dr artifact code
-// sync` between deploys is the exception, answered by CodeChange.ImageStale.
-func hasImage(builds []workload.Build) bool {
-	for _, build := range builds {
-		if workload.IsBuildCompleted(build.Status) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// buildHistoryLimit bounds the look back for a completed build. A handful of
-// attempts is all a deploy can have made; past that the answer is no.
-const buildHistoryLimit = 20
+// buildHistoryLimit is how much of a leftover's build history is read. Only
+// the newest build matters, as the one to attach to while it runs.
+const buildHistoryLimit = 1
 
 // buildImage builds the artifact's image and waits for it, streaming the
 // build's own log lines beneath the phase header while it runs. attachTo, when
@@ -518,6 +561,9 @@ func buildImage(ctx context.Context, artifactID, attachTo string, opts Options, 
 
 		// The final catch-up: ingestion lags the build, so the last lines
 		// routinely land after the wait, and the reorder buffer must drain.
+		// A failed build's are waited for, since they are the ones that say
+		// why.
+		tail.Settle(ctx, b, opts.PollInterval, buildLogSettleBudget, func(note string) { say(note, tui.HintStyle) })
 		tail.Finish()
 		logged = tail.Emitted()
 
@@ -582,7 +628,9 @@ func triggerBuild(artifactID string) (string, error) {
 // going to happen; a second prompt from inside a phase would be a surprise,
 // and in CI it would be a hang.
 func defaultSync(projectDir string) (*sync.Result, error) {
-	engine, err := sync.New(projectDir, sync.Options{Yes: true})
+	// Quiet: the sizing pass before the plan already reported the symlinks
+	// and divergences of this tree.
+	engine, err := sync.New(projectDir, sync.Options{Yes: true, Quiet: true})
 	if err != nil {
 		return nil, err
 	}

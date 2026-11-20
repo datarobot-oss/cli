@@ -16,6 +16,8 @@ package sync
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload/fileops"
@@ -28,6 +30,58 @@ import (
 // collapse case-colliding paths, so the collision check below can only be
 // exercised on every host by injecting the manifest rather than walking one.
 var hashEntriesFn = hashEntries
+
+// warnSkippedSymlinks sorts the skipped symlinks by path, so notices and the
+// structured field are deterministic, and logs them from the phase like the
+// shadow warning: the user hears it even when a later phase fails before
+// anything renders. The prose stops at SymlinkNoticeBound; the engine field
+// carries every symlink regardless.
+func warnSkippedSymlinks(e *Engine) {
+	sort.Slice(e.skippedSymlinks, func(i, j int) bool {
+		return e.skippedSymlinks[i].Path < e.skippedSymlinks[j].Path
+	})
+
+	if e.opts.Quiet {
+		return
+	}
+
+	for i, s := range e.skippedSymlinks {
+		if i >= SymlinkNoticeBound {
+			break
+		}
+
+		log.Warn(s.Notice())
+	}
+
+	if len(e.skippedSymlinks) > SymlinkNoticeBound {
+		log.Warn(fmt.Sprintf(
+			"skipped symlink: and %d more symlink(s) were not uploaded or synced (see the plan JSON for the full list)",
+			len(e.skippedSymlinks)-SymlinkNoticeBound))
+	}
+}
+
+// warnReplacedRemoteEdits says which server changes the plan replaces because
+// the path is reached through a link, up to SymlinkNoticeBound of them.
+func warnReplacedRemoteEdits(e *Engine, plan *SyncPlan) {
+	if e.opts.Quiet {
+		return
+	}
+
+	sort.Strings(plan.ReplacedRemote)
+
+	for i, path := range plan.ReplacedRemote {
+		if i == SymlinkNoticeBound {
+			log.Warn(fmt.Sprintf("linked path: and %d more server change(s) under symlinks are replaced by the local copy",
+				len(plan.ReplacedRemote)-i))
+
+			return
+		}
+
+		log.Warn(fmt.Sprintf(
+			"linked path: %s changed on the server, but it is reached through a symlink, so the local copy replaces that change",
+			path))
+	}
+}
 
 // phase2Manifests builds the LOCAL manifest by walking + hashing the
 // project, and either fetches REMOTE from FilesAPI (when drifted) or
@@ -51,16 +105,27 @@ func phase2Manifests(e *Engine) error {
 
 	warnIfLockfileIgnored(e, matcher)
 
-	var skippedSymlinks []string
+	onLink := func(link fileops.Link) {
+		if link.Outcome == fileops.LinkFollowed {
+			e.linkedPaths = append(e.linkedPaths, link.RelPath)
 
-	walkOnSymlink := func(rel, _ string) {
-		skippedSymlinks = append(skippedSymlinks, rel)
+			return
+		}
+
+		e.unfollowedLinks = append(e.unfollowedLinks, link.RelPath)
+
+		// The user excluded an ignored link, so it is not news.
+		if link.Outcome != fileops.LinkIgnored {
+			e.skippedSymlinks = append(e.skippedSymlinks, SkippedSymlink{Path: link.RelPath, IsDir: link.IsDir, Reason: link.Outcome})
+		}
 	}
 
-	entries, err := fileops.Walk(e.projectDir, matcher.Match, walkOnSymlink)
+	entries, err := fileops.Walk(e.projectDir, matcher.Match, onLink)
 	if err != nil {
 		return fmt.Errorf("walk project directory: %w", err)
 	}
+
+	warnSkippedSymlinks(e)
 
 	local, err := hashEntriesFn(entries)
 	if err != nil {
@@ -68,20 +133,54 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	e.local = local
+	e.aliases = aliasesOf(e.projectDir, entries, e.linkedPaths, local)
 
 	if cs := caseCollisionsFromManifest(local); len(cs) > 0 {
 		return fmt.Errorf("%s", fileops.FormatCaseCollisions(cs))
 	}
 
-	if !e.drifted {
-		// Nobody else changed the remote since our last sync; skip the
-		// allFiles round-trip and reuse BASE.
+	return resolveRemote(e)
+}
+
+// trustsBase reports the solo-developer fast path: nobody else changed the
+// remote since the last sync, so BASE stands in for it. --verify opts out,
+// since its point is to check BASE against the server, on dry-run too. So
+// does a base that lacks the executable bits, which lists the remote once to
+// learn them.
+func trustsBase(e *Engine, codeRef codeRefRef) bool {
+	if e.drifted || e.opts.Verify {
+		return false
+	}
+
+	if needsExecutableBackfill(e, codeRef) {
+		e.execBackfill = true
+
+		return false
+	}
+
+	return true
+}
+
+// needsExecutableBackfill reports a fast-path sync that should list the
+// remote anyway: a base written before the executable bit was tracked cannot
+// say what the catalog holds, unless the server is known not to report it.
+func needsExecutableBackfill(e *Engine, codeRef codeRefRef) bool {
+	return hasUnknownExecutable(e.base) && !e.config.ExecutableUnreported &&
+		codeRef.CatalogID != "" && e.remoteVer != ""
+}
+
+// resolveRemote fills e.remote: copied from BASE on the fast path, empty on a
+// first sync, or listed from the Files API. Split out of the phase body, which
+// is at the complexity ceiling.
+func resolveRemote(e *Engine) error {
+	codeRef := codeRefOrEmpty(e)
+
+	if trustsBase(e, codeRef) {
 		e.remote = copyManifest(e.base)
 
 		return nil
 	}
 
-	codeRef := codeRefOrEmpty(e)
 	if codeRef.CatalogID == "" || e.remoteVer == "" {
 		// First sync against an empty artifact: remote manifest is empty.
 		e.remote = RemoteManifest{}
@@ -90,11 +189,29 @@ func phase2Manifests(e *Engine) error {
 	}
 
 	remote, err := e.files.AllFiles(codeRef.CatalogID, e.remoteVer)
+	if err != nil && e.execBackfill {
+		// The backfill only learns the bits; without it the sync is the one it was.
+		log.Debug("Could not list the remote to learn executable bits", "error", err)
+
+		e.execBackfill = false
+		e.remote = copyManifest(e.base)
+
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("fetch remote manifest: %w", err)
 	}
 
 	e.remote = FromFilesAPI(remote)
+	e.remoteListed = true
+
+	// Only a verify-forced fetch on a non-drifted artifact checks BASE's
+	// claim: here — and only here — BASE claims to describe exactly the
+	// version just fetched, so a mismatch is a lie worth reporting. On a
+	// drifted artifact the remote is a newer version by design, and
+	// BASE-vs-REMOTE differences are ordinary drift, not findings.
+	maybeDetectDivergence(e)
 
 	return nil
 }
@@ -106,15 +223,49 @@ func hashEntries(entries []fileops.Entry) (LocalManifest, error) {
 	out := make(LocalManifest, len(entries))
 
 	for _, ent := range entries {
-		hash, size, err := fileops.HashFile(ent.AbsPath)
+		hash, size, mode, err := fileops.HashFileMode(ent.AbsPath)
 		if err != nil {
 			return nil, fmt.Errorf("hash %s: %w", ent.RelPath, err)
 		}
 
-		out[ent.RelPath] = FileEntry{Hash: hash, Size: size}
+		out[ent.RelPath] = FileEntry{Hash: hash, Size: size, Executable: fileops.LocalExecutable(mode)}
 	}
 
 	return out, nil
+}
+
+// aliasesOf maps each entry listed under one of links to the path local lists
+// the same file under in its own right, where it does.
+func aliasesOf(projectDir string, entries []fileops.Entry, links []string, local LocalManifest) map[string]string {
+	if len(links) == 0 {
+		return nil
+	}
+
+	root, err := filepath.EvalSymlinks(projectDir)
+	if err != nil {
+		return nil
+	}
+
+	out := map[string]string{}
+
+	for _, ent := range entries {
+		if !underLink(ent.RelPath, links) {
+			continue
+		}
+
+		rel, err := filepath.Rel(root, ent.AbsPath)
+		if err != nil {
+			continue
+		}
+
+		if own := fileops.NormalizePath(rel); own != ent.RelPath {
+			if _, ok := local[own]; ok {
+				out[ent.RelPath] = own
+			}
+		}
+	}
+
+	return out
 }
 
 func caseCollisionsFromManifest(m LocalManifest) []fileops.CaseCollision {

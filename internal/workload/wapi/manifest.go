@@ -25,10 +25,12 @@ import (
 )
 
 // FileMeta is the per-file entry in the BASE manifest. Hash is SHA-256 hex
-// (64 chars) as produced by the sync engine.
+// (64 chars) as produced by the sync engine. Executable is nil when the bit
+// is unknown, as in a manifest written before it was tracked.
 type FileMeta struct {
-	Hash string `json:"hash" validate:"required,dr_sha256hex"`
-	Size int64  `json:"size" validate:"gte=0"`
+	Hash       string `json:"hash" validate:"required,dr_sha256hex"`
+	Size       int64  `json:"size" validate:"gte=0"`
+	Executable *bool  `json:"executable,omitempty"`
 }
 
 // Manifest is the parsed representation of the project's manifest.json — the BASE

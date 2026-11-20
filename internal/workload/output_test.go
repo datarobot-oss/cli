@@ -471,6 +471,32 @@ func TestRenderBuildSummary_TextFailureDumpsTailToStderr(t *testing.T) {
 	assert.Contains(t, stderrOut, "boom")
 }
 
+// Lines the stream already printed are not printed again under the summary;
+// the reason still is, and JSON still carries the tail.
+func TestRenderBuildSummary_TextSkipsATailTheStreamShowed(t *testing.T) {
+	summary := BuildSummary{
+		BuildID:       "b-1",
+		Status:        BuildStatusFailed,
+		FailureReason: "The build failed.",
+		LogTail:       []BuildLogEntry{{Levelname: "ERROR", Message: "boom"}},
+		LogTailShown:  true,
+	}
+
+	stderrOut := captureStderr(t, func() {
+		captureStdout(t, func() {
+			require.NoError(t, RenderBuildSummary(outputformat.OutputFormatText, summary))
+		})
+	})
+
+	assert.Equal(t, "Reason: The build failed.\n", stderrOut)
+
+	out := captureStdout(t, func() {
+		require.NoError(t, RenderBuildSummary(outputformat.OutputFormatJSON, summary))
+	})
+
+	assert.Contains(t, out, `"boom"`)
+}
+
 func TestRenderBuildSummary_JSONIncludesTail(t *testing.T) {
 	summary := BuildSummary{
 		BuildID:         "b-1",

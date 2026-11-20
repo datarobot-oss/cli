@@ -353,10 +353,11 @@ func TestRun_RollWithoutARuntimeChangeSendsNoRuntime(t *testing.T) {
 	assert.Nil(t, tr.rolledRuntime)
 }
 
-// --lock is about the artifact that ends up live, not about one this run
+// --promote is about the artifact that ends up live, not about one this run
 // minted. A resize mints nothing, so the artifact already serving is the one
-// that ends up live, and it is what gets locked. A start does the same.
-func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
+// that ends up live, and the workload is promoted in place. A start does the
+// same.
+func TestRun_RetuneWithPromoteLocksTheServingArtifact(t *testing.T) {
 	var (
 		tr   track
 		sent json.RawMessage
@@ -366,10 +367,11 @@ func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
 	// The shared fixture is already locked, which is the other branch: an
 	// artifact cannot be locked twice.
 	f.artifactD = func(string) (workload.Document, error) { return unlockedArtifact(t), nil }
-	f.lock = func(id string) (*workload.Artifact, error) {
-		tr.steps = append(tr.steps, "lock:"+id)
+	f.lock = neverLocks(t)
+	f.promote = func(id string) (*workload.Workload, error) {
+		tr.steps = append(tr.steps, "promote:"+id)
 
-		return &workload.Artifact{ID: id, Status: workload.ArtifactStatusLocked}, nil
+		return &workload.Workload{ID: id}, nil
 	}
 
 	install(t, f)
@@ -379,7 +381,7 @@ func TestRun_RetuneWithLockLocksTheServingArtifact(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"guard:68b0c1d2e3f4a5b6c7d8e9f0", "settings:68b0c1d2e3f4a5b6c7d8e9f0",
-		"await-resize", "settle:+drain", "lock:68a0000000000000000000a1",
-	}, tr.steps, "the lock comes last, once the workload is serving again")
+		"await-resize", "settle:+drain", "promote:68b0c1d2e3f4a5b6c7d8e9f0",
+	}, tr.steps, "the promotion comes last, once the workload is serving again")
 	assert.True(t, result.Locked)
 }

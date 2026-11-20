@@ -34,6 +34,15 @@ func StateNotice(w io.Writer, notice string) {
 	fmt.Fprintln(w, tui.DimStyle.Render(notice))
 }
 
+// Warning prints a "Warning: " line to w (stderr in practice); "" prints nothing.
+func Warning(w io.Writer, notice string) {
+	if notice == "" {
+		return
+	}
+
+	fmt.Fprintln(w, "Warning: "+notice)
+}
+
 // Bytes renders n in base-1024 units with the IEC labels that mean base 1024
 // (KiB, MiB, ...), capping at PiB to avoid suffix overflow. Workload memory
 // is the one size the CLI spells in decimal units, and it keeps KB/MB/GB.

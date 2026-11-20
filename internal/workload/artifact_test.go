@@ -1155,3 +1155,48 @@ func TestCodeRefInContainer(t *testing.T) {
 		}
 	})
 }
+
+// The container shape staging returns: the build record names the code it was
+// made from beside the code the container points at now.
+func TestImageBuiltFromItsCode(t *testing.T) {
+	ref := func(version string) map[string]any {
+		return map[string]any{
+			"type":      "datarobot",
+			"datarobot": map[string]any{"catalogId": "cat-1", "catalogVersionId": version},
+		}
+	}
+
+	container := func(status, builtFrom string) map[string]any {
+		c := map[string]any{
+			"imageUri":         "registry/app@sha256:abc",
+			"imageBuildConfig": map[string]any{"codeRef": ref("ver-2")},
+		}
+
+		if status != "" {
+			c["build"] = map[string]any{"status": status, "builtFrom": map[string]any{"codeRef": ref(builtFrom)}}
+		}
+
+		return c
+	}
+
+	cases := []struct {
+		name      string
+		container map[string]any
+		want      bool
+	}{
+		{name: "built from the code it points at", container: container("COMPLETED", "ver-2"), want: true},
+		{name: "the platform's status in lower case", container: container("completed", "ver-2"), want: true},
+		{name: "built from code it has since moved past", container: container("COMPLETED", "ver-1")},
+		{name: "its last build failed", container: container("FAILED", "ver-2")},
+		{name: "its last build is still running", container: container("IN_PROGRESS", "ver-2")},
+		{name: "no build record, which a code change leaves", container: container("", "")},
+		{name: "a build record naming no code", container: container("COMPLETED", "")},
+		{name: "no container at all"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, ImageBuiltFromItsCode(c.container))
+		})
+	}
+}

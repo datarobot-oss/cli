@@ -50,20 +50,23 @@ func syncedProject(t *testing.T, files map[string]string, catalogID, versionID s
 	// Build manifest with hashes of ALL files on disk: user files plus the
 	// .drignore template that Initialize writes. Every manifest entry must
 	// match the real file hash so that local == base and the plan is empty.
+	// The files are written 0644, and a current sync records that bit; a
+	// manifest without it is an older CLI's and triggers a one-time listing.
 	manifestFiles := make(map[string]wapi.FileMeta)
+	notExec := false
 
 	for rel := range files {
 		hash, size, err := hashLocal(t, dir, rel)
 		require.NoError(t, err)
 
-		manifestFiles[rel] = wapi.FileMeta{Hash: hash, Size: size}
+		manifestFiles[rel] = wapi.FileMeta{Hash: hash, Size: size, Executable: &notExec}
 	}
 
 	// Include .drignore (created by Initialize) so it too is in sync.
 	hash, size, err := hashLocal(t, dir, ignore.FileName)
 	require.NoError(t, err)
 
-	manifestFiles[ignore.FileName] = wapi.FileMeta{Hash: hash, Size: size}
+	manifestFiles[ignore.FileName] = wapi.FileMeta{Hash: hash, Size: size, Executable: &notExec}
 
 	syncedAt := time.Now().UTC()
 	manifest := wapi.Manifest{

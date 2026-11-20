@@ -17,6 +17,7 @@ package code
 import (
 	"github.com/datarobot/cli/cmd/artifact/code/checkout"
 	"github.com/datarobot/cli/cmd/artifact/code/codesync"
+	doctorcmd "github.com/datarobot/cli/cmd/artifact/code/doctor"
 	initcmd "github.com/datarobot/cli/cmd/artifact/code/init"
 	"github.com/datarobot/cli/cmd/artifact/code/versions"
 	"github.com/spf13/cobra"
@@ -42,6 +43,8 @@ Subcommands:
   versions   List catalog versions for the linked artifact.
   checkout   Download a prior version into
              '.datarobot/workload/.checkouts/' for read-only inspection.
+  doctor     Diagnose the sync state of a project directory (read-only) and
+             suggest remedies for anything broken.
 
 Artifacts must already exist before running 'init'. Create them via
 'dr artifact create' or in the DataRobot UI — these commands
@@ -58,6 +61,7 @@ Example:
 	cmd.AddCommand(codesync.Cmd())
 	cmd.AddCommand(versions.Cmd())
 	cmd.AddCommand(checkout.Cmd())
+	cmd.AddCommand(doctorcmd.Cmd())
 
 	return cmd
 }

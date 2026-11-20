@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/datarobot/cli/internal/fsutil"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -105,6 +106,12 @@ type Options struct {
 	// the preview is shown and agreed to rather than applied on the strength
 	// of a flag.
 	SyncEnv bool
+	// SpecFile is a prepared artifact or workload spec the answers come
+	// from, so only what it leaves open is asked: a name when it has none,
+	// the .env import, the sizing when it carries no runtime block. The
+	// build-source flags are refused with it, since the file is that answer,
+	// and so is --workload-id, since a prepared spec is a workload to create.
+	SpecFile string
 	// JSONOutput says the run's answer is a machine-readable envelope. Under
 	// it the command hands the wizard no Stderr at all, because stdout purity
 	// is only half the contract and `2>&1 | jq .` has to parse too; what a
@@ -150,6 +157,16 @@ type Options struct {
 	// on with the file as it stands, which is what the same command without
 	// the flag would have deployed.
 	Confirm func() (bool, error)
+	// ConfirmDelete is asked, once per credential, whether to delete one the
+	// sync has just replaced with the workload's own key. nil means do not
+	// delete: --yes agrees to the sync, not to destroying a stored copy, so
+	// the credential is named in the output and left alone.
+	ConfirmDelete func(name string) bool
+	// ConfirmReuse is asked, once per secret, whether to point it at the
+	// credential that already holds its name and replace that credential's
+	// value with the one in .env. nil means no: the failure then names the
+	// credential's id and the line that would use it as it is.
+	ConfirmReuse ReuseFunc
 	// Stderr carries the wizard and its summary. Nothing the wizard says
 	// belongs on stdout, which is the command's machine-readable channel.
 	Stderr io.Writer
@@ -220,7 +237,16 @@ func Run(opts Options) (Result, error) {
 
 	path := manifest.Path(dir)
 	if fsutil.FileExists(path) {
+		if opts.SpecFile != "" {
+			return Result{}, fmt.Errorf("--spec-file is for a project with no manifest, and %s already has one; "+
+				"edit that file, or delete it to start over", ShortPath(path))
+		}
+
 		return opts.configured(path, dir)
+	}
+
+	if err := opts.checkSpecFile(); err != nil {
+		return Result{}, err
 	}
 
 	if err := opts.checkNothingToImport(dir); err != nil {
@@ -262,14 +288,7 @@ func (o Options) create(dir string) (Result, error) {
 		}
 	}
 
-	// A file that came from a running workload is judged as the platform's
-	// news, not as a bug in the wizard.
-	author := authorWizard
-	if draft.WorkloadID != "" {
-		author = authorLive
-	}
-
-	if err := checkRendered(content, projectDir, author); err != nil {
+	if err := checkRendered(content, projectDir, o.author(draft)); err != nil {
 		return Result{}, err
 	}
 
@@ -296,6 +315,21 @@ func (o Options) create(dir string) (Result, error) {
 	}
 
 	return result, nil
+}
+
+// author says whose content a rendered manifest is, which decides how a
+// validation failure on it is worded: a file that came from a running
+// workload is the platform's news rather than a bug in the wizard, and one
+// from a prepared spec is the user's own.
+func (o Options) author(draft manifest.Draft) contentAuthor {
+	switch {
+	case o.SpecFile != "":
+		return authorUser
+	case draft.WorkloadID != "":
+		return authorLive
+	default:
+		return authorWizard
+	}
 }
 
 // editsEnv reports that this run acts on the .env of a manifest that already
@@ -633,7 +667,7 @@ func applyLine(blocker error, advice string) string {
 // A secret stays apart because it is genuinely unanswerable: the platform
 // never returns a stored value, so nothing here can tell a rotated key from an
 // untouched one, and the run re-sends rather than guessing.
-func (o Options) compareValues(
+func (o Options) compareValues( //nolint:cyclop // ordered rule list; the case order is the logic
 	parsed *manifest.Manifest, detected Detected,
 ) (changed, unverifiable []string) {
 	local := make(map[string]manifest.EnvVar, len(detected.EnvVars))
@@ -653,6 +687,13 @@ func (o Options) compareValues(
 		// the table cannot miss an edit the write then makes.
 		case declared.Unwritten:
 			changed = append(changed, declared.Name)
+
+		// The platform's own key replaces a literal or a credential, and once
+		// declared has no value of .env's to compare or re-send.
+		case declared.APIKey != want.APIKey:
+			changed = append(changed, declared.Name)
+
+		case declared.APIKey:
 
 		// A placeholder has no stored value to compare or re-send, and the
 		// reconciliation finishes it rather than rotating it. On a dry run
@@ -781,6 +822,8 @@ func (o Options) editEnv(path string, parsed *manifest.Manifest, detected Detect
 	}
 
 	o.recordSync(parsed, detected, actions, changes, content, &result)
+
+	o.offerCredentialCleanup(parsed, wanted)
 
 	// Re-read rather than reported from parsed: this run may have finished the
 	// very placeholder the notice is about, and saying a deploy will refuse an
@@ -968,6 +1011,63 @@ func usableCredentials(parsed *manifest.Manifest) map[string]string {
 	}
 
 	return held
+}
+
+// offerCredentialCleanup deals with the credential an api-key entry replaced.
+// The CLI minted it from the user's own token, so after the swap it is a stored
+// copy of that token nothing references. Only a credential this project named
+// and wrote is touched: the store is tenant-wide, and one another workload may
+// share is not this run's to delete.
+func (o Options) offerCredentialCleanup(parsed *manifest.Manifest, wanted []manifest.EnvVar) {
+	if o.DryRun {
+		return
+	}
+
+	for _, v := range wanted {
+		if !v.APIKey {
+			continue
+		}
+
+		for _, declared := range parsed.DeclaredEnvVars() {
+			if declared.Name != v.Name || !declared.Secret() || declared.CredentialID == manifest.CredentialPlaceholder ||
+				declared.CredentialKey != manifest.CredentialKeyWritten {
+				continue
+			}
+
+			o.deleteReplacedCredential(declared, CredentialName(parsed.Name(), declared.Name))
+		}
+	}
+}
+
+func (o Options) deleteReplacedCredential(declared manifest.DeclaredEnvVar, want string) {
+	cred, err := getCredentialFn(declared.CredentialID)
+	if err != nil || cred.Name != want {
+		// Unreadable or someone else's: left alone, same as a rotation.
+		return
+	}
+
+	if o.ConfirmDelete == nil || !o.ConfirmDelete(cred.Name) {
+		if !o.quiet() {
+			fmt.Fprintf(o.Stderr, "  Credential %q (%s) still holds a copy of your token and nothing uses it now.\n",
+				cred.Name, declared.CredentialID)
+		}
+
+		return
+	}
+
+	if err := deleteCredentialFn(declared.CredentialID); err != nil {
+		log.Error("could not delete the replaced credential", "credential_id", declared.CredentialID, "err", err)
+
+		if !o.quiet() {
+			fmt.Fprintf(o.Stderr, "  Could not delete credential %q (%s): %v\n", cred.Name, declared.CredentialID, err)
+		}
+
+		return
+	}
+
+	if !o.quiet() {
+		fmt.Fprintf(o.Stderr, "  Deleted credential %q.\n", cred.Name)
+	}
 }
 
 // recordSync is what the run has to show for what the reconciliation did.
@@ -1268,9 +1368,12 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 		// a refusal — a valid project cannot be reliably recognized, so a
 		// wrong guess has to cost nothing. Only the headless paths return
 		// detected.Dir unchanged, so the fourth value is settled right here.
-		o.warnSuspectDir(detected)
-
 		content, draft, err := o.resolveHeadless(detected)
+
+		// After the resolution, so a spec file's build mode is known: an
+		// image build syncs nothing, and the warning is about the upload.
+		o.warnSuspectDir(detected, draft.Build.Mode)
+
 		if err == nil {
 			o.warnGeneratedLock(detected, draft)
 		}
@@ -1282,6 +1385,10 @@ func (o Options) resolve(detected Detected) ([]byte, manifest.Draft, string, err
 }
 
 func (o Options) resolveHeadless(detected Detected) ([]byte, manifest.Draft, error) {
+	if o.SpecFile != "" {
+		return o.resolveHeadlessSpec(detected)
+	}
+
 	if o.Answers.WorkloadID != "" {
 		return o.resolveHeadlessBound(detected)
 	}
@@ -1322,8 +1429,8 @@ func (o Options) warnGeneratedLock(detected Detected, draft manifest.Draft) {
 //
 // An image-mode run is exempt: it never syncs local directory contents, so
 // "everything here would be uploaded" describes a risk that cannot happen.
-func (o Options) warnSuspectDir(detected Detected) {
-	if o.Stderr == nil || !detected.SuspectDir() || o.Answers.BuildMode == manifest.BuildModeImage {
+func (o Options) warnSuspectDir(detected Detected, buildMode string) {
+	if o.Stderr == nil || !detected.SuspectDir() || buildMode == manifest.BuildModeImage {
 		return
 	}
 
@@ -1369,7 +1476,7 @@ func (o Options) storeSecrets(
 		return vars
 	}
 
-	stored, report := importSecrets(vars, detected, workloadName)
+	stored, report := importSecrets(vars, detected, workloadName, o.ConfirmReuse, o.remedy("--sync-env"))
 
 	reportImport(o.Stderr, report, keepsPlaceholder)
 
@@ -1425,7 +1532,7 @@ func (o Options) resolveHeadlessBound(detected Detected) ([]byte, manifest.Draft
 	// Read off the workload as it arrived, not off applied: the point is what
 	// the platform was already serving in the clear, and a run that failed
 	// above has no file to warn about.
-	warnLiveSecretLiterals(o.Stderr, live)
+	warnSecretLiterals(o.Stderr, live, live.Name, "binding")
 
 	return content, draft, nil
 }
@@ -1776,8 +1883,8 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 		detected.EnvErr, manifest.FileName)
 }
 
-// warnLiveSecretLiterals names the variables a bound workload already declares
-// in the clear whose values say what they are.
+// warnSecretLiterals names the variables a bound workload or a spec file
+// already declares in the clear whose values say what they are.
 //
 // The .env import classifies what it carries and writes a secret as a
 // reference. The live spec gets no such treatment, by design: binding
@@ -1795,7 +1902,10 @@ func warnUnreadEnvFile(stderr io.Writer, detected Detected) {
 // manifest. That one lists everything ordinary and is bounded to stay
 // readable; this lists only values carrying an issuer's own signature, of
 // which any number is worth reading to the end.
-func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
+//
+// subject is what declared the values, the workload or the spec file, and
+// actor is what copies them across.
+func warnSecretLiterals(stderr io.Writer, live manifest.Live, subject, actor string) {
 	if stderr == nil {
 		return
 	}
@@ -1813,9 +1923,9 @@ func warnLiveSecretLiterals(stderr io.Writer, live manifest.Live) {
 	}
 
 	fmt.Fprintf(stderr,
-		"Warning: %s declares %d %s whose value looks like a secret, and binding copies it as it stands: %s.\n"+
+		"Warning: %s declares %d %s whose value looks like a secret, and %s copies it as it stands: %s.\n"+
 			"  Replace the value in %s with a %s<credential-id>/<key> reference before committing the file.\n",
-		live.Name, len(named), Plural(len(named), "variable", "variables"), strings.Join(named, ", "),
+		subject, len(named), Plural(len(named), "variable", "variables"), actor, strings.Join(named, ", "),
 		manifest.FileName, manifest.CredentialShorthandPrefix)
 }
 

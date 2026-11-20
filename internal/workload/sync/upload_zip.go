@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi/filesapi"
+	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload/fileops"
 )
 
 // syncZipName is the filename the zip travels under. It names the upload,
@@ -38,7 +40,7 @@ type ZipUploader struct{}
 // ApplyUploads zips the files, POSTs, polls until done, and returns the
 // per-path streamed hashes so Phase 7 can record what entered the archive.
 func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, error) {
-	zipPath, sent, err := buildZip(e.projectDir, files)
+	zipPath, sent, err := buildZip(e.projectDir, files, e.files.SupportsExecutable())
 	if err != nil {
 		return UploadOutcome{}, err
 	}
@@ -65,7 +67,7 @@ func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, e
 	// Small archives complete inline (201, no statusId); larger ones
 	// come back 202 with a statusId we then poll.
 	if resp.StatusID != "" {
-		if err := waitForCompletion(e, resp.StatusID); err != nil {
+		if err := waitForCompletion(e, resp.StatusID, zipPollTimeout(len(files))); err != nil {
 			return UploadOutcome{}, err
 		}
 	}
@@ -80,41 +82,78 @@ func (ZipUploader) ApplyUploads(e *Engine, files []FileAction) (UploadOutcome, e
 // buildZip writes a zip archive to a temp file and returns the per-path
 // streamed hashes. Buffering on disk keeps very large zips from pinning a
 // multi-GiB allocation.
-func buildZip(projectDir string, files []FileAction) (string, map[string]FileEntry, error) {
+// supported says whether the server keeps the executable bit; when it does
+// not, the sent entries record it as unknown.
+//
+// The temp file is closed before any failure-path removal: on Windows an
+// open handle blocks os.Remove (Go opens files without FILE_SHARE_DELETE,
+// so the remove fails with a sharing violation), and the leak-prone order —
+// remove-then-close via defers — would strand the archive in the system
+// temp dir on every build failure. POSIX unlinks an open file freely, which
+// is exactly why the leak only ever showed on Windows.
+func buildZip(projectDir string, files []FileAction, supported bool) (string, map[string]FileEntry, error) {
 	tmp, err := os.CreateTemp("", "wapi-sync-*.zip")
 	if err != nil {
 		return "", nil, fmt.Errorf("create zip tempfile: %w", err)
 	}
 
-	defer func() { _ = tmp.Close() }()
+	sent, err := writeZip(tmp, projectDir, files, supported)
 
+	// A close error must not mask the real failure, so it is adopted only
+	// when the archive built cleanly.
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+
+	if err != nil {
+		// The remove itself can fail — a Windows sharing violation was the
+		// original leak — so a discarded error here would hide exactly the
+		// recurrence this cleanup exists to prevent. Log it instead.
+		if rmErr := os.Remove(tmp.Name()); rmErr != nil {
+			log.Warn("zip temp cleanup failed; the archive may be stranded in the system temp dir",
+				"path", tmp.Name(), "err", rmErr)
+		}
+
+		return "", nil, err
+	}
+
+	return tmp.Name(), sent, nil
+}
+
+// writeZip streams every planned file into tmp and returns the per-path
+// streamed hashes. It owns no lifecycle: the caller closes the file and
+// removes it on failure.
+func writeZip(tmp *os.File, projectDir string, files []FileAction, supported bool) (map[string]FileEntry, error) {
 	zw := zip.NewWriter(tmp)
-
-	defer func() { _ = zw.Close() }()
 
 	sent := make(map[string]FileEntry, len(files))
 
 	for _, fa := range files {
 		abs := filepath.Join(projectDir, filepath.FromSlash(fa.Path))
 
-		entry, err := addToZip(zw, abs, fa.Path)
+		entry, err := addToZip(zw, abs, fa)
 		if err != nil {
-			_ = os.Remove(tmp.Name())
-			return "", nil, err
+			// Lifecycle contract: zw is deliberately left unclosed here — the caller closes the temp file and removes the dead archive, and closing would only flush a doomed central directory that risks masking the real error.
+			return nil, err
 		}
 
+		entry.Executable = sentExecutable(entry.Executable, supported)
 		sent[fa.Path] = entry
 	}
 
 	if err := zw.Close(); err != nil {
-		_ = os.Remove(tmp.Name())
-		return "", nil, fmt.Errorf("close zip writer: %w", err)
+		return nil, fmt.Errorf("close zip writer: %w", err)
 	}
 
-	return tmp.Name(), sent, nil
+	return sent, nil
 }
 
-func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
+// addToZip archives one file. The server reads the executable bit from the
+// entry's Unix mode, so every entry carries 0755 or 0644, from the bit merged
+// with the base and the remote.
+func addToZip(zw *zip.Writer, src string, fa FileAction) (FileEntry, error) {
+	archivePath := fa.Path
+
 	in, err := os.Open(src)
 	if err != nil {
 		return FileEntry{}, fmt.Errorf("open %s for zip: %w", src, err)
@@ -122,7 +161,20 @@ func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
 
 	defer func() { _ = in.Close() }()
 
+	stat, err := in.Stat()
+	if err != nil {
+		return FileEntry{}, fmt.Errorf("stat %s for zip: %w", src, err)
+	}
+
+	local := fileops.LocalExecutable(stat.Mode())
+	exec := mergeExecutable(fa.BaseExec, local, fa.RemoteExec)
+
+	if err := keepLocalExecutable(src, local, exec); err != nil {
+		return FileEntry{}, fmt.Errorf("%s: %w", archivePath, err)
+	}
+
 	hdr := &zip.FileHeader{Name: archivePath, Method: zip.Deflate}
+	hdr.SetMode(fileops.ArchivePerm(isSet(exec)))
 
 	w, err := zw.CreateHeader(hdr)
 	if err != nil {
@@ -141,7 +193,10 @@ func addToZip(zw *zip.Writer, src, archivePath string) (FileEntry, error) {
 		return FileEntry{}, fmt.Errorf("copy %s into zip: %w", archivePath, err)
 	}
 
-	return streamedEntry(h, n), nil
+	entry := streamedEntry(h, n)
+	entry.Executable = exec
+
+	return entry, nil
 }
 
 // postZip creates the catalog if the project has none, then adds the zip's
@@ -169,10 +224,18 @@ func postZip(e *Engine, body io.Reader, size int64) (*filesapi.FromFileResp, err
 	return e.files.UploadFromZipExisting(catalogID, syncZipName, filesapi.OverwriteReplace, size, body)
 }
 
-// waitForCompletion polls until terminal status or ZipPollTimeoutSecs
-// elapses.
-func waitForCompletion(e *Engine, statusID string) error {
-	deadline := time.Now().Add(time.Duration(ZipPollTimeoutSecs) * time.Second)
+// zipPollTimeout is how long to wait for the server to extract an archive of
+// files entries: ZipPollTimeoutSecs, or longer for an archive large enough to
+// need it, up to ZipPollMaxTimeoutSecs.
+func zipPollTimeout(files int) time.Duration {
+	scaled := max(time.Duration(ZipPollTimeoutSecs)*time.Second, time.Duration(files)*ZipPollPerFile)
+
+	return min(scaled, time.Duration(ZipPollMaxTimeoutSecs)*time.Second)
+}
+
+// waitForCompletion polls until terminal status or timeout elapses.
+func waitForCompletion(e *Engine, statusID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 
 	for {
 		if time.Now().After(deadline) {

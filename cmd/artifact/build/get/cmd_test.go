@@ -16,15 +16,18 @@ package get
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,6 +61,18 @@ func serveFailedBuild(t *testing.T, runningFirst int, logs func(w http.ResponseW
 	viperx.Set(config.DataRobotAPIKey, "test-token")
 	viperx.Set(config.SkipAuthKey, true)
 	t.Cleanup(viperx.Reset)
+
+	settleWithin(t, 50*time.Millisecond)
+}
+
+// settleWithin bounds how long a failed build's logs are waited for.
+func settleWithin(t *testing.T, budget time.Duration) {
+	t.Helper()
+
+	prev := logSettleBudget
+	logSettleBudget = budget
+
+	t.Cleanup(func() { logSettleBudget = prev })
 }
 
 // A build that failed before --wait had anything to wait for gets the same
@@ -103,8 +118,53 @@ func TestCmd_WaitOnAFailedBuildNamesTheLogsOnlyWhenThereAreSome(t *testing.T) {
 			assert.Contains(t, err.Error(), c.want)
 			assert.Equal(t, c.runningFirst > 0, strings.Contains(stderr.String(), "Waiting for build"),
 				"only a build still running is waited for")
+			assert.Equal(t, c.runningFirst > 0, strings.Contains(stderr.String(), "waiting up to a minute"),
+				"only a failure the wait saw happen has lines still on their way")
 		})
 	}
+}
+
+// A failure the wait saw happen is read until the builder's closing line has
+// arrived, so the summary's logTail carries the cause rather than nothing.
+func TestCmd_WaitThatSeesTheFailureReadsUntilItsLastLines(t *testing.T) {
+	var reads atomic.Int32
+
+	serveFailedBuild(t, 1, func(w http.ResponseWriter) {
+		if reads.Add(1) <= 2 {
+			fmt.Fprint(w, `{"data":[],"count":0,"next":""}`)
+
+			return
+		}
+
+		fmt.Fprint(w, `{"data":[
+			{"timestamp":"2026-10-02T10:00:03Z","level":"info","message":"Image build FAILED in 3.069211 seconds."},
+			{"timestamp":"2026-10-02T10:00:02Z","level":"error","message":"failed to solve: exit code: 7"}
+		],"count":2,"next":""}`)
+	})
+	settleWithin(t, time.Minute)
+
+	cmd := Cmd()
+	cmd.PreRunE = nil
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"art-1", "b-1", "--wait", "--poll-interval", "1ms", "--output-format", "json"})
+
+	var err error
+
+	stdout := testutil.CaptureStdout(t, func() { err = cmd.Execute() })
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "see 'dr artifact build logs art-1 b-1'")
+
+	var summary struct {
+		LogTail []struct {
+			Message string `json:"message"`
+		} `json:"logTail"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &summary))
+	require.Len(t, summary.LogTail, 2)
+	assert.Equal(t, "failed to solve: exit code: 7", summary.LogTail[0].Message)
+	assert.Equal(t, "Image build FAILED in 3.069211 seconds.", summary.LogTail[1].Message)
 }
 
 func TestCmd_RequiresAtLeastOneArg(t *testing.T) {

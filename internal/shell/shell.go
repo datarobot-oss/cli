@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/tui"
 )
@@ -91,7 +93,8 @@ func DetectShell() (string, error) {
 
 	// $SHELL is a real environment variable that is inherited by all
 	// subprocesses, including package-manager installers (brew → ruby → dr).
-	if shellPath := os.Getenv("SHELL"); shellPath != "" {
+	// The root config initializer binds it to config.ShellKey.
+	if shellPath := viperx.GetString(config.ShellKey); shellPath != "" {
 		log.Debug("Parent process name did not match a supported shell; falling back to $SHELL", "SHELL", shellPath)
 
 		return normalizeShellName(filepath.Base(shellPath)), nil

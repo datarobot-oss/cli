@@ -18,6 +18,7 @@ import (
 	"slices"
 
 	"github.com/datarobot/cli/internal/workload/manifest"
+	"github.com/datarobot/cli/internal/workload/sync"
 )
 
 // Actions are what a run will do, and what the JSON envelope reports. A run
@@ -29,6 +30,7 @@ const (
 	ActionRolled    = "rolled"
 	ActionUpdated   = "updated"
 	ActionStarted   = "started"
+	ActionLinked    = "linked"
 	ActionUnchanged = "unchanged"
 )
 
@@ -59,16 +61,33 @@ type CodeChange struct {
 	// artifact has since moved past, which `dr artifact code sync` does.
 	ImageStale bool
 
+	// Unserved reports that a deploy from this checkout pushed code into a new
+	// version and never saw the workload serve it. A deploy interrupted
+	// between the sync and the rollout leaves it so, and the tree then
+	// matches the last push exactly, so Files alone would call a workload
+	// still serving the old code up to date.
+	Unserved bool
+
 	// LinkLocked reports that the artifact this project pushes into can no
 	// longer take code. The deploy answers by minting one that can and moving
 	// the link onto it, which the plan says out loud because nothing in the
 	// file asked for it.
 	LinkLocked bool
+
+	// SyncPlan is the dry-run plan the sync engine measured this tree with,
+	// the same one Files counts. --diff renders it through the sync command's
+	// own plan printer, so the two commands describe an upload with one
+	// format instead of two. It is plain data rather than engine state -- the
+	// lock is released right after measuring -- so carrying it past the
+	// engine's Close costs nothing. Nil on a first deploy, for a manifest
+	// that names an image, and when a test harness wires only the count.
+	SyncPlan *sync.SyncPlan
 }
 
-// Changed reports whether the code needs syncing and rebuilding.
+// Changed reports whether the workload is behind the working tree's code:
+// there is code to push, or code already pushed that it is not running.
 func (c CodeChange) Changed() bool {
-	return c.Applies && (c.FirstDeploy || c.Files > 0)
+	return c.Applies && (c.FirstDeploy || c.Files > 0 || c.Unserved)
 }
 
 // Plan is what a run intends to do, computed before it does any of it.
@@ -104,6 +123,23 @@ type Plan struct {
 	// InheritsImage reports that the new version can take the running image.
 	// What the plan intends, not a promise; the envelope is corrected after.
 	InheritsImage bool
+	// DiffArtifact and DiffRuntime are the same two halves for the --diff
+	// rendering: every leaf the file names, changed or not, so a diff can
+	// draw context around its changes instead of listing only what moves.
+	// They come from the walks that produce Artifact and Runtime, so the two
+	// renderings of one plan cannot disagree about what differs. The changes
+	// below that no walk can produce -- the artifact id and type -- are
+	// merged into the rows as well, because a change the default plan prints
+	// must never be invisible in the diff.
+	DiffArtifact []DiffRow
+	DiffRuntime  []DiffRow
+
+	// Unmanaged lists the name-keyed elements the live object carries that
+	// the file never names and this plan leaves alone, each with the block it
+	// lives in. A plan that rolls or resizes sends the file's block whole and
+	// drops them instead; those are Removed rows in DiffArtifact and
+	// DiffRuntime, not entries here.
+	Unmanaged []LiveOnly
 
 	// InPlace reports that the change is written to the draft artifact the
 	// workload already runs and rolled from there; no version is minted.
@@ -117,9 +153,26 @@ type Plan struct {
 	// this plan asks for, "" when it could or when the plan builds none.
 	Unbuildable string
 
+	// BoundArtifactID is the artifact the file names by id instead of
+	// describing one, "" when it describes one. A create comes up on it and
+	// a roll swaps onto it; neither builds anything.
+	BoundArtifactID string
+
+	// BoundRead and BoundLocked carry the status of the named artifact when
+	// the plan read it to judge a swap, so the roll and the lock line need
+	// not read it again.
+	BoundRead   bool
+	BoundLocked bool
+
+	// Incompatible is why the platform would refuse to swap the workload
+	// onto the artifact the file names, "" when it would not or when the
+	// file names none: a version from another repository, or a draft and a
+	// locked version, which cannot replace each other.
+	Incompatible string
+
 	// Locked reports that the version now serving is immutable. Its successor
 	// has to be locked too before the platform will take it, so a deploy onto
-	// locked production locks something whether or not --lock was passed, and
+	// locked production locks something whether or not --promote was passed, and
 	// that cannot be undone. The plan is where it belongs: --dry-run is how a
 	// locked deploy is reviewed before it happens.
 	Locked bool
@@ -133,6 +186,41 @@ type Plan struct {
 	// Reason is the platform's account of why the workload is errored, "" for
 	// every other state, printed beside the state and named in the refusal.
 	Reason string
+
+	// UseCase is the Use Case link this run asks for, nil when neither
+	// --use-case-id nor the manifest's useCaseId names one.
+	UseCase *UseCasePlan
+}
+
+// UseCasePlan is what a run does about the workload's Use Case link. The
+// links live beside the workload rather than in it, so they are read and
+// written through their own route, and a change to them builds and rolls
+// nothing.
+type UseCasePlan struct {
+	// ID is the Use Case the workload should be linked to.
+	ID string
+
+	// Linked reports that the workload already is. Always false on a create,
+	// where the link travels in the create payload instead.
+	Linked bool
+
+	// Unknown is why the links could not be read, "" when they were. Only a
+	// dry run gets this far without them: it previews the link as if it were
+	// missing and warns, where a deploy stops before changing anything.
+	Unknown string
+}
+
+// ReplacesNothing reports that a run with this action started, rolled and
+// resized nothing: a container serving before the run is still serving.
+func ReplacesNothing(action string) bool {
+	return action == ActionUnchanged || action == ActionLinked
+}
+
+// relinks reports that the run has a link to add to a workload that already
+// exists. A create carries its link in the payload instead. Links to other
+// Use Cases are left alone: see planUseCase.
+func (p Plan) relinks() bool {
+	return !p.Creates && p.UseCase != nil && !p.UseCase.Linked
 }
 
 // Empty reports that the live state already matches the file and there is
@@ -148,7 +236,8 @@ func (p Plan) Empty() bool {
 		len(p.Runtime) == 0 &&
 		!p.forcesBuild() &&
 		p.Reroll == "" &&
-		!p.actsOnState()
+		!p.actsOnState() &&
+		!p.relinks()
 }
 
 // forcesBuild reports that --force-build has an image to act on: only a project
@@ -371,6 +460,8 @@ func (p Plan) Action() string {
 		return ActionUpdated
 	case p.State == StateStopped:
 		return ActionStarted
+	case p.relinks():
+		return ActionLinked
 	default:
 		return ActionUnchanged
 	}
@@ -392,11 +483,22 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 		Code:            code,
 		Locked:          live.Locked,
 		ForceBuild:      opts.ForceBuild,
+		BoundArtifactID: loaded.Compiled.ArtifactID,
 	}
 
 	// Nothing exists to compare against, so every field is trivially an
 	// addition. Saying so once is a plan; saying it per field is a wall.
 	if plan.Creates {
+		artifactRows, runtimeRows, err := createRows(loaded)
+		if err != nil {
+			return Plan{}, err
+		}
+
+		// The diff has no live side to draw context from either, so it walks
+		// the file against nil and shows what will be created, leaf by leaf.
+		plan.DiffArtifact = artifactRows
+		plan.DiffRuntime = runtimeRows
+
 		return plan, nil
 	}
 
@@ -413,6 +515,12 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 	plan.Artifact = Subset(spec, live.Spec)
 	plan.Runtime = Subset(runtime, live.Runtime)
 
+	// The diff rows are the same two walks with the agreeing leaves kept, so
+	// the changes above and the context around them come from one comparison
+	// and cannot disagree about what differs.
+	plan.DiffArtifact = DiffRows(spec, live.Spec)
+	plan.DiffRuntime = DiffRows(runtime, live.Runtime)
+
 	// A file that names an artifact by id describes no spec to compare, so
 	// the walk above has nothing to say about it. Pointing at a different
 	// version than the one running is still the whole plan: it is a roll, and
@@ -424,6 +532,13 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 			Keys: []string{keyArtifactID},
 			Have: live.ArtifactID,
 			Want: bound,
+		})
+
+		plan.DiffArtifact = append(plan.DiffArtifact, DiffRow{
+			Path:    keyArtifactID,
+			Have:    live.ArtifactID,
+			Want:    bound,
+			Changed: true,
 		})
 	}
 
@@ -465,6 +580,13 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 			Have: running,
 			Want: kind,
 		})
+
+		plan.DiffArtifact = append(plan.DiffArtifact, DiffRow{
+			Path:    keyArtifactType,
+			Have:    running,
+			Want:    kind,
+			Changed: true,
+		})
 	}
 
 	// Last: every drift has to be in hand before RebuildsImage can answer.
@@ -472,7 +594,73 @@ func Build(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error
 
 	plan.InPlace = patchesInPlace(live, plan)
 
+	// Last of all: which live-only elements this plan drops depends on every
+	// change above being in hand.
+	plan.settleLiveOnly(spec, runtime, live)
+
 	return plan, nil
+}
+
+// settleLiveOnly sorts what the live object carries that the file never
+// names. A roll writes the file's spec whole, and a sizing change sends its
+// runtime block whole, so on those plans the elements are dropped: they join
+// the diff rows as removals. A file with no block to send drops nothing. On
+// any other plan they survive untouched and are listed as unmanaged, each
+// path once however many halves carry it.
+func (p *Plan) settleLiveOnly(spec, runtime map[string]any, live Live) {
+	var kept []LiveOnly
+
+	artifact := extraRows(spec, live.Spec)
+	if p.RollsArtifact() && len(spec) > 0 {
+		p.DiffArtifact = append(p.DiffArtifact, artifact...)
+	} else {
+		kept = append(kept, liveOnly(BlockArtifact, artifact)...)
+	}
+
+	sizing := extraRows(runtime, live.Runtime)
+	if len(p.Runtime) > 0 && len(runtime) > 0 {
+		p.DiffRuntime = append(p.DiffRuntime, sizing...)
+	} else {
+		kept = append(kept, liveOnly(BlockRuntime, sizing)...)
+	}
+
+	p.Unmanaged = kept
+}
+
+// The two blocks a manifest writes, as the JSON diff names them.
+const (
+	BlockArtifact = "artifact"
+	BlockRuntime  = "runtime"
+)
+
+// LiveOnly is one element the live object carries that the file never names,
+// in the block it lives in. A sidecar is in both the artifact's spec and the
+// workload's runtime, and a deploy can drop one side while leaving the other.
+type LiveOnly struct {
+	Block string
+	Path  string
+}
+
+// rowPaths is the paths of rows, in order.
+func rowPaths(rows []DiffRow) []string {
+	out := make([]string, 0, len(rows))
+
+	for _, row := range rows {
+		out = append(out, row.Path)
+	}
+
+	return out
+}
+
+// liveOnly tags each row's path with its block, in order.
+func liveOnly(block string, rows []DiffRow) []LiveOnly {
+	out := make([]LiveOnly, 0, len(rows))
+
+	for _, row := range rows {
+		out = append(out, LiveOnly{Block: block, Path: row.Path})
+	}
+
+	return out
 }
 
 // patchesInPlace reports whether the change can be written to the running
@@ -488,4 +676,44 @@ func patchesInPlace(live Live, plan Plan) bool {
 	}
 
 	return plan.RollsArtifact() && !plan.RebuildsImage()
+}
+
+// createRows walks the file against nothing, which is what a create compares
+// against: the spec half and the runtime half both come back as additions,
+// one row per leaf, so a diff can show what will be created rather than
+// summarise it.
+func createRows(loaded Loaded) ([]DiffRow, []DiffRow, error) {
+	spec, err := loaded.Spec()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	runtime, err := loaded.Runtime()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return DiffRows(spec, nil), DiffRows(runtime, nil), nil
+}
+
+// distinctPaths is the unmanaged paths with each path once, for the count a
+// reader is told. A sidecar the file never names exists in the artifact's
+// spec and in the workload's runtime alike, so counting it twice would
+// promise two fields where there is one name to go look at.
+func distinctPaths(items []LiveOnly) []string {
+	seen := make(map[string]struct{}, len(items))
+
+	out := make([]string, 0, len(items))
+
+	for _, item := range items {
+		if _, ok := seen[item.Path]; ok {
+			continue
+		}
+
+		seen[item.Path] = struct{}{}
+
+		out = append(out, item.Path)
+	}
+
+	return out
 }

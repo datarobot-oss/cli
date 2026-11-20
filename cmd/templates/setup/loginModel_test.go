@@ -16,19 +16,40 @@ package setup
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"gopkg.in/yaml.v3"
 )
+
+// TestLoginModel_View_TimeoutShowsRecovery pins that a login timeout surfaces the
+// friendly recovery line, which needs errMsg.Unwrap for the errors.Is match.
+func TestLoginModel_View_TimeoutShowsRecovery(t *testing.T) {
+	timeoutErr := fmt.Errorf("no browser authorization within 5m0s: %w", auth.ErrLoginTimedOut)
+	lm, _ := LoginModel{}.Update(errMsg{timeoutErr})
+
+	view := lm.View()
+	assert.Contains(t, view, "Login timed out", "a timeout must surface the recovery line, not the raw error")
+	assert.Contains(t, view, "dr auth login")
+	assert.NotContains(t, view, "something went wrong")
+
+	// Bubble Tea clips lines at the terminal width, so keep each within 80 columns.
+	for _, line := range strings.Split(view, "\n") {
+		assert.LessOrEqual(t, len(line), 80, "line would be clipped on an 80-column terminal: %q", line)
+	}
+}
 
 func TestLoginModelSuite(t *testing.T) {
 	suite.Run(t, new(LoginModelTestSuite))
