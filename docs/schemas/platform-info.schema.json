@@ -50,7 +50,7 @@
       "properties": {
         "scope": {"enum": ["platform", "caller"], "description": "Who the answer is true for: platform means any caller, caller means it depends on who asks."},
         "status": {"enum": ["ok", "degraded", "unavailable"]},
-        "httpStatus": {"type": "integer", "description": "The status of the one HTTP response that made the section unavailable. Absent when no response came, and for a section that several responses decided."},
+        "httpStatus": {"type": "integer", "minimum": 100, "maximum": 599, "description": "The status of the one HTTP error response that made the section unavailable. Absent when the failure was not an error status (no response came, or the answer was not the JSON the route promises), and for a section that several responses decided."},
         "message": {"type": "string"}
       },
       "if": {"properties": {"status": {"enum": ["degraded", "unavailable"]}}, "required": ["status"]},
@@ -131,7 +131,7 @@
         {"$ref": "#/$defs/section"},
         {"properties": {"data": {
           "type": "object",
-          "properties": {"totalCount": {"type": "integer"}}
+          "properties": {"totalCount": {"type": "integer", "minimum": 0}}
         }}}
       ]
     }

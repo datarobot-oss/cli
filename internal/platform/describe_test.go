@@ -163,7 +163,7 @@ func TestDescribe_StopsWhenTheCredentialsAreRejected(t *testing.T) {
 
 func TestDescribe_AnImageAddressReachesTheJSONReportThatTheSchemaAccepts(t *testing.T) {
 	fake := newFakeInstall(t, "sts-11.12.0")
-	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithOnePublishedImage})
+	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithPublishedImages})
 
 	report, err := Describe(context.Background())
 	require.NoError(t, err)

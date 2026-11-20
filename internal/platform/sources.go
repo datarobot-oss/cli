@@ -122,10 +122,11 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 		Name                    string   `json:"name"`
 		ProgrammingLanguage     string   `json:"programmingLanguage"`
 		UseCases                []string `json:"useCases"`
-		LatestSuccessfulVersion any      `json:"latestSuccessfulVersion"`
-		LatestVersion           *struct {
-			BuildStatus          string `json:"buildStatus"`
+		LatestSuccessfulVersion *struct {
 			SourceDockerImageURI string `json:"sourceDockerImageUri"`
+		} `json:"latestSuccessfulVersion"`
+		LatestVersion *struct {
+			BuildStatus string `json:"buildStatus"`
 		} `json:"latestVersion"`
 	}
 
@@ -150,9 +151,12 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 			HasSuccessfulVersion: e.LatestSuccessfulVersion != nil,
 		}
 
+		if e.LatestSuccessfulVersion != nil {
+			item.SourceDockerImageURI = e.LatestSuccessfulVersion.SourceDockerImageURI
+		}
+
 		if e.LatestVersion != nil {
 			item.BuildStatus = e.LatestVersion.BuildStatus
-			item.SourceDockerImageURI = e.LatestVersion.SourceDockerImageURI
 		}
 
 		items = append(items, item)

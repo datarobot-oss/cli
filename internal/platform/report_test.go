@@ -119,6 +119,22 @@ func TestSchema_RejectsAnHTTPStatusThatIsNotAnInteger(t *testing.T) {
 	assert.Error(t, validateJSON(t, compileSchema(t), []byte(raw)))
 }
 
+func TestSchema_RejectsAnHTTPStatusOutsideTheHTTPRange(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionResourceBundles] = Section{Scope: ScopeCaller, Status: StatusUnavailable, Message: "HTTP 403: forbidden"}
+
+	raw := strings.Replace(string(renderJSON(t, report)), `"status": "unavailable"`, `"status": "unavailable", "httpStatus": 9999`, 1)
+
+	assert.Error(t, validateJSON(t, compileSchema(t), []byte(raw)))
+}
+
+func TestSchema_RejectsANegativeWorkloadCount(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]any{"totalCount": -1}}
+
+	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
+}
+
 func TestSchema_RejectsAMissingSchemaVersion(t *testing.T) {
 	assert.Error(t, validateJSON(t, compileSchema(t), []byte(`{"platform":{"server":{},"sections":{}}}`)))
 }

@@ -304,27 +304,60 @@ func TestExecutionEnvironmentsSection_ARealInstallListsOneNameTwice(t *testing.T
 	assert.Len(t, idsByName["[DataRobot] NodeJS 24 Applications Base"], 2)
 }
 
-const environmentsWithOnePublishedImage = `{"data":[
+// The address sits under latestSuccessfulVersion, where an air-gap install
+// publishes it. env-rebuilt has a failed latest build beside an earlier good
+// one, and env-never-built has no good build yet.
+const environmentsWithPublishedImages = `{"data":[
   {"id":"env-published","name":"[DataRobot] Python 3.12 Applications Base","useCases":["customApplication"],
-   "latestSuccessfulVersion":{"id":"v1"},
+   "latestSuccessfulVersion":{"id":"v1","sourceDockerImageUri":"registry.example.com/base-image:abc123"},
    "latestVersion":{"buildStatus":"success","sourceDockerImageUri":"registry.example.com/base-image:abc123"}},
   {"id":"env-unpublished","name":"[DataRobot] Python 3.12 Applications Base","useCases":["customApplication"],
-   "latestSuccessfulVersion":{"id":"v1"},
-   "latestVersion":{"buildStatus":"success","sourceDockerImageUri":null}}
+   "latestSuccessfulVersion":{"id":"v1","sourceDockerImageUri":null},
+   "latestVersion":{"buildStatus":"success","sourceDockerImageUri":null}},
+  {"id":"env-rebuilt","name":"Rebuilt","useCases":["customApplication"],
+   "latestSuccessfulVersion":{"id":"v1","sourceDockerImageUri":"registry.example.com/base-image:good"},
+   "latestVersion":{"buildStatus":"failed","sourceDockerImageUri":"registry.example.com/base-image:failed"}},
+  {"id":"env-never-built","name":"Never built","useCases":["customApplication"],
+   "latestSuccessfulVersion":null,
+   "latestVersion":{"buildStatus":"building","sourceDockerImageUri":"registry.example.com/base-image:pending"}}
 ],"next":null}`
 
-func TestExecutionEnvironmentsSection_ReportsTheImageAddressAnInstallPublishes(t *testing.T) {
+func publishedImages(t *testing.T) []ExecutionEnvironment {
+	t.Helper()
+
 	fake := newFakeInstall(t, "sts-11.12.0")
-	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithOnePublishedImage})
+	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithPublishedImages})
 
 	section := executionEnvironmentsSection(context.Background())
 
 	require.Equal(t, StatusOK, section.Status)
 
 	items := section.Data.(ExecutionEnvironments).Items
-	require.Len(t, items, 2)
+	require.Len(t, items, 4)
+
+	return items
+}
+
+func TestExecutionEnvironmentsSection_ReportsTheImageAddressAnInstallPublishes(t *testing.T) {
+	items := publishedImages(t)
+
 	assert.Equal(t, "registry.example.com/base-image:abc123", items[0].SourceDockerImageURI)
 	assert.Empty(t, items[1].SourceDockerImageURI, "a null address is no address")
+}
+
+func TestExecutionEnvironmentsSection_ReportsTheAddressOfTheLatestSuccessfulVersion(t *testing.T) {
+	items := publishedImages(t)
+
+	assert.Equal(t, "registry.example.com/base-image:good", items[2].SourceDockerImageURI)
+	assert.Equal(t, "failed", items[2].BuildStatus)
+	assert.True(t, items[2].HasSuccessfulVersion)
+}
+
+func TestExecutionEnvironmentsSection_LeavesOutTheAddressOfAVersionThatNeverBuilt(t *testing.T) {
+	items := publishedImages(t)
+
+	assert.Empty(t, items[3].SourceDockerImageURI)
+	assert.False(t, items[3].HasSuccessfulVersion)
 }
 
 func TestExecutionEnvironment_JSONCarriesTheImageAddressOnlyWhenThereIsOne(t *testing.T) {
@@ -386,6 +419,27 @@ func TestWorkloadAPISection_AsksForOneWorkload(t *testing.T) {
 	assert.Equal(t, "limit=1", fake.queryOf("GET /api/v2/workloads/"))
 }
 
+func TestWorkloadAPISection_ReportsACountOfZero(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{body: `{"count":0,"next":null,"previous":null,"totalCount":0,"data":[]}`})
+
+	section := workloadAPISection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"totalCount":0}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadAPISection_IsUnavailableWithoutAStatusWhenTheAnswerIsNotJSON(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{body: `<html>Sign in</html>`})
+
+	section := workloadAPISection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Contains(t, section.Message, "not JSON")
+	assert.Zero(t, section.HTTPStatus, "the route answered 200, so no error status exists to report")
+}
+
 func TestWorkloadAPISection_LeavesTheCountOutWhenTheRouteOmitsIt(t *testing.T) {
 	fake := newFakeInstall(t, "sts-11.12.0")
 	fake.set("GET /api/v2/workloads/", route{body: `{"data":[]}`})
@@ -422,12 +476,6 @@ func TestWorkloadAPISection_IsUnavailableWithTheBodyOfTheRefusal(t *testing.T) {
 			status:  http.StatusBadGateway,
 			body:    `{"message":"Backend service is deactivated."}`,
 			message: `HTTP 502: {"message":"Backend service is deactivated."}`,
-		},
-		{
-			name:    "an install without the route",
-			status:  http.StatusNotFound,
-			body:    "not found",
-			message: "HTTP 404: not found",
 		},
 	}
 
@@ -560,6 +608,7 @@ func TestEntitlementsFor_IsUnavailableWhenNoNameCanBeRead(t *testing.T) {
 	assert.Equal(t, StatusUnavailable, section.Status)
 	assert.Nil(t, section.Data)
 	assert.Contains(t, section.Message, "HTTP 403")
+	assert.Zero(t, section.HTTPStatus, "several responses decide this section, so none is its status")
 }
 
 func TestInstallSection_IsUnavailableWhenConfigFails(t *testing.T) {

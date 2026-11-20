@@ -84,6 +84,27 @@ func TestRenderTo_TextShowsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
 	assert.Contains(t, out, "workloads visible to you: 7")
 }
 
+func TestRenderTo_TextShowsAWorkloadCountOfZero(t *testing.T) {
+	zero := 0
+	report := sampleReport()
+	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusOK, Data: WorkloadAPI{TotalCount: &zero}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "workloads visible to you: 0")
+}
+
+func TestRenderTo_TextGivesTheStatusOfARefusedSectionInItsMessageOnly(t *testing.T) {
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, sampleReport()))
+
+	assert.Contains(t, out.String(), "HTTP 403: forbidden")
+	assert.NotContains(t, out.String(), "httpStatus")
+}
+
 func TestRenderTo_TextLeavesTheWorkloadCountOutWhenTheRouteGaveNone(t *testing.T) {
 	report := sampleReport()
 	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusOK, Data: WorkloadAPI{}}

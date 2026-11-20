@@ -83,9 +83,11 @@ type Server struct {
 
 // Section is one source's result. Data is absent when the source is
 // unavailable; Message is present then, and for a degraded section. HTTPStatus
-// is the status of the one response that made the section unavailable, so a
-// reader need not take it from the message. It is absent when no response came,
-// and for a section that several responses decided, such as entitlements.
+// is the status of the one HTTP error response that made the section
+// unavailable, so a reader need not take it from the message. It is absent when
+// the failure was not an error status (no response came, or the answer was not
+// the JSON the route promises), and for a section that several responses
+// decided, such as entitlements.
 type Section struct {
 	Scope      Scope  `json:"scope"`
 	Status     Status `json:"status"`
@@ -115,9 +117,10 @@ type ExecutionEnvironments struct {
 
 // ExecutionEnvironment is one environment. Names are not unique on an install,
 // so a reader picks by ID and HasSuccessfulVersion. SourceDockerImageURI is the
-// image address of the latest version when the install publishes one, as a
-// reader needs it for a Dockerfile FROM on an install that pulls only its own
-// images.
+// image address of the latest successful version when the install publishes
+// one, as a reader needs it for a Dockerfile FROM on an install that pulls only
+// its own images. BuildStatus is the status of the latest build, which may
+// have failed after an earlier one succeeded.
 type ExecutionEnvironment struct {
 	ID                   string   `json:"id"`
 	Name                 string   `json:"name"`
