@@ -35,7 +35,7 @@ The command exits zero when it prints a report, including one with unavailable s
 | `install` | public `/config` | `isEnterprise`, `defaultAppResourceBundle`. A key the install does not return is left out |
 | `seats` | `/api/v2/account/info/` | `seatLicenses`: each license mapped to whether the caller has it. A license that is absent is not enforced on that install, so `{}` does not mean blocked |
 | `entitlements` | `/api/v2/entitlements/evaluate/` | The flags a Custom Application deploy depends on. Names the install does not know are listed in the message and the section is `degraded` |
-| `executionEnvironments` | `/api/v2/executionEnvironments/` | Every environment the caller can read: `id`, `name`, `programmingLanguage`, `useCases`, `hasSuccessfulVersion`, `buildStatus`. Names are not unique, so pick by `id` and `hasSuccessfulVersion`. DataRobot marks a retired environment only in its name, with a `[Deprecated]` prefix. An environment is valid for applications when `useCases` lists `customApplication` |
+| `executionEnvironments` | `/api/v2/executionEnvironments/` | Every environment the caller can read: `id`, `name`, `programmingLanguage`, `useCases`, `hasSuccessfulVersion`, `buildStatus`, `sourceDockerImageUri`. `sourceDockerImageUri` is the address of the image of the environment's latest version, and an install that does not publish one leaves it out. Names are not unique, so pick by `id` and `hasSuccessfulVersion`. DataRobot marks a retired environment only in its name, with a `[Deprecated]` prefix. An environment is valid for applications when `useCases` lists `customApplication` |
 | `resourceBundles` | `/api/v2/mlops/compute/bundles/` | Every bundle the caller can read: `id`, `name`, `useCases`, `memoryBytes`, `cpuCount`. A bundle is valid for applications when `useCases` lists `customApplication` |
 
 Every section carries a `scope` that says who its answer is true for. `platform` means the same for any caller. `caller` means it depends on who asks: their permissions, seats, or organization. Run the command with the credentials the pipeline will use.
@@ -77,4 +77,8 @@ dr info
 # The environments a pipeline can build an application on.
 dr info --output-format json \
   | jq '.platform.sections.executionEnvironments.data.items[] | select(.useCases | index("customApplication")) | select(.hasSuccessfulVersion)'
+
+# The base image address an install publishes, for a Dockerfile FROM.
+dr info --output-format json \
+  | jq -r '.platform.sections.executionEnvironments.data.items[] | select(.name == "[DataRobot] Python 3.12 Applications Base") | select(.hasSuccessfulVersion) | select(.sourceDockerImageUri) | .sourceDockerImageUri'
 ```

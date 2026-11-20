@@ -109,7 +109,10 @@ type ExecutionEnvironments struct {
 }
 
 // ExecutionEnvironment is one environment. Names are not unique on an install,
-// so a reader picks by ID and HasSuccessfulVersion.
+// so a reader picks by ID and HasSuccessfulVersion. SourceDockerImageURI is the
+// image address of the latest version when the install publishes one, as a
+// reader needs it for a Dockerfile FROM on an install that pulls only its own
+// images.
 type ExecutionEnvironment struct {
 	ID                   string   `json:"id"`
 	Name                 string   `json:"name"`
@@ -117,6 +120,7 @@ type ExecutionEnvironment struct {
 	UseCases             []string `json:"useCases"`
 	HasSuccessfulVersion bool     `json:"hasSuccessfulVersion"`
 	BuildStatus          string   `json:"buildStatus,omitempty"`
+	SourceDockerImageURI string   `json:"sourceDockerImageUri,omitempty"`
 }
 
 // ResourceBundles lists every resource bundle the caller can read.

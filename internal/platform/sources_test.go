@@ -272,6 +272,37 @@ func TestExecutionEnvironmentsSection_ARealInstallListsOneNameTwice(t *testing.T
 	assert.Len(t, idsByName["[DataRobot] NodeJS 24 Applications Base"], 2)
 }
 
+const environmentsWithOnePublishedImage = `{"data":[
+  {"id":"env-published","name":"[DataRobot] Python 3.12 Applications Base","useCases":["customApplication"],
+   "latestSuccessfulVersion":{"id":"v1"},
+   "latestVersion":{"buildStatus":"success","sourceDockerImageUri":"registry.example.com/base-image:abc123"}},
+  {"id":"env-unpublished","name":"[DataRobot] Python 3.12 Applications Base","useCases":["customApplication"],
+   "latestSuccessfulVersion":{"id":"v1"},
+   "latestVersion":{"buildStatus":"success","sourceDockerImageUri":null}}
+],"next":null}`
+
+func TestExecutionEnvironmentsSection_ReportsTheImageAddressAnInstallPublishes(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithOnePublishedImage})
+
+	section := executionEnvironmentsSection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+
+	items := section.Data.(ExecutionEnvironments).Items
+	require.Len(t, items, 2)
+	assert.Equal(t, "registry.example.com/base-image:abc123", items[0].SourceDockerImageURI)
+	assert.Empty(t, items[1].SourceDockerImageURI, "a null address is no address")
+}
+
+func TestExecutionEnvironment_JSONCarriesTheImageAddressOnlyWhenThereIsOne(t *testing.T) {
+	withAddress := jsonOf(t, ExecutionEnvironment{ID: "e", SourceDockerImageURI: "registry.example.com/base-image:abc123"})
+	without := jsonOf(t, ExecutionEnvironment{ID: "e"})
+
+	assert.Contains(t, withAddress, `"sourceDockerImageUri":"registry.example.com/base-image:abc123"`)
+	assert.NotContains(t, without, "sourceDockerImageUri")
+}
+
 func TestExecutionEnvironmentsSection_IsUnavailableWhenTheRouteRefuses(t *testing.T) {
 	fake := newFakeInstall(t, "sts-11.12.0")
 	fake.set("GET /api/v2/executionEnvironments/", route{status: http.StatusForbidden, body: `{"message":"no feature"}`})

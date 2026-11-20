@@ -145,6 +145,19 @@ func TestDescribe_StopsWhenTheCredentialsAreRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "HTTP 401")
 }
 
+func TestDescribe_AnImageAddressReachesTheJSONReportThatTheSchemaAccepts(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithOnePublishedImage})
+
+	report, err := Describe(context.Background())
+	require.NoError(t, err)
+
+	out := renderJSON(t, *report)
+
+	assert.Contains(t, string(out), `"sourceDockerImageUri": "registry.example.com/base-image:abc123"`)
+	require.NoError(t, validateJSON(t, compileSchema(t), out))
+}
+
 func TestDescribe_NamesAnAnswerThatIsNotJSON(t *testing.T) {
 	fake := newFakeInstall(t, "sts-11.12.0")
 	fake.set("GET /api/v2/version/", route{body: `<html>Sign in to continue</html>`})

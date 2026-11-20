@@ -124,7 +124,8 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 		UseCases                []string `json:"useCases"`
 		LatestSuccessfulVersion any      `json:"latestSuccessfulVersion"`
 		LatestVersion           *struct {
-			BuildStatus string `json:"buildStatus"`
+			BuildStatus          string `json:"buildStatus"`
+			SourceDockerImageURI string `json:"sourceDockerImageUri"`
 		} `json:"latestVersion"`
 	}
 
@@ -151,6 +152,7 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 
 		if e.LatestVersion != nil {
 			item.BuildStatus = e.LatestVersion.BuildStatus
+			item.SourceDockerImageURI = e.LatestVersion.SourceDockerImageURI
 		}
 
 		items = append(items, item)

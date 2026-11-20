@@ -97,7 +97,8 @@
               "programmingLanguage": {"type": "string"},
               "useCases": {"type": "array", "items": {"type": "string"}},
               "hasSuccessfulVersion": {"type": "boolean"},
-              "buildStatus": {"type": "string"}
+              "buildStatus": {"type": "string"},
+              "sourceDockerImageUri": {"type": "string"}
             }
           }}}
         }}}
