@@ -51,8 +51,6 @@ The v0.8.0 and v0.20.0 auth-profile threads are the references.
   script and JSON notes in their own reply instead of the main post.
 - End the main post with "Real-life use cases and a hands-on tour in :thread:" before the
   Release link.
-- **Correct earlier announcements in the thread.** When a release makes an older post's claim
-  inaccurate, say so plainly in the reply that covers it.
 - **Link demo docs by tag**, e.g. `https://github.com/datarobot-oss/cli/blob/vX.Y.Z/docs/demos/<page>.md`,
   even when the page isn't in the docs navigation. A tag link doesn't move.
 - Use profile and environment **names** in examples, never internal hostnames or URLs. Use
@@ -103,7 +101,7 @@ The v0.8.0 and v0.20.0 auth-profile threads are the references.
 ## Posting with the Claude.ai Slack connector
 
 - `slack_send_message` takes standard markdown (`**bold**`, fenced blocks with a language tag)
-  and converts it; don't hand-convert to mrkdwn.
+  and converts it; don't hand-convert.
 - Post the main post first, take its `message_ts`, then send each reply with that value as
   `thread_ts`. Send replies **one at a time** so they keep their order.
 
