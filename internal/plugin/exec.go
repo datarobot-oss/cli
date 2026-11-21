@@ -37,7 +37,9 @@ import (
 type ExecOption func(*execOptions)
 
 type execOptions struct {
-	depsConsent   bool
+	depsConsent bool
+	// skipPreflight disables the preflight checks for this call — see
+	// WithoutPreflight for what preflight is and when skipping it is right.
 	skipPreflight bool
 }
 
@@ -49,10 +51,19 @@ func WithDepsConsent() ExecOption {
 	return func(o *execOptions) { o.depsConsent = true }
 }
 
-// WithoutPreflight skips the dependency and authentication checks before the
-// plugin runs. Use it for non-functional invocations such as rendering the
-// plugin's --help: those must never open an interactive prompt (login wizard,
-// dependency install), which would hang when the output is piped.
+// WithoutPreflight skips the plugin preflight for this call.
+//
+// Preflight is the set of readiness checks ExecutePlugin runs before it
+// launches the plugin subprocess: it makes sure the plugin's declared
+// dependencies are installed (offering to install them, unless consent was
+// pre-approved with WithDepsConsent or -y), and that the user is
+// authenticated when the manifest sets "authentication": true (unless
+// --skip-auth is set). Both checks can prompt interactively.
+//
+// Skip them for non-functional invocations such as rendering the plugin's
+// --help: those must never open an interactive prompt (login wizard,
+// dependency install), which would hang when the output is piped. See
+// docs/development/plugins.md, section "Preflight".
 func WithoutPreflight() ExecOption {
 	return func(o *execOptions) { o.skipPreflight = true }
 }

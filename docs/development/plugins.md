@@ -174,6 +174,21 @@ The CLI:
 
 Because plugin commands are registered as top-level commands, a plugin cannot conflict with an existing built-in command name.
 
+### Preflight
+
+Steps 1 and 3 above are the plugin **preflight** — the readiness checks
+`plugin.ExecutePlugin` runs before it launches the plugin subprocess. It makes
+sure the plugin's declared dependencies are installed (offering to install
+them, unless consent was pre-approved with `WithDepsConsent` or `-y`), and
+that the user is authenticated when the manifest sets `"authentication": true`
+(unless `--skip-auth` is set). Both checks can prompt interactively.
+
+A caller that must never prompt can skip both checks for a single call with
+the `plugin.WithoutPreflight()` exec option. `dr build-studio --help` does
+this when it runs `xp --help` to render the forwarded flag list: without it, a
+logged-out user would get the login wizard instead of help — and a piped run
+would hang on the hidden prompt.
+
 ### Authentication
 
 If your plugin needs to interact with the DataRobot API, set `"authentication": true` in your manifest. This ensures users are authenticated before your plugin runs.
