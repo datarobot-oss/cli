@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -34,6 +35,10 @@ type initResult struct {
 	CatalogID        *string `json:"catalogId"`
 	CatalogVersionID *string `json:"catalogVersionId"`
 	Dir              string  `json:"dir"`
+
+	// Set only when --with-manifest wrote a file.
+	ManifestPath               string `json:"manifestPath,omitempty"`
+	ManifestCredentialsPending *int   `json:"manifestCredentialsPending,omitempty"`
 }
 
 // alreadyLinkedJSON is the pinned JSON shape emitted on stdout when init
@@ -97,6 +102,14 @@ func renderInitResult(stderr io.Writer, format outputformat.OutputFormat, result
 		printLinkedEmptyArtifact(result.Name, result.ArtifactID)
 
 		step.Description = "Upload your files"
+	}
+
+	// Sync cannot write to a locked artifact.
+	if strings.EqualFold(result.Status, "locked") {
+		step = tui.NextStep{
+			Command:     "dr artifact code checkout" + manifest.DirFlag(result.Dir),
+			Description: "Read the code of this locked artifact; sync cannot write to it",
+		}
 	}
 
 	tui.PrintNextSteps(stderr, step)

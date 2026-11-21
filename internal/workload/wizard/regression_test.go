@@ -1451,7 +1451,7 @@ func TestFlow_BindKeepsTheFlagsGivenBeforeTheFetch(t *testing.T) {
 func mustFetchLive(t *testing.T, id string) manifest.Live {
 	t.Helper()
 
-	live, err := fetchLive(id)
+	live, err := FetchLive(id)
 	require.NoError(t, err)
 
 	return live

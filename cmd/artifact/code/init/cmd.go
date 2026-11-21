@@ -54,6 +54,11 @@ and pull remote changes.
 The artifact must already exist before running 'init'. Create it via
 'dr artifact create' or in the DataRobot UI.
 
+With --with-manifest, init also writes a .datarobot.yaml from the workload that
+runs the artifact, for deploying the code to another install. The file binds no
+workload, and its credential references name PLACEHOLDER. Pass --workload-id to
+choose the workload when none or several run the artifact.
+
 By default, output is human-readable. Use --output-format json for
 machine-parseable output.
 
@@ -61,7 +66,9 @@ Example:
   dr artifact code init art-abc-123                  # interactive: prompt for dir
   dr artifact code init art-abc-123 --yes            # non-interactive: cwd
   dr artifact code init art-abc-123 --dir ./service  # link ./service
-  dr artifact code init art-abc-123 --yes --output-format json`,
+  dr artifact code init art-abc-123 --yes --output-format json
+  dr artifact code init art-abc-123 --with-manifest
+  dr artifact code init art-abc-123 --with-manifest --workload-id 68b0c1d2e3f4a5b6c7d8e9f0`,
 		Args:    cobra.MaximumNArgs(1),
 		PreRunE: auth.EnsureAuthenticatedE,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,6 +82,9 @@ Example:
 
 	c.Flags().String("dir", "", "Project directory (default: current directory).")
 	c.Flags().BoolP(cli.YesFlagName, "y", false, "Skip interactive prompts; use defaults.")
+	c.Flags().Bool("with-manifest", false,
+		"Also write .datarobot.yaml from the workload that runs the artifact, to deploy the code to another install.")
+	c.Flags().String("workload-id", "", "With --with-manifest, use this workload instead of looking one up.")
 
 	// Bind only the env var (DATAROBOT_CLI_NON_INTERACTIVE) to viper. The --yes
 	// flag itself is read directly from cmd.Flags() in runInit so an explicit
@@ -87,6 +97,7 @@ Example:
 		return map[string]any{
 			"artifact_id":   telemetry.FirstArg(args),
 			"yes":           yes,
+			"with_manifest": cmd.Flags().Changed("with-manifest"),
 			"output_format": string(outputFormat),
 		}
 	})
@@ -119,6 +130,12 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
+	// Before the link, so a failure here leaves nothing behind.
+	portable, err := getManifest(cmd, art)
+	if err != nil {
+		return err
+	}
+
 	codeRef := workload.ExtractCodeRef(*art)
 	opts := buildInitOptions(artifactID, codeRef)
 
@@ -130,7 +147,26 @@ func runInit(cmd *cobra.Command, args []string, outputFormat outputformat.Output
 		return err
 	}
 
-	return renderInitResult(cmd.ErrOrStderr(), outputFormat, newInitResult(*art, dir))
+	return finishInit(cmd, dir, *art, portable, outputFormat)
+}
+
+func finishInit(
+	cmd *cobra.Command, dir string, art workload.Artifact, portable *portableManifest,
+	outputFormat outputformat.OutputFormat,
+) error {
+	result := newInitResult(art, dir)
+
+	if portable != nil {
+		if err := portable.write(cmd.ErrOrStderr(), dir, &result); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"To deploy this to another install, delete %s first: it names this install's artifact.\n",
+			wapi.Dir(dir))
+	}
+
+	return renderInitResult(cmd.ErrOrStderr(), outputFormat, result)
 }
 
 func fetchArtifact(artifactID string) (*workload.Artifact, error) {
@@ -142,10 +178,6 @@ func fetchArtifact(artifactID string) (*workload.Artifact, error) {
 		}
 
 		return nil, err
-	}
-
-	if art.IsLocked() {
-		return nil, errors.New("artifact is locked (immutable); cannot init on a registered artifact")
 	}
 
 	return art, nil

@@ -52,6 +52,8 @@ type Live struct {
 	// ArtifactType is the artifact's kind, which the platform keeps beside the
 	// spec rather than inside it.
 	ArtifactType string
+	// RepositoryID is the artifact lineage.
+	RepositoryID string
 	Spec         map[string]any
 	Runtime      map[string]any
 }
@@ -74,6 +76,7 @@ func NewLive(workloadID string, workloadDoc, artifactDoc map[string]any) (Live, 
 		Importance:   stringAt(workloadDoc, keyImportance),
 		ArtifactName: stringAt(artifactDoc, keyName),
 		ArtifactType: stringAt(artifactDoc, keyType),
+		RepositoryID: stringAt(artifactDoc, keyArtifactRepoID),
 		// stripServerManaged deep-copies once and strips both server-managed
 		// keys and nil-valued keys in a single recursive walk, so no second
 		// copy is allocated here.
