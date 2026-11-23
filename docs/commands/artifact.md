@@ -49,16 +49,16 @@ The same path with the deploy on the end, and with what each step writes, is in 
 
 ## Command groups
 
-| Command               | Endpoint                               | Purpose                                                                    |
-| --------------------- | -------------------------------------- | -------------------------------------------------------------------------- |
-| `dr artifact create`  | `POST   /api/v2/artifacts/`            | Register a draft artifact from a JSON/YAML spec.                           |
-| `dr artifact get`     | `GET    /api/v2/artifacts/{id}/`       | Show a single artifact.                                                    |
-| `dr artifact list`    | `GET    /api/v2/artifacts/`            | List artifacts, optionally filtered by status.                             |
-| `dr artifact lock`    | `PATCH  /api/v2/artifacts/{id}/`       | Promote a draft to locked (immutable).                                     |
-| `dr artifact delete`  | `DELETE /api/v2/artifacts/{id}/`       | Delete an artifact.                                                        |
-| `dr artifact build …`    | `…/artifacts/{id}/builds[/{build-id}]` | Trigger and inspect image builds.                                       |
-| `dr artifact build logs` | `GET /api/v2/otel/artifact/{id}/logs/` | Read a build's logs, served by the telemetry route rather than builds.  |
-| `dr artifact code …`  | DataRobot catalog (Files API)          | Sync local code with an artifact (`init`, `sync`, `versions`, `checkout`, `doctor`). |
+| Command                  | Endpoint                                 | Purpose                                                                              |
+| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| `dr artifact create`     | `POST   /api/v2/artifacts/`              | Register a draft artifact from a JSON/YAML spec.                                     |
+| `dr artifact get`        | `GET    /api/v2/artifacts/{id}/`         | Show a single artifact.                                                              |
+| `dr artifact list`       | `GET    /api/v2/artifacts/`              | List artifacts, optionally filtered by status.                                       |
+| `dr artifact lock`       | `PATCH  /api/v2/artifacts/{id}/`         | Promote a draft to locked (immutable).                                               |
+| `dr artifact delete`     | `DELETE /api/v2/artifacts/{id}/`         | Delete an artifact.                                                                  |
+| `dr artifact build …`    | `…/artifacts/{id}/builds[/{build-id}]`   | Trigger and inspect image builds.                                                    |
+| `dr artifact build logs` | `GET /api/v2/otel/artifact/{id}/logs/`   | Read a build's logs, served by the telemetry route rather than builds.               |
+| `dr artifact code …`     | DataRobot catalog (Files API)            | Sync local code with an artifact (`init`, `sync`, `versions`, `checkout`, `doctor`). |
 
 ## Subcommands
 
@@ -271,12 +271,12 @@ dr artifact build logs <artifact-id> <build-id> --level debug
 
 ## Error handling
 
-| Status | Cause                                                                                                             |
-| ------ | ----------------------------------------------------------------------------------------------------------------- |
+| Status | Cause                                                                                                                                               |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `403`  | Tried to lock an already-locked artifact, or the Workload API is not enabled for your account ([see below](workload.md#every-command-answers-403)). |
-| `404`  | The artifact, build, or version does not exist.                                                                   |
-| `409`  | Tried to delete a locked artifact, or to delete one still referenced by a workload; the detail names the blocking workloads. |
-| `422`  | The spec failed server validation; the response names the offending JSON path.                                    |
+| `404`  | The artifact, build, or version does not exist.                                                                                                     |
+| `409`  | Tried to delete a locked artifact, or to delete one still referenced by a workload; the detail names the blocking workloads.                        |
+| `422`  | The spec failed server validation; the response names the offending JSON path.                                                                      |
 
 A `403` on the very first request, including a plain `dr artifact list`, is about access rather than about the artifact. `dr artifact` and `dr workload` sit behind the same platform entitlement: see [Every command answers `403`](workload.md#every-command-answers-403).
 

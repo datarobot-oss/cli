@@ -48,8 +48,10 @@ require (
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/datarobot/cli/tools/mdformat v0.0.0-00010101000000-000000000000 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.2 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/fbiville/markdown-table-formatter v0.3.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
@@ -85,3 +87,7 @@ require (
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/net v0.62.0 // indirect
 )
+
+replace github.com/datarobot/cli/tools/mdformat => ./tools/mdformat
+
+tool github.com/datarobot/cli/tools/mdformat

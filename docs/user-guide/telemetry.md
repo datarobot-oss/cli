@@ -9,7 +9,7 @@ All telemetry data sent over the network is stored in the USA. When telemetry is
 Telemetry is enabled by default. Users can disable it at any time via any of the three methods below (listed in order of precedence — higher precedence wins):
 
 | Method               | How                                          |
-|----------------------|----------------------------------------------|
+| -------------------- | -------------------------------------------- |
 | Flag                 | `dr --disable-telemetry <command>`           |
 | Environment variable | `DATAROBOT_CLI_DISABLE_TELEMETRY=true`       |
 | Config file          | `disable-telemetry: true` in `drconfig.yaml` |
@@ -29,10 +29,10 @@ When telemetry is disabled, events are logged to the debug logger (visible with 
 
 Telemetry makes outbound HTTPS requests to two services. In network-restricted environments (corporate proxies, firewalls, air-gapped CI), the following hosts must be allowlisted for telemetry to function:
 
-| Host                                                       | Purpose                                                                                                       | Port |
-|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|------|
-| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone) — event ingestion                                                                | 443  |
-| *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution | 443  |
+| Host                                                       | Purpose                                                                                                         | Port |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---- |
+| `api2.amplitude.com`                                       | Amplitude HTTP API (US zone) — event ingestion                                                                  | 443  |
+| *configured DataRobot endpoint* (e.g. `app.datarobot.com`) | `GET /api/v2/account/info/` — fetches the `user_id`, `organization_id`, and `tenant_id` for event attribution   | 443  |
 
 The DataRobot endpoint call is only made when the user is authenticated and the cached account info is stale or absent (see [User ID](#user-id)). If that call fails due to network restrictions, telemetry falls back to `device_id`-only tracking — the CLI does not error.
 
@@ -98,7 +98,7 @@ This ensures correct behavior in shared environments (e.g., Codespaces) where tw
 ### Behavior summary
 
 | Scenario                                                         | `user_id` / `organization_id` / `tenant_id` behavior  |
-|------------------------------------------------------------------|-------------------------------------------------------|
+| ---------------------------------------------------------------- | ----------------------------------------------------- |
 | Authenticated, API succeeds                                      | `uid`, `org_id`, `tenant_id` from API, cached to disk |
 | Authenticated, cache hit (same endpoint + token, complete cache) | Cached `uid`, `org_id`, `tenant_id` (no API call)     |
 | Endpoint changed                                                 | Re-fetch from API, update cache                       |

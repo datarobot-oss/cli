@@ -98,13 +98,13 @@ Install missing dependencies? [Y/n]:
 
 ### Confirmation modes
 
-| Method | Effect |
-|---|---|
-| Press **Enter** or type **y** | Install the missing tools |
-| Type **n** | Skip installation and continue |
-| `dr plugin install --yes` / `-y` | Auto-confirm during install |
-| `dr <plugin> -y` or `dr <plugin> --yes` | Auto-confirm at run time |
-| `DATAROBOT_CLI_NON_INTERACTIVE=1` | Auto-confirm in CI / automation |
+| Method                                  | Effect                          |
+| --------------------------------------- | ------------------------------- |
+| Press **Enter** or type **y**           | Install the missing tools       |
+| Type **n**                              | Skip installation and continue  |
+| `dr plugin install --yes` / `-y`        | Auto-confirm during install     |
+| `dr <plugin> -y` or `dr <plugin> --yes` | Auto-confirm at run time        |
+| `DATAROBOT_CLI_NON_INTERACTIVE=1`       | Auto-confirm in CI / automation |
 
 > **Note:** Dependency checks only apply to managed plugins installed via `dr plugin install`. PATH-based and project-local plugins are not checked.
 
@@ -173,12 +173,12 @@ Either way, the check is not repeated until the configured cooldown interval has
 
 ### Update check behavior
 
-| Situation | Behavior |
-|---|---|
-| No internet / registry unreachable | Silently skipped — plugin runs normally |
-| Plugin is already up to date | No prompt — plugin runs normally |
-| PATH-based or project-local plugin | Skipped — only managed plugins are checked |
-| Cooldown period has not elapsed | Skipped — plugin runs normally |
+| Situation                          | Behavior                                     |
+| ---------------------------------- | -------------------------------------------- |
+| No internet / registry unreachable | Silently skipped — plugin runs normally      |
+| Plugin is already up to date       | No prompt — plugin runs normally             |
+| PATH-based or project-local plugin | Skipped — only managed plugins are checked   |
+| Cooldown period has not elapsed    | Skipped — plugin runs normally               |
 
 ### Configuring the update check
 
@@ -275,13 +275,13 @@ When a global flag is placed before the plugin name, the CLI forwards it to the
 plugin subprocess as a `DATAROBOT_CLI_*` environment variable in addition to
 consenting it internally:
 
-| CLI flag | Forwarded as env var | Value |
-|---|---|---|
-| `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
-| `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
-| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
-| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
-| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
+| CLI flag                   | Forwarded as env var                   | Value    |
+| -------------------------- | -------------------------------------- | -------- |
+| `--debug`                  | `DATAROBOT_CLI_DEBUG`                  | `1`      |
+| `--disable-telemetry`      | `DATAROBOT_CLI_DISABLE_TELEMETRY`      | `1`      |
+| `--verbose`                | `DATAROBOT_CLI_VERBOSE`                | `1`      |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1`      |
+| `--ca-cert <path>`         | `DATAROBOT_CLI_CA_CERT`                | `<path>` |
 
 Plugins that want to honour these flags can read the environment variables at
 startup. See [Plugin environment variables](../development/plugins.md#environment-variables)

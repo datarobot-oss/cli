@@ -48,28 +48,28 @@ Pin a workload to an enclave with [`dr workload create --enclave <name>`](worklo
 
 ## Command groups
 
-| Command                        | Endpoint                                          | Purpose                                          |
-| ------------------------------ | ------------------------------------------------- | ------------------------------------------------ |
-| `dr enclave register`          | `POST   /api/v2/enclaves`                         | Register an enclave, returning install secrets.  |
-| `dr enclave get`               | `GET    /api/v2/enclaves/{id}`                    | Show a single enclave.                           |
-| `dr enclave list`              | `GET    /api/v2/enclaves`                         | List the enclaves you can see.                   |
-| `dr enclave deactivate`        | `POST   /api/v2/enclaves/{id}/deactivate`         | Take an active enclave out of scheduling.        |
-| `dr enclave reactivate`        | `POST   /api/v2/enclaves/{id}/reactivate`         | Return a deactivated enclave to service.         |
-| `dr enclave delete`            | `DELETE /api/v2/enclaves/{id}`                    | Delete an enclave.                               |
-| `dr enclave access grant`      | `PATCH  /api/v2/enclaves/{id}/sharedRoles`        | Grant a role on one enclave.                     |
-| `dr enclave access revoke`     | `PATCH  /api/v2/enclaves/{id}/sharedRoles`        | Revoke a recipient's role on one enclave.        |
-| `dr enclave access list`       | `GET    /api/v2/enclaves/{id}/sharedRoles`        | List who holds a role on one enclave.            |
-| `dr enclave access show`       | `GET    /api/v2/enclaves/{id}/permissions`        | Show effective permissions on one enclave.       |
-| `dr enclave permission grant`  | `PATCH  /api/v2/enclaves/createAccess`            | Allow a recipient to create enclaves.            |
-| `dr enclave permission grant --permission pin` | `PATCH  /api/v2/enclaves/pinAccess` | Allow a user to pin workloads.          |
-| `dr enclave permission revoke` | `PATCH  /api/v2/enclaves/createAccess`            | Stop a recipient from creating enclaves.         |
-| `dr enclave permission revoke --permission pin` | `PATCH  /api/v2/enclaves/pinAccess` | Stop a user from pinning workloads.    |
-| `dr enclave permission list`   | `GET    /api/v2/enclaves/createAccess`            | List who may create enclaves.                    |
-| `dr enclave permission list --permission pin` | `GET    /api/v2/enclaves/pinAccess` | List who may pin, in your organization.  |
-| `dr enclave permission grant --permission hub` | `PATCH  /api/v2/enclaves/access` (`"permission": "hub"`) | Allow a user or group to run workloads on the Hub. |
+| Command                                         | Endpoint                                                 | Purpose                                                 |
+| ----------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------- |
+| `dr enclave register`                           | `POST   /api/v2/enclaves`                                | Register an enclave, returning install secrets.         |
+| `dr enclave get`                                | `GET    /api/v2/enclaves/{id}`                           | Show a single enclave.                                  |
+| `dr enclave list`                               | `GET    /api/v2/enclaves`                                | List the enclaves you can see.                          |
+| `dr enclave deactivate`                         | `POST   /api/v2/enclaves/{id}/deactivate`                | Take an active enclave out of scheduling.               |
+| `dr enclave reactivate`                         | `POST   /api/v2/enclaves/{id}/reactivate`                | Return a deactivated enclave to service.                |
+| `dr enclave delete`                             | `DELETE /api/v2/enclaves/{id}`                           | Delete an enclave.                                      |
+| `dr enclave access grant`                       | `PATCH  /api/v2/enclaves/{id}/sharedRoles`               | Grant a role on one enclave.                            |
+| `dr enclave access revoke`                      | `PATCH  /api/v2/enclaves/{id}/sharedRoles`               | Revoke a recipient's role on one enclave.               |
+| `dr enclave access list`                        | `GET    /api/v2/enclaves/{id}/sharedRoles`               | List who holds a role on one enclave.                   |
+| `dr enclave access show`                        | `GET    /api/v2/enclaves/{id}/permissions`               | Show effective permissions on one enclave.              |
+| `dr enclave permission grant`                   | `PATCH  /api/v2/enclaves/createAccess`                   | Allow a recipient to create enclaves.                   |
+| `dr enclave permission grant --permission pin`  | `PATCH  /api/v2/enclaves/pinAccess`                      | Allow a user to pin workloads.                          |
+| `dr enclave permission revoke`                  | `PATCH  /api/v2/enclaves/createAccess`                   | Stop a recipient from creating enclaves.                |
+| `dr enclave permission revoke --permission pin` | `PATCH  /api/v2/enclaves/pinAccess`                      | Stop a user from pinning workloads.                     |
+| `dr enclave permission list`                    | `GET    /api/v2/enclaves/createAccess`                   | List who may create enclaves.                           |
+| `dr enclave permission list --permission pin`   | `GET    /api/v2/enclaves/pinAccess`                      | List who may pin, in your organization.                 |
+| `dr enclave permission grant --permission hub`  | `PATCH  /api/v2/enclaves/access` (`"permission": "hub"`) | Allow a user or group to run workloads on the Hub.      |
 | `dr enclave permission revoke --permission hub` | `PATCH  /api/v2/enclaves/access` (`"permission": "hub"`) | Stop a user or group from running workloads on the Hub. |
-| `dr enclave permission list --permission hub` | `GET    /api/v2/enclaves/access?permission=hub` | List who may use the Hub, in your organization. |
-| `dr enclave permission show`   | `GET    /api/v2/enclaves/permissions`             | Show your own collection-level permissions.      |
+| `dr enclave permission list --permission hub`   | `GET    /api/v2/enclaves/access?permission=hub`          | List who may use the Hub, in your organization.         |
+| `dr enclave permission show`                    | `GET    /api/v2/enclaves/permissions`                    | Show your own collection-level permissions.             |
 
 All paths are served at the root of your DataRobot host. They are new: the API
 previously sat behind a `/covalent` prefix, and its access routes answered under
@@ -89,10 +89,10 @@ dr enclave register --name my-enclave --label team=research --label env=prod
 dr enclave register --name my-enclave --output-format json
 ```
 
-| Flag      | Description                                                     |
-| --------- | --------------------------------------------------------------- |
-| `--name`  | Name for the new enclave (required).                            |
-| `--label` | Attach a `key=value` label. Repeatable.                         |
+| Flag      | Description                             |
+| --------- | --------------------------------------- |
+| `--name`  | Name for the new enclave (required).    |
+| `--label` | Attach a `key=value` label. Repeatable. |
 
 Creating an enclave requires the collection-level `create` permission (see [`permission grant`](#permission-grant)) or system administrator rights.
 
@@ -139,9 +139,9 @@ dr enclave delete <enclave-id> --yes
 dr enclave delete <enclave-id> --yes --output-format json
 ```
 
-| Flag        | Description                    |
-| ----------- | ------------------------------ |
-| `-y, --yes` | Skip the confirmation prompt.  |
+| Flag        | Description                   |
+| ----------- | ----------------------------- |
+| `-y, --yes` | Skip the confirmation prompt. |
 
 Deleting an enclave that is already gone, and declining the prompt, are both
 no-ops that exit 0. `--output-format json` is how a script tells them apart from
@@ -162,11 +162,11 @@ nothing but the result document.
 
 The three roles:
 
-| Role       | Grants                                                          |
-| ---------- | --------------------------------------------------------------- |
-| `owner`    | Full control, including sharing the enclave with others.        |
-| `user`     | View and deploy onto the enclave.                               |
-| `consumer` | View only — **not** enough to deploy.                           |
+| Role       | Grants                                                   |
+| ---------- | -------------------------------------------------------- |
+| `owner`    | Full control, including sharing the enclave with others. |
+| `user`     | View and deploy onto the enclave.                        |
+| `consumer` | View only — **not** enough to deploy.                    |
 
 A recipient is exactly one of `--user` (by username), `--user-id`, `--group`, or `--org`.
 
@@ -178,13 +178,13 @@ dr enclave access grant <enclave-id> --role consumer --user alice@corp.io
 dr enclave access grant <enclave-id> --role owner --user-id <datarobot-user-id>
 ```
 
-| Flag        | Description                                        |
-| ----------- | -------------------------------------------------- |
-| `--role`    | `owner`, `user`, or `consumer` (required).         |
-| `--user`    | Grant a user by username.                          |
-| `--user-id` | Grant a user by DataRobot user id.                 |
-| `--group`   | Grant a group by id.                               |
-| `--org`     | Grant an entire organization by id.                |
+| Flag        | Description                                |
+| ----------- | ------------------------------------------ |
+| `--role`    | `owner`, `user`, or `consumer` (required). |
+| `--user`    | Grant a user by username.                  |
+| `--user-id` | Grant a user by DataRobot user id.         |
+| `--group`   | Grant a group by id.                       |
+| `--org`     | Grant an entire organization by id.        |
 
 ### `access revoke`
 
@@ -224,9 +224,9 @@ The three are independent: none of them implies another. A system administrator 
 
 Who may grant, revoke and list:
 
-| Permission | System administrator | Org admin | Anyone else |
-| ---------- | -------------------- | --------- | ----------- |
-| `create`   | yes                  | no        | no          |
+| Permission | System administrator                       | Org admin                                                                                    | Anyone else                              |
+| ---------- | ------------------------------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `create`   | yes                                        | no                                                                                           | no                                       |
 | `pin`      | yes, any user or group in any organization | yes, users and groups in their own organization only (another organization's recipient: 403) | no (403), including users who hold `pin` |
 | `hub`      | yes, any user or group in any organization | yes, users and groups in their own organization only (another organization's recipient: 403) | no (403), including users who hold `hub` |
 
@@ -245,12 +245,12 @@ The Hub permission is served on the server's `/api/v2/enclaves/access` endpoint.
 
 A server that still grants pin to users only refuses `--group` with a 422; the CLI says the server needs to be upgraded. Revoking a group's grant doesn't affect a member who also holds a grant of their own.
 
-| Flag           | Description                                  |
-| -------------- | -------------------------------------------- |
+| Flag           | Description                                               |
+| -------------- | --------------------------------------------------------- |
 | `--permission` | Permission to grant: `create`, `pin` or `hub` (required). |
-| `--user-id`    | Grant a user by DataRobot user id.           |
-| `--group`      | Grant a group by id.                         |
-| `--org`        | Grant an entire organization by id.          |
+| `--user-id`    | Grant a user by DataRobot user id.                        |
+| `--group`      | Grant a group by id.                                      |
+| `--org`        | Grant an entire organization by id.                       |
 
 ### `permission revoke`
 

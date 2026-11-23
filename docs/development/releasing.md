@@ -48,11 +48,11 @@ The CLI is still on `0.x`, and SemVer treats a major version of zero as an
 unstable public API ([SemVer item 4](https://semver.org/#spec-item-4)). Until
 `v1.0.0` ships, shift the guidelines above one position to the right:
 
-| Change | At 1.0 and later | Pre-1.0 (today) |
-| --- | --- | --- |
-| Breaks an existing workflow | MAJOR | **MINOR** (`v0.2.7` to `v0.3.0`) |
-| Adds functionality, backward-compatible | MINOR | **PATCH** (`v0.2.7` to `v0.2.8`) |
-| Fixes a bug, backward-compatible | PATCH | **PATCH** (`v0.2.7` to `v0.2.8`) |
+| Change                                  | At 1.0 and later | Pre-1.0 (today)                  |
+| --------------------------------------- | ---------------- | -------------------------------- |
+| Breaks an existing workflow             | MAJOR            | **MINOR** (`v0.2.7` to `v0.3.0`) |
+| Adds functionality, backward-compatible | MINOR            | **PATCH** (`v0.2.7` to `v0.2.8`) |
+| Fixes a bug, backward-compatible        | PATCH            | **PATCH** (`v0.2.7` to `v0.2.8`) |
 
 Two consequences worth stating plainly:
 

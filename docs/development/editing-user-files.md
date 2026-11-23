@@ -51,12 +51,12 @@ implementation. Do not try to unify them.
 Some files cannot be edited and put back soundly. Refuse them, each with the remedy that
 fits it:
 
-| Shape | Why it cannot be edited |
-| --- | --- |
-| More than one YAML document | Re-emitting moves comments between documents |
-| Repeated keys that disagree | Removing one silently promotes the other |
-| A value carrying an anchor the file aliases | Removing it strands the alias and the file never loads again |
-| The edit would leave no recognized key | The result is not a manifest, and the file still exists, so nothing falls back to setup |
+| Shape                                       | Why it cannot be edited                                                                 |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| More than one YAML document                 | Re-emitting moves comments between documents                                            |
+| Repeated keys that disagree                 | Removing one silently promotes the other                                                |
+| A value carrying an anchor the file aliases | Removing it strands the alias and the file never loads again                            |
+| The edit would leave no recognized key      | The result is not a manifest, and the file still exists, so nothing falls back to setup |
 
 Do not append one generic remedy to all of them. "Remove that line" is correct advice for
 one of these and walks the user into a broken file for another.

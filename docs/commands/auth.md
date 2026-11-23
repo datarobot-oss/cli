@@ -41,10 +41,10 @@ dr auth login
 
 **Options:**
 
-| Flag           | Description                                                |
-| -------------- | ---------------------------------------------------------- |
+| Flag           | Description                                                         |
+| -------------- | ------------------------------------------------------------------- |
 | `--no-browser` | Print the login link instead of opening a browser (useful over SSH) |
-| `--timeout`    | How long to wait for the browser callback (default 5m) |
+| `--timeout`    | How long to wait for the browser callback (default 5m)              |
 
 **What happens:**
 

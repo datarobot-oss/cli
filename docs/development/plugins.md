@@ -204,11 +204,11 @@ CLI applies the TLS configuration to its own HTTP client and forwards the
 equivalent runtime configuration to your plugin subprocess via these environment
 variables:
 
-| Variable | Set when | Value |
-|---|---|---|
-| `NODE_TLS_REJECT_UNAUTHORIZED` | `--skip-certificate-check`/`-k` is used | `0` |
-| `NODE_EXTRA_CA_CERTS` | `--ca-cert <path>` is used | `<path>` |
-| `SSL_CERT_FILE` | `--ca-cert <path>` is used | `<path>` |
+| Variable                       | Set when                                | Value    |
+| ------------------------------ | --------------------------------------- | -------- |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | `--skip-certificate-check`/`-k` is used | `0`      |
+| `NODE_EXTRA_CA_CERTS`          | `--ca-cert <path>` is used              | `<path>` |
+| `SSL_CERT_FILE`                | `--ca-cert <path>` is used              | `<path>` |
 
 Plugins written in Node.js/Bun automatically honour `NODE_TLS_REJECT_UNAUTHORIZED`
 and `NODE_EXTRA_CA_CERTS` without any extra code. Other runtimes that respect
@@ -222,18 +222,18 @@ The CLI sets the following environment variables on the plugin subprocess. Your 
 
 #### Always present
 
-| Variable | Value | Description |
-|---|---|---|
-| `DR_PLUGIN_MODE` | `1` | Signals to the plugin that it was invoked by the `dr` CLI. |
-| `DR_PLUGIN_PATH` | `/path/to/dr-myplugin` | Absolute path to the plugin executable. |
-| `DATAROBOT_CONFIG` | `/path/to/drconfig.yaml` | Path to the active config file (if one is loaded). |
+| Variable           | Value                    | Description                                                |
+| ------------------ | ------------------------ | ---------------------------------------------------------- |
+| `DR_PLUGIN_MODE`   | `1`                      | Signals to the plugin that it was invoked by the `dr` CLI. |
+| `DR_PLUGIN_PATH`   | `/path/to/dr-myplugin`   | Absolute path to the plugin executable.                    |
+| `DATAROBOT_CONFIG` | `/path/to/drconfig.yaml` | Path to the active config file (if one is loaded).         |
 
 #### Present when `authentication: true`
 
-| Variable | Value | Description |
-|---|---|---|
-| `DATAROBOT_ENDPOINT` | `https://app.datarobot.com` | The DataRobot API endpoint. |
-| `DATAROBOT_API_TOKEN` | `<token>` | The user's API token, already validated. |
+| Variable              | Value                       | Description                              |
+| --------------------- | --------------------------- | ---------------------------------------- |
+| `DATAROBOT_ENDPOINT`  | `https://app.datarobot.com` | The DataRobot API endpoint.              |
+| `DATAROBOT_API_TOKEN` | `<token>`                   | The user's API token, already validated. |
 
 #### Universal CLI flags (`DATAROBOT_CLI_*`)
 
@@ -253,13 +253,13 @@ dr --debug myplugin [args...]
 dr myplugin --debug [args...]
 ```
 
-| CLI flag | Environment variable | Value |
-|---|---|---|
-| `--debug` | `DATAROBOT_CLI_DEBUG` | `1` |
-| `--disable-telemetry` | `DATAROBOT_CLI_DISABLE_TELEMETRY` | `1` |
-| `--verbose` | `DATAROBOT_CLI_VERBOSE` | `1` |
-| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1` |
-| `--ca-cert <path>` | `DATAROBOT_CLI_CA_CERT` | `<path>` |
+| CLI flag                   | Environment variable                   | Value    |
+| -------------------------- | -------------------------------------- | -------- |
+| `--debug`                  | `DATAROBOT_CLI_DEBUG`                  | `1`      |
+| `--disable-telemetry`      | `DATAROBOT_CLI_DISABLE_TELEMETRY`      | `1`      |
+| `--verbose`                | `DATAROBOT_CLI_VERBOSE`                | `1`      |
+| `--skip-certificate-check` | `DATAROBOT_CLI_SKIP_CERTIFICATE_CHECK` | `1`      |
+| `--ca-cert <path>`         | `DATAROBOT_CLI_CA_CERT`                | `<path>` |
 
 The `DATAROBOT_CLI_` prefix is the canonical namespace for flags forwarded from
 the core CLI. As new universal flags are added, they follow the same convention:
