@@ -49,6 +49,7 @@ const (
 const (
 	SectionInstall               = "install"
 	SectionSeats                 = "seats"
+	SectionLimits                = "limits"
 	SectionEntitlements          = "entitlements"
 	SectionExecutionEnvironments = "executionEnvironments"
 	SectionResourceBundles       = "resourceBundles"
@@ -107,6 +108,11 @@ type Install struct {
 type Seats struct {
 	SeatLicenses map[string]bool `json:"seatLicenses"`
 }
+
+// Limits are the caller's numeric limits as the install reports them, by the
+// install's own key (maxConcurrentWorkloads, maxWorkloadReplicas, ...). A key
+// the install does not return, or returns as null, is absent.
+type Limits map[string]int
 
 // ExecutionEnvironments lists every execution environment the caller can read.
 type ExecutionEnvironments struct {

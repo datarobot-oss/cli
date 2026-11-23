@@ -245,6 +245,64 @@ func TestSeatsSection_IsUnavailableWithTheRouteBody(t *testing.T) {
 	assert.Nil(t, section.Data)
 }
 
+func TestLimitsSection_ReturnsEachLimitTheInstallReports(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := limitsSection(context.Background())
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"maxConcurrentWorkloads":50,"maxWorkloadReplicas":3}`, jsonOf(t, section.Data))
+}
+
+func TestLimitsSection_LeavesOutALimitTheInstallReturnsAsNull(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"limits":{"maxConcurrentWorkloads":null,"maxWorkloadReplicas":3}}`})
+
+	section := limitsSection(context.Background())
+
+	assert.JSONEq(t, `{"maxWorkloadReplicas":3}`, jsonOf(t, section.Data))
+}
+
+func TestLimitsSection_KeepsAMissingMapAsAnEmptyObject(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"seatLicenses":{}}`})
+
+	section := limitsSection(context.Background())
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{}`, jsonOf(t, section.Data))
+}
+
+func TestLimitsSection_CleansTheKeyOfALimit(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"limits":{"max\u001b[2JWorkloadReplicas":3}}`})
+
+	section := limitsSection(context.Background())
+
+	assert.JSONEq(t, `{"max[2JWorkloadReplicas":3}`, jsonOf(t, section.Data))
+}
+
+func TestLimitsSection_IsUnavailableWhenALimitIsNotAnInteger(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"limits":{"maxWorkloadReplicas":"three"}}`})
+
+	section := limitsSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+}
+
+func TestLimitsSection_IsUnavailableWithTheRouteBody(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{status: http.StatusForbidden, body: `{"message":"nope"}`})
+
+	section := limitsSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, http.StatusForbidden, section.HTTPStatus)
+	assert.Equal(t, `HTTP 403: {"message":"nope"}`, section.Message)
+}
+
 func TestSectionOf_LeavesTheHTTPStatusUnsetWhenNoResponseCame(t *testing.T) {
 	section := sectionOf(nil, errors.New("dial tcp: connection refused"))
 
@@ -562,13 +620,15 @@ func TestEntitlementsFor_ReadsOneBatch(t *testing.T) {
 
 	assert.Equal(t, StatusOK, section.Status)
 	assert.Equal(t, map[string]bool{
-		"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND": false,
-		"ENABLE_WORKLOAD_API_CONTAINERS":         true,
-		"DISABLE_CUSTOM_TEMPLATES":               false,
+		"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND":     false,
+		"ENABLE_WORKLOAD_API_CONTAINERS":             true,
+		"ENABLE_WORKLOAD_REQUIRE_USE_CASE":           false,
+		"ENABLE_SECURE_CONFIG_EXPOSURE_TO_CONSUMERS": false,
+		"DISABLE_CUSTOM_TEMPLATES":                   false,
 	}, section.Data)
 	assert.Len(t, fake.postBodies(), 1)
 	assert.JSONEq(t,
-		`{"entitlements":[{"name":"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND"},{"name":"ENABLE_WORKLOAD_API_CONTAINERS"},{"name":"DISABLE_CUSTOM_TEMPLATES"}]}`,
+		`{"entitlements":[{"name":"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND"},{"name":"ENABLE_WORKLOAD_API_CONTAINERS"},{"name":"ENABLE_WORKLOAD_REQUIRE_USE_CASE"},{"name":"ENABLE_SECURE_CONFIG_EXPOSURE_TO_CONSUMERS"},{"name":"DISABLE_CUSTOM_TEMPLATES"}]}`,
 		fake.postBodies()[0])
 }
 

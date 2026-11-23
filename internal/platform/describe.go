@@ -68,6 +68,7 @@ func Describe(ctx context.Context) (*Report, error) {
 			return installSection(cfg, cfgErr)
 		}},
 		{SectionSeats, func() Section { return seatsSection(ctx) }},
+		{SectionLimits, func() Section { return limitsSection(ctx) }},
 		{SectionEntitlements, func() Section { return entitlementsSection(ctx) }},
 		{SectionExecutionEnvironments, func() Section { return executionEnvironmentsSection(ctx) }},
 		{SectionResourceBundles, func() Section { return resourceBundlesSection(ctx) }},
@@ -113,6 +114,7 @@ func Describe(ctx context.Context) (*Report, error) {
 var scopeOf = map[string]Scope{
 	SectionInstall:               ScopePlatform,
 	SectionSeats:                 ScopeCaller,
+	SectionLimits:                ScopeCaller,
 	SectionEntitlements:          ScopeCaller,
 	SectionExecutionEnvironments: ScopeCaller,
 	SectionResourceBundles:       ScopeCaller,

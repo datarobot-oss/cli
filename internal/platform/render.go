@@ -31,6 +31,7 @@ const customApplication = "customApplication"
 var sectionOrder = []string{
 	SectionInstall,
 	SectionSeats,
+	SectionLimits,
 	SectionEntitlements,
 	SectionExecutionEnvironments,
 	SectionResourceBundles,
@@ -108,6 +109,10 @@ func renderData(say func(string, ...any), data any) {
 		renderInstall(say, d)
 	case Seats:
 		renderSeats(say, d)
+	case Limits:
+		for _, name := range sortedKeys(d) {
+			say("  %s: %d", name, d[name])
+		}
 	case map[string]bool:
 		for _, name := range sortedKeys(d) {
 			say("  %s: %s", name, onOff(d[name]))
@@ -184,7 +189,7 @@ func renderWorkloadAPI(say func(string, ...any), api WorkloadAPI) {
 	}
 }
 
-func sortedKeys(m map[string]bool) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
 		keys = append(keys, key)

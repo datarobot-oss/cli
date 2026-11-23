@@ -61,7 +61,7 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 				assert.Equal(t, StatusOK, section.Status, name)
 			}
 
-			assert.Len(t, report.Sections, 6)
+			assert.Len(t, report.Sections, 7)
 			require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
 		})
 	}
@@ -78,6 +78,7 @@ func TestDescribe_EverySectionStatesWhoItsAnswerIsTrueFor(t *testing.T) {
 	want := map[string]Scope{
 		SectionInstall:               ScopePlatform,
 		SectionSeats:                 ScopeCaller,
+		SectionLimits:                ScopeCaller,
 		SectionEntitlements:          ScopeCaller,
 		SectionExecutionEnvironments: ScopeCaller,
 		SectionResourceBundles:       ScopeCaller,

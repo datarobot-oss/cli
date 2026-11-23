@@ -45,7 +45,8 @@ Each section has a source, a `scope`, and a status.
 
 - `install`, from the `/config` route: `isEnterprise` and `defaultAppResourceBundle`. A key the install does not return is left out. `/config` is the web interface's bootstrap document. It sits at the install root, outside `/api/v2`, has no version, and answers without credentials, so the command sends no token to it. Treat `install`, `server.release`, and `server.canonicalUrl` as best effort: a later release can change the route or require authentication, and the values are then empty and `install` is `unavailable`.
 - `seats`, from `/api/v2/account/info/`: `seatLicenses`, each license mapped to whether the caller has it. A license that is absent is not enforced on that install, so `{}` does not mean blocked. When a release removes or restricts the route, `seats` is `unavailable`.
-- `entitlements`, from `/api/v2/entitlements/evaluate/`: the flags a Custom Application deploy depends on. A name the install does not know, or leaves out of its answer, is listed in the message and the section is `degraded`.
+- `limits`, from `/api/v2/account/info/`: the caller's numeric limits, each under the install's own key, for example `maxConcurrentWorkloads` and `maxWorkloadReplicas`. A limit the install returns as null is left out.
+- `entitlements`, from `/api/v2/entitlements/evaluate/`: the flags a Custom Application or Workload deploy depends on, among them `ENABLE_WORKLOAD_REQUIRE_USE_CASE` and `ENABLE_SECURE_CONFIG_EXPOSURE_TO_CONSUMERS`, which decides whether a Workload can mount a shared secure configuration. A name the install does not know, or leaves out of its answer, is listed in the message and the section is `degraded`.
 - `executionEnvironments`, from `/api/v2/executionEnvironments/`: every environment the caller can read, with `id`, `name`, `programmingLanguage`, `useCases`, `hasSuccessfulVersion`, `buildStatus`, `isPublic`, and `sourceDockerImageUri`.
   - An environment is valid for applications when `useCases` lists `customApplication`.
   - Names are not unique, and any user who can share an environment can give it the name of an official one. Pick by `id` from a list you pin. `isPublic` says whether the install publishes the environment to every user, as it does an official one. It is left out when the install does not say.
@@ -78,6 +79,7 @@ A list read stops at 100 pages or 10,000 items, and one response may hold at mos
     "sections": {
       "install": {"scope": "platform", "status": "ok", "data": {"isEnterprise": true, "defaultAppResourceBundle": "cpu.xlarge"}},
       "seats": {"scope": "caller", "status": "ok", "data": {"seatLicenses": {}}},
+      "limits": {"scope": "caller", "status": "ok", "data": {"maxConcurrentWorkloads": 50, "maxWorkloadReplicas": 3}},
       "entitlements": {"scope": "caller", "status": "ok", "data": {"ENABLE_WORKLOAD_API_CONTAINERS": true}},
       "executionEnvironments": {"scope": "caller", "status": "ok", "data": {"items": [
         {"id": "5f1a...", "name": "[DataRobot] Python 3.12 Applications Base", "programmingLanguage": "python",

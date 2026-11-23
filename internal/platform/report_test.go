@@ -60,6 +60,7 @@ func sampleReport() Report {
 		Sections: map[string]Section{
 			SectionInstall:      {Scope: ScopePlatform, Status: StatusOK, Data: Install{IsEnterprise: &enterprise, DefaultAppResourceBundle: "cpu.xlarge"}},
 			SectionSeats:        {Scope: ScopeCaller, Status: StatusOK, Data: Seats{SeatLicenses: map[string]bool{}}},
+			SectionLimits:       {Scope: ScopeCaller, Status: StatusOK, Data: Limits{"maxWorkloadReplicas": 3}},
 			SectionEntitlements: {Scope: ScopeCaller, Status: StatusDegraded, Message: "ENABLE_X: HTTP 422", Data: map[string]bool{"ENABLE_Y": true}},
 			SectionExecutionEnvironments: {Scope: ScopeCaller, Status: StatusOK, Data: ExecutionEnvironments{Items: []ExecutionEnvironment{
 				{ID: "env-1", Name: "Python", UseCases: []string{"customApplication"}, HasSuccessfulVersion: true, BuildStatus: "success"},
@@ -131,6 +132,13 @@ func TestSchema_RejectsAnHTTPStatusOutsideTheHTTPRange(t *testing.T) {
 func TestSchema_RejectsANegativeWorkloadCount(t *testing.T) {
 	report := sampleReport()
 	report.Sections[SectionWorkloadAPI] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]any{"totalCount": -1}}
+
+	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
+}
+
+func TestSchema_RejectsALimitThatIsNotAnInteger(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionLimits] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]any{"maxWorkloadReplicas": "three"}}
 
 	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
 }

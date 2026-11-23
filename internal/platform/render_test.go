@@ -59,7 +59,7 @@ func TestRenderTo_TextNamesTheInstallAndEverySection(t *testing.T) {
 	assert.Contains(t, out, "https://dr.example.com")
 	assert.Contains(t, out, "11.12.0")
 
-	for _, section := range []string{SectionInstall, SectionSeats, SectionEntitlements, SectionExecutionEnvironments, SectionResourceBundles, SectionWorkloadAPI} {
+	for _, section := range []string{SectionInstall, SectionSeats, SectionLimits, SectionEntitlements, SectionExecutionEnvironments, SectionResourceBundles, SectionWorkloadAPI} {
 		assert.Contains(t, out, section)
 	}
 }
@@ -82,6 +82,13 @@ func TestRenderTo_TextShowsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
 	out := renderFixture(t, "sts-11.12.0", outputformat.OutputFormatText)
 
 	assert.Contains(t, out, "workloads visible to you: 7")
+}
+
+func TestRenderTo_TextListsEachLimitWithItsValue(t *testing.T) {
+	out := renderFixture(t, "sts-11.12.0", outputformat.OutputFormatText)
+
+	assert.Contains(t, out, "maxConcurrentWorkloads: 50")
+	assert.Contains(t, out, "maxWorkloadReplicas: 3")
 }
 
 func TestRenderTo_TextShowsAWorkloadCountOfZero(t *testing.T) {
