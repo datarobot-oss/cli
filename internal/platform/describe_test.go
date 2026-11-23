@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,6 +160,31 @@ func TestDescribe_StopsWhenTheCredentialsAreRejected(t *testing.T) {
 	assert.Nil(t, report)
 	assert.Contains(t, err.Error(), "rejected the credentials")
 	assert.Contains(t, err.Error(), "HTTP 401")
+}
+
+func TestDescribe_RejectedCredentialsKeepTheirStatusAndURLInTheJSONError(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/version/", route{status: http.StatusUnauthorized, body: `{"message":"Invalid token"}`})
+
+	_, err := Describe(context.Background())
+
+	body := outputformat.NewErrorBody(err)
+
+	assert.Equal(t, http.StatusUnauthorized, body.StatusCode)
+	assert.Contains(t, body.URL, "/api/v2/version/")
+	assert.Contains(t, body.Message, "rejected the credentials")
+}
+
+func TestDescribe_AnUnreachableInstallCarriesNoHTTPStatusInTheJSONError(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.srv.Close()
+
+	_, err := Describe(context.Background())
+
+	body := outputformat.NewErrorBody(err)
+
+	assert.Zero(t, body.StatusCode)
+	assert.Contains(t, body.Message, "cannot reach the install")
 }
 
 func TestDescribe_AnImageAddressReachesTheJSONReportThatTheSchemaAccepts(t *testing.T) {

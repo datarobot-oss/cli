@@ -46,9 +46,9 @@ func Describe(ctx context.Context) (*Report, error) {
 
 	switch {
 	case err != nil && isTransport(err):
-		return nil, fmt.Errorf("cannot reach the install: %s", reason(err))
+		return nil, stopped{"cannot reach the install: " + reason(err), err}
 	case statusOf(err) == http.StatusUnauthorized:
-		return nil, fmt.Errorf("the install rejected the credentials: %s", reason(err))
+		return nil, stopped{"the install rejected the credentials: " + reason(err), err}
 	}
 
 	var (
@@ -102,6 +102,18 @@ func Describe(ctx context.Context) (*Report, error) {
 		},
 	}, nil
 }
+
+// stopped is the error that ends a run before any section is read. Its message
+// carries the one-line reason, and it unwraps to the cause so the JSON error
+// envelope still finds the *drapi.HTTPError behind it.
+type stopped struct {
+	message string
+	cause   error
+}
+
+func (e stopped) Error() string { return e.message }
+
+func (e stopped) Unwrap() error { return e.cause }
 
 // guard runs read. When read panics, the section becomes an unavailable one, so
 // a broken source costs only its own section.
