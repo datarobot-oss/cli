@@ -54,34 +54,9 @@ func publicURL(path string) (string, error) {
 // drapi.Get is not used because it drops the body of an error response, and
 // the body is what names the cause.
 func call(ctx context.Context, method, url string, authorize bool, in, out any) error {
-	var body io.Reader
-
-	if in != nil {
-		raw, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-
-		body = bytes.NewReader(raw)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	req, err := newRequest(ctx, method, url, authorize, in)
 	if err != nil {
 		return err
-	}
-
-	req.Header.Set("Accept", "application/json")
-
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	if authorize {
-		if err = drapi.AuthorizeRequest(req); err != nil { //nolint:contextcheck // drapi takes no context
-			return err
-		}
-	} else {
-		req.Header.Set("User-Agent", config.GetUserAgentHeader())
 	}
 
 	resp, err := drapi.Do(req, callTimeout)
@@ -95,17 +70,61 @@ func call(ctx context.Context, method, url string, authorize bool, in, out any) 
 
 	defer resp.Body.Close()
 
-	if err = json.NewDecoder(resp.Body).Decode(out); err != nil {
-		var syntax *json.SyntaxError
+	return decodeJSON(resp.Body, out)
+}
 
-		if errors.As(err, &syntax) || errors.Is(err, io.EOF) {
-			return fmt.Errorf("the response is not JSON (a login or proxy page?): %w", err)
+// newRequest builds a request with a JSON body when in is set. authorize false
+// leaves the token off and sends only the user agent.
+func newRequest(ctx context.Context, method, url string, authorize bool, in any) (*http.Request, error) {
+	var body io.Reader
+
+	if in != nil {
+		raw, err := json.Marshal(in)
+		if err != nil {
+			return nil, err
 		}
 
-		return err
+		body = bytes.NewReader(raw)
 	}
 
-	return nil
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept", "application/json")
+
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	if !authorize {
+		req.Header.Set("User-Agent", config.GetUserAgentHeader())
+
+		return req, nil
+	}
+
+	if err = drapi.AuthorizeRequest(req); err != nil { //nolint:contextcheck // drapi takes no context
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// decodeJSON reads one JSON value from r into out.
+func decodeJSON(r io.Reader, out any) error {
+	err := json.NewDecoder(r).Decode(out)
+	if err == nil {
+		return nil
+	}
+
+	var syntax *json.SyntaxError
+
+	if errors.As(err, &syntax) || errors.Is(err, io.EOF) {
+		return fmt.Errorf("the response is not JSON (a login or proxy page?): %w", err)
+	}
+
+	return err
 }
 
 // listAll reads a paged list to the end, following each page's next cursor.
