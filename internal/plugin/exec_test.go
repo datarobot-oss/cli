@@ -310,6 +310,38 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
 
+// WithoutPreflight must skip the auth check entirely: no request reaches the
+// endpoint even though the manifest requires authentication, and the plugin
+// still runs (help rendering must never open the login wizard).
+func TestExecutePluginWithoutPreflightSkipsAuthCheck(t *testing.T) {
+	var authCheckCalled bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		authCheckCalled = true
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, server.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	scriptPath := writeExitScript(t, t.TempDir(), "test", 0)
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
+	}
+
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{"--help"}, nil, WithoutPreflight())
+
+	assert.Equal(t, 0, exitCode)
+	assert.False(t, authCheckCalled, "auth endpoint must not be contacted when preflight is skipped")
+}
+
 func TestConfirmPluginDepsInstall_YFlag(t *testing.T) {
 	result := confirmPluginDepsInstall([]string{"-y"})
 
