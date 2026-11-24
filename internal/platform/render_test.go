@@ -151,3 +151,68 @@ func TestRenderTo_TextShowsWhyASectionIsUnavailable(t *testing.T) {
 	assert.Contains(t, out.String(), "HTTP 403: forbidden")
 	assert.Contains(t, out.String(), "ENABLE_X: HTTP 422")
 }
+
+// Each field a server controls gets the payload in turn. None of it may reach
+// the text a terminal prints.
+func TestRenderTo_TextPrintsNoTerminalControlFromAnyServerField(t *testing.T) {
+	bundleUnavailable := func(r *Report, message string) {
+		r.Sections[SectionResourceBundles] = Section{Scope: ScopeCaller, Status: StatusUnavailable, Message: message}
+	}
+
+	fields := map[string]func(r *Report, payload string){
+		"canonical URL": func(r *Report, p string) { r.Server.CanonicalURL = p },
+		"release":       func(r *Report, p string) { r.Server.Release = p },
+		"API version":   func(r *Report, p string) { r.Server.APIVersion = p },
+		"default bundle": func(r *Report, p string) {
+			r.Sections[SectionInstall] = Section{Scope: ScopePlatform, Status: StatusOK, Data: Install{DefaultAppResourceBundle: p}}
+		},
+		"seat license": func(r *Report, p string) {
+			r.Sections[SectionSeats] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Seats{SeatLicenses: map[string]bool{p: true}}}
+		},
+		"entitlement": func(r *Report, p string) {
+			r.Sections[SectionEntitlements] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]bool{p: true}}
+		},
+		"environment ID": func(r *Report, p string) {
+			r.Sections[SectionExecutionEnvironments] = Section{Scope: ScopeCaller, Status: StatusOK, Data: ExecutionEnvironments{
+				Items: []ExecutionEnvironment{{ID: p, Name: "n", UseCases: []string{customApplication}}},
+			}}
+		},
+		"environment name": func(r *Report, p string) {
+			r.Sections[SectionExecutionEnvironments] = Section{Scope: ScopeCaller, Status: StatusOK, Data: ExecutionEnvironments{
+				Items: []ExecutionEnvironment{{ID: "e", Name: p, UseCases: []string{customApplication}}},
+			}}
+		},
+		"environment language": func(r *Report, p string) {
+			r.Sections[SectionExecutionEnvironments] = Section{Scope: ScopeCaller, Status: StatusOK, Data: ExecutionEnvironments{
+				Items: []ExecutionEnvironment{{ID: "e", Name: "n", ProgrammingLanguage: p, UseCases: []string{customApplication}}},
+			}}
+		},
+		"bundle ID": func(r *Report, p string) {
+			r.Sections[SectionResourceBundles] = Section{Scope: ScopeCaller, Status: StatusOK, Data: ResourceBundles{
+				Items: []ResourceBundle{{ID: p, Name: "n", UseCases: []string{customApplication}}},
+			}}
+		},
+		"bundle name": func(r *Report, p string) {
+			r.Sections[SectionResourceBundles] = Section{Scope: ScopeCaller, Status: StatusOK, Data: ResourceBundles{
+				Items: []ResourceBundle{{ID: "b", Name: p, UseCases: []string{customApplication}}},
+			}}
+		},
+		"section message": func(r *Report, p string) { bundleUnavailable(r, p) },
+	}
+
+	for name, inject := range fields {
+		t.Run(name, func(t *testing.T) {
+			report := sampleReport()
+
+			inject(&report, terminalPayload)
+
+			var out bytes.Buffer
+
+			require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+			assert.NotContains(t, out.String(), "\x1b")
+			assert.NotContains(t, out.String(), "\x07")
+			assert.Contains(t, out.String(), "keep", "the text around the payload stays")
+		})
+	}
+}

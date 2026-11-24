@@ -61,7 +61,7 @@ func renderText(w io.Writer, report Report) error {
 			return
 		}
 
-		_, err = fmt.Fprintf(w, format+"\n", args...)
+		_, err = fmt.Fprintf(w, format+"\n", cleanArgs(args)...)
 	}
 
 	say("Install   %s", orUnknown(report.Server.CanonicalURL))
@@ -84,6 +84,22 @@ func renderText(w io.Writer, report Report) error {
 	}
 
 	return err
+}
+
+// cleanArgs cleans every string among a line's arguments, so no field the
+// install supplied reaches the terminal as it came.
+func cleanArgs(args []any) []any {
+	out := make([]any, len(args))
+
+	for i, arg := range args {
+		if s, ok := arg.(string); ok {
+			arg = clean(s)
+		}
+
+		out[i] = arg
+	}
+
+	return out
 }
 
 func renderData(say func(string, ...any), data any) {

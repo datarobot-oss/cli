@@ -23,9 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
-	"unicode"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
@@ -162,32 +160,15 @@ func reason(err error) string {
 	var httpErr *drapi.HTTPError
 
 	if !errors.As(err, &httpErr) {
-		return err.Error()
+		return clean(err.Error())
 	}
 
-	body := oneLine(string(httpErr.Body))
+	body := clean(string(httpErr.Body))
 	if body == "" {
 		return fmt.Sprintf("HTTP %d", httpErr.StatusCode)
 	}
 
 	return fmt.Sprintf("HTTP %d: %s", httpErr.StatusCode, body)
-}
-
-// oneLine joins a response body into one line and drops control characters, so
-// an error page from a proxy cannot rewrite the terminal.
-func oneLine(s string) string {
-	spaced := strings.Map(func(r rune) rune {
-		switch {
-		case unicode.IsSpace(r):
-			return ' '
-		case unicode.IsControl(r):
-			return -1
-		}
-
-		return r
-	}, s)
-
-	return strings.Join(strings.Fields(spaced), " ")
 }
 
 // statusOf returns the HTTP status of a failed call, or zero when no response

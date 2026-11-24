@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -60,6 +61,10 @@ func readConfig(ctx context.Context) (publicConfig, error) {
 
 	err = call(ctx, http.MethodGet, target, false, nil, &cfg)
 
+	cfg.ReleaseVersion = clean(cfg.ReleaseVersion)
+	cfg.ExternalWebServerURL = clean(cfg.ExternalWebServerURL)
+	cfg.CustomAppDefaultResourceBundle = clean(cfg.CustomAppDefaultResourceBundle)
+
 	return cfg, err
 }
 
@@ -77,7 +82,7 @@ func readAPIVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return version.VersionString, nil
+	return clean(version.VersionString), nil
 }
 
 // sectionOf turns a read into a section: the data when it succeeded, the
@@ -110,7 +115,7 @@ func seatsSection(ctx context.Context) Section {
 	// A JSON null or a missing map must reach the report as {}, not null.
 	seats := Seats{SeatLicenses: map[string]bool{}}
 	for name, access := range info.SeatLicenses {
-		seats.SeatLicenses[name] = access
+		seats.SeatLicenses[clean(name)] = access
 	}
 
 	return sectionOf(seats, err)
@@ -144,19 +149,19 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 
 	for _, e := range raw {
 		item := ExecutionEnvironment{
-			ID:                   e.ID,
-			Name:                 e.Name,
-			ProgrammingLanguage:  e.ProgrammingLanguage,
-			UseCases:             append([]string{}, e.UseCases...),
+			ID:                   clean(e.ID),
+			Name:                 clean(e.Name),
+			ProgrammingLanguage:  clean(e.ProgrammingLanguage),
+			UseCases:             cleanAll(e.UseCases),
 			HasSuccessfulVersion: e.LatestSuccessfulVersion != nil,
 		}
 
 		if e.LatestSuccessfulVersion != nil {
-			item.SourceDockerImageURI = e.LatestSuccessfulVersion.SourceDockerImageURI
+			item.SourceDockerImageURI = clean(e.LatestSuccessfulVersion.SourceDockerImageURI)
 		}
 
 		if e.LatestVersion != nil {
-			item.BuildStatus = e.LatestVersion.BuildStatus
+			item.BuildStatus = clean(e.LatestVersion.BuildStatus)
 		}
 
 		items = append(items, item)
@@ -177,7 +182,9 @@ func resourceBundlesSection(ctx context.Context) Section {
 	}
 
 	for i := range items {
-		items[i].UseCases = append([]string{}, items[i].UseCases...)
+		items[i].ID = clean(items[i].ID)
+		items[i].Name = clean(items[i].Name)
+		items[i].UseCases = cleanAll(items[i].UseCases)
 	}
 
 	if items == nil {
@@ -326,9 +333,11 @@ func evaluate(ctx context.Context, names []string) (map[string]bool, error) {
 		return nil, err
 	}
 
-	values := make(map[string]bool, len(response.Entitlements))
+	values := make(map[string]bool, len(names))
 	for _, e := range response.Entitlements {
-		values[e.Name] = e.Value
+		if slices.Contains(names, e.Name) {
+			values[e.Name] = e.Value
+		}
 	}
 
 	return values, nil
