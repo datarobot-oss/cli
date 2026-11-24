@@ -94,6 +94,12 @@ The v0.8.0 and v0.20.0 auth-profile threads are the references.
   pings need a rich_text block edit: post with `parse: none`, then `slack__update_message`
   replacing the literal text with a `{"type": "user", "user_id": "U…"}` element. Using plain
   names instead of mentions sidesteps the limitation entirely and is the default.
+  - **Exception, verified twice (v0.22.1, v0.23.0):** with `parse` left unset, `<@U…>` in
+    `post_message` text DOES arrive as a real `{"type": "user"}` mention element. Always
+    verify the send response's blocks carry `type: user` before considering it done.
+- Markdown `[text](url)` links are NOT converted — they arrive as literal text. Convert to
+  `<url|text>` or a bare URL when composing the post (bare links, `<url|text>`, bold, inline
+  code, fenced blocks, and numbered lists all render correctly as plain mrkdwn).
 - Angle-bracket placeholders (`<group-id>`) render correctly inside code spans and preformatted
   blocks; only the plain-text fallback shows `&lt;…&gt;`.
 - `*bold*`, `` `code` ``, fenced blocks, and bare links all render correctly as plain mrkdwn text.
@@ -113,6 +119,14 @@ The v0.8.0 and v0.20.0 auth-profile threads are the references.
 - **Re-read the draft file immediately before posting.** Sync a meaningful aj edit across
   surfaces when it touches content that also appears in the GitHub release body (a trimmed
   gate note); leave pure-opener edits alone.
+- **aj may hand the draft back for a finishing pass** (v0.23.0: "I updated the announcements,
+  spellcheck and fix the Slack IDs"). The job then is spelling (he types `z` for `s`) and
+  swapping `@Name` placeholders for real `<@UID>` markup — not restructuring. Leave his voice
+  (quips, emoji) alone; look up IDs by `firstname.lastname@datarobot.com`.
+- **Framing aj writes in Slack is the framing aj wants on the GitHub release.** v0.23.0: the
+  release notes were rewritten to mirror his 1-2-3 lead ("everything you want to know about a
+  particular installation") instead of the agent's problem/solution paragraphs. Keep the
+  operational bullets; adopt his lead.
 - Publish release notes **after** `promote-release` succeeds, not between publish and
   promotion (see `pipeline.md` for the race).
 

@@ -104,6 +104,7 @@ nav:
       - pipeline: commands/pipeline.md
       - pipeline reference: commands/pipelines-reference.md
       - llm-gateway: commands/llm-gateway.md
+      - info: commands/info.md
   - Development:
       - development/README.md
       - Setup: development/setup.md
