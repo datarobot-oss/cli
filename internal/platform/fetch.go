@@ -23,15 +23,39 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 )
 
-// callTimeout bounds one request, so a source that hangs does not hold the
-// report back.
-const callTimeout = 15 * time.Second
+const (
+	// callTimeout bounds one request, so a source that hangs does not hold the
+	// report back.
+	callTimeout = 15 * time.Second
+
+	// maxBodyBytes is the most one response may hold. The largest recorded
+	// answer is a few hundred kilobytes.
+	maxBodyBytes = 8 << 20
+
+	// maxPages and maxItems bound one paged read. A page holds up to listLimit
+	// items, so maxItems is also the most a full run of pages can hold.
+	maxPages = 100
+	maxItems = 10_000
+
+	// errorBodyBytes is how much of an error response the report keeps. The
+	// read goes further than the cut, so redaction sees a token the cut would
+	// have split.
+	errorBodyBytes = 512
+	errorReadBytes = 2 * errorBodyBytes
+
+	// maxRedirects is the number of redirects one request follows, as net/http
+	// does by default.
+	maxRedirects = 10
+)
 
 // apiURL builds a URL under the configured install's /api/v2.
 func apiURL(path string, query url.Values) (string, error) {
@@ -44,31 +68,99 @@ func publicURL(path string) (string, error) {
 	return config.GetEndpointURL(path)
 }
 
+// transportError is a failure to get a usable answer: the install is
+// unreachable, the name does not resolve, TLS failed, a redirect left the
+// install, or the answer was not the JSON the route promises. A failure that
+// never left the machine, such as an empty endpoint or a token that cannot be
+// resolved, is not one.
+type transportError struct{ cause error }
+
+func (e *transportError) Error() string { return e.cause.Error() }
+
+func (e *transportError) Unwrap() error { return e.cause }
+
+// limitError means a cap tripped before a read finished.
+type limitError struct{ message string }
+
+func (e *limitError) Error() string { return e.message }
+
 // call sends one request and decodes a 2xx JSON response into out. A non-2xx
-// response comes back as a *drapi.HTTPError that carries the response body,
-// which reason turns into the section's message. authorize false leaves the
-// token off, for public routes.
+// response comes back as a *drapi.HTTPError that carries the start of the
+// response body with the token redacted, which reason turns into the section's
+// message. authorize false leaves the token off, for public routes.
 //
-// drapi.Get is not used because it drops the body of an error response, and
-// the body is what names the cause.
+// call does not use drapi.Get, Post or Do, which take no context, so the
+// deadline of the whole run could not reach the request, and which follow
+// redirects to any origin. It logs the request as they do.
 func call(ctx context.Context, method, url string, authorize bool, in, out any) error {
 	req, err := newRequest(ctx, method, url, authorize, in)
 	if err != nil {
 		return err
 	}
 
-	resp, err := drapi.Do(req, callTimeout)
-	if err != nil {
-		return err
-	}
+	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return drapi.ErrFromResp(resp, url)
+	client := drapi.NewHTTPClient(callTimeout)
+	client.CheckRedirect = stayOnOrigin
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return &transportError{err}
 	}
 
 	defer resp.Body.Close()
 
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return httpError(resp, url, req.Header.Get("Authorization"))
+	}
+
 	return decodeJSON(resp.Body, out)
+}
+
+// stayOnOrigin refuses a redirect to another scheme, host or port than the
+// request began on. Go keeps the Authorization header for a redirect to the
+// same hostname, whatever the scheme or port, so the token would reach a
+// listener the install did not name.
+func stayOnOrigin(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return errors.New("stopped after too many redirects")
+	}
+
+	first := via[0].URL
+	if req.URL.Scheme != first.Scheme || req.URL.Host != first.Host {
+		return fmt.Errorf("the install redirected to %s://%s, which is not the configured address; set the endpoint to it",
+			req.URL.Scheme, req.URL.Host)
+	}
+
+	return nil
+}
+
+// bearerPattern matches a bearer credential wherever an error page echoes one.
+var bearerPattern = regexp.MustCompile(`(?i)bearer\s+\S+`)
+
+// redact removes a bearer credential and the request's own token from s.
+func redact(s, authorization string) string {
+	s = bearerPattern.ReplaceAllString(s, "Bearer [redacted]")
+
+	if token := strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer")); token != "" {
+		s = strings.ReplaceAll(s, token, "[redacted]")
+	}
+
+	return s
+}
+
+// httpError turns a non-2xx response into a *drapi.HTTPError whose Body is the
+// start of the response with credentials redacted. The error page of a proxy
+// may echo the request headers.
+func httpError(resp *http.Response, requestURL, authorization string) error {
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, errorReadBytes))
+	body := redact(string(raw), authorization)
+
+	if len(body) > errorBodyBytes {
+		body = body[:errorBodyBytes]
+	}
+
+	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Body: []byte(body)}
 }
 
 // newRequest builds a request with a JSON body when in is set. authorize false
@@ -109,9 +201,19 @@ func newRequest(ctx context.Context, method, url string, authorize bool, in any)
 	return req, nil
 }
 
-// decodeJSON reads one JSON value from r into out.
+// decodeJSON reads one JSON value from r into out. A response larger than
+// maxBodyBytes is refused before it is decoded.
 func decodeJSON(r io.Reader, out any) error {
-	err := json.NewDecoder(r).Decode(out)
+	raw, err := io.ReadAll(io.LimitReader(r, maxBodyBytes+1))
+	if err != nil {
+		return &transportError{err}
+	}
+
+	if len(raw) > maxBodyBytes {
+		return &transportError{fmt.Errorf("the response is larger than %d MiB", maxBodyBytes>>20)}
+	}
+
+	err = json.NewDecoder(bytes.NewReader(raw)).Decode(out)
 	if err == nil {
 		return nil
 	}
@@ -119,39 +221,85 @@ func decodeJSON(r io.Reader, out any) error {
 	var syntax *json.SyntaxError
 
 	if errors.As(err, &syntax) || errors.Is(err, io.EOF) {
-		return fmt.Errorf("the response is not JSON (a login or proxy page?): %w", err)
+		return &transportError{fmt.Errorf("the response is not JSON (a login or proxy page?): %w", err)}
 	}
 
-	return err
+	return &transportError{err}
 }
 
 // listAll reads a paged list to the end, following each page's next cursor.
-// A cursor that leaves the configured install is refused, because the token
-// goes with every request.
+// The token goes with every request, so a cursor must stay on the requested
+// route of the configured install, and the read stops at maxPages pages or
+// maxItems items, or when a cursor repeats.
 func listAll[T any](ctx context.Context, firstURL string) ([]T, error) {
+	route, err := url.Parse(firstURL)
+	if err != nil {
+		return nil, err
+	}
+
 	var all []T
 
-	for next := firstURL; next != ""; {
+	seen := map[string]bool{firstURL: true}
+
+	for pages, next := 1, firstURL; next != ""; pages++ {
+		if pages > maxPages {
+			return nil, &limitError{fmt.Sprintf("the list did not finish: more than %d pages", maxPages)}
+		}
+
 		var page struct {
 			Data []T    `json:"data"`
 			Next string `json:"next"`
 		}
 
-		if err := call(ctx, http.MethodGet, next, true, nil, &page); err != nil {
+		if err = call(ctx, http.MethodGet, next, true, nil, &page); err != nil {
 			return nil, err
 		}
 
 		all = append(all, page.Data...)
+
+		if len(all) > maxItems {
+			return nil, &limitError{fmt.Sprintf("the list did not finish: more than %d items", maxItems)}
+		}
+
 		next = page.Next
 
-		if next != "" {
-			if err := drapi.AssertNextOnSameHost(next); err != nil {
-				return nil, err
-			}
+		if next == "" {
+			break
 		}
+
+		if err = checkCursor(route, next, seen); err != nil {
+			return nil, err
+		}
+
+		seen[next] = true
 	}
 
 	return all, nil
+}
+
+// checkCursor refuses a next cursor that leaves the configured install, the
+// requested route, or carries user information, or that names a page already
+// read.
+func checkCursor(route *url.URL, next string, seen map[string]bool) error {
+	if err := drapi.AssertNextOnSameHost(next); err != nil {
+		return err
+	}
+
+	cursor, err := url.Parse(next)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case cursor.User != nil:
+		return &limitError{"the next cursor carries user information"}
+	case cursor.Path != route.Path:
+		return &limitError{"the next cursor leaves the route that was requested"}
+	case seen[next]:
+		return &limitError{"the list did not finish: the next cursor repeats a page already read"}
+	}
+
+	return nil
 }
 
 // reason words a failed call for a section's message: the status and the
@@ -183,9 +331,10 @@ func statusOf(err error) int {
 	return 0
 }
 
-// isTransport reports whether a call failed without an HTTP error status: the
-// install is unreachable, the name does not resolve, TLS failed, or the answer
-// was not the JSON the route promises.
+// isTransport reports whether a call failed to get a usable answer. It is
+// false for a failure that never left the machine.
 func isTransport(err error) bool {
-	return statusOf(err) == 0
+	var transport *transportError
+
+	return errors.As(err, &transport)
 }

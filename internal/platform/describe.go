@@ -35,7 +35,8 @@ var now = time.Now
 // The version route goes first, because it is the cheapest call that proves the
 // install answers and the credentials work. When it fails without an answer, or
 // with a 401, every later call would fail the same way, so Describe returns an
-// error instead of a report of failures. After that every source runs
+// error instead of a report of failures: it says apart a failure on this
+// machine (no endpoint, no token) from one of the network. After that every source runs
 // concurrently, and one that fails becomes an unavailable section while the
 // others still report.
 func Describe(ctx context.Context) (*Report, error) {
@@ -49,6 +50,8 @@ func Describe(ctx context.Context) (*Report, error) {
 		return nil, stopped{"cannot reach the install: " + reason(err), err}
 	case statusOf(err) == http.StatusUnauthorized:
 		return nil, stopped{"the install rejected the credentials: " + reason(err), err}
+	case err != nil && statusOf(err) == 0:
+		return nil, stopped{"cannot send the request: " + reason(err), err}
 	}
 
 	var (

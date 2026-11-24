@@ -40,8 +40,8 @@ func TestClean_RemovesWhatReachesATerminalOrReadsAsAnInstruction(t *testing.T) {
 	}{
 		"an escape sequence":       {"evil \x1b[2J\x1b[31mPWNED\x1b]0;pwn\x07 name", "evil [2J[31mPWNED]0;pwn name"},
 		"a C1 control":             {"a\u009bmb", "amb"},
-		"a bidi override":          {"gnp‮.exe", "gnp.exe"},
-		"a zero width space":       {"a​b", "ab"},
+		"a bidi override":          {"gnp\u202e.exe", "gnp.exe"},
+		"a zero width space":       {"a\u200bb", "ab"},
 		"a Unicode tag character":  {"ok\U000E0041\U000E0042", "ok"},
 		"a private use character":  {"ab", "ab"},
 		"a line separator":         {"a b", "a b"},
@@ -99,7 +99,7 @@ func assertAllStringsSafe(t *testing.T, path string, v any) {
 }
 
 func hostile(name string) string {
-	return name + "\u001b[2J\u001b]0;pwn\u0007‮​"
+	return name + "\u001b[2J\u001b]0;pwn\u0007\u202e\u200b"
 }
 
 // Every route answers with hostile strings. No string of the report may keep a

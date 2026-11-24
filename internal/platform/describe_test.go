@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -239,4 +241,21 @@ func TestDescribe_StopsWhenTheInstallIsUnreachable(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, report)
 	assert.Contains(t, err.Error(), "cannot reach the install")
+}
+
+func TestDescribe_ALocalFailureIsNotReportedAsAnUnreachableInstall(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+	viperx.Set(config.DataRobotURL, "")
+
+	report, err := Describe(context.Background())
+
+	require.Error(t, err)
+	assert.Nil(t, report)
+	assert.NotContains(t, err.Error(), "cannot reach the install")
+	assert.Contains(t, err.Error(), "cannot send the request")
+
+	body := outputformat.NewErrorBody(err)
+
+	assert.Zero(t, body.StatusCode)
+	assert.Equal(t, err.Error(), body.Message, "text and JSON modes say the same thing")
 }
