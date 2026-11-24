@@ -116,7 +116,10 @@ type ExecutionEnvironments struct {
 }
 
 // ExecutionEnvironment is one environment. Names are not unique on an install,
-// so a reader picks by ID and HasSuccessfulVersion. SourceDockerImageURI is the
+// and any user who can share one may name it like an official one, so a reader
+// picks by ID from a list it pins, never by Name. IsPublic says whether the
+// install publishes the environment to every user, as it does an official one,
+// and stays unset when the install does not say. SourceDockerImageURI is the
 // image address of the latest successful version when the install publishes
 // one, as a reader needs it for a Dockerfile FROM on an install that pulls only
 // its own images. BuildStatus is the status of the latest build, which may
@@ -129,6 +132,7 @@ type ExecutionEnvironment struct {
 	HasSuccessfulVersion bool     `json:"hasSuccessfulVersion"`
 	BuildStatus          string   `json:"buildStatus,omitempty"`
 	SourceDockerImageURI string   `json:"sourceDockerImageUri,omitempty"`
+	IsPublic             *bool    `json:"isPublic,omitempty"`
 }
 
 // WorkloadAPI is what the Workload API's list route answers the caller with. A
@@ -151,5 +155,5 @@ type ResourceBundle struct {
 	Name        string   `json:"name"`
 	UseCases    []string `json:"useCases"`
 	MemoryBytes int64    `json:"memoryBytes"`
-	CPUCount    float64  `json:"cpuCount,omitempty"`
+	CPUCount    *float64 `json:"cpuCount,omitempty"`
 }

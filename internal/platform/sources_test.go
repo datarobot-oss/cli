@@ -368,6 +368,24 @@ func TestExecutionEnvironment_JSONCarriesTheImageAddressOnlyWhenThereIsOne(t *te
 	assert.NotContains(t, without, "sourceDockerImageUri")
 }
 
+func TestExecutionEnvironmentsSection_ReportsWhetherTheInstallPublishesAnEnvironment(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/executionEnvironments/", route{body: `{"data":[
+		{"id":"e1","name":"official","useCases":[],"isPublic":true},
+		{"id":"e2","name":"user made","useCases":[],"isPublic":false},
+		{"id":"e3","name":"unsaid","useCases":[]}],"next":null}`})
+
+	section := executionEnvironmentsSection(context.Background())
+
+	items := section.Data.(ExecutionEnvironments).Items //nolint:forcetypeassert // the section was built above
+	require.Len(t, items, 3)
+	require.NotNil(t, items[0].IsPublic)
+	assert.True(t, *items[0].IsPublic)
+	require.NotNil(t, items[1].IsPublic)
+	assert.False(t, *items[1].IsPublic)
+	assert.Nil(t, items[2].IsPublic, "an install that does not say stays unsaid")
+}
+
 func TestExecutionEnvironmentsSection_IsUnavailableWhenTheRouteRefuses(t *testing.T) {
 	fake := newFakeInstall(t, "sts-11.12.0")
 	fake.set("GET /api/v2/executionEnvironments/", route{status: http.StatusForbidden, body: `{"message":"no feature"}`})
@@ -387,7 +405,10 @@ func TestResourceBundlesSection_ReadsEveryPage(t *testing.T) {
 
 	items := section.Data.(ResourceBundles).Items
 	require.Len(t, items, 3)
-	assert.Equal(t, ResourceBundle{ID: "cpu.xlarge", Name: "XL", UseCases: []string{"customApplication"}, MemoryBytes: 2147483648, CPUCount: 2}, items[1])
+
+	twoCPUs := 2.0
+
+	assert.Equal(t, ResourceBundle{ID: "cpu.xlarge", Name: "XL", UseCases: []string{"customApplication"}, MemoryBytes: 2147483648, CPUCount: &twoCPUs}, items[1])
 	assert.Equal(t, "gpu.small", items[2].ID)
 }
 
@@ -400,6 +421,20 @@ func TestResourceBundlesSection_IsUnavailableWhenALaterPageFails(t *testing.T) {
 	assert.Equal(t, StatusUnavailable, section.Status)
 	assert.Equal(t, "HTTP 500: boom", section.Message)
 	assert.Equal(t, http.StatusInternalServerError, section.HTTPStatus)
+}
+
+func TestResourceBundlesSection_KeepsACPUCountOfZero(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/mlops/compute/bundles/", route{body: `{"data":[
+		{"id":"gpu","name":"GPU","useCases":[],"memoryBytes":1,"cpuCount":0},
+		{"id":"unsaid","name":"No count","useCases":[],"memoryBytes":1}],"next":null}`})
+
+	section := resourceBundlesSection(context.Background())
+
+	out := jsonOf(t, section.Data)
+
+	assert.Contains(t, out, `"id":"gpu","name":"GPU","useCases":[],"memoryBytes":1,"cpuCount":0`)
+	assert.Contains(t, out, `"id":"unsaid","name":"No count","useCases":[],"memoryBytes":1}`)
 }
 
 func TestWorkloadAPISection_ReportsHowManyWorkloadsTheCallerCanSee(t *testing.T) {

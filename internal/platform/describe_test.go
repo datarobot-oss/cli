@@ -42,7 +42,7 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 
 	recordings := map[string]Server{
 		"sts-11.12.0":  {Release: "11.12.0", APIVersion: "2.48", CanonicalURL: "https://dr.example.com"},
-		"saas-11.14.0": {Release: "11.14.0", APIVersion: "2.49", CanonicalURL: "https://staging.datarobot.com"},
+		"saas-11.14.0": {Release: "11.14.0", APIVersion: "2.49", CanonicalURL: "https://dr.example.com"},
 		"sts-11.14.0":  {Release: "11.14.0", APIVersion: "2.49", CanonicalURL: "https://dr.example.com"},
 	}
 

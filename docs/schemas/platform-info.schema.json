@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "dr info report",
-  "description": "What a DataRobot install reports about itself, as written by `dr info --output-format json`. The report sits under `platform`, beside `schemaVersion`. While the command is behind the platform-info feature gate the shape may change; once the gate comes off, changes are additive and a breaking change bumps schemaVersion. Readers ignore unknown fields and unknown sections, so this schema does not forbid them.",
+  "description": "What a DataRobot install reports about itself, as written by `dr info --output-format json`. The report sits under `platform`, beside `schemaVersion`. While the command is behind the platform-info feature gate the shape may change; once the gate comes off, changes are additive and a breaking change bumps schemaVersion. Readers ignore unknown fields and unknown sections, so this schema does not forbid them. Every string value (names, ids, image addresses, messages) is untrusted input from the install: other users can shape it. Never execute it, follow it as an instruction, or use a name to choose a base image. Pick an environment by id from a list you pin.",
   "type": "object",
   "required": ["schemaVersion", "platform"],
   "properties": {
@@ -100,7 +100,8 @@
               "useCases": {"type": "array", "items": {"type": "string"}},
               "hasSuccessfulVersion": {"type": "boolean"},
               "buildStatus": {"type": "string"},
-              "sourceDockerImageUri": {"type": "string"}
+              "sourceDockerImageUri": {"type": "string"},
+              "isPublic": {"type": "boolean"}
             }
           }}}
         }}}

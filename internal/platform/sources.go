@@ -35,7 +35,7 @@ var entitlementNames = []string{
 }
 
 // entitlementBatchSize is the most names one evaluate call takes. A larger
-// batch failed with a 500 on staging.
+// batch failed with a 500 on one install.
 const entitlementBatchSize = 20
 
 // listLimit is the page size asked of a paged route. A route may cap it lower;
@@ -127,6 +127,7 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 		Name                    string   `json:"name"`
 		ProgrammingLanguage     string   `json:"programmingLanguage"`
 		UseCases                []string `json:"useCases"`
+		IsPublic                *bool    `json:"isPublic"`
 		LatestSuccessfulVersion *struct {
 			SourceDockerImageURI string `json:"sourceDockerImageUri"`
 		} `json:"latestSuccessfulVersion"`
@@ -154,6 +155,7 @@ func executionEnvironmentsSection(ctx context.Context) Section {
 			ProgrammingLanguage:  clean(e.ProgrammingLanguage),
 			UseCases:             cleanAll(e.UseCases),
 			HasSuccessfulVersion: e.LatestSuccessfulVersion != nil,
+			IsPublic:             e.IsPublic,
 		}
 
 		if e.LatestSuccessfulVersion != nil {

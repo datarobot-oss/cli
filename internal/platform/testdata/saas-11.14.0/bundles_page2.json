@@ -1,7 +1,7 @@
 {
   "data": [
     {
-      "id": "DRAWS_r6i.16xlarge_frac16_regular",
+      "id": "cpu.large",
       "name": "4x32",
       "useCases": [
         "modelingMachineWorker"
