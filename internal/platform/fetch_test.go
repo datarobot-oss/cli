@@ -17,6 +17,7 @@ package platform
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,8 +26,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/datarobot/cli/internal/drapi"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
@@ -432,4 +435,187 @@ func TestIsTransport_IsFalseForAFailureThatNeverLeftTheMachine(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, isTransport(err))
 	assert.Zero(t, statusOf(err))
+}
+
+// useBackoff replaces the wait between attempts with a recorder, and the jitter
+// with its upper bound, so a test neither sleeps nor depends on chance.
+func useBackoff(t *testing.T) *[]time.Duration {
+	t.Helper()
+
+	var waits []time.Duration
+
+	prevSleep, prevJitter := sleep, jitter
+
+	sleep = func(_ context.Context, d time.Duration) error {
+		waits = append(waits, d)
+
+		return nil
+	}
+	jitter = func(upper time.Duration) time.Duration { return upper }
+
+	t.Cleanup(func() { sleep, jitter = prevSleep, prevJitter })
+
+	return &waits
+}
+
+// flaky answers the first failures requests with status and header, then 200.
+func flaky(t *testing.T, failures int, status int, retryAfter string) (*atomic.Int64, *[]string) {
+	t.Helper()
+
+	var (
+		seen   atomic.Int64
+		bodies []string
+	)
+
+	useServer(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(raw))
+
+		if int(seen.Add(1)) <= failures {
+			if retryAfter != "" {
+				w.Header().Set("Retry-After", retryAfter)
+			}
+
+			writeJSON(w, status, `{"message":"slow down"}`)
+
+			return
+		}
+
+		writeJSON(w, http.StatusOK, `{}`)
+	})
+
+	return &seen, &bodies
+}
+
+func getVersion(t *testing.T) error {
+	t.Helper()
+
+	url, err := apiURL("/version/", nil)
+	require.NoError(t, err)
+
+	return call(context.Background(), http.MethodGet, url, true, nil, &struct{}{})
+}
+
+func TestCall_RetriesATooManyRequestsAnswerAfterTheWaitTheServerAsks(t *testing.T) {
+	waits := useBackoff(t)
+	seen, _ := flaky(t, 1, http.StatusTooManyRequests, "2")
+
+	require.NoError(t, getVersion(t))
+
+	assert.Equal(t, int64(2), seen.Load())
+	assert.Equal(t, []time.Duration{2 * time.Second}, *waits)
+}
+
+func TestCall_RetriesAServiceUnavailableAnswerWithGrowingJitteredWaits(t *testing.T) {
+	waits := useBackoff(t)
+	seen, _ := flaky(t, 2, http.StatusServiceUnavailable, "")
+
+	require.NoError(t, getVersion(t))
+
+	assert.Equal(t, int64(3), seen.Load())
+	assert.Equal(t, []time.Duration{retryBase, 2 * retryBase}, *waits)
+}
+
+func TestCall_GivesUpAfterTheLastAllowedRetryAndReportsTheStatus(t *testing.T) {
+	useBackoff(t)
+	seen, _ := flaky(t, 100, http.StatusServiceUnavailable, "")
+
+	err := getVersion(t)
+
+	require.Error(t, err)
+	assert.Equal(t, http.StatusServiceUnavailable, statusOf(err))
+	assert.Equal(t, int64(1+maxRetries), seen.Load())
+}
+
+func TestCall_DoesNotRetryWhenTheServerAsksForALongerWaitThanTheCap(t *testing.T) {
+	waits := useBackoff(t)
+	seen, _ := flaky(t, 100, http.StatusTooManyRequests, "120")
+
+	err := getVersion(t)
+
+	assert.Equal(t, http.StatusTooManyRequests, statusOf(err))
+	assert.Equal(t, int64(1), seen.Load())
+	assert.Empty(t, *waits)
+}
+
+func TestCall_ReadsARetryAfterGivenAsADate(t *testing.T) {
+	waits := useBackoff(t)
+
+	prev := now
+	now = func() time.Time { return time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC) }
+
+	t.Cleanup(func() { now = prev })
+
+	seen, _ := flaky(t, 1, http.StatusTooManyRequests, "Tue, 24 Nov 2026 12:00:03 GMT")
+
+	require.NoError(t, getVersion(t))
+
+	assert.Equal(t, int64(2), seen.Load())
+	assert.Equal(t, []time.Duration{3 * time.Second}, *waits)
+}
+
+func TestCall_DoesNotRetryAnAnswerThatARetryCannotChange(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusBadGateway} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			useBackoff(t)
+			seen, _ := flaky(t, 100, status, "1")
+
+			err := getVersion(t)
+
+			assert.Equal(t, status, statusOf(err))
+			assert.Equal(t, int64(1), seen.Load())
+		})
+	}
+}
+
+func TestCall_SendsTheSameBodyOnARetry(t *testing.T) {
+	useBackoff(t)
+	_, bodies := flaky(t, 1, http.StatusServiceUnavailable, "")
+
+	url, err := apiURL("/entitlements/evaluate/", nil)
+	require.NoError(t, err)
+
+	require.NoError(t, call(context.Background(), http.MethodPost, url, true, map[string]string{"k": "v"}, &struct{}{}))
+
+	assert.Equal(t, []string{`{"k":"v"}`, `{"k":"v"}`}, *bodies)
+}
+
+func TestCall_StopsRetryingWhenTheRunIsCancelled(t *testing.T) {
+	prev := sleep
+	sleep = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
+
+	t.Cleanup(func() { sleep = prev })
+
+	seen, _ := flaky(t, 100, http.StatusServiceUnavailable, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	url, err := apiURL("/version/", nil)
+	require.NoError(t, err)
+
+	err = call(ctx, http.MethodGet, url, true, nil, &struct{}{})
+
+	require.Error(t, err)
+	assert.LessOrEqual(t, seen.Load(), int64(1))
+}
+
+func TestCall_CarriesTheCleanedErrorBodyAsTheDetailOfTheHTTPError(t *testing.T) {
+	useServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusForbidden, "no seat\x1b[2J for \u202eyou")
+	})
+
+	err := getVersion(t)
+
+	var httpErr *drapi.HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, "no seat[2J for you", httpErr.Detail)
+	assert.NotContains(t, err.Error(), "\x1b")
+}
+
+func TestReason_CleansAnErrorThatIsNotHTTP(t *testing.T) {
+	err := errors.New("x509: certificate is valid for evil\x1b]0;pwn\x07.example.com, not dr.example.com")
+
+	assert.Equal(t, "x509: certificate is valid for evil]0;pwn.example.com, not dr.example.com", reason(err))
 }

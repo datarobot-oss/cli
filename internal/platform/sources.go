@@ -25,18 +25,18 @@ import (
 	"strings"
 )
 
-// entitlementNames are the flags a Custom Application deploy depends on. The
-// route rejects a whole batch for one unknown name, so entitlementsFor falls
-// back to single names.
+// entitlementNames are the flags a Custom Application deploy depends on, asked
+// in one request. The route rejects a whole batch for one unknown name, so
+// entitlementsFor falls back to single names, and it failed with a 500 on one
+// install for a batch above entitlementBatchLimit.
 var entitlementNames = []string{
 	"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND",
 	"ENABLE_WORKLOAD_API_CONTAINERS",
 	"DISABLE_CUSTOM_TEMPLATES",
 }
 
-// entitlementBatchSize is the most names one evaluate call takes. A larger
-// batch failed with a 500 on one install.
-const entitlementBatchSize = 20
+// entitlementBatchLimit is the most names one evaluate call takes.
+const entitlementBatchLimit = 20
 
 // listLimit is the page size asked of a paged route. A route may cap it lower;
 // listAll follows the next cursor either way.
@@ -222,18 +222,10 @@ func entitlementsSection(ctx context.Context) Section {
 	return entitlementsFor(ctx, entitlementNames)
 }
 
-// entitlementsFor evaluates names in batches. One flag the install does not
-// know costs only itself: the section is degraded and says which.
+// entitlementsFor evaluates names in one request. One flag the install does
+// not know costs only itself: the section is degraded and says which.
 func entitlementsFor(ctx context.Context, names []string) Section {
-	values := make(map[string]bool, len(names))
-	failed := map[string]string{}
-
-	for start := 0; start < len(names); start += entitlementBatchSize {
-		got, missed := evaluateBatch(ctx, names[start:min(start+entitlementBatchSize, len(names))])
-
-		maps.Copy(values, got)
-		maps.Copy(failed, missed)
-	}
+	values, failed := evaluateBatch(ctx, names)
 
 	switch {
 	case len(failed) == 0:

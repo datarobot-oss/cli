@@ -75,7 +75,7 @@ func TestClean_KeepsAStringAtTheLimit(t *testing.T) {
 
 // unsafeRune reports a rune that must not reach a report string.
 func unsafeRune(r rune) bool {
-	return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Co, unicode.Cs, unicode.Zl, unicode.Zp) || r == utf8.RuneError
+	return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Co, unicode.Cs, unicode.Zl, unicode.Zp)
 }
 
 // assertAllStringsSafe fails for every string in a decoded JSON value that holds
@@ -145,4 +145,19 @@ func TestDescribe_NoServerStringKeepsACharacterThatReachesATerminalOrAReader(t *
 	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
 	assertAllStringsSafe(t, "report", decoded)
 	assert.NotContains(t, out.String(), "NOT_ASKED_FOR")
+}
+
+func FuzzClean(f *testing.F) {
+	for _, seed := range []string{"", "plain", terminalPayload, "a\u2028b", "gnp\u202e.exe", "ok\U000E0041", "a\xffb", "\ufffd", "\x9b2J", "\x1b]8;;http://evil\x07link\x1b]8;;\x07"} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, in string) {
+		out := clean(in)
+
+		assert.True(t, utf8.ValidString(out), "the result is valid UTF-8")
+		assert.False(t, strings.ContainsFunc(out, unsafeRune), "the result keeps an unsafe character: %q", out)
+		assert.LessOrEqual(t, utf8.RuneCountInString(out), textLimit)
+		assert.Equal(t, out, clean(out), "cleaning twice changes nothing")
+	})
 }

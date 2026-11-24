@@ -54,40 +54,43 @@ func Describe(ctx context.Context) (*Report, error) {
 		return nil, stopped{"cannot send the request: " + reason(err), err}
 	}
 
-	var (
-		cfg                                                      publicConfig
-		install, seats, entitlements, envs, bundles, workloadAPI Section
-		wg                                                       sync.WaitGroup
-	)
+	var cfg publicConfig
 
-	for _, source := range []struct {
-		section *Section
-		read    func()
+	reads := []struct {
+		name string
+		read func() Section
 	}{
-		{&install, func() {
+		{SectionInstall, func() Section {
 			var cfgErr error
 
 			cfg, cfgErr = readConfig(ctx)
-			install = installSection(cfg, cfgErr)
+
+			return installSection(cfg, cfgErr)
 		}},
-		{&seats, func() { seats = seatsSection(ctx) }},
-		{&entitlements, func() { entitlements = entitlementsSection(ctx) }},
-		{&envs, func() { envs = executionEnvironmentsSection(ctx) }},
-		{&bundles, func() { bundles = resourceBundlesSection(ctx) }},
-		{&workloadAPI, func() { workloadAPI = workloadAPISection(ctx) }},
-	} {
+		{SectionSeats, func() Section { return seatsSection(ctx) }},
+		{SectionEntitlements, func() Section { return entitlementsSection(ctx) }},
+		{SectionExecutionEnvironments, func() Section { return executionEnvironmentsSection(ctx) }},
+		{SectionResourceBundles, func() Section { return resourceBundlesSection(ctx) }},
+		{SectionWorkloadAPI, func() Section { return workloadAPISection(ctx) }},
+	}
+
+	sections := make([]Section, len(reads))
+
+	var wg sync.WaitGroup
+
+	for i, source := range reads {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
 
-			guard(source.section, source.read)
+			sections[i] = guard(source.read)
 		}()
 	}
 
 	wg.Wait()
 
-	return &Report{
+	report := &Report{
 		GeneratedAt: now().UTC().Format(time.RFC3339),
 		Producer:    Producer{Name: version.CliName, Version: version.Version},
 		Server: Server{
@@ -95,15 +98,25 @@ func Describe(ctx context.Context) (*Report, error) {
 			APIVersion:   apiVersion,
 			CanonicalURL: cfg.ExternalWebServerURL,
 		},
-		Sections: map[string]Section{
-			SectionInstall:               scoped(ScopePlatform, install),
-			SectionSeats:                 scoped(ScopeCaller, seats),
-			SectionEntitlements:          scoped(ScopeCaller, entitlements),
-			SectionExecutionEnvironments: scoped(ScopeCaller, envs),
-			SectionResourceBundles:       scoped(ScopeCaller, bundles),
-			SectionWorkloadAPI:           scoped(ScopeCaller, workloadAPI),
-		},
-	}, nil
+		Sections: make(map[string]Section, len(reads)),
+	}
+
+	for i, source := range reads {
+		report.Sections[source.name] = scoped(scopeOf[source.name], sections[i])
+	}
+
+	return report, nil
+}
+
+// scopeOf says who each section's answer is true for. The install's own config
+// is the same for every caller; every other section depends on who asks.
+var scopeOf = map[string]Scope{
+	SectionInstall:               ScopePlatform,
+	SectionSeats:                 ScopeCaller,
+	SectionEntitlements:          ScopeCaller,
+	SectionExecutionEnvironments: ScopeCaller,
+	SectionResourceBundles:       ScopeCaller,
+	SectionWorkloadAPI:           ScopeCaller,
 }
 
 // stopped is the error that ends a run before any section is read. Its message
@@ -118,16 +131,16 @@ func (e stopped) Error() string { return e.message }
 
 func (e stopped) Unwrap() error { return e.cause }
 
-// guard runs read. When read panics, the section becomes an unavailable one, so
+// guard runs read. When read panics, the result is an unavailable section, so
 // a broken source costs only its own section.
-func guard(section *Section, read func()) {
+func guard(read func() Section) (section Section) {
 	defer func() {
 		if r := recover(); r != nil {
-			*section = Section{Status: StatusUnavailable, Message: fmt.Sprintf("internal error: %v", r)}
+			section = Section{Status: StatusUnavailable, Message: fmt.Sprintf("internal error: %v", r)}
 		}
 	}()
 
-	read()
+	return read()
 }
 
 // scoped marks who the section's answer is true for, whether or not the read

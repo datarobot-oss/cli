@@ -215,18 +215,14 @@ func TestDescribe_NamesAnAnswerThatIsNotJSON(t *testing.T) {
 }
 
 func TestGuard_TurnsAPanicIntoAnUnavailableSection(t *testing.T) {
-	var section Section
-
-	guard(&section, func() { panic("boom") })
+	section := guard(func() Section { panic("boom") })
 
 	assert.Equal(t, StatusUnavailable, section.Status)
 	assert.Contains(t, section.Message, "boom")
 }
 
 func TestGuard_KeepsTheSectionAReadProduced(t *testing.T) {
-	var section Section
-
-	guard(&section, func() { section = Section{Status: StatusDegraded, Message: "one flag missing"} })
+	section := guard(func() Section { return Section{Status: StatusDegraded, Message: "one flag missing"} })
 
 	assert.Equal(t, StatusDegraded, section.Status)
 	assert.Equal(t, "one flag missing", section.Message)

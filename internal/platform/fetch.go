@@ -21,9 +21,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,7 +57,37 @@ const (
 	// maxRedirects is the number of redirects one request follows, as net/http
 	// does by default.
 	maxRedirects = 10
+
+	// maxRetries is how many times a throttled request is sent again. Every
+	// request this command sends reads state, so each is safe to repeat.
+	maxRetries = 2
+
+	// retryBase and retryCap shape the wait when the server names none: full
+	// jitter, a random wait up to retryBase doubled per attempt, never above
+	// retryCap. retryAfterCap is the longest wait the server may ask for. A
+	// longer one is reported instead of waited for, so a run stays short.
+	retryBase     = 250 * time.Millisecond
+	retryCap      = 2 * time.Second
+	retryAfterCap = 5 * time.Second
 )
+
+// sleep waits for d or until ctx ends, and is a seam for tests.
+var sleep = func(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// jitter returns a random duration in [0, upper], a seam for tests.
+var jitter = func(upper time.Duration) time.Duration {
+	return rand.N(upper + 1) //nolint:gosec // a retry delay needs no cryptographic randomness
+}
 
 // apiURL builds a URL under the configured install's /api/v2.
 func apiURL(path string, query url.Values) (string, error) {
@@ -79,7 +111,10 @@ func (e *transportError) Error() string { return e.cause.Error() }
 
 func (e *transportError) Unwrap() error { return e.cause }
 
-// limitError means a cap tripped before a read finished.
+// listUnfinished starts the message of every error that ends a paged read early.
+const listUnfinished = "the list did not finish: "
+
+// limitError means a cap or a check ended a read before it finished.
 type limitError struct{ message string }
 
 func (e *limitError) Error() string { return e.message }
@@ -87,15 +122,30 @@ func (e *limitError) Error() string { return e.message }
 // call sends one request and decodes a 2xx JSON response into out. A non-2xx
 // response comes back as a *drapi.HTTPError that carries the start of the
 // response body with the token redacted, which reason turns into the section's
-// message. authorize false leaves the token off, for public routes.
+// message. authorize false leaves the token off, for public routes. A 429 or
+// 503 answer is sent again up to maxRetries times, after the wait the server
+// names in Retry-After or a jittered, growing one.
 //
 // call does not use drapi.Get, Post or Do, which take no context, so the
 // deadline of the whole run could not reach the request, and which follow
 // redirects to any origin. It logs the request as they do.
 func call(ctx context.Context, method, url string, authorize bool, in, out any) error {
+	for attempt := 0; ; attempt++ {
+		retryAfter, err := callOnce(ctx, method, url, authorize, in, out)
+
+		delay, again := retryDelay(err, retryAfter, attempt)
+		if !again || sleep(ctx, delay) != nil {
+			return err
+		}
+	}
+}
+
+// callOnce sends the request once. It also returns the Retry-After header of a
+// failed answer, first.
+func callOnce(ctx context.Context, method, url string, authorize bool, in, out any) (string, error) {
 	req, err := newRequest(ctx, method, url, authorize, in)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	log.Debug("Request Info: \n" + config.RedactedReqInfo(req))
@@ -105,16 +155,52 @@ func call(ctx context.Context, method, url string, authorize bool, in, out any) 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return &transportError{err}
+		return "", &transportError{err}
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return httpError(resp, url, req.Header.Get("Authorization"))
+		return resp.Header.Get("Retry-After"), httpError(resp, url, req.Header.Get("Authorization"))
 	}
 
-	return decodeJSON(resp.Body, out)
+	return "", decodeJSON(resp.Body, out)
+}
+
+// retryDelay says whether a failed attempt is worth another and how long to
+// wait first. Only 429 and 503 are: a retry cannot change any other answer, and
+// a 502 from the proxy of a switched-off service is a stable state the report
+// should show at once.
+func retryDelay(err error, retryAfter string, attempt int) (time.Duration, bool) {
+	status := statusOf(err)
+	if (status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable) || attempt >= maxRetries {
+		return 0, false
+	}
+
+	if asked, ok := parseRetryAfter(retryAfter, now()); ok {
+		return asked, asked <= retryAfterCap
+	}
+
+	return jitter(min(retryCap, retryBase<<attempt)), true
+}
+
+// parseRetryAfter reads the Retry-After header: a number of seconds or an HTTP
+// date. A date in the past means no wait.
+func parseRetryAfter(value string, at time.Time) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+
+	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		return time.Duration(seconds) * time.Second, true
+	}
+
+	if date, err := http.ParseTime(value); err == nil {
+		return max(0, date.Sub(at)), true
+	}
+
+	return 0, false
 }
 
 // stayOnOrigin refuses a redirect to another scheme, host or port than the
@@ -150,8 +236,9 @@ func redact(s, authorization string) string {
 }
 
 // httpError turns a non-2xx response into a *drapi.HTTPError whose Body is the
-// start of the response with credentials redacted. The error page of a proxy
-// may echo the request headers.
+// start of the response with credentials redacted, and whose Detail is the same
+// text cleaned for a terminal. The error page of a proxy may echo the request
+// headers.
 func httpError(resp *http.Response, requestURL, authorization string) error {
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, errorReadBytes))
 	body := redact(string(raw), authorization)
@@ -160,7 +247,7 @@ func httpError(resp *http.Response, requestURL, authorization string) error {
 		body = body[:errorBodyBytes]
 	}
 
-	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Body: []byte(body)}
+	return &drapi.HTTPError{StatusCode: resp.StatusCode, URL: requestURL, Detail: clean(body), Body: []byte(body)}
 }
 
 // newRequest builds a request with a JSON body when in is set. authorize false
@@ -243,7 +330,7 @@ func listAll[T any](ctx context.Context, firstURL string) ([]T, error) {
 
 	for pages, next := 1, firstURL; next != ""; pages++ {
 		if pages > maxPages {
-			return nil, &limitError{fmt.Sprintf("the list did not finish: more than %d pages", maxPages)}
+			return nil, &limitError{fmt.Sprintf("%smore than %d pages", listUnfinished, maxPages)}
 		}
 
 		var page struct {
@@ -258,7 +345,7 @@ func listAll[T any](ctx context.Context, firstURL string) ([]T, error) {
 		all = append(all, page.Data...)
 
 		if len(all) > maxItems {
-			return nil, &limitError{fmt.Sprintf("the list did not finish: more than %d items", maxItems)}
+			return nil, &limitError{fmt.Sprintf("%smore than %d items", listUnfinished, maxItems)}
 		}
 
 		next = page.Next
@@ -282,7 +369,7 @@ func listAll[T any](ctx context.Context, firstURL string) ([]T, error) {
 // read.
 func checkCursor(route *url.URL, next string, seen map[string]bool) error {
 	if err := drapi.AssertNextOnSameHost(next); err != nil {
-		return err
+		return fmt.Errorf("%s%w", listUnfinished, err)
 	}
 
 	cursor, err := url.Parse(next)
@@ -292,11 +379,11 @@ func checkCursor(route *url.URL, next string, seen map[string]bool) error {
 
 	switch {
 	case cursor.User != nil:
-		return &limitError{"the next cursor carries user information"}
+		return &limitError{listUnfinished + "the next cursor carries user information"}
 	case cursor.Path != route.Path:
-		return &limitError{"the next cursor leaves the route that was requested"}
+		return &limitError{listUnfinished + "the next cursor leaves the route that was requested"}
 	case seen[next]:
-		return &limitError{"the list did not finish: the next cursor repeats a page already read"}
+		return &limitError{listUnfinished + "the next cursor repeats a page already read"}
 	}
 
 	return nil

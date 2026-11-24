@@ -572,24 +572,8 @@ func TestEntitlementsFor_ReadsOneBatch(t *testing.T) {
 		fake.postBodies()[0])
 }
 
-func TestEntitlementsFor_SplitsALongListIntoBatches(t *testing.T) {
-	fake := newFakeInstall(t, "sts-11.12.0")
-	fake.set("POST /api/v2/entitlements/evaluate/", route{fn: evaluateRejecting("")})
-
-	names := make([]string, 25)
-	for i := range names {
-		names[i] = fmt.Sprintf("ENABLE_FLAG_%02d", i)
-	}
-
-	section := entitlementsFor(context.Background(), names)
-
-	assert.Equal(t, StatusOK, section.Status)
-	assert.Len(t, section.Data, 25)
-
-	posts := fake.postBodies()
-	require.Len(t, posts, 2)
-	assert.Equal(t, entitlementBatchSize, strings.Count(posts[0], `"name"`))
-	assert.Equal(t, 5, strings.Count(posts[1], `"name"`))
+func TestEntitlementNames_FitOneRequest(t *testing.T) {
+	assert.LessOrEqual(t, len(entitlementNames), entitlementBatchLimit)
 }
 
 func TestEntitlementsFor_AnUnknownNameDegradesInsteadOfLosingTheRest(t *testing.T) {
