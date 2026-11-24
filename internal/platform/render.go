@@ -36,6 +36,7 @@ var sectionOrder = []string{
 	SectionExecutionEnvironments,
 	SectionResourceBundles,
 	SectionWorkloadAPI,
+	SectionWorkloadLimits,
 }
 
 // jsonEnvelopeKey is the top-level key the report sits under in JSON output.
@@ -110,9 +111,7 @@ func renderData(say func(string, ...any), data any) {
 	case Seats:
 		renderSeats(say, d)
 	case Limits:
-		for _, name := range sortedKeys(d) {
-			say("  %s: %d", name, d[name])
-		}
+		renderLimits(say, d)
 	case map[string]bool:
 		for _, name := range sortedKeys(d) {
 			say("  %s: %s", name, onOff(d[name]))
@@ -123,6 +122,8 @@ func renderData(say func(string, ...any), data any) {
 		renderBundles(say, d)
 	case WorkloadAPI:
 		renderWorkloadAPI(say, d)
+	case WorkloadLimits:
+		renderWorkloadLimits(say, d)
 	}
 }
 
@@ -143,6 +144,12 @@ func renderSeats(say func(string, ...any), seats Seats) {
 
 	for _, name := range sortedKeys(seats.SeatLicenses) {
 		say("  %s: %s", name, yesNo(seats.SeatLicenses[name]))
+	}
+}
+
+func renderLimits(say func(string, ...any), limits Limits) {
+	for _, name := range sortedKeys(limits) {
+		say("  %s: %d", name, limits[name])
 	}
 }
 
@@ -186,6 +193,16 @@ func renderBundles(say func(string, ...any), bundles ResourceBundles) {
 func renderWorkloadAPI(say func(string, ...any), api WorkloadAPI) {
 	if api.TotalCount != nil {
 		say("  workloads visible to you: %d", *api.TotalCount)
+	}
+}
+
+func renderWorkloadLimits(say func(string, ...any), limits WorkloadLimits) {
+	if limits.MaxContainersPerGroup != nil {
+		say("  max containers per group: %d", *limits.MaxContainersPerGroup)
+	}
+
+	if limits.MaxCredentialsPerContainer != nil {
+		say("  max credentials per container: %d", *limits.MaxCredentialsPerContainer)
 	}
 }
 

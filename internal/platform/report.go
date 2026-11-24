@@ -54,6 +54,7 @@ const (
 	SectionExecutionEnvironments = "executionEnvironments"
 	SectionResourceBundles       = "resourceBundles"
 	SectionWorkloadAPI           = "workloadApi"
+	SectionWorkloadLimits        = "workloadLimits"
 )
 
 // Report is the whole answer. It states facts the install reports and leaves
@@ -145,6 +146,14 @@ type ExecutionEnvironment struct {
 // unset when the route does not return it.
 type WorkloadAPI struct {
 	TotalCount *int `json:"totalCount,omitempty"`
+}
+
+// WorkloadLimits are the install's own limits on the shape of a workload, read
+// from the Workload API. A create that goes over one is refused with a 422. A
+// limit the route does not return stays unset, and a limit of zero is kept.
+type WorkloadLimits struct {
+	MaxContainersPerGroup      *int `json:"maxContainersPerGroup,omitempty"`
+	MaxCredentialsPerContainer *int `json:"maxCredentialsPerContainer,omitempty"`
 }
 
 // ResourceBundles lists every resource bundle the caller can read.

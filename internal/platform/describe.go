@@ -73,6 +73,7 @@ func Describe(ctx context.Context) (*Report, error) {
 		{SectionExecutionEnvironments, func() Section { return executionEnvironmentsSection(ctx) }},
 		{SectionResourceBundles, func() Section { return resourceBundlesSection(ctx) }},
 		{SectionWorkloadAPI, func() Section { return workloadAPISection(ctx) }},
+		{SectionWorkloadLimits, func() Section { return workloadLimitsSection(ctx) }},
 	}
 
 	sections := make([]Section, len(reads))
@@ -119,6 +120,7 @@ var scopeOf = map[string]Scope{
 	SectionExecutionEnvironments: ScopeCaller,
 	SectionResourceBundles:       ScopeCaller,
 	SectionWorkloadAPI:           ScopeCaller,
+	SectionWorkloadLimits:        ScopePlatform,
 }
 
 // stopped is the error that ends a run before any section is read. Its message

@@ -322,6 +322,54 @@ func TestLimitsSection_IsUnavailableWithTheRouteBody(t *testing.T) {
 	assert.Equal(t, `HTTP 403: {"message":"nope"}`, section.Message)
 }
 
+func TestWorkloadLimitsSection_ReturnsEachLimitTheRouteReports(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloadLimits/", route{body: `{"maxContainersPerGroup":4,"maxCredentialsPerContainer":25}`})
+
+	section := workloadLimitsSection(context.Background())
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"maxContainersPerGroup":4,"maxCredentialsPerContainer":25}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadLimitsSection_KeepsALimitOfZero(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloadLimits/", route{body: `{"maxContainersPerGroup":10,"maxCredentialsPerContainer":0}`})
+
+	section := workloadLimitsSection(context.Background())
+
+	assert.JSONEq(t, `{"maxContainersPerGroup":10,"maxCredentialsPerContainer":0}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadLimitsSection_LeavesOutALimitTheRouteDoesNotReturn(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloadLimits/", route{body: `{"maxContainersPerGroup":4}`})
+
+	section := workloadLimitsSection(context.Background())
+
+	assert.JSONEq(t, `{"maxContainersPerGroup":4}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadLimitsSection_IsUnavailableOnAnInstallWithoutTheRoute(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := workloadLimitsSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, http.StatusNotFound, section.HTTPStatus)
+	assert.Nil(t, section.Data)
+}
+
+func TestWorkloadLimitsSection_IsUnavailableWhenALimitIsNotAnInteger(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloadLimits/", route{body: `{"maxCredentialsPerContainer":"ten"}`})
+
+	section := workloadLimitsSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+}
+
 func TestSectionOf_LeavesTheHTTPStatusUnsetWhenNoResponseCame(t *testing.T) {
 	section := sectionOf(nil, errors.New("dial tcp: connection refused"))
 

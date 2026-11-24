@@ -102,6 +102,34 @@ func TestRenderTo_TextShowsAnOKLimitsSectionWithNoLimits(t *testing.T) {
 	assert.Contains(t, out.String(), "limits: ok")
 }
 
+func TestRenderTo_TextListsTheWorkloadLimits(t *testing.T) {
+	containers, credentials := 4, 25
+	report := sampleReport()
+	report.Sections[SectionWorkloadLimits] = Section{Scope: ScopePlatform, Status: StatusOK, Data: WorkloadLimits{
+		MaxContainersPerGroup: &containers, MaxCredentialsPerContainer: &credentials,
+	}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "max containers per group: 4")
+	assert.Contains(t, out.String(), "max credentials per container: 25")
+}
+
+func TestRenderTo_TextShowsAWorkloadCredentialLimitOfZero(t *testing.T) {
+	zero := 0
+	report := sampleReport()
+	report.Sections[SectionWorkloadLimits] = Section{Scope: ScopePlatform, Status: StatusOK, Data: WorkloadLimits{MaxCredentialsPerContainer: &zero}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "max credentials per container: 0")
+	assert.NotContains(t, out.String(), "max containers per group")
+}
+
 func TestRenderTo_TextShowsAWorkloadCountOfZero(t *testing.T) {
 	zero := 0
 	report := sampleReport()

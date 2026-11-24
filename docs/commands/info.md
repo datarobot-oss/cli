@@ -54,6 +54,7 @@ Each section has a source, a `scope`, and a status.
   - `buildStatus` is the status of the latest build, which can be `failed` while an earlier build succeeded. DataRobot marks a retired environment only in its name, with a `[Deprecated]` prefix.
 - `resourceBundles`, from `/api/v2/mlops/compute/bundles/`: every bundle the caller can read, with `id`, `name`, `useCases`, `memoryBytes`, and `cpuCount`. A bundle is valid for applications when `useCases` lists `customApplication`.
 - `workloadApi`, from `/api/v2/workloads/?limit=1`: `totalCount`, how many workloads the caller can see, left out when the route does not return it. When the route refuses, the section is `unavailable` and the message carries the start of the response body (the first 512 bytes, on one line, with any token removed), which names the cause. A missing seat license and a disabled feature flag both answer 403 with different text, and a switched-off proxy answers 502.
+- `workloadLimits`, from `/api/v2/workloadLimits/`: the install's own limits on the shape of a workload, `maxContainersPerGroup` and `maxCredentialsPerContainer`, the same for every caller. A limit the route does not return is left out, and a limit of 0 is kept. A Workload API release that predates the route answers 404 and the section is `unavailable`.
 
 Every section carries a `scope` that says who its answer is true for. `platform` means the same for any caller. `caller` means it depends on who asks: their permissions, seats, or organization. Run the command with the credentials the pipeline will use.
 
@@ -86,7 +87,8 @@ A list read stops at 100 pages or 10,000 items, and one response may hold at mos
          "useCases": ["customApplication"], "hasSuccessfulVersion": true, "buildStatus": "success", "isPublic": true}
       ]}},
       "resourceBundles": {"scope": "caller", "status": "unavailable", "httpStatus": 403, "message": "HTTP 403: {\"message\": \"...\"}"},
-      "workloadApi": {"scope": "caller", "status": "ok", "data": {"totalCount": 7}}
+      "workloadApi": {"scope": "caller", "status": "ok", "data": {"totalCount": 7}},
+      "workloadLimits": {"scope": "platform", "status": "ok", "data": {"maxContainersPerGroup": 10, "maxCredentialsPerContainer": 10}}
     }
   }
 }
@@ -117,5 +119,5 @@ dr info --output-format json \
 ## Security notes
 
 - `dr info` accepts an `http://` endpoint. For an install that is not on loopback, the token travels in clear text. Use `https://`.
-- `--skip-certificate-check` (`-k`) sends the token to a server whose certificate is not verified. The command adds no TLS handling of its own, and it sends the token to six routes.
+- `--skip-certificate-check` (`-k`) sends the token to a server whose certificate is not verified. The command adds no TLS handling of its own, and it sends the token to seven routes.
 - The report describes the install's internal topology: release, URLs, registry hosts, environment and bundle inventory, and seat licenses. Do not paste it into a public CI log or ticket.

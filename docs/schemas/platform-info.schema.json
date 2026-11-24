@@ -40,7 +40,8 @@
             "entitlements": {"$ref": "#/$defs/entitlementsSection"},
             "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
             "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"},
-            "workloadApi": {"$ref": "#/$defs/workloadApiSection"}
+            "workloadApi": {"$ref": "#/$defs/workloadApiSection"},
+            "workloadLimits": {"$ref": "#/$defs/workloadLimitsSection"}
           }
         }
       }
@@ -143,6 +144,18 @@
         {"properties": {"data": {
           "type": "object",
           "properties": {"totalCount": {"type": "integer", "minimum": 0}}
+        }}}
+      ]
+    },
+    "workloadLimitsSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "properties": {
+            "maxContainersPerGroup": {"type": "integer"},
+            "maxCredentialsPerContainer": {"type": "integer"}
+          }
         }}}
       ]
     }
