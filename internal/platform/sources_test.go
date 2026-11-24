@@ -587,6 +587,39 @@ func TestEntitlementsFor_AFlagTheRouteLeavesOutIsNotReportedAsOff(t *testing.T) 
 	assert.Contains(t, section.Message, "ENABLE_B: the route returned no value")
 }
 
+func TestEntitlementsFor_ABatchAnswerThatOmitsANameDegradesAndNamesIt(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{body: `{"entitlements":[{"name":"ENABLE_A","value":true}]}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B", "ENABLE_C"})
+
+	assert.Equal(t, StatusDegraded, section.Status)
+	assert.Equal(t, map[string]bool{"ENABLE_A": true}, section.Data)
+	assert.Equal(t, "ENABLE_B: the route returned no value; ENABLE_C: the route returned no value", section.Message)
+	assert.Len(t, fake.postBodies(), 1, "an answer is not retried name by name")
+}
+
+func TestEntitlementsFor_AnEmptyBatchAnswerIsUnavailableNotOK(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{body: `{"entitlements":[]}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B"})
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+	assert.Contains(t, section.Message, "ENABLE_A: the route returned no value")
+}
+
+func TestEntitlementsFor_IgnoresANameTheCallerDidNotAsk(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{body: `{"entitlements":[{"name":"ENABLE_A","value":false},{"name":"ENABLE_EXTRA","value":true}]}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A"})
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.Equal(t, map[string]bool{"ENABLE_A": false}, section.Data)
+}
+
 func TestReason_ShowsABodyOnOneLineWithoutControlCharacters(t *testing.T) {
 	err := &drapi.HTTPError{StatusCode: http.StatusBadGateway, Body: []byte("\x1b[31mBad gateway\x1b[0m\r\nline two\ttab")}
 

@@ -243,14 +243,18 @@ func entitlementsFor(ctx context.Context, names []string) Section {
 	}
 }
 
-// evaluateBatch asks for a whole batch. When the route answers with an HTTP
-// error, it retries the batch name by name, because the route rejects every
-// name for one it does not know. The second map holds the names that could not
-// be read, with the reason.
+// noValue is the reason for a requested name the route's answer leaves out.
+const noValue = "the route returned no value"
+
+// evaluateBatch asks for a whole batch. A name the answer leaves out is
+// reported as failed, never as off, whether the answer came for the batch or
+// for one name. When the route answers with an HTTP error, it retries the
+// batch name by name, because the route rejects every name for one it does not
+// know. The second map holds the names that could not be read, with the reason.
 func evaluateBatch(ctx context.Context, batch []string) (map[string]bool, map[string]string) {
 	got, err := evaluate(ctx, batch)
 	if err == nil {
-		return got, nil
+		return answered(batch, got)
 	}
 
 	failed := map[string]string{}
@@ -273,9 +277,25 @@ func evaluateBatch(ctx context.Context, batch []string) (map[string]bool, map[st
 			continue
 		}
 
-		value, answered := one[name]
-		if !answered {
-			failed[name] = "the route returned no value"
+		gotOne, missedOne := answered([]string{name}, one)
+
+		maps.Copy(values, gotOne)
+		maps.Copy(failed, missedOne)
+	}
+
+	return values, failed
+}
+
+// answered splits batch into the names the answer holds a value for and the
+// names it leaves out.
+func answered(batch []string, got map[string]bool) (map[string]bool, map[string]string) {
+	values := make(map[string]bool, len(batch))
+	failed := map[string]string{}
+
+	for _, name := range batch {
+		value, ok := got[name]
+		if !ok {
+			failed[name] = noValue
 
 			continue
 		}
