@@ -56,6 +56,8 @@ Each section has a source, a `scope`, and a status.
 - `workloadApi`, from `/api/v2/workloads/?limit=1`: `totalCount`, how many workloads the caller can see, left out when the route does not return it. When the route refuses, the section is `unavailable` and the message carries the start of the response body (the first 512 bytes, on one line, with any token removed), which names the cause. A missing seat license and a disabled feature flag both answer 403 with different text, and a switched-off proxy answers 502.
 - `workloadLimits`, from `/api/v2/workloadLimits/`: the install's own limits on the shape of a workload, `maxContainersPerGroup` and `maxCredentialsPerContainer`, the same for every caller. A limit the route does not return is left out, and a limit of 0 is kept. A Workload API release that predates the route answers 404 and the section is `unavailable`.
 
+Releases checked: 11.1.13 (API 2.37), 11.12.0, 11.14.0, and 11.15.0. On 11.1.13 the `workloadApi` and `workloadLimits` sections are `unavailable` with `httpStatus` 404, because the release has no Workload API, and `entitlements` is `degraded`, because the install does not know the Workload flags. The other sections report `ok`.
+
 Every section carries a `scope` that says who its answer is true for. `platform` means the same for any caller. `caller` means it depends on who asks: their permissions, seats, or organization. Run the command with the credentials the pipeline will use.
 
 `server` carries the `release`, the `apiVersion`, and the `canonicalUrl` of the install. `release` comes from `/config`. `apiVersion` comes from `/api/v2/version/` and is the version the caller sees: a user on the beta API sees the beta version string.
