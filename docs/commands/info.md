@@ -12,7 +12,7 @@ dr info [flags]
 
 A Custom Application deploy depends on values that differ per install: which execution environment and resource bundle are valid for applications, which feature flags are on, which seat licenses the caller has, and the install's release and URL. A pipeline copied from another install breaks on the first mismatch, usually after the upload.
 
-`dr info` reads those values from public routes with the caller's own credentials and prints one report. It adds no access: a source the caller cannot read becomes an `unavailable` section that carries the route's reason, and the other sections still report.
+`dr info` reads those values from the install's own routes with the caller's own credentials and prints one report. Two of the routes, `/config` and `/api/v2/account/info/`, are not public API, so a release can change them without notice. The command adds no access: a source the caller cannot read becomes an `unavailable` section that carries the route's reason, and the other sections still report.
 
 The report states facts and leaves the verdict to the reader. Read `hasSuccessfulVersion` and `useCases` and decide; the command does not say "you can create an app".
 
@@ -43,8 +43,8 @@ A script that reads stderr handles both shapes.
 
 Each section has a source, a `scope`, and a status.
 
-- `install`, from the public `/config` route: `isEnterprise` and `defaultAppResourceBundle`. A key the install does not return is left out. `/config` is the web interface's bootstrap document. It sits at the install root, outside `/api/v2`, has no version, and answers without credentials, so the command sends no token to it. Treat `install`, `server.release`, and `server.canonicalUrl` as best effort: a later release can change the route or require authentication, and the values are then empty and `install` is `unavailable`.
-- `seats`, from `/api/v2/account/info/`: `seatLicenses`, each license mapped to whether the caller has it. A license that is absent is not enforced on that install, so `{}` does not mean blocked.
+- `install`, from the `/config` route: `isEnterprise` and `defaultAppResourceBundle`. A key the install does not return is left out. `/config` is the web interface's bootstrap document. It sits at the install root, outside `/api/v2`, has no version, and answers without credentials, so the command sends no token to it. Treat `install`, `server.release`, and `server.canonicalUrl` as best effort: a later release can change the route or require authentication, and the values are then empty and `install` is `unavailable`.
+- `seats`, from `/api/v2/account/info/`: `seatLicenses`, each license mapped to whether the caller has it. A license that is absent is not enforced on that install, so `{}` does not mean blocked. When a release removes or restricts the route, `seats` is `unavailable`.
 - `entitlements`, from `/api/v2/entitlements/evaluate/`: the flags a Custom Application deploy depends on. A name the install does not know, or leaves out of its answer, is listed in the message and the section is `degraded`.
 - `executionEnvironments`, from `/api/v2/executionEnvironments/`: every environment the caller can read, with `id`, `name`, `programmingLanguage`, `useCases`, `hasSuccessfulVersion`, `buildStatus`, `isPublic`, and `sourceDockerImageUri`.
   - An environment is valid for applications when `useCases` lists `customApplication`.
@@ -56,7 +56,7 @@ Each section has a source, a `scope`, and a status.
 
 Every section carries a `scope` that says who its answer is true for. `platform` means the same for any caller. `caller` means it depends on who asks: their permissions, seats, or organization. Run the command with the credentials the pipeline will use.
 
-`server` carries the `release`, the `apiVersion`, and the `canonicalUrl` of the install.
+`server` carries the `release`, the `apiVersion`, and the `canonicalUrl` of the install. `release` comes from `/config`. `apiVersion` comes from `/api/v2/version/` and is the version the caller sees: a user with the `api_dev_version_enabled` flag gets the beta version string.
 
 ### Text output
 

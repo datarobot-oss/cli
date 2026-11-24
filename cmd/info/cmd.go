@@ -40,7 +40,7 @@ func Cmd() *cobra.Command {
 		Use:     "info",
 		GroupID: "core",
 		Short:   "🧭 Report what the DataRobot install supports",
-		Long: `Report what the install says about itself, from public routes only.
+		Long: `Report what the install says about itself, from routes it already serves.
 
 A Custom Application deploy depends on values that differ per install: which
 execution environments and resource bundles are valid for applications, which

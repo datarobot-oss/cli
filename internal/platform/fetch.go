@@ -122,7 +122,7 @@ func (e *limitError) Error() string { return e.message }
 // call sends one request and decodes a 2xx JSON response into out. A non-2xx
 // response comes back as a *drapi.HTTPError that carries the start of the
 // response body with the token redacted, which reason turns into the section's
-// message. authorize false leaves the token off, for public routes. A 429 or
+// message. authorize false leaves the token off, for the anonymous /config route. A 429 or
 // 503 answer is sent again up to maxRetries times, after the wait the server
 // names in Retry-After or a jittered, growing one.
 //

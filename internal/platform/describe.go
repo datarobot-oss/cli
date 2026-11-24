@@ -30,7 +30,7 @@ const describeTimeout = 60 * time.Second
 // now is the clock behind the report's timestamp, a seam for tests.
 var now = time.Now
 
-// Describe reads the install's public routes and returns the report.
+// Describe reads the install's routes and returns the report.
 //
 // The version route goes first, because it is the cheapest call that proves the
 // install answers and the credentials work. When it fails without an answer, or

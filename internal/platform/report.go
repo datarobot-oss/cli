@@ -92,7 +92,7 @@ type Section struct {
 	Data       any    `json:"data,omitempty"`
 }
 
-// Install carries the install-wide switches from the public /config route. A
+// Install carries the install-wide switches from the /config route. A
 // key the install does not return stays unset rather than guessed.
 type Install struct {
 	IsEnterprise             *bool  `json:"isEnterprise,omitempty"`

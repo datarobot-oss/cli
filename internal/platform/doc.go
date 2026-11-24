@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package platform implements `dr info`: what an install says about itself
-// that decides whether a Custom Application deploy will work, read from public
-// routes only. The report's shape is a contract, written down in
+// that decides whether a Custom Application deploy will work, read from the
+// install's own routes. The report's shape is a contract, written down in
 // docs/schemas/platform-info.schema.json.
 package platform
