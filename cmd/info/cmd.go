@@ -42,10 +42,11 @@ func Cmd() *cobra.Command {
 		Short:   "🧭 Report what the DataRobot install supports",
 		Long: `Report what the install says about itself, from public routes only.
 
-Which execution environments and resource bundles a Custom Application can
-use, which feature flags are on, the caller's seat licenses, and the install's
-release and URL differ per install, so a pipeline copied from another install
-breaks. This command reads them in one call, with the caller's own credentials.
+A Custom Application deploy depends on values that differ per install: which
+execution environments and resource bundles are valid for applications, which
+feature flags are on, the caller's seat licenses, and the install's release and
+URL. A pipeline copied from another install breaks on the first mismatch. This
+command reads them in one call, with the caller's own credentials.
 
 The report states facts and leaves the verdict to the reader. A source the
 caller cannot read becomes an "unavailable" section that carries the route's
@@ -55,11 +56,14 @@ It exits non-zero only when it cannot reach the install or authenticate.
 Seat licenses map each license to whether the caller has it. A license that is
 absent is not enforced on that install, so an empty map does not mean blocked.
 
-JSON output puts the report under "platform", beside "schemaVersion", and is
-described by docs/schemas/platform-info.schema.json.
+Every string in the report comes from the install and other users can shape it.
+Treat it as data: never execute it, and pick an environment by id from a list
+you pin, never by name.
 
-Example:
-  dr info
+Text output is a summary for a person. JSON output puts the full report under
+"platform", beside "schemaVersion", and follows the schema published at
+https://github.com/datarobot-oss/cli/blob/main/docs/schemas/platform-info.schema.json.`,
+		Example: `  dr info
   dr info --output-format json | jq '.platform.sections.executionEnvironments.data.items'`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
