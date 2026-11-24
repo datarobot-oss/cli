@@ -1,0 +1,671 @@
+// Copyright 2026 DataRobot, Inc. and its affiliates.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package platform
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// route answers one request. fn, when set, decides from the request body.
+type route struct {
+	status int
+	body   string
+	fn     func(body string) (int, string)
+}
+
+// fakeInstall serves recorded responses for the routes describe reads. A test
+// replaces a route to simulate a failing source.
+type fakeInstall struct {
+	mu      sync.Mutex
+	routes  map[string]route
+	queries map[string]string
+	posts   []string
+	srv     *httptest.Server
+}
+
+// workloadsPage is the shape the workloads route answers with, recorded from
+// staging on 2026-11-20 with the workload trimmed to its id and name.
+const workloadsPage = `{"count":1,"next":"{{BASE}}/api/v2/workloads/?offset=1&limit=1","previous":null,"totalCount":7,"data":[{"id":"w1","name":"demo"}]}`
+
+// newFakeInstall loads the recorded responses in testdata/<dir> and points the
+// CLI at the server. {{BASE}} in a recording becomes the server's address.
+func newFakeInstall(t *testing.T, dir string) *fakeInstall {
+	t.Helper()
+
+	read := func(name string) string {
+		raw, err := os.ReadFile(filepath.Join("testdata", dir, name))
+		require.NoError(t, err)
+
+		return string(raw)
+	}
+
+	fake := &fakeInstall{routes: map[string]route{
+		"GET /config":                                 {body: read("config.json")},
+		"GET /api/v2/version/":                        {body: read("version.json")},
+		"GET /api/v2/account/info/":                   {body: read("account_info.json")},
+		"POST /api/v2/entitlements/evaluate/":         {body: read("entitlements.json")},
+		"GET /api/v2/executionEnvironments/":          {body: read("environments.json")},
+		"GET /api/v2/mlops/compute/bundles/":          {body: read("bundles_page1.json")},
+		"GET /api/v2/mlops/compute/bundles/?offset=2": {body: read("bundles_page2.json")},
+		"GET /api/v2/workloads/":                      {body: workloadsPage},
+	}, queries: map[string]string{}}
+
+	fake.srv = useServer(t, fake.serve)
+
+	return fake
+}
+
+func (f *fakeInstall) serve(w http.ResponseWriter, r *http.Request) {
+	key := r.Method + " " + r.URL.Path
+	if offset := r.URL.Query().Get("offset"); offset != "" {
+		key += "?offset=" + offset
+	}
+
+	var body string
+
+	if r.Method == http.MethodPost {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+
+		f.mu.Lock()
+		f.posts = append(f.posts, body)
+		f.mu.Unlock()
+	}
+
+	f.mu.Lock()
+	rt, ok := f.routes[key]
+	f.queries[key] = r.URL.RawQuery
+	f.mu.Unlock()
+
+	if !ok {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	status, payload := rt.status, rt.body
+	if rt.fn != nil {
+		status, payload = rt.fn(body)
+	}
+
+	if status == 0 {
+		status = http.StatusOK
+	}
+
+	writeJSON(w, status, strings.ReplaceAll(payload, "{{BASE}}", f.srv.URL))
+}
+
+func (f *fakeInstall) set(key string, rt route) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.routes[key] = rt
+}
+
+// queryOf returns the raw query of the last request that matched key.
+func (f *fakeInstall) queryOf(key string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.queries[key]
+}
+
+func (f *fakeInstall) postBodies() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]string(nil), f.posts...)
+}
+
+func jsonOf(t *testing.T, v any) string {
+	t.Helper()
+
+	raw, err := json.Marshal(v)
+	require.NoError(t, err)
+
+	return string(raw)
+}
+
+func TestReadConfig_PicksTheKeysItNames(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	cfg, err := readConfig(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "11.12.0", cfg.ReleaseVersion)
+	assert.Equal(t, "https://dr.example.com", cfg.ExternalWebServerURL)
+	assert.Equal(t, "cpu.xlarge", cfg.CustomAppDefaultResourceBundle)
+	require.NotNil(t, cfg.IsEnterprise)
+	assert.True(t, *cfg.IsEnterprise)
+}
+
+func TestReadConfig_LeavesAMissingKeyUnset(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /config", route{body: `{"RELEASE_VERSION": "11.12.0"}`})
+
+	cfg, err := readConfig(context.Background())
+
+	require.NoError(t, err)
+	assert.Nil(t, cfg.IsEnterprise)
+	assert.Empty(t, cfg.CustomAppDefaultResourceBundle)
+}
+
+func TestReadConfig_ReportsAPageThatIsNotJSON(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /config", route{body: `<html>login</html>`})
+
+	_, err := readConfig(context.Background())
+
+	assert.Error(t, err)
+}
+
+func TestReadAPIVersion_ReturnsTheVersionString(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	version, err := readAPIVersion(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "2.48", version)
+}
+
+func TestReadAPIVersion_ReturnsTheStatusOfARejection(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/version/", route{status: http.StatusUnauthorized, body: `{"message":"Invalid token"}`})
+
+	_, err := readAPIVersion(context.Background())
+
+	assert.Equal(t, http.StatusUnauthorized, statusOf(err))
+}
+
+func TestSeatsSection_KeepsAnEmptyMapAsAnEmptyObject(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := seatsSection(context.Background())
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"seatLicenses":{}}`, jsonOf(t, section.Data))
+}
+
+func TestSeatsSection_ReturnsEachLicenseWithItsAccess(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"seatLicenses":{"AGENTIC_PREDICTIVE_GOVERNANCE_BUILDER":true,"NON_BUILDER_USER":false}}`})
+
+	section := seatsSection(context.Background())
+
+	assert.JSONEq(t,
+		`{"seatLicenses":{"AGENTIC_PREDICTIVE_GOVERNANCE_BUILDER":true,"NON_BUILDER_USER":false}}`,
+		jsonOf(t, section.Data))
+}
+
+func TestSeatsSection_TreatsANullMapAsEmpty(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"seatLicenses":null}`})
+
+	section := seatsSection(context.Background())
+
+	assert.JSONEq(t, `{"seatLicenses":{}}`, jsonOf(t, section.Data))
+}
+
+func TestSeatsSection_IsUnavailableWithTheRouteBody(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{status: http.StatusForbidden, body: `{"message":"nope"}`})
+
+	section := seatsSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, `HTTP 403: {"message":"nope"}`, section.Message)
+	assert.Equal(t, http.StatusForbidden, section.HTTPStatus)
+	assert.Nil(t, section.Data)
+}
+
+func TestSectionOf_LeavesTheHTTPStatusUnsetWhenNoResponseCame(t *testing.T) {
+	section := sectionOf(nil, errors.New("dial tcp: connection refused"))
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, "dial tcp: connection refused", section.Message)
+	assert.Zero(t, section.HTTPStatus)
+}
+
+func TestSectionOf_LeavesTheHTTPStatusUnsetForASectionThatIsOK(t *testing.T) {
+	section := sectionOf(Seats{SeatLicenses: map[string]bool{}}, nil)
+
+	assert.Zero(t, section.HTTPStatus)
+	assert.NotContains(t, jsonOf(t, section), "httpStatus")
+}
+
+func TestExecutionEnvironmentsSection_KeepsEnvironmentsThatShareAName(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := executionEnvironmentsSection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+
+	items := section.Data.(ExecutionEnvironments).Items
+	require.Len(t, items, 4)
+
+	assert.Equal(t, ExecutionEnvironment{
+		ID: "env-python", Name: "[DataRobot] Python 3.12 Applications Base", ProgrammingLanguage: "python",
+		UseCases: []string{"customApplication"}, HasSuccessfulVersion: true, BuildStatus: "success",
+	}, items[0])
+
+	// Same name, never built: a reader must tell them apart by ID and build state.
+	assert.Equal(t, ExecutionEnvironment{
+		ID: "env-python-unbuilt", Name: "[DataRobot] Python 3.12 Applications Base", ProgrammingLanguage: "python",
+		UseCases: []string{"customApplication"},
+	}, items[2])
+}
+
+// A real single-tenant install lists two NodeJS 24 environments under one name,
+// so a pipeline that picks by name cannot tell them apart.
+func TestExecutionEnvironmentsSection_ARealInstallListsOneNameTwice(t *testing.T) {
+	newFakeInstall(t, "sts-11.14.0")
+
+	section := executionEnvironmentsSection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+
+	idsByName := map[string]map[string]bool{}
+
+	for _, env := range section.Data.(ExecutionEnvironments).Items {
+		if idsByName[env.Name] == nil {
+			idsByName[env.Name] = map[string]bool{}
+		}
+
+		idsByName[env.Name][env.ID] = true
+	}
+
+	assert.Len(t, idsByName["[DataRobot] NodeJS 24 Applications Base"], 2)
+}
+
+// The address sits under latestSuccessfulVersion, where an air-gap install
+// publishes it. env-rebuilt has a failed latest build beside an earlier good
+// one, and env-never-built has no good build yet.
+const environmentsWithPublishedImages = `{"data":[
+  {"id":"env-published","name":"[DataRobot] Python 3.12 Applications Base","useCases":["customApplication"],
+   "latestSuccessfulVersion":{"id":"v1","sourceDockerImageUri":"registry.example.com/base-image:abc123"},
+   "latestVersion":{"buildStatus":"success","sourceDockerImageUri":"registry.example.com/base-image:abc123"}},
+  {"id":"env-unpublished","name":"[DataRobot] Python 3.12 Applications Base","useCases":["customApplication"],
+   "latestSuccessfulVersion":{"id":"v1","sourceDockerImageUri":null},
+   "latestVersion":{"buildStatus":"success","sourceDockerImageUri":null}},
+  {"id":"env-rebuilt","name":"Rebuilt","useCases":["customApplication"],
+   "latestSuccessfulVersion":{"id":"v1","sourceDockerImageUri":"registry.example.com/base-image:good"},
+   "latestVersion":{"buildStatus":"failed","sourceDockerImageUri":"registry.example.com/base-image:failed"}},
+  {"id":"env-never-built","name":"Never built","useCases":["customApplication"],
+   "latestSuccessfulVersion":null,
+   "latestVersion":{"buildStatus":"building","sourceDockerImageUri":"registry.example.com/base-image:pending"}}
+],"next":null}`
+
+func publishedImages(t *testing.T) []ExecutionEnvironment {
+	t.Helper()
+
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/executionEnvironments/", route{body: environmentsWithPublishedImages})
+
+	section := executionEnvironmentsSection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+
+	items := section.Data.(ExecutionEnvironments).Items
+	require.Len(t, items, 4)
+
+	return items
+}
+
+func TestExecutionEnvironmentsSection_ReportsTheImageAddressAnInstallPublishes(t *testing.T) {
+	items := publishedImages(t)
+
+	assert.Equal(t, "registry.example.com/base-image:abc123", items[0].SourceDockerImageURI)
+	assert.Empty(t, items[1].SourceDockerImageURI, "a null address is no address")
+}
+
+func TestExecutionEnvironmentsSection_ReportsTheAddressOfTheLatestSuccessfulVersion(t *testing.T) {
+	items := publishedImages(t)
+
+	assert.Equal(t, "registry.example.com/base-image:good", items[2].SourceDockerImageURI)
+	assert.Equal(t, "failed", items[2].BuildStatus)
+	assert.True(t, items[2].HasSuccessfulVersion)
+}
+
+func TestExecutionEnvironmentsSection_LeavesOutTheAddressOfAVersionThatNeverBuilt(t *testing.T) {
+	items := publishedImages(t)
+
+	assert.Empty(t, items[3].SourceDockerImageURI)
+	assert.False(t, items[3].HasSuccessfulVersion)
+}
+
+func TestExecutionEnvironment_JSONCarriesTheImageAddressOnlyWhenThereIsOne(t *testing.T) {
+	withAddress := jsonOf(t, ExecutionEnvironment{ID: "e", SourceDockerImageURI: "registry.example.com/base-image:abc123"})
+	without := jsonOf(t, ExecutionEnvironment{ID: "e"})
+
+	assert.Contains(t, withAddress, `"sourceDockerImageUri":"registry.example.com/base-image:abc123"`)
+	assert.NotContains(t, without, "sourceDockerImageUri")
+}
+
+func TestExecutionEnvironmentsSection_ReportsWhetherTheInstallPublishesAnEnvironment(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/executionEnvironments/", route{body: `{"data":[
+		{"id":"e1","name":"official","useCases":[],"isPublic":true},
+		{"id":"e2","name":"user made","useCases":[],"isPublic":false},
+		{"id":"e3","name":"unsaid","useCases":[]}],"next":null}`})
+
+	section := executionEnvironmentsSection(context.Background())
+
+	items := section.Data.(ExecutionEnvironments).Items //nolint:forcetypeassert // the section was built above
+	require.Len(t, items, 3)
+	require.NotNil(t, items[0].IsPublic)
+	assert.True(t, *items[0].IsPublic)
+	require.NotNil(t, items[1].IsPublic)
+	assert.False(t, *items[1].IsPublic)
+	assert.Nil(t, items[2].IsPublic, "an install that does not say stays unsaid")
+}
+
+func TestExecutionEnvironmentsSection_IsUnavailableWhenTheRouteRefuses(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/executionEnvironments/", route{status: http.StatusForbidden, body: `{"message":"no feature"}`})
+
+	section := executionEnvironmentsSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Contains(t, section.Message, "HTTP 403")
+}
+
+func TestResourceBundlesSection_ReadsEveryPage(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := resourceBundlesSection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+
+	items := section.Data.(ResourceBundles).Items
+	require.Len(t, items, 3)
+
+	twoCPUs := 2.0
+
+	assert.Equal(t, ResourceBundle{ID: "cpu.xlarge", Name: "XL", UseCases: []string{"customApplication"}, MemoryBytes: 2147483648, CPUCount: &twoCPUs}, items[1])
+	assert.Equal(t, "gpu.small", items[2].ID)
+}
+
+func TestResourceBundlesSection_IsUnavailableWhenALaterPageFails(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/mlops/compute/bundles/?offset=2", route{status: http.StatusInternalServerError, body: `boom`})
+
+	section := resourceBundlesSection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, "HTTP 500: boom", section.Message)
+	assert.Equal(t, http.StatusInternalServerError, section.HTTPStatus)
+}
+
+func TestResourceBundlesSection_KeepsACPUCountOfZero(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/mlops/compute/bundles/", route{body: `{"data":[
+		{"id":"gpu","name":"GPU","useCases":[],"memoryBytes":1,"cpuCount":0},
+		{"id":"unsaid","name":"No count","useCases":[],"memoryBytes":1}],"next":null}`})
+
+	section := resourceBundlesSection(context.Background())
+
+	out := jsonOf(t, section.Data)
+
+	assert.Contains(t, out, `"id":"gpu","name":"GPU","useCases":[],"memoryBytes":1,"cpuCount":0`)
+	assert.Contains(t, out, `"id":"unsaid","name":"No count","useCases":[],"memoryBytes":1}`)
+}
+
+func TestWorkloadAPISection_ReportsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
+	newFakeInstall(t, "sts-11.12.0")
+
+	section := workloadAPISection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"totalCount":7}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadAPISection_AsksForOneWorkload(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+
+	workloadAPISection(context.Background())
+
+	assert.Equal(t, "limit=1", fake.queryOf("GET /api/v2/workloads/"))
+}
+
+func TestWorkloadAPISection_ReportsACountOfZero(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{body: `{"count":0,"next":null,"previous":null,"totalCount":0,"data":[]}`})
+
+	section := workloadAPISection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{"totalCount":0}`, jsonOf(t, section.Data))
+}
+
+func TestWorkloadAPISection_IsUnavailableWithoutAStatusWhenTheAnswerIsNotJSON(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{body: `<html>Sign in</html>`})
+
+	section := workloadAPISection(context.Background())
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Contains(t, section.Message, "not JSON")
+	assert.Zero(t, section.HTTPStatus, "the route answered 200, so no error status exists to report")
+}
+
+func TestWorkloadAPISection_LeavesTheCountOutWhenTheRouteOmitsIt(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/workloads/", route{body: `{"data":[]}`})
+
+	section := workloadAPISection(context.Background())
+
+	require.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{}`, jsonOf(t, section.Data))
+}
+
+// The section carries the body of the service that refused, because that body
+// names the cause. The bodies below are the ones the monolith proxy sends.
+func TestWorkloadAPISection_IsUnavailableWithTheBodyOfTheRefusal(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		message string
+	}{
+		{
+			name:    "a missing seat",
+			status:  http.StatusForbidden,
+			body:    "Agentic, Predictive and Governance Seat License has not been granted to this user.",
+			message: "HTTP 403: Agentic, Predictive and Governance Seat License has not been granted to this user.",
+		},
+		{
+			name:    "a disabled feature flag",
+			status:  http.StatusForbidden,
+			body:    "Required feature flag WORKLOAD_API_CONTAINERS is not enabled.",
+			message: "HTTP 403: Required feature flag WORKLOAD_API_CONTAINERS is not enabled.",
+		},
+		{
+			name:    "a proxy that is switched off",
+			status:  http.StatusBadGateway,
+			body:    `{"message":"Backend service is deactivated."}`,
+			message: `HTTP 502: {"message":"Backend service is deactivated."}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := newFakeInstall(t, "sts-11.12.0")
+			fake.set("GET /api/v2/workloads/", route{status: tt.status, body: tt.body})
+
+			section := workloadAPISection(context.Background())
+
+			assert.Equal(t, StatusUnavailable, section.Status)
+			assert.Equal(t, tt.message, section.Message)
+			assert.Equal(t, tt.status, section.HTTPStatus)
+			assert.Nil(t, section.Data)
+		})
+	}
+}
+
+// evaluate answers a batch with every name's value, and rejects the whole
+// batch when one name is unknown to the install.
+func evaluateRejecting(bad string) func(body string) (int, string) {
+	return func(body string) (int, string) {
+		var req struct {
+			Entitlements []struct {
+				Name string `json:"name"`
+			} `json:"entitlements"`
+		}
+
+		_ = json.Unmarshal([]byte(body), &req)
+
+		var out []string
+
+		for _, e := range req.Entitlements {
+			if e.Name == bad {
+				return http.StatusUnprocessableEntity, `{"message":"unknown entitlement ` + bad + `"}`
+			}
+
+			out = append(out, fmt.Sprintf(`{"name":%q,"value":true}`, e.Name))
+		}
+
+		return http.StatusOK, `{"entitlements":[` + strings.Join(out, ",") + `]}`
+	}
+}
+
+func TestEntitlementsFor_ReadsOneBatch(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+
+	section := entitlementsFor(context.Background(), entitlementNames)
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.Equal(t, map[string]bool{
+		"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND": false,
+		"ENABLE_WORKLOAD_API_CONTAINERS":         true,
+		"DISABLE_CUSTOM_TEMPLATES":               false,
+	}, section.Data)
+	assert.Len(t, fake.postBodies(), 1)
+	assert.JSONEq(t,
+		`{"entitlements":[{"name":"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND"},{"name":"ENABLE_WORKLOAD_API_CONTAINERS"},{"name":"DISABLE_CUSTOM_TEMPLATES"}]}`,
+		fake.postBodies()[0])
+}
+
+func TestEntitlementNames_FitOneRequest(t *testing.T) {
+	assert.LessOrEqual(t, len(entitlementNames), entitlementBatchLimit)
+}
+
+func TestEntitlementsFor_AnUnknownNameDegradesInsteadOfLosingTheRest(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{fn: evaluateRejecting("ENABLE_NOT_ON_THIS_INSTALL")})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_NOT_ON_THIS_INSTALL", "ENABLE_B"})
+
+	assert.Equal(t, StatusDegraded, section.Status)
+	assert.Equal(t, map[string]bool{"ENABLE_A": true, "ENABLE_B": true}, section.Data)
+	assert.Contains(t, section.Message, "ENABLE_NOT_ON_THIS_INSTALL")
+	assert.Contains(t, section.Message, "HTTP 422")
+}
+
+func TestEntitlementsFor_AFlagTheRouteLeavesOutIsNotReportedAsOff(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{fn: func(body string) (int, string) {
+		if strings.Count(body, `"name"`) > 1 {
+			return http.StatusUnprocessableEntity, `{"message":"unknown entitlement"}`
+		}
+
+		return http.StatusOK, `{"entitlements":[]}`
+	}})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B"})
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+	assert.Contains(t, section.Message, "ENABLE_A: the route returned no value")
+	assert.Contains(t, section.Message, "ENABLE_B: the route returned no value")
+}
+
+func TestEntitlementsFor_ABatchAnswerThatOmitsANameDegradesAndNamesIt(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{body: `{"entitlements":[{"name":"ENABLE_A","value":true}]}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B", "ENABLE_C"})
+
+	assert.Equal(t, StatusDegraded, section.Status)
+	assert.Equal(t, map[string]bool{"ENABLE_A": true}, section.Data)
+	assert.Equal(t, "ENABLE_B: the route returned no value; ENABLE_C: the route returned no value", section.Message)
+	assert.Len(t, fake.postBodies(), 1, "an answer is not retried name by name")
+}
+
+func TestEntitlementsFor_AnEmptyBatchAnswerIsUnavailableNotOK(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{body: `{"entitlements":[]}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B"})
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+	assert.Contains(t, section.Message, "ENABLE_A: the route returned no value")
+}
+
+func TestEntitlementsFor_IgnoresANameTheCallerDidNotAsk(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{body: `{"entitlements":[{"name":"ENABLE_A","value":false},{"name":"ENABLE_EXTRA","value":true}]}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A"})
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.Equal(t, map[string]bool{"ENABLE_A": false}, section.Data)
+}
+
+func TestReason_ShowsABodyOnOneLineWithoutControlCharacters(t *testing.T) {
+	err := &drapi.HTTPError{StatusCode: http.StatusBadGateway, Body: []byte("\x1b[31mBad gateway\x1b[0m\r\nline two\ttab")}
+
+	assert.Equal(t, "HTTP 502: [31mBad gateway[0m line two tab", reason(err))
+}
+
+func TestReason_KeepsAPlainBodyAsItIs(t *testing.T) {
+	err := &drapi.HTTPError{StatusCode: http.StatusForbidden, Body: []byte(`{"message":"no bundles feature"}`)}
+
+	assert.Equal(t, `HTTP 403: {"message":"no bundles feature"}`, reason(err))
+}
+
+func TestEntitlementsFor_IsUnavailableWhenNoNameCanBeRead(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("POST /api/v2/entitlements/evaluate/", route{status: http.StatusForbidden, body: `{"message":"no"}`})
+
+	section := entitlementsFor(context.Background(), []string{"ENABLE_A", "ENABLE_B"})
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Nil(t, section.Data)
+	assert.Contains(t, section.Message, "HTTP 403")
+	assert.Zero(t, section.HTTPStatus, "several responses decide this section, so none is its status")
+}
+
+func TestInstallSection_IsUnavailableWhenConfigFails(t *testing.T) {
+	section := installSection(publicConfig{}, assert.AnError)
+
+	assert.Equal(t, StatusUnavailable, section.Status)
+	assert.Equal(t, assert.AnError.Error(), section.Message)
+}
