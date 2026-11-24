@@ -91,6 +91,17 @@ func TestRenderTo_TextListsEachLimitWithItsValue(t *testing.T) {
 	assert.Contains(t, out, "maxWorkloadReplicas: 3")
 }
 
+func TestRenderTo_TextShowsAnOKLimitsSectionWithNoLimits(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionLimits] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Limits{}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "limits: ok")
+}
+
 func TestRenderTo_TextShowsAWorkloadCountOfZero(t *testing.T) {
 	zero := 0
 	report := sampleReport()
@@ -175,6 +186,9 @@ func TestRenderTo_TextPrintsNoTerminalControlFromAnyServerField(t *testing.T) {
 		},
 		"seat license": func(r *Report, p string) {
 			r.Sections[SectionSeats] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Seats{SeatLicenses: map[string]bool{p: true}}}
+		},
+		"limit name": func(r *Report, p string) {
+			r.Sections[SectionLimits] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Limits{p: 3}}
 		},
 		"entitlement": func(r *Report, p string) {
 			r.Sections[SectionEntitlements] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]bool{p: true}}

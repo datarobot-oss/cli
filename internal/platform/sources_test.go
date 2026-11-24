@@ -282,6 +282,25 @@ func TestLimitsSection_CleansTheKeyOfALimit(t *testing.T) {
 	assert.JSONEq(t, `{"max[2JWorkloadReplicas":3}`, jsonOf(t, section.Data))
 }
 
+func TestLimitsSection_KeepsALimitOfZero(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"limits":{"maxWorkloadReplicas":0}}`})
+
+	section := limitsSection(context.Background())
+
+	assert.JSONEq(t, `{"maxWorkloadReplicas":0}`, jsonOf(t, section.Data))
+}
+
+func TestLimitsSection_TreatsANullMapAsEmpty(t *testing.T) {
+	fake := newFakeInstall(t, "sts-11.12.0")
+	fake.set("GET /api/v2/account/info/", route{body: `{"limits":null}`})
+
+	section := limitsSection(context.Background())
+
+	assert.Equal(t, StatusOK, section.Status)
+	assert.JSONEq(t, `{}`, jsonOf(t, section.Data))
+}
+
 func TestLimitsSection_IsUnavailableWhenALimitIsNotAnInteger(t *testing.T) {
 	fake := newFakeInstall(t, "sts-11.12.0")
 	fake.set("GET /api/v2/account/info/", route{body: `{"limits":{"maxWorkloadReplicas":"three"}}`})
