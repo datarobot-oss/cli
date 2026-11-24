@@ -71,6 +71,8 @@ type Producer struct {
 }
 
 // Server identifies the install. A field is empty when its source failed.
+// Release comes from /config. APIVersion comes from /api/v2/version/ and is the
+// version the caller sees, which can differ between callers.
 type Server struct {
 	Release      string `json:"release,omitempty"`
 	APIVersion   string `json:"apiVersion,omitempty"`

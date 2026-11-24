@@ -56,7 +56,7 @@ Each section has a source, a `scope`, and a status.
 
 Every section carries a `scope` that says who its answer is true for. `platform` means the same for any caller. `caller` means it depends on who asks: their permissions, seats, or organization. Run the command with the credentials the pipeline will use.
 
-`server` carries the `release`, the `apiVersion`, and the `canonicalUrl` of the install. `release` comes from `/config`. `apiVersion` comes from `/api/v2/version/` and is the version the caller sees: a user with the `api_dev_version_enabled` flag gets the beta version string.
+`server` carries the `release`, the `apiVersion`, and the `canonicalUrl` of the install. `release` comes from `/config`. `apiVersion` comes from `/api/v2/version/` and is the version the caller sees: a user on the beta API sees the beta version string.
 
 ### Text output
 

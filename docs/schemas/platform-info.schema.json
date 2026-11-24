@@ -25,8 +25,8 @@
         "server": {
           "type": "object",
           "properties": {
-            "release": {"type": "string"},
-            "apiVersion": {"type": "string"},
+            "release": {"type": "string", "description": "The install's release, from /config."},
+            "apiVersion": {"type": "string", "description": "The API version the caller sees, from /api/v2/version/. It can differ between callers."},
             "canonicalUrl": {"type": "string"}
           }
         },
