@@ -179,7 +179,7 @@ func (o Options) resolveHeadlessSpec(detected Detected) ([]byte, manifest.Draft,
 		return nil, manifest.Draft{}, err
 	}
 
-	warnSecretLiterals(o.Stderr, live, "the spec file "+o.SpecFile, "the manifest")
+	WarnSecretLiterals(o.Stderr, live, "the spec file "+o.SpecFile, "the manifest")
 
 	return content, draft, nil
 }

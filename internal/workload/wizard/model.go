@@ -409,7 +409,7 @@ func (f *flow) resizeComponents() {
 // fetchLiveCmd downloads a workload so the file can say everything it says.
 func fetchLiveCmd(workloadID string) tea.Cmd {
 	return func() tea.Msg {
-		live, err := fetchLive(workloadID)
+		live, err := FetchLive(workloadID)
 
 		return liveLoadedMsg{live: live, err: err}
 	}

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -834,6 +835,24 @@ func paginateWorkloads(pageURL string, limit int) ([]Workload, error) {
 	}
 
 	return all, nil
+}
+
+// FindWorkloadsByArtifact lists the workloads whose artifact is artifactID.
+func FindWorkloadsByArtifact(artifactID string) ([]Workload, error) {
+	all, err := ListWorkloads(math.MaxInt, 0, nil, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var found []Workload
+
+	for _, w := range all {
+		if w.ArtifactID == artifactID {
+			found = append(found, w)
+		}
+	}
+
+	return found, nil
 }
 
 // DeleteWorkload deletes a workload. The server stops the backing proton(s)
