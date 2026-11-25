@@ -119,14 +119,6 @@ The v0.8.0 and v0.20.0 auth-profile threads are the references.
 - **Re-read the draft file immediately before posting.** Sync a meaningful aj edit across
   surfaces when it touches content that also appears in the GitHub release body (a trimmed
   gate note); leave pure-opener edits alone.
-- **aj may hand the draft back for a finishing pass** (v0.23.0: "I updated the announcements,
-  spellcheck and fix the Slack IDs"). The job then is spelling (he types `z` for `s`) and
-  swapping `@Name` placeholders for real `<@UID>` markup — not restructuring. Leave his voice
-  (quips, emoji) alone; look up IDs by `firstname.lastname@datarobot.com`.
-- **Framing aj writes in Slack is the framing aj wants on the GitHub release.** v0.23.0: the
-  release notes were rewritten to mirror his 1-2-3 lead ("everything you want to know about a
-  particular installation") instead of the agent's problem/solution paragraphs. Keep the
-  operational bullets; adopt his lead.
 - Publish release notes **after** `promote-release` succeeds, not between publish and
   promotion (see `pipeline.md` for the race).
 
