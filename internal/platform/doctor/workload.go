@@ -93,8 +93,11 @@ func explainRefusal(report *platform.Report, section platform.Section) core.Resu
 		result.Status = core.StatusWARN
 		result.Summary = "This release has no Workload API."
 		result.Remedy = remedyCustomApplication
+	case section.HTTPStatus == http.StatusUnauthorized:
+		result.Summary = "The Workload API rejected the credentials."
+		result.Remedy = remedyCheckCredentials
 	case section.HTTPStatus == http.StatusBadGateway:
-		result.Summary = "The Workload API proxy is switched off on this install."
+		result.Summary = "The Workload API proxy is switched off, or a gateway in front of it failed."
 		result.Remedy = remedyEnableProxy
 	case section.HTTPStatus == http.StatusForbidden && seatMissing(report):
 		result.Summary = "The caller has no Agentic + Predictive + Governance Builder seat."

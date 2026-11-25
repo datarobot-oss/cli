@@ -167,6 +167,36 @@ func TestUseEnvCredentials_ACompletePairOverridesTheProfile(t *testing.T) {
 	assert.Equal(t, "env-token", viperx.GetString("token"))
 }
 
+func TestCmd_AnEnvCredentialPairWinsOverTheProfileBeforeTheChecksRun(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
+	t.Setenv("DATAROBOT_ENDPOINT", "https://env.example.com/api/v2")
+	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
+
+	var endpointAtDescribe string
+
+	prev := describeFn
+
+	describeFn = func(context.Context) (*platform.Report, error) {
+		endpointAtDescribe = viperx.GetString("endpoint")
+
+		return installReport(answering()), nil
+	}
+
+	t.Cleanup(func() { describeFn = prev })
+
+	cmd := Cmd()
+
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs(nil)
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "https://env.example.com/api/v2", endpointAtDescribe)
+}
+
 func TestUseEnvCredentials_AnIncompletePairLeavesTheProfile(t *testing.T) {
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)

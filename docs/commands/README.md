@@ -100,6 +100,7 @@ dr
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
 ├── info               Report what the install supports (feature-gated)
+├── doctor             Check whether the install accepts your deploys (feature-gated)
 ├── pipeline           Pipelines API management (alias: pipelines, feature-gated)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines

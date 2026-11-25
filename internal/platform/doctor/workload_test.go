@@ -144,10 +144,10 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			wantRemedy: remedyReadMessage,
 		},
 		{
-			name:       "a rejected credential fails with the message",
+			name:       "a rejected credential fails and points at the credentials",
 			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(401, "bad key")},
 			wantStatus: core.StatusFAIL,
-			wantRemedy: remedyReadMessage,
+			wantRemedy: remedyCheckCredentials,
 		},
 		{
 			name:       "an unavailable service fails with the message",

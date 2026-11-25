@@ -29,7 +29,8 @@ The `platform.workload.deploy` check reads the `workloadApi` section of the repo
 
 - `OK`: the Workload API answers the caller.
 - `WARN`, HTTP 404: the release has no Workload API. A Custom Application still deploys.
-- `FAIL`, HTTP 502: the Workload API proxy is switched off. An install administrator switches it on.
+- `FAIL`, HTTP 401: the Workload API rejected the credentials. Check them.
+- `FAIL`, HTTP 502: the Workload API proxy is switched off, or a gateway in front of it failed. An install administrator checks both.
 - `FAIL`, HTTP 403 with `AGENTIC_PREDICTIVE_GOVERNANCE_BUILDER` set to `false` in `seats`: the caller lacks the builder seat. An install administrator grants it.
 - `FAIL`, HTTP 403 with `ENABLE_WORKLOAD_API_CONTAINERS` set to `false` in `entitlements`: the feature flag is off for the caller.
 - `FAIL`, any other refusal: the details carry the HTTP status and the install's message.
