@@ -40,6 +40,7 @@ DATAROBOT_CLI_FEATURE_ENCLAVE=true dr enclave --help
 Feature names are converted from lowercase with hyphens to uppercase with underscores:
 - `workload-alpha` → `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA`
 - `pipeline` → `DATAROBOT_CLI_FEATURE_PIPELINE` (AI Pipelines are in Private Preview on DataRobot 11.15 and later)
+- `platform-info` → `DATAROBOT_CLI_FEATURE_PLATFORM_INFO` (gates `dr info` while its name and output settle; see [the info docs](../commands/info.md))
 - `my-feature` → `DATAROBOT_CLI_FEATURE_MY_FEATURE`
 
 ### Config File (Future)
