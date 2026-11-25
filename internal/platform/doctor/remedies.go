@@ -17,7 +17,8 @@ package doctor
 // The canonical remedy for each condition. A check returns the constant
 // verbatim, so the text reporter prints a shared remedy once.
 const (
-	remedyCheckCredentials  = "Check DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN, and that the install is reachable from here."
+	remedyCheckCredentials  = "Check that the install is reachable from here, then check your credentials: DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN, or run 'dr auth login' for the active profile."
+	remedyRetry             = "Run the check again, then check the network path to the install."
 	remedyCustomApplication = "Deploy a Custom Application instead, or ask an install administrator for a release that has the Workload API."
 	remedyEnableProxy       = "Ask an install administrator to switch the Workload API proxy on."
 	remedyGrantSeat         = "Ask an install administrator for the Agentic + Predictive + Governance Builder seat."

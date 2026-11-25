@@ -63,6 +63,22 @@ func TestJSONReporter_TitleReplacesProjectFields(t *testing.T) {
 	assert.Len(t, got["checks"], 1)
 }
 
+func TestReporters_TitleWinsOverProjectFields(t *testing.T) {
+	artifact := "abc123"
+	report := NewReport("/tmp/x", &artifact, nil)
+	report.Title = platformTitle
+
+	var text, jsonOut bytes.Buffer
+
+	require.NoError(t, WriteText(&text, report))
+	require.NoError(t, WriteJSON(&jsonOut, report))
+
+	assert.True(t, strings.HasPrefix(stripANSI(text.String()), platformTitle+"\n"))
+	assert.NotContains(t, text.String(), "abc123")
+	assert.NotContains(t, jsonOut.String(), "abc123")
+	assert.NotContains(t, jsonOut.String(), "projectDir")
+}
+
 func TestJSONReporter_NoTitleKeyForProjectReport(t *testing.T) {
 	var buf bytes.Buffer
 

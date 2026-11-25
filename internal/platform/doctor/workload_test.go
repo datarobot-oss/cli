@@ -128,15 +128,44 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			wantRemedy: remedyReadMessage,
 		},
 		{
+			name: "a refusal with both the seat and the flag at fault names the seat first",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI:  workloadRefuses(403, "refused"),
+				platform.SectionSeats:        seatsOf(map[string]bool{builderSeat: false}),
+				platform.SectionEntitlements: flagsOf(map[string]bool{containersFlag: false}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyGrantSeat,
+		},
+		{
+			name:       "a refusal with no seats or entitlements in the report carries the message",
+			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(403, "refused")},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyReadMessage,
+		},
+		{
+			name:       "a rejected credential fails with the message",
+			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(401, "bad key")},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyReadMessage,
+		},
+		{
+			name:       "an unavailable service fails with the message",
+			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(503, "unavailable")},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyReadMessage,
+		},
+		{
 			name:       "any other HTTP refusal fails with the message",
 			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(500, "boom")},
 			wantStatus: core.StatusFAIL,
 			wantRemedy: remedyReadMessage,
 		},
 		{
-			name:       "a route that could not be read is skipped",
+			name:       "a route that could not be read is a warning to run the check again",
 			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(0, "timeout")},
-			wantStatus: core.StatusSKIP,
+			wantStatus: core.StatusWARN,
+			wantRemedy: remedyRetry,
 		},
 		{
 			name:       "a report without the section is skipped",
@@ -200,7 +229,16 @@ func TestInstallRead_NamesTheRelease(t *testing.T) {
 	assert.Contains(t, got.Summary, "11.15.0")
 }
 
-func TestChecks_ReadTheInstallOncePerRun(t *testing.T) {
+func TestInstallRead_WithoutAReleaseStillSaysTheInstallAnswered(t *testing.T) {
+	checks := Checks(func(context.Context) (*platform.Report, error) { return reportOf(nil), nil })
+
+	got := checks[0].Run(context.Background())
+
+	assert.Equal(t, core.StatusOK, got.Status)
+	assert.Equal(t, "The install answered.", got.Summary)
+}
+
+func TestChecks_ReadTheInstallOncePerChecksValue(t *testing.T) {
 	calls := 0
 	checks := Checks(func(context.Context) (*platform.Report, error) {
 		calls++

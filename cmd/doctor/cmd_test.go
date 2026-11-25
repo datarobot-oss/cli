@@ -43,6 +43,13 @@ func stubDescribe(t *testing.T, report *platform.Report, err error) {
 func run(t *testing.T, args ...string) (stdout string, err error) {
 	t.Helper()
 
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_TOKEN", "")
+
 	cmd := Cmd()
 
 	var out bytes.Buffer
@@ -118,6 +125,19 @@ func TestCmd_AFailureExitsNonZeroAfterPrintingTheReport(t *testing.T) {
 	assert.Contains(t, stdout, "platform.workload.deploy")
 }
 
+func TestCmd_AFailureInJSONStillPrintsOneDocumentAndExitsNonZero(t *testing.T) {
+	stubDescribe(t, installReport(refusing(502)), nil)
+
+	stdout, err := run(t, "--output-format", "json")
+
+	require.ErrorIs(t, err, cli.ErrSilent)
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal([]byte(stdout), &decoded), "stdout must be one JSON document")
+	assert.Equal(t, "fail", decoded["status"])
+}
+
 func TestCmd_AnUnreadableInstallFailsAndSkipsTheRest(t *testing.T) {
 	stubDescribe(t, nil, errors.New("install unreachable"))
 
@@ -168,5 +188,5 @@ func TestCmd_RejectsArguments(t *testing.T) {
 
 	_, err := run(t, "extra")
 
-	assert.Error(t, err)
+	assert.ErrorContains(t, err, `unknown command "extra"`)
 }

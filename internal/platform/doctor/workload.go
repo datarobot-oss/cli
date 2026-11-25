@@ -68,7 +68,11 @@ func evaluateWorkloadDeploy(report *platform.Report) core.Result {
 	case section.Status == platform.StatusOK:
 		return core.Result{Status: core.StatusOK, Summary: "The Workload API answers this caller."}
 	case section.HTTPStatus == 0:
-		return core.Result{Status: core.StatusSKIP, Summary: "The Workload API route could not be read: " + section.Message}
+		return core.Result{
+			Status:  core.StatusWARN,
+			Summary: "The Workload API route could not be read: " + section.Message,
+			Remedy:  remedyRetry,
+		}
 	}
 
 	return explainRefusal(report, section)
