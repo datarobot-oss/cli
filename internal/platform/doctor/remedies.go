@@ -21,7 +21,7 @@ const (
 	remedyRetry             = "Run the check again."
 	remedyCheckNetwork      = "Run the check again, then read the message and check the network path to the install."
 	remedyCustomApplication = "Deploy a Custom Application instead, or ask an install administrator whether the install has the Workload API."
-	remedyInternalError     = "Run the check again, and report the message in the details as a bug in dr if it repeats."
+	remedyInternalError     = "Run the check again, and report the message as a bug in dr if it repeats."
 	remedyEnableProxy       = "Ask an install administrator to check that the Workload API proxy is switched on and that the gateway reaches it."
 	remedyGrantSeat         = "Ask an install administrator for the Agentic + Predictive + Governance Builder seat."
 	remedyEnableFlag        = "Ask an install administrator to enable ENABLE_WORKLOAD_API_CONTAINERS for your account."

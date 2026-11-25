@@ -107,13 +107,14 @@ func TestCmd_JSONHasTheTitleAndNoProjectFields(t *testing.T) {
 	assert.NotContains(t, decoded, "artifactId")
 }
 
-func TestCmd_TheTitleNamesTheInstall(t *testing.T) {
+func runWithEndpoint(t *testing.T, endpoint string, args ...string) (stdout string, err error) {
+	t.Helper()
+
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)
 
-	t.Setenv("DATAROBOT_ENDPOINT", "https://env.example.com/api/v2")
+	t.Setenv("DATAROBOT_ENDPOINT", endpoint)
 	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
-	stubDescribe(t, installReport(answering()), nil)
 
 	cmd := Cmd()
 
@@ -121,22 +122,50 @@ func TestCmd_TheTitleNamesTheInstall(t *testing.T) {
 
 	cmd.SetOut(&out)
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"--output-format", "json"})
+	cmd.SetArgs(args)
 
-	require.NoError(t, cmd.Execute())
+	err = cmd.Execute()
 
-	var decoded map[string]any
+	return out.String(), err
+}
 
-	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
-	assert.Equal(t, "Platform doctor report for https://env.example.com", decoded["title"])
+func TestCmd_TheTitleNamesTheInstallWithoutCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+	}{
+		{name: "a plain endpoint", endpoint: "https://env.example.com/api/v2"},
+		{name: "an endpoint with credentials", endpoint: "https://user:secret@env.example.com/api/v2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stubDescribe(t, installReport(answering()), nil)
+
+			stdout, err := runWithEndpoint(t, tt.endpoint, "--output-format", "json")
+			require.NoError(t, err)
+
+			var decoded map[string]any
+
+			require.NoError(t, json.Unmarshal([]byte(stdout), &decoded))
+			assert.Equal(t, "Platform doctor report for https://env.example.com", decoded["title"])
+		})
+	}
 }
 
 func TestCmd_WithoutAnEndpointTheFirstCheckSaysSo(t *testing.T) {
 	stdout, err := run(t)
 
 	require.ErrorIs(t, err, cli.ErrSilent)
-	assert.Contains(t, stdout, "no endpoint is configured")
+	assert.Contains(t, stdout, "no valid endpoint is configured")
 	assert.NotContains(t, stdout, "Empty URL")
+}
+
+func TestCmd_AQuotedEndpointIsNotAValidEndpoint(t *testing.T) {
+	stdout, err := runWithEndpoint(t, `"https://env.example.com/api/v2"`)
+
+	require.ErrorIs(t, err, cli.ErrSilent)
+	assert.Contains(t, stdout, "no valid endpoint is configured")
 }
 
 func TestCmd_AWarningExitsZero(t *testing.T) {

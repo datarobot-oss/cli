@@ -18,6 +18,7 @@ package doctor
 import (
 	"context"
 	"errors"
+	"net/url"
 
 	"github.com/spf13/cobra"
 
@@ -39,14 +40,25 @@ const (
 
 var describeFn = describeInstall
 
-// describeInstall names a missing endpoint, which the request would report as
-// "Empty URL.".
+// describeInstall names a missing or malformed endpoint, which the request
+// would report as "Empty URL.".
 func describeInstall(ctx context.Context) (*platform.Report, error) {
 	if config.GetBaseURL() == "" {
-		return nil, errors.New("no endpoint is configured")
+		return nil, errors.New("no valid endpoint is configured")
 	}
 
 	return platform.Describe(ctx)
+}
+
+// installURL returns scheme://host of the configured endpoint, without any
+// credentials in it, or "" when there is none.
+func installURL() string {
+	parsed, err := url.Parse(config.GetBaseURL())
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // Cmd returns the `dr doctor` command.
@@ -56,7 +68,7 @@ func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "doctor",
 		GroupID: "core",
-		Short:   "🩺 Check whether the install accepts your deploys",
+		Short:   "🩺 Check that the install accepts your deploys",
 		Long: `Judge what the install says about itself, as 'dr info' reports it, against
 what a deploy needs.
 
@@ -75,7 +87,7 @@ Exit code is 0 when no check FAILs and 1 when at least one does. Pass
 			auth.BindEnvCredentials()
 
 			heading := title
-			if endpoint := config.GetBaseURL(); endpoint != "" {
+			if endpoint := installURL(); endpoint != "" {
 				heading += " for " + endpoint
 			}
 

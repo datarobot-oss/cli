@@ -181,6 +181,24 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			wantRemedy: remedyEnableFlag,
 		},
 		{
+			name: "a message that names the seat wins over a flag that the entitlements show off",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI:  workloadRefuses(403, "Agentic, Predictive and Governance Seat License has not been granted to this user."),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: false}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyGrantSeat,
+		},
+		{
+			name: "a refusal other than 403 is not blamed on a seat",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI: workloadRefuses(503, "seat license service unavailable"),
+				platform.SectionSeats:       seatsOf(map[string]bool{builderSeat: false}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyReadMessage,
+		},
+		{
 			name:       "a recovered panic is a warning to run the check again and not a network problem",
 			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(0, "internal error: boom")},
 			wantStatus: core.StatusWARN,

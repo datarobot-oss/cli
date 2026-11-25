@@ -745,18 +745,31 @@ func TestBindEnvCredentials_ACompletePairOverridesTheProfile(t *testing.T) {
 }
 
 func TestBindEnvCredentials_AnIncompletePairLeavesTheProfile(t *testing.T) {
-	viperx.Reset()
-	t.Cleanup(viperx.Reset)
+	tests := []struct {
+		name     string
+		endpoint string
+		token    string
+	}{
+		{name: "a token without an endpoint", token: "env-token"},
+		{name: "an endpoint without a token", endpoint: "https://env.example.com/api/v2"},
+	}
 
-	viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
-	viperx.SetDefault("token", "profile-token")
-	t.Setenv("DATAROBOT_ENDPOINT", "")
-	t.Setenv("DATAROBOT_API_ENDPOINT", "")
-	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viperx.Reset()
+			t.Cleanup(viperx.Reset)
 
-	assert.False(t, BindEnvCredentials())
-	assert.Equal(t, "https://profile.example.com/api/v2", viperx.GetString("endpoint"))
-	assert.Equal(t, "profile-token", viperx.GetString("token"))
+			viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
+			viperx.SetDefault("token", "profile-token")
+			t.Setenv("DATAROBOT_ENDPOINT", tt.endpoint)
+			t.Setenv("DATAROBOT_API_ENDPOINT", "")
+			t.Setenv("DATAROBOT_API_TOKEN", tt.token)
+
+			assert.False(t, BindEnvCredentials())
+			assert.Equal(t, "https://profile.example.com/api/v2", viperx.GetString("endpoint"))
+			assert.Equal(t, "profile-token", viperx.GetString("token"))
+		})
+	}
 }
 
 func TestGetEnvCredentials(t *testing.T) {

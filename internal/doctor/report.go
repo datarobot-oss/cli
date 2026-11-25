@@ -54,7 +54,8 @@ func NewReport(projectDir string, artifactID *string, checks []Result) Report {
 }
 
 // NewTitledReport builds a read-only Report with no project, headed by title.
-// The title must not be empty.
+// The title must not be empty: the reporters would fall back to the project
+// header.
 func NewTitledReport(title string, checks []Result) Report {
 	return Report{
 		Title:  title,
