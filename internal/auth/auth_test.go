@@ -730,6 +730,35 @@ func TestConfig_ConfigFilePath(t *testing.T) {
 	assert.NoError(t, err, "Expected config file to exist at %s", expectedPath)
 }
 
+func TestBindEnvCredentials_ACompletePairOverridesTheProfile(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
+	viperx.SetDefault("token", "profile-token")
+	t.Setenv("DATAROBOT_ENDPOINT", "https://env.example.com/api/v2")
+	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
+
+	assert.True(t, BindEnvCredentials())
+	assert.Equal(t, "https://env.example.com/api/v2", viperx.GetString("endpoint"))
+	assert.Equal(t, "env-token", viperx.GetString("token"))
+}
+
+func TestBindEnvCredentials_AnIncompletePairLeavesTheProfile(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
+	viperx.SetDefault("token", "profile-token")
+	t.Setenv("DATAROBOT_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_ENDPOINT", "")
+	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
+
+	assert.False(t, BindEnvCredentials())
+	assert.Equal(t, "https://profile.example.com/api/v2", viperx.GetString("endpoint"))
+	assert.Equal(t, "profile-token", viperx.GetString("token"))
+}
+
 func TestGetEnvCredentials(t *testing.T) {
 	t.Run("prefers DATAROBOT_ENDPOINT over DATAROBOT_API_ENDPOINT", func(t *testing.T) {
 		t.Setenv("DATAROBOT_ENDPOINT", "https://primary.example.com")

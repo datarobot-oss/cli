@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/platform"
@@ -27,12 +28,11 @@ import (
 const (
 	idWorkloadDeploy = "platform.workload.deploy"
 
-	// builderSeat is the one seat the monolith proxy and the Workload API both
-	// require. A seat that is absent from the report is not enforced.
+	// builderSeat is the seat that both layers require.
 	builderSeat = "AGENTIC_PREDICTIVE_GOVERNANCE_BUILDER"
 
-	// containersFlag is the feature flag both layers require.
-	containersFlag = "ENABLE_WORKLOAD_API_CONTAINERS"
+	causeSeat = "seat"
+	causeFlag = "flag"
 )
 
 // workloadDeploy says whether the Workload API accepts the caller.
@@ -56,9 +56,8 @@ func (c *workloadDeploy) Run(ctx context.Context) core.Result {
 	return evaluateWorkloadDeploy(report)
 }
 
-// evaluateWorkloadDeploy judges the workloadApi section, which is the live
-// answer of the gate, and uses the seats and entitlements sections only to
-// name the cause of a 403.
+// evaluateWorkloadDeploy judges the workloadApi section, the live answer of the
+// gate.
 func evaluateWorkloadDeploy(report *platform.Report) core.Result {
 	section, ok := report.Sections[platform.SectionWorkloadAPI]
 
@@ -67,6 +66,12 @@ func evaluateWorkloadDeploy(report *platform.Report) core.Result {
 		return core.Result{Status: core.StatusSKIP, Summary: "The report has no workloadApi section."}
 	case section.Status == platform.StatusOK:
 		return core.Result{Status: core.StatusOK, Summary: "The Workload API answers this caller."}
+	case section.HTTPStatus == 0 && strings.HasPrefix(section.Message, platform.InternalErrorPrefix):
+		return core.Result{
+			Status:  core.StatusWARN,
+			Summary: "dr failed while reading the Workload API route: " + section.Message,
+			Remedy:  remedyInternalError,
+		}
 	case section.HTTPStatus == 0:
 		return core.Result{
 			Status:  core.StatusWARN,
@@ -88,10 +93,12 @@ func explainRefusal(report *platform.Report, section platform.Section) core.Resu
 		},
 	}
 
+	cause := forbiddenCause(report, section)
+
 	switch {
 	case section.HTTPStatus == http.StatusNotFound:
 		result.Status = core.StatusWARN
-		result.Summary = "This release has no Workload API."
+		result.Summary = "This install does not serve the Workload API."
 		result.Remedy = remedyCustomApplication
 	case section.HTTPStatus == http.StatusTooManyRequests:
 		result.Status = core.StatusWARN
@@ -103,11 +110,11 @@ func explainRefusal(report *platform.Report, section platform.Section) core.Resu
 	case section.HTTPStatus == http.StatusBadGateway:
 		result.Summary = "The Workload API proxy is switched off, or a gateway in front of it failed."
 		result.Remedy = remedyEnableProxy
-	case section.HTTPStatus == http.StatusForbidden && seatMissing(report):
+	case cause == causeSeat:
 		result.Summary = "The caller has no Agentic + Predictive + Governance Builder seat."
 		result.Remedy = remedyGrantSeat
-	case section.HTTPStatus == http.StatusForbidden && flagOff(report):
-		result.Summary = containersFlag + " is off for the caller."
+	case cause == causeFlag:
+		result.Summary = platform.EntitlementWorkloadAPIContainers + " is off for the caller."
 		result.Remedy = remedyEnableFlag
 	default:
 		result.Summary = fmt.Sprintf("The Workload API answered HTTP %d.", section.HTTPStatus)
@@ -117,17 +124,42 @@ func explainRefusal(report *platform.Report, section platform.Section) core.Resu
 	return result
 }
 
-// seatMissing reports whether the install enforces the builder seat and the
-// caller lacks it.
+// forbiddenCause names what a 403 is about, or "" for any other answer. Both
+// layers name the seat license or the feature flag in the message, so the
+// message decides first. The seats and entitlements sections decide only when
+// the message does not say.
+func forbiddenCause(report *platform.Report, section platform.Section) string {
+	if section.HTTPStatus != http.StatusForbidden {
+		return ""
+	}
+
+	message := strings.ToLower(section.Message)
+
+	switch {
+	case strings.Contains(message, "seat license"):
+		return causeSeat
+	case strings.Contains(message, "feature flag"):
+		return causeFlag
+	case seatMissing(report):
+		return causeSeat
+	case flagOff(report):
+		return causeFlag
+	}
+
+	return ""
+}
+
+// seatMissing reports whether the caller lacks the builder seat. A seat is
+// listed only when the install enforces it.
 func seatMissing(report *platform.Report) bool {
 	seats, ok := report.Sections[platform.SectionSeats].Data.(platform.Seats)
 	if !ok {
 		return false
 	}
 
-	held, enforced := seats.SeatLicenses[builderSeat]
+	held, listed := seats.SeatLicenses[builderSeat]
 
-	return enforced && !held
+	return listed && !held
 }
 
 // flagOff reports whether the entitlements section says the containers flag is
@@ -138,7 +170,7 @@ func flagOff(report *platform.Report) bool {
 		return false
 	}
 
-	value, known := flags[containersFlag]
+	value, known := flags[platform.EntitlementWorkloadAPIContainers]
 
 	return known && !value
 }

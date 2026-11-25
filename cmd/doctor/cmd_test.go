@@ -107,6 +107,38 @@ func TestCmd_JSONHasTheTitleAndNoProjectFields(t *testing.T) {
 	assert.NotContains(t, decoded, "artifactId")
 }
 
+func TestCmd_TheTitleNamesTheInstall(t *testing.T) {
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	t.Setenv("DATAROBOT_ENDPOINT", "https://env.example.com/api/v2")
+	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
+	stubDescribe(t, installReport(answering()), nil)
+
+	cmd := Cmd()
+
+	var out bytes.Buffer
+
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--output-format", "json"})
+
+	require.NoError(t, cmd.Execute())
+
+	var decoded map[string]any
+
+	require.NoError(t, json.Unmarshal(out.Bytes(), &decoded))
+	assert.Equal(t, "Platform doctor report for https://env.example.com", decoded["title"])
+}
+
+func TestCmd_WithoutAnEndpointTheFirstCheckSaysSo(t *testing.T) {
+	stdout, err := run(t)
+
+	require.ErrorIs(t, err, cli.ErrSilent)
+	assert.Contains(t, stdout, "no endpoint is configured")
+	assert.NotContains(t, stdout, "Empty URL")
+}
+
 func TestCmd_AWarningExitsZero(t *testing.T) {
 	stubDescribe(t, installReport(refusing(404)), nil)
 
@@ -163,21 +195,6 @@ func TestCmd_IsBehindThePlatformDoctorGate(t *testing.T) {
 	assert.Equal(t, "platform-doctor", Cmd().Annotations[features.AnnotationKey])
 }
 
-func TestUseEnvCredentials_ACompletePairOverridesTheProfile(t *testing.T) {
-	viperx.Reset()
-	t.Cleanup(viperx.Reset)
-
-	viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
-	viperx.SetDefault("token", "profile-token")
-	t.Setenv("DATAROBOT_ENDPOINT", "https://env.example.com/api/v2")
-	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
-
-	useEnvCredentials()
-
-	assert.Equal(t, "https://env.example.com/api/v2", viperx.GetString("endpoint"))
-	assert.Equal(t, "env-token", viperx.GetString("token"))
-}
-
 func TestCmd_AnEnvCredentialPairWinsOverTheProfileBeforeTheChecksRun(t *testing.T) {
 	viperx.Reset()
 	t.Cleanup(viperx.Reset)
@@ -206,22 +223,6 @@ func TestCmd_AnEnvCredentialPairWinsOverTheProfileBeforeTheChecksRun(t *testing.
 
 	require.NoError(t, cmd.Execute())
 	assert.Equal(t, "https://env.example.com/api/v2", endpointAtDescribe)
-}
-
-func TestUseEnvCredentials_AnIncompletePairLeavesTheProfile(t *testing.T) {
-	viperx.Reset()
-	t.Cleanup(viperx.Reset)
-
-	viperx.SetDefault("endpoint", "https://profile.example.com/api/v2")
-	viperx.SetDefault("token", "profile-token")
-	t.Setenv("DATAROBOT_ENDPOINT", "")
-	t.Setenv("DATAROBOT_API_ENDPOINT", "")
-	t.Setenv("DATAROBOT_API_TOKEN", "env-token")
-
-	useEnvCredentials()
-
-	assert.Equal(t, "https://profile.example.com/api/v2", viperx.GetString("endpoint"))
-	assert.Equal(t, "profile-token", viperx.GetString("token"))
 }
 
 func TestCmd_RejectsArguments(t *testing.T) {

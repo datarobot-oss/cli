@@ -68,7 +68,7 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			wantStatus: core.StatusOK,
 		},
 		{
-			name: "a release without the route is a warning that points at Custom Applications",
+			name: "an install without the route is a warning that points at Custom Applications",
 			sections: map[string]platform.Section{
 				platform.SectionWorkloadAPI: workloadRefuses(404, `HTTP 404: {"message": "Not Found"}`),
 				platform.SectionSeats:       seatsOf(map[string]bool{}),
@@ -102,7 +102,7 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			sections: map[string]platform.Section{
 				platform.SectionWorkloadAPI:  workloadRefuses(403, "flag is not enabled"),
 				platform.SectionSeats:        seatsOf(map[string]bool{}),
-				platform.SectionEntitlements: flagsOf(map[string]bool{containersFlag: false}),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: false}),
 			},
 			wantStatus: core.StatusFAIL,
 			wantRemedy: remedyEnableFlag,
@@ -112,7 +112,7 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			sections: map[string]platform.Section{
 				platform.SectionWorkloadAPI:  workloadRefuses(403, "something else"),
 				platform.SectionSeats:        seatsOf(map[string]bool{builderSeat: true}),
-				platform.SectionEntitlements: flagsOf(map[string]bool{containersFlag: true}),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: true}),
 			},
 			wantStatus: core.StatusFAIL,
 			wantRemedy: remedyReadMessage,
@@ -122,7 +122,7 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			sections: map[string]platform.Section{
 				platform.SectionWorkloadAPI:  workloadRefuses(403, "something else"),
 				platform.SectionSeats:        seatsOf(map[string]bool{"NON_BUILDER_USER": true}),
-				platform.SectionEntitlements: flagsOf(map[string]bool{containersFlag: true}),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: true}),
 			},
 			wantStatus: core.StatusFAIL,
 			wantRemedy: remedyReadMessage,
@@ -132,10 +132,68 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			sections: map[string]platform.Section{
 				platform.SectionWorkloadAPI:  workloadRefuses(403, "refused"),
 				platform.SectionSeats:        seatsOf(map[string]bool{builderSeat: false}),
-				platform.SectionEntitlements: flagsOf(map[string]bool{containersFlag: false}),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: false}),
 			},
 			wantStatus: core.StatusFAIL,
 			wantRemedy: remedyGrantSeat,
+		},
+		{
+			name: "a message that names the seat license gets the seat remedy whatever the seats section says",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI: workloadRefuses(403, "Agentic, Predictive and Governance Seat License has not been granted to this user."),
+				platform.SectionSeats:       seatsOf(map[string]bool{builderSeat: true}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyGrantSeat,
+		},
+		{
+			name: "a Workload API message that names the seat license gets the seat remedy",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI: workloadRefuses(403, "This feature requires the 'Agentic + Predictive + Governance Builder' seat license"),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyGrantSeat,
+		},
+		{
+			name: "a message that names a feature flag gets the flag remedy whatever the entitlements say",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI:  workloadRefuses(403, "Required feature flag WORKLOAD_API_CONTAINERS is not enabled."),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: true}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyEnableFlag,
+		},
+		{
+			name: "a Workload API message that says the feature flags disable it gets the flag remedy",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI: workloadRefuses(403, "Workload API is disabled in feature flags"),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyEnableFlag,
+		},
+		{
+			name: "a message that names the flag wins over a seat that the seats section shows missing",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI: workloadRefuses(403, "Required feature flag WORKLOAD_API_CONTAINERS is not enabled."),
+				platform.SectionSeats:       seatsOf(map[string]bool{builderSeat: false}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyEnableFlag,
+		},
+		{
+			name: "a message that names the seat wins over a flag that the entitlements show off",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI:  workloadRefuses(403, "Agentic, Predictive and Governance Seat License has not been granted to this user."),
+				platform.SectionEntitlements: flagsOf(map[string]bool{platform.EntitlementWorkloadAPIContainers: false}),
+			},
+			wantStatus: core.StatusFAIL,
+			wantRemedy: remedyGrantSeat,
+		},
+		{
+			name:       "a recovered panic is a warning to run the check again and not a network problem",
+			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(0, "internal error: boom")},
+			wantStatus: core.StatusWARN,
+			wantRemedy: remedyInternalError,
 		},
 		{
 			name:       "a refusal with no seats or entitlements in the report carries the message",
@@ -208,6 +266,15 @@ func TestWorkloadDeploy_RefusalCarriesStatusAndMessage(t *testing.T) {
 
 	assert.Equal(t, "403", got.Details["httpStatus"])
 	assert.Equal(t, "something else", got.Details["message"])
+}
+
+func TestWorkloadDeploy_ANotFoundSpeaksOfTheInstallNotTheRelease(t *testing.T) {
+	got := evaluateWorkloadDeploy(reportOf(map[string]platform.Section{
+		platform.SectionWorkloadAPI: workloadRefuses(404, "Not Found"),
+	}))
+
+	assert.Equal(t, "This install does not serve the Workload API.", got.Summary)
+	assert.NotContains(t, got.Remedy, "release")
 }
 
 func TestChecks_IDsAreStableAndOrdered(t *testing.T) {

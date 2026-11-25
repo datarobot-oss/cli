@@ -25,16 +25,17 @@ Check IDs are stable and their order is part of the output.
 | `platform.install.read`    | The install answered. It fails when the install is unreachable or rejects the credentials. Later checks skip then. |
 | `platform.workload.deploy` | The Workload API accepts the caller. The outcomes are listed below.                                                |
 
-The `platform.workload.deploy` check reads the `workloadApi` section of the report, which is the live answer, and uses the `seats` and `entitlements` sections only to name the cause of a refusal.
+The `platform.workload.deploy` check reads the `workloadApi` section of the report, which is the live answer. For a 403, the refusal message decides the cause. The `seats` and `entitlements` sections decide only when the message does not name one.
 
 - `OK`: the Workload API answers the caller.
-- `WARN`, HTTP 404: the release has no Workload API. A Custom Application still deploys.
+- `WARN`, HTTP 404: the install does not serve the Workload API. A Custom Application still deploys.
 - `FAIL`, HTTP 401: the Workload API rejected the credentials. Check them.
 - `FAIL`, HTTP 502: the Workload API proxy is switched off, or a gateway in front of it failed. An install administrator checks both.
-- `FAIL`, HTTP 403 with `AGENTIC_PREDICTIVE_GOVERNANCE_BUILDER` set to `false` in `seats`: the caller lacks the builder seat. An install administrator grants it.
-- `FAIL`, HTTP 403 with `ENABLE_WORKLOAD_API_CONTAINERS` set to `false` in `entitlements`: the feature flag is off for the caller.
+- `FAIL`, HTTP 403 naming a seat license, or `AGENTIC_PREDICTIVE_GOVERNANCE_BUILDER` set to `false` in `seats`: the caller lacks the builder seat. An install administrator grants it.
+- `FAIL`, HTTP 403 naming a feature flag, or `ENABLE_WORKLOAD_API_CONTAINERS` set to `false` in `entitlements`: the feature flag is off for the caller.
 - `FAIL`, any other refusal: the details carry the HTTP status and the install's message.
-- `WARN`, no HTTP status or HTTP 429: the route could not be read, for example after a timeout or an unexpected response, or the install is throttling the probe. Run the check again. When the route could not be read, also read the message and check the network path to the install.
+- `WARN`, HTTP 429: the install is throttling the probe. Run the check again.
+- `WARN`, no HTTP status: the route could not be read, for example after a timeout. Run the check again, then read the message and check the network path to the install. A message that starts with `internal error` is a failure of `dr`: report it if it repeats.
 - `SKIP`: the report has no `workloadApi` section, or `platform.install.read` failed.
 
 A seat that is absent from `seats` is not enforced on that install. The `NON_BUILDER_USER` seat restricts which routes the caller may use, and the Workload API does not read it, so it is never the reported cause.

@@ -17,11 +17,14 @@
 package doctor
 
 import (
+	"context"
+	"errors"
+
 	"github.com/spf13/cobra"
 
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
-	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/config"
 	core "github.com/datarobot/cli/internal/doctor"
 	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -35,7 +38,17 @@ const (
 	title = "Platform doctor report"
 )
 
-var describeFn = platform.Describe
+var describeFn = describeInstall
+
+// describeInstall reads the install. Without an endpoint it says so, where the
+// request would fail with "Empty URL.".
+func describeInstall(ctx context.Context) (*platform.Report, error) {
+	if config.GetBaseURL() == "" {
+		return nil, errors.New("no endpoint is configured")
+	}
+
+	return platform.Describe(ctx)
+}
 
 // Cmd returns the `dr doctor` command.
 func Cmd() *cobra.Command {
@@ -52,7 +65,7 @@ judges it. Each check is OK, WARN, FAIL or SKIP, and every finding that needs
 action names the remedy and who acts on it. It is read-only: nothing is
 written to the install or to disk.
 
-A release without the Workload API is a WARN, because a Custom Application
+An install without the Workload API is a WARN, because a Custom Application
 still deploys. A refusal from the Workload API is a FAIL that names the seat or
 the feature flag behind it, except a probe that was throttled or could not be
 read, which is a WARN to run again. A check that depends on an earlier failure
@@ -67,10 +80,15 @@ one check FAILs. Pass --output-format json for a machine-readable report.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outputFormat = outputformat.GetFormat(cmd)
 
-			useEnvCredentials()
+			auth.BindEnvCredentials()
+
+			heading := title
+			if endpoint := config.GetBaseURL(); endpoint != "" {
+				heading += " for " + endpoint
+			}
 
 			results := core.NewRunner(platformdoctor.Checks(describeFn)...).Run(cmd.Context())
-			report := core.NewTitledReport(title, results)
+			report := core.NewTitledReport(heading, results)
 
 			if err := render(cmd, outputFormat, report); err != nil {
 				return err
@@ -95,20 +113,6 @@ one check FAILs. Pass --output-format json for a machine-readable report.`,
 	})
 
 	return cmd
-}
-
-// useEnvCredentials makes a complete DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN
-// pair win over the active profile, as it does for the other commands. It neither
-// verifies the pair nor starts a login: a rejected pair is a FAIL of
-// platform.install.read. Anything less than a complete pair leaves the profile.
-func useEnvCredentials() {
-	creds := auth.GetEnvCredentials()
-	if creds.Endpoint == "" || creds.Token == "" {
-		return
-	}
-
-	_ = viperx.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
-	_ = viperx.BindEnv("token", "DATAROBOT_API_TOKEN")
 }
 
 // render writes the report in the requested format.
