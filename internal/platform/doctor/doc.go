@@ -12,6 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package doctor holds the checks on a `dr info` report. Their IDs sit under
+// Package platformdoctor holds the checks on a `dr info` report. Their IDs sit under
 // "platform." and, like their order, are stable.
-package doctor
+package platformdoctor

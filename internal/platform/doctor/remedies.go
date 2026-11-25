@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package doctor
+package platformdoctor
 
 // A check returns a remedy verbatim, so the text reporter prints a shared
 // remedy once.

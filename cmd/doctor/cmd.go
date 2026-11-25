@@ -29,7 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/platform"
-	platformdoctor "github.com/datarobot/cli/internal/platform/doctor"
+	"github.com/datarobot/cli/internal/platform/doctor"
 	"github.com/datarobot/cli/internal/telemetry"
 )
 
