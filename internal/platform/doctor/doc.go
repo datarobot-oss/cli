@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package doctor holds the checks that read a `dr info` report and say whether
-// the caller can use the install. The checks that Checks returns share one
-// call to the describe function, so a run reads the install once.
-//
-// Check IDs sit under the "platform." namespace. They are stable and their
-// order is public, like the IDs of the checks in internal/workload/doctor.
+// Package doctor holds the checks on a `dr info` report. Their IDs sit under
+// "platform." and, like their order, are stable.
 package doctor

@@ -40,13 +40,10 @@ type workloadDeploy struct {
 	snapshot *snapshot
 }
 
-// ID returns the stable check ID.
 func (c *workloadDeploy) ID() string { return idWorkloadDeploy }
 
-// Name returns the display name of the check.
 func (c *workloadDeploy) Name() string { return "Workload deploy access" }
 
-// Run reads the shared report and judges the workloadApi section.
 func (c *workloadDeploy) Run(ctx context.Context) core.Result {
 	report, err := c.snapshot.get(ctx)
 	if err != nil {
@@ -83,7 +80,6 @@ func evaluateWorkloadDeploy(report *platform.Report) core.Result {
 	return explainRefusal(report, section)
 }
 
-// explainRefusal maps a refused workloadApi section to its cause and remedy.
 func explainRefusal(report *platform.Report, section platform.Section) core.Result {
 	result := core.Result{
 		Status: core.StatusFAIL,
@@ -125,9 +121,8 @@ func explainRefusal(report *platform.Report, section platform.Section) core.Resu
 }
 
 // forbiddenCause names what a 403 is about, or "" for any other answer. Both
-// layers name the seat license or the feature flag in the message, so the
-// message decides first. The seats and entitlements sections decide only when
-// the message does not say.
+// layers name the seat license or the feature flag in the message, so it
+// decides before the seats and entitlements sections do.
 func forbiddenCause(report *platform.Report, section platform.Section) string {
 	if section.HTTPStatus != http.StatusForbidden {
 		return ""
@@ -162,8 +157,7 @@ func seatMissing(report *platform.Report) bool {
 	return listed && !held
 }
 
-// flagOff reports whether the entitlements section says the containers flag is
-// false for the caller.
+// flagOff reports whether the containers flag is false for the caller.
 func flagOff(report *platform.Report) bool {
 	flags, ok := report.Sections[platform.SectionEntitlements].Data.(map[string]bool)
 	if !ok {

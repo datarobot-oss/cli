@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package doctor implements `dr doctor`: checks on what the install says about
-// itself, so a caller learns before a deploy whether the install will accept it.
+// Package doctor implements `dr doctor`.
 package doctor
 
 import (
@@ -40,8 +39,8 @@ const (
 
 var describeFn = describeInstall
 
-// describeInstall reads the install. Without an endpoint it says so, where the
-// request would fail with "Empty URL.".
+// describeInstall names a missing endpoint, which the request would report as
+// "Empty URL.".
 func describeInstall(ctx context.Context) (*platform.Report, error) {
 	if config.GetBaseURL() == "" {
 		return nil, errors.New("no endpoint is configured")
@@ -58,21 +57,14 @@ func Cmd() *cobra.Command {
 		Use:     "doctor",
 		GroupID: "core",
 		Short:   "🩺 Check whether the install accepts your deploys",
-		Long: `Check what the install says about itself against what a deploy needs.
+		Long: `Judge what the install says about itself, as 'dr info' reports it, against
+what a deploy needs.
 
-The doctor reads the same report as 'dr info', with your own credentials, and
-judges it. Each check is OK, WARN, FAIL or SKIP, and every finding that needs
-action names the remedy and who acts on it. It is read-only: nothing is
-written to the install or to disk.
+Each check is OK, WARN, FAIL or SKIP. A finding that needs action names the
+remedy and who acts. The command is read-only.
 
-An install without the Workload API is a WARN, because a Custom Application
-still deploys. A refusal from the Workload API is a FAIL that names the seat or
-the feature flag behind it, except a probe that was throttled or could not be
-read, which is a WARN to run again. A check that depends on an earlier failure
-is a SKIP, so an unreachable install fails once.
-
-Exit code is 0 when no check FAILs (warnings are allowed) and 1 when at least
-one check FAILs. Pass --output-format json for a machine-readable report.`,
+Exit code is 0 when no check FAILs and 1 when at least one does. Pass
+--output-format json for a machine-readable report.`,
 		Example: `  dr doctor
   dr doctor --output-format json`,
 		Args:         cobra.NoArgs,

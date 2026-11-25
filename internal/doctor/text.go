@@ -26,10 +26,10 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// WriteText renders a report in human-readable form: a header (the report
-// title, or the project dir and linked artifact or "not linked"), a CHECK/STATUS/DETAIL table with one
-// row per check in runner order, remedies for non-OK rows, and a summary
-// line with per-status counts plus the overall verdict.
+// WriteText renders a report in human-readable form: a header (the title, or
+// the project dir and linked artifact or "not linked"), a CHECK/STATUS/DETAIL
+// table with one row per check in runner order, remedies for non-OK rows, and a
+// summary line with per-status counts plus the overall verdict.
 func WriteText(w io.Writer, report Report) error {
 	if _, err := fmt.Fprintf(w, "%s\n\n", header(report)); err != nil {
 		return err
@@ -50,8 +50,6 @@ func WriteText(w io.Writer, report Report) error {
 	return writeSummary(w, report)
 }
 
-// header returns the first line of the text report: the title when one is set,
-// else the project dir and the linked artifact.
 func header(report Report) string {
 	if report.Title != "" {
 		return report.Title

@@ -14,8 +14,8 @@
 
 package doctor
 
-// The canonical remedy for each condition. A check returns the constant
-// verbatim, so the text reporter prints a shared remedy once.
+// A check returns a remedy verbatim, so the text reporter prints a shared
+// remedy once.
 const (
 	remedyCheckCredentials  = "Check that the install is reachable from here, then check your credentials: DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN, or run 'dr auth login' for the active profile."
 	remedyRetry             = "Run the check again."

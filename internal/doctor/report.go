@@ -30,9 +30,8 @@ type Report struct {
 	// is nil for another reason, such as a config that cannot be read.
 	NoArtifactLabel string
 
-	// Title is the first line of the text report and the JSON "title" for a
-	// report with no project, such as one about an install. When set, the
-	// project and artifact fields are ignored and both reporters leave them out.
+	// Title heads a report that has no project. When set, the reporters leave
+	// out ProjectDir and ArtifactID.
 	Title string
 
 	// Checks holds the results in runner order.
@@ -54,9 +53,8 @@ func NewReport(projectDir string, artifactID *string, checks []Result) Report {
 	}
 }
 
-// NewTitledReport builds a read-only Report that has no project or artifact,
-// headed by title in both reporters. The title must not be empty: an empty
-// title makes the reporters fall back to the project header.
+// NewTitledReport builds a read-only Report with no project, headed by title.
+// The title must not be empty.
 func NewTitledReport(title string, checks []Result) Report {
 	return Report{
 		Title:  title,

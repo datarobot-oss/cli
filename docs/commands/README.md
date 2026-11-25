@@ -45,25 +45,25 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command                           | Description                                                    |
-| --------------------------------- | -------------------------------------------------------------- |
-| [`auth`](auth.md)                 | Authenticate with DataRobot.                                   |
-| `component`                       | Manage template components.                                    |
-| `templates`                       | Manage application templates.                                  |
-| [`start`](start.md)               | Run the application quickstart process.                        |
-| [`run`](run.md)                   | Execute application tasks.                                     |
-| [`task`](task.md)                 | Manage Taskfile composition and task execution.                |
-| [`dotenv`](dotenv.md)             | Manage environment variables.                                  |
-| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).    |
-| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                                |
-| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models).   |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).        |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts.                           |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                    |
-| [`info`](info.md)                 | Report what an install supports (feature-gated).               |
-| [`doctor`](doctor.md)             | Check whether an install accepts your deploys (feature-gated). |
-| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).       |
-| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).            |
+| Command                           | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| [`auth`](auth.md)                 | Authenticate with DataRobot.                                 |
+| `component`                       | Manage template components.                                  |
+| `templates`                       | Manage application templates.                                |
+| [`start`](start.md)               | Run the application quickstart process.                      |
+| [`run`](run.md)                   | Execute application tasks.                                   |
+| [`task`](task.md)                 | Manage Taskfile composition and task execution.              |
+| [`dotenv`](dotenv.md)             | Manage environment variables.                                |
+| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).  |
+| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
+| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                  |
+| [`info`](info.md)                 | Report what an install supports (feature-gated).             |
+| [`doctor`](doctor.md)             | Check that an install accepts your deploys (feature-gated).  |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).     |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).          |
 
 ### Command tree
 
@@ -100,7 +100,7 @@ dr
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
 ├── info               Report what the install supports (feature-gated)
-├── doctor             Check whether the install accepts your deploys (feature-gated)
+├── doctor             Check that the install accepts your deploys (feature-gated)
 ├── pipeline           Pipelines API management (alias: pipelines, feature-gated)
 │   ├── create         Upload a Python file to create a pipeline
 │   ├── list           List pipelines

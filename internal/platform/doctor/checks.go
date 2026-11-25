@@ -22,12 +22,10 @@ import (
 	"github.com/datarobot/cli/internal/platform"
 )
 
-// DescribeFunc reads the install and returns its report. platform.Describe is
-// the production value.
+// DescribeFunc reads the install.
 type DescribeFunc func(ctx context.Context) (*platform.Report, error)
 
-// snapshot reads the install once and shares the report between the checks of
-// one run.
+// snapshot shares one read of the install between the checks.
 type snapshot struct {
 	once     sync.Once
 	describe DescribeFunc
@@ -35,7 +33,7 @@ type snapshot struct {
 	err      error
 }
 
-// get returns the report, reading the install on the first call only.
+// get reads the install on the first call only.
 func (s *snapshot) get(ctx context.Context) (*platform.Report, error) {
 	s.once.Do(func() {
 		s.report, s.err = s.describe(ctx)
@@ -44,8 +42,7 @@ func (s *snapshot) get(ctx context.Context) (*platform.Report, error) {
 	return s.report, s.err
 }
 
-// Checks returns the platform checks in run order. They share one report,
-// which describe reads on first use.
+// Checks returns the platform checks in run order.
 func Checks(describe DescribeFunc) []core.Check {
 	shared := &snapshot{describe: describe}
 

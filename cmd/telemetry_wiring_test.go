@@ -203,9 +203,8 @@ func TestTelemetryWiring_GatedInfoCommandTracked(t *testing.T) {
 		"command %q must be wired to telemetry via telemetry.Track / TrackWith", "dr info")
 }
 
-// TestTelemetryWiring_GatedDoctorCommandTracked checks `dr doctor`, which
-// cli.CommandAdder leaves out of the live RootCmd while
-// DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR is unset, so the test builds it directly.
+// TestTelemetryWiring_GatedDoctorCommandTracked builds `dr doctor` directly,
+// because its gate hides it from the live RootCmd.
 func TestTelemetryWiring_GatedDoctorCommandTracked(t *testing.T) {
 	assert.Containsf(t, doctor.Cmd().Annotations, "telemetry",
 		"command %q must be wired to telemetry via telemetry.Track / TrackWith", "dr doctor")

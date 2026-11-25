@@ -22,19 +22,16 @@ import (
 
 const idInstallRead = "platform.install.read"
 
-// installRead says whether the install answered. Every other check depends on
-// it, so a failure here makes them skip.
+// installRead says whether the install answered. A failure makes the other
+// checks skip.
 type installRead struct {
 	snapshot *snapshot
 }
 
-// ID returns the stable check ID.
 func (c *installRead) ID() string { return idInstallRead }
 
-// Name returns the display name of the check.
 func (c *installRead) Name() string { return "Install report" }
 
-// Run reads the install through the shared snapshot.
 func (c *installRead) Run(ctx context.Context) core.Result {
 	report, err := c.snapshot.get(ctx)
 	if err != nil {

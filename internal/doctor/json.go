@@ -30,9 +30,7 @@ type jsonCheck struct {
 	Fixable bool              `json:"fixable"`
 }
 
-// jsonBody holds the fields every report shares: lowercase status, checks in
-// runner order, per-status summary counts, and — for repair runs only — an
-// actions array.
+// jsonBody holds the fields that every report shares.
 type jsonBody struct {
 	Status  string      `json:"status"`
 	Checks  []jsonCheck `json:"checks"`
@@ -40,16 +38,14 @@ type jsonBody struct {
 	Actions *[]Action   `json:"actions,omitempty"`
 }
 
-// jsonReport is the pinned top-level JSON shape of a project report: absolute
-// projectDir and artifactId (null when unlinked), then the shared body.
+// jsonReport is the pinned JSON shape of a project report.
 type jsonReport struct {
 	ProjectDir string  `json:"projectDir"`
 	ArtifactID *string `json:"artifactId"`
 	jsonBody
 }
 
-// jsonTitledReport is the top-level JSON shape of a report with no project:
-// the title, then the shared body.
+// jsonTitledReport is the JSON shape of a report with no project.
 type jsonTitledReport struct {
 	Title string `json:"title"`
 	jsonBody
