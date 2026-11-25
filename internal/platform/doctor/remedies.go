@@ -19,10 +19,10 @@ package doctor
 const (
 	remedyCheckCredentials  = "Check that the install is reachable from here, then check your credentials: DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN, or run 'dr auth login' for the active profile."
 	remedyRetry             = "Run the check again."
-	remedyCheckNetwork      = "Run the check again, then check the network path to the install."
+	remedyCheckNetwork      = "Run the check again, then read the message and check the network path to the install."
 	remedyCustomApplication = "Deploy a Custom Application instead, or ask an install administrator for a release that has the Workload API."
 	remedyEnableProxy       = "Ask an install administrator to check that the Workload API proxy is switched on and that the gateway reaches it."
 	remedyGrantSeat         = "Ask an install administrator for the Agentic + Predictive + Governance Builder seat."
 	remedyEnableFlag        = "Ask an install administrator to enable ENABLE_WORKLOAD_API_CONTAINERS for your account."
-	remedyReadMessage       = "Read the message in the details, then ask an install administrator to fix the check it names."
+	remedyReadMessage       = "Read the message in the details, then ask an install administrator to look into it."
 )

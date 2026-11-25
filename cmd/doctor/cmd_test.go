@@ -124,6 +124,7 @@ func TestCmd_AThrottledProbeExitsZeroWithTheRemedy(t *testing.T) {
 
 	assert.Contains(t, stdout, "WARN")
 	assert.Contains(t, stdout, "Run the check again")
+	assert.NotContains(t, stdout, "network path")
 }
 
 func TestCmd_AFailureExitsNonZeroAfterPrintingTheReport(t *testing.T) {
