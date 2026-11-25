@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/datarobot/cli/cmd/doctor"
 	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/info"
 	"github.com/datarobot/cli/cmd/pipeline"
@@ -200,6 +201,14 @@ func TestTelemetryWiring_AllEnclaveCommandsTracked(t *testing.T) {
 func TestTelemetryWiring_GatedInfoCommandTracked(t *testing.T) {
 	assert.Containsf(t, info.Cmd().Annotations, "telemetry",
 		"command %q must be wired to telemetry via telemetry.Track / TrackWith", "dr info")
+}
+
+// TestTelemetryWiring_GatedDoctorCommandTracked checks `dr doctor`, which
+// cli.CommandAdder leaves out of the live RootCmd while
+// DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR is unset, so the test builds it directly.
+func TestTelemetryWiring_GatedDoctorCommandTracked(t *testing.T) {
+	assert.Containsf(t, doctor.Cmd().Annotations, "telemetry",
+		"command %q must be wired to telemetry via telemetry.Track / TrackWith", "dr doctor")
 }
 
 // TestTelemetryWiring_EveryPipelineLeafTracked walks the pipeline subtree built
