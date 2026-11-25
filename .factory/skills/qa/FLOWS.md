@@ -1,100 +1,8 @@
----
-name: qa-cli
-description: >
-  Functional QA for the Go DataRobot CLI: command discovery, isolated auth
-  configuration, dotenv TUIs, task execution, local validation, and approved
-  staging workload/artifact flows. Drives the terminal through tuistory (Droid
-  Control in Droid, the tuistory CLI in Claude Code).
----
+# QA flow menu and known failure modes
 
-# DataRobot CLI functional QA
-
-Read `.factory/skills/qa/config.yaml`, even when invoked independently.
-This is a **menu**, not a checklist. Select flows using the behavioral diff;
-an explicit smoke request may select a broader subset. Do not run test suites.
-
-## Testing target and prerequisites
-
-Build the checked-out branch using `task build` from the repository root.
-Resolve `dist/dr` to an absolute path before switching to scratch directories.
-Go must satisfy `go.mod` (currently 1.27.1); Task and Git must be available.
-Do not substitute a released binary if the build fails.
-
-Use a unique run-prefixed session and 110 columns by 36 rows for every flow.
-Follow the driver route for the agent you are running in (see `qa` section 3):
-
-- **Droid:** invoke `droid-control` for all terminal interactions. Route through
-  its terminal tuistory backend and `tctl` wrapper. Use Capture and Verify; load
-  Compose only when both `video_evidence` and `droid_control.compose` in config
-  are enabled. Let the installed plugin own launch, keystroke, capture, and
-  verification mechanics. Do not launch raw tuistory. Recording additionally
-  needs asciinema, and terminal Compose needs agg and the Compose prerequisites.
-- **Claude Code:** call the tuistory CLI directly from Bash. `--env` only adds
-  to the inherited environment (and `env -i` discards it), so start the child
-  from an empty environment and pass every value inside the `env -i` list:
-  `tuistory launch "env -i PATH=$PATH HOME=<scratch>/home TERM=xterm-256color
-  DATAROBOT_CLI_DISABLE_TELEMETRY=true bash --norc --noprofile"
-  -s <RUN_ID>-<flow> --cols 110 --rows 36 --cwd <scratch>/project --background`,
-  adding the remaining isolation variables the same way. Then use `type`,
-  `press` (e.g. `enter`, `ctrl c`), `wait <pattern>`, `wait-idle`, and
-  `snapshot --trim` for evidence. Run `close -s <session>` after each flow and
-  confirm `tuistory sessions` lists nothing from this run before reporting.
-  Never change Claude Code's own environment to isolate the child.
-
-Launch a shell through the driver, then type invocations of the absolute `dr`
-binary. Wait for the shell prompt between commands. Assert exit status immediately
-after each invocation (e.g. type `echo "exit=$?"` and wait for it). `dr` is a
-command-oriented CLI with per-command TUIs, not a REPL: type `dr --help`, never
-`/help`. Exercise real keystrokes for a relevant TUI flow when the changed path
-offers one; do not substitute unit tests or a non-interactive agent transcript
-(`droid exec`, `claude -p`) for functional proof.
-
-### Isolation
-
-Create a new scratch directory with `mktemp` and record its path for cleanup.
-Use separate scratch home, config, state, cache, and project directories. For
-the **child application only**, set `HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`,
-`XDG_CACHE_HOME`, and `DATAROBOT_CLI_CONFIG` to run-owned paths. Never change the
-parent agent's (Droid's or Claude Code's) home, authentication, or plugin
-directories.
-
-Start a clean child environment. Remove all inherited `DATAROBOT_*` and
-`DR_API_TOKEN` values, including endpoint, token, profile, config, certificate,
-feature, and skip-auth overrides. Add back only approved flow-specific settings.
-Keep the toolchain on PATH, but isolate plugin discovery from user-installed
-plugins. Clear `SSH_AUTH_SOCK` and do not inherit private service credentials.
-Disable application telemetry with `DATAROBOT_CLI_DISABLE_TELEMETRY=true`.
-Use the absolute binary and operate from the scratch project, not this repo.
-
-In CI under Droid, the generic terminal launch prefix is
-`env -u CI FACTORY_DISABLE_KEYRING=true`. `dr` uses Bubble Tea, not Ink or Factory
-keyring authentication; these generic controls do not replace the isolation
-above. Keep `DATAROBOT_CLI_NON_INTERACTIVE` unset for interactive flows. Set it
-only for a selected non-interactive behavior test, never as deletion consent.
-
-Do not suppress the first-run animation when first-run behavior is the change.
-Otherwise allow it to finish before asserting terminal state. Capture only
-non-secret dummy values and sanitized output in `qa-results/<RUN_ID>/`.
-
-### Authentication and staging
-
-The initial persona is `local_unauthenticated`. No signup, stored credentials,
-or live API token is needed. Local tests must not call DataRobot APIs.
-
-Staging is configured but disabled until dedicated accounts and secret references
-are provided. Approved future staging runs consume `DATAROBOT_ENDPOINT` and
-`DATAROBOT_API_TOKEN` from the configured dedicated source; the complete pair
-takes priority over stored profiles. CI must pass any future dedicated secret
-under the app's documented variable name; no interactive login is needed.
-Any local-only QA workflow must supply no DataRobot credential.
-Do not reuse the existing smoke-suite `DR_API_TOKEN` secret. Missing credentials
-or per-run permission makes a selected staging flow BLOCKED.
-
-Do not use `--skip-auth` to make live requests. For strictly local config/wizard
-paths that have an authentication pre-hook, it may bypass that hook **only after
-inspecting the selected RunE path to establish it makes no API requests**.
-This does not test authentication or prove authorization. Help parsing and local
-validation sometimes occur after auth, so never assume `--dry-run` is offline.
+This is a **menu**, not a checklist. Select flows using the behavioral diff
+(`SKILL.md` section 2); an explicit smoke request may select a broader subset.
+Do not run test suites.
 
 ## Flow menu
 
@@ -199,8 +107,8 @@ Relevant paths: workload/artifact commands, manifest/wapi/wizard/sync packages.
 
 Relevant paths: DataRobot client wrappers and resource/authorization behavior.
 
-This menu entry is unavailable until staging is enabled, accounts are configured,
-and a human approves the endpoint and exact mutations for this run. Do not run
+Requires staging enabled, dedicated configured accounts, and per-run human
+approval of the endpoint and exact mutations (`SKILL.md` section 1). Never run
 it in the local-only PR workflow.
 
 - Use the branch binary and configured staging credentials, not browser login.
@@ -221,23 +129,6 @@ it in the local-only PR workflow.
 - Stop/delete only ledger-recorded resources created by this run. Report leftovers,
   including artifact/catalog/credential IDs requiring manual cleanup, without
   exposing their secrets.
-
-## Evidence, cleanup, and reporting
-
-Capture distinct text snapshots at meaningful transitions. Tuistory does not
-provide compositor PNG screenshots; use its text snapshots, not an unsupported
-screenshot command. Real rendered-image proof requires the plugin's appropriate
-terminal route and prerequisites (Droid only). Under Claude Code, text snapshots
-are the evidence; save each one as a labeled file under `qa-results/<RUN_ID>/`.
-
-Close each session after its flow, even after failure. Preserve sanitized evidence
-before removing this run's scratch directory. Never put tokens or secret-bearing
-raw recordings into artifacts. Never silently skip a selected flow: report BLOCKED
-with attempts and remediation, and continue other selected flows.
-
-For standalone invocation, use `qa/REPORT-TEMPLATE.md` and write
-`qa-results/report.md` plus `qa-results/status.json` using the orchestrator's
-result contract. Report behavior assertions only, not setup as passing tests.
 
 ## Known Failure Modes
 

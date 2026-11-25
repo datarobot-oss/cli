@@ -48,10 +48,11 @@ task run -- --help  # Run CLI with arguments
 
 ## Functional QA
 
-Run `/qa` for diff-targeted functional testing, or `/qa-cli` for the CLI flow
-menu. Configuration lives in `skills/qa/config.yaml`; the default target is an
-isolated local CLI built from the current branch. These skills do not run unit
-tests or lint, and the existing smoke workflows remain unchanged.
+`/qa` is the single entry point for functional QA: it scopes the diff, selects
+flows from `skills/qa/FLOWS.md`, and drives the terminal. Configuration lives in
+`skills/qa/config.yaml`; the default target is an isolated local CLI built from
+the current branch. The skill does not run unit tests or lint, and the existing
+smoke workflows remain unchanged.
 
 This change installs local skills only. CI support is a separate follow-up;
 local use needs no GitHub repository secrets.
@@ -61,10 +62,10 @@ installation can satisfy this dependency locally; fresh environments can install
 it at project scope. Local terminal QA needs tuistory. Recording/Compose tools are
 resolved conditionally from the runtime configuration.
 
-The same skills are exposed to Claude Code through the `.claude/skills/qa` and
-`.claude/skills/qa-cli` symlinks, so `/qa` and `/qa-cli` work there too. Claude
-Code needs no plugin: it drives tuistory directly (`npm i -g tuistory`) and
-records text snapshots as evidence. Edit the skills here, in `.factory/skills/`.
+The same skill is exposed to Claude Code through the `.claude/skills/qa`
+symlink, so `/qa` works there too. Claude Code needs no plugin: it drives
+tuistory directly (`npm i -g tuistory`) and records text snapshots as evidence.
+Edit the skills here, in `.factory/skills/`.
 
 Staging is disabled until dedicated QA accounts and secret references are
 configured. Each staging run also requires explicit approval of its target and
