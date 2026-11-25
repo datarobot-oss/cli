@@ -143,10 +143,17 @@ it in the local-only PR workflow.
 4. **Config/environment fallback.** An invalid explicit endpoint/token pair must
    not silently use stored credentials. Quoted endpoint values are not stripped.
 5. **Interactive startup.** A fresh TTY can show a welcome animation. Wait for
-   the UI before typing; do not globally enable non-interactive mode.
+   the UI before typing; do not globally enable non-interactive mode. Keystrokes
+   queued during the animation or a screen redraw are dropped or consumed;
+   see "Waits, sentinels, and exit-status assertions" in `SKILL.md` section 4.
 6. **Wrong JSON flag.** `self version` uses `--format=json`; resource commands
    generally use `--output-format json`. Verify the selected command's help.
 7. **Sync previews can modify lockfiles.** `--dry-run`/`--diff` can run `uv lock`;
    no remote write does not mean no installation or local file change.
 8. **Unapproved downloaded code.** Public fetch permission is not permission to
    execute plugins, Taskfiles, or installers. Report selected execution BLOCKED.
+9. **Exit-status capture through the driver.** An unescaped `$?` in a
+   double-quoted `type` payload is expanded by the agent's own wrapper shell and
+   captures the driver's status (always 0), so assertions pass vacuously.
+   Single-quote the payload or escape `$?`, and verify once per run with a
+   `false` sanity check (see `SKILL.md` section 4).

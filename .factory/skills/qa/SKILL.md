@@ -112,11 +112,35 @@ released binary if the build fails.
 Use a unique run-prefixed session and 110 columns by 36 rows for every flow.
 Launch a shell through the driver, then type invocations of the absolute `dr`
 binary. Wait for the shell prompt between commands. Assert exit status
-immediately after each invocation (e.g. type `echo "exit=$?"` and wait for it).
+immediately after each invocation using the sentinel technique in
+"Waits, sentinels, and exit-status assertions" below.
 `dr` is a command-oriented CLI with per-command TUIs, not a REPL: type
 `dr --help`, never `/help`. Exercise real keystrokes for a relevant TUI flow
 when the changed path offers one; do not substitute unit tests or a
 non-interactive agent transcript (`droid exec`, `claude -p`) for functional proof.
+
+### Waits, sentinels, and exit-status assertions
+
+- **Sentinels must not match the typed command line.** `tctl wait` (and
+  `tuistory wait`) scans the whole scrollback, so `wait "exit-B1="` matches the
+  typed `echo "exit-B1=$?"` before the command executes and returns early.
+  Echo a unique digit-bearing marker and wait for the regex that requires a
+  digit: type `echo "EXIT-<TAG>=$?"`, then `wait "/EXIT-<TAG>=[0-9]/"`.
+- **Escape `$?` from wrapper expansion.** In a double-quoted `type` payload the
+  agent's own shell expands `$?` before the bytes reach the PTY, capturing the
+  driver's exit status (usually 0) and making every assertion pass vacuously.
+  Single-quote the payload, or escape it (`echo EXIT=\\\$?`), so the child
+  shell expands it. Verify the escape once per run: after `false`, the marker
+  must read 1 before any exit assertion is trusted.
+- **Type only at a confirmed idle prompt.** Keystrokes sent while the first-run
+  welcome animation plays (skip-on-keypress) or while a command redraws the
+  screen are dropped or consumed; queued echo markers vanish and the wait times
+  out. Wait for an output marker first; if the marker never appears, re-send
+  the echo at the idle prompt instead of assuming the command's exit status.
+- **Do not trust `wait-idle` in fresh environments.** A `dr` invocation can
+  stay silent for 60–90 seconds (plugin and update checks) before its first
+  output, which `wait-idle` treats as stable. Use long-timeout regex waits,
+  then snapshot.
 
 Driver-specific session mechanics:
 
