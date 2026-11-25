@@ -408,7 +408,7 @@ func RenderCollectionPermissions(
 	fmt.Printf("Subject:     %s\n", p.SubjectUserID)
 
 	if len(p.Permissions) == 0 {
-		fmt.Printf("Permissions: %s (may not create enclaves)\n", emptyValuePlaceholder)
+		fmt.Printf("Permissions: %s (may not create enclaves or pin workloads)\n", emptyValuePlaceholder)
 	} else {
 		fmt.Printf("Permissions: %s\n", strings.Join(p.Permissions, ", "))
 	}
@@ -417,7 +417,7 @@ func RenderCollectionPermissions(
 	case !p.RBACEnabled:
 		fmt.Println("Source:      enclave RBAC is disabled server-side — nothing is enforced")
 	case p.ViaSysAdmin:
-		fmt.Println("Source:      system administrator (bypasses enclave permissions)")
+		fmt.Println("Source:      system administrator (may create without a grant; pin still needs one)")
 	default:
 		fmt.Println("Source:      granted permissions")
 	}
@@ -435,16 +435,24 @@ func RenderCollectionPermissions(
 
 // RenderCreateAccess prints who may create enclaves.
 func RenderCreateAccess(format outputformat.OutputFormat, holders []CreateAccessHolder) error {
+	return RenderCollectionAccess(format, PermissionCreate, holders)
+}
+
+// RenderCollectionAccess prints who holds the named permission ("create" or
+// "pin"). The JSON envelope key matches the endpoint: createAccess or pinAccess.
+func RenderCollectionAccess(
+	format outputformat.OutputFormat, permission string, holders []CreateAccessHolder,
+) error {
 	if format == outputformat.OutputFormatJSON {
 		if holders == nil {
 			holders = []CreateAccessHolder{}
 		}
 
-		return outputformat.PrintJSONEnvelope(os.Stdout, "createAccess", holders)
+		return outputformat.PrintJSONEnvelope(os.Stdout, permission+"Access", holders)
 	}
 
 	if len(holders) == 0 {
-		fmt.Println("Nobody has been granted the enclave create permission.")
+		fmt.Printf("Nobody has been granted the enclave %s permission.\n", permission)
 
 		return nil
 	}

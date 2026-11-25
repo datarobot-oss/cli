@@ -125,20 +125,21 @@ func runInstall(cmd *cobra.Command, specifiedShell string, force, yes, dryRun bo
 }
 
 func installForShell(cmd *cobra.Command, shell string, shellType internalShell.Shell, force, yes, dryRun bool) error {
-	installPath, installFunc, err := getInstallFunc(cmd.Root(), shellType, force)
+	installer, err := getInstaller(cmd, shellType, force)
 	if err != nil {
 		return err
 	}
 
+	installPath := installer.Path()
+
 	// Check if already installed
-	alreadyInstalled := fsutil.FileExists(installPath)
-	if !force && alreadyInstalled {
+	if !force && installer.Installed() {
 		showAlreadyInstalled(cmd, installPath)
 		return nil
 	}
 
 	// Show installation plan
-	showInstallationPlan(shell, installPath, alreadyInstalled)
+	showInstallationPlan(shell, installPath, fsutil.FileExists(installPath))
 
 	// Dry-run mode
 	if dryRun {
@@ -161,7 +162,7 @@ func installForShell(cmd *cobra.Command, shell string, shellType internalShell.S
 	fmt.Println()
 
 	// Install
-	if err := installFunc(cmd.Root()); err != nil {
+	if err := installer.Install(cmd.Root()); err != nil {
 		return fmt.Errorf("Failed to install completions: %w", err)
 	}
 
@@ -220,26 +221,66 @@ func promptForConfirmation() (bool, error) {
 	return true, nil
 }
 
-func getInstallFunc(rootCmd *cobra.Command, shellType internalShell.Shell, force bool) (string, func(*cobra.Command) error, error) {
+// shellInstaller sets completion up for one shell.
+type shellInstaller interface {
+	// Path returns the file the installer writes.
+	Path() string
+	// Installed reports whether completion is already set up and current.
+	Installed() bool
+	// Install sets completion up.
+	Install(rootCmd *cobra.Command) error
+}
+
+// fileInstaller installs a completion file, so it counts as installed once the file exists.
+type fileInstaller struct {
+	path    string
+	install func(*cobra.Command) error
+}
+
+func newFileInstaller(path string, install func(*cobra.Command) error) fileInstaller {
+	return fileInstaller{path: path, install: install}
+}
+
+func (f fileInstaller) Path() string {
+	return f.path
+}
+
+func (f fileInstaller) Installed() bool {
+	return fsutil.FileExists(f.path)
+}
+
+func (f fileInstaller) Install(rootCmd *cobra.Command) error {
+	return f.install(rootCmd)
+}
+
+// completionCommand returns the command that prints the completion script for a shell, a sibling of
+// the install command in the command tree: `dr self completion powershell` for the shipped tree.
+func completionCommand(cmd *cobra.Command, shell internalShell.Shell) string {
+	if cmd.HasParent() {
+		cmd = cmd.Parent()
+	}
+
+	return cmd.CommandPath() + " " + string(shell)
+}
+
+func getInstaller(cmd *cobra.Command, shellType internalShell.Shell, force bool) (shellInstaller, error) {
+	rootCmd := cmd.Root()
+
 	switch shellType {
 	case internalShell.Zsh:
-		path, fn := installZsh(rootCmd, force)
-		return path, fn, nil
+		return newFileInstaller(installZsh(rootCmd, force)), nil
 	case internalShell.Bash:
-		path, fn := installBash(rootCmd, force)
-		return path, fn, nil
+		return newFileInstaller(installBash(rootCmd, force)), nil
 	case internalShell.Fish:
-		path, fn := installFish(rootCmd, force)
-		return path, fn, nil
+		return newFileInstaller(installFish(rootCmd, force)), nil
 	case internalShell.PowerShell:
-		path, fn := installPowerShell(rootCmd, force)
-		return path, fn, nil
+		return newPowerShellInstaller(completionCommand(cmd, shellType))
 	case internalShell.Cmd:
 		// cmd.exe has no completion-script mechanism; callers short-circuit
 		// before reaching here, so this is a defensive guard.
-		return "", nil, errors.New("cmd.exe does not support shell completion scripts.")
+		return nil, errors.New("cmd.exe does not support shell completion scripts.")
 	default:
-		return "", nil, fmt.Errorf("Unsupported shell: %s.", shellType)
+		return nil, fmt.Errorf("Unsupported shell: %s.", shellType)
 	}
 }
 
@@ -467,123 +508,6 @@ func installFish(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) 
 	}
 
 	return installPath, installFunc
-}
-
-func missingPowerShellBlocks(existingContent string) string {
-	var sb strings.Builder
-
-	if !strings.Contains(existingContent, version.CliName+" completion powershell") {
-		fmt.Fprintf(&sb, "\n# %s completion\n", version.CliName)
-		fmt.Fprintf(&sb, "if (Get-Command %s -ErrorAction SilentlyContinue) {\n", version.CliName)
-		fmt.Fprintf(&sb, "    %s completion powershell | Out-String | Invoke-Expression\n", version.CliName)
-		sb.WriteString("}\n")
-	}
-
-	for _, alias := range version.CliAliases {
-		if !strings.Contains(existingContent, fmt.Sprintf("# %s alias completion", alias)) {
-			fmt.Fprintf(&sb, "\n# %s alias completion\n", alias)
-			fmt.Fprintf(&sb, "if (Get-Command %s -ErrorAction SilentlyContinue) {\n", alias)
-			fmt.Fprintf(&sb, "    $__drCompletionScript = (%s completion powershell | Out-String)\n", version.CliName)
-			fmt.Fprintf(&sb, "    Invoke-Expression ($__drCompletionScript -replace \"CommandName '%s'\", \"CommandName '%s'\")\n", version.CliName, alias)
-			sb.WriteString("}\n")
-		}
-	}
-
-	return sb.String()
-}
-
-func installPowerShell(_ *cobra.Command, _ bool) (string, func(*cobra.Command) error) {
-	profilePath, err := powerShellProfilePath()
-	if err != nil {
-		return "", func(*cobra.Command) error { return err }
-	}
-
-	shellExe := powerShellExeForProfile()
-
-	installFunc := func(rootCmd *cobra.Command) error {
-		// Ensure the directory exists
-		profileDir := filepath.Dir(profilePath)
-
-		if err := os.MkdirAll(profileDir, 0o755); err != nil {
-			return fmt.Errorf("Failed to create PowerShell profile directory: %w", err)
-		}
-
-		// Read existing profile content to detect which blocks are already installed.
-		var existingContent string
-
-		if fsutil.FileExists(profilePath) {
-			data, err := os.ReadFile(profilePath)
-			if err != nil {
-				return fmt.Errorf("Failed to read PowerShell profile: %w", err)
-			}
-
-			existingContent = string(data)
-		}
-
-		missingScript := missingPowerShellBlocks(existingContent)
-
-		if missingScript == "" {
-			return nil // Already fully installed
-		}
-
-		// Append missing blocks to profile
-		f, err := os.OpenFile(profilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			return fmt.Errorf("Failed to open PowerShell profile: %w", err)
-		}
-		defer f.Close()
-
-		if _, err = f.WriteString(missingScript); err != nil {
-			return fmt.Errorf("Failed to write to PowerShell profile: %w", err)
-		}
-
-		warnIfExecutionPolicyRestricted(shellExe)
-
-		return nil
-	}
-
-	return profilePath, installFunc
-}
-
-// powerShellExeForProfile returns the PowerShell binary name that matches the
-// profile path chosen by powerShellProfilePath. PS Core (pwsh) and Windows
-// PowerShell (powershell) maintain separate execution policy settings, so the
-// warning check must query the same shell that will actually load the profile.
-func powerShellExeForProfile() string {
-	if runtime.GOOS != "windows" {
-		return "powershell"
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "powershell"
-	}
-
-	if fsutil.DirExists(filepath.Join(homeDir, "Documents", "PowerShell")) {
-		return "pwsh"
-	}
-
-	return "powershell"
-}
-
-func powerShellProfilePath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("get user home dir: %w", err)
-	}
-
-	if runtime.GOOS != "windows" {
-		return filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"), nil
-	}
-
-	documentsPath := filepath.Join(homeDir, "Documents")
-
-	psCorePath := filepath.Join(documentsPath, "PowerShell")
-	if fsutil.DirExists(psCorePath) {
-		return filepath.Join(psCorePath, "Microsoft.PowerShell_profile.ps1"), nil
-	}
-
-	return filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"), nil
 }
 
 func showActivationInstructions(shell internalShell.Shell) {

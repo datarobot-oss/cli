@@ -27,20 +27,33 @@ import (
 func CaptureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
-	orig := os.Stdout
+	return capture(t, &os.Stdout, fn)
+}
 
-	t.Cleanup(func() { os.Stdout = orig })
+// CaptureStderr redirects os.Stderr while fn runs and returns the captured text.
+func CaptureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	return capture(t, &os.Stderr, fn)
+}
+
+func capture(t *testing.T, target **os.File, fn func()) string {
+	t.Helper()
+
+	orig := *target
+
+	t.Cleanup(func() { *target = orig })
 
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("create pipe: %v", err)
 	}
 
-	os.Stdout = w
+	*target = w
 
 	fn()
 
-	os.Stdout = orig
+	*target = orig
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("close pipe: %v", err)

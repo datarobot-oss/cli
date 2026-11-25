@@ -77,6 +77,7 @@ func ReadString() (string, error) {
 
 	str, err := readLine(reader)
 	if err != nil {
+		// print a newline so the cursor leaves the prompt line
 		fmt.Println()
 	}
 
@@ -267,6 +268,18 @@ func AskYesNo() bool {
 // Returns false when stdin is a pipe, a file redirect, or otherwise non-interactive.
 func IsStdinTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+// IsStderrTerminal reports whether stderr is connected to a terminal, which
+// is where anything drawn for a person (a spinner, a prompt) is written.
+func IsStderrTerminal() bool {
+	return term.IsTerminal(int(os.Stderr.Fd()))
+}
+
+// IsStdoutTerminal reports whether stdout is connected to a terminal; false
+// when a caller is capturing the command's output.
+func IsStdoutTerminal() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // NonInteractiveEnv is the env var users set to force non-interactive mode

@@ -1,0 +1,8 @@
+{
+  "data": [
+    {"id": "cpu.small", "name": "S", "useCases": ["customApplication", "customModel"], "memoryBytes": 536870912, "cpuCount": 0.5, "description": "ignored"},
+    {"id": "cpu.xlarge", "name": "XL", "useCases": ["customApplication"], "memoryBytes": 2147483648, "cpuCount": 2}
+  ],
+  "count": 2, "totalCount": 3,
+  "next": "{{BASE}}/api/v2/mlops/compute/bundles/?offset=2&limit=2", "previous": null
+}

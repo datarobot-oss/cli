@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Detect Changes
     timeout-minutes: 5
+    # PR-file API mode avoids cloning the large repository just to select jobs.
+    permissions:
+      pull-requests: read
     outputs:
       completion: ${{ steps.changes.outputs.completion }}
       dotenv: ${{ steps.changes.outputs.dotenv }}
@@ -32,9 +35,6 @@ jobs:
       test_config: ${{ steps.changes.outputs.test_config }}
       lint_config: ${{ steps.changes.outputs.lint_config }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Detect file changes
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: changes
@@ -43,6 +43,8 @@ jobs:
             completion:
               - 'cmd/self/completion/**'
               - 'goreleaser.yaml'  # Homebrew post-install hook runs `dr self completion install`
+              - 'smoke_test_scripts/windows/run_powershell_profile_test.ps1'
+              - 'uninstall.ps1'
             dotenv:
               - 'cmd/dotenv/**'
             templates:
@@ -68,12 +70,11 @@ jobs:
               - 'Taskfile.yaml'
               - '.github/workflows/pr-checks.yaml'
               - '.github/actions/setup/**'
-            # Re-run the lint job when the lint tooling itself changes, so a PR
-            # that only touches the Taskfile / golangci config still gets its
-            # lint behaviour validated (CFX-7138).
+            # Re-run lint when lint/dupcheck tooling changes so config-only PRs still get validated (CFX-7138).
             lint_config:
               - 'Taskfile.yaml'
               - '.golangci.yaml'
+              - '.jscpd.json'
               - '.github/workflows/pr-checks.yaml'
               - '.github/actions/setup/**'
 
@@ -88,7 +89,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      actions: write   # actions/cache (save)
+      actions: write   # actions/cache (save), upload-artifact (jscpd report)
 
     steps:
       - name: Checkout Code
@@ -118,6 +119,19 @@ jobs:
       - name: Run all checks
         run: |
           task lint
+
+      # Duplicate-code detection; CI is the enforcement point (kept out of the commit hook for speed).
+      - name: Check for duplicate code (jscpd)
+        run: task dupcheck
+
+      # Upload even on failure so reviewers can inspect the clones.
+      - name: Upload duplicate-code report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: jscpd-report
+          path: tmp/jscpd-report
+          retention-days: 7
 
   test:
     needs: detect-changes
@@ -200,7 +214,7 @@ jobs:
     needs: detect-changes
     name: Build Binaries
     # Cross-compile all platforms on a single Ubuntu runner (cheaper than 3-OS matrix).
-    # Completion-tests depends on this job for the dr-ubuntu artifact.
+    # The completion tests depend on this job for the dr-ubuntu and dr-windows artifacts.
     if: needs.detect-changes.outputs.go_code == 'true' || needs.detect-changes.outputs.completion == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -215,7 +229,7 @@ jobs:
           install-task: 'false'
 
       - name: Build all platforms with GoReleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: '~> v2'
@@ -225,10 +239,17 @@ jobs:
         run: ./dist/linux_linux_amd64_v1/dr --help
 
       - name: Upload Linux binary (used by completion-tests)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dr-ubuntu
           path: dist/linux_linux_amd64_v1/dr
+          retention-days: 1
+
+      - name: Upload Windows binary (used by completion-tests-windows)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dr-windows
+          path: dist/windows_windows_amd64_v1/dr.exe
           retention-days: 1
   auto-label:
     needs: detect-changes
@@ -292,6 +313,35 @@ jobs:
       build: true
       test-script: 'LOCAL_BINARY=./dist/dr bash smoke_test_scripts/run_install_integration_test.sh'
     # S1: _smoke.yaml's DR_API_TOKEN secret is optional; this suite needs none.
+  completion-tests-windows:
+    needs: [build, detect-changes]
+    if: needs.detect-changes.outputs.completion == 'true'
+    runs-on: windows-latest
+    name: Test PowerShell Completion
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read    # actions/download-artifact
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download Binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dr-windows
+          path: ${{ runner.temp }}\dr-bin
+
+      - name: Add Binary to PATH
+        shell: pwsh
+        run: |
+          "${{ runner.temp }}\dr-bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Test the PowerShell profile
+        shell: pwsh
+        run: ./smoke_test_scripts/windows/run_powershell_profile_test.ps1
+
   completion-tests:
     needs: [build, detect-changes]
     if: needs.detect-changes.outputs.completion == 'true'
@@ -307,7 +357,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download Binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dr-ubuntu
           path: /tmp/dr-bin

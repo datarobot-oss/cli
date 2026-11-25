@@ -1,0 +1,7 @@
+{
+  "entitlements": [
+    {"name": "ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND", "value": false},
+    {"name": "ENABLE_WORKLOAD_API_CONTAINERS", "value": true},
+    {"name": "DISABLE_CUSTOM_TEMPLATES", "value": false}
+  ]
+}

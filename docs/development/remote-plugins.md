@@ -10,6 +10,11 @@ The system enables:
 - Platform-agnostic plugin packages containing both Posix and Windows scripts
 - Python-based plugins wrapped in shell scripts using `uv run`
 
+**Package model (important):** one platform-agnostic archive per version — the registry has a single `url` and `sha256` per version and no per-OS entries. OS selection happens at runtime: the CLI reads the manifest's `scripts` block and executes the script for the current platform, and that wrapper picks the right bundled binary. Two conventions keep packages healthy:
+
+- Entry scripts are `dr-<name>.sh` (Posix) and `dr-<name>.ps1` (Windows); the manifest's `scripts` block points at them, and packaging validation executes exactly the declared script (a declared-but-missing script is a hard error, not a reason to fall back to the directory scan).
+- Bundled binaries must not be `dr-`-prefixed and extensionless — the CLI's fallback scan (for plugins without a `scripts` block) treats any such file as a candidate entry point and can execute the wrong one. Name binaries `<name>-<os>-<arch>` instead (the `opencode` plugin follows this).
+
 ## Architecture
 
 ### Plugin Registry (`index.json`)
@@ -157,25 +162,25 @@ This pattern:
 
 ## Files created
 
-| File | Purpose |
-|------|---------|
-| `docs/plugins/index.json` | Remote plugin registry |
-| `cmd/plugin/install/cmd.go` | Install command |
-| `cmd/plugin/uninstall/cmd.go` | Uninstall command |
-| `cmd/plugin/update/cmd.go` | Update command |
-| `internal/plugin/remote.go` | Remote fetch & install logic |
-| `internal/plugin/types.go` | Extended type definitions |
-| `cmd/self/plugin/package/cmd.go` | Package command |
-| `cmd/self/plugin/add/cmd.go` | Add to registry command |
+| File                             | Purpose                      |
+| -------------------------------- | ---------------------------- |
+| `docs/plugins/index.json`        | Remote plugin registry       |
+| `cmd/plugin/install/cmd.go`      | Install command              |
+| `cmd/plugin/uninstall/cmd.go`    | Uninstall command            |
+| `cmd/plugin/update/cmd.go`       | Update command               |
+| `internal/plugin/remote.go`      | Remote fetch & install logic |
+| `internal/plugin/types.go`       | Extended type definitions    |
+| `cmd/self/plugin/package/cmd.go` | Package command              |
+| `cmd/self/plugin/add/cmd.go`     | Add to registry command      |
 | `cmd/self/plugin/publish/cmd.go` | Publish command (all-in-one) |
 
 ## Files modified
 
-| File | Changes |
-|------|---------|
-| `cmd/plugin/cmd.go` | Register new subcommands |
+| File                          | Changes                        |
+| ----------------------------- | ------------------------------ |
+| `cmd/plugin/cmd.go`           | Register new subcommands       |
 | `internal/plugin/discover.go` | Scan managed plugins directory |
-| `internal/repo/paths.go` | Added `ManagedPluginsDir()` |
+| `internal/repo/paths.go`      | Added `ManagedPluginsDir()`    |
 
 ## Usage examples
 

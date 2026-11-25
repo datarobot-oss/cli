@@ -1,0 +1,34 @@
+{
+    "runtime": {
+        "containerGroups": [
+            {
+                "name": "default",
+                "resourceBundles": [
+                    "cpu.small"
+                ],
+                "bundleSelectionPolicy": "availability",
+                "replicaCount": 1,
+                "autoscaling": null,
+                "containers": [
+                    {
+                        "name": "primary",
+                        "resourceAllocation": {
+                            "gpu": null,
+                            "cpu": 0.5,
+                            "memory": 512000000
+                        }
+                    }
+                ],
+                "resolvedBundle": {
+                    "id": "cpu.small",
+                    "cpuCount": 1.0,
+                    "memoryBytes": 536870912,
+                    "gpuCount": 0,
+                    "gpuMaker": null,
+                    "gpuTypeLabel": null
+                }
+            }
+        ]
+    },
+    "replacement": null
+}

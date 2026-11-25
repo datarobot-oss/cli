@@ -17,11 +17,9 @@ package sync
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	stdsync "sync"
 	"testing"
 	"time"
 
@@ -56,118 +54,6 @@ func (f *fakeArtifactStore) PatchCodeRef(artifactID, catalogID, catalogVersionID
 	}
 
 	return f.PatchFn(artifactID, catalogID, catalogVersionID)
-}
-
-// fakeFilesClient is the in-memory FilesAPI fake used by engine tests.
-// Unexpected methods return errors so off-happy-path drift fails loudly.
-type fakeFilesClient struct {
-	allFiles      map[string]filesapi.FileMeta
-	catalogID     string
-	versionID     string
-	stageID       string
-	uploadedFiles map[string][]byte
-	deletedPaths  []string
-
-	// zipResp, when set, turns on the zip path; nil keeps it a loud
-	// error so a test that lands there by accident still fails.
-	zipResp *filesapi.FromFileResp
-
-	// createdCatalogName records the name the sync asked the Files API to
-	// give the catalog it created; zippedIntoCatalog, which catalog the zip
-	// was then added to.
-	createdCatalogName string
-	zippedIntoCatalog  string
-
-	mu stdsync.Mutex
-}
-
-func (f *fakeFilesClient) CreateCatalog(name string) (*filesapi.CatalogResp, error) {
-	if f.catalogID == "" {
-		return nil, errors.New("fakeFilesClient.CreateCatalog: no catalogID configured")
-	}
-
-	f.createdCatalogName = name
-
-	return &filesapi.CatalogResp{CatalogID: f.catalogID, CatalogVersionID: ""}, nil
-}
-
-func (f *fakeFilesClient) CreateStage(_ string) (*filesapi.StageResp, error) {
-	if f.stageID == "" {
-		return nil, errors.New("fakeFilesClient.CreateStage: no stageID configured")
-	}
-
-	return &filesapi.StageResp{CatalogID: f.catalogID, StageID: f.stageID}, nil
-}
-
-func (f *fakeFilesClient) UploadToStage(_, _, name string, _ int64, body io.Reader) error {
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.uploadedFiles == nil {
-		f.uploadedFiles = map[string][]byte{}
-	}
-
-	f.uploadedFiles[name] = data
-
-	return nil
-}
-
-func (f *fakeFilesClient) ApplyStage(_, _, _ string) (*filesapi.ApplyStageResp, error) {
-	if f.versionID == "" {
-		return nil, errors.New("fakeFilesClient.ApplyStage: no versionID configured")
-	}
-
-	return &filesapi.ApplyStageResp{
-		CatalogID:        f.catalogID,
-		CatalogVersionID: f.versionID,
-		NumFiles:         len(f.uploadedFiles),
-	}, nil
-}
-
-func (f *fakeFilesClient) UploadFromZipExisting(
-	catalogID, _, _ string, _ int64, body io.Reader,
-) (*filesapi.FromFileResp, error) {
-	if f.zipResp == nil {
-		return nil, errors.New("fakeFilesClient: UploadFromZipExisting not expected")
-	}
-
-	f.zippedIntoCatalog = catalogID
-
-	if _, err := io.Copy(io.Discard, body); err != nil {
-		return nil, err
-	}
-
-	return f.zipResp, nil
-}
-
-func (f *fakeFilesClient) PollStatus(statusID string) (*filesapi.StatusResp, error) {
-	if f.zipResp == nil {
-		return nil, errors.New("fakeFilesClient: PollStatus not expected")
-	}
-
-	return &filesapi.StatusResp{Status: filesapi.StatusCompleted, StatusID: statusID}, nil
-}
-
-func (f *fakeFilesClient) AllFiles(_, _ string) (map[string]filesapi.FileMeta, error) {
-	return f.allFiles, nil
-}
-
-func (f *fakeFilesClient) DownloadFile(_, _, _ string, _ io.Writer) (string, int64, error) {
-	return "", 0, errors.New("fakeFilesClient: DownloadFile not expected")
-}
-
-func (f *fakeFilesClient) DeleteFiles(_ string, paths []string) (*filesapi.DeleteFilesResp, error) {
-	f.deletedPaths = append(f.deletedPaths, paths...)
-	return &filesapi.DeleteFilesResp{}, nil
-}
-
-func (f *fakeFilesClient) ListVersions(_ string, _ int) ([]filesapi.CatalogVersion, error) {
-	return nil, errors.New("fakeFilesClient: ListVersions not expected")
 }
 
 // testRepoID is the artifact repository the test artifacts belong to. The
@@ -262,12 +148,13 @@ func TestEngine_Plan_FastPathUpToDate(t *testing.T) {
 	require.NoError(t, wapi.SaveConfig(dir, cfg))
 
 	manifest := wapi.Manifest{Version: wapi.ManifestVersion, Files: map[string]wapi.FileMeta{}}
+	notExec := false
 
 	for _, rel := range []string{"agent.py", ".drignore"} {
 		hash, size, err := hashLocal(t, dir, rel)
 		require.NoError(t, err)
 
-		manifest.Files[rel] = wapi.FileMeta{Hash: hash, Size: size}
+		manifest.Files[rel] = wapi.FileMeta{Hash: hash, Size: size, Executable: &notExec}
 	}
 
 	require.NoError(t, wapi.SaveManifest(dir, manifest))
@@ -468,11 +355,7 @@ func TestEngine_Run_FirstSyncZipPathNamesTheCatalog(t *testing.T) {
 
 	fake := &fakeFilesClient{
 		catalogID: "cid-zip",
-		zipResp: &filesapi.FromFileResp{
-			CatalogID:        "cid-zip",
-			CatalogVersionID: "ver-zip",
-			StatusID:         "sid-zip",
-		},
+		versionID: "ver-zip",
 	}
 
 	e, err := newWithDeps(dir, Options{Yes: true}, Deps{

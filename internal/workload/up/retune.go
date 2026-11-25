@@ -15,11 +15,14 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/tui"
 )
 
 // retune applies a change that moved only the sizing: a replica count, a
@@ -60,7 +63,7 @@ import (
 // The window it cannot close: the settings route answers 202, so a resize
 // started and not waited for may not be readable on the replacement route yet
 // when the next run looks. Two detached resizes back to back can still queue.
-func retune(loaded Loaded, result Result, opts Options, report *reporter) (Result, error) {
+func retune(ctx context.Context, loaded Loaded, result Result, opts Options, report *reporter) (Result, error) {
 	sizing, err := loaded.Compiled.RuntimePayload()
 	if err != nil {
 		return result, err
@@ -96,7 +99,7 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 	// it had, so reporting an update would name something that did not happen.
 	waitFrom := time.Now()
 
-	if err := awaitResize(result.WorkloadID, started, opts, report); err != nil {
+	if err := awaitResize(ctx, result.WorkloadID, started, opts, report); err != nil {
 		return result, err
 	}
 
@@ -104,27 +107,33 @@ func retune(loaded Loaded, result Result, opts Options, report *reporter) (Resul
 
 	// A resize changes no artifact, but it does replace a generation, so the
 	// wait still has to see the outgoing one stop answering.
-	return settle(result.WorkloadID, workload.Serving{AwaitDrain: true},
+	return settle(ctx, result.WorkloadID, workload.Serving{AwaitDrain: true},
 		result, budgetLeft(opts, waitFrom), report)
 }
 
 // awaitResize follows the replacement a settings change starts. A failed one
 // leaves the workload on the sizing it had, so it is the difference between a
 // resize that happened and one that was merely accepted.
-func awaitResize(workloadID string, started *workload.Replacement, opts Options, report *reporter) error {
-	var settled *workload.Replacement
+func awaitResize(ctx context.Context, workloadID string, started *workload.Replacement, opts Options,
+	report *reporter,
+) error {
+	var last held[workload.Replacement]
 
-	err := report.run("Waiting for the new settings", func() error {
-		replacement, waitErr := waitReplacementFn(workloadID, started, opts.PollInterval, opts.PollTimeout, nil)
-		settled = replacement
+	const label = "Waiting for the new settings"
 
-		return waitErr
-	})
+	err := report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			replacement, waitErr := waitReplacementFn(ctx, workloadID, started, opts.PollInterval, opts.PollTimeout,
+				rolloutProgress(strings.ToLower(label), opts, report, note))
+			last.set(replacement)
+
+			return waitErr
+		})
 	if err == nil {
 		return nil
 	}
 
-	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+	if settled := last.get(); settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
 		return fmt.Errorf(
 			"the settings update for workload %s ended as %s, so it is still running with the sizing it had; "+
 				"check 'dr workload status %s': %w",

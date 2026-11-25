@@ -364,6 +364,120 @@ func TestRunE_NoCredentialsKeepsStdoutEmpty(t *testing.T) {
 	assert.Contains(t, stderr.String(), "auth login")
 }
 
+// Export errors must name the active credential source (root-level or the
+// explicitly selected profile) and keep --profile in the suggested recovery
+// commands, so the advice can be run verbatim (ALIFE-735). Env-sourced
+// problems keep their env-specific advice: no profile hints apply there.
+func TestRunE_ProfileAwareErrorAdvice(t *testing.T) {
+	cases := []struct {
+		name            string
+		profile         string
+		endpoint        string
+		token           string
+		wantContains    []string
+		wantNotContains []string
+	}{
+		{
+			name: "omitted selection names root-level credentials with bare advice",
+			wantContains: []string{
+				"root-level",
+				"dr auth login to authenticate",
+			},
+			wantNotContains: []string{"--profile"},
+		},
+		{
+			name:     "endpoint-only profile is named with a login --profile suggestion",
+			profile:  "east",
+			endpoint: "https://east.dummy.invalid/api/v2",
+			wantContains: []string{
+				`profile "east"`,
+				"dr auth login --profile east",
+			},
+		},
+		{
+			name:    "token-only profile is named with a set-url --profile suggestion",
+			profile: "east",
+			token:   "stored-token",
+			wantContains: []string{
+				`profile "east"`,
+				"dr auth set-url --profile east",
+			},
+		},
+		{
+			name:    "explicit default suggests login --profile default",
+			profile: "default",
+			wantContains: []string{
+				`profile "default"`,
+				"dr auth login --profile default",
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			viperx.Reset()
+			clearEnvCredentials(t)
+
+			viperx.Set(config.DataRobotURL, c.endpoint)
+			viperx.Set(config.DataRobotAPIKey, c.token)
+
+			if c.profile != "" {
+				viperx.Set(config.ProfileKey, c.profile)
+			}
+
+			defer viperx.Reset()
+
+			var stdout, stderr bytes.Buffer
+
+			cmd := Cmd()
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{"--shell", "bash"})
+
+			err := cmd.Execute()
+			require.ErrorIs(t, err, cli.ErrSilent)
+			assert.Empty(t, stdout.String())
+
+			for _, want := range c.wantContains {
+				assert.Contains(t, stderr.String(), want)
+			}
+
+			for _, notWant := range c.wantNotContains {
+				assert.NotContains(t, stderr.String(), notWant)
+			}
+		})
+	}
+}
+
+// An invalid endpoint sourced from the environment keeps its env-specific
+// advice (eval hint, unset instructions) even when a profile is selected:
+// `dr auth set-url` cannot heal env vars, so profile recovery hints would
+// point at the wrong fix.
+func TestRunE_EnvErrorSkipsProfileHints(t *testing.T) {
+	viperx.Reset()
+	clearEnvCredentials(t)
+
+	t.Setenv("DATAROBOT_ENDPOINT", "'https://staging.datarobot.com/api/v2'")
+	t.Setenv("DATAROBOT_API_TOKEN", "token")
+	viperx.Set(config.ProfileKey, "east")
+
+	defer viperx.Reset()
+
+	var stdout, stderr bytes.Buffer
+
+	cmd := Cmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--shell", "bash"})
+
+	err := cmd.Execute()
+	require.ErrorIs(t, err, cli.ErrSilent)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), `eval "$(dr auth export)"`)
+	assert.Contains(t, stderr.String(), "unset DATAROBOT_ENDPOINT")
+	assert.NotContains(t, stderr.String(), "--profile east")
+}
+
 func TestRunE_UnsupportedShell(t *testing.T) {
 	viperx.Reset()
 	clearEnvCredentials(t)

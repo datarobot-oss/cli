@@ -14,10 +14,21 @@
 
 package plugin
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // PluginPrefix is the required prefix for all plugin executables.
 const PluginPrefix = "dr-"
+
+const (
+	// DefaultShutdownGrace is how long a plugin gets to exit after the CLI cancels it, before SIGKILL.
+	DefaultShutdownGrace = 5 * time.Second
+
+	// MaxShutdownGraceSeconds caps what a manifest can request, so a hung plugin cannot hold the terminal for long.
+	MaxShutdownGraceSeconds = 300
+)
 
 // PluginManifestFlag is the command-line flag plugins must implement to output their manifest.
 const PluginManifestFlag = "--dr-plugin-manifest"
@@ -42,6 +53,20 @@ type PluginManifest struct {
 	BasicPluginManifest
 	Scripts       *PluginScripts `json:"scripts,omitempty"`       // Platform-specific script paths
 	MinCLIVersion string         `json:"minCLIVersion,omitempty"` // Minimum CLI version required
+
+	// ShutdownGraceSeconds is how long the plugin gets to exit after Ctrl-C before the CLI kills it.
+	// Zero means DefaultShutdownGrace.
+	ShutdownGraceSeconds int `json:"shutdownGraceSeconds,omitempty" validate:"omitempty,min=1,max=300"`
+}
+
+// ShutdownGrace returns how long the plugin gets to exit after the CLI cancels it. A missing or
+// negative value gives DefaultShutdownGrace, and a value above MaxShutdownGraceSeconds is capped.
+func (m PluginManifest) ShutdownGrace() time.Duration {
+	if m.ShutdownGraceSeconds <= 0 {
+		return DefaultShutdownGrace
+	}
+
+	return time.Duration(min(m.ShutdownGraceSeconds, MaxShutdownGraceSeconds)) * time.Second
 }
 
 // RegistryVersion represents a specific version in the plugin registry.

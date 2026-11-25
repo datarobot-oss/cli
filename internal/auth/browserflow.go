@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/assets"
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/open"
 	"github.com/datarobot/cli/internal/misc/reader"
@@ -44,6 +46,10 @@ const DefaultLoginTimeout = 5 * time.Minute
 // ErrLoginInterrupted is returned when the user aborts the login (Ctrl-C) or
 // another CLI process takes over the callback port.
 var ErrLoginInterrupted = errors.New("login was interrupted")
+
+// ErrLoginTimedOut is returned when no browser callback arrives before the
+// deadline. Callers print FprintLoginTimeoutHelp instead of the raw error.
+var ErrLoginTimedOut = errors.New("browser login timed out")
 
 // BrowserFlow owns the local HTTP listener that receives the API key after the
 // user authorizes the CLI in their browser.
@@ -124,7 +130,7 @@ func (f *BrowserFlow) OpenBrowser() error {
 }
 
 // Wait serves the callback endpoint until the API key arrives, the user
-// interrupts, or DefaultLoginTimeout elapses.
+// interrupts, or the timeout elapses.
 func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 	go func() {
 		err := f.server.Serve(f.listener)
@@ -150,13 +156,29 @@ func (f *BrowserFlow) Wait(ctx context.Context) (string, error) {
 
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("timed out after %s waiting for browser authorization: %w", f.timeout, ctx.Err())
+			return "", fmt.Errorf("no browser authorization within %s: %w", f.timeout, ErrLoginTimedOut)
 		}
 
 		log.Debug("Login context cancelled, exiting auth wait")
 
 		return "", ErrLoginInterrupted
 	}
+}
+
+// FprintLoginTimeoutHelp writes recovery steps after a browser login timed out:
+// retry (with a longer --timeout for a slow SSO or MFA sign-in), or use the env-var
+// credentials. The retry command retraces the active profile selection so it
+// targets the credentials the user was logging in for.
+func FprintLoginTimeoutHelp(w io.Writer) {
+	base, info := writerStyles(w)
+
+	fmt.Fprintln(w, base.Render("❌ No authorization came back from the browser."))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, base.Render("Try again, or give a slow SSO or MFA sign-in more time:"))
+	fmt.Fprintln(w, info.Render("  dr auth login"+config.SelectedProfileFlagSuffix()+" --timeout 10m"))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, base.Render("Or set DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN (from Developer Tools),"))
+	fmt.Fprintln(w, base.Render("then run any other dr command, which skips the browser."))
 }
 
 // Close shuts the callback server down. It is safe to call more than once.
@@ -213,6 +235,13 @@ type LoginOptions struct {
 	// NoBrowser skips launching a browser and shows the link instead. Useful over
 	// SSH or anywhere the CLI cannot reach a usable browser.
 	NoBrowser bool
+
+	// Timeout overrides DefaultLoginTimeout for the callback wait. Zero uses the default.
+	Timeout time.Duration
+
+	// JSONOutput marks --output-format json runs: stdout is a parseable channel,
+	// so the human link/wait block is routed to stderr instead of stdout.
+	JSONOutput bool
 }
 
 // RunBrowserLogin opens the browser, tells the user what is happening, and blocks
@@ -252,6 +281,10 @@ func RunBrowserLoginWith(ctx context.Context, datarobotHost string, opts LoginOp
 // Split out from RunBrowserLoginWith so tests can drive a flow on an ephemeral port
 // instead of competing for the fixed production one.
 func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions) (string, error) {
+	if opts.Timeout > 0 {
+		flow.timeout = opts.Timeout
+	}
+
 	// The browser state drives the wording: when no browser opened, the link stops
 	// being a footnote and becomes the primary instruction.
 	state := BrowserSkipped
@@ -281,22 +314,36 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 
 	var err error
 
-	// The link is what this command exists to produce, so it goes to stdout - where
-	// the animated spinner renders its own copy (tui.Run hands bubbletea os.Stdout)
-	// and where callers that redirect the streams separately look for it. The Windows
-	// smoke test is one such caller; the expect-based Linux and macOS ones cannot tell
-	// the difference, because a PTY merges stdout and stderr.
+	// In text mode the link is what this command exists to produce, so it reaches
+	// stdout, where callers that redirect the streams separately look for it. The
+	// Windows smoke test is one such caller; the expect-based Linux and macOS ones
+	// cannot tell the difference, because a PTY merges stdout and stderr. Under
+	// --output-format json the block moves to stderr so stdout stays parseable.
 	//
-	// Printing it here rather than leaving it to tui.RunWithSpinner, which only shows
-	// the label while it animates: it drops the label outright without a terminal, and
-	// diverts it to stderr under DATAROBOT_CLI_NON_INTERACTIVE. Neither leaves the
-	// link on stdout, and the spinner is no use in either case anyway.
-	if !reader.IsStdinTerminal() || reader.IsNonInteractive() {
-		fmt.Fprintln(os.Stdout, label)
+	// The spinner draws on stderr, so it only carries the link to a reader who sees
+	// both streams on one terminal. Whenever stdout is not that terminal the label is
+	// printed there too, and when the spinner would not draw it is skipped and the
+	// label goes to stdout alone.
+	printLink, spin := loginOutput(reader.IsStdinTerminal(), reader.IsStdoutTerminal(),
+		reader.IsStderrTerminal(), reader.IsNonInteractive())
 
-		err = wait()
-	} else {
+	// The link block is human instruction. Under --output-format json stdout is a
+	// parseable channel, so the block rides stderr there; text-mode stdout behavior
+	// (the Windows smoke test's contract) is unchanged.
+	linkDest := io.Writer(os.Stdout)
+
+	if opts.JSONOutput {
+		linkDest = os.Stderr
+	}
+
+	if printLink {
+		fmt.Fprintln(linkDest, label)
+	}
+
+	if spin {
 		err = tui.RunWithSpinner(label, wait)
+	} else {
+		err = wait()
 	}
 
 	if err != nil {
@@ -304,6 +351,15 @@ func runLoginWithFlow(ctx context.Context, flow *BrowserFlow, opts LoginOptions)
 	}
 
 	return apiKey, nil
+}
+
+// loginOutput decides where the login label goes: printed to stdout unless the
+// spinner will draw it on the same terminal. The spinner runs only when it
+// draws, by the spinner's own rule, so the two cannot disagree.
+func loginOutput(stdinTerm, stdoutTerm, stderrTerm, nonInteractive bool) (printLink, spin bool) {
+	spin = tui.SpinnerDrawn(stdinTerm, stderrTerm, nonInteractive)
+
+	return !spin || !stdoutTerm, spin
 }
 
 // listenReclaimingPort binds addr, first asking any auth server left over from a

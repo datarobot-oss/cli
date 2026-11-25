@@ -13,3 +13,35 @@
 // limitations under the License.
 
 package drapi
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestGetJSON_NonOKCarriesBody(t *testing.T) {
+	// A caller that knows its API's error shape reads HTTPError.Body, so a GET
+	// failure carries the start of the response the same way the writes do.
+	defer resetTokenForTest(t, "test-token")()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Not Found"}`))
+	}))
+	defer server.Close()
+
+	var out map[string]any
+
+	err := GetJSON(server.URL, "", &out)
+	require.Error(t, err)
+
+	var httpErr *HTTPError
+
+	require.ErrorAs(t, err, &httpErr)
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
+	assert.JSONEq(t, `{"detail":"Not Found"}`, string(httpErr.Body))
+}

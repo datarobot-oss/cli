@@ -46,8 +46,12 @@ sleep 1
 expect "Talk to My Docs"
 send -- "\r\n"
 
-sleep 1
-expect "talk-to-my-docs-agents"
+# Wait for text only the clone screen renders. The default directory name
+# ("talk-to-my-docs-agents") is also part of the repository URL in the template
+# list, and expect matches against output it has already buffered, so waiting
+# for the name can match the list screen and send this Enter while the list is
+# still handling the previous one. The clone screen then never gets its Enter.
+expect "Enter the destination directory"
 send -- "\r\n"
 
 # Phase 0: Handle Pulumi setup if it appears before the dotenv wizard.

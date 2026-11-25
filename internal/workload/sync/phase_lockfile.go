@@ -145,7 +145,7 @@ func generateLockfile(e *Engine) error {
 // copied in, so `uv lock --check` there fails on changes the image never
 // consumes, including a `dynamic = ["dependencies"]` project that can
 // never be made to pass. The CLI is the only component holding the whole
-// project tree, which is what the check needs (RAPTOR-20217).
+// project tree, which is what the check needs.
 //
 // Hence the asymmetry with generateLockfile: a lockfile this cannot put
 // right is a wrong image nothing else will stop, so it stops the sync.

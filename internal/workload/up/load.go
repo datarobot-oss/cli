@@ -205,6 +205,27 @@ func Load(dir string) (Loaded, error) {
 		return Loaded{}, err
 	}
 
+	return compileLoaded(m, path)
+}
+
+// LoadRendered is Load for a manifest that exists only as bytes: the file a
+// dry run of setup would have written at path. It is validated and compiled
+// exactly as the file would be, anchored to the directory it would sit in, so
+// the plan a preview prints is the plan the real run would print.
+func LoadRendered(content []byte, path string) (Loaded, error) {
+	m, err := manifest.Parse(content, filepath.Dir(path))
+	if err != nil {
+		return Loaded{}, fmt.Errorf("%s: %w", path, err)
+	}
+
+	m.Path = path
+
+	return compileLoaded(m, path)
+}
+
+// compileLoaded runs the checks both loaders share, so a manifest previewed
+// from memory and one read from disk are judged by the same rules.
+func compileLoaded(m *manifest.Manifest, path string) (Loaded, error) {
 	if err := m.Validate(); err != nil {
 		return Loaded{}, err
 	}

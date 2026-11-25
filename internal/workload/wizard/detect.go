@@ -19,11 +19,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/log"
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/joho/godotenv"
 )
@@ -111,7 +113,95 @@ type DirCandidate struct {
 // suspicion, not proof, in both directions: a directory with none can still
 // be a deployable project, which is why nothing here refuses.
 var rootMarkers = []string{
-	DockerfileName, "pyproject.toml", "uv.lock", "requirements.txt", "package.json", "go.mod", "setup.py",
+	DockerfileName, "pyproject.toml", "uv.lock", "requirements.txt", "package.json", "package-lock.json", "go.mod", "setup.py",
+}
+
+// generatedBuild is what the directory says about a generated image.
+//
+// The platform detects the runtime from pyproject.toml with uv.lock, or
+// package.json with package-lock.json, and refuses anything else only once
+// the artifact exists and the code is synced. The pairs are the platform's
+// (workload-api, src/workload_api/code_to_workload/runtime_detectors/), so
+// that is where to look when it learns another package manager.
+//
+// Problem is a shape nothing in the deploy can repair, and the mode is
+// refused with it. Note is a gap the deploy fills itself when uv is installed
+// where it runs: a pyproject.toml with no uv.lock gets one generated before
+// the upload, so the mode is accepted and the note says what to commit.
+//
+// Language and evidence are what the matched pair says the runtime is, since
+// the pair is what the platform builds from; a directory carrying both
+// languages' files says nothing.
+type generatedBuild struct {
+	language string
+	evidence []string
+	problem  string
+	note     string
+}
+
+func (d Detected) generatedBuild() generatedBuild {
+	build := d.matchPair()
+
+	// Both languages' files at once: the platform picks one by its own
+	// order, and guessing which would refuse the wrong environment.
+	if slices.Contains(d.RootMarkers, "pyproject.toml") && slices.Contains(d.RootMarkers, "package.json") {
+		build.language, build.evidence = "", nil
+	}
+
+	return build
+}
+
+func (d Detected) matchPair() generatedBuild {
+	has := func(name string) bool { return slices.Contains(d.RootMarkers, name) }
+
+	switch {
+	case has("pyproject.toml") && has("uv.lock"):
+		return generatedBuild{language: "python", evidence: []string{"pyproject.toml", "uv.lock"}}
+	case has("package.json") && has("package-lock.json"):
+		return generatedBuild{language: "node", evidence: []string{"package.json", "package-lock.json"}}
+	case has("pyproject.toml"):
+		return generatedBuild{
+			language: "python", evidence: []string{"pyproject.toml"},
+			note: "pyproject.toml has no uv.lock beside it; the deploy generates one before the " +
+				"upload if uv is installed where it runs, so commit it (or run 'uv lock' now)",
+		}
+	case has("package.json"):
+		return generatedBuild{
+			language: "node", evidence: []string{"package.json"},
+			problem: "package.json has no package-lock.json beside it; run 'npm install' and commit the result",
+		}
+	default:
+		return generatedBuild{problem: fmt.Sprintf("%s has neither pyproject.toml with uv.lock nor package.json "+
+			"with package-lock.json, which is what a generated image is built from", d.Dir)}
+	}
+}
+
+// GeneratedBuildProblem is why the platform cannot build a generated image
+// from this directory, "" when it can.
+func (d Detected) GeneratedBuildProblem() string {
+	return d.generatedBuild().problem
+}
+
+// Language is the runtime the platform would build a generated image for:
+// python for a pyproject.toml, node for a package.json, "" when the files say
+// nothing or both. The same files decide the build, so a stray
+// requirements.txt beside a Node project does not change the answer.
+func (d Detected) Language() string {
+	return d.generatedBuild().language
+}
+
+// EnvironmentMismatch is why a generated image on ee would not build for this
+// project, "" when it would or when either language is unknown.
+func (d Detected) EnvironmentMismatch(ee workload.ExecutionEnvironment) string {
+	build := d.generatedBuild()
+
+	env := workload.EnvironmentLanguage(ee.ProgrammingLanguage)
+	if build.language == "" || env == "" || build.language == env {
+		return ""
+	}
+
+	return fmt.Sprintf("%s is a %s project (%s), but %s is labelled %s, so the generated image would not build; "+
+		"pick a %s environment", d.Dir, build.language, strings.Join(build.evidence, ", "), ee.Name, env, build.language)
 }
 
 // maxDirCandidates caps the offer. Past a handful the list stops being an

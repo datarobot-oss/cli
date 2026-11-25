@@ -20,6 +20,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 )
 
@@ -341,14 +342,27 @@ func (a Answers) syncVars(detected Detected) []manifest.EnvVar {
 	out := make([]manifest.EnvVar, 0, len(detected.EnvVars))
 
 	for _, v := range detected.EnvVars {
-		out = append(out, manifest.EnvVar{
-			Name:   v.Name,
-			Value:  v.Value,
-			Secret: v.Kind == EnvSecret,
-		})
+		// A rule, not a guess: the pod's endpoint is the platform's to set.
+		if v.Name == platformEndpointEnvName {
+			continue
+		}
+
+		out = append(out, manifestVar(v.Name, v.Value, v.Kind == EnvSecret))
 	}
 
 	return out
+}
+
+// manifestVar is the manifest's form of one .env entry. The variable the
+// platform fills in itself is declared as such whatever .env holds, because
+// the value there is the deploying user's own token and the workload is given
+// one made for it; every other entry is a literal or a credential reference.
+func manifestVar(name, value string, secret bool) manifest.EnvVar {
+	if name == manifest.APIKeyEnvName {
+		return manifest.EnvVar{Name: name, APIKey: true}
+	}
+
+	return manifest.EnvVar{Name: name, Value: value, Secret: secret}
 }
 
 // envVars is the .env listing a fresh manifest will carry: everything the
@@ -368,11 +382,7 @@ func (a Answers) envVars(detected Detected) []manifest.EnvVar {
 			continue
 		}
 
-		out = append(out, manifest.EnvVar{
-			Name:   v.Name,
-			Value:  v.Value,
-			Secret: v.Kind == EnvSecret,
-		})
+		out = append(out, manifestVar(v.Name, v.Value, v.Kind == EnvSecret))
 	}
 
 	return out
@@ -417,7 +427,11 @@ func (a Answers) build(detected Detected) (manifest.Build, error) {
 		return manifest.Build{Mode: manifest.BuildModeImage, ImageURI: a.Image}, nil
 
 	case manifest.BuildModeGenerated:
-		return a.generatedBuild()
+		if problem := detected.generatedBuild().problem; problem != "" {
+			return manifest.Build{}, fmt.Errorf("--build-mode %s: %s", manifest.BuildModeGenerated, problem)
+		}
+
+		return a.generatedBuild(detected)
 
 	default:
 		return manifest.Build{}, fmt.Errorf(
@@ -446,7 +460,7 @@ func (a Answers) buildMode(detected Detected) string {
 	}
 }
 
-func (a Answers) generatedBuild() (manifest.Build, error) {
+func (a Answers) generatedBuild(detected Detected) (manifest.Build, error) {
 	var missing []string
 
 	if a.ExecutionEnvironment == "" {
@@ -467,20 +481,32 @@ func (a Answers) generatedBuild() (manifest.Build, error) {
 		return manifest.Build{}, fmt.Errorf("--entrypoint %q: %w", a.Entrypoint, err)
 	}
 
-	// Resolved at setup, not at deploy: the file records both ids so the same
-	// manifest builds the same image after the environment moves on, and a
-	// name that does not exist fails now rather than after a sync.
-	id, versionID, err := resolveExecEnvFn(a.ExecutionEnvironment)
+	ee, err := a.executionEnvironment(detected)
 	if err != nil {
 		return manifest.Build{}, err
 	}
 
 	return manifest.Build{
 		Mode:                          manifest.BuildModeGenerated,
-		ExecutionEnvironmentID:        id,
-		ExecutionEnvironmentVersionID: versionID,
+		ExecutionEnvironmentID:        ee.ID,
+		ExecutionEnvironmentVersionID: ee.LatestSuccessfulVersion.ID,
 		Entrypoint:                    entrypoint,
 	}, nil
+}
+
+// executionEnvironment resolves --execution-environment at setup, so a missing
+// name or a wrong-language environment fails now rather than after a build.
+func (a Answers) executionEnvironment(detected Detected) (workload.ExecutionEnvironment, error) {
+	ee, err := findExecEnvFn(a.ExecutionEnvironment)
+	if err != nil {
+		return workload.ExecutionEnvironment{}, err
+	}
+
+	if problem := detected.EnvironmentMismatch(ee); problem != "" {
+		return workload.ExecutionEnvironment{}, fmt.Errorf("--execution-environment %q: %s", a.ExecutionEnvironment, problem)
+	}
+
+	return ee, nil
 }
 
 // splitCommand parses a command line the way a shell would, so quoted

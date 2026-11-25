@@ -17,16 +17,20 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -306,6 +310,38 @@ func TestExecutePluginCustomUserAgent(t *testing.T) {
 	assert.Equal(t, "DataRobot CLI plugin: test-plugin (version 1.2.3)", capturedUserAgent)
 }
 
+// WithoutPreflight must skip the auth check entirely: no request reaches the
+// endpoint even though the manifest requires authentication, and the plugin
+// still runs (help rendering must never open the login wizard).
+func TestExecutePluginWithoutPreflightSkipsAuthCheck(t *testing.T) {
+	var authCheckCalled bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		authCheckCalled = true
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	viperx.Reset()
+	viperx.Set(config.DataRobotURL, server.URL)
+	viperx.Set(config.DataRobotAPIKey, "test-token")
+
+	os.Unsetenv("DATAROBOT_ENDPOINT")
+	os.Unsetenv("DATAROBOT_API_TOKEN")
+
+	scriptPath := writeExitScript(t, t.TempDir(), "test", 0)
+
+	manifest := PluginManifest{
+		BasicPluginManifest: BasicPluginManifest{Name: "test-plugin", Version: "1.2.3", Authentication: true},
+	}
+
+	exitCode := ExecutePlugin(context.Background(), manifest, scriptPath, []string{"--help"}, nil, WithoutPreflight())
+
+	assert.Equal(t, 0, exitCode)
+	assert.False(t, authCheckCalled, "auth endpoint must not be contacted when preflight is skipped")
+}
+
 func TestConfirmPluginDepsInstall_YFlag(t *testing.T) {
 	result := confirmPluginDepsInstall([]string{"-y"})
 
@@ -331,7 +367,7 @@ func TestCheckAndInstallPluginPrereqs_SkipsWhenNoVersionsYaml(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: "nonexistent-test-dr-cli-plugin-xyz"},
 	}
 
-	result := checkAndInstallPluginDeps(manifest, []string{})
+	result := checkAndInstallPluginDeps(manifest, []string{}, false)
 
 	assert.True(t, result)
 }
@@ -364,9 +400,108 @@ func TestCheckAndInstallPluginPrereqs_TrueWhenAllDepsSatisfied(t *testing.T) {
 		BasicPluginManifest: BasicPluginManifest{Name: pluginName},
 	}
 
-	result := checkAndInstallPluginDeps(manifest, []string{})
+	result := checkAndInstallPluginDeps(manifest, []string{}, false)
 
 	assert.True(t, result)
+}
+
+// unsatisfiableDepYAML declares one dependency that cannot be found, so
+// CheckAndInstallDeps always reaches the confirmation step.
+const unsatisfiableDepYAML = `missing-tool:
+  name: Missing tool
+  minimum-version: "1.0.0"
+  command: "dr-cli-test-no-such-tool --version"
+  url: https://example.invalid
+  install:
+    macos: "echo install"
+    linux: "echo install"
+`
+
+// setupPluginWithVersions installs a managed plugin directory holding the given
+// versions.yaml into an isolated config home, so no test touches the real one.
+func setupPluginWithVersions(t *testing.T, pluginName, versionsYAML string) {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+
+	testutil.SetXDGEnv(t, "XDG_CONFIG_HOME", tmpDir)
+
+	managedDir, err := ManagedPluginsDir()
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(tmpDir, "datarobot", "plugins"), managedDir, "managed plugins dir must be isolated")
+
+	pluginDir := filepath.Join(managedDir, pluginName)
+
+	require.NoError(t, os.MkdirAll(pluginDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "versions.yaml"), []byte(versionsYAML), 0o644))
+}
+
+// captureStderr redirects os.Stderr to a pipe while fn runs and returns what
+// was written to it.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStderr := os.Stderr
+	os.Stderr = w
+
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	fn()
+
+	require.NoError(t, w.Close())
+
+	os.Stderr = origStderr
+
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+
+	return string(out)
+}
+
+func TestCheckAndInstallPluginDeps_DeclinedExplainsWhatWasSkipped(t *testing.T) {
+	const pluginName = "test-dr-cli-decline-plugin"
+
+	setupPluginWithVersions(t, pluginName, unsatisfiableDepYAML)
+
+	// Not set, so the prompt is reached; the canned answer declines it.
+	t.Setenv(reader.NonInteractiveEnv, "")
+
+	origStdin := reader.Stdin
+	reader.Stdin = strings.NewReader("n\n")
+
+	t.Cleanup(func() { reader.Stdin = origStdin })
+
+	manifest := PluginManifest{BasicPluginManifest: BasicPluginManifest{Name: pluginName}}
+
+	var result bool
+
+	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}, false) })
+
+	assert.False(t, result, "declining must stop the plugin from running")
+	assert.Contains(t, stderr, "Skipped installing dependencies that "+pluginName+" needs to run")
+	assert.Contains(t, stderr, reader.NonInteractiveEnv+"=1", "should name the setting that installs them automatically")
+	assert.NotContains(t, stderr, "pass -y", "-y reaches the plugin's own args and strict plugins reject it")
+	assert.NotContains(t, stderr, "plugin dependency check failed")
+}
+
+func TestCheckAndInstallPluginDeps_OtherFailureIsNotReportedAsDeclined(t *testing.T) {
+	const pluginName = "test-dr-cli-broken-versions-plugin"
+
+	setupPluginWithVersions(t, pluginName, "this: is: not: valid: yaml: [")
+
+	manifest := PluginManifest{BasicPluginManifest: BasicPluginManifest{Name: pluginName}}
+
+	var result bool
+
+	stderr := captureStderr(t, func() { result = checkAndInstallPluginDeps(manifest, []string{}, false) })
+
+	assert.False(t, result)
+	assert.Contains(t, stderr, "plugin dependency check failed")
+	assert.NotContains(t, stderr, "Skipped installing dependencies")
 }
 
 // --- universalFlagEnv unit tests ---
@@ -672,4 +807,117 @@ func TestExecutePluginAuthCalledWithoutSkipAuth(t *testing.T) {
 
 	assert.Equal(t, 0, exitCode)
 	assert.True(t, authContacted, "auth server should be contacted when --skip-auth is not set")
+}
+
+// TestPluginManifestShutdownGrace verifies how the manifest value maps to the
+// grace period between SIGTERM and SIGKILL.
+func TestPluginManifestShutdownGrace(t *testing.T) {
+	tests := []struct {
+		name    string
+		seconds int
+		want    time.Duration
+	}{
+		{"omitted uses the default", 0, DefaultShutdownGrace},
+		{"negative uses the default", -3, DefaultShutdownGrace},
+		{"explicit value", 30, 30 * time.Second},
+		{"at the cap", MaxShutdownGraceSeconds, MaxShutdownGraceSeconds * time.Second},
+		{"above the cap is capped", MaxShutdownGraceSeconds + 1, MaxShutdownGraceSeconds * time.Second},
+		{"far above the cap is capped", 10000, MaxShutdownGraceSeconds * time.Second},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := PluginManifest{ShutdownGraceSeconds: tc.seconds}
+
+			assert.Equal(t, tc.want, m.ShutdownGrace())
+		})
+	}
+}
+
+// TestBuildPluginCommandAppliesGrace verifies the grace reaches exec.Cmd.WaitDelay.
+func TestBuildPluginCommandAppliesGrace(t *testing.T) {
+	cmd := buildPluginCommand(context.Background(), "dr-example", nil, false, nil, 42*time.Second)
+
+	assert.Equal(t, 42*time.Second, cmd.WaitDelay)
+}
+
+// TestExecutePluginShutdownGraceLetsSlowHandlerFinish verifies a manifest grace
+// longer than the default lets a plugin finish a slow SIGTERM handler with its own
+// exit code, where the default would have killed it after 5 seconds.
+func TestExecutePluginShutdownGraceLetsSlowHandlerFinish(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGTERM handling is Unix-specific")
+	}
+
+	markerFile := filepath.Join(t.TempDir(), "cleanup-done")
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
+trap 'sleep 6; touch %s; exit 56' TERM
+touch %s
+while true; do sleep 0.1; done
+`, markerFile, readyFile)
+
+	scriptPath := filepath.Join(t.TempDir(), "slow-term.sh")
+	createScript(t, scriptPath, script)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	manifest := PluginManifest{ShutdownGraceSeconds: 15}
+	done := make(chan int, 1)
+
+	go func() {
+		done <- ExecutePlugin(ctx, manifest, scriptPath, []string{}, nil)
+	}()
+
+	waitForFile(t, readyFile)
+	cancel()
+
+	select {
+	case exitCode := <-done:
+		assert.Equal(t, 56, exitCode, "plugin should finish its handler and exit with its own code")
+
+		_, err := os.Stat(markerFile)
+		require.NoError(t, err, "cleanup marker should exist")
+	case <-time.After(20 * time.Second):
+		t.Fatal("plugin did not exit within 20 seconds of context cancellation")
+	}
+}
+
+// TestExecutePluginShutdownGraceStillKillsUnresponsive verifies a short manifest
+// grace kills a plugin that ignores SIGTERM well before the default would.
+func TestExecutePluginShutdownGraceStillKillsUnresponsive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGTERM handling is Unix-specific")
+	}
+
+	readyFile := filepath.Join(t.TempDir(), "ready")
+	script := fmt.Sprintf(`#!/bin/sh
+trap '' TERM
+touch %s
+while true; do sleep 0.1; done
+`, readyFile)
+
+	scriptPath := filepath.Join(t.TempDir(), "ignore-term.sh")
+	createScript(t, scriptPath, script)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	manifest := PluginManifest{ShutdownGraceSeconds: 1}
+	done := make(chan int, 1)
+
+	go func() {
+		done <- ExecutePlugin(ctx, manifest, scriptPath, []string{}, nil)
+	}()
+
+	waitForFile(t, readyFile)
+
+	start := time.Now()
+
+	cancel()
+
+	select {
+	case exitCode := <-done:
+		assert.NotEqual(t, 0, exitCode, "killed plugin should not report success")
+		assert.Less(t, time.Since(start), DefaultShutdownGrace, "a 1 second grace should kill before the default 5 seconds")
+	case <-time.After(10 * time.Second):
+		t.Fatal("plugin was not killed within 10 seconds of context cancellation")
+	}
 }

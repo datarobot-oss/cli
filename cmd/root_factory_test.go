@@ -21,11 +21,14 @@ import (
 	"testing"
 
 	"github.com/amplitude/analytics-go/amplitude"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/testutil"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -166,6 +169,12 @@ func writeProfileConfig(t *testing.T) {
 	tempDir := t.TempDir()
 	testutil.SetTestHomeDir(t, tempDir)
 
+	// The pre-run opens the debug log in this home, and a run that fails
+	// there never reaches the hooks that close it. Cleanups run last-in
+	// first-out, so this closes it before the directory is removed, which
+	// Windows refuses for an open file.
+	t.Cleanup(log.Stop)
+
 	configDir := filepath.Join(tempDir, ".config", "datarobot")
 	require.NoError(t, os.MkdirAll(configDir, 0o755))
 
@@ -186,6 +195,84 @@ func addNoopStub(root *cli.CommandAdder) {
 	}
 
 	root.AddCommand(stub)
+}
+
+func TestBuildDefersPluginRegistrationUntilExecuteTime(t *testing.T) {
+	var calls int
+
+	root := NewIsolatedRootFactory(
+		WithPluginRegistrar(func(cmd *cobra.Command) {
+			calls++
+
+			cmd.AddCommand(&cobra.Command{
+				Use: "deferred-plugin",
+				Run: func(_ *cobra.Command, _ []string) {},
+			})
+		}),
+	).Build()
+
+	assert.Nil(t, findCommandByPath(root.Command, "dr deferred-plugin"),
+		"Build must not register plugins before leading global flags can be parsed")
+
+	factory := NewIsolatedRootFactory(
+		WithPluginRegistrar(func(cmd *cobra.Command) {
+			calls++
+
+			cmd.AddCommand(&cobra.Command{
+				Use: "deferred-plugin",
+				Run: func(_ *cobra.Command, _ []string) {},
+			})
+		}),
+	)
+	root = factory.Build()
+
+	factory.RegisterPlugins(root)
+	factory.RegisterPlugins(root)
+
+	assert.Equal(t, 1, calls, "RegisterPlugins must be idempotent")
+	assert.NotNil(t, findCommandByPath(root.Command, "dr deferred-plugin"))
+}
+
+func TestRegisterPlugins_RegistersEveryBuiltTree(t *testing.T) {
+	var calls int
+
+	factory := NewIsolatedRootFactory(
+		WithPluginRegistrar(func(cmd *cobra.Command) {
+			calls++
+
+			cmd.AddCommand(&cobra.Command{
+				Use: "deferred-plugin",
+				Run: func(_ *cobra.Command, _ []string) {},
+			})
+		}),
+	)
+
+	first := factory.Build()
+	second := factory.Build()
+
+	factory.RegisterPlugins(first)
+	factory.RegisterPlugins(second)
+	factory.RegisterPlugins(first)
+
+	assert.Equal(t, 2, calls, "each built tree registers exactly once")
+	assert.NotNil(t, findCommandByPath(first.Command, "dr deferred-plugin"))
+	assert.NotNil(t, findCommandByPath(second.Command, "dr deferred-plugin"))
+}
+
+func TestConfigInitializer_BindsShellEnv(t *testing.T) {
+	writeProfileConfig(t)
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	t.Setenv("SHELL", "/usr/local/bin/fish")
+
+	root := buildProfileAwareTree()
+	addNoopStub(root)
+
+	root.SetArgs([]string{"stub"})
+	require.NoError(t, root.Execute())
+
+	assert.Equal(t, "/usr/local/bin/fish", viperx.GetString(config.ShellKey))
 }
 
 func TestProfileFlag_RegisteredAndUniversal(t *testing.T) {
@@ -261,4 +348,22 @@ func TestProfileFlag_CreateAnnotationSurvivesUnknownProfile(t *testing.T) {
 
 	assert.Empty(t, sawEndpoint, "credentials must be cleared so a new profile doesn't inherit the default's endpoint")
 	assert.Empty(t, sawToken, "credentials must be cleared so a new profile doesn't inherit the default's token")
+}
+
+// cobra prints the error prefix to stderr, so its color has to be decided by
+// stderr. Here stdout claims to be a full-color terminal, which is what the
+// package styles answer to, and NO_COLOR speaks for stderr whether or not the
+// test's own stderr is a terminal: the prefix has to come out plain.
+func TestErrPrefix_FollowsStderrNotStdout(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("CLICOLOR_FORCE", "")
+
+	root := NewIsolatedRootFactory().Build()
+
+	assert.Equal(t, "Error:", root.ErrPrefix())
 }

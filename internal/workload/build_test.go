@@ -481,7 +481,7 @@ func TestWaitForBuild_ServerWithoutImageApplied_FallsBackToTheImageTag(t *testin
 
 	installEndpoint(t, srv.URL)
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, time.Second, nil)
 	require.NoError(t, err, "a released server must not be polled to the timeout")
 	assert.Equal(t, BuildStatusCompleted, build.Status)
 	assert.Positive(t, artifactReads, "the tag check is what answered")
@@ -516,7 +516,7 @@ func TestWaitForBuild_ServerWithoutImageApplied_WaitsWhileTagIsStale(t *testing.
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForBuild("art-1", "b-2", time.Millisecond, 20*time.Millisecond, nil)
+	_, err := WaitForBuild(t.Context(), "art-1", "b-2", time.Millisecond, 20*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "still not using its image")
 }
@@ -552,7 +552,7 @@ func TestWaitForBuild_ExplicitFalseIsNotSecondGuessed(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForBuild("art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
+	_, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
 	require.Error(t, err, "the server said not yet")
 	assert.Zero(t, artifactReads, "an answered question is not asked again")
 }
@@ -698,6 +698,46 @@ func TestGetArtifactBuildLogs_ReadsTheOTELStream(t *testing.T) {
 	assert.NotEmpty(t, entries[0].Raw, "OTEL record preserved for JSON passthrough")
 }
 
+// One line is all the hint needs, so the check asks for one page of one and
+// tells a stream with nothing from a stream it could not read.
+func TestBuildLogsAvailable(t *testing.T) {
+	serve := func(t *testing.T, handler http.HandlerFunc) {
+		t.Helper()
+		installSkipAuth(t)
+
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+		installEndpoint(t, srv.URL)
+	}
+
+	t.Run("captured, asking for one line", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "1", r.URL.Query().Get("limit"), "a boolean must not drain every page")
+			fmt.Fprint(w, logsPage("", logEntryDoc("INFO", "hi")))
+		})
+		assert.Equal(t, LogsCaptured, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("absent on an empty page", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, logsPage("")) })
+		assert.Equal(t, LogsAbsent, BuildLogsAvailable("art-1", "b-1"))
+	})
+
+	t.Run("unknown on a fetch error", func(t *testing.T) {
+		serve(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) })
+		assert.Equal(t, LogsUnknown, BuildLogsAvailable("art-1", "b-1"))
+	})
+}
+
+func TestBuildFailureMessage(t *testing.T) {
+	require.EqualError(t, BuildFailureMessage("art-1", "b-1", BuildStatusFailed, LogsCaptured),
+		"build b-1 ended with status FAILED; see 'dr artifact build logs art-1 b-1'")
+	require.EqualError(t, BuildFailureMessage("art-1", "b-1", BuildStatusCancelled, LogsAbsent),
+		"build b-1 ended with status CANCELLED; no log lines have been captured for it yet, 'dr artifact build logs art-1 b-1' shows any that arrive")
+	require.EqualError(t, BuildFailureMessage("art-1", "b-1", BuildStatusFailed, LogsUnknown),
+		"build b-1 ended with status FAILED; its logs could not be read just now, try 'dr artifact build logs art-1 b-1'")
+}
+
 func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 	installSkipAuth(t)
 
@@ -707,7 +747,7 @@ func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 		page := atomic.AddInt32(&hits, 1)
 
 		// IN_PROGRESS, then COMPLETED with the image not yet applied, then
-		// applied. The middle state is the window RAPTOR-20311 is about:
+		// applied. The middle state is the window the fix is about:
 		// --wait must poll through it rather than return there.
 		status, applied := BuildStatusInProgress, "false"
 		if page >= 2 {
@@ -731,7 +771,7 @@ func TestWaitForBuild_TerminalCompletedReturnsNil(t *testing.T) {
 
 	var ticks int
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, func(*Build) {
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, time.Second, func(*Build) {
 		ticks++
 	})
 	require.NoError(t, err)
@@ -758,7 +798,7 @@ func TestWaitForBuild_CompletedButNeverAppliedTimesOutDistinctly(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, 20*time.Millisecond, nil)
 	require.Error(t, err)
 	require.NotNil(t, build)
 	assert.Equal(t, BuildStatusCompleted, build.Status)
@@ -783,7 +823,7 @@ func TestWaitForBuild_FailedReturnsError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	build, err := WaitForBuild("art-1", "b-1", time.Millisecond, time.Second, nil)
+	build, err := WaitForBuild(t.Context(), "art-1", "b-1", time.Millisecond, time.Second, nil)
 	require.Error(t, err)
 	require.NotNil(t, build, "FAILED returns final Build alongside error")
 	assert.Equal(t, BuildStatusFailed, build.Status)
@@ -805,7 +845,7 @@ func TestWaitForBuild_Timeout(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := WaitForBuild("art-1", "b-1", 5*time.Millisecond, 25*time.Millisecond, nil)
+	_, err := WaitForBuild(t.Context(), "art-1", "b-1", 5*time.Millisecond, 25*time.Millisecond, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timeout")
 }

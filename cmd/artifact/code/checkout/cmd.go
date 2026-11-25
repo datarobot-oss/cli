@@ -29,6 +29,7 @@ import (
 	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/workload"
+	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/wapi"
 	"github.com/spf13/cobra"
 )
@@ -134,7 +135,7 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 	format.StateNotice(cmd.ErrOrStderr(), wapi.EnsureMigrated(dir))
 
 	if !wapi.Exists(dir) {
-		return errors.New("not linked to an artifact. Run 'dr artifact code init <id>' first")
+		return fmt.Errorf("not linked to an artifact. Run 'dr artifact code init <id>%s' first", manifest.DirFlag(dir))
 	}
 
 	if clean {
@@ -147,12 +148,19 @@ func runCheckout(cmd *cobra.Command, args []string, outputFormat outputformat.Ou
 		return runClean(cmd.OutOrStdout(), outputFormat, dir, arg)
 	}
 
-	verArg, err := resolveVersionArg(cmd.ErrOrStderr(), args, yes, deps.PromptVersion)
+	// Before the version question: a project with nothing synced has no
+	// version to name, and asking for one would only fail after the answer.
+	cfg, err := syncedCatalog(dir)
 	if err != nil {
 		return err
 	}
 
-	return runDownload(cmd.OutOrStdout(), outputFormat, dir, verArg, deps)
+	verArg, err := resolveVersionArg(cmd.ErrOrStderr(), dir, args, yes, deps.PromptVersion)
+	if err != nil {
+		return err
+	}
+
+	return runDownload(cmd.OutOrStdout(), outputFormat, dir, cfg, verArg, deps)
 }
 
 func resolveProjectDir(dirFlag string, yes bool, prompt dirprompt.PromptFunc) (string, error) {
@@ -169,7 +177,7 @@ func resolveProjectDir(dirFlag string, yes bool, prompt dirprompt.PromptFunc) (s
 	return abs, nil
 }
 
-func resolveVersionArg(stderr io.Writer, args []string, yes bool, prompt dirprompt.PromptNoDefaultFunc) (string, error) {
+func resolveVersionArg(stderr io.Writer, dir string, args []string, yes bool, prompt dirprompt.PromptNoDefaultFunc) (string, error) {
 	if len(args) == 1 {
 		return args[0], nil
 	}
@@ -178,7 +186,11 @@ func resolveVersionArg(stderr io.Writer, args []string, yes bool, prompt dirprom
 		return "", errors.New("a version argument is required (or pass --clean to remove checkouts)")
 	}
 
-	fmt.Fprintln(stderr, "Run 'dr artifact code versions' to list available versions.")
+	// Prose rather than a Next: block, because this is help with the question
+	// below and the command is not done. The --dir goes along: the directory
+	// may have been passed or prompted for, and a bare command run from here
+	// would list some other project.
+	fmt.Fprintf(stderr, "Run 'dr artifact code versions%s' to list available versions.\n", manifest.DirFlag(dir))
 
 	return prompt("Code version ID")
 }

@@ -103,11 +103,11 @@ Configuration initialized. Using config file: /Users/username/.config/datarobot/
 
 Plugin packaging and development tools for creating and publishing CLI plugins. These subcommands are for plugin authors and registry maintainers.
 
-| Subcommand | Description |
-|------------|-------------|
-| `add <path-to-index.json>` | Add a packaged plugin version to a registry file (index.json). |
-| `publish <plugin-dir>` | Package and publish a plugin in one step (package, copy to plugins dir, update index). |
-| `package <plugin-dir>` | Package a plugin directory into a distributable .tar.xz archive. |
+| Subcommand                 | Description                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------- |
+| `add <path-to-index.json>` | Add a packaged plugin version to a registry file (index.json).                         |
+| `publish <plugin-dir>`     | Package and publish a plugin in one step (package, copy to plugins dir, update index). |
+| `package <plugin-dir>`     | Package a plugin directory into a distributable .tar.xz archive.                       |
 
 See the [Plugin development](../development/plugins.md) guide for details. For installing and managing plugins as a user, use the top-level [`dr plugin`](plugins.md) command.
 

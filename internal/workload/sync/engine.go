@@ -30,6 +30,23 @@ type Options struct {
 	DryRun    bool
 	ShowDiffs bool
 	Yes       bool
+	// PushOnly uploads local changes and leaves every remote-side change
+	// as it is on both sides: nothing is downloaded or removed locally, and
+	// the base keeps the old entry so the next plain sync still sees it.
+	PushOnly bool
+
+	// Quiet keeps the phases from logging the symlink and divergence notices.
+	// For a caller that already ran another engine over the same tree and
+	// reported them, so they are not said twice in one run.
+	Quiet bool
+
+	// Verify opts into the network-cost integrity checks: a remote
+	// round-trip even when the artifact is not drifted, and post-apply
+	// verification that the server holds what was uploaded. It changes how
+	// much a run checks, not whether the run applies its plan, so it must
+	// never be treated as a preview mode: previewOnly must not consider it,
+	// and a Verify run without DryRun/ShowDiffs still reaches Execute.
+	Verify bool
 }
 
 // Result is the outcome of a successful sync.
@@ -40,8 +57,22 @@ type Result struct {
 	DownloadedCount int
 	DeletedCount    int
 	ConflictCount   int
-	ConflictCopies  []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
-	Duration        time.Duration
+
+	// The two halves of DeletedCount: local files a remote deletion removed,
+	// and remote files a local deletion removed.
+	LocalDeletedCount  int
+	RemoteDeletedCount int
+	ConflictCopies     []string // every *.LOCAL.<ts> backup made this sync (conflicts and overwritten/deleted downloads alike)
+	Duration           time.Duration
+
+	// ExecutableNotice warns that image builds drop the executable bit of the
+	// files it names; "" when this sync uploaded none. Returned rather than
+	// logged, because up's progress display silences the stderr logger.
+	ExecutableNotice string
+
+	// SkippedSymlinks are the links the walk did not follow, for a caller
+	// that ran the engine quietly and has not named them yet.
+	SkippedSymlinks []SkippedSymlink
 }
 
 var ErrNoPlan = errors.New("sync engine: Execute called before Plan")
@@ -101,13 +132,18 @@ type Engine struct {
 	artifact      *workload.Artifact
 	remoteVer     string
 	drifted       bool
+	execBackfill  bool
+	remoteListed  bool
+	execNotice    string
 	local         LocalManifest
 	remote        RemoteManifest
 	plan          *SyncPlan
+	divergences   []Divergence
 	lock          *SyncLock
 	rollback      *Rollback
 	newCatalogID  string
 	newVersionID  string
+	uploadOutcome *UploadOutcome
 	localBackups  []string
 	result        *Result
 	startedAt     time.Time
@@ -115,6 +151,24 @@ type Engine struct {
 	migrationNote string
 	ignoreNotice  string
 	lockedNote    string
+
+	// skippedSymlinks holds symlinks the walk did not follow, filtered
+	// through the ignore matcher so deliberately-ignored or system-excluded
+	// links are absent. Populated in Phase 2; exposed by the display layer.
+	skippedSymlinks []SkippedSymlink
+
+	// linkedPaths are the paths of the links the walk followed. Populated in
+	// Phase 2; Phase 3 pushes everything at or under them and pulls nothing.
+	linkedPaths []string
+
+	// aliases maps each file listed under a followed link to the path the
+	// project lists it under in its own right. Populated in Phase 2.
+	aliases map[string]string
+
+	// unfollowedLinks are the paths of every other link, ignored ones
+	// included. Phase 3 pulls nothing at or under them either: the write
+	// would go through the link, possibly out of the project.
+	unfollowedLinks []string
 
 	lockfileFn        LockfileRunner
 	lockfileCheckFn   LockfileChecker
@@ -173,12 +227,20 @@ func (e *Engine) Plan() (*SyncPlan, error) {
 		return nil, e.joinReleaseErr(err)
 	}
 
+	// An empty plan never reaches the state phase, so what a backfill
+	// learned is written here; a preview writes nothing.
+	if !e.previewOnly() && e.plan.IsEmpty() {
+		if err := persistExecutableBackfill(e); err != nil {
+			log.Debug("Could not record the executable bits", "error", err)
+		}
+	}
+
 	return e.plan, nil
 }
 
-// Execute runs phases 5-6 against the plan returned by Plan. The lock
-// is released on completion (success or error). A failure to release
-// the lock is joined into the returned error so callers see both.
+// Execute runs the execute and state phases against the plan returned by
+// Plan. The lock is released on completion (success or error). A failure to
+// release the lock is joined into the returned error so callers see both.
 func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 	if e.plan == nil || plan == nil {
 		return nil, e.joinReleaseErr(ErrNoPlan)
@@ -192,12 +254,15 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 
 	defer func() {
 		retErr = e.joinReleaseErr(retErr)
+		if retErr != nil {
+			retErr = &ExecuteError{Size: planSize(e.plan), Err: retErr}
+		}
 	}()
 
 	if err := runPhases(
 		e,
 		phase{name: "execute", run: phase5Execute},
-		phase{name: "state", run: phase6State},
+		phase{name: "state", run: phase7State},
 	); err != nil {
 		return nil, err
 	}
@@ -206,20 +271,28 @@ func (e *Engine) Execute(plan *SyncPlan) (_ *Result, retErr error) {
 }
 
 // Run is Plan + Execute. With DryRun or ShowDiffs it stops after Plan.
+// An empty plan normally short-circuits before Execute too, but a --verify
+// run that recorded BASE-vs-REMOTE divergences must still run the state
+// phase: the plan has nothing to apply, yet the manifest on disk is a lie
+// about the server, and that phase is what rewrites it from the real remote.
+// The sharpest shape — BASE poisoned to A while disk and server both hold B
+// — classifies as CONVERGED and plans nothing, so without this the poison
+// survives the very run that detected it.
 func (e *Engine) Run() (*Result, error) {
 	plan, err := e.Plan()
 	if err != nil {
 		return nil, err
 	}
 
-	if e.previewOnly() || plan.IsEmpty() {
+	if e.previewOnly() || (plan.IsEmpty() && len(e.divergences) == 0) {
 		if relErr := e.releaseLock(); relErr != nil {
 			return nil, fmt.Errorf("release lock: %w", relErr)
 		}
 
 		return &Result{
-			OldVersion: ptrOrEmpty(e.config.LastSyncedVersionID),
-			Duration:   e.nowFn().Sub(e.startedAt),
+			OldVersion:      ptrOrEmpty(e.config.LastSyncedVersionID),
+			Duration:        e.nowFn().Sub(e.startedAt),
+			SkippedSymlinks: e.skippedSymlinks,
 		}, nil
 	}
 
@@ -255,6 +328,30 @@ func (e *Engine) IgnoreFileNotice() string { return e.ignoreNotice }
 // preview can reach it, and a preview that printed a plan without saying so
 // would read as a sync that is going to work.
 func (e *Engine) LockedNotice() string { return e.lockedNote }
+
+// Divergences reports the paths where BASE (manifest.json) and the real
+// REMOTE listing disagree, as detected in Phase 2 of a --verify run. A
+// non-drifted artifact without --verify never fetches the remote (the fast
+// path copies BASE into REMOTE), so an empty result can mean "checked and
+// clean", "nothing was checked", or "nothing can be checked" (first sync) —
+// only a --verify run with a fetched remote populates the slice.
+//
+// The findings are diagnostics, not errors: the plan already reconciles them
+// because the real remote is in hand, and the exit status must not change.
+func (e *Engine) Divergences() []Divergence { return e.divergences }
+
+// Verified reports whether the BASE-vs-REMOTE check ran: --verify was given
+// and the artifact had not moved, so an empty Divergences means clean rather
+// than unchecked.
+func (e *Engine) Verified() bool { return e.opts.Verify && !e.drifted && e.remote != nil }
+
+// SkippedSymlinks reports the symlinks the walk did not follow, filtered
+// through the ignore matcher so deliberately-ignored or system-excluded
+// links are absent. Each entry distinguishes a single skipped file from an
+// entire omitted subtree (a directory symlink prunes all of its children).
+// The findings are diagnostics: the plan already excludes them, and the
+// exit status must not change.
+func (e *Engine) SkippedSymlinks() []SkippedSymlink { return e.skippedSymlinks }
 
 // previewOnly reports that this run stops after Plan and sends nothing to the
 // platform, which is what makes the artifact's own mutability beside the point

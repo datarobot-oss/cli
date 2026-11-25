@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/cmd/self/completion/powershell"
 	"github.com/datarobot/cli/internal/fsutil"
 	"github.com/datarobot/cli/internal/misc/reader"
 	internalShell "github.com/datarobot/cli/internal/shell"
@@ -261,22 +261,9 @@ func getUninstallPaths(shell internalShell.Shell) []string {
 	case internalShell.Fish:
 		return fishCompletionPaths(homeDir)
 	case internalShell.PowerShell:
-		var paths []string
-
-		if runtime.GOOS == "windows" {
-			documentsPath, err := os.UserHomeDir()
-			if err != nil {
-				return []string{}
-			}
-
-			documentsPath = filepath.Join(documentsPath, "Documents")
-
-			// PowerShell Core
-			paths = append(paths, filepath.Join(documentsPath, "PowerShell", "Microsoft.PowerShell_profile.ps1"))
-			// Windows PowerShell
-			paths = append(paths, filepath.Join(documentsPath, "WindowsPowerShell", "Microsoft.PowerShell_profile.ps1"))
-		} else {
-			paths = append(paths, filepath.Join(homeDir, ".config", "powershell", "Microsoft.PowerShell_profile.ps1"))
+		paths, err := powershell.ProfilePaths()
+		if err != nil {
+			return []string{}
 		}
 
 		return paths
@@ -384,6 +371,9 @@ func uninstallPowerShell() bool {
 	return removed
 }
 
+// removePowerShellCompletionFromProfile removes the completion blocks the CLI wrote into a profile
+// and reports whether it changed the file. A line the user wrote stays, even when it loads
+// completion.
 func removePowerShellCompletionFromProfile(profilePath string) bool {
 	if !fsutil.FileExists(profilePath) {
 		return false
@@ -394,17 +384,21 @@ func removePowerShellCompletionFromProfile(profilePath string) bool {
 		return false
 	}
 
-	// Check if completion is configured
-	if !strings.Contains(string(content), version.CliName+" completion powershell") {
+	if err := powershell.CheckEditable(content); err != nil {
+		fmt.Printf("%s Skipped %s: %s. Save it as UTF-8 to let the CLI edit it.\n", warnStyle.Render("⚠"), profilePath, err)
+
 		return false
 	}
 
-	// Remove completion section
-	newContent := removeCompletionSection(string(content))
+	newContent := powershell.RemoveBlocks(string(content))
+	if newContent == string(content) {
+		warnIfCompletionLeft(profilePath, string(content))
 
-	// Write back
-	if err := os.WriteFile(profilePath, []byte(newContent), 0o644); err != nil {
-		fmt.Printf("%s Failed to update: %s\n", warnStyle.Render("⚠"), profilePath)
+		return false
+	}
+
+	if err := fsutil.AtomicWriteFile(profilePath, []byte(newContent)); err != nil {
+		fmt.Printf("%s Failed to update %s: %v\n", warnStyle.Render("⚠"), profilePath, err)
 
 		return false
 	}
@@ -414,47 +408,10 @@ func removePowerShellCompletionFromProfile(profilePath string) bool {
 	return true
 }
 
-func isCompletionMarker(line string) bool {
-	if strings.Contains(line, "# "+version.CliName+" completion") {
-		return true
+// warnIfCompletionLeft tells the user when a profile still loads completion through a line the CLI
+// did not write, so "uninstalled" does not leave them with an active completion.
+func warnIfCompletionLeft(profilePath, content string) {
+	if powershell.LoadsCompletion(content) {
+		fmt.Printf("%s %s loads completion with a line the CLI did not write. Remove that line by hand.\n", warnStyle.Render("⚠"), profilePath)
 	}
-
-	for _, alias := range version.CliAliases {
-		if strings.Contains(line, "# "+alias+" alias completion") {
-			return true
-		}
-	}
-
-	return false
-}
-
-func removeCompletionSection(content string) string {
-	lines := strings.Split(content, "\n")
-	newLines := make([]string, 0, len(lines))
-
-	skipNext := 0
-	for _, line := range lines {
-		if skipNext > 0 {
-			skipNext--
-
-			continue
-		}
-
-		// Look for the completion comment
-		if isCompletionMarker(line) {
-			// Skip this line and the next 3 lines (the if block)
-			skipNext = 3
-
-			// Also skip preceding blank line if present
-			if len(newLines) > 0 && strings.TrimSpace(newLines[len(newLines)-1]) == "" {
-				newLines = newLines[:len(newLines)-1]
-			}
-
-			continue
-		}
-
-		newLines = append(newLines, line)
-	}
-
-	return strings.Join(newLines, "\n")
 }

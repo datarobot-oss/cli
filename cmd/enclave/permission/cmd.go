@@ -25,20 +25,33 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "permission",
-		Short: "Inspect and manage who can create enclaves.",
+		Short: "Inspect and manage who can create enclaves, pin workloads or use the Hub.",
 		Long: `Inspect ("show", "list") or manage ("grant", "revoke") collection-level enclave
 permissions — capabilities that are not tied to any single enclave.
 
-Today the only such permission is "create": the right to register a new
-enclave. A system administrator grants it to org admins and other users, so
-that creating enclaves is delegated as a permission rather than inferred from a
-role.
+There are three, and they are independent (none implies another):
+  create   the right to register a new enclave. A system administrator grants
+           it to org admins and other users, so that creating enclaves is
+           delegated as a permission rather than inferred from a role.
+  pin      the right to pin a workload to one chosen enclave
+           ("dr workload create --enclave"), overriding the scheduler. Granted
+           to users and groups (not organizations), by a system administrator
+           (any user or group) or an org admin (users and groups in their own
+           organization). A group grant lets its members pin. A system
+           administrator also needs a pin grant to pin.
+  hub      the right to run workloads on the Hub. Checked only when the
+           organization requires it (WORKLOAD_REQUIRE_HUB_PERMISSION): a workload
+           with no use case, or a use case without Enclaves, runs on the Hub and
+           needs it. Granted like pin: to users and
+           groups, by a system administrator or an org admin in their own
+           organization.
 
 Use "dr enclave access" instead to manage access to an existing enclave.
 
 These commands take effect only when the server has ENCLAVE_RBAC_ENABLED=true;
-otherwise the call succeeds but changes nothing. Granting and revoking require
-a system administrator.`,
+otherwise create and pin succeed but change nothing, and hub is refused. Granting
+and revoking create require a system administrator; pin and hub can also be
+managed by an org admin, for users and groups in their own organization.`,
 	}
 
 	cmd.AddCommand(

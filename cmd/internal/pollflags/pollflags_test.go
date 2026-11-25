@@ -56,6 +56,18 @@ func TestRegisterWithDefaults_RejectsNonPositiveDurations(t *testing.T) {
 	}
 }
 
+func TestRegisterWithDefaults_RejectsNonDurations(t *testing.T) {
+	cmd := &cobra.Command{}
+
+	var s Set
+
+	RegisterWithDefaults(cmd, &s, time.Second, time.Minute, "wait usage")
+
+	err := cmd.ParseFlags([]string{"--poll-interval", "soon"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `must be a duration like "30s" or "5m"`)
+}
+
 func TestRegisterWithDefaults_ParsesPositiveDurations(t *testing.T) {
 	cmd := &cobra.Command{}
 

@@ -26,7 +26,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/state"
 	"github.com/datarobot/cli/tui"
@@ -96,4 +98,94 @@ func setUnknownArgGuards(root *cobra.Command) {
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		return cmd.Help()
 	}
+}
+
+// parseLeadingGlobalFlags parses only the root-level flags that appear before
+// the first positional argument. Plugin discovery happens before Cobra command
+// resolution, so this pre-pass is what lets a command like
+// `dr --plugin-discovery-timeout=0s plugin-name` disable discovery before the
+// plugin command would otherwise need to be registered.
+func parseLeadingGlobalFlags(root *cobra.Command, args []string) {
+	leading := leadingGlobalFlagArgs(root, args)
+	if len(leading) == 0 {
+		return
+	}
+
+	// Malformed flags must still be reported by Cobra's real parse path, where
+	// usage and error handling are consistent. This pre-pass only seeds flag
+	// values needed before discovery, so log and continue on parse failures.
+	if err := root.ParseFlags(leading); err != nil {
+		log.Debug("Failed to pre-parse leading global flags", "error", err)
+	}
+}
+
+// leadingGlobalFlagArgs mirrors the small part of Cobra's Traverse parser that
+// collects root flags before the first positional token. Cobra itself cannot be
+// reused here because it only calls ParseFlags after a child command matches,
+// and plugin commands are not children until discovery has already run.
+func leadingGlobalFlagArgs(root *cobra.Command, args []string) []string {
+	var leading []string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		if arg == "--" {
+			return leading
+		}
+
+		if isLongFlagArg(arg) {
+			leading = append(leading, arg)
+
+			if longFlagConsumesValue(root, arg) && i+1 < len(args) {
+				i++
+				leading = append(leading, args[i])
+			}
+
+			continue
+		}
+
+		if isShortFlagArg(arg) {
+			leading = append(leading, arg)
+
+			if shortFlagConsumesValue(root, arg) && i+1 < len(args) {
+				i++
+				leading = append(leading, args[i])
+			}
+
+			continue
+		}
+
+		return leading
+	}
+
+	return leading
+}
+
+func isLongFlagArg(arg string) bool {
+	return strings.HasPrefix(arg, "--")
+}
+
+func isShortFlagArg(arg string) bool {
+	return strings.HasPrefix(arg, "-") && arg != "-"
+}
+
+func longFlagConsumesValue(root *cobra.Command, arg string) bool {
+	if strings.Contains(arg, "=") {
+		return false
+	}
+
+	name := strings.TrimPrefix(arg, "--")
+	flag := root.PersistentFlags().Lookup(name)
+
+	return flag != nil && flag.NoOptDefVal == ""
+}
+
+func shortFlagConsumesValue(root *cobra.Command, arg string) bool {
+	if len(arg) != 2 {
+		return false
+	}
+
+	flag := root.PersistentFlags().ShorthandLookup(arg[1:])
+
+	return flag != nil && flag.NoOptDefVal == ""
 }

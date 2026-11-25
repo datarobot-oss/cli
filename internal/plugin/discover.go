@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"os/exec"
@@ -38,6 +39,13 @@ const PluginRegistryTerminology = "registry"
 // PluginRegistryURL is the default URL for the remote plugin registry.
 const PluginRegistryURL = "https://cli.datarobot.com/plugins/index.json"
 
+// DiscoveryTimeoutKey is the global flag/env/config key for plugin discovery.
+const DiscoveryTimeoutKey = "plugin-discovery-timeout"
+
+// DefaultDiscoveryTimeout is the startup discovery timeout used when no
+// execution-time flag or environment override is present.
+const DefaultDiscoveryTimeout = 2 * time.Second
+
 // TODO: Consider adding ResetRegistry() for testing, as package-level state makes unit tests harder.
 var registry = &DiscoveredPluginsRegistry{}
 
@@ -48,10 +56,43 @@ var registry = &DiscoveredPluginsRegistry{}
 // TODO: Consider file-based caching with TTL to avoid manifest fetching on every CLI invocation.
 func GetPlugins() ([]DiscoveredPlugin, []PluginConflict) {
 	registry.once.Do(func() {
-		registry.plugins, registry.conflicts = DiscoverPluginsWithContext(context.Background())
+		timeout := DiscoveryTimeout()
+		if timeout <= 0 {
+			log.Debug("Plugin discovery disabled", "timeout", timeout)
+
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		registry.plugins, registry.conflicts = DiscoverPluginsWithContext(ctx)
 	})
 
 	return registry.plugins, registry.conflicts
+}
+
+// DiscoveryTimeout resolves discovery timeout values outside Cobra startup.
+// Env is checked explicitly because command registration runs before viper's
+// env binding is initialized; viper remains the fallback for tests and for
+// lazy GetPlugins calls that happen after config initialization.
+func DiscoveryTimeout() time.Duration {
+	if raw := os.Getenv("DATAROBOT_CLI_PLUGIN_DISCOVERY_TIMEOUT"); raw != "" {
+		timeout, err := time.ParseDuration(raw)
+		if err != nil {
+			log.Debug("Invalid plugin discovery timeout environment value", "value", raw, "error", err)
+
+			return DefaultDiscoveryTimeout
+		}
+
+		return timeout
+	}
+
+	if viperx.IsSet(DiscoveryTimeoutKey) {
+		return viperx.GetDuration(DiscoveryTimeoutKey)
+	}
+
+	return DefaultDiscoveryTimeout
 }
 
 // PrimeCache seeds the discovery cache with an already-computed plugin list
@@ -294,11 +335,11 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 	var manifest PluginManifest
 
 	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %w", ErrCorruptInstall, err)
 	}
 
 	if manifest.Name == "" {
-		return nil, nil, errMissingManifestField("name")
+		return nil, nil, fmt.Errorf("%w: %w", ErrCorruptInstall, errMissingManifestField("name"))
 	}
 
 	if seen[manifest.Name] {
@@ -321,7 +362,7 @@ func loadManagedPlugin(dir, name string, seen map[string]bool) (*DiscoveredPlugi
 // resolvePlatformExecutable returns the appropriate script path for the current platform.
 func resolvePlatformExecutable(pluginDir string, manifest *PluginManifest) (string, error) {
 	if manifest.Scripts == nil {
-		return "", errors.New("managed plugin missing scripts configuration")
+		return "", fmt.Errorf("%w: missing scripts configuration", ErrCorruptInstall)
 	}
 
 	var scriptPath string
@@ -333,13 +374,18 @@ func resolvePlatformExecutable(pluginDir string, manifest *PluginManifest) (stri
 	}
 
 	if scriptPath == "" {
-		return "", errors.New("no script configured for platform: " + runtime.GOOS)
+		return "", fmt.Errorf("%w: no script configured for platform %s", ErrCorruptInstall, runtime.GOOS)
 	}
 
 	fullPath := filepath.Join(pluginDir, scriptPath)
 
-	// Verify script exists
+	// Verify the script exists. A missing script is a repairable corruption;
+	// any other stat failure (e.g. permission denied) is reported as-is.
 	if _, err := os.Stat(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("%w: %w", ErrCorruptInstall, err)
+		}
+
 		return "", err
 	}
 
@@ -468,6 +514,14 @@ func getManifest(ctx context.Context, executable string) (*PluginManifest, error
 	name, cmdArgs := pluginCommandArgs(executable, PluginManifestFlag)
 
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
+
+	// The timeout kills the plugin binary, but a shell-script plugin can leave
+	// an orphaned child holding the stdout pipe, which would block Output()
+	// until that child exits and defeat the timeout in wall-clock terms.
+	// WaitDelay closes the pipes shortly after the process dies. Unlike plugin
+	// execution (exec.go, 5s graceful stop), a manifest probe is read-only and
+	// its result is discarded on error, so the grace is short.
+	cmd.WaitDelay = 100 * time.Millisecond
 
 	output, err := cmd.Output()
 	if err != nil {

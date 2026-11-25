@@ -342,15 +342,15 @@ my-template/
 
 Discovery rules:
 
-| Rule | Behavior |
-|------|----------|
-| Root | Only `.datarobot/` at the repository root (or at `--output`) is scanned. |
-| Pattern | Any file matching `*.yaml` or `*.yml`. Filenames are not significant. |
-| Recursion | Subdirectories are walked, up to 5 levels below `.datarobot/`. |
-| Hidden directories | Skipped, apart from `.datarobot` itself. |
-| Ordering | Files are sorted by full path, then processed in that order. |
-| Non-prompt YAML | Files that don't match the prompt schema are silently skipped, so copier answer files, version manifests, and other config can live alongside prompts. |
-| Duplicates | If two files define the same `env` (or `key`), the first one in path order wins and the rest are ignored. |
+| Rule               | Behavior                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Root               | Only `.datarobot/` at the repository root (or at `--output`) is scanned.                                                                               |
+| Pattern            | Any file matching `*.yaml` or `*.yml`. Filenames are not significant.                                                                                  |
+| Recursion          | Subdirectories are walked, up to 5 levels below `.datarobot/`.                                                                                         |
+| Hidden directories | Skipped, apart from `.datarobot` itself.                                                                                                               |
+| Ordering           | Files are sorted by full path, then processed in that order.                                                                                           |
+| Non-prompt YAML    | Files that don't match the prompt schema are silently skipped, so copier answer files, version manifests, and other config can live alongside prompts. |
+| Duplicates         | If two files define the same `env` (or `key`), the first one in path order wins and the rest are ignored.                                              |
 
 > [!TIP]
 > Because non-conforming YAML is skipped rather than rejected, a malformed prompt
@@ -379,25 +379,25 @@ sections are processed in alphabetical order.
 
 Every prompt supports the following fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `env` | string | Environment variable to write to `.env`. Required unless `key` is given. |
-| `key` | string | Identifier used when the prompt does not map to an environment variable. Written to `.env` as a comment. |
-| `help` | string | Description shown to the user and emitted as a comment above the variable. Strongly recommended. |
-| `type` | string | `string` (default) or `secret_string` for masked input. See also `llmgw_catalog` below. |
-| `default` | string | Initial value. A prompt already sitting at its default is not shown unless `always_prompt` or `--all` is set. |
-| `optional` | bool | Allows the prompt to be left blank. |
-| `multiple` | bool | Renders `options` as checkboxes; selections are stored comma-separated. |
-| `generate` | bool | Auto-generates a random value when empty. Only applies to `secret_string`. |
-| `always_prompt` | bool | Shows the prompt even when its default already answers it. |
-| `options` | list | Choices for a selection prompt. |
+| Field           | Type   | Description                                                                                                   |
+| --------------- | ------ | ------------------------------------------------------------------------------------------------------------- |
+| `env`           | string | Environment variable to write to `.env`. Required unless `key` is given.                                      |
+| `key`           | string | Identifier used when the prompt does not map to an environment variable. Written to `.env` as a comment.      |
+| `help`          | string | Description shown to the user and emitted as a comment above the variable. Strongly recommended.              |
+| `type`          | string | `string` (default) or `secret_string` for masked input. See also `llmgw_catalog` below.                       |
+| `default`       | string | Initial value. A prompt already sitting at its default is not shown unless `always_prompt` or `--all` is set. |
+| `optional`      | bool   | Allows the prompt to be left blank.                                                                           |
+| `multiple`      | bool   | Renders `options` as checkboxes; selections are stored comma-separated.                                       |
+| `generate`      | bool   | Auto-generates a random value when empty. Only applies to `secret_string`.                                    |
+| `always_prompt` | bool   | Shows the prompt even when its default already answers it.                                                    |
+| `options`       | list   | Choices for a selection prompt.                                                                               |
 
 Each entry in `options` supports:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Text shown in the list. |
-| `value` | string | Value stored in `.env`. Defaults to `name`. |
+| Field      | Type   | Description                                                        |
+| ---------- | ------ | ------------------------------------------------------------------ |
+| `name`     | string | Text shown in the list.                                            |
+| `value`    | string | Value stored in `.env`. Defaults to `name`.                        |
 | `requires` | string | Section in the same file to activate when this option is selected. |
 
 ## Interactive configuration
@@ -663,11 +663,11 @@ Error: required variable DATABASE_URL is not set
 
 ## Exit codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success. |
-| 1 | Error (file not found, validation failed, not in repo). |
-| 130 | Interrupted (Ctrl+C). |
+| Code | Meaning                                                 |
+| ---- | ------------------------------------------------------- |
+| 0    | Success.                                                |
+| 1    | Error (file not found, validation failed, not in repo). |
+| 130  | Interrupted (Ctrl+C).                                   |
 
 ## Examples
 

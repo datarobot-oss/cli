@@ -20,6 +20,9 @@ irm https://cli.datarobot.com/winstall | iex
 
 For more installation options, see the [Installation](https://github.com/datarobot-oss/cli/blob/main/README.md#installation) section in the main README.
 
+> [!NOTE]
+> The CLI collects usage analytics linked to your DataRobot user ID. You can opt out at any time. See [Telemetry](user-guide/telemetry.md).
+
 ## Documentation structure
 
 ### 📚 User guide
@@ -30,6 +33,7 @@ End-user documentation for using the CLI:
 - [Quick reference](user-guide/quick-reference.md)&mdash;one-page command reference for the most common commands.
 - [Shell completions](user-guide/shell-completions.md)&mdash;set up command auto-completion for Bash, Zsh, Fish, and PowerShell.
 - [Configuration files](user-guide/configuration.md)&mdash;understanding config file structure, location, and how to manage multiple environments.
+- [Telemetry](user-guide/telemetry.md)&mdash;what usage analytics the CLI collects, where they are sent, and how to opt out.
 
 ### 🎯 Template system
 
@@ -52,7 +56,7 @@ Detailed documentation for each command:
 - [self](commands/self.md)&mdash;CLI utility commands (version, update &mdash; including installing a specific released version, config, completion, and plugin authoring: add, publish, package).
 - [plugins](commands/plugins.md)&mdash;plugin system documentation.
 - [component](commands/component-managed-updates.md)&mdash;component management and updates.
-- [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines; see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.
+- [pipeline](commands/pipeline.md)&mdash;create, run, and schedule AI/ML pipelines (Private Preview on DataRobot 11.15 and later, behind `DATAROBOT_CLI_FEATURE_PIPELINE=true`); see the [pipelines command reference](commands/pipelines-reference.md) for the per-endpoint breakdown.
 - [artifact](commands/artifact.md): build and manage the container artifacts that back workloads (register a spec, sync code, build images, lock).
 - [workload](commands/workload.md): deploy and operate workloads created from artifacts (alias `wl`), from create through start, stop, status, endpoint and logs.
 - [artifact and workload spec](commands/workload-spec.md): every field the two spec files accept, environment variables and secrets, and one walkthrough from source code to a running URL.

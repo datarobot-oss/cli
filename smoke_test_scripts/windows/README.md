@@ -32,9 +32,18 @@ Expected output: `Shell detection correctly identified PowerShell`
 
 Expected output: `Shell detection correctly identified cmd.exe`
 
+## PowerShell Profile Completion Test
+
+`run_powershell_profile_test.ps1` installs completion into the PowerShell profile and checks that a new session loads it without printing anything. It runs for PowerShell 7 (`pwsh`), Windows PowerShell 5.1 (`powershell.exe`), and a machine that has both, then uninstalls, with `dr` and with `uninstall.ps1`, and checks that the profile still loads. It needs `dr`, `pwsh`, and `powershell.exe` on `PATH`, and it replaces the PowerShell profiles, so it runs only where `CI` is set:
+
+```powershell
+$env:CI = "1"; .\smoke_test_scripts\windows\run_powershell_profile_test.ps1
+```
+
 ## Files
 
 - `run_smoke_test.ps1` - Main smoke test suite (includes shell detection)
+- `run_powershell_profile_test.ps1` - Standalone PowerShell profile completion test
 - `run_shell_detection_test_powershell.ps1` - Standalone PowerShell detection test
 - `run_shell_detection_test_cmd.bat` - Standalone cmd.exe detection test
 

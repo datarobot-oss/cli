@@ -61,8 +61,18 @@ jobs:
       debug-brew: ${{ inputs.debug_brew || false }}
       test-script: './smoke_test_scripts/run_self_update_smoke_test.sh'
 
+  # Acceptance tests, not smoke tests: live `dr workload` / `dr artifact`
+  # scenarios that create real resources and wait on platform rollouts. They
+  # belong here (visibility + Slack on failure), not in the release gate.
+  workload-acceptance-test:
+    uses: ./.github/workflows/_workload-acceptance.yaml
+    with:
+      version: ${{ github.sha }}
+    secrets:
+      DR_API_TOKEN: ${{ secrets.DR_API_TOKEN }}
+
   notify-failure:
-    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test, self-update-smoke-test]
+    needs: [build-windows, smoke-test, windows-smoke-test, installs-smoke-test, self-update-smoke-test, workload-acceptance-test]
     if: failure()
     runs-on: ubuntu-latest
     name: Notify Slack on Failure
@@ -86,6 +96,9 @@ jobs:
           fi
           if [[ "${{ needs.self-update-smoke-test.result }}" == "failure" ]]; then
             failed="${failed}Self-Update Tests, "
+          fi
+          if [[ "${{ needs.workload-acceptance-test.result }}" == "failure" ]]; then
+            failed="${failed}Workload/Artifact Acceptance Tests, "
           fi
           # Trim trailing comma+space
           failed="${failed%, }"

@@ -7,11 +7,11 @@ The tool registry lives in `internal/dependencies/registry/` and drives two beha
 
 ## Architecture
 
-| File | Purpose |
-|------|---------|
-| `registry_managers.go` | Defines every known package/version manager and how to detect it |
-| `registry_types_and_methods.go` | Core types (`ToolInfo`, `ManagerStrategy`, `FallbackStrategy`) and `DetectEnvironment` / `SelectInstallStrategy` |
-| `<tool>.go` (e.g. `python.go`, `node.go`) | Registers one tool into `ToolRegistry` via `init()` |
+| File                                      | Purpose                                                                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `registry_managers.go`                    | Defines every known package/version manager and how to detect it                                                 |
+| `registry_types_and_methods.go`           | Core types (`ToolInfo`, `ManagerStrategy`, `FallbackStrategy`) and `DetectEnvironment` / `SelectInstallStrategy` |
+| `<tool>.go` (e.g. `python.go`, `node.go`) | Registers one tool into `ToolRegistry` via `init()`                                                              |
 
 ---
 
@@ -51,10 +51,10 @@ func init() {
 
 Use `{version}` and `{version_mm}` in commands when install commands accept a version:
 
-| Placeholder | Example input | Substituted value |
-|-------------|--------------|-------------------|
-| `{version}` | `3.9.6` | `3.9.6` |
-| `{version_mm}` | `3.9.6` | `3.9` (major.minor only) |
+| Placeholder    | Example input | Substituted value        |
+| -------------- | ------------- | ------------------------ |
+| `{version}`    | `3.9.6`       | `3.9.6`                  |
+| `{version_mm}` | `3.9.6`       | `3.9` (major.minor only) |
 
 When a strategy uses a placeholder, set `DefaultVersion` so the CLI can suggest a command even when no minimum version is specified:
 
@@ -122,12 +122,12 @@ For managers detected by directory rather than a binary (like `nvm`), override `
 
 The `detectionCtx` fields available inside `present`:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `ctx.hasCommand(name)` | `bool` | Reports whether `name` is on `PATH` |
-| `ctx.getenv(key)` | `string` | Reads an environment variable |
-| `ctx.dirExists(path)` | `bool` | Reports whether `path` is an existing directory |
-| `ctx.goos` | `string` | `runtime.GOOS` value (e.g. `"darwin"`, `"linux"`, `"windows"`) |
+| Field                  | Type     | Description                                                    |
+| ---------------------- | -------- | -------------------------------------------------------------- |
+| `ctx.hasCommand(name)` | `bool`   | Reports whether `name` is on `PATH`                            |
+| `ctx.getenv(key)`      | `string` | Reads an environment variable                                  |
+| `ctx.dirExists(path)`  | `bool`   | Reports whether `path` is an existing directory                |
+| `ctx.goos`             | `string` | `runtime.GOOS` value (e.g. `"darwin"`, `"linux"`, `"windows"`) |
 
 After adding a manager to `knownManagers`, it is automatically included in `KnownManagers` (the exported slice used by the installer to identify managers in failed command output) and in `DetectEnvironment()`. No further wiring is needed.
 

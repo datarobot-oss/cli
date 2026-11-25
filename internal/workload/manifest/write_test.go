@@ -72,8 +72,7 @@ artifact:
 
 runtime:
   containerGroups:
-    - name: default # matches the artifact group
-      replicaCount: 1
+    - replicaCount: 1
       containers:
         - name: primary
           resourceAllocation: {cpu: 0.5, memory: 512MB}

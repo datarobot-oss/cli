@@ -15,7 +15,10 @@
 package update
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,7 +131,11 @@ with your default shell.
 			}
 
 			execCmd.Stdout = os.Stdout
-			execCmd.Stderr = os.Stderr
+			// Mirror installer stderr to a buffer so failures like an HTTP 504
+			// from the download step can be detected after Run.
+			var stderr bytes.Buffer
+
+			execCmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 
 			// The install scripts (install.sh, install.ps1) default INSTALL_DIR to
 			// ~/.local/bin or %LOCALAPPDATA%\Programs\dr, ignoring where dr is
@@ -144,13 +151,27 @@ with your default shell.
 			if err := execCmd.Run(); err != nil {
 				if runtime.GOOS == "windows" {
 					// rename back if update failed
-					revertErr := os.Rename(backup, executable)
-					if revertErr != nil {
-						log.Errorf("Could not revert executable from backup: %s\n", backup)
-					}
+					revertFromBackup(backup, executable)
 				}
 
-				return fmt.Errorf("command execution failed: %w", err)
+				// updateFailureErr defers to the script's own 504 remedy when the
+				// freshly fetched script printed one.
+				return updateFailureErr(err, stderr.String())
+			}
+
+			// POSIX pipefail gap: `curl … | sh` exits 0 when the outer curl 504s
+			// (sh succeeds on empty stdin), so Run reports success with the real
+			// error only in stderr. A 504 marker after a nominally successful run
+			// can only mean that fetch failed: the scripts print a remedy only on
+			// failure, which exits non-zero.
+			if http504(stderr.String()) {
+				if runtime.GOOS == "windows" {
+					// The update is failing after the binary was renamed aside;
+					// restore it like the error path above does.
+					revertFromBackup(backup, executable)
+				}
+
+				return gatewayTimeoutErr()
 			}
 
 			return nil
@@ -161,6 +182,54 @@ with your default shell.
 	cmd.Flags().StringVar(&targetVersion, "version", "", "Install a specific released version instead of latest (e.g. v0.12.3)")
 
 	return cmd
+}
+
+// revertFromBackup restores the pre-update binary on Windows after a failed
+// update: backupExecutable renamed it aside before the installer ran, and any
+// failure past that point must put it back or leave no dr executable at all.
+func revertFromBackup(backup, executable string) {
+	revertErr := os.Rename(backup, executable)
+	if revertErr != nil {
+		log.Errorf("Could not revert executable from backup: %s\n", backup)
+	}
+}
+
+// scriptRemedyMarker appears in the gateway-timeout remedy that both install
+// scripts print (they cannot import Go constants), so updateFailureErr can
+// tell a script that already explained a 504 from one that did not.
+const scriptRemedyMarker = "githubstatus.com"
+
+// updateFailureErr builds the error returned when the update command fails.
+// If the captured installer output shows a 504 that the script did not
+// already explain, return the specific gateway-timeout backstop; otherwise
+// wrap the exec error as before. The backstop also covers the wget path
+// (install.sh prints no remedy there) and the Windows case where the outer
+// `irm ... | iex` itself times out before the script runs. Note the Windows
+// script's Write-ErrorMsg lands on stdout, so the defer branch is effective
+// on POSIX only.
+func updateFailureErr(err error, stderr string) error {
+	if http504(stderr) && !strings.Contains(stderr, scriptRemedyMarker) {
+		return gatewayTimeoutErr()
+	}
+
+	return fmt.Errorf("command execution failed: %w", err)
+}
+
+// gatewayTimeoutErr is the user-facing backstop for an HTTP 504 the installer
+// output shows but the script could not have explained itself.
+func gatewayTimeoutErr() error {
+	return errors.New("Download failed: gateway timeout (HTTP 504). GitHub or the download service may be down; check https://www." + scriptRemedyMarker + " and try again shortly.")
+}
+
+// http504 reports whether captured installer output shows an HTTP 504
+// gateway timeout from the download step (curl, wget, or PowerShell).
+//
+// TODO(ALIFE-1277): extend detection to the 502/503 gateway family here and
+// in the install scripts; the ticket scoped the fix to 504 only.
+func http504(out string) bool {
+	return strings.Contains(out, "error: 504") || // curl
+		strings.Contains(out, "504: Gateway") || // wget
+		strings.Contains(out, "(504)") // PowerShell
 }
 
 // normalizeAndValidateVersion validates s as a strict semantic version

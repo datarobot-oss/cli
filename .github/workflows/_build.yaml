@@ -17,6 +17,14 @@ on:
         description: 'Git ref to checkout (for fork PRs). Defaults to the triggering ref.'
         required: false
         type: string
+      trusted-actions:
+        description: >-
+          Run composite actions from trusted upstream main (checked out into
+          ci-tooling/) instead of the checked-out ref. Fork smoke tests must
+          set this so fork PRs never execute fork-authored action code (#1031).
+        required: false
+        type: boolean
+        default: false
 
 # S5: deny all by default; jobs opt-in to what they need.
 permissions:
@@ -36,18 +44,38 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      # Trusted actions lane (#1031): when trusted-actions is set, the local
+      # composite actions come from upstream main checked out into ci-tooling/
+      # (a git fetch, not the 2 GiB codeload tarball that remote action refs
+      # download) instead of from the fork-controlled checkout. Local `uses:`
+      # paths are static, so the setup step has an if-gated twin; keep the
+      # pair in sync.
+      - name: Checkout trusted CI tooling (upstream main)
+        if: ${{ inputs.trusted-actions }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: datarobot-oss/cli
+          ref: main
+          path: ci-tooling
+          persist-credentials: false
+
       - name: Set up Go and Task
-        uses: datarobot-oss/cli/.github/actions/setup@main
+        if: ${{ !inputs.trusted-actions }}
+        uses: ./.github/actions/setup
+
+      - name: Set up Go and Task (trusted)
+        if: ${{ inputs.trusted-actions }}
+        uses: ./ci-tooling/.github/actions/setup
 
       - name: Cross-compile binaries with GoReleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: '~> v2'
           args: release --snapshot --clean --skip homebrew --skip archive
 
       - name: Upload Windows Binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact-name }}
           path: dist/windows_windows_amd64_v1/dr.exe

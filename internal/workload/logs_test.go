@@ -70,7 +70,7 @@ func TestGetWorkloadLogs_SinglePageReversedToChronological(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 25, "")
+	entries, err := GetWorkloadLogs("wl-1", 25, LogFilter{})
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	// Reversed for display: oldest first, newest last.
@@ -91,7 +91,7 @@ func TestGetWorkloadLogs_LevelLowercased(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 25, "ERROR")
+	_, err := GetWorkloadLogs("wl-1", 25, LogFilter{Level: "ERROR"})
 	require.NoError(t, err)
 }
 
@@ -112,7 +112,7 @@ func TestGetWorkloadLogs_OmitsLevelWhenEmpty(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 25, "")
+	_, err := GetWorkloadLogs("wl-1", 25, LogFilter{})
 	require.NoError(t, err)
 }
 
@@ -141,7 +141,7 @@ func TestGetWorkloadLogs_FollowsNextAndTruncatesToLimit(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 3, "")
+	entries, err := GetWorkloadLogs("wl-1", 3, LogFilter{})
 	require.NoError(t, err)
 	assert.Equal(t, 2, calls)
 	require.Len(t, entries, 3)
@@ -163,7 +163,7 @@ func TestGetWorkloadLogs_ClampsPageSizeToServerMax(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 2500, "")
+	_, err := GetWorkloadLogs("wl-1", 2500, LogFilter{})
 	require.NoError(t, err)
 }
 
@@ -189,7 +189,7 @@ func TestGetWorkloadLogs_StopsOnEmptyPageWithNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 5, "")
+	entries, err := GetWorkloadLogs("wl-1", 5, LogFilter{})
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 	assert.Equal(t, 1, calls)
@@ -228,7 +228,7 @@ func TestGetWorkloadLogs_DropsCrossPageDuplicates(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 10, "")
+	entries, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.NoError(t, err)
 	require.Len(t, entries, 3)
 	assert.Equal(t, "n2", entries[0].Message)
@@ -253,7 +253,7 @@ func TestGetWorkloadLogs_RejectsOffHostNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 10, "")
+	_, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match API base")
 }
@@ -272,7 +272,7 @@ func TestGetWorkloadLogs_RejectsMalformedNext(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1", 10, "")
+	_, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parse Next URL")
 }
@@ -293,14 +293,14 @@ func TestGetWorkloadLogs_KeepsSamePageDuplicates(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	entries, err := GetWorkloadLogs("wl-1", 10, "")
+	entries, err := GetWorkloadLogs("wl-1", 10, LogFilter{})
 	require.NoError(t, err)
 	assert.Len(t, entries, 2)
 }
 
 func TestGetWorkloadLogs_RejectsNonPositiveLimit(t *testing.T) {
 	for _, limit := range []int{0, -1} {
-		_, err := GetWorkloadLogs("wl-1", limit, "")
+		_, err := GetWorkloadLogs("wl-1", limit, LogFilter{})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be positive")
 	}
@@ -318,7 +318,7 @@ func TestGetWorkloadLogs_EscapesIDInPath(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("wl-1?x=1", 25, "")
+	_, err := GetWorkloadLogs("wl-1?x=1", 25, LogFilter{})
 	require.NoError(t, err)
 }
 
@@ -333,7 +333,7 @@ func TestGetWorkloadLogs_404PropagatesAsHTTPError(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	_, err := GetWorkloadLogs("missing", 25, "")
+	_, err := GetWorkloadLogs("missing", 25, LogFilter{})
 	require.Error(t, err)
 
 	var httpErr *drapi.HTTPError
@@ -589,7 +589,7 @@ func TestFollowWorkloadLogs_StreamsWithTimeCursor(t *testing.T) {
 
 	var lines []string
 
-	err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Millisecond,
 		func(e WorkloadLogEntry) error {
 			lines = append(lines, e.Message)
 
@@ -618,7 +618,7 @@ func TestFollowWorkloadLogs_CancelledContextEndsCleanly(t *testing.T) {
 
 	// Ctrl-C cancels the CLI's root context; the follow must end with nil
 	// (a stopped tail is a normal exit, not a failure) instead of looping.
-	err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Minute, func(WorkloadLogEntry) error { return nil }, nil)
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Minute, func(WorkloadLogEntry) error { return nil }, nil)
 	require.NoError(t, err)
 }
 
@@ -637,7 +637,7 @@ func TestFollowWorkloadLogs_TerminalErrorStops(t *testing.T) {
 
 	installEndpoint(t, srv.URL)
 
-	err := FollowWorkloadLogs(context.Background(), "missing", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(context.Background(), "missing", 5, LogFilter{}, time.Millisecond,
 		func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 
@@ -665,7 +665,7 @@ func TestFollowWorkloadLogs_GivesUpAfterSustainedTransientErrors(t *testing.T) {
 
 	var warnings []string
 
-	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, time.Millisecond,
 		func(WorkloadLogEntry) error { return nil },
 		func(msg string) { warnings = append(warnings, msg) })
 	require.Error(t, err)
@@ -710,7 +710,7 @@ func TestFollowWorkloadLogs_RecoversFromTransientErrors(t *testing.T) {
 
 	var warnings []string
 
-	err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+	err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Millisecond,
 		func(e WorkloadLogEntry) error {
 			lines = append(lines, e.Message)
 
@@ -762,7 +762,7 @@ func TestFollowWorkloadLogs_FallsBackWhenTimeFilterRejected(t *testing.T) {
 
 			var warnings []string
 
-			err := FollowWorkloadLogs(ctx, "wl-1", 5, "", time.Millisecond,
+			err := FollowWorkloadLogs(ctx, "wl-1", 5, LogFilter{}, time.Millisecond,
 				func(e WorkloadLogEntry) error {
 					lines = append(lines, e.Message)
 
@@ -819,7 +819,7 @@ func TestFollowWorkloadLogs_WarnsOnWindowGap(t *testing.T) {
 
 	var warnings []string
 
-	err := FollowWorkloadLogs(ctx, "wl-1", 2, "", time.Millisecond,
+	err := FollowWorkloadLogs(ctx, "wl-1", 2, LogFilter{}, time.Millisecond,
 		func(WorkloadLogEntry) error { return nil },
 		func(msg string) { warnings = append(warnings, msg) })
 	require.NoError(t, err)
@@ -840,22 +840,22 @@ func TestFollowWorkloadLogs_OnLineErrorStops(t *testing.T) {
 
 	wantErr := errors.New("broken pipe")
 
-	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Minute,
+	err := FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, time.Minute,
 		func(WorkloadLogEntry) error { return wantErr }, nil)
 	require.ErrorIs(t, err, wantErr)
 }
 
 func TestFollowWorkloadLogs_RejectsBadArguments(t *testing.T) {
-	err := FollowWorkloadLogs(context.Background(), "wl-1", 0, "", time.Second, func(WorkloadLogEntry) error { return nil }, nil)
+	err := FollowWorkloadLogs(context.Background(), "wl-1", 0, LogFilter{}, time.Second, func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid limit")
 
-	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, "", 0, func(WorkloadLogEntry) error { return nil }, nil)
+	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, 0, func(WorkloadLogEntry) error { return nil }, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid interval")
 
 	// A nil onLine would panic in emit(); reject it up front instead.
-	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, "", time.Second, nil, nil)
+	err = FollowWorkloadLogs(context.Background(), "wl-1", 5, LogFilter{}, time.Second, nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "onLine callback is required")
 }

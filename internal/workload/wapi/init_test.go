@@ -136,6 +136,28 @@ func TestInitialize_CreatesMissingProjectDir(t *testing.T) {
 	assert.True(t, Exists(nested), "project dir + state dir must be created end-to-end")
 }
 
+// A deploy that links a project for the first time marks the version pending in
+// the same write; a plain link marks nothing.
+func TestInitialize_RolloutPending(t *testing.T) {
+	for _, pending := range []bool{true, false} {
+		tmp := t.TempDir()
+
+		require.NoError(t, Initialize(tmp, InitOptions{ArtifactID: "art-abc", RolloutPending: pending}))
+
+		cfg, err := LoadConfig(tmp)
+		require.NoError(t, err)
+
+		if !pending {
+			assert.Nil(t, cfg.PendingRolloutArtifactID)
+
+			continue
+		}
+
+		require.NotNil(t, cfg.PendingRolloutArtifactID)
+		assert.Equal(t, "art-abc", *cfg.PendingRolloutArtifactID)
+	}
+}
+
 func TestInitialize_AlreadyLinked(t *testing.T) {
 	tmp := t.TempDir()
 

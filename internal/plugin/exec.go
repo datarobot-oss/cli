@@ -33,18 +33,64 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// ExecOption customizes a single ExecutePlugin call.
+type ExecOption func(*execOptions)
+
+type execOptions struct {
+	depsConsent bool
+	// skipPreflight disables the preflight checks for this call — see
+	// WithoutPreflight for what preflight is and when skipping it is right.
+	skipPreflight bool
+}
+
+// WithDepsConsent pre-approves the dependency-install prompt, as if the user
+// had answered yes. Use it when a wrapping command already collected consent
+// (e.g. via its own --yes flag) and cannot forward it through the plugin args
+// without the plugin binary rejecting an unknown flag.
+func WithDepsConsent() ExecOption {
+	return func(o *execOptions) { o.depsConsent = true }
+}
+
+// WithoutPreflight skips the plugin preflight for this call.
+//
+// Preflight is the set of readiness checks ExecutePlugin runs before it
+// launches the plugin subprocess: it makes sure the plugin's declared
+// dependencies are installed (offering to install them, unless consent was
+// pre-approved with WithDepsConsent or -y), and that the user is
+// authenticated when the manifest sets "authentication": true (unless
+// --skip-auth is set). Both checks can prompt interactively.
+//
+// Skip them for non-functional invocations such as rendering the plugin's
+// --help: those must never open an interactive prompt (login wizard,
+// dependency install), which would hang when the output is piped. See
+// docs/development/plugins.md, section "Preflight".
+func WithoutPreflight() ExecOption {
+	return func(o *execOptions) { o.skipPreflight = true }
+}
+
 // checkAndInstallPluginDeps checks and installs the plugin's declared dependencies
 // before execution. Returns false if the check fails or the user declines installation.
 //
 // Confirmation modes (in order of precedence):
-//  1. -y / --yes present in args
-//  2. DATAROBOT_CLI_NON_INTERACTIVE env var set
-//  3. Interactive [Y/n] prompt
-func checkAndInstallPluginDeps(manifest PluginManifest, args []string) bool {
-	confirm := func() bool { return confirmPluginDepsInstall(args) }
+//  1. Explicit consent from the caller (WithDepsConsent)
+//  2. -y / --yes present in args
+//  3. DATAROBOT_CLI_NON_INTERACTIVE env var set
+//  4. Interactive [Y/n] prompt
+//
+// When the user declines (or stdin closes before an answer), it says what was
+// skipped and how to proceed, instead of exiting without a word.
+func checkAndInstallPluginDeps(manifest PluginManifest, args []string, consent bool) bool {
+	confirm := func() bool { return consent || confirmPluginDepsInstall(args) }
 
 	if err := CheckAndInstallDeps(manifest.Name, confirm, os.Stderr); err != nil {
-		if !errors.Is(err, ErrDepsDeclined) {
+		if errors.Is(err, ErrDepsDeclined) {
+			// The guidance names the env var rather than -y: -y is read from
+			// the plugin's own args and is also passed on to the plugin, so a
+			// plugin that parses flags strictly rejects it (xp does).
+			fmt.Fprintf(os.Stderr,
+				"Skipped installing dependencies that %s needs to run. Re-run the command and accept the prompt, or set %s=1 to install them automatically.\n",
+				manifest.Name, reader.NonInteractiveEnv)
+		} else {
 			fmt.Fprintf(os.Stderr, "plugin dependency check failed: %v\n", err)
 		}
 
@@ -73,28 +119,36 @@ func confirmPluginDepsInstall(args []string) bool {
 // ctx is used to cancel the auth flow and subprocess if the user presses Ctrl-C.
 // rootFlags is the root command's persistent flagset, used to forward annotated
 // universal flags (e.g. --debug) to the plugin subprocess as DATAROBOT_CLI_* env vars.
-func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string, rootFlags *pflag.FlagSet) int {
-	if !checkAndInstallPluginDeps(manifest, args) {
-		return 1
+func ExecutePlugin(ctx context.Context, manifest PluginManifest, executable string, args []string, rootFlags *pflag.FlagSet, opts ...ExecOption) int {
+	var options execOptions
+
+	for _, opt := range opts {
+		opt(&options)
 	}
 
-	skipAuth := viperx.GetBool(config.SkipAuthKey)
-
-	if manifest.Authentication && !skipAuth {
-		userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
-		authCtx := config.WithUserAgent(ctx, userAgent)
-
-		if !auth.EnsureAuthenticated(authCtx) {
+	if !options.skipPreflight {
+		if !checkAndInstallPluginDeps(manifest, args, options.depsConsent) {
 			return 1
+		}
+
+		skipAuth := viperx.GetBool(config.SkipAuthKey)
+
+		if manifest.Authentication && !skipAuth {
+			userAgent := fmt.Sprintf("DataRobot CLI plugin: %s (version %s)", manifest.Name, manifest.Version)
+			authCtx := config.WithUserAgent(ctx, userAgent)
+
+			if !auth.EnsureAuthenticated(authCtx) {
+				return 1
+			}
 		}
 	}
 
-	return executePluginCommand(ctx, executable, args, manifest.Authentication, rootFlags)
+	return executePluginCommand(ctx, executable, args, manifest.Authentication, rootFlags, manifest.ShutdownGrace())
 }
 
 // executePluginCommand runs the actual plugin command.
-func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) int {
-	cmd := buildPluginCommand(ctx, executable, args, requireAuth, rootFlags)
+func executePluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet, grace time.Duration) int {
+	cmd := buildPluginCommand(ctx, executable, args, requireAuth, rootFlags, grace)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -133,14 +187,14 @@ func pluginCommandArgsFor(goos, executable string, args ...string) (string, []st
 
 // buildPluginCommand creates the appropriate exec.Cmd for the given executable.
 // On Windows, .ps1 files are executed via PowerShell.
-// ctx cancellation sends SIGTERM to the process, with a 5-second grace
-// period before SIGKILL.
-func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet) *exec.Cmd {
+// ctx cancellation sends SIGTERM to the process, with the grace period
+// before SIGKILL.
+func buildPluginCommand(ctx context.Context, executable string, args []string, requireAuth bool, rootFlags *pflag.FlagSet, grace time.Duration) *exec.Cmd {
 	name, cmdArgs := pluginCommandArgs(executable, args...)
 
 	cmd := exec.CommandContext(ctx, name, cmdArgs...)
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = grace
 	cmd.Env = buildPluginEnv(executable, requireAuth, rootFlags)
 
 	return cmd

@@ -1,0 +1,67 @@
+{
+    "overallStatus": {
+        "state": "stopped",
+        "summary": "Workload is in state stopped based on pod states",
+        "lastUpdated": "2026-09-29T21:20:30.232106196Z"
+    },
+    "replicas": [
+        {
+            "name": "lrs-6abbbaea720810ff290d71ec-6c855fdfbf-f5jjk",
+            "status": "succeeded",
+            "address": "10.0.0.17",
+            "nodeAddress": "10.0.1.7",
+            "startedAt": "2026-09-29T13:19:39Z",
+            "conditions": [
+                {
+                    "type": "PodReadyToStartContainers",
+                    "value": false,
+                    "lastTransitionTime": "2026-09-29T21:20:30Z",
+                    "reason": "",
+                    "message": ""
+                },
+                {
+                    "type": "Initialized",
+                    "value": true,
+                    "lastTransitionTime": "2026-09-29T13:19:39Z",
+                    "reason": "PodCompleted",
+                    "message": ""
+                },
+                {
+                    "type": "Ready",
+                    "value": false,
+                    "lastTransitionTime": "2026-09-29T21:20:30Z",
+                    "reason": "PodCompleted",
+                    "message": ""
+                },
+                {
+                    "type": "ContainersReady",
+                    "value": false,
+                    "lastTransitionTime": "2026-09-29T21:20:30Z",
+                    "reason": "PodCompleted",
+                    "message": ""
+                },
+                {
+                    "type": "PodScheduled",
+                    "value": true,
+                    "lastTransitionTime": "2026-09-29T13:19:39Z",
+                    "reason": "",
+                    "message": ""
+                }
+            ],
+            "containers": [
+                {
+                    "name": "lrs-6abbbaea720810ff290d71ec-primary",
+                    "status": "terminated",
+                    "startedAt": null,
+                    "ready": false,
+                    "restartCount": 0,
+                    "image": "000000000000.dkr.ecr.us-east-1.amazonaws.com/workload-api/service-artifact:6abbbac64df5d926abdf03ff",
+                    "reason": "Completed",
+                    "exitCode": 0,
+                    "message": "",
+                    "lastState": null
+                }
+            ]
+        }
+    ]
+}

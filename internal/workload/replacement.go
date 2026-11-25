@@ -15,6 +15,7 @@
 package workload
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 )
 
 // Replacement statuses observed to be terminal. The platform's own docs name
@@ -46,10 +48,13 @@ import (
 // the workload ended up running (see WaitForWorkload). A resize has no artifact
 // change to confirm, and is covered instead by that same wait refusing to
 // settle while a generation is still draining.
+//
+// "cancelled" leaves the workload where it was, like a failed rollout.
 const (
 	ReplacementStatusCompleted = "completed"
 	ReplacementStatusFailed    = "failed"
 	ReplacementStatusErrored   = "errored"
+	ReplacementStatusCancelled = "cancelled"
 )
 
 // rollingStrategy is the only strategy the platform ships. Blue-green and
@@ -67,6 +72,11 @@ type Replacement struct {
 	ArtifactID string `json:"candidateArtifactId"`
 	Status     string `json:"status"`
 	Strategy   string `json:"strategy,omitempty"`
+
+	// CandidateProtonIDs are the generations the replacement launched, set
+	// once it has. They are what identifies the replacement in the trail
+	// afterwards: the finished record there is written under a new id.
+	CandidateProtonIDs []string `json:"candidateProtonIds,omitempty"`
 
 	// Message is the platform's account of how a failed rollout ended, which
 	// for a candidate that never became healthy carries the container's reason.
@@ -92,11 +102,13 @@ func IsTerminalReplacementStatus(s string) bool {
 	return IsFailedReplacementStatus(s) || strings.EqualFold(s, ReplacementStatusCompleted)
 }
 
-// IsFailedReplacementStatus reports whether s is a terminal failure. On
-// failure the workload reverts to the artifact it was running before the
-// replacement started, so a failed rollout never promotes.
+// IsFailedReplacementStatus reports whether s is a terminal status under
+// which nothing was promoted: failed, errored or cancelled. The workload stays
+// on the artifact it was running before the replacement started.
 func IsFailedReplacementStatus(s string) bool {
-	return strings.EqualFold(s, ReplacementStatusFailed) || strings.EqualFold(s, ReplacementStatusErrored)
+	return strings.EqualFold(s, ReplacementStatusFailed) ||
+		strings.EqualFold(s, ReplacementStatusErrored) ||
+		strings.EqualFold(s, ReplacementStatusCancelled)
 }
 
 // replacementURL builds the single route all three verbs share.
@@ -354,6 +366,7 @@ func confirmWorkloadExists(workloadID string) error {
 // status should ask IsTerminalReplacementStatus rather than read a nil error
 // as "completed".
 func WaitForReplacement(
+	ctx context.Context,
 	workloadID string,
 	started *Replacement,
 	interval, timeout time.Duration,
@@ -367,7 +380,11 @@ func WaitForReplacement(
 	wait := &replacementWait{workloadID: workloadID, lastSeen: started, onTick: onTick}
 
 	for {
-		done, err := wait.step()
+		if err := ctx.Err(); err != nil {
+			return wait.lastSeen, abandoned(workloadID, err)
+		}
+
+		done, err := wait.step() //nolint:contextcheck // drapi takes no context; see abandoned in workload.go
 		if done {
 			return wait.lastSeen, err
 		}
@@ -376,7 +393,9 @@ func WaitForReplacement(
 			return wait.lastSeen, timedOut(workloadID, timeout)
 		}
 
-		time.Sleep(interval)
+		if !sleepInterval(ctx, interval) {
+			return wait.lastSeen, abandoned(workloadID, ctx.Err())
+		}
 	}
 }
 
@@ -449,11 +468,35 @@ func absenceMeans(workloadID string, lastSeen *Replacement, watched bool, absenc
 		return nil, true, fmt.Errorf("no replacement is in flight for workload %s", workloadID)
 
 	case watched, absences >= uncorroboratedAbsences:
-		return lastSeen, true, nil
+		settled := recordedOutcome(workloadID, lastSeen)
+
+		return settled, true, terminalReplacementErr(workloadID, settled)
 
 	default:
 		return lastSeen, false, nil
 	}
+}
+
+// recordedOutcome reads how a replacement ended from the workload's events once
+// its record is gone: a failed rollout is cleared as fast as a successful one.
+// Falls back to the last status seen.
+func recordedOutcome(workloadID string, lastSeen *Replacement) *Replacement {
+	record, err := RolloutRecord(workloadID, lastSeen)
+	if err != nil || record == nil {
+		log.Debug("replacement record gone and not yet in the trail; settling on the last status seen",
+			"workload_id", workloadID, "replacement_id", lastSeen.ID, "err", err)
+
+		return lastSeen
+	}
+
+	settled := *lastSeen
+	settled.Status = record.ReplacementStatus()
+
+	if message := record.Message(); message != "" {
+		settled.Message = message
+	}
+
+	return &settled
 }
 
 // uncorroboratedAbsences is how many consecutive 404s it takes to believe a
@@ -484,7 +527,7 @@ func terminalReplacementErr(workloadID string, replacement *Replacement) error {
 	}
 
 	return fmt.Errorf(
-		"replacement for workload %s ended with status %s%s; the workload reverted to its previous artifact",
+		"replacement for workload %s ended with status %s%s; the workload is still on the generation it was running",
 		workloadID, replacement.Status, why,
 	)
 }

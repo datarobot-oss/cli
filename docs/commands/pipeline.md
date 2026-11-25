@@ -5,6 +5,16 @@ pipelines service. The `dr pipeline` group is a thin CLI wrapper over
 the pipelines REST API: every subcommand maps directly to a single
 endpoint.
 
+> [!NOTE]
+> On DataRobot 11.15 and later, AI Pipelines are in Private Preview: behavior
+> may change, and preview functionality is not covered by Support SLA
+> agreements. The `dr pipeline` group is behind a CLI feature gate: export
+> `DATAROBOT_CLI_FEATURE_PIPELINE=true` before running any subcommand (see
+> [Feature gates](../development/feature-gates.md)). Once enabled, the commands
+> and the API work regardless of the platform feature flag, which gates only the
+> **Pipelines** tab in the DataRobot UI. Contact your DataRobot representative to
+> enable the tab for your organization.
+
 ## Synopsis
 
 ```bash
@@ -67,23 +77,23 @@ dr pipeline lock <pipeline-id>
 
 ## Command groups
 
-| Group                    | Endpoint(s)                          | Purpose                                          |
-|--------------------------|--------------------------------------|--------------------------------------------------|
-| `dr pipeline create`    | `POST   /api/v2/pipelines`           | Upload a Python file to register a new pipeline. |
-| `dr pipeline list`      | `GET    /api/v2/pipelines`           | Paginated list with mode filtering.              |
-| `dr pipeline get`       | `GET    /api/v2/pipelines/{id}`      | Pipeline detail including all versions.          |
-| `dr pipeline clone`     | `POST   /api/v2/pipelines/{id}/clone` | Clone a pipeline into a new draft (source, description, latest input, image). |
-| `dr pipeline update`    | `PATCH  /api/v2/pipelines/{id}`      | Re-upload a file to append a new version.        |
-| `dr pipeline delete`    | `DELETE /api/v2/pipelines/{id}`      | Remove a pipeline and all of its versions.       |
-| `dr pipeline lock`      | `PATCH  /api/v2/pipelines/{id}/mode` | Promote a draft to locked mode.                  |
-| `dr pipeline version …` | `…/versions[/{ver}]`                 | Inspect pipeline versions.                       |
-| `dr pipeline graph`     | `…/graph` (draft or locked)          | Render the pipeline/task DAG.                    |
-| `dr pipeline source`    | `…/source` (draft or locked)         | Retrieve the pipeline's Python source code.      |
-| `dr pipeline run …`     | `…/dispatches` and `…/{id}`          | Trigger, inspect, and cancel runs.               |
-| `dr pipeline input …`   | `…/inputs` and `…/inputs/{input_id}` | Manage JSON payloads for runs.                   |
-| `dr pipeline schedule …` | `…/versions/{ver}/schedules`        | Manage recurring (cron) runs on locked versions. |
-| `dr pipeline image …` | `/pipelines/images[/{id}]` | Manage named, versioned pip-package images. |
-| `dr pipeline task …`        | `…/tasks/{task_id}` (draft or locked) | Inspect individual task source, signature, and inputs. |
+| Group                      | Endpoint(s)                              | Purpose                                                                       |
+| -------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `dr pipeline create`       | `POST   /api/v2/pipelines`               | Upload a Python file to register a new pipeline.                              |
+| `dr pipeline list`         | `GET    /api/v2/pipelines`               | Paginated list with mode filtering.                                           |
+| `dr pipeline get`          | `GET    /api/v2/pipelines/{id}`          | Pipeline detail including all versions.                                       |
+| `dr pipeline clone`        | `POST   /api/v2/pipelines/{id}/clone`    | Clone a pipeline into a new draft (source, description, latest input, image). |
+| `dr pipeline update`       | `PATCH  /api/v2/pipelines/{id}`          | Re-upload a file to append a new version.                                     |
+| `dr pipeline delete`       | `DELETE /api/v2/pipelines/{id}`          | Remove a pipeline and all of its versions.                                    |
+| `dr pipeline lock`         | `PATCH  /api/v2/pipelines/{id}/mode`     | Promote a draft to locked mode.                                               |
+| `dr pipeline version …`    | `…/versions[/{ver}]`                     | Inspect pipeline versions.                                                    |
+| `dr pipeline graph`        | `…/graph` (draft or locked)              | Render the pipeline/task DAG.                                                 |
+| `dr pipeline source`       | `…/source` (draft or locked)             | Retrieve the pipeline's Python source code.                                   |
+| `dr pipeline run …`        | `…/dispatches` and `…/{id}`              | Trigger, inspect, and cancel runs.                                            |
+| `dr pipeline input …`      | `…/inputs` and `…/inputs/{input_id}`     | Manage JSON payloads for runs.                                                |
+| `dr pipeline schedule …`   | `…/versions/{ver}/schedules`             | Manage recurring (cron) runs on locked versions.                              |
+| `dr pipeline image …`      | `/pipelines/images[/{id}]`               | Manage named, versioned pip-package images.                                   |
+| `dr pipeline task …`       | `…/tasks/{task_id}` (draft or locked)    | Inspect individual task source, signature, and inputs.                        |
 
 ## Subcommands
 
@@ -536,10 +546,10 @@ If the task ID is not found, the command prints `Task not found: <task-id>` and 
 
 ## Error handling
 
-| Status | Cause                                                                          |
-|--------|--------------------------------------------------------------------------------|
-| `400`  | Invalid Python file or mismatched pipeline name.                               |
-| `404`  | The provided `<pipeline-id>`, version, run, or task does not exist.            |
+| Status | Cause                                                                                                                                                                                                                                                          |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | Invalid Python file or mismatched pipeline name.                                                                                                                                                                                                               |
+| `404`  | The provided `<pipeline-id>`, version, run, or task does not exist.                                                                                                                                                                                            |
 | `409`  | Tried to update a `locked` pipeline; cancelled an already-terminal run; requested `run task result` before the task reached `COMPLETED`; or addressed a fan-out `run task` (`get`/`logs`/`result`) without `--node-id` (message lists the candidate node ids). |
 
 ## See also

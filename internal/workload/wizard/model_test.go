@@ -15,6 +15,8 @@
 package wizard
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -107,6 +109,16 @@ func dockerfileProject(t *testing.T) Detected {
 	t.Helper()
 
 	return Detect(writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n"))
+}
+
+// generatedProject is dockerfileProject with the pair a generated build is
+// made from, so the execution-environment track is open as well.
+func generatedProject(t *testing.T) Detected {
+	t.Helper()
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+
+	return Detect(writeGeneratedProject(t, dir))
 }
 
 // With no workloads to bind to there is no binding question, and once the
@@ -434,7 +446,7 @@ func TestFlow_GeneratedBuildPicksABaseImage(t *testing.T) {
 
 	t.Cleanup(func() { listExecEnvsFn = original })
 
-	model := newFlow(dockerfileProject(t), nil, Answers{})
+	model := newFlow(generatedProject(t), nil, Answers{})
 
 	model = press(t, pastName(t, model), "enter") // name, kind
 	model = press(t, model, "2", "enter")         // build from a base image
@@ -453,6 +465,186 @@ func TestFlow_GeneratedBuildPicksABaseImage(t *testing.T) {
 
 	require.Equal(t, screenSettings, model.at)
 	assert.Equal(t, []string{"uvicorn", "app:app", "--host", "0.0.0.0"}, model.draft.Build.Entrypoint)
+}
+
+// A project the platform cannot build a generated image from is told so on
+// the source screen, where the pick is made, rather than after the sync.
+func TestFlow_GeneratedSourceIsRefusedWithoutTheProjectFiles(t *testing.T) {
+	model := newFlow(dockerfileProject(t), nil, Answers{})
+
+	model = press(t, pastName(t, model), "enter") // name, kind
+	require.Equal(t, screenSource, model.at)
+	assert.Contains(t, model.View(), "needs pyproject.toml + uv.lock or package.json + package-lock.json")
+
+	model = press(t, model, "2", "enter") // build from a base image
+
+	assert.Equal(t, screenSource, model.at)
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "neither pyproject.toml with uv.lock nor package.json with package-lock.json")
+	assert.Contains(t, model.failed.Error(), "or pick another source")
+	assert.Equal(t, manifest.BuildModeDockerfile, model.draft.Build.Mode, "a refused pick records nothing")
+}
+
+// A pyproject.toml with no uv.lock is accepted on the source screen, with a
+// hint rather than a warning: the deploy generates the lock during the sync.
+func TestFlow_GeneratedSourceIsAcceptedWhenOnlyTheLockIsMissing(t *testing.T) {
+	original := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+		return []workload.ExecutionEnvironment{{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}}}, nil
+	}
+
+	t.Cleanup(func() { listExecEnvsFn = original })
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\nEXPOSE 3000\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project]\n"), 0o600))
+
+	model := newFlow(Detect(dir), nil, Answers{})
+
+	model = press(t, pastName(t, model), "enter") // name, kind
+	require.Equal(t, screenSource, model.at)
+	assert.Contains(t, model.View(), "uv.lock is generated at deploy")
+	assert.NotContains(t, model.View(), "needs pyproject.toml")
+
+	model = press(t, model, "2", "enter") // build from a base image
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenExecEnv, model.at)
+}
+
+// Keeping a bound workload's generated build does not need the project files:
+// its code lives in the artifact, and up pulls it into an empty directory.
+// Refusing here would make the empty-directory bind impossible to finish.
+func TestFlow_BoundGeneratedBuildIsKeptWithoutTheProjectFiles(t *testing.T) {
+	stubLive(t,
+		documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+			"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+				"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+		documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+				{"name": "primary", "primary": true, "port": 8000,
+				 "imageBuildConfig": {"dockerfile": {"source": "generated",
+				   "entrypoint": ["python", "old.py"],
+				   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+	original := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+		return []workload.ExecutionEnvironment{{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}}}, nil
+	}
+
+	t.Cleanup(func() { listExecEnvsFn = original })
+
+	model := newFlow(Detect(t.TempDir()), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+	updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+	model, ok := updated.(flow)
+	require.True(t, ok)
+
+	model = press(t, model, "enter") // kind
+	require.Equal(t, screenSource, model.at)
+	assert.Contains(t, model.View(), "built from the workload's current code")
+	assert.NotContains(t, model.View(), "needs pyproject.toml")
+
+	model = press(t, model, "enter") // keep the live build
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenExecEnv, model.at)
+	assert.Equal(t, "68a1", model.draft.Build.ExecutionEnvironmentID, "the live build survives being kept")
+}
+
+// The exemption above is for the empty directory only, because that is the
+// one shape `up` seeds from the artifact. A directory with files of its own
+// is uploaded as it is, so keeping the generated build is judged on them:
+// refused when they cannot be built from, hinted at when the deploy fills the
+// gap itself.
+func TestFlow_BoundGeneratedBuildIsJudgedOnADirectoryWithFiles(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		file    string
+		shows   string
+		refused string
+	}{
+		{"requirements.txt alone cannot be built from", "requirements.txt", "needs pyproject.toml + uv.lock", "or pick another source"},
+		{"pyproject.toml alone gets the lock hint", "pyproject.toml", "uv.lock is generated at deploy if uv is installed", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stubLive(t,
+				documentFrom(t, `{"name": "live-agent", "artifactId": "68a1",
+					"runtime": {"containerGroups": [{"name": "default", "replicaCount": 1,
+						"containers": [{"name": "primary", "resourceAllocation": {"cpu": 1, "memory": "2GB"}}]}]}}`),
+				documentFrom(t, `{"name": "live-agent-artifact", "type": "service", "spec": {"containerGroups": [{"name": "default", "containers": [
+						{"name": "primary", "primary": true, "port": 8000,
+						 "imageBuildConfig": {"dockerfile": {"source": "generated",
+						   "entrypoint": ["python", "old.py"],
+						   "executionEnvironmentId": "68a1", "executionEnvironmentVersionId": "v1"}}}]}]}}`))
+
+			original := listExecEnvsFn
+			listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+				return []workload.ExecutionEnvironment{{ID: "68a1", Name: "first", LatestSuccessfulVersion: &workload.EEVersion{ID: "v1"}}}, nil
+			}
+
+			t.Cleanup(func() { listExecEnvsFn = original })
+
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, c.file), []byte("x\n"), 0o600))
+
+			model := newFlow(Detect(dir), nil, Answers{WorkloadID: "68b0c1d2e3f4a5b6c7d8e9f0"})
+
+			updated, _ := model.Update(liveLoadedMsg{live: mustFetchLive(t, "68b0c1d2e3f4a5b6c7d8e9f0")})
+			model, ok := updated.(flow)
+			require.True(t, ok)
+
+			model = press(t, model, "enter") // kind
+			require.Equal(t, screenSource, model.at)
+			assert.Contains(t, model.View(), c.shows)
+			assert.NotContains(t, model.View(), "built from the workload's current code",
+				"only an empty directory is seeded from the artifact")
+
+			model = press(t, model, "enter") // keep the live build
+
+			if c.refused == "" {
+				require.NoError(t, model.failed)
+				assert.Equal(t, screenExecEnv, model.at)
+
+				return
+			}
+
+			require.Error(t, model.failed)
+			assert.Contains(t, model.failed.Error(), c.refused)
+			assert.Equal(t, screenSource, model.at)
+		})
+	}
+}
+
+// A base image of another language than the project is refused on the
+// picker, where the choice is made, not after the sync and a build.
+func TestFlow_GeneratedBuildRefusesABaseImageOfAnotherLanguage(t *testing.T) {
+	original := listExecEnvsFn
+	listExecEnvsFn = func(int) ([]workload.ExecutionEnvironment, error) {
+		return []workload.ExecutionEnvironment{
+			{ID: "68a1", Name: "[DataRobot] Python 3.12", ProgrammingLanguage: "python", LatestSuccessfulVersion: &workload.EEVersion{ID: "68a2"}},
+			{ID: "68b1", Name: "[DataRobot] NodeJS 24", ProgrammingLanguage: "other", LatestSuccessfulVersion: &workload.EEVersion{ID: "68b2"}},
+		}, nil
+	}
+
+	t.Cleanup(func() { listExecEnvsFn = original })
+
+	dir := writeDockerfile(t, t.TempDir(), "FROM scratch\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package-lock.json"), []byte("{}\n"), 0o600))
+
+	model := newFlow(Detect(dir), nil, Answers{})
+	model = press(t, pastName(t, model), "enter") // name, kind
+	model = press(t, model, "2", "enter")         // build from a base image
+	require.Equal(t, screenExecEnv, model.at)
+
+	model = press(t, model, "enter") // the Python image, listed first
+	require.Error(t, model.failed)
+	assert.Contains(t, model.failed.Error(), "Python 3.12 is labelled python")
+	assert.Contains(t, model.failed.Error(), "node project")
+	assert.Equal(t, screenExecEnv, model.at, "a refused pick stays on the screen")
+	assert.Empty(t, model.draft.Build.ExecutionEnvironmentID)
+
+	model = press(t, model, "down", "enter") // the Node image
+	require.NoError(t, model.failed)
+	assert.Equal(t, screenEntrypoint, model.at)
+	assert.Equal(t, "68b1", model.draft.Build.ExecutionEnvironmentID)
 }
 
 // Confirming is the only thing that ends the flow with something to write.

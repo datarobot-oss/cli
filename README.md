@@ -49,6 +49,7 @@ If you're new to DataRobot, visit the [DataRobot documentation](https://docs.dat
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Telemetry](#telemetry)
 - [Next steps](#next-steps)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -407,6 +408,23 @@ dr run test
 > [!TIP]
 > **What's next?** Your application is now running! Explore the [Template system](docs/template-system/) documentation, set up [shell completions](docs/user-guide/shell-completions.md), or review the [Command reference](docs/commands/) for detailed command documentation.
 
+## Telemetry
+
+The CLI collects usage analytics linked to your DataRobot user ID to help the DataRobot team improve the tool. Telemetry is enabled by default, and all telemetry data is stored in the USA. To opt out, use any one of the following:
+
+```bash
+# Per-invocation
+dr --disable-telemetry templates list
+
+# Per-session (environment variable)
+export DATAROBOT_CLI_DISABLE_TELEMETRY=true
+
+# Permanently (add to ~/.config/datarobot/drconfig.yaml)
+disable-telemetry: true
+```
+
+When telemetry is disabled, no data is sent over the network. See [Telemetry](docs/user-guide/telemetry.md) for what is collected, where it is sent, and the hosts to allowlist.
+
 ## Next steps
 
 From here, refer to the repository of the template you selected to start customizing it.
@@ -418,6 +436,7 @@ See the links below for specific details:
 - **[Template system](docs/template-system/)**&mdash;deep dive into how templates work, the interactive configuration wizard, and environment variable management.
 - **[Command reference](docs/commands/)**&mdash;detailed documentation for all CLI commands and subcommands, including flags, options, and usage examples.
 - **[Auth command](docs/commands/auth.md)**&mdash;detailed authentication management guide.
+- **[Auth profiles walkthrough](docs/demos/auth-profiles.md)**&mdash;a hands-on, offline beginner tour of named profiles: selecting with `--profile` or `DATAROBOT_CLI_PROFILE`, creating, inspecting, and deleting them in a safe scratch config.
 - **[Deploying workloads](docs/commands/workload-spec.md)**&mdash;take your own code from an artifact to a running URL with [`dr artifact`](docs/commands/artifact.md) and [`dr workload`](docs/commands/workload.md), including the spec files both commands read.
 - **[Development guide](docs/development/)**&mdash;for contributors: building from source, development setup, project structure, and release process.
 

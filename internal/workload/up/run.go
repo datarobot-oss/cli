@@ -15,6 +15,7 @@
 package up
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/ignore"
 	"github.com/datarobot/cli/internal/workload/manifest"
@@ -49,12 +51,18 @@ var (
 	updateArtifactSpecFn = workload.UpdateArtifactSpec
 	getArtifactFn        = workload.GetArtifact
 	lockArtifactFn       = workload.LockArtifact
+	promoteWorkloadFn    = workload.PromoteWorkload
 	triggerBuildFn       = workload.TriggerArtifactBuild
 	waitBuildFn          = workload.WaitForBuild
+	hasLogsFn            = workload.BuildLogsAvailable
+	newBuildLogTailFn    = workload.NewBuildLogTail
 	listBuildsFn         = workload.ListArtifactBuilds
 	getCredentialFn      = workload.GetCredential
 	findCredentialFn     = workload.FindCredentialNamed
+	activeReplacementFn  = workload.GetActiveReplacement
 	guardReplacementFn   = workload.RefuseActiveReplacement
+	activeProtonFn       = workload.ActiveProton
+	getExecEnvFn         = workload.GetExecutionEnvironment
 	startReplacementFn   = workload.StartReplacement
 	waitReplacementFn    = workload.WaitForReplacement
 	updateSettingsFn     = workload.UpdateWorkloadSettings
@@ -66,7 +74,19 @@ var (
 	saveProjectFn        = wapi.SaveConfig
 	patchCodeRefFn       = workload.PatchArtifactCodeRef
 	syncProjectFn        = defaultSync
+
+	// buildLogSettleBudget is how long a failed build's stream waits for
+	// its last lines.
+	buildLogSettleBudget = workload.BuildLogSettleTimeout
 )
+
+// ErrDeclined is what a run answers when --confirm was given and the user
+// said no. It is returned before the first deploying branch runs, so a caller
+// can treat it as "nothing was deployed" rather than as a failure partway
+// through one: nothing was locked, and the plan it declined is still the plan
+// the next run will carry out. A --sync-env re-send or a manifest the wizard
+// wrote before the question stands.
+var ErrDeclined = errors.New("declined: nothing was deployed")
 
 // Options is everything a run needs from its caller.
 type Options struct {
@@ -74,12 +94,20 @@ type Options struct {
 	// upward from here.
 	Dir string
 
-	// NonInteractive forbids prompting. With no manifest it turns the setup
-	// wizard into an error naming the command that writes one.
+	// NonInteractive forbids prompting. With no manifest the setup answers
+	// itself from the project, the way `dr workload config --yes` does, and
+	// writes the file before the deploy reads it.
 	NonInteractive bool
 
 	// DryRun stops after the plan.
 	DryRun bool
+
+	// Diff renders the plan as a unified diff instead of the summary list:
+	// the same plan, laid out leaf by leaf with context around what moves.
+	// It changes how the plan is shown and nothing else -- the dry-run
+	// return and every apply branch read the plan exactly as they do
+	// without it, so a diff run and a summary run mutate the same things.
+	Diff bool
 
 	// Detach returns once the apply is requested, skipping the waits.
 	Detach bool
@@ -96,6 +124,20 @@ type Options struct {
 	// and nil when there is no terminal to ask on. Reading the answer is the
 	// caller's job because only it knows where the user's input comes from.
 	Confirm func(question, want string) (bool, error)
+
+	// SpecFile is a prepared spec the first deploy's setup takes its answers
+	// from. Refused once a manifest exists: the file is the manifest then.
+	SpecFile string
+
+	// ConfirmApply is the opt-in y/N gate behind --confirm, and nil when
+	// nobody is to be asked. It is separate from Confirm: that one is the
+	// locked-production question only the exact workload name answers, and
+	// this one is the ordinary "apply this?" asked of every run the flag was
+	// given to. The deploy calls it once, after the plan is printed and
+	// before the first mutating branch, and a no stops the run with
+	// ErrDeclined. Reading the answer is the caller's job because only it
+	// knows where the user's input comes from.
+	ConfirmApply func(question string) (bool, error)
 
 	// Lock makes the artifact that ends up live immutable and permanent.
 	// Locking is one-way, so it happens last, only after the workload is
@@ -129,6 +171,13 @@ type Options struct {
 	// put one in front of somebody.
 	ConfirmEnv func() (bool, error)
 
+	// ConfirmDelete is the wizard's question about a credential the sync made
+	// redundant, passed through for the same reason.
+	ConfirmDelete func(name string) bool
+	// ConfirmReuse is the wizard's question about a secret whose credential
+	// name is already taken, passed through for the same reason.
+	ConfirmReuse wizard.ReuseFunc
+
 	// PollInterval and PollTimeout tune the waits.
 	PollInterval time.Duration
 	PollTimeout  time.Duration
@@ -139,6 +188,11 @@ type Options struct {
 
 	// Spinner is true only when Stderr is the terminal the user is watching.
 	Spinner bool
+
+	// UseCaseID is --use-case-id as typed, "" when it was not passed. The
+	// workload is linked to it, or to the manifest's useCaseId without it;
+	// the two have to agree when both are set.
+	UseCaseID string
 }
 
 // Result is what happened, and the material for the JSON envelope.
@@ -159,12 +213,34 @@ type Result struct {
 	// the caller can say which logs to read.
 	BuildID string
 
+	// ProjectDir is the directory holding the manifest this run deployed,
+	// empty when it failed before finding one. It is not always the one the
+	// command was pointed at: the manifest search walks upward, and the setup
+	// wizard can write the project into a directory below, where a bare
+	// follow-up command could not find it.
+	ProjectDir string
+
 	// Env is what --sync-env did to the manifest before
 	// the plan was computed, zero when neither was asked for. The counts
 	// travel because a rotation is the one edit the plan cannot show: it
 	// changes no file, so a run that re-sent a secret and deployed nothing
 	// would otherwise report itself as a deploy that did nothing at all.
 	Env EnvEdit
+
+	// Sync is the size of the code sync this run ran, zero when it ran none.
+	// It is for telemetry, which sizes the sync limits from it.
+	Sync sync.Size
+
+	// UseCaseID is the Use Case the run was asked to link the workload to, by
+	// --use-case-id or by the manifest's useCaseId, "" when it was asked for
+	// none. It is set before the first request, so a run that fails before
+	// its plan still reports what it was asked for.
+	UseCaseID string
+
+	// UseCaseLinked reports that this run added the link to a workload that
+	// already existed. It is set as soon as the link is made, so a run that
+	// then failed to build or roll still says the link is in place.
+	UseCaseLinked bool
 }
 
 // EnvEdit is the .env re-entry's side of a deploy.
@@ -181,8 +257,20 @@ type EnvEdit struct {
 	Literals []string
 }
 
+// Interrupted reports a wait the user stopped, whether by the keystroke the
+// terminal UI catches or by the signal a piped run gets. Both mean the same
+// thing to a deploy — nobody is waiting for this any more — and neither is a
+// verdict on the rollout, which carries on platform-side either way.
+//
+// Exported because the command turns it into the sentence the user reads, and
+// two places answering "was this interrupted" differently is how the summary
+// and the exit code come to disagree.
+func Interrupted(err error) bool {
+	return errors.Is(err, tui.ErrInterrupted) || errors.Is(err, context.Canceled)
+}
+
 // Run reads, plans, and applies as much of the plan as this release can.
-func Run(opts Options) (Result, error) {
+func Run(ctx context.Context, opts Options) (Result, error) {
 	dir, err := filepath.Abs(opts.Dir)
 	if err != nil {
 		return Result{}, fmt.Errorf("cannot resolve %s: %w", opts.Dir, err)
@@ -193,15 +281,28 @@ func Run(opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// Before any request. On a project that already has its file, load ran
+	// the same check before --sync-env re-sent anything, so a disagreement
+	// with the file costs nothing there either.
+	loaded, useCaseID, err := withUseCase(loaded, opts.UseCaseID)
+	if err != nil {
+		return Result{ProjectDir: loaded.ProjectDir, Env: loaded.Env}, err
+	}
+
 	// What a failure between here and the plan still has to report. The
 	// binding travels because losing the id is how a deploy becomes
 	// unfindable; the .env counts travel because that edit has already
 	// happened. A rotation in particular leaves no file behind, so a failure
 	// that dropped it would let the next bare run call the workload up to date
 	// while it goes on serving the old value.
-	early := Result{WorkloadID: loaded.WorkloadID(), Env: loaded.Env}
+	early := Result{
+		WorkloadID: loaded.WorkloadID(),
+		ProjectDir: loaded.ProjectDir,
+		Env:        loaded.Env,
+		UseCaseID:  useCaseID,
+	}
 
-	live, err := lookSettled(loaded.WorkloadID(), opts)
+	live, err := lookSettled(ctx, loaded.WorkloadID(), opts)
 	if err != nil {
 		return early, err
 	}
@@ -213,14 +314,15 @@ func Run(opts Options) (Result, error) {
 
 	noteIgnoreFile(code, opts)
 
-	plan, err := Build(loaded, live, code, opts)
+	plan, err := planFor(loaded, live, code, opts)
 	if err != nil {
 		return early, err
 	}
 
-	// Read here rather than in Build, which is kept off the filesystem so its
-	// tests can stay there too.
-	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
+	plan.UseCase, err = planUseCase(plan, live.WorkloadID, useCaseID, loaded.Compiled.Payload, opts.DryRun)
+	if err != nil {
+		return early, err
+	}
 
 	result := Result{
 		Plan:       plan,
@@ -234,12 +336,15 @@ func Run(opts Options) (Result, error) {
 		// acted. Seeding it from the plan reported a mutation for every run
 		// that failed before attempting one, including the two returns just
 		// below this. What was wanted stays readable under plan.action.
-		Action: ActionUnchanged,
-		Locked: live.Locked,
+		Action:     ActionUnchanged,
+		Locked:     live.Locked,
+		ProjectDir: loaded.ProjectDir,
 		// What the .env flags did before any of this, so a run that re-sent a
 		// secret and found nothing else to do can say so: that edit changes no
 		// file and appears in no plan.
 		Env: loaded.Env,
+
+		UseCaseID: useCaseID,
 	}
 
 	if err := bindLocked(loaded, plan, &result); err != nil {
@@ -252,6 +357,15 @@ func Run(opts Options) (Result, error) {
 
 	noteUnusedForce(plan, opts)
 
+	return carryOut(ctx, loaded, live, plan, result, opts)
+}
+
+// carryOut is everything a run does once the plan has been shown: stop for a
+// dry run, ask the confirm gate, then act on the plan through whichever path
+// applies. It is its own step because the ordering here is the contract the
+// --confirm gate rests on: the review is printed before the question is asked,
+// and the question is answered before the first mutation is attempted.
+func carryOut(ctx context.Context, loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if opts.DryRun {
 		// The one run whose action is the plan's: it stops here, so printing
 		// the plan is the whole of what it did.
@@ -260,22 +374,260 @@ func Run(opts Options) (Result, error) {
 		return result, nil
 	}
 
-	if plan.Empty() {
-		return lockOnly(loaded, live, result, opts)
+	if err := confirmGate(plan, result, opts); err != nil {
+		return result, err
 	}
 
-	return apply(loaded, live, plan, result, opts)
+	var err error
+
+	switch {
+	case plan.Empty():
+		result, err = lockOnly(loaded, live, result, opts)
+	case plan.Action() == ActionLinked:
+		result, err = linkOnly(loaded, live, plan, result, opts)
+	default:
+		result, err = apply(ctx, loaded, live, plan, result, opts)
+	}
+
+	// After either path, failed or not: a roll moves result.ArtifactID onto the
+	// new version only once it has seen the rollout promote it, so it never
+	// names a version a swap was merely asked for.
+	clearServedRollout(loaded.ProjectDir, result.ArtifactID)
+
+	return result, err
 }
 
-// lockOnly is the whole of a --lock run that found nothing else to do.
+// keepInPlace drops the in-place path when the project pushes code to another
+// artifact; the build path knows how to pick that leftover up.
+func keepInPlace(loaded Loaded, live Live, plan Plan) Plan {
+	if !plan.InPlace || !plan.Code.Applies {
+		return plan
+	}
+
+	if linked := linkedArtifact(loaded.ProjectDir); linked != "" && linked != live.ArtifactID {
+		plan.InPlace = false
+	}
+
+	return plan
+}
+
+// linkedArtifact is the artifact this project pushes to, "" when it is not
+// linked or the link cannot be read.
+func linkedArtifact(projectDir string) string {
+	if !projectLinkedFn(projectDir) {
+		return ""
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil {
+		return ""
+	}
+
+	return cfg.ArtifactID
+}
+
+// noteStaleGeneration rerolls a running draft whose artifact changed after the
+// serving generation was launched: an in-place write that never rolled out
+// leaves the file and the artifact agreeing while the workload runs the old
+// spec. A read that fails is logged and the plan left as it was.
+func noteStaleGeneration(live Live, plan Plan) Plan {
+	if !staleCheckApplies(live, plan) {
+		return plan
+	}
+
+	active, err := activeProtonFn(live.WorkloadID)
+	if err != nil {
+		log.Debug("cannot read the serving generation; planning on the documents alone",
+			"workload_id", live.WorkloadID, "err", err)
+
+		return plan
+	}
+
+	if !generationPredates(active, live) {
+		return plan
+	}
+
+	return plan.rerolling("the artifact was changed after the generation serving it started")
+}
+
+// staleCheckApplies is the plan and state noteStaleGeneration asks about.
+func staleCheckApplies(live Live, plan Plan) bool {
+	leavesArtifact := plan.Empty() || plan.Retunes()
+
+	return leavesArtifact && !plan.RebuildsImage() &&
+		live.State == StateRunning && !live.Locked && !live.ArtifactUpdatedAt.IsZero()
+}
+
+// generationPredates reports that the serving generation was launched before
+// the artifact it runs was last changed.
+func generationPredates(active *workload.Proton, live Live) bool {
+	return active != nil && active.ArtifactID == live.ArtifactID &&
+		!active.CreatedAt.IsZero() && active.CreatedAt.Before(live.ArtifactUpdatedAt)
+}
+
+// planFor is Build plus the reads Build is kept away from, so its tests can
+// stay off the filesystem and the network: the project link, the serving
+// generation, and whether the platform can build what the plan asks for.
+func planFor(loaded Loaded, live Live, code CodeChange, opts Options) (Plan, error) {
+	plan, err := Build(loaded, live, code, opts)
+	if err != nil {
+		return Plan{}, err
+	}
+
+	plan.LinkedArtifact = projectLinkedFn(loaded.ProjectDir)
+	plan = noteStaleGeneration(live, keepInPlace(loaded, live, plan))
+
+	plan.Unbuildable, err = unbuildableGenerated(loaded, live, plan)
+	if err != nil {
+		return Plan{}, err
+	}
+
+	err = incompatibleBound(live, &plan)
+
+	return plan, err
+}
+
+// incompatibleBound is why the platform would refuse to swap the workload
+// onto the artifact the file names, "" when it would not. The replacement
+// route takes only a version of the running artifact's own repository, and
+// a draft and a locked version cannot replace each other; both used to be
+// found out at apply time, after a dry run had said the roll would work.
+func incompatibleBound(live Live, plan *Plan) error {
+	bound := plan.BoundArtifactID
+	if bound == "" || live.ArtifactID == "" || bound == live.ArtifactID {
+		return nil
+	}
+
+	artifact, err := getArtifactFn(bound)
+	if err != nil {
+		return fmt.Errorf("cannot read artifact %s, which %s names, so nothing was deployed: %w",
+			bound, manifest.FileName, err)
+	}
+
+	plan.BoundRead, plan.BoundLocked = true, artifact.IsLocked()
+
+	if live.ArtifactRepositoryID != "" && artifact.ArtifactRepositoryID != "" &&
+		artifact.ArtifactRepositoryID != live.ArtifactRepositoryID {
+		plan.Incompatible = fmt.Sprintf("artifact %s belongs to repository %s, and workload %s runs %s from repository %s; "+
+			"a workload only takes a version of its own repository. Point artifactId in %s at one",
+			bound, artifact.ArtifactRepositoryID, live.WorkloadID, live.ArtifactID, live.ArtifactRepositoryID, manifest.FileName)
+
+		return nil
+	}
+
+	// The other direction is fine: a draft named by a locked workload is
+	// locked to match before the swap, which is how production takes its
+	// next version.
+	if plan.BoundLocked && !live.Locked {
+		plan.Incompatible = fmt.Sprintf("artifact %s is locked and workload %s runs a draft, %s; a draft workload cannot take "+
+			"a locked version. Run 'dr workload promote %s' to make the version it runs permanent, "+
+			"or point artifactId in %s at a draft",
+			bound, live.WorkloadID, live.ArtifactID, live.WorkloadID, manifest.FileName)
+	}
+
+	return nil
+}
+
+// unbuildableGenerated is why the platform could not build the generated
+// image this plan asks for, "" when it could or when the plan builds none.
+// Asked before anything is created: the build used to fail only after the
+// artifact existed and the code was synced. A bound workload pulling its code
+// into a directory with no project files is not judged: the pulled code is
+// what the workload last built from.
+func unbuildableGenerated(loaded Loaded, live Live, plan Plan) (string, error) {
+	if loaded.Manifest.BuildMode() != manifest.BuildModeGenerated || !buildsImage(plan) {
+		return "", nil
+	}
+
+	detected := wizard.Detect(loaded.ProjectDir)
+	if seedApplies(loaded, live) && detected.SuspectDir() {
+		return "", nil
+	}
+
+	if problem := detected.GeneratedBuildProblem(); problem != "" {
+		return problem, nil
+	}
+
+	id := loaded.Manifest.ExecutionEnvironmentID()
+	if id == "" {
+		return "", nil
+	}
+
+	ee, err := getExecEnvFn(id)
+	if err != nil {
+		return "", fmt.Errorf("cannot read execution environment %s, so nothing was deployed: %w", id, err)
+	}
+
+	return detected.EnvironmentMismatch(ee), nil
+}
+
+// buildsImage reports whether the plan has the platform build an image: a
+// create, or a roll that mints a version rather than carrying the running
+// image over. A resize, a start or a reroll builds nothing, and neither does
+// a stale image on its own, which every unlinked project reports.
+func buildsImage(plan Plan) bool {
+	return plan.Creates || (plan.RollsArtifact() && !plan.InheritsImage)
+}
+
+// confirmGate asks the opt-in y/N question --confirm installs, and only when
+// answering yes would change something. The gate fires whenever the run would
+// otherwise mutate: a plan carrying changes, or an empty one with a --promote
+// waiting to make the serving artifact permanent. A wholly empty plan asks
+// nothing and returns as it always has: the live-only fields it lists as
+// unmanaged are left alone, so there is nothing to consent to. "Empty" is
+// therefore measured by pending mutation, not by how quiet the plan looks.
 //
-// --lock is about the end state rather than about what this run happened to
+// Everything that prints has printed by the time the question is asked, and
+// everything that mutates on the platform is still ahead of it. That
+// placement is the whole promise: a decline returns ErrDeclined from a run
+// that has deployed nothing, and a dry run never gets here at all -- it
+// returns above, because a preview is not a mutation to consent to. What
+// loading did before the plan, a manifest the wizard wrote or a secret
+// --sync-env re-sent, stands.
+func confirmGate(plan Plan, result Result, opts Options) error {
+	if opts.ConfirmApply == nil {
+		return nil
+	}
+
+	// lockOnly is the one mutation an empty plan can still carry out, and
+	// only when --promote was passed and the serving artifact is not already
+	// locked. Any other empty plan is the "Already up to date" run.
+	if plan.Empty() && (result.Locked || !opts.Lock) {
+		return nil
+	}
+
+	agreed, err := opts.ConfirmApply("Apply this deploy?")
+	if err != nil {
+		return fmt.Errorf("cannot ask to apply this deploy: %w", err)
+	}
+
+	if !agreed {
+		return ErrDeclined
+	}
+
+	return nil
+}
+
+// rendererFor picks how the plan is shown. --diff swaps the renderer and
+// nothing else: the plan goes out laid out as a diff rather than summarised,
+// and everything below reads it identically either way.
+func rendererFor(diff bool) func(io.Writer, Summary, Plan) error {
+	if diff {
+		return RenderDiff
+	}
+
+	return Render
+}
+
+// lockOnly is the whole of a --promote run that found nothing else to do.
+//
+// --promote is about the end state rather than about what this run happened to
 // change: the flag says the artifact that ends up live should be permanent,
 // and an empty plan means the one already serving is that artifact. Returning
 // early on Empty, as this used to, printed "Already up to date" and exited 0
 // having locked nothing, which is the wrong answer twice over. It contradicts
 // the flag's own help, and it breaks the sequence the draft warning tells
-// people to follow: deploy, read the warning, run 'up --lock'. By then there
+// people to follow: deploy, read the warning, run 'up --promote'. By then there
 // is nothing left to change, so the remedy silently did nothing at all.
 //
 // The live state is checked first because an empty plan is not the same as a
@@ -287,23 +639,40 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 		return result, nil
 	}
 
-	// loaded is threaded through for the remedy a refusal names: a terminated
-	// workload is cleared by `dr workload delete`, and that command only finds
-	// this project's manifest if the message carries the same --dir the deploy
-	// was given.
-	if err := deployable(live, result.Plan, result.Name, dirFlagFor(loaded)); err != nil {
+	if err := lockGuards(loaded, live, result); err != nil {
 		return result, err
+	}
+
+	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+}
+
+// lockGuards is every check that can refuse a lock on a run that rolls
+// nothing. A run that also links runs them before the link, so a lock they
+// refuse leaves the workload as it was.
+func lockGuards(loaded Loaded, live Live, result Result) error {
+	if err := lockable(loaded, live, result); err != nil {
+		return err
 	}
 
 	// A rollout in flight is about to move the workload off the artifact this
 	// would make permanent, and locking cannot be undone. deployable does not
 	// cover it: the workload reports itself running for the whole of a swap,
 	// so the only way to know is to ask.
-	if err := guardRollout(live.WorkloadID, "the artifact was left as it is"); err != nil {
-		return result, err
-	}
+	return guardRollout(live.WorkloadID, "nothing was changed")
+}
 
-	return lock(result, newReporter(opts.Stderr, opts.Spinner))
+// lockable is deployable as a lock sees it. A link-only plan lets an errored
+// workload through deployable, because the link touches nothing it runs; a
+// lock does, and cannot be undone, so it judges the plan without the link.
+// loaded is threaded through for the remedy a refusal names: a terminated
+// workload is cleared by `dr workload delete`, and that command only finds
+// this project's manifest if the message carries the same --dir the deploy
+// was given.
+func lockable(loaded Loaded, live Live, result Result) error {
+	judged := result.Plan
+	judged.UseCase = nil
+
+	return deployable(live, judged, result.Name, dirFlagFor(loaded))
 }
 
 // guardRollout refuses to act while a swap is already under way, and gives a
@@ -323,6 +692,9 @@ func lockOnly(loaded Loaded, live Live, result Result, opts Options) (Result, er
 // replacement route that answered 500, or timed out, says nothing at all
 // about the run it just stopped, and the reader is looking at a deploy rather
 // than at a route.
+//
+// Kept apart from awaitReplaced: a swap can start between the plan and the
+// apply, and only a check in front of the POST catches that one.
 func guardRollout(workloadID, consequence string) error {
 	err := guardReplacementFn(workloadID)
 	if err == nil || errors.Is(err, workload.ErrReplacementInFlight) {
@@ -334,14 +706,173 @@ func guardRollout(workloadID, consequence string) error {
 }
 
 // lookSettled is the live read a plan is built from: the workload as it is,
-// once it has stopped moving.
-func lookSettled(workloadID string, opts Options) (Live, error) {
+// once it has stopped moving. A rollout is waited out first, then the
+// workload's own status; both waits share one --poll-timeout.
+func lookSettled(ctx context.Context, workloadID string, opts Options) (Live, error) {
 	found, err := Look(workloadID)
 	if err != nil {
 		return Live{}, err
 	}
 
-	return awaitSteady(found, opts)
+	waitFrom := time.Now()
+
+	replaced, previewed, err := awaitReplaced(ctx, found, opts)
+	if err != nil {
+		return replaced, err
+	}
+
+	// A preview that already said a deploy would wait says nothing further.
+	if previewed {
+		return replaced, nil
+	}
+
+	return awaitSteady(ctx, replaced, budgetLeft(opts, waitFrom))
+}
+
+// awaitReplaced waits out a swap somebody else started and re-reads the
+// workload once it has landed. A dry run never waits; the bool reports that
+// the preview already said a deploy would.
+func awaitReplaced(ctx context.Context, live Live, opts Options) (Live, bool, error) {
+	if !replaceable(live) {
+		return live, false, nil
+	}
+
+	active, err := activeReplacementFn(live.WorkloadID)
+	if err != nil {
+		return live, false, fmt.Errorf(
+			"cannot tell whether workload %s already has a rollout in progress, so nothing was deployed: %w",
+			live.WorkloadID, err)
+	}
+
+	if active == nil {
+		// Logged so a --debug transcript shows the route was asked at all.
+		log.Debug("no rollout in flight; planning against the workload as read",
+			"workload_id", live.WorkloadID)
+
+		return live, false, nil
+	}
+
+	// A settled record lingers, so it is not waited on, but the workload is
+	// re-read: the snapshot in hand may name the outgoing artifact.
+	if workload.IsTerminalReplacementStatus(active.Status) {
+		log.Debug("the rollout already settled; re-reading before planning",
+			"workload_id", live.WorkloadID, "replacement_id", active.ID, "status", active.Status)
+
+		refreshed, err := Look(live.WorkloadID)
+
+		return refreshed, false, err
+	}
+
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	report.say("  %s\n", tui.HintStyle.Render(replacingNote(live.WorkloadID, active)))
+
+	if opts.DryRun {
+		report.say("  %s\n", tui.HintStyle.Render(
+			"A deploy would wait for this rollout to finish and plan against where it lands."))
+
+		return previewedMidSwap(live), true, nil
+	}
+
+	if opts.Detach {
+		// --detach is about the deploy; this wait comes before it.
+		report.say("  %s\n", tui.HintStyle.Render(
+			"Waiting for it to land before planning; --detach applies to the deploy."))
+	}
+
+	var settled held[workload.Replacement]
+
+	const label = "Waiting for the rollout already in progress"
+
+	err = report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			// Seeded with the record just read, so the wait can tell a rollout
+			// that settled before the first poll from one that was never there.
+			replacement, waitErr := waitReplacementFn(ctx, live.WorkloadID, active,
+				opts.PollInterval, opts.PollTimeout, rolloutProgress(strings.ToLower(label), opts, report, note))
+			settled.set(replacement)
+
+			return waitErr
+		})
+	if err != nil {
+		if failure := replacedFailed(live, settled.get(), err); failure != nil {
+			return live, false, failure
+		}
+
+		report.say("  %s\n", tui.WarnStyle.Render(fmt.Sprintf(
+			"⚠ That rollout ended as %s%s, so the workload is still on the version it was.",
+			settled.get().Status, reasonClause(settled.get().Message))))
+	}
+
+	refreshed, err := Look(live.WorkloadID)
+
+	return refreshed, false, err
+}
+
+// previewedMidSwap is the state a dry run plans against while a swap is in
+// flight: running and stopped both read as settling, since the swap decides
+// what differs. Errored keeps its verdict.
+func previewedMidSwap(live Live) Live {
+	live.SwapInFlight = true
+
+	if live.State == StateRunning || live.State == StateStopped {
+		live.State = StateSettling
+	}
+
+	return live
+}
+
+// replaceable says whether there is a workload for the replacement route to
+// answer about: a missing or terminated one is not being replaced.
+func replaceable(live Live) bool {
+	if live.WorkloadID == "" {
+		return false
+	}
+
+	switch live.State {
+	case StateUnbound, StateMissing, StateTerminated:
+		return false
+
+	case StateStopped, StateSettling, StateRunning, StateErrored:
+		return true
+
+	default:
+		return true
+	}
+}
+
+// replacingNote says what is in flight, naming only the fields the platform
+// filled in: a settings-only rollout carries no candidate artifact.
+func replacingNote(workloadID string, active *workload.Replacement) string {
+	note := "Workload " + workloadID + " is being replaced"
+
+	if active.ArtifactID != "" {
+		note += " onto artifact " + active.ArtifactID
+	}
+
+	if active.Status != "" {
+		note += ", status " + active.Status
+	}
+
+	return note + "."
+}
+
+// replacedFailed is the verdict on a wait that did not come back clean: a
+// failed rollout never promoted, so the run carries on; anything else is an
+// error naming where the rollout got to.
+func replacedFailed(live Live, settled *workload.Replacement, err error) error {
+	if settled != nil && workload.IsFailedReplacementStatus(settled.Status) {
+		return nil
+	}
+
+	where := "did not finish rolling out"
+	if settled != nil && settled.Status != "" {
+		where = "was still " + settled.Status
+	}
+
+	return fmt.Errorf(
+		"the rollout of workload %s %s, so nothing was deployed; check 'dr workload status %s': %w",
+		live.WorkloadID, where, live.WorkloadID, err)
 }
 
 // awaitSteady waits out a workload that is still moving, and hands back what
@@ -369,7 +900,7 @@ func lookSettled(workloadID string, opts Options) (Live, error) {
 // the answer: the plan for a workload halfway through a transition depends on
 // where the transition lands, so the state travels on unchanged and Render
 // declines to call it up to date.
-func awaitSteady(live Live, opts Options) (Live, error) {
+func awaitSteady(ctx context.Context, live Live, opts Options) (Live, error) {
 	if live.State != StateSettling {
 		return live, nil
 	}
@@ -398,16 +929,20 @@ func awaitSteady(live Live, opts Options) (Live, error) {
 			"Waiting for it to settle before planning; --detach applies to the deploy."))
 	}
 
-	var settled *workload.Workload
+	var settled held[workload.Workload]
 
-	err := report.run("Waiting for the workload to settle", func() error {
-		wl, waitErr := waitSteadyFn(live.WorkloadID, opts.PollInterval, opts.PollTimeout, nil)
-		settled = wl
+	const label = "Waiting for the workload to settle"
 
-		return waitErr
-	})
+	err := report.wait(ctx, label,
+		func(ctx context.Context, note tui.Noter) error {
+			wl, waitErr := waitSteadyFn(ctx, live.WorkloadID, opts.PollInterval, opts.PollTimeout,
+				progress(strings.ToLower(label), opts, report, note))
+			settled.set(wl)
+
+			return waitErr
+		})
 	if err != nil {
-		if failure := settleFailed(live, settled, err); failure != nil {
+		if failure := settleFailed(live, settled.get(), err); failure != nil {
 			return live, failure
 		}
 
@@ -469,8 +1004,8 @@ func noteIgnoreFile(code CodeChange, opts Options) {
 //
 // That is not a cosmetic slip. Deploying a locked, versioned artifact onto a
 // fresh workload is how a promotion works, and getting it wrong there tells
-// someone their permanent deploy is temporary and then advises 'up --lock',
-// which the platform answers with a 403 because the artifact is already
+// someone their permanent deploy is temporary and then advises promoting it,
+// which the platform answers with a 422 because the artifact is already
 // locked. The reader is left with a warning they cannot act on.
 //
 // Only creates ask. A roll onto a live workload cannot hit this, because the
@@ -519,13 +1054,36 @@ func noteUnusedForce(plan Plan, opts Options) {
 		"  --force-build had no effect: this manifest does not build its image, so there is nothing to rebuild.\n")
 }
 
-// load finds the manifest, running the setup wizard when there is none and a
-// person is there to answer it. In CI there is nobody, so a missing manifest
-// is an error that names the command which writes one: deploying by guessing
-// is the one thing this command must never do.
+// load finds the manifest, running the setup wizard when there is none: the
+// screens on a terminal, the same answers taken from the project without
+// one. Either way the file is written before the deploy reads it, so the
+// choices the run made are on disk to read and to commit.
+//
+// A missing manifest used to be an error without a terminal, on the rule
+// that this command never deploys by guessing. The refusal was never
+// preventing a guess — `dr workload config --yes` makes the identical one,
+// from ./Dockerfile and its EXPOSE — it only required that the guess be made
+// by the other command, and the cost was a dead end: the error named a
+// command whose own help says it opens a wizard, so an agent asked for a
+// human and stopped. What keeps the rule honest is the
+// committed file, which is as true here as it is there, and the report below
+// that says the file was written: nobody commits a file they were not told
+// about, and a CI job that never commits it would create a workload per run.
 func load(dir string, opts Options) (Loaded, error) {
 	loaded, err := Load(dir)
 	if err == nil {
+		if opts.SpecFile != "" {
+			return loaded, fmt.Errorf("--spec-file is for a first deploy, and this project already has %s; "+
+				"edit that file, or delete it to start over", manifest.FileName)
+		}
+
+		// A --use-case-id that disagrees with the file is refused before
+		// --sync-env re-sends a secret. Run applies the flag afterwards, on
+		// whichever file the run ends up reading.
+		if _, _, err := withUseCase(loaded, opts.UseCaseID); err != nil {
+			return loaded, err
+		}
+
 		return opts.editEnv(loaded)
 	}
 
@@ -533,22 +1091,37 @@ func load(dir string, opts Options) (Loaded, error) {
 		return loaded, err
 	}
 
-	if opts.NonInteractive {
-		return Loaded{}, fmt.Errorf(
-			"%w. Run 'dr workload config' to create one, then deploy", err)
-	}
-
 	// Remedy for the same reason the deploy path sets it: nothing setup prints
 	// today names a flag, but the fallback is `dr workload config`, and a
 	// default that is wrong for this caller is one nobody will notice going
 	// wrong.
+	//
+	// DryRun travels: a preview must not write the file it is previewing, and
+	// the wizard already knows how to render one without writing it. The plan
+	// is then computed from those bytes, so a dry run on a fresh project shows
+	// the file a real run would write and what it would do next, which is the
+	// natural first move for anyone looking before they deploy.
+	//
+	// A project the wizard cannot read still refuses, in its own words: with
+	// no Dockerfile it cannot infer an image source and says which flags
+	// settle it. That error is better than one written here, because it is
+	// the one `dr workload config` gives for the same project.
 	setup, err := runWizardFn(wizard.Options{
-		Dir:    dir,
-		Remedy: "dr workload up" + manifest.DirFlag(dir),
-		Stderr: opts.Stderr,
+		Dir:            dir,
+		NonInteractive: opts.NonInteractive,
+		DryRun:         opts.DryRun,
+		Remedy:         "dr workload up" + manifest.DirFlag(dir),
+		Stderr:         opts.Stderr,
+		SpecFile:       opts.SpecFile,
 	})
 	if err != nil {
-		return Loaded{}, err
+		return Loaded{}, setupRefused(err, opts.NonInteractive, dir)
+	}
+
+	reportSetup(setup, opts)
+
+	if opts.DryRun {
+		return LoadRendered(setup.Content, setup.Path)
 	}
 
 	// The wizard's directory question may have moved the project, and the
@@ -559,6 +1132,60 @@ func load(dir string, opts Options) (Loaded, error) {
 	}
 
 	return Load(dir)
+}
+
+// reportSetup says what setup just did to the project, because nothing else
+// in this run will: the deploy reports the workload, and the file it read on
+// the way is not part of that story.
+//
+// The path is always named, since the file has to be committed for the next
+// deploy to find the workload this one creates. The contents are printed only
+// when nobody saw them: a headless run answered every question itself, and
+// this is the one place its answers are shown; on a terminal the person just
+// walked through the screens. A dry run prints them either way, because the
+// file is the whole of what it is previewing. Literals get the same warning
+// `dr workload config` gives, for the same file.
+func reportSetup(setup wizard.Result, opts Options) {
+	if opts.Stderr == nil {
+		return
+	}
+
+	short := wizard.ShortPath(setup.Path)
+
+	// The plan that follows opens with a blank line of its own.
+	switch {
+	case opts.DryRun:
+		fmt.Fprintf(opts.Stderr, "Dry run: %s was not written. A real run writes it first, then deploys:\n\n%s",
+			short, setup.Content)
+
+		return
+	case opts.NonInteractive:
+		fmt.Fprintf(opts.Stderr, "✓ Wrote %s from the project; commit it, every later deploy reads it.\n\n%s",
+			short, setup.Content)
+	default:
+		fmt.Fprintf(opts.Stderr, "✓ Wrote %s; commit it, every later deploy reads it.\n", short)
+	}
+
+	wizard.WarnLiterals(opts.Stderr, setup.Draft.EnvVars)
+}
+
+// setupRefused says which command the flags in a headless setup failure
+// belong to.
+//
+// The wizard's own message names them — "--build-mode image with --image", and
+// the rest — but it is the same message whether `dr workload config` or this
+// deploy ran it, and those flags exist only on the first. Left alone, a reader
+// told to pass --image to a command that has no such flag learns that the hard
+// way. An interactive run is left untouched: nobody there was given flags to
+// be confused about.
+func setupRefused(err error, nonInteractive bool, dir string) error {
+	// A spec file with no workload name already names the command that takes
+	// --name; the suffix would send the reader to one without the file.
+	if !nonInteractive || errors.Is(err, wizard.ErrSpecFileUnnamed) {
+		return err
+	}
+
+	return fmt.Errorf("%w. Pass them to 'dr workload config%s', then run this again", err, manifest.DirFlag(dir))
 }
 
 // editEnv applies the .env re-entry this run asked for, against the manifest
@@ -608,6 +1235,8 @@ func (o Options) editEnv(loaded Loaded) (Loaded, error) {
 		DryRun:         o.DryRun,
 		SyncEnv:        true,
 		Confirm:        o.ConfirmEnv,
+		ConfirmDelete:  o.ConfirmDelete,
+		ConfirmReuse:   o.ConfirmReuse,
 		Remedy:         remedy,
 		Stderr:         o.Stderr,
 	})
@@ -778,25 +1407,14 @@ func name(loaded Loaded, live Live) string {
 // work it will not attempt. deployable stays here as the backstop it always
 // was, and is the only thing that answers for a workload which was steady when
 // it was read and is moving again by the time it is acted on.
-func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
+func apply(ctx context.Context, loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
 	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
-		return result, err
-	}
-
-	// Pulled before anything is started or rolled, so a directory that turns
-	// out to hold the wrong thing is refused before the run has touched the
-	// workload.
-	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
 		return result, err
 	}
 
 	report := newReporter(opts.Stderr, opts.Spinner)
 
-	// Everything that can refuse this run goes first, because a start is a
-	// mutation and the branch below performs one. The order used to be
-	// academic: a stopped workload with drift was turned away here, so nothing
-	// could refuse after something had already changed.
-	lock, err := beforeAnything(loaded, live, plan, result, opts)
+	lock, err := prepare(loaded, live, plan, &result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -820,7 +1438,7 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	// read describe the artifact rather than the workload, so faking a refresh
 	// would advertise a consistency this value does not have.
 	if live.State == StateStopped {
-		result, err = startFirst(live, plan, result, opts, report)
+		result, err = startFirst(ctx, live, plan, result, opts, report)
 		if err != nil || plan.OnlyStarts() {
 			return result, err
 		}
@@ -834,23 +1452,81 @@ func apply(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Re
 	// are the same question, and answering it twice is how a roll comes to skip
 	// a check or a resize comes to fail one.
 	if plan.Retunes() {
-		return retune(loaded, result, opts, report)
+		return retune(ctx, loaded, result, opts, report)
 	}
 
 	// A workload that already exists is replaced rather than created: the
 	// endpoint has to survive, and something is serving on it meanwhile.
 	if plan.RollsArtifact() {
-		return roll(loaded, live, plan, lock, result, opts, report)
+		return roll(ctx, loaded, live, plan, lock, result, opts, report)
 	}
 
 	// A published image is one POST. Anything the platform builds has to be
 	// given somewhere to put the code and time to turn it into an image
 	// first, which is a different shape of deploy rather than a longer one.
 	if plan.Code.Applies {
-		return buildAndCreate(loaded, plan.Code, result, opts, report)
+		return buildAndCreate(ctx, loaded, plan.Code, result, opts, report)
 	}
 
-	return create(loaded, loaded.Compiled.Payload, result, opts, report)
+	return create(ctx, loaded, loaded.Compiled.Payload, result, opts, report)
+}
+
+// prepare is what an apply does before it starts, rolls or resizes anything.
+//
+// The seed is pulled first, so a directory that turns out to hold the wrong
+// thing is refused before the run has touched the workload. Then everything
+// that can refuse this run, because a start is a mutation and the apply
+// performs one. The Use Case link comes last of the three and before the
+// rest: the platform checks a rollout against the workload's links. A link it
+// makes is recorded on result at once, so a run that fails later says so.
+func prepare(loaded Loaded, live Live, plan Plan, result *Result, opts Options, report *reporter) (bool, error) {
+	if err := seedIfMinting(loaded, live, plan, opts); err != nil {
+		return false, err
+	}
+
+	lock, err := beforeAnything(loaded, live, plan, *result, opts)
+	if err != nil {
+		return false, err
+	}
+
+	result.UseCaseLinked, err = link(plan, live.WorkloadID, report)
+
+	return lock, err
+}
+
+// linkOnly is the whole of a run whose only change is the Use Case link: a
+// link is no reason to start, build or roll anything. --promote still locks
+// what is serving, as it does on a run with nothing to do, and every check
+// on that lock runs before the link is made, so a lock it would refuse
+// changes nothing.
+func linkOnly(loaded Loaded, live Live, plan Plan, result Result, opts Options) (Result, error) {
+	if err := deployable(live, plan, result.Name, dirFlagFor(loaded)); err != nil {
+		return result, err
+	}
+
+	locks := opts.Lock && !result.Locked
+	if locks {
+		if err := lockGuards(loaded, live, result); err != nil {
+			return result, err
+		}
+	}
+
+	report := newReporter(opts.Stderr, opts.Spinner)
+
+	sent, err := link(plan, live.WorkloadID, report)
+	result.UseCaseLinked = sent
+
+	if err != nil {
+		return result, err
+	}
+
+	result.Action = ActionLinked
+
+	if !locks {
+		return result, nil
+	}
+
+	return lock(result, report)
 }
 
 // beforeAnything runs every check that can still refuse, and settles the one
@@ -933,7 +1609,7 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 // Only a plan with something in it is judged. An empty plan says what it found
 // rather than listing work, so there is no announcement to correct, and
 // refusing here would turn today's exit 0 into a failure for a run that was
-// never going to change anything. --lock is the one empty plan that still
+// never going to change anything. --promote is the one empty plan that still
 // mutates, and lockOnly asks the same question for itself.
 func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) error {
 	var refused error
@@ -955,7 +1631,7 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 		SecretsRotated: result.Env.SecretsRotated,
 	}
 
-	if err := Render(opts.Stderr, summary, plan); err != nil {
+	if err := rendererFor(opts.Diff)(opts.Stderr, summary, plan); err != nil {
 		return err
 	}
 
@@ -987,7 +1663,28 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 // alongside errored. deployable keeps its settling branch as the backstop for
 // everything that reaches the apply by another route.
 func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bool) error {
-	if live.State == StateSettling && dryRun {
+	// A project the platform cannot build from is refused whatever the
+	// workload is doing: where a swap lands does not change the files.
+	if plan.Unbuildable != "" {
+		return fmt.Errorf(
+			"nothing was deployed: %s. Fix the project, or run 'dr workload config%s' to pick another build, then deploy again",
+			plan.Unbuildable, dirFlagFor(loaded))
+	}
+
+	// A terminated workload has to be deleted whatever the file names, and
+	// after that the run is a create, which this swap check does not apply
+	// to. Saying so first saves a round trip through repointing artifactId.
+	if live.State == StateTerminated {
+		return deployable(live, plan, workloadName, dirFlagFor(loaded))
+	}
+
+	if plan.Incompatible != "" {
+		return fmt.Errorf("nothing was deployed: %s, then deploy again", plan.Incompatible)
+	}
+
+	// A preview of a moving workload reports the state and refuses nothing:
+	// the deploy would wait and plan against where the swap lands.
+	if dryRun && (live.State == StateSettling || live.SwapInFlight) {
 		return nil
 	}
 
@@ -1016,7 +1713,9 @@ func refusal(loaded Loaded, live Live, plan Plan, workloadName string, dryRun bo
 //
 // Errored is refused only for a plan that replaces nothing: a roll or a resize
 // is the recovery, with no serving generation for the swap to endanger, while
-// a run with nothing new to deploy could only put the same failure back.
+// a run with nothing new to deploy could only put the same failure back. A
+// plan whose only change is the Use Case link is let through as well: the link
+// touches nothing the workload runs, so there is no failure for it to repeat.
 func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 	switch live.State {
 	case StateTerminated:
@@ -1026,7 +1725,7 @@ func deployable(live Live, plan Plan, workloadName, dirFlag string) error {
 			workloadName, deleteRemedy(live.WorkloadID, dirFlag, true), recreateNote)
 
 	case StateErrored:
-		if plan.Replaces() {
+		if plan.Replaces() || plan.Action() == ActionLinked {
 			return nil
 		}
 
@@ -1116,6 +1815,7 @@ func startable(live Live, workloadName string) error {
 // else can fail, so a run that dies during the wait still leaves the next one
 // able to find what it made.
 func create(
+	ctx context.Context,
 	loaded Loaded,
 	payload json.RawMessage,
 	result Result,
@@ -1127,7 +1827,7 @@ func create(
 	err := report.run("Creating workload", func() error {
 		wl, createErr := createWorkloadFn(payload)
 		if createErr != nil {
-			return nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded))
+			return enclaveRefusal(nameTaken(createErr, result.Name, loaded.Path, dirFlagFor(loaded)))
 		}
 
 		created = wl
@@ -1158,7 +1858,7 @@ func create(
 		return result, nil
 	}
 
-	return settle(created.ID, workload.Serving{}, result, opts, report)
+	return settle(ctx, created.ID, workload.Serving{}, result, opts, report)
 }
 
 // startFirst brings a stopped workload up so the rest of the plan has
@@ -1175,7 +1875,7 @@ func create(
 // cannot be requested against a workload that is not up yet, and it is the
 // rollout that --detach returns without waiting for. Saying so is better than
 // silently blocking, so the note goes out before the wait rather than after it.
-func startFirst(live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
+func startFirst(ctx context.Context, live Live, plan Plan, result Result, opts Options, report *reporter) (Result, error) {
 	if err := requestStart(result.WorkloadID, report); err != nil {
 		return result, err
 	}
@@ -1201,10 +1901,10 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 	// Only the run that ends here may lock: locking is about the artifact left
 	// serving, and a start that is about to be rolled off is not that.
 	if only {
-		return settle(result.WorkloadID, workload.Serving{}, result, opts, report)
+		return settle(ctx, result.WorkloadID, workload.Serving{}, result, opts, report)
 	}
 
-	result, err := awaitRunning(result.WorkloadID, workload.Serving{}, result, opts, report)
+	result, err := awaitRunning(ctx, result.WorkloadID, workload.Serving{}, result, opts, report)
 	if err != nil && workload.IsErroredWorkloadStatus(result.Status) {
 		// The start is a prerequisite rather than the deploy, and what follows
 		// replaces the generation that just failed. Failing here closed a loop:
@@ -1227,7 +1927,7 @@ func startFirst(live Live, plan Plan, result Result, opts Options, report *repor
 // and a start that came up errored is the thing that says otherwise. It is the
 // same evidence on which an already-errored workload never inherits. Left
 // standing, the copy would carry the image that just failed onto the version
-// this run promotes, and under --lock lock it there for good, leaving a
+// this run promotes, and under --promote lock it there for good, leaving a
 // permanently locked artifact pointing at an image that does not work.
 func afterStart(plan Plan, result Result, report *reporter) Plan {
 	if !plan.InheritsImage || !workload.IsErroredWorkloadStatus(result.Status) {
@@ -1235,6 +1935,7 @@ func afterStart(plan Plan, result Result, report *reporter) Plan {
 	}
 
 	plan.InheritsImage = false
+	plan.InPlace = false
 
 	report.say("  The image it failed to come up on cannot be trusted, " +
 		"so the new version is built rather than copied.\n")
@@ -1287,7 +1988,7 @@ func startingStatus(was string) string {
 // "an unrelated workload that happens to share a name", and the two want
 // opposite things. Adopting the first is how a room full of people deploying
 // the same template all bind to whoever ran it first, are told their own
-// deploy succeeded, and under --lock permanently lock a stranger's artifact.
+// deploy succeeded, and under --promote permanently lock a stranger's artifact.
 // The plan they were shown said a workload would be created; nothing about the
 // file would have reached the one they were given.
 //
@@ -1400,7 +2101,9 @@ func isConflict(err error) bool {
 // It is also what puts verifyEndpoint after the cutover rather than inside it.
 // Before this wait existed, a roll GETted the endpoint mid-swap and reported
 // the version being replaced.
-func settle(workloadID string, want workload.Serving, result Result, opts Options, report *reporter) (Result, error) {
+func settle(ctx context.Context, workloadID string, want workload.Serving, result Result, opts Options,
+	report *reporter,
+) (Result, error) {
 	// Whether the drain wait actually happened decides what the endpoint line
 	// below is allowed to claim. On an install without the proton route the
 	// wait rests on the artifact alone, and the artifact moves about a minute
@@ -1409,7 +2112,7 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 	unconfirmed := ""
 	want.OnUnconfirmed = func(reason string) { unconfirmed = reason }
 
-	result, err := awaitRunning(workloadID, want, result, opts, report)
+	result, err := awaitRunning(ctx, workloadID, want, result, opts, report)
 	if err != nil {
 		return result, err
 	}
@@ -1417,9 +2120,31 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 	// One GET against the endpoint, reported and never fatal. Running means
 	// the container started; with no probe written by default, whether
 	// anything answers is a question nobody has asked yet.
-	verifyEndpoint(result, unconfirmed, report)
+	interrupted := verifyEndpoint(result, unconfirmed, report)
 
+	return finishSettle(result, interrupted, opts, report)
+}
+
+// finishSettle is the last step of a settle: the lock, when one was asked
+// for. It is its own function so the one decision in it can be tested without
+// a terminal to interrupt.
+//
+// An interrupt during the endpoint check does not fail the deploy — the
+// rollout finished, and the workload is serving — but it does withhold the
+// lock. Locking is the one irreversible step of the run, and taking it after
+// the user asked the run to stop is the opposite of what the keystroke meant.
+// The deploy stays a success, the run says the lock was not taken, and the
+// summary's locked=false carries the same fact to anything reading JSON.
+func finishSettle(result Result, interrupted bool, opts Options, report *reporter) (Result, error) {
 	if !opts.Lock {
+		return result, nil
+	}
+
+	if interrupted {
+		report.say("  %s\n", tui.WarnStyle.Render("⚠ --promote skipped: interrupted."))
+		report.say("    %s\n", tui.HintStyle.Render(
+			"The artifact is running and unlocked. Run 'dr workload promote' to make it permanent."))
+
 		return result, nil
 	}
 
@@ -1433,28 +2158,36 @@ func settle(workloadID string, want workload.Serving, result Result, opts Option
 // the status alone would settle the wait too early; a resize asks for the drain
 // with no artifact to name; a create and a start ask for neither.
 func awaitRunning(
+	ctx context.Context,
 	workloadID string,
 	want workload.Serving,
 	result Result,
 	opts Options,
 	report *reporter,
 ) (Result, error) {
-	var final *workload.Workload
+	var final held[workload.Workload]
 
 	label := waitLabel(want, result)
 
-	err := report.run(label, func() error {
-		wl, waitErr := waitWorkloadFn(workloadID, want, opts.PollInterval, opts.PollTimeout,
-			heartbeat(strings.ToLower(label), opts, report))
-		final = wl
+	err := report.wait(ctx, label, func(ctx context.Context, note tui.Noter) error {
+		wl, waitErr := waitWorkloadFn(ctx, workloadID, want, opts.PollInterval, opts.PollTimeout,
+			progress(strings.ToLower(label), opts, report, note))
+		final.set(wl)
 
 		return waitErr
 	})
 
-	if final != nil {
-		result.Status = final.Status
-		result.Endpoint = final.Endpoint
-		result.ArtifactID = final.ArtifactID
+	// An abandoned wait saw a workload — the poll loop hands back its last
+	// read alongside the cancellation — but what it saw is the rollout
+	// mid-flight, which for a roll is the version being replaced. Recording
+	// that would put the outgoing artifact and endpoint in the summary and in
+	// the JSON envelope of a deploy nobody waited for, under a status that
+	// reads as arrived. A timeout is different: it waited the whole way and
+	// where it got to is the finding, so that one still reports.
+	if f := final.get(); f != nil && !Interrupted(err) {
+		result.Status = f.Status
+		result.Endpoint = f.Endpoint
+		result.ArtifactID = f.ArtifactID
 	}
 
 	if err != nil {
@@ -1525,19 +2258,66 @@ func budgetLeft(opts Options, since time.Time) Options {
 // minPollBudget is what a wait gets when the one before it spent everything.
 const minPollBudget = 30 * time.Second
 
-// heartbeat prints a line every so often while a long wait runs, and nil when
-// there is a spinner to do that job.
+// progress narrates a long wait, in whichever way the output it is going to
+// can carry.
 //
-// report.run prints nothing until a phase ends, so without this the longest
-// phase in the deploy emits no bytes at all: on a live rollout it sat for eight
-// and a half minutes, which from outside is indistinguishable from a hang.
+// A phase prints nothing until it ends, so without this the longest phase in
+// the deploy emits no bytes at all: on a live rollout it sat for eight and a
+// half minutes, which from outside is indistinguishable from a hang.
 //
-// The line carries the phase name because it is printed before the checkmark it
-// belongs to. Read top to bottom, an unlabelled line sits under the previous
-// phase's tick and reads as belonging to that one.
-func heartbeat(label string, opts Options, report *reporter) func(*workload.Workload) {
-	if opts.Spinner || opts.PollInterval <= 0 {
+// With a spinner the narration is the label's own suffix, rewritten on every
+// poll. That path used to get nothing — this returned nil whenever a spinner
+// was drawn, on the grounds that the spinner was already moving — which left
+// the one reader who is definitely watching with a glyph that says only that
+// the process is alive. Its own comment said the interval was "short enough
+// that nobody reaches for Ctrl-C"; it was disabled on the path where somebody
+// did.
+func progress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Workload) {
+	return narrate(label, opts, report, note, func(wl *workload.Workload) string {
+		return "the workload is " + wl.Status
+	})
+}
+
+// rolloutProgress is progress for the waits that follow a replacement rather
+// than the workload: the rollout a new version rides in on, and the one a
+// sizing change starts.
+func rolloutProgress(label string, opts Options, report *reporter, note tui.Noter) func(*workload.Replacement) {
+	return narrate(label, opts, report, note, func(r *workload.Replacement) string {
+		return "the rollout is " + r.Status
+	})
+}
+
+// narrate builds the per-poll callback a wait says it is still alive with.
+// state is the only part that differs between the things being waited on, and
+// is never handed a nil: both poll loops call their tick only after a
+// successful read.
+//
+// Elapsed time, never the version being waited for. Naming that reads as
+// though it had arrived, which is the opposite of the question this answers:
+// the wait is progressing, not stuck.
+func narrate[T any](
+	label string,
+	opts Options,
+	report *reporter,
+	note tui.Noter,
+	state func(T) string,
+) func(T) {
+	if opts.PollInterval <= 0 {
 		return nil
+	}
+
+	started := phaseClock()
+
+	// On a terminal the spinner is already rendering the label, so this goes
+	// in the parentheses after it and is rewritten on every poll. Anywhere
+	// else there is nothing to rewrite, so it is a whole line, carrying the
+	// label because it prints before the checkmark it belongs to — unlabelled,
+	// it would sit under the previous phase's tick and read as that one's.
+	if opts.Spinner {
+		return func(v T) {
+			note(fmt.Sprintf("%s so far; %s",
+				phaseClock().Sub(started).Truncate(time.Second), state(v)))
+		}
 	}
 
 	every := int(heartbeatEvery / opts.PollInterval)
@@ -1545,22 +2325,18 @@ func heartbeat(label string, opts Options, report *reporter) func(*workload.Work
 		every = 1
 	}
 
-	started := phaseClock()
 	ticks := 0
 
-	return func(wl *workload.Workload) {
+	return func(v T) {
 		ticks++
 
 		if ticks%every != 0 {
 			return
 		}
 
-		// Elapsed, not the artifact. Naming the version being waited for reads
-		// as though it had arrived, which is the question this line exists to
-		// answer: the wait is progressing, not stuck.
 		report.say("    %s\n", tui.HintStyle.Render(fmt.Sprintf(
-			"%s, %s so far; the workload is %s",
-			label, phaseClock().Sub(started).Truncate(time.Second), wl.Status)))
+			"%s, %s so far; %s",
+			label, phaseClock().Sub(started).Truncate(time.Second), state(v))))
 	}
 }
 
@@ -1580,17 +2356,27 @@ func lock(result Result, report *reporter) (Result, error) {
 	}
 
 	if result.ArtifactID == "" {
-		return result, errors.New("cannot lock: the platform did not report which artifact is running")
+		return result, errors.New("cannot promote: the platform did not report which artifact is running")
 	}
 
-	err := report.run("Locking the artifact", func() error {
-		_, lockErr := lockArtifactFn(result.ArtifactID)
+	// The workload's own promote route, not the artifact's lock: it locks what
+	// the workload is serving right now, which is the whole question.
+	var promoted *workload.Workload
 
-		return lockErr
+	err := report.run("Promoting the workload", func() error {
+		w, promoteErr := promoteWorkloadFn(result.WorkloadID)
+		promoted = w
+
+		return promoteErr
 	})
 	if err != nil {
 		return result, fmt.Errorf("workload %s is running, but artifact %s could not be locked: %w",
 			result.WorkloadID, result.ArtifactID, err)
+	}
+
+	// The route answers with what it locked, which is the artifact to report.
+	if promoted != nil && promoted.ArtifactID != "" {
+		result.ArtifactID = promoted.ArtifactID
 	}
 
 	result.Locked = true
@@ -1649,10 +2435,16 @@ func defaultCodeChange(loaded Loaded, live Live) (change CodeChange, err error) 
 	}
 
 	return CodeChange{
-		Applies:      true,
-		Files:        len(plan.Uploads) + len(plan.Deletes),
+		Applies: true,
+		Files:   len(plan.Uploads) + len(plan.Deletes),
+		// The plan rides along beside its count so --diff can name the files
+		// rather than only counting them, rendered by the sync command's own
+		// plan printer. It is data, not engine state, so it survives the
+		// Close below.
+		SyncPlan:     plan,
 		IgnoreNotice: notice,
 		ImageStale:   imageStale(loaded.ProjectDir, live),
+		Unserved:     unserved(loaded.ProjectDir, live),
 		// The engine says so rather than this asking a second time: it fetched
 		// the artifact to build the plan, and a locked one is the reason it
 		// left a notice at all.
@@ -1683,6 +2475,71 @@ func imageStale(projectDir string, live Live) bool {
 	// No code reference on the running version is the same unknown from the
 	// other side: nothing says the image matches it.
 	return live.CodeVersionID == "" || *cfg.LastBuiltVersionID != live.CodeVersionID
+}
+
+// unserved reports that a deploy from this checkout pushed code into a new
+// version and never saw the workload serve it.
+//
+// A roll links the project to the new version and marks it pending before it
+// pushes, so a run that dies after the push and before the rollout leaves the
+// mark, and the link and the last push one version ahead of the workload. The
+// tree then matches the push and the spec matches the running version, so
+// without this the next run reported the project up to date while the endpoint
+// went on serving the old code. Saying so makes the next run roll, and the roll
+// picks up the version that run left behind, along with any build of it that
+// finished.
+//
+// The mark is what keeps this from undoing someone else's deploy. Another
+// checkout, a CI job or a rollback in the UI also leave this checkout's link
+// and last push behind the workload, and without the mark a run with nothing
+// to do would roll this checkout's older version back out. A version this
+// checkout has seen serve carries no mark, so those runs stay up to date.
+//
+// The code is compared as well as the link, against the running version
+// rather than the record of the last build. A roll that changed only the spec
+// leaves a pending version holding the code already running, which is a roll
+// the spec drives on its own and no reason to build. And a run that saw its
+// build finish and then failed to roll out, or died before asking, leaves the
+// build record matching the push and the workload behind it.
+//
+// Unlike imageStale, an answer it cannot establish is no. This decides whether
+// a run rolls at all, so a record that is missing or unreadable would roll
+// every run for as long as it stayed that way.
+func unserved(projectDir string, live Live) bool {
+	if live.CodeVersionID == "" || !projectLinkedFn(projectDir) {
+		return false
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || cfg.LastSyncedVersionID == nil || deref(cfg.PendingRolloutArtifactID) != cfg.ArtifactID {
+		return false
+	}
+
+	return cfg.ArtifactID != live.ArtifactID && *cfg.LastSyncedVersionID != live.CodeVersionID
+}
+
+// clearServedRollout drops the pending mark once the workload runs the version
+// it names. That is a roll this run saw promoted, or one an earlier run left in
+// flight and the platform finished since. Left in place, it would make a later
+// run read someone else's newer deploy as this checkout's unfinished one.
+//
+// Best effort: a mark that stays only means the next run that sees the version
+// serving clears it instead.
+func clearServedRollout(projectDir, servingArtifactID string) {
+	if servingArtifactID == "" || !projectLinkedFn(projectDir) {
+		return
+	}
+
+	cfg, err := loadProjectFn(projectDir)
+	if err != nil || deref(cfg.PendingRolloutArtifactID) != servingArtifactID {
+		return
+	}
+
+	cfg.PendingRolloutArtifactID = nil
+
+	if err := saveProjectFn(projectDir, cfg); err != nil {
+		log.Debug("cannot clear the pending rollout mark", "project_dir", projectDir, "err", err)
+	}
 }
 
 // ignoreFileNotice is the deprecation line for this project, empty when there

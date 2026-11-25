@@ -32,7 +32,7 @@ func Cmd() *cobra.Command {
 		Use:     "enclave",
 		Aliases: []string{"enclaves", "outpost", "outposts"},
 		GroupID: "core",
-		Short:   "🏛️  Enclave (outpost) management commands",
+		Short:   "🏰 Enclave (outpost) management commands",
 		Long: `Manage enclaves — remote outpost clusters that run your DataRobot workloads.
 
 Register a new enclave to receive its one-shot installation secrets, then

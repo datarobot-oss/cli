@@ -26,10 +26,12 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/datarobot/cli/internal/log"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/tui"
 	"github.com/datarobot/cli/tui/hostpicker"
 	"github.com/spf13/cobra"
@@ -58,14 +60,12 @@ func FprintUnsetTokenInstructions(w io.Writer) {
 	fmt.Fprintln(w, base.Render(" on Windows)"))
 }
 
-// writerStyles binds the shared text styles to w's renderer. The package
-// defaults probe stdout for color support, so styled text sent to a different
-// stream (stderr redirected to a file while stdout is a TTY, or a buffer in
-// tests) would otherwise carry ANSI codes the destination cannot display.
+// writerStyles is the two shared styles this package writes with, bound to w:
+// see tui.StylesFor for why they cannot be the package defaults.
 func writerStyles(w io.Writer) (base, info lipgloss.Style) {
-	r := lipgloss.NewRenderer(w)
+	styles := tui.StylesFor(w)
 
-	return tui.BaseTextStyle.Renderer(r), tui.InfoStyle.Renderer(r)
+	return styles.Base, styles.Info
 }
 
 // EnvCredentials holds environment variable authentication credentials.
@@ -125,12 +125,7 @@ func ValidateEndpoint(endpoint string) error {
 		return err
 	}
 
-	// Checked here, not in SchemeHostOnly, which set-url and export share.
-	if scheme, _, _ := strings.Cut(baseURL, "://"); scheme != "http" && scheme != "https" {
-		return fmt.Errorf("unsupported URL scheme %q, use https://", scheme)
-	}
-
-	return nil
+	return config.RequireHTTPScheme(baseURL)
 }
 
 // ReportEnvCredentialsError writes a classified explanation of why an
@@ -317,11 +312,16 @@ func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
 
 // EnsureAuthenticatedE checks if valid authentication exists, and if not,
 // triggers the login flow automatically (see EnsureAuthenticated for the
-// exceptions). Returns an error if authentication fails, suitable for use in
-// Cobra PreRunE hooks.
+// exceptions). Suitable for use in Cobra PreRunE hooks.
+//
+// On failure it returns cli.ErrSilent, not a descriptive error: EnsureAuthenticated
+// has already told the user what went wrong, and the command runner reports other errors.
 func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 	if !EnsureAuthenticated(cmd.Context()) {
-		return errors.New("authentication failed")
+		// Every path where EnsureAuthenticated reports false has already written a
+		// user-facing message, so signal that rather than returning a fresh error
+		// the command runner would print a second time.
+		return cli.ErrSilent
 	}
 
 	return nil
@@ -415,7 +415,12 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 
 	key, err := APIKeyCallbackFunc(ctx, datarobotHost)
 	if err != nil {
-		log.Error("Failed to retrieve API key.", "error", err)
+		if errors.Is(err, ErrLoginTimedOut) {
+			FprintLoginTimeoutHelp(os.Stderr)
+		} else {
+			log.Error("Failed to retrieve API key.", "error", err)
+		}
+
 		return false
 	}
 
@@ -455,13 +460,26 @@ func WriteConfigFileSilent() error {
 	return nil
 }
 
-func WriteConfigFile() error {
+// WriteConfigFile persists the config file and prints a success line. The
+// line follows the command's output-format contract: under
+// --output-format json it goes to stderr so stdout stays a parseable
+// channel, mirroring the save notice the auth commands emit after a
+// successful login/set-url write.
+func WriteConfigFile(cmd *cobra.Command) error {
 	err := WriteConfigFileSilent()
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Config file written successfully.")
+	successLine := "Config file written successfully."
+
+	if outputformat.GetFormat(cmd) == outputformat.OutputFormatJSON {
+		fmt.Fprintln(cmd.ErrOrStderr(), successLine)
+
+		return nil
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), successLine)
 
 	return nil
 }
@@ -643,7 +661,9 @@ func printURLUnchanged() {
 		fmt.Print(tui.BaseTextStyle.Render("Set one non-interactively with "))
 	}
 
-	fmt.Println(tui.InfoStyle.Render("dr auth set-url <url>"))
+	// The suggestion retraces the active selection so it targets the
+	// credentials the user is actually configuring, not the root ones.
+	fmt.Println(tui.InfoStyle.Render("dr auth set-url" + config.SelectedProfileFlagSuffix() + " <url>"))
 	fmt.Print(tui.BaseTextStyle.Render("or export "))
 	fmt.Print(tui.InfoStyle.Render("DATAROBOT_ENDPOINT"))
 	fmt.Print(tui.BaseTextStyle.Render(" and "))

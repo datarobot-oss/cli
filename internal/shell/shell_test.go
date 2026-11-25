@@ -18,9 +18,36 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/datarobot/cli/internal/config"
+	"github.com/datarobot/cli/internal/config/viperx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// bindShellEnv mirrors the root config initializer's SHELL binding, which
+// these package-level tests never run.
+func bindShellEnv(t *testing.T) {
+	t.Helper()
+
+	viperx.Reset()
+	t.Cleanup(viperx.Reset)
+
+	_ = viperx.BindEnv(config.ShellKey, "SHELL")
+}
+
+func TestDetectShell_FallsBackToShellKey(t *testing.T) {
+	if isSupportedShell(normalizeShellName(parentProcessName())) {
+		t.Skip("parent process is a supported shell, so the fallback is never reached")
+	}
+
+	bindShellEnv(t)
+	t.Setenv("SHELL", "/usr/local/bin/fish")
+
+	name, err := DetectShell()
+
+	require.NoError(t, err)
+	assert.Equal(t, "fish", name)
+}
 
 func TestParentProcessName_ReturnsNonEmpty(t *testing.T) {
 	name := parentProcessName()
@@ -32,6 +59,8 @@ func TestParentProcessName_ReturnsNonEmpty(t *testing.T) {
 }
 
 func TestDetectShell_ReturnsNonEmpty(t *testing.T) {
+	bindShellEnv(t)
+
 	name, err := DetectShell()
 
 	require.NoError(t, err)
@@ -61,6 +90,7 @@ func TestNormalizeShellName(t *testing.T) {
 
 func TestDetectShell_EnvVarFallback(t *testing.T) {
 	// Verify that $SHELL is used when set (simulates the env var fallback path).
+	bindShellEnv(t)
 	t.Setenv("SHELL", "/usr/bin/fish")
 
 	// parentProcessName() will still return the test runner's parent, so we
@@ -170,6 +200,7 @@ func TestDetectShell_SHELLEnvFixtures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.shellEnv, func(t *testing.T) {
+			bindShellEnv(t)
 			t.Setenv("SHELL", tt.shellEnv)
 
 			name, err := DetectShell()
@@ -211,6 +242,8 @@ func TestResolveShell_SpecifiedShell(t *testing.T) {
 // TestResolveShell_AutoDetect verifies that an empty specifiedShell triggers
 // shell detection and returns a non-empty result.
 func TestResolveShell_AutoDetect(t *testing.T) {
+	bindShellEnv(t)
+
 	got, err := ResolveShell("")
 
 	require.NoError(t, err)

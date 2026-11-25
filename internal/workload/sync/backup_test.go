@@ -112,7 +112,7 @@ func TestBackupOverwrittenLocals_BacksUpEveryDestructiveAction(t *testing.T) {
 // End-to-end through phase5Execute: a conflict and a REMOTE_MODIFIED download
 // together. Each local file is preserved as *.LOCAL and the remote bytes land
 // at the freed original path — the backup-rename → download-at-freed-path
-// interaction the unit tests only cover in pieces (RAPTOR-19348 review).
+// interaction the unit tests only cover in pieces.
 func TestPhase5Execute_ConflictAndDownloadBackupThenPullRemote(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, wapi.Initialize(dir, wapi.InitOptions{ArtifactID: "art-1"}))
@@ -161,7 +161,7 @@ func TestPhase5Execute_ConflictAndDownloadBackupThenPullRemote(t *testing.T) {
 // A REMOTE_ADDED path can still hold a file the local manifest never saw (a
 // .drignore'd file, a symlink the walk skipped). It gets no .LOCAL copy, so
 // applyDownloads must back it up for rollback: a failed sync's Restore then puts
-// it back instead of deleting it with nothing behind it (RAPTOR-19348 review).
+// it back instead of deleting it with nothing behind it.
 func TestApplyDownloads_RollbackRestoresAPreexistingRemoteAddedFile(t *testing.T) {
 	dir := t.TempDir()
 

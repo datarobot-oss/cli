@@ -293,7 +293,7 @@ func TestSyncEnvVars_KeepsCommentsAcrossAFormChange(t *testing.T) {
 func TestDeclaredEnvVars_MarksAnEntryWithNoWrittenValue(t *testing.T) {
 	parsed, err := Parse([]byte(container(`            environmentVars:
               - name: GREETING
-                source: api-key
+                source: some-future-source
               - name: LOG_LEVEL
                 value: ""
 `)), FileName)
@@ -302,6 +302,8 @@ func TestDeclaredEnvVars_MarksAnEntryWithNoWrittenValue(t *testing.T) {
 	declared := parsed.DeclaredEnvVars()
 	require.Len(t, declared, 2)
 
+	// api-key is not the example: it is a source this CLI knows and writes, and
+	// has its own test in platformkey_test.go.
 	assert.True(t, declared[0].Unwritten, "no value key at all")
 	assert.False(t, declared[1].Unwritten, "an empty value is a value")
 }

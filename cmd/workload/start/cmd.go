@@ -15,8 +15,6 @@
 package start
 
 import (
-	"fmt"
-
 	"github.com/datarobot/cli/cmd/workload/internal/idargs"
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/outputformat"
@@ -84,17 +82,7 @@ Example:
 				return ref.Wrap(err)
 			}
 
-			if err := workload.RenderWorkloadOperation(outputFormat, *resp); err != nil {
-				return err
-			}
-
-			// The follow-up hint goes to stderr so script captures of stdout
-			// stay limited to the server's acknowledgement message.
-			if outputFormat == outputformat.OutputFormatText {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Check progress with: dr workload status "+ref.ID)
-			}
-
-			return nil
+			return workload.RenderWorkloadOperation(cmd.ErrOrStderr(), outputFormat, ref.ID, *resp)
 		},
 	}
 
