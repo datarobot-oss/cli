@@ -6,6 +6,15 @@ updates:
       interval: daily
     commit-message:
       prefix: "⬆️ SEC(Deps): "
+    groups:
+      gomod:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      gomod-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -14,6 +23,11 @@ updates:
     commit-message:
       prefix: "⬆️ CI(Actions): "
     groups:
-      codeql-action:
+      github-actions:
+        applies-to: version-updates
         patterns:
-          - "github/codeql-action*"
+          - "*"
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
