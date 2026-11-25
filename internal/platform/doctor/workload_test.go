@@ -168,8 +168,17 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			wantRemedy: remedyReadMessage,
 		},
 		{
-			name:       "a route that could not be read is a warning to run the check again",
+			name:       "a route that could not be read is a warning to run the check again and check the network",
 			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(0, "timeout")},
+			wantStatus: core.StatusWARN,
+			wantRemedy: remedyCheckNetwork,
+		},
+		{
+			name: "a throttled probe stays a warning whatever the seats say",
+			sections: map[string]platform.Section{
+				platform.SectionWorkloadAPI: workloadRefuses(429, "slow down"),
+				platform.SectionSeats:       seatsOf(map[string]bool{builderSeat: false}),
+			},
 			wantStatus: core.StatusWARN,
 			wantRemedy: remedyRetry,
 		},

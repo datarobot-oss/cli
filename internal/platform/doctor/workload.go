@@ -71,7 +71,7 @@ func evaluateWorkloadDeploy(report *platform.Report) core.Result {
 		return core.Result{
 			Status:  core.StatusWARN,
 			Summary: "The Workload API route could not be read: " + section.Message,
-			Remedy:  remedyRetry,
+			Remedy:  remedyCheckNetwork,
 		}
 	}
 

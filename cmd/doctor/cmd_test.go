@@ -116,6 +116,16 @@ func TestCmd_AWarningExitsZero(t *testing.T) {
 	assert.Contains(t, stdout, "WARN")
 }
 
+func TestCmd_AThrottledProbeExitsZeroWithTheRemedy(t *testing.T) {
+	stubDescribe(t, installReport(refusing(429)), nil)
+
+	stdout, err := run(t)
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout, "WARN")
+	assert.Contains(t, stdout, "Run the check again")
+}
+
 func TestCmd_AFailureExitsNonZeroAfterPrintingTheReport(t *testing.T) {
 	stubDescribe(t, installReport(refusing(502)), nil)
 

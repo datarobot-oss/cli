@@ -54,8 +54,9 @@ written to the install or to disk.
 
 A release without the Workload API is a WARN, because a Custom Application
 still deploys. A refusal from the Workload API is a FAIL that names the seat or
-the feature flag behind it. A check that depends on an earlier failure is a
-SKIP, so an unreachable install fails once.
+the feature flag behind it, except a probe that was throttled or could not be
+read, which is a WARN to run again. A check that depends on an earlier failure
+is a SKIP, so an unreachable install fails once.
 
 Exit code is 0 when no check FAILs (warnings are allowed) and 1 when at least
 one check FAILs. Pass --output-format json for a machine-readable report.`,
