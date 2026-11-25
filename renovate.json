@@ -1,0 +1,97 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+
+  "description": [
+    "Renovate is used here only for version pins that Dependabot cannot see —",
+    "specifically the Go toolchain directive in go.mod and tool versions in Taskfile.yaml.",
+    "Dependabot already handles gomod dependencies and github-actions, so Renovate's",
+    "built-in managers are disabled to avoid duplicate PRs.",
+    "",
+    "See: https://datarobot.atlassian.net/wiki/spaces/CFX/pages/7950729316"
+  ],
+
+  "enabledManagers": ["custom.regex"],
+
+  "labels": ["dependencies", "renovate"],
+
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 5,
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the Go toolchain version directive in go.mod",
+      "fileMatch": ["^go\\.mod$"],
+      "matchStrings": ["^go (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "go",
+      "commitMessageTopic": "Go toolchain version"
+    },
+    {
+      "customType": "regex",
+      "description": "Update golangci-lint version in Taskfile.yaml",
+      "fileMatch": ["^Taskfile\\.yaml$"],
+      "matchStrings": [
+        "GOLANGCI_LINT_VERSION:\\s*\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "golangci/golangci-lint",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "commitMessageTopic": "golangci-lint"
+    },
+    {
+      "customType": "regex",
+      "description": "Update lefthook version in Taskfile.yaml",
+      "fileMatch": ["^Taskfile\\.yaml$"],
+      "matchStrings": [
+        "LEFTHOOK_VERSION:\\s*\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "evilmartians/lefthook",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "commitMessageTopic": "lefthook"
+    },
+    {
+      "customType": "regex",
+      "description": "Update goreleaser version in Taskfile.yaml",
+      "fileMatch": ["^Taskfile\\.yaml$"],
+      "matchStrings": [
+        "GORELEASER_VERSION:\\s*\"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "goreleaser/goreleaser",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "commitMessageTopic": "goreleaser"
+    },
+    {
+      "customType": "regex",
+      "description": "Update jscpd version in Taskfile.yaml",
+      "fileMatch": ["^Taskfile\\.yaml$"],
+      "matchStrings": [
+        "JSCPD_VERSION:\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "kucherenko/jscpd",
+      "versioningTemplate": "semver",
+      "commitMessageTopic": "jscpd"
+    }
+  ],
+
+  "packageRules": [
+    {
+      "description": "Group all Taskfile.yaml tool version updates into a single PR",
+      "matchManagers": ["custom.regex"],
+      "matchFiles": ["Taskfile.yaml"],
+      "groupName": "Taskfile tool versions"
+    },
+    {
+      "description": "Go toolchain updates get their own PR",
+      "matchManagers": ["custom.regex"],
+      "matchFiles": ["go.mod"],
+      "groupName": "Go toolchain version"
+    }
+  ]
+}
