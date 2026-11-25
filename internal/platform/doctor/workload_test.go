@@ -150,6 +150,12 @@ func TestWorkloadDeploy_Outcomes(t *testing.T) {
 			wantRemedy: remedyCheckCredentials,
 		},
 		{
+			name:       "a throttled probe is a warning to run the check again",
+			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(429, "slow down")},
+			wantStatus: core.StatusWARN,
+			wantRemedy: remedyRetry,
+		},
+		{
 			name:       "an unavailable service fails with the message",
 			sections:   map[string]platform.Section{platform.SectionWorkloadAPI: workloadRefuses(503, "unavailable")},
 			wantStatus: core.StatusFAIL,
