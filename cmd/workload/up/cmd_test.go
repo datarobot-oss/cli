@@ -20,7 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +30,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
@@ -341,6 +344,69 @@ func TestCmd_FailureBeforeAnythingExistsJustFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout)
 	assert.Contains(t, err.Error(), "manifest")
+}
+
+// platformDoctorGate is the variable that switches `dr doctor` on.
+const platformDoctorGate = "DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR"
+
+func platformRefusal(status int) error {
+	return fmt.Errorf("create workload: %w", &drapi.HTTPError{
+		StatusCode: status,
+		URL:        "https://dr.example.com/api/v2/workloads/",
+	})
+}
+
+func TestCmd_RefusedDeployPointsToTheDoctorWhenItsGateIsOn(t *testing.T) {
+	for _, status := range []int{
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusBadGateway,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Setenv(platformDoctorGate, "1")
+			stubRun(t, up.Result{}, platformRefusal(status))
+
+			_, _, err := runCmd(t)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "dr doctor")
+
+			var httpErr *drapi.HTTPError
+
+			require.ErrorAs(t, err, &httpErr)
+			assert.Equal(t, status, httpErr.StatusCode)
+		})
+	}
+}
+
+func TestCmd_RefusedDeployKeepsItsMessageWhenTheDoctorGateIsOff(t *testing.T) {
+	refusal := platformRefusal(http.StatusForbidden)
+	stubRun(t, up.Result{}, refusal)
+
+	_, _, err := runCmd(t)
+
+	assert.EqualError(t, err, refusal.Error())
+}
+
+func TestCmd_FailureThatIsNotAPlatformRefusalDoesNotPointToTheDoctor(t *testing.T) {
+	cases := map[string]error{
+		"bad request":       platformRefusal(http.StatusBadRequest),
+		"unprocessable":     platformRefusal(http.StatusUnprocessableEntity),
+		"server error":      platformRefusal(http.StatusInternalServerError),
+		"not an HTTP error": errors.New("no .datarobot.yaml manifest"),
+	}
+
+	for name, failure := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(platformDoctorGate, "1")
+			stubRun(t, up.Result{}, failure)
+
+			_, _, err := runCmd(t)
+
+			assert.EqualError(t, err, failure.Error())
+		})
+	}
 }
 
 // The deploy asks one question, and only the exact name answers it. The

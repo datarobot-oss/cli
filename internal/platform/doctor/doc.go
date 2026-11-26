@@ -15,3 +15,7 @@
 // Package platformdoctor holds the checks on a `dr info` report. Their IDs sit under
 // "platform." and, like their order, are stable.
 package platformdoctor
+
+// Gate is the feature gate behind `dr doctor`. A command that points to
+// `dr doctor` checks the same gate.
+const Gate = "platform-doctor"

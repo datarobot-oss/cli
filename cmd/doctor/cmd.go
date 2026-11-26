@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	gate  = "platform-doctor"
+	gate  = platformdoctor.Gate
 	title = "Platform doctor report"
 )
 

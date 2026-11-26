@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -33,8 +34,11 @@ import (
 	"github.com/datarobot/cli/internal/auth"
 	"github.com/datarobot/cli/internal/cli"
 	"github.com/datarobot/cli/internal/config/viperx"
+	"github.com/datarobot/cli/internal/drapi"
+	"github.com/datarobot/cli/internal/features"
 	"github.com/datarobot/cli/internal/misc/reader"
 	"github.com/datarobot/cli/internal/outputformat"
+	platformdoctor "github.com/datarobot/cli/internal/platform/doctor"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/internal/usecase"
 	"github.com/datarobot/cli/internal/workload"
@@ -497,7 +501,30 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 
 	*facts = runFacts{synced: result.Sync, useCaseRequested: result.UseCaseID != ""}
 
-	return report(cmd, f, format, result, runErr)
+	return pointToDoctor(report(cmd, f, format, result, runErr))
+}
+
+// doctorStatuses are the answers `dr doctor` explains: rejected credentials, a
+// missing seat or feature flag, a release without the Workload API, and a
+// proxy that is switched off.
+var doctorStatuses = map[int]bool{
+	http.StatusUnauthorized: true,
+	http.StatusForbidden:    true,
+	http.StatusNotFound:     true,
+	http.StatusBadGateway:   true,
+}
+
+// pointToDoctor adds a line that names `dr doctor` to a refusal from the
+// platform, when the command is switched on. Any other error passes through
+// unchanged. The original *drapi.HTTPError stays reachable through errors.As.
+func pointToDoctor(err error) error {
+	var httpErr *drapi.HTTPError
+
+	if !features.Enabled(platformdoctor.Gate) || !errors.As(err, &httpErr) || !doctorStatuses[httpErr.StatusCode] {
+		return err
+	}
+
+	return fmt.Errorf("%w\nTo find out whether this install lets you deploy a Workload, run `dr doctor`.", err)
 }
 
 // report is what the run says once the deploy has returned: nothing after a
