@@ -49,10 +49,12 @@ const (
 const (
 	SectionInstall               = "install"
 	SectionSeats                 = "seats"
+	SectionLimits                = "limits"
 	SectionEntitlements          = "entitlements"
 	SectionExecutionEnvironments = "executionEnvironments"
 	SectionResourceBundles       = "resourceBundles"
 	SectionWorkloadAPI           = "workloadApi"
+	SectionWorkloadLimits        = "workloadLimits"
 )
 
 // Report is the whole answer. It states facts the install reports and leaves
@@ -108,6 +110,11 @@ type Seats struct {
 	SeatLicenses map[string]bool `json:"seatLicenses"`
 }
 
+// Limits are the caller's numeric limits as the install reports them, by the
+// install's own key (maxConcurrentWorkloads, maxWorkloadReplicas, ...). A key
+// the install does not return, or returns as null, is absent.
+type Limits map[string]int
+
 // ExecutionEnvironments lists every execution environment the caller can read.
 type ExecutionEnvironments struct {
 	Items []ExecutionEnvironment `json:"items"`
@@ -139,6 +146,14 @@ type ExecutionEnvironment struct {
 // unset when the route does not return it.
 type WorkloadAPI struct {
 	TotalCount *int `json:"totalCount,omitempty"`
+}
+
+// WorkloadLimits are the install's own limits on the shape of a workload, read
+// from the Workload API. A create that goes over one is refused with a 422. A
+// limit the route does not return stays unset, and a limit of zero is kept.
+type WorkloadLimits struct {
+	MaxContainersPerGroup      *int `json:"maxContainersPerGroup,omitempty"`
+	MaxCredentialsPerContainer *int `json:"maxCredentialsPerContainer,omitempty"`
 }
 
 // ResourceBundles lists every resource bundle the caller can read.

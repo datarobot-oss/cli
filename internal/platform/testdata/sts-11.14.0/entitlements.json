@@ -9,6 +9,14 @@
       "value": true
     },
     {
+      "name": "ENABLE_WORKLOAD_REQUIRE_USE_CASE",
+      "value": false
+    },
+    {
+      "name": "ENABLE_SECURE_CONFIG_EXPOSURE_TO_CONSUMERS",
+      "value": false
+    },
+    {
       "name": "DISABLE_CUSTOM_TEMPLATES",
       "value": false
     }

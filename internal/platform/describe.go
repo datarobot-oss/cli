@@ -68,10 +68,12 @@ func Describe(ctx context.Context) (*Report, error) {
 			return installSection(cfg, cfgErr)
 		}},
 		{SectionSeats, func() Section { return seatsSection(ctx) }},
+		{SectionLimits, func() Section { return limitsSection(ctx) }},
 		{SectionEntitlements, func() Section { return entitlementsSection(ctx) }},
 		{SectionExecutionEnvironments, func() Section { return executionEnvironmentsSection(ctx) }},
 		{SectionResourceBundles, func() Section { return resourceBundlesSection(ctx) }},
 		{SectionWorkloadAPI, func() Section { return workloadAPISection(ctx) }},
+		{SectionWorkloadLimits, func() Section { return workloadLimitsSection(ctx) }},
 	}
 
 	sections := make([]Section, len(reads))
@@ -109,14 +111,17 @@ func Describe(ctx context.Context) (*Report, error) {
 }
 
 // scopeOf says who each section's answer is true for. The install's own config
-// is the same for every caller; every other section depends on who asks.
+// and its workload limits are the same for every caller; every other section
+// depends on who asks.
 var scopeOf = map[string]Scope{
 	SectionInstall:               ScopePlatform,
 	SectionSeats:                 ScopeCaller,
+	SectionLimits:                ScopeCaller,
 	SectionEntitlements:          ScopeCaller,
 	SectionExecutionEnvironments: ScopeCaller,
 	SectionResourceBundles:       ScopeCaller,
 	SectionWorkloadAPI:           ScopeCaller,
+	SectionWorkloadLimits:        ScopePlatform,
 }
 
 // stopped is the error that ends a run before any section is read. Its message

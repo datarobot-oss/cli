@@ -57,18 +57,25 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 			assert.Equal(t, "2026-10-06T20:00:00Z", report.GeneratedAt)
 			assert.Equal(t, "dr", report.Producer.Name)
 
+			// The recordings predate the workloadLimits route, so that section is the one
+			// that is not ok.
 			for name, section := range report.Sections {
-				assert.Equal(t, StatusOK, section.Status, name)
+				if name != SectionWorkloadLimits {
+					assert.Equal(t, StatusOK, section.Status, name)
+				}
 			}
 
-			assert.Len(t, report.Sections, 6)
+			assert.Equal(t, StatusUnavailable, report.Sections[SectionWorkloadLimits].Status)
+			assert.Equal(t, http.StatusNotFound, report.Sections[SectionWorkloadLimits].HTTPStatus)
+			assert.Len(t, report.Sections, 8)
 			require.NoError(t, validateJSON(t, compileSchema(t), renderJSON(t, *report)))
 		})
 	}
 }
 
 // The scope says who a section's answer is true for. The install's own config
-// is the same for every caller; every other section depends on who asks.
+// and its workload limits are the same for every caller; every other section
+// depends on who asks.
 func TestDescribe_EverySectionStatesWhoItsAnswerIsTrueFor(t *testing.T) {
 	newFakeInstall(t, "sts-11.12.0")
 
@@ -78,10 +85,12 @@ func TestDescribe_EverySectionStatesWhoItsAnswerIsTrueFor(t *testing.T) {
 	want := map[string]Scope{
 		SectionInstall:               ScopePlatform,
 		SectionSeats:                 ScopeCaller,
+		SectionLimits:                ScopeCaller,
 		SectionEntitlements:          ScopeCaller,
 		SectionExecutionEnvironments: ScopeCaller,
 		SectionResourceBundles:       ScopeCaller,
 		SectionWorkloadAPI:           ScopeCaller,
+		SectionWorkloadLimits:        ScopePlatform,
 	}
 
 	for name, scope := range want {
