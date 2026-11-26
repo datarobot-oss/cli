@@ -111,7 +111,8 @@ func Describe(ctx context.Context) (*Report, error) {
 }
 
 // scopeOf says who each section's answer is true for. The install's own config
-// is the same for every caller; every other section depends on who asks.
+// and its workload limits are the same for every caller; every other section
+// depends on who asks.
 var scopeOf = map[string]Scope{
 	SectionInstall:               ScopePlatform,
 	SectionSeats:                 ScopeCaller,

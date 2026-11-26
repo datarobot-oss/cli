@@ -74,7 +74,8 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 }
 
 // The scope says who a section's answer is true for. The install's own config
-// is the same for every caller; every other section depends on who asks.
+// and its workload limits are the same for every caller; every other section
+// depends on who asks.
 func TestDescribe_EverySectionStatesWhoItsAnswerIsTrueFor(t *testing.T) {
 	newFakeInstall(t, "sts-11.12.0")
 
