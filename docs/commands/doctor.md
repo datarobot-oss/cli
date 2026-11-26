@@ -12,7 +12,7 @@ dr doctor [flags]
 
 `dr doctor` reads the report that [`dr info`](info.md) prints, with the caller's own credentials, and judges it. Each check is `OK`, `WARN`, `FAIL`, or `SKIP`. A finding that needs action carries one remedy that names who acts: the caller or an install administrator. The command is read-only.
 
-The command is behind a feature gate. Set `DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR=1` to use it.
+The command is behind a feature gate. Set `DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR=1` to use it. While the gate is on, `dr workload up` ends a refusal from the platform (HTTP 401, 403, 404, or 502) with a line that names `dr doctor`.
 
 Authentication follows the other commands: `DATAROBOT_ENDPOINT` and `DATAROBOT_API_TOKEN` when both are set, otherwise the active profile. The command never starts a login prompt. An install that cannot be read is a `FAIL` of the first check.
 

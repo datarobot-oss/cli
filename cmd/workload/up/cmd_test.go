@@ -20,7 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +30,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/datarobot/cli/cmd/workload/internal/envconfirm"
+	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload"
 	"github.com/datarobot/cli/internal/workload/manifest"
 	"github.com/datarobot/cli/internal/workload/up"
@@ -341,6 +344,105 @@ func TestCmd_FailureBeforeAnythingExistsJustFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, stdout)
 	assert.Contains(t, err.Error(), "manifest")
+}
+
+// platformDoctorGate is the variable that switches `dr doctor` on.
+const platformDoctorGate = "DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR"
+
+// platformRefusalStatuses are the answers the doctor hint is for, spelled out
+// here so a change to the production list shows up as a test failure.
+var platformRefusalStatuses = []int{
+	http.StatusUnauthorized,
+	http.StatusForbidden,
+	http.StatusNotFound,
+	http.StatusBadGateway,
+}
+
+func platformRefusal(status int) error {
+	return fmt.Errorf("create workload: %w", &drapi.HTTPError{
+		StatusCode: status,
+		URL:        "https://dr.example.com/api/v2/workloads/",
+	})
+}
+
+func TestCmd_RefusedDeployPointsToTheDoctorWhenItsGateIsOn(t *testing.T) {
+	for _, status := range platformRefusalStatuses {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Setenv(platformDoctorGate, "1")
+
+			refusal := platformRefusal(status)
+			stubRun(t, up.Result{}, refusal)
+
+			_, _, err := runCmd(t)
+
+			require.Error(t, err)
+			assert.True(t, strings.HasPrefix(err.Error(), refusal.Error()), "the refusal comes first: %q", err)
+			assert.Contains(t, strings.TrimPrefix(err.Error(), refusal.Error()), "dr doctor")
+
+			var httpErr *drapi.HTTPError
+
+			require.ErrorAs(t, err, &httpErr)
+			assert.Equal(t, status, httpErr.StatusCode)
+		})
+	}
+}
+
+func TestCmd_RefusedDeployKeepsItsMessageWhenTheDoctorGateIsOff(t *testing.T) {
+	for _, status := range platformRefusalStatuses {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Setenv(platformDoctorGate, "")
+
+			refusal := platformRefusal(status)
+			stubRun(t, up.Result{}, refusal)
+
+			_, _, err := runCmd(t)
+
+			assert.EqualError(t, err, refusal.Error())
+		})
+	}
+}
+
+func TestCmd_FailureThatIsNotAPlatformRefusalDoesNotPointToTheDoctor(t *testing.T) {
+	cases := []struct {
+		name string
+		fail error
+	}{
+		{"bad request", platformRefusal(http.StatusBadRequest)},
+		{"unprocessable", platformRefusal(http.StatusUnprocessableEntity)},
+		{"server error", platformRefusal(http.StatusInternalServerError)},
+		{"not an HTTP error", errors.New("no .datarobot.yaml manifest")},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(platformDoctorGate, "1")
+			stubRun(t, up.Result{}, tc.fail)
+
+			_, _, err := runCmd(t)
+
+			assert.EqualError(t, err, tc.fail.Error())
+		})
+	}
+}
+
+func TestCmd_RefusalAfterThePlatformAcceptedTheDeployDoesNotPointToTheDoctor(t *testing.T) {
+	t.Setenv(platformDoctorGate, "1")
+
+	refusal := platformRefusal(http.StatusBadGateway)
+	stubRun(t, deployed(), refusal)
+
+	_, _, err := runCmd(t)
+
+	assert.EqualError(t, err, refusal.Error())
+}
+
+func TestCmd_SuccessfulDeployIsUnchangedWhenTheDoctorGateIsOn(t *testing.T) {
+	t.Setenv(platformDoctorGate, "1")
+	stubRun(t, deployed(), nil)
+
+	_, _, err := runCmd(t)
+
+	assert.NoError(t, err)
 }
 
 // The deploy asks one question, and only the exact name answers it. The
