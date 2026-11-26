@@ -438,6 +438,19 @@ func TestReportUnjudged(t *testing.T) {
 	}
 }
 
+func TestReportUnjudged_NamesTheHostWithoutCredentials(t *testing.T) {
+	var buf bytes.Buffer
+
+	handled := ReportUnjudged(
+		&buf, "https://user:secret@app.example.com/api/v2", StoredEndpointName,
+		&config.HTTPStatusError{StatusCode: http.StatusServiceUnavailable},
+	)
+
+	require.True(t, handled)
+	assert.Contains(t, buf.String(), "https://app.example.com")
+	assert.NotContains(t, buf.String(), "secret")
+}
+
 // TestEnsureAuthenticated_NoTokenBadEndpoint is the lockout regression test: an
 // endpoint the CLI cannot dial must not withhold the login flow that fixes it.
 func TestEnsureAuthenticated_NoTokenBadEndpoint(t *testing.T) {
