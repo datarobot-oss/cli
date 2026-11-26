@@ -36,10 +36,12 @@
           "properties": {
             "install": {"$ref": "#/$defs/installSection"},
             "seats": {"$ref": "#/$defs/seatsSection"},
+            "limits": {"$ref": "#/$defs/limitsSection"},
             "entitlements": {"$ref": "#/$defs/entitlementsSection"},
             "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
             "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"},
-            "workloadApi": {"$ref": "#/$defs/workloadApiSection"}
+            "workloadApi": {"$ref": "#/$defs/workloadApiSection"},
+            "workloadLimits": {"$ref": "#/$defs/workloadLimitsSection"}
           }
         }
       }
@@ -75,6 +77,15 @@
           "type": "object",
           "required": ["seatLicenses"],
           "properties": {"seatLicenses": {"type": "object", "additionalProperties": {"type": "boolean"}}}
+        }}}
+      ]
+    },
+    "limitsSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"}
         }}}
       ]
     },
@@ -133,6 +144,18 @@
         {"properties": {"data": {
           "type": "object",
           "properties": {"totalCount": {"type": "integer", "minimum": 0}}
+        }}}
+      ]
+    },
+    "workloadLimitsSection": {
+      "allOf": [
+        {"$ref": "#/$defs/section"},
+        {"properties": {"data": {
+          "type": "object",
+          "properties": {
+            "maxContainersPerGroup": {"type": "integer"},
+            "maxCredentialsPerContainer": {"type": "integer"}
+          }
         }}}
       ]
     }

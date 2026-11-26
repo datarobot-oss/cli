@@ -30,13 +30,15 @@ import (
 // reads it from the entitlements section by this name.
 const EntitlementWorkloadAPIContainers = "ENABLE_WORKLOAD_API_CONTAINERS"
 
-// entitlementNames are the flags a Custom Application deploy depends on, asked
-// in one request. The route rejects a whole batch for one unknown name, so
+// entitlementNames are the flags a Custom Application or Workload deploy depends on,
+// asked in one request. The route rejects a whole batch for one unknown name, so
 // entitlementsFor falls back to single names, and it failed with a 500 on one
 // install for a batch above entitlementBatchLimit.
 var entitlementNames = []string{
 	"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND",
 	EntitlementWorkloadAPIContainers,
+	"ENABLE_WORKLOAD_REQUIRE_USE_CASE",
+	"ENABLE_SECURE_CONFIG_EXPOSURE_TO_CONSUMERS",
 	"DISABLE_CUSTOM_TEMPLATES",
 }
 
@@ -124,6 +126,27 @@ func seatsSection(ctx context.Context) Section {
 	}
 
 	return sectionOf(seats, err)
+}
+
+func limitsSection(ctx context.Context) Section {
+	var info struct {
+		Limits map[string]*int `json:"limits"`
+	}
+
+	target, err := apiURL("/account/info/", nil)
+	if err == nil {
+		err = call(ctx, http.MethodGet, target, true, nil, &info)
+	}
+
+	limits := Limits{}
+
+	for name, value := range info.Limits {
+		if value != nil {
+			limits[clean(name)] = *value
+		}
+	}
+
+	return sectionOf(limits, err)
 }
 
 func executionEnvironmentsSection(ctx context.Context) Section {
@@ -221,6 +244,20 @@ func workloadAPISection(ctx context.Context) Section {
 	}
 
 	return sectionOf(WorkloadAPI{TotalCount: page.TotalCount}, err)
+}
+
+// workloadLimitsSection reads the install's limits on the shape of a workload
+// from the Workload API. A release that predates the route answers 404, which
+// leaves this section unavailable and the others intact.
+func workloadLimitsSection(ctx context.Context) Section {
+	var limits WorkloadLimits
+
+	target, err := apiURL("/workloadLimits/", nil)
+	if err == nil {
+		err = call(ctx, http.MethodGet, target, true, nil, &limits)
+	}
+
+	return sectionOf(limits, err)
 }
 
 func entitlementsSection(ctx context.Context) Section {

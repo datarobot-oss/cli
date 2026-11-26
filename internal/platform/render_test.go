@@ -59,7 +59,7 @@ func TestRenderTo_TextNamesTheInstallAndEverySection(t *testing.T) {
 	assert.Contains(t, out, "https://dr.example.com")
 	assert.Contains(t, out, "11.12.0")
 
-	for _, section := range []string{SectionInstall, SectionSeats, SectionEntitlements, SectionExecutionEnvironments, SectionResourceBundles, SectionWorkloadAPI} {
+	for _, section := range []string{SectionInstall, SectionSeats, SectionLimits, SectionEntitlements, SectionExecutionEnvironments, SectionResourceBundles, SectionWorkloadAPI} {
 		assert.Contains(t, out, section)
 	}
 }
@@ -82,6 +82,52 @@ func TestRenderTo_TextShowsHowManyWorkloadsTheCallerCanSee(t *testing.T) {
 	out := renderFixture(t, "sts-11.12.0", outputformat.OutputFormatText)
 
 	assert.Contains(t, out, "workloads visible to you: 7")
+}
+
+func TestRenderTo_TextListsEachLimitWithItsValue(t *testing.T) {
+	out := renderFixture(t, "sts-11.12.0", outputformat.OutputFormatText)
+
+	assert.Contains(t, out, "maxConcurrentWorkloads: 50")
+	assert.Contains(t, out, "maxWorkloadReplicas: 3")
+}
+
+func TestRenderTo_TextShowsAnOKLimitsSectionWithNoLimits(t *testing.T) {
+	report := sampleReport()
+	report.Sections[SectionLimits] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Limits{}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "limits: ok")
+}
+
+func TestRenderTo_TextListsTheWorkloadLimits(t *testing.T) {
+	containers, credentials := 4, 25
+	report := sampleReport()
+	report.Sections[SectionWorkloadLimits] = Section{Scope: ScopePlatform, Status: StatusOK, Data: WorkloadLimits{
+		MaxContainersPerGroup: &containers, MaxCredentialsPerContainer: &credentials,
+	}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "max containers per group: 4")
+	assert.Contains(t, out.String(), "max credentials per container: 25")
+}
+
+func TestRenderTo_TextShowsAWorkloadCredentialLimitOfZero(t *testing.T) {
+	zero := 0
+	report := sampleReport()
+	report.Sections[SectionWorkloadLimits] = Section{Scope: ScopePlatform, Status: StatusOK, Data: WorkloadLimits{MaxCredentialsPerContainer: &zero}}
+
+	var out bytes.Buffer
+
+	require.NoError(t, RenderTo(&out, outputformat.OutputFormatText, report))
+
+	assert.Contains(t, out.String(), "max credentials per container: 0")
+	assert.NotContains(t, out.String(), "max containers per group")
 }
 
 func TestRenderTo_TextShowsAWorkloadCountOfZero(t *testing.T) {
@@ -168,6 +214,9 @@ func TestRenderTo_TextPrintsNoTerminalControlFromAnyServerField(t *testing.T) {
 		},
 		"seat license": func(r *Report, p string) {
 			r.Sections[SectionSeats] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Seats{SeatLicenses: map[string]bool{p: true}}}
+		},
+		"limit name": func(r *Report, p string) {
+			r.Sections[SectionLimits] = Section{Scope: ScopeCaller, Status: StatusOK, Data: Limits{p: 3}}
 		},
 		"entitlement": func(r *Report, p string) {
 			r.Sections[SectionEntitlements] = Section{Scope: ScopeCaller, Status: StatusOK, Data: map[string]bool{p: true}}
