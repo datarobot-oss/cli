@@ -45,27 +45,27 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command                           | Description                                                  |
-| --------------------------------- | ------------------------------------------------------------ |
-| [`auth`](auth.md)                 | Authenticate with DataRobot.                                 |
-| `component`                       | Manage template components.                                  |
-| `templates`                       | Manage application templates.                                |
-| [`start`](start.md)               | Run the application quickstart process.                      |
-| [`run`](run.md)                   | Execute application tasks.                                   |
-| [`task`](task.md)                 | Manage Taskfile composition and task execution.              |
-| [`dotenv`](dotenv.md)             | Manage environment variables.                                |
-| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).  |
-| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
-| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
+| Command                           | Description                                                       |
+| --------------------------------- | ----------------------------------------------------------------- |
+| [`auth`](auth.md)                 | Authenticate with DataRobot.                                      |
+| `component`                       | Manage template components.                                       |
+| `templates`                       | Manage application templates.                                     |
+| [`start`](start.md)               | Run the application quickstart process.                           |
+| [`run`](run.md)                   | Execute application tasks.                                        |
+| [`task`](task.md)                 | Manage Taskfile composition and task execution.                   |
+| [`dotenv`](dotenv.md)             | Manage environment variables.                                     |
+| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).       |
+| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                                   |
+| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models).      |
 | [`llm`](llm.md)                   | Deploy, roll out and chat with LLMs from recipes (feature-gated). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
-| [`recipe`](recipe.md)             | Manage LLM serving recipes (feature-gated).                  |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                  |
-| [`info`](info.md)                 | Report what an install supports (feature-gated).             |
-| [`doctor`](doctor.md)             | Check that an install accepts your deploys (feature-gated).  |
-| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).     |
-| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).          |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).           |
+| [`recipe`](recipe.md)             | Manage LLM serving recipes (feature-gated).                       |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                              |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                       |
+| [`info`](info.md)                 | Report what an install supports (feature-gated).                  |
+| [`doctor`](doctor.md)             | Check that an install accepts your deploys (feature-gated).       |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).          |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).               |
 
 ### Command tree
 

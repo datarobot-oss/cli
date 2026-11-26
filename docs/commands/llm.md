@@ -17,14 +17,14 @@ dr llm status|watch|endpoint [<workload-id>]
 
 ## Commands
 
-| Command | API call | What it does |
-| --- | --- | --- |
-| `deploy` | `GET /llmRecipes/{id}`, then `POST /workloads/` | Deploys a recipe as an llm workload |
-| `rollout` | `GET /workloads/{id}`, then `POST /workloads/{id}/replacement/` | Rolls a running llm workload onto another recipe version |
-| `chat` | `GET /workloads/{id}`, `GET /artifacts/{id}`, then `POST {endpoint}/v1/chat/completions` | Sends a chat request to a deployed LLM |
-| `status` | Same as `dr workload status` | Is it up |
-| `watch` | Same as `dr workload status --watch` | Follows the status until it settles |
-| `endpoint` | Same as `dr workload endpoint` | Prints the URL |
+| Command    | API call                                                                                 | What it does                                             |
+| ---------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `deploy`   | `GET /llmRecipes/{id}`, then `POST /workloads/`                                          | Deploys a recipe as an llm workload                      |
+| `rollout`  | `GET /workloads/{id}`, then `POST /workloads/{id}/replacement/`                          | Rolls a running llm workload onto another recipe version |
+| `chat`     | `GET /workloads/{id}`, `GET /artifacts/{id}`, then `POST {endpoint}/v1/chat/completions` | Sends a chat request to a deployed LLM                   |
+| `status`   | Same as `dr workload status`                                                             | Is it up                                                 |
+| `watch`    | Same as `dr workload status --watch`                                                     | Follows the status until it settles                      |
+| `endpoint` | Same as `dr workload endpoint`                                                           | Prints the URL                                           |
 
 Logs, events, settings, stop, start and delete are [`dr workload`](workload.md) commands.
 

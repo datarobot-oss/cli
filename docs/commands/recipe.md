@@ -14,24 +14,24 @@ dr recipe <command> [args] [flags]
 
 A **recipe** is a known-good, versioned serving configuration for an open-weights model on the Dynamo operator. Its payload is one of:
 
-| Format | Content |
-| --- | --- |
+| Format               | Content                                                             |
+| -------------------- | ------------------------------------------------------------------- |
 | `dynamo.dgd/v1beta1` | `objects`: a DynamoGraphDeployment and the ConfigMaps it references |
-| `vllm.recipe/v1` | `recipe`: a recipes.vllm.ai model document |
+| `vllm.recipe/v1`     | `recipe`: a recipes.vllm.ai model document                          |
 
 Content is validated on create and patch. A recipe that fails policy is still stored, with status `invalid` and the reasons listed, and cannot be deployed. A new payload makes a new version; name and description changes do not. Recipes belong to a tenant: the creator or a tenant admin can patch or delete one, and anyone in the tenant can copy it.
 
 ## Commands
 
-| Command | API call | What it does |
-| --- | --- | --- |
-| `dr recipe list` | `GET /llmRecipes/` | Lists the tenant's recipes, newest first |
-| `dr recipe get <id>` | `GET /llmRecipes/{id}` | Shows a recipe, its diagnostics and descriptor; `--payload` prints only the payload |
-| `dr recipe create [<file>]` | `POST /llmRecipes/` | Registers a recipe from a JSON or YAML file |
-| `dr recipe copy <id> --name <name>` | `GET /llmRecipes/{id}`, then `POST /llmRecipes/` | Creates a new recipe from an existing one |
-| `dr recipe patch <id> [<file>]` | `PATCH /llmRecipes/{id}` | Renames or describes, or replaces the content as a new version |
-| `dr recipe delete <id>` | `DELETE /llmRecipes/{id}` | Deletes a recipe after confirmation |
-| `dr recipe deployments <id>` | `GET /workloads/?type=llm` | Lists the llm workloads that run the recipe |
+| Command                             | API call                                         | What it does                                                                        |
+| ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `dr recipe list`                    | `GET /llmRecipes/`                               | Lists the tenant's recipes, newest first                                            |
+| `dr recipe get <id>`                | `GET /llmRecipes/{id}`                           | Shows a recipe, its diagnostics and descriptor; `--payload` prints only the payload |
+| `dr recipe create [<file>]`         | `POST /llmRecipes/`                              | Registers a recipe from a JSON or YAML file                                         |
+| `dr recipe copy <id> --name <name>` | `GET /llmRecipes/{id}`, then `POST /llmRecipes/` | Creates a new recipe from an existing one                                           |
+| `dr recipe patch <id> [<file>]`     | `PATCH /llmRecipes/{id}`                         | Renames or describes, or replaces the content as a new version                      |
+| `dr recipe delete <id>`             | `DELETE /llmRecipes/{id}`                        | Deletes a recipe after confirmation                                                 |
+| `dr recipe deployments <id>`        | `GET /workloads/?type=llm`                       | Lists the llm workloads that run the recipe                                         |
 
 Every command accepts `--output-format json`.
 
