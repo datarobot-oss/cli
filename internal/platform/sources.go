@@ -25,13 +25,18 @@ import (
 	"strings"
 )
 
+// EntitlementWorkloadAPIContainers is the feature flag that the monolith proxy
+// and the Workload API both require to serve a Workload deploy. The doctor
+// reads it from the entitlements section by this name.
+const EntitlementWorkloadAPIContainers = "ENABLE_WORKLOAD_API_CONTAINERS"
+
 // entitlementNames are the flags a Custom Application deploy depends on, asked
 // in one request. The route rejects a whole batch for one unknown name, so
 // entitlementsFor falls back to single names, and it failed with a 500 on one
 // install for a batch above entitlementBatchLimit.
 var entitlementNames = []string{
 	"ENABLE_CUSTOM_APP_WORKLOAD_API_BACKEND",
-	"ENABLE_WORKLOAD_API_CONTAINERS",
+	EntitlementWorkloadAPIContainers,
 	"DISABLE_CUSTOM_TEMPLATES",
 }
 
