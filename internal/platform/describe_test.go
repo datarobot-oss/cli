@@ -57,8 +57,8 @@ func TestDescribe_ReportMatchesTheSchemaForEveryRecording(t *testing.T) {
 			assert.Equal(t, "2026-10-06T20:00:00Z", report.GeneratedAt)
 			assert.Equal(t, "dr", report.Producer.Name)
 
-			// The recordings predate the workloadShapeLimits route, so that section is the one
-			// that is not ok.
+			// The recordings have no workloadShapeLimits route, so that section is the only
+			// one that is not ok.
 			for name, section := range report.Sections {
 				if name != SectionWorkloadShapeLimits {
 					assert.Equal(t, StatusOK, section.Status, name)
