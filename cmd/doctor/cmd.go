@@ -18,7 +18,6 @@ package doctor
 import (
 	"context"
 	"errors"
-	"net/url"
 
 	"github.com/spf13/cobra"
 
@@ -50,17 +49,6 @@ func describeInstall(ctx context.Context) (*platform.Report, error) {
 	return platform.Describe(ctx)
 }
 
-// installURL returns scheme://host of the configured endpoint, without any
-// credentials in it, or "" when there is none.
-func installURL() string {
-	parsed, err := url.Parse(config.GetBaseURL())
-	if err != nil || parsed.Host == "" {
-		return ""
-	}
-
-	return parsed.Scheme + "://" + parsed.Host
-}
-
 // Cmd returns the `dr doctor` command.
 func Cmd() *cobra.Command {
 	var outputFormat outputformat.OutputFormat
@@ -87,7 +75,7 @@ Exit code is 0 when no check FAILs and 1 when at least one does. Pass
 			auth.BindEnvCredentials()
 
 			heading := title
-			if endpoint := installURL(); endpoint != "" {
+			if endpoint := config.GetBaseURL(); endpoint != "" {
 				heading += " for " + endpoint
 			}
 

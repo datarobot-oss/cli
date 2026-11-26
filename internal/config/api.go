@@ -32,7 +32,8 @@ const DRAPIURLSuffix = "/api/v2"
 var ErrInvalidURL = errors.New("Invalid URL.")
 
 // SchemeHostOnly takes a URL like: https://app.datarobot.com/api/v2 and just
-// returns https://app.datarobot.com (no trailing slash).
+// returns https://app.datarobot.com (no trailing slash). Credentials in the
+// URL (user:password@) are dropped, so the result is safe to print.
 //
 // A bare hostname without a scheme (e.g. "app.datarobot.com") is also accepted
 // and defaults to the https scheme, so "app.datarobot.com" is treated the same
@@ -55,7 +56,7 @@ func SchemeHostOnly(longURL string) (string, error) {
 		return "", ErrInvalidURL
 	}
 
-	parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = "", "", ""
+	parsedURL.User, parsedURL.Path, parsedURL.RawQuery, parsedURL.Fragment = nil, "", "", ""
 
 	return parsedURL.String(), nil
 }

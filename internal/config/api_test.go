@@ -95,6 +95,11 @@ func (suite *APITestSuite) TestSetURLToConfig() {
 			expectedURL: "https://custom.example.com/api/v2",
 		},
 		{
+			name:        "credentials in the URL are dropped",
+			input:       "https://user:secret@app.datarobot.com/api/v2",
+			expectedURL: "https://app.datarobot.com/api/v2",
+		},
+		{
 			name:        "invalid URL with space in host returns error",
 			input:       "not a url",
 			expectError: true,
@@ -333,6 +338,35 @@ func TestRedactedReqInfo_DoesNotDrainBody(t *testing.T) {
 	body, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	assert.Equal(t, payload, string(body), "the request body must survive being logged")
+}
+
+func TestSchemeHostOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"the path is dropped", "https://app.datarobot.com/api/v2", "https://app.datarobot.com"},
+		{"a bare host defaults to https", "app.datarobot.com", "https://app.datarobot.com"},
+		{"credentials are dropped", "https://user:secret@app.datarobot.com/api/v2", "https://app.datarobot.com"},
+		{"credentials are dropped and the port stays", "https://user:secret@localhost:8443", "https://localhost:8443"},
+		{"credentials on a bare host are dropped", "user:secret@app.datarobot.com", "https://app.datarobot.com"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := SchemeHostOnly(tc.raw)
+
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSchemeHostOnly_RejectsAURLWithoutAHost(t *testing.T) {
+	_, err := SchemeHostOnly("")
+
+	require.ErrorIs(t, err, ErrInvalidURL)
 }
 
 // RequireHTTPScheme expects an already-normalized base URL (SchemeHostOnly runs
