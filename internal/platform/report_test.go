@@ -68,7 +68,7 @@ func sampleReport() Report {
 			}}},
 			SectionResourceBundles: {Scope: ScopeCaller, Status: StatusUnavailable, HTTPStatus: 403, Message: "HTTP 403: forbidden"},
 			SectionWorkloadAPI:     {Scope: ScopeCaller, Status: StatusOK, Data: WorkloadAPI{TotalCount: &workloads}},
-			SectionWorkloadLimits: {Scope: ScopePlatform, Status: StatusOK, Data: WorkloadLimits{
+			SectionWorkloadShapeLimits: {Scope: ScopePlatform, Status: StatusOK, Data: WorkloadShapeLimits{
 				MaxContainersPerGroup: &containersPerGroup, MaxCredentialsPerContainer: &credentialsPerContainer,
 			}},
 		},
@@ -149,7 +149,7 @@ func TestSchema_RejectsALimitThatIsNotAnInteger(t *testing.T) {
 
 func TestSchema_RejectsAWorkloadLimitThatIsNotAnInteger(t *testing.T) {
 	report := sampleReport()
-	report.Sections[SectionWorkloadLimits] = Section{Scope: ScopePlatform, Status: StatusOK, Data: map[string]any{"maxCredentialsPerContainer": "ten"}}
+	report.Sections[SectionWorkloadShapeLimits] = Section{Scope: ScopePlatform, Status: StatusOK, Data: map[string]any{"maxCredentialsPerContainer": "ten"}}
 
 	assert.Error(t, validateJSON(t, compileSchema(t), renderJSON(t, report)))
 }

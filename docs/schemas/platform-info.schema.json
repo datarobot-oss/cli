@@ -41,7 +41,7 @@
             "executionEnvironments": {"$ref": "#/$defs/executionEnvironmentsSection"},
             "resourceBundles": {"$ref": "#/$defs/resourceBundlesSection"},
             "workloadApi": {"$ref": "#/$defs/workloadApiSection"},
-            "workloadLimits": {"$ref": "#/$defs/workloadLimitsSection"}
+            "workloadShapeLimits": {"$ref": "#/$defs/workloadShapeLimitsSection"}
           }
         }
       }
@@ -147,7 +147,7 @@
         }}}
       ]
     },
-    "workloadLimitsSection": {
+    "workloadShapeLimitsSection": {
       "allOf": [
         {"$ref": "#/$defs/section"},
         {"properties": {"data": {

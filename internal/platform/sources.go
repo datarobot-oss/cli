@@ -246,13 +246,13 @@ func workloadAPISection(ctx context.Context) Section {
 	return sectionOf(WorkloadAPI{TotalCount: page.TotalCount}, err)
 }
 
-// workloadLimitsSection reads the install's limits on the shape of a workload
+// workloadShapeLimitsSection reads the install's limits on the shape of a workload
 // from the Workload API. A release that predates the route answers 404, which
 // leaves this section unavailable and the others intact.
-func workloadLimitsSection(ctx context.Context) Section {
-	var limits WorkloadLimits
+func workloadShapeLimitsSection(ctx context.Context) Section {
+	var limits WorkloadShapeLimits
 
-	target, err := apiURL("/workloadLimits/", nil)
+	target, err := apiURL("/workloadShapeLimits/", nil)
 	if err == nil {
 		err = call(ctx, http.MethodGet, target, true, nil, &limits)
 	}

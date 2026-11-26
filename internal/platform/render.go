@@ -36,7 +36,7 @@ var sectionOrder = []string{
 	SectionExecutionEnvironments,
 	SectionResourceBundles,
 	SectionWorkloadAPI,
-	SectionWorkloadLimits,
+	SectionWorkloadShapeLimits,
 }
 
 // jsonEnvelopeKey is the top-level key the report sits under in JSON output.
@@ -122,8 +122,8 @@ func renderData(say func(string, ...any), data any) {
 		renderBundles(say, d)
 	case WorkloadAPI:
 		renderWorkloadAPI(say, d)
-	case WorkloadLimits:
-		renderWorkloadLimits(say, d)
+	case WorkloadShapeLimits:
+		renderWorkloadShapeLimits(say, d)
 	}
 }
 
@@ -196,7 +196,7 @@ func renderWorkloadAPI(say func(string, ...any), api WorkloadAPI) {
 	}
 }
 
-func renderWorkloadLimits(say func(string, ...any), limits WorkloadLimits) {
+func renderWorkloadShapeLimits(say func(string, ...any), limits WorkloadShapeLimits) {
 	if limits.MaxContainersPerGroup != nil {
 		say("  max containers per group: %d", *limits.MaxContainersPerGroup)
 	}
