@@ -103,6 +103,7 @@ nav:
       - manifest reference: commands/workload-manifest.md
       - pipeline: commands/pipeline.md
       - pipeline reference: commands/pipelines-reference.md
+      - recipe: commands/recipe.md
       - llm-gateway: commands/llm-gateway.md
       - info: commands/info.md
       - doctor: commands/doctor.md

@@ -41,6 +41,7 @@ Feature names are converted from lowercase with hyphens to uppercase with unders
 - `workload-alpha` → `DATAROBOT_CLI_FEATURE_WORKLOAD_ALPHA`
 - `pipeline` → `DATAROBOT_CLI_FEATURE_PIPELINE` (AI Pipelines are in Private Preview on DataRobot 11.15 and later)
 - `platform-info` → `DATAROBOT_CLI_FEATURE_PLATFORM_INFO` (gates `dr info` while its name and output settle; see [the info docs](../commands/info.md))
+- `workload-api-llm` → `DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM` (gates `dr recipe` while LLM serving on the Workload API is behind `ENABLE_WORKLOAD_API_TOKEN_FACTORY`; see [the recipe docs](../commands/recipe.md))
 - `platform-doctor` → `DATAROBOT_CLI_FEATURE_PLATFORM_DOCTOR` (gates `dr doctor`; see [the doctor docs](../commands/doctor.md))
 - `my-feature` → `DATAROBOT_CLI_FEATURE_MY_FEATURE`
 

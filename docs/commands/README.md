@@ -58,6 +58,7 @@ These flags are available for all commands:
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
+| [`recipe`](recipe.md)             | Manage LLM serving recipes (feature-gated).                  |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
 | [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                  |
 | [`info`](info.md)                 | Report what an install supports (feature-gated).             |
@@ -148,6 +149,14 @@ dr
 │   ├── source         Display the source code of a pipeline
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
+├── recipe             LLM serving recipes (alias: recipes, feature-gated)
+│   ├── list           List the tenant's recipes
+│   ├── get            Show a recipe with its content
+│   ├── create         Register a recipe from a file
+│   ├── copy           Create a new recipe from an existing one
+│   ├── patch          Rename, describe, or replace the content as a new version
+│   ├── delete         Delete a recipe
+│   └── deployments    List the workloads deployed from a recipe
 ├── artifact           Artifact management
 │   ├── create         Create an artifact
 │   ├── get            Display details of an artifact

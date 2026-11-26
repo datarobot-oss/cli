@@ -22,6 +22,7 @@ import (
 	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/info"
 	"github.com/datarobot/cli/cmd/pipeline"
+	"github.com/datarobot/cli/cmd/recipe"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -215,6 +216,15 @@ func TestTelemetryWiring_GatedDoctorCommandTracked(t *testing.T) {
 // RootCmd unless DATAROBOT_CLI_FEATURE_PIPELINE is set (the default in CI).
 func TestTelemetryWiring_EveryPipelineLeafTracked(t *testing.T) {
 	for _, leaf := range leafCommands(pipeline.Cmd()) {
+		t.Run("dr "+leaf.CommandPath(), func(t *testing.T) {
+			assert.Containsf(t, leaf.Annotations, "telemetry",
+				"command %q must be wired to telemetry via telemetry.Track / TrackWith", leaf.CommandPath())
+		})
+	}
+}
+
+func TestTelemetryWiring_EveryRecipeLeafTracked(t *testing.T) {
+	for _, leaf := range leafCommands(recipe.Cmd()) {
 		t.Run("dr "+leaf.CommandPath(), func(t *testing.T) {
 			assert.Containsf(t, leaf.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", leaf.CommandPath())

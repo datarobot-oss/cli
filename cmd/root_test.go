@@ -450,6 +450,19 @@ func TestPipelineCommandNotPresentByDefault(t *testing.T) {
 		"pipeline command should be present with DATAROBOT_CLI_FEATURE_PIPELINE=true")
 }
 
+// TestRecipeCommandNotPresentByDefault verifies that recipe is hidden while LLM
+// serving is behind the server feature flag, and shown once
+// DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM is set.
+func TestRecipeCommandNotPresentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "")
+	assert.Nil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr recipe"),
+		"recipe command should not be present when the feature gate is not enabled")
+
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "true")
+	assert.NotNil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr recipe"),
+		"recipe command should be present with DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM=true")
+}
+
 // TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-CA TLS flags
 // are always registered on RootCmd (no longer feature-gated). Flag registration
 // happens during init(); no execution is required.

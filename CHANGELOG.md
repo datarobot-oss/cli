@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+# [Unreleased]
+
+## Added
+
+- `dr recipe` (feature-gated: `DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM=true`) manages the serving recipes LLM workloads deploy with on the Workload API: `list`, `get` (`--payload` prints the payload as YAML to edit), `create` from a JSON or YAML file (a full request or a bare `dynamo.dgd/v1beta1` / `vllm.recipe/v1` payload), `copy`, `patch` (a new payload needs `--if-version`), `delete` and `deployments` (the llm workloads running a recipe). A 403 from either LLM serving gate names the closed gate: the installation's LLM serving switch or the `ENABLE_WORKLOAD_API_TOKEN_FACTORY` user flag (INF-3290).
+
 # [0.18.0] - 2026-11-04
 
 ## Added
