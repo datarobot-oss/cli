@@ -424,6 +424,12 @@
           "url": "codespace/codespace-0.6.1.tar.xz",
           "sha256": "258b7816d9b2e40008521863b1f6d5b42688d7fad7466b021090e2122519c4cc",
           "releaseDate": "2026-11-03"
+        },
+        {
+          "version": "0.6.2",
+          "url": "codespace/codespace-0.6.2.tar.xz",
+          "sha256": "63ffe37141e698e2e350c11d3a54fc9ae654204739098ffe88bb6e430714765a",
+          "releaseDate": "2026-11-26"
         }
       ]
     }
