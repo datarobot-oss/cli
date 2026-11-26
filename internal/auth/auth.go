@@ -316,6 +316,23 @@ func reportStoredCredentialsNotUsed(w io.Writer, creds *EnvCredentials) {
 	fmt.Fprintln(w, base.Render("."))
 }
 
+// reportEnvOverridesProfile warns that the environment credentials are used
+// instead of the profile selected with --profile or DATAROBOT_CLI_PROFILE.
+// Precedence stays as `dr auth export` documents it, so this line is the only
+// sign that a command runs against another install than the profile names.
+func reportEnvOverridesProfile(w io.Writer, creds *EnvCredentials) {
+	profile := config.ActiveProfile()
+	if profile == "" {
+		return
+	}
+
+	base, _ := writerStyles(w)
+
+	fmt.Fprintln(w, base.Render(fmt.Sprintf(
+		"Using %s and DATAROBOT_API_TOKEN from the environment, not %s. Unset them to use the profile.",
+		creds.EndpointVar, config.ProfileDescription(profile))))
+}
+
 // VerifyEnvCredentials checks if environment variable credentials are valid.
 // Returns credentials and nil error if valid, credentials and error otherwise.
 func VerifyEnvCredentials(ctx context.Context) (*EnvCredentials, error) {
@@ -354,7 +371,8 @@ func EnsureAuthenticatedE(cmd *cobra.Command, _ []string) error {
 // verification returns false without falling back to the stored credentials and
 // without starting the login flow: environment credentials are an explicit
 // instance request, and substituting the profile would silently run against
-// the wrong instance.
+// the wrong instance. A valid pair that replaces a selected profile prints a
+// warning on stderr.
 func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	if viperx.GetBool(config.SkipAuthKey) {
 		log.Warn("Authentication checks are disabled via the '--skip-auth' flag. This may cause API calls to fail.")
@@ -366,6 +384,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	creds, envErr := VerifyEnvCredentials(ctx)
 	if envErr == nil {
 		BindEnvCredentials()
+		reportEnvOverridesProfile(os.Stderr, creds)
 
 		return true
 	}

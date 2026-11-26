@@ -143,6 +143,8 @@ dr auth profile show eu-mtsaas
 An explicit `DATAROBOT_ENDPOINT`/`DATAROBOT_API_TOKEN` environment variable
 pair still takes precedence over any profile, exactly as it does over the
 default profile — see [Environment variables](#environment-variables) below.
+When the pair replaces a profile selected with `--profile` or
+`DATAROBOT_CLI_PROFILE`, `dr` prints a warning on stderr.
 
 ### Environment-specific configs
 

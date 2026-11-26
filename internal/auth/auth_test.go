@@ -233,6 +233,79 @@ func TestEnsureAuthenticated_EnvMalformedEndpointStoredValid(t *testing.T) {
 		"Expected EnsureAuthenticated to fail on a malformed endpoint instead of using the stored credentials")
 }
 
+// A complete environment pair wins over a selected profile. The warning goes to
+// stderr so --output-format json leaves stdout parseable.
+func TestEnsureAuthenticated_EnvPairOverridingASelectedProfileWarns(t *testing.T) {
+	tests := []struct {
+		name        string
+		endpointVar string
+		want        string
+	}{
+		{
+			name:        "the endpoint from DATAROBOT_ENDPOINT",
+			endpointVar: "DATAROBOT_ENDPOINT",
+			want:        `Using DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN from the environment, not profile "target". Unset them to use the profile.`,
+		},
+		{
+			name:        "the endpoint from DATAROBOT_API_ENDPOINT",
+			endpointVar: "DATAROBOT_API_ENDPOINT",
+			want:        `Using DATAROBOT_API_ENDPOINT and DATAROBOT_API_TOKEN from the environment, not profile "target". Unset them to use the profile.`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, cleanup := setupTestEnvironment(t)
+			defer cleanup()
+
+			viperx.Set(config.ProfileKey, "target")
+			t.Setenv(tt.endpointVar, server.URL+"/api/v2")
+			t.Setenv("DATAROBOT_API_TOKEN", "valid-token")
+
+			var result bool
+
+			stderr := testutil.CaptureStderr(t, func() {
+				result = EnsureAuthenticated(context.Background())
+			})
+
+			assert.True(t, result, "the environment pair is valid, so authentication succeeds")
+			assert.Contains(t, stderr, tt.want)
+		})
+	}
+}
+
+func TestEnsureAuthenticated_EnvPairIsSilentWhenItReplacesNoSelectedProfile(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+		token   string
+		want    bool
+	}{
+		{name: "no profile is selected", profile: "", token: "valid-token", want: true},
+		{name: "the environment pair is rejected", profile: "target", token: "expired-token", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, cleanup := setupTestEnvironment(t)
+			defer cleanup()
+
+			viperx.Set(config.ProfileKey, tt.profile)
+			t.Setenv("DATAROBOT_ENDPOINT", server.URL+"/api/v2")
+			t.Setenv("DATAROBOT_API_TOKEN", tt.token)
+
+			var result bool
+
+			stderr := testutil.CaptureStderr(t, func() {
+				result = EnsureAuthenticated(context.Background())
+			})
+
+			assert.Equal(t, tt.want, result)
+			assert.NotContains(t, stderr, "from the environment, not profile")
+		})
+	}
+}
+
 func TestReportEnvCredentialsError(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		var buf bytes.Buffer
