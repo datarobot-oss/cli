@@ -501,7 +501,7 @@ func run(cmd *cobra.Command, f flags, poll pollflags.Set, format outputformat.Ou
 
 	*facts = runFacts{synced: result.Sync, useCaseRequested: result.UseCaseID != ""}
 
-	return pointToDoctor(report(cmd, f, format, result, runErr))
+	return pointToDoctor(report(cmd, f, format, result, runErr), result)
 }
 
 // doctorStatuses are the answers `dr doctor` explains: rejected credentials, a
@@ -515,12 +515,15 @@ var doctorStatuses = map[int]bool{
 }
 
 // pointToDoctor adds a line that names `dr doctor` to a refusal from the
-// platform, when the command is switched on. Any other error passes through
-// unchanged. The original *drapi.HTTPError stays reachable through errors.As.
-func pointToDoctor(err error) error {
+// platform, when the command is switched on. A run that already created a
+// workload or a build was accepted by the platform, so it gets no line, and
+// neither does any other error. The original *drapi.HTTPError stays reachable
+// through errors.As.
+func pointToDoctor(err error, result up.Result) error {
 	var httpErr *drapi.HTTPError
 
-	if !features.Enabled(platformdoctor.Gate) || !errors.As(err, &httpErr) || !doctorStatuses[httpErr.StatusCode] {
+	if reportable(result) || !features.Enabled(platformdoctor.Gate) ||
+		!errors.As(err, &httpErr) || !doctorStatuses[httpErr.StatusCode] {
 		return err
 	}
 
