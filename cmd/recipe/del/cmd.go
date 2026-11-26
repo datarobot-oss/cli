@@ -28,12 +28,15 @@ import (
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/llm"
 	"github.com/datarobot/cli/internal/misc/reader"
+	"github.com/datarobot/cli/internal/outputformat"
 	"github.com/datarobot/cli/internal/telemetry"
 	"github.com/datarobot/cli/tui"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
+	var outputFormat outputformat.OutputFormat
+
 	cmd := &cobra.Command{
 		Use:   "delete <recipe-id>",
 		Short: "Delete a recipe.",
@@ -41,7 +44,8 @@ func Cmd() *cobra.Command {
 
 Workloads already scheduled keep running on the version they resolved; a
 deleted recipe cannot be deployed again. Without --yes the command asks for
-confirmation.
+confirmation. With --output-format json, stdout carries only the result and
+the prompt goes to stderr.
 
 Example:
   dr recipe delete 6a1f0c2e9b7d4e3f2a1b0c9d
@@ -50,13 +54,20 @@ Example:
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			confirmed, err := confirm(cmd, args[0])
+			outputFormat = outputformat.GetFormat(cmd)
+			jsonOut := outputFormat == outputformat.OutputFormatJSON
+
+			confirmed, err := confirm(cmd, args[0], jsonOut)
 			if err != nil || !confirmed {
 				return err
 			}
 
 			if err := llm.DeleteRecipe(args[0]); err != nil {
-				return handleError(cmd, err, args[0])
+				return handleError(cmd, err, args[0], jsonOut)
+			}
+
+			if jsonOut {
+				return outputformat.PrintJSONEnvelope(cmd.OutOrStdout(), "deleted", map[string]string{"id": args[0]})
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), tui.BaseTextStyle.Render("Deleted recipe: "+args[0]))
@@ -65,6 +76,7 @@ Example:
 		},
 	}
 
+	outputformat.AddFlag(cmd, &outputFormat)
 	cmd.Flags().BoolP(cli.YesFlagName, "y", false, "Skip the confirmation prompt.")
 
 	// Bind only the env var to viper, as `dr artifact delete` does, so an
@@ -72,13 +84,15 @@ Example:
 	_ = viperx.BindEnv(cli.YesFlagName, "DATAROBOT_CLI_NON_INTERACTIVE")
 
 	telemetry.TrackWith(cmd, func(cmd *cobra.Command, _ []string) map[string]any {
-		return map[string]any{"yes": cli.IsNonInteractive(cmd)}
+		return map[string]any{"yes": cli.IsNonInteractive(cmd), "output_format": string(outputFormat)}
 	})
 
 	return cmd
 }
 
-func confirm(cmd *cobra.Command, id string) (bool, error) {
+// confirm asks before deleting. In JSON mode the prompt and "Aborted." go to
+// stderr so stdout stays pure JSON.
+func confirm(cmd *cobra.Command, id string, jsonOut bool) (bool, error) {
 	if cli.IsNonInteractive(cmd) {
 		return true, nil
 	}
@@ -87,24 +101,30 @@ func confirm(cmd *cobra.Command, id string) (bool, error) {
 		return false, errors.New("confirmation required: pass --yes (or set DATAROBOT_CLI_NON_INTERACTIVE=1) to delete without a prompt")
 	}
 
-	ok, err := helpers.Confirm(cmd.OutOrStdout(), cmd.InOrStdin(), "Delete recipe "+id+"? [y/N] ")
+	talk := cmd.OutOrStdout()
+	if jsonOut {
+		talk = cmd.ErrOrStderr()
+	}
+
+	ok, err := helpers.Confirm(talk, cmd.InOrStdin(), "Delete recipe "+id+"? [y/N] ")
 	if err != nil {
 		return false, err
 	}
 
 	if !ok {
-		fmt.Fprintln(cmd.OutOrStdout(), tui.DimStyle.Render("Aborted."))
+		fmt.Fprintln(talk, tui.DimStyle.Render("Aborted."))
 	}
 
 	return ok, nil
 }
 
 // handleError turns a 404 into an informational line (exit 0), as
-// `dr artifact delete` does; everything else keeps the server's detail.
-func handleError(cmd *cobra.Command, err error, id string) error {
+// `dr artifact delete` does; JSON mode keeps the error so stdout stays pure
+// JSON, as `dr recipe get` does. Everything else keeps the server's detail.
+func handleError(cmd *cobra.Command, err error, id string, jsonOut bool) error {
 	var httpErr *drapi.HTTPError
 
-	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound && !jsonOut {
 		fmt.Fprintln(cmd.OutOrStdout(), tui.DimStyle.Render("No recipe found with id: "+id))
 
 		return nil

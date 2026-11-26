@@ -104,6 +104,8 @@ func RecipeDeployments(recipeID string, statuses []string, limit int) ([]Deploym
 
 	var matched []Deployment
 
+	pages := newPager(pageURL)
+
 	for pageURL != "" {
 		var page deploymentPage
 
@@ -116,15 +118,9 @@ func RecipeDeployments(recipeID string, statuses []string, limit int) ([]Deploym
 			return matched, nil
 		}
 
-		if page.Next == "" {
-			break
-		}
-
-		if err := drapi.AssertNextOnSameHost(page.Next); err != nil {
+		if pageURL, err = pages.next(page.Next, len(page.Data)); err != nil {
 			return nil, err
 		}
-
-		pageURL = page.Next
 	}
 
 	return matched, nil

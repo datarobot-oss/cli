@@ -286,3 +286,57 @@ func TestRenderPayload_YAML(t *testing.T) {
 	assert.Contains(t, buf.String(), "format: vllm.recipe/v1")
 	assert.Contains(t, buf.String(), "hf_id: Qwen/Qwen3-32B")
 }
+
+func TestListRecipes_RefusesARepeatedPage(t *testing.T) {
+	var base string
+
+	base = serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": []map[string]any{{"id": "a"}},
+			"next": base + "/api/v2/llmRecipes/?offset=1",
+		})
+	}))
+
+	_, err := ListRecipes(ListOptions{Limit: 50})
+	require.ErrorContains(t, err, "already read")
+}
+
+func TestRecipeDeployments_RefusesAnEmptyPageWithNext(t *testing.T) {
+	var base string
+
+	base = serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": []map[string]any{},
+			"next": base + "/api/v2/workloads/?offset=" + r.URL.Query().Get("offset") + "0",
+		})
+	}))
+
+	_, err := RecipeDeployments("r1", nil, 10)
+	require.ErrorContains(t, err, "empty page")
+}
+
+const bigIntPayload = `{"format":"vllm.recipe/v1","recipe":{"hf_id":"Qwen/Qwen3-32B","seed":9007199254740993,"tag":"123","ratio":0.9}}`
+
+func TestRenderPayload_KeepsLargeIntegersExact(t *testing.T) {
+	r := Recipe{ID: "abc", Payload: json.RawMessage(bigIntPayload)}
+
+	var js bytes.Buffer
+
+	require.NoError(t, RenderPayload(&js, outputformat.OutputFormatJSON, r))
+	assert.Contains(t, js.String(), "9007199254740993")
+
+	var y bytes.Buffer
+
+	require.NoError(t, RenderPayload(&y, outputformat.OutputFormatText, r))
+	assert.Contains(t, y.String(), "seed: 9007199254740993")
+	assert.Contains(t, y.String(), `tag: "123"`, "a numeric-looking string stays a string")
+	assert.NotContains(t, y.String(), "{", "block style, not JSON flow style")
+
+	// The YAML re-reads to the same payload: the get, edit, patch loop.
+	p := filepath.Join(t.TempDir(), "recipe.yaml")
+	require.NoError(t, os.WriteFile(p, y.Bytes(), 0o600))
+
+	f, err := ReadRecipeFile(p)
+	require.NoError(t, err)
+	assert.JSONEq(t, bigIntPayload, string(f.Payload))
+}

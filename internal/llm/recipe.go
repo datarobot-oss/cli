@@ -201,6 +201,8 @@ func ListRecipes(opts ListOptions) ([]Recipe, error) {
 
 	var all []Recipe
 
+	pages := newPager(pageURL)
+
 	for pageURL != "" {
 		var page recipePage
 
@@ -214,15 +216,9 @@ func ListRecipes(opts ListOptions) ([]Recipe, error) {
 			return all[:opts.Limit], nil
 		}
 
-		if page.Next == "" {
-			break
-		}
-
-		if err := drapi.AssertNextOnSameHost(page.Next); err != nil {
+		if pageURL, err = pages.next(page.Next, len(page.Data)); err != nil {
 			return nil, err
 		}
-
-		pageURL = page.Next
 	}
 
 	return all, nil

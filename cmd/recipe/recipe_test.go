@@ -203,3 +203,23 @@ func TestGet_JSONIsPure(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &env))
 	assert.Contains(t, env, "recipe")
 }
+
+func TestDelete_JSON(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	out, err := run(t, "delete", "r1", "--yes", "--output-format", "json")
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"deleted":{"id":"r1"}}`, out)
+}
+
+func TestDelete_JSONNotFoundIsAnError(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"detail": "Recipe not found"})
+	}))
+
+	out, err := run(t, "delete", "gone", "--yes", "--output-format", "json")
+	require.Error(t, err)
+	assert.Empty(t, out, "stdout stays pure JSON")
+}

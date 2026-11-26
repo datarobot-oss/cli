@@ -15,6 +15,7 @@
 package llm
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -170,16 +171,19 @@ func RenderPayload(w io.Writer, format outputformat.OutputFormat, r Recipe) erro
 	}
 
 	if format == outputformat.OutputFormatJSON {
-		var v any
+		// Indent the bytes as sent rather than decoding them: a decode turns
+		// every number into a float64 and would round large integers.
+		var buf bytes.Buffer
 
-		if err := json.Unmarshal(r.Payload, &v); err != nil {
+		if err := json.Indent(&buf, r.Payload, "", "  "); err != nil {
 			return err
 		}
 
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
+		buf.WriteByte('\n')
 
-		return enc.Encode(v)
+		_, err := buf.WriteTo(w)
+
+		return err
 	}
 
 	out, err := toYAML(r.Payload)
@@ -219,19 +223,36 @@ func RenderDeployments(w io.Writer, format outputformat.OutputFormat, deployment
 	return err
 }
 
+// toYAML renders JSON as block-style YAML without decoding it into Go values:
+// JSON is YAML, so it is parsed into a node tree that keeps every scalar's
+// text (a large integer stays exact), and the JSON flow style is dropped so
+// the output reads, and edits, as ordinary YAML.
 func toYAML(raw json.RawMessage) (string, error) {
-	var v any
+	var node yaml.Node
 
-	if err := json.Unmarshal(raw, &v); err != nil {
+	if err := yaml.Unmarshal(raw, &node); err != nil {
 		return "", err
 	}
 
-	out, err := yaml.Marshal(v)
+	blockStyle(&node)
+
+	out, err := yaml.Marshal(&node)
 	if err != nil {
 		return "", err
 	}
 
 	return string(out), nil
+}
+
+// blockStyle clears the flow and quoting styles the JSON source carried. The
+// encoder still quotes a string whose text would read as another type, so
+// "123" stays a string.
+func blockStyle(n *yaml.Node) {
+	n.Style = 0
+
+	for _, c := range n.Content {
+		blockStyle(c)
+	}
 }
 
 func indent(s string) string {
