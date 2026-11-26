@@ -15,6 +15,7 @@
 package buildstudio
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -40,6 +41,7 @@ func stubSeams(t *testing.T) {
 	origInstall := installPluginByName
 	origExecute := executePlugin
 	origUpdate := checkPluginUpdate
+	origStderr := stderr
 
 	t.Cleanup(func() {
 		getPlugins = origGetPlugins
@@ -47,6 +49,7 @@ func stubSeams(t *testing.T) {
 		installPluginByName = origInstall
 		executePlugin = origExecute
 		checkPluginUpdate = origUpdate
+		stderr = origStderr
 	})
 
 	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
@@ -66,6 +69,7 @@ func stubSeams(t *testing.T) {
 		return 1
 	}
 	checkPluginUpdate = func(string, string, string) {}
+	stderr = &bytes.Buffer{}
 }
 
 func discovered(name, executable string) plugin.DiscoveredPlugin {
@@ -339,4 +343,151 @@ func TestResolveInstalled_TransientErrorAborts(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "permission denied")
+}
+
+func TestXPVersionWarning(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    []string
+		notWant []string
+	}{
+		{
+			name:    "below Assist",
+			version: "2.2.0",
+			want:    []string{"xp 2.2.0", "Assist needs 2.3.0", "Analyze trace needs 2.5.0", "dr plugin update xp"},
+		},
+		{
+			name:    "between Assist and Analyze trace",
+			version: "2.4.9",
+			want:    []string{"xp 2.4.9", "Analyze trace needs 2.5.0"},
+			notWant: []string{"Assist needs"},
+		},
+		{
+			name:    "pre-release of the minimum",
+			version: "2.5.0-rc.1",
+			want:    []string{"Analyze trace needs 2.5.0"},
+		},
+		{name: "at the minimum", version: "2.5.0"},
+		{name: "above the minimum", version: "3.0.1"},
+		{name: "unparseable", version: "dev"},
+		{name: "empty", version: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := xpVersionWarning(tt.version)
+
+			if len(tt.want) == 0 {
+				assert.Empty(t, got)
+
+				return
+			}
+
+			for _, w := range tt.want {
+				assert.Contains(t, got, w)
+			}
+
+			for _, nw := range tt.notWant {
+				assert.NotContains(t, got, nw)
+			}
+		})
+	}
+}
+
+// studioWithXP stubs an installed xp at the given version plus opencode, and
+// records xp's execution. It returns the stderr buffer and the args xp got.
+func studioWithXP(t *testing.T, xpVersion string) (*bytes.Buffer, *[]string) {
+	t.Helper()
+	stubSeams(t)
+
+	xp := discovered("xp", "/managed/xp.sh")
+	xp.Manifest.Version = xpVersion
+
+	getPlugins = func() ([]plugin.DiscoveredPlugin, []plugin.PluginConflict) {
+		return []plugin.DiscoveredPlugin{xp, discovered("opencode", "/managed/opencode.sh")}, nil
+	}
+
+	gotArgs := new([]string)
+
+	executePlugin = func(_ context.Context, _ plugin.PluginManifest, _ string, args []string, _ *pflag.FlagSet, _ ...plugin.ExecOption) int {
+		*gotArgs = args
+
+		return 0
+	}
+
+	buf := &bytes.Buffer{}
+	stderr = buf
+
+	return buf, gotArgs
+}
+
+func TestRunStudio_WarnsOnOldXPAndStillStarts(t *testing.T) {
+	buf, gotArgs := studioWithXP(t, "2.3.1")
+
+	exitCode, err := runStudio(Cmd(), studioArgs{passthrough: []string{"--port", "9000"}})
+
+	require.NoError(t, err)
+	assert.Zero(t, exitCode)
+	assert.Contains(t, buf.String(), "xp 2.3.1 is older than Build Studio needs: Analyze trace needs 2.5.0")
+	assert.Equal(t, []string{"--port", "9000"}, *gotArgs, "xp should still start with the same args")
+}
+
+func TestRunStudio_NoWarningForCurrentXP(t *testing.T) {
+	buf, _ := studioWithXP(t, "2.5.0")
+
+	_, err := runStudio(Cmd(), studioArgs{})
+
+	require.NoError(t, err)
+	assert.NotContains(t, buf.String(), "older than Build Studio needs")
+}
+
+// TestRunStudio_NoWarningAfterAcceptedUpdate verifies that the version is
+// read again after the update check, so an xp updated in place doesn't
+// warn about the version it replaced.
+func TestRunStudio_NoWarningAfterAcceptedUpdate(t *testing.T) {
+	buf, _ := studioWithXP(t, "2.2.0")
+
+	updated := false
+
+	checkPluginUpdate = func(name, _, _ string) {
+		if name == "xp" {
+			updated = true
+		}
+	}
+	loadManagedPlugin = func(name string) (*plugin.DiscoveredPlugin, error) {
+		if name != "xp" || !updated {
+			return nil, nil
+		}
+
+		// The update may rename the entrypoint; the plugin directory stays.
+		p := discovered("xp", "/managed/xp.ps1")
+		p.Manifest.Version = "2.5.0"
+
+		return &p, nil
+	}
+
+	_, err := runStudio(Cmd(), studioArgs{})
+
+	require.NoError(t, err)
+	assert.NotContains(t, buf.String(), "older than Build Studio needs")
+}
+
+// TestRunStudio_IgnoresOtherManagedXP verifies that a managed xp at another
+// path than the one about to run (e.g. xp found on PATH) doesn't decide the
+// warning.
+func TestRunStudio_IgnoresOtherManagedXP(t *testing.T) {
+	buf, _ := studioWithXP(t, "2.2.0")
+
+	loadManagedPlugin = func(string) (*plugin.DiscoveredPlugin, error) {
+		p := discovered("xp", "/elsewhere/xp.sh")
+		p.Manifest.Version = "2.5.0"
+
+		return &p, nil
+	}
+
+	_, err := runStudio(Cmd(), studioArgs{})
+
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "xp 2.2.0 is older than Build Studio needs")
 }
