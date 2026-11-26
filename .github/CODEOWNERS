@@ -11,6 +11,8 @@ docs/commands/enclave.md @datarobot-oss/inference-platform
 cmd/build-studio/ @datarobot-oss/agent-ecosystem
 cmd/build_studio_command_test.go @datarobot-oss/agent-ecosystem
 cmd/info/ @datarobot-oss/labs
+cmd/doctor/ @datarobot-oss/labs
 internal/platform/ @datarobot-oss/labs
 docs/commands/info.md @datarobot-oss/labs
+docs/commands/doctor.md @datarobot-oss/labs
 docs/schemas/platform-info.schema.json @datarobot-oss/labs

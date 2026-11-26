@@ -229,6 +229,12 @@ func TestGuard_TurnsAPanicIntoAnUnavailableSection(t *testing.T) {
 	assert.Contains(t, section.Message, "boom")
 }
 
+func TestGuard_MarksAPanicWithTheInternalErrorPrefix(t *testing.T) {
+	section := guard(func() Section { panic("boom") })
+
+	assert.Equal(t, "internal error: boom", section.Message)
+}
+
 func TestGuard_KeepsTheSectionAReadProduced(t *testing.T) {
 	section := guard(func() Section { return Section{Status: StatusDegraded, Message: "one flag missing"} })
 

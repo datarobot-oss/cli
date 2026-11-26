@@ -26,22 +26,12 @@ import (
 	"github.com/datarobot/cli/tui"
 )
 
-// WriteText renders a report in human-readable form: a header (project dir
-// and linked artifact or "not linked"), a CHECK/STATUS/DETAIL table with one
-// row per check in runner order, remedies for non-OK rows, and a summary
-// line with per-status counts plus the overall verdict.
+// WriteText renders a report in human-readable form: a header (the title, or
+// the project dir and linked artifact or "not linked"), a CHECK/STATUS/DETAIL
+// table with one row per check in runner order, remedies for non-OK rows, and a
+// summary line with per-status counts plus the overall verdict.
 func WriteText(w io.Writer, report Report) error {
-	artifact := report.linkedArtifact()
-
-	switch {
-	case artifact != "":
-	case report.NoArtifactLabel != "":
-		artifact = report.NoArtifactLabel
-	default:
-		artifact = "not linked"
-	}
-
-	if _, err := fmt.Fprintf(w, "Doctor report for %s — artifact: %s\n\n", report.ProjectDir, artifact); err != nil {
+	if _, err := fmt.Fprintf(w, "%s\n\n", header(report)); err != nil {
 		return err
 	}
 
@@ -58,6 +48,24 @@ func WriteText(w io.Writer, report Report) error {
 	}
 
 	return writeSummary(w, report)
+}
+
+func header(report Report) string {
+	if report.Title != "" {
+		return report.Title
+	}
+
+	artifact := report.linkedArtifact()
+
+	switch {
+	case artifact != "":
+	case report.NoArtifactLabel != "":
+		artifact = report.NoArtifactLabel
+	default:
+		artifact = "not linked"
+	}
+
+	return fmt.Sprintf("Doctor report for %s — artifact: %s", report.ProjectDir, artifact)
 }
 
 // writeChecksTable renders the per-check table using the repo-standard

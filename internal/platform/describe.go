@@ -135,12 +135,17 @@ func (e stopped) Error() string { return e.message }
 
 func (e stopped) Unwrap() error { return e.cause }
 
+// InternalErrorPrefix starts the message of a section that a recovered panic
+// produced. Such a section has no HTTP status, like a network failure, so the
+// doctor tells the two apart by this prefix.
+const InternalErrorPrefix = "internal error: "
+
 // guard runs read. When read panics, the result is an unavailable section, so
 // a broken source costs only its own section.
 func guard(read func() Section) (section Section) {
 	defer func() {
 		if r := recover(); r != nil {
-			section = Section{Status: StatusUnavailable, Message: fmt.Sprintf("internal error: %v", r)}
+			section = Section{Status: StatusUnavailable, Message: fmt.Sprintf("%s%v", InternalErrorPrefix, r)}
 		}
 	}()
 

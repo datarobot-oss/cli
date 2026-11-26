@@ -40,6 +40,7 @@ import (
 	buildstudio "github.com/datarobot/cli/cmd/build-studio"
 	"github.com/datarobot/cli/cmd/component"
 	"github.com/datarobot/cli/cmd/dependencies"
+	"github.com/datarobot/cli/cmd/doctor"
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/info"
@@ -677,6 +678,7 @@ func (f *RootFactory) addSubcommands(adder *cli.CommandAdder) {
 		plugin.Cmd(),
 		pipeline.Cmd(),
 		info.Cmd(),
+		doctor.Cmd(),
 	)
 }
 

@@ -347,11 +347,8 @@ type remoteCreds struct {
 // reachability is judged by the remote checks themselves, which report SKIP
 // with a `dr auth login` remedy when these credentials do not work.
 func softAuthProbe() (remoteCreds, bool) {
-	env := auth.GetEnvCredentials()
-
-	if env.Endpoint != "" && env.Token != "" {
-		_ = viperx.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
-		_ = viperx.BindEnv("token", "DATAROBOT_API_TOKEN")
+	if auth.BindEnvCredentials() {
+		env := auth.GetEnvCredentials()
 
 		return remoteCreds{Endpoint: env.Endpoint, Token: env.Token}, true
 	}

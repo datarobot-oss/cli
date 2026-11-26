@@ -113,6 +113,25 @@ func GetEnvCredentials() EnvCredentials {
 	}
 }
 
+// BindEnvCredentials makes a complete DATAROBOT_ENDPOINT and DATAROBOT_API_TOKEN
+// pair win over the stored profile and reports whether it did. Anything less
+// than a complete pair leaves the profile in place. It verifies nothing and
+// never starts a login.
+func BindEnvCredentials() bool {
+	creds := GetEnvCredentials()
+	if creds.Endpoint == "" || creds.Token == "" {
+		return false
+	}
+
+	// Map the DATAROBOT_* variables that the platform and other SDKs set to the
+	// config keys. If the DATAROBOT_CLI equivalents are not set, Viper falls back
+	// to these.
+	_ = viperx.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
+	_ = viperx.BindEnv("token", "DATAROBOT_API_TOKEN")
+
+	return true
+}
+
 // ValidateEndpoint rejects an endpoint the CLI cannot use: one that will not
 // parse (surrounding quotes) or a scheme other than http/https. Empty is nil.
 func ValidateEndpoint(endpoint string) error {
@@ -346,12 +365,7 @@ func EnsureAuthenticated(ctx context.Context) bool { //nolint: cyclop
 	// bindValidAuthEnv binds DATAROBOT ENDPOINT/API_TOKEN to viper config only if these credentials are valid
 	creds, envErr := VerifyEnvCredentials(ctx)
 	if envErr == nil {
-		// Now map other environment variables to config keys
-		// such as those used by the DataRobot platform or other SDKs
-		// and clients. If the DATAROBOT_CLI equivalents are not set,
-		// then Viper will fallback to these
-		_ = viperx.BindEnv("endpoint", "DATAROBOT_ENDPOINT", "DATAROBOT_API_ENDPOINT")
-		_ = viperx.BindEnv("token", "DATAROBOT_API_TOKEN")
+		BindEnvCredentials()
 
 		return true
 	}

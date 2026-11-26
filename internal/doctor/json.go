@@ -30,16 +30,25 @@ type jsonCheck struct {
 	Fixable bool              `json:"fixable"`
 }
 
-// jsonReport is the pinned top-level JSON shape: absolute projectDir,
-// artifactId (null when unlinked), lowercase status, checks in runner order,
-// per-status summary counts, and — for repair runs only — an actions array.
+// jsonBody holds the fields that every report shares.
+type jsonBody struct {
+	Status  string      `json:"status"`
+	Checks  []jsonCheck `json:"checks"`
+	Summary Counts      `json:"summary"`
+	Actions *[]Action   `json:"actions,omitempty"`
+}
+
+// jsonReport is the pinned JSON shape of a project report.
 type jsonReport struct {
-	ProjectDir string      `json:"projectDir"`
-	ArtifactID *string     `json:"artifactId"`
-	Status     string      `json:"status"`
-	Checks     []jsonCheck `json:"checks"`
-	Summary    Counts      `json:"summary"`
-	Actions    *[]Action   `json:"actions,omitempty"`
+	ProjectDir string  `json:"projectDir"`
+	ArtifactID *string `json:"artifactId"`
+	jsonBody
+}
+
+// jsonTitledReport is the JSON shape of a report with no project.
+type jsonTitledReport struct {
+	Title string `json:"title"`
+	jsonBody
 }
 
 // WriteJSON renders a report as a single pure-JSON object (indented, trailing
@@ -60,13 +69,21 @@ func WriteJSON(w io.Writer, report Report) error {
 		})
 	}
 
-	out := jsonReport{
+	body := jsonBody{
+		Status:  report.OverallStatus(),
+		Checks:  checks,
+		Summary: report.Counts(),
+		Actions: report.Actions,
+	}
+
+	var out any = jsonReport{
 		ProjectDir: report.ProjectDir,
 		ArtifactID: report.artifactIDForJSON(),
-		Status:     report.OverallStatus(),
-		Checks:     checks,
-		Summary:    report.Counts(),
-		Actions:    report.Actions,
+		jsonBody:   body,
+	}
+
+	if report.Title != "" {
+		out = jsonTitledReport{Title: report.Title, jsonBody: body}
 	}
 
 	enc := json.NewEncoder(w)

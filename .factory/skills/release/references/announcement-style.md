@@ -94,6 +94,12 @@ The v0.8.0 and v0.20.0 auth-profile threads are the references.
   pings need a rich_text block edit: post with `parse: none`, then `slack__update_message`
   replacing the literal text with a `{"type": "user", "user_id": "U…"}` element. Using plain
   names instead of mentions sidesteps the limitation entirely and is the default.
+  - **Exception, verified twice (v0.22.1, v0.23.0):** with `parse` left unset, `<@U…>` in
+    `post_message` text DOES arrive as a real `{"type": "user"}` mention element. Always
+    verify the send response's blocks carry `type: user` before considering it done.
+- Markdown `[text](url)` links are NOT converted — they arrive as literal text. Convert to
+  `<url|text>` or a bare URL when composing the post (bare links, `<url|text>`, bold, inline
+  code, fenced blocks, and numbered lists all render correctly as plain mrkdwn).
 - Angle-bracket placeholders (`<group-id>`) render correctly inside code spans and preformatted
   blocks; only the plain-text fallback shows `&lt;…&gt;`.
 - `*bold*`, `` `code` ``, fenced blocks, and bare links all render correctly as plain mrkdwn text.
