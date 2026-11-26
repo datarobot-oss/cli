@@ -42,11 +42,13 @@ func TestCmd_InvalidOutputFormat(t *testing.T) {
 }
 
 func TestCmd_HasNoWaitFlag(t *testing.T) {
-	// status is a single fetch; blocking lives only in the long-running
-	// build commands.
+	// status is a single fetch unless --watch is asked for explicitly; it has
+	// no --wait, which in the long-running commands blocks on their own work.
 	cmd := Cmd()
 
 	assert.Nil(t, cmd.Flag("wait"))
-	assert.Nil(t, cmd.Flag("poll-interval"))
-	assert.Nil(t, cmd.Flag("poll-timeout"))
+
+	watch := cmd.Flag("watch")
+	require.NotNil(t, watch)
+	assert.Equal(t, "false", watch.DefValue, "a plain status is one fetch")
 }

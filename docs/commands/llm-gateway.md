@@ -6,7 +6,6 @@ List available LLMs — both LLM Gateway catalog models and DataRobot-deployed L
 
 ```bash
 dr llm-gateway <command> [flags]
-dr llm [flags]           # alias
 ```
 
 ## Description
@@ -18,7 +17,9 @@ The `dr llm-gateway` group exposes two subcommands:
 
 When both sources are queried (`select`, and `list` without `--source`), each is best-effort: if one cannot be reached (e.g. an empty LLM Gateway on-prem, or no deployment access), the command logs a warning and lists the other, and errors only when both fail. The two are fetched in parallel, so the command waits on the slower source rather than on both in turn. Asking `list` for a single source instead makes a failure to reach it an error, since there is no other source left to show.
 
-**Aliases:** `llm`, `llm-gateways`
+**Aliases:** `llm-gateways`
+
+`llm` was an alias of this group. It is now [`dr llm`](llm.md), which serves LLMs from recipes; `dr llm list` and `dr llm select` still forward here, so existing scripts keep working.
 
 ## Subcommands
 
@@ -28,7 +29,7 @@ Fetch available LLMs — LLM Gateway catalog models and DataRobot-deployed LLMs 
 
 ```bash
 dr llm-gateway list [flags]
-dr llm ls               # shortest alias
+dr llm-gateway ls       # shortest form
 ```
 
 **Flags:**

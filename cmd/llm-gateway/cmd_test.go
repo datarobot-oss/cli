@@ -29,7 +29,8 @@ func TestCmd_Use(t *testing.T) {
 func TestCmd_Aliases(t *testing.T) {
 	cmd := Cmd()
 
-	assert.Contains(t, cmd.Aliases, "llm")
+	// "llm" is its own group now (dr llm); dr llm list|select forward here.
+	assert.NotContains(t, cmd.Aliases, "llm")
 	assert.Contains(t, cmd.Aliases, "llm-gateways")
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/datarobot/cli/cmd/doctor"
 	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/info"
+	"github.com/datarobot/cli/cmd/llm"
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/datarobot/cli/cmd/recipe"
 	"github.com/spf13/cobra"
@@ -216,6 +217,17 @@ func TestTelemetryWiring_GatedDoctorCommandTracked(t *testing.T) {
 // RootCmd unless DATAROBOT_CLI_FEATURE_PIPELINE is set (the default in CI).
 func TestTelemetryWiring_EveryPipelineLeafTracked(t *testing.T) {
 	for _, leaf := range leafCommands(pipeline.Cmd()) {
+		t.Run("dr "+leaf.CommandPath(), func(t *testing.T) {
+			assert.Containsf(t, leaf.Annotations, "telemetry",
+				"command %q must be wired to telemetry via telemetry.Track / TrackWith", leaf.CommandPath())
+		})
+	}
+}
+
+func TestTelemetryWiring_EveryLLMLeafTracked(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "true")
+
+	for _, leaf := range leafCommands(llm.Cmd()) {
 		t.Run("dr "+leaf.CommandPath(), func(t *testing.T) {
 			assert.Containsf(t, leaf.Annotations, "telemetry",
 				"command %q must be wired to telemetry via telemetry.Track / TrackWith", leaf.CommandPath())

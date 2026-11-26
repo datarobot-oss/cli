@@ -57,6 +57,7 @@ These flags are available for all commands:
 | [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).  |
 | [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
 | [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
+| [`llm`](llm.md)                   | Deploy, roll out and chat with LLMs from recipes (feature-gated). |
 | [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
 | [`recipe`](recipe.md)             | Manage LLM serving recipes (feature-gated).                  |
 | [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
@@ -97,7 +98,7 @@ dr
 │   ├── install        Install a plugin
 │   ├── uninstall      Uninstall a plugin
 │   └── update         Update plugins
-├── llm-gateway        LLM model management (alias: llm, llm-gateways)
+├── llm-gateway        LLM model management (alias: llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
 ├── info               Report what the install supports (feature-gated)
@@ -149,6 +150,13 @@ dr
 │   ├── source         Display the source code of a pipeline
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
+├── llm                Serve LLMs from recipes (feature-gated)
+│   ├── deploy         Deploy a recipe as an llm workload
+│   ├── rollout        Roll a running llm workload onto another recipe version
+│   ├── chat           Send a chat request to a deployed LLM
+│   ├── status         Same as dr workload status
+│   ├── watch          Same as dr workload status --watch
+│   └── endpoint       Same as dr workload endpoint
 ├── recipe             LLM serving recipes (alias: recipes, feature-gated)
 │   ├── list           List the tenant's recipes
 │   ├── get            Show a recipe with its content
@@ -305,9 +313,9 @@ dr llm-gateway select <llm-id>
 Aliases:
 
 ```bash
-dr llm list       # llm-gateway → llm
-dr llm ls         # list → ls
-dr llm select
+dr llm-gateway ls # list → ls
+dr llm list       # still forwards to llm-gateway list
+dr llm select     # still forwards to llm-gateway select
 ```
 
 ### Running tasks

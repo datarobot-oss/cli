@@ -23,7 +23,7 @@ import (
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "llm-gateway",
-		Aliases: []string{"llm-gateways", "llm"},
+		Aliases: []string{"llm-gateways"},
 		GroupID: "core",
 		Short:   "🤖 Manage LLM Gateway models",
 	}

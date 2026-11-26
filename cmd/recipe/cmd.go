@@ -25,12 +25,9 @@ import (
 	"github.com/datarobot/cli/cmd/recipe/list"
 	"github.com/datarobot/cli/cmd/recipe/patch"
 	"github.com/datarobot/cli/internal/features"
+	"github.com/datarobot/cli/internal/llm"
 	"github.com/spf13/cobra"
 )
-
-// Gate is the CLI feature gate shared by `dr recipe` and the new `dr llm`
-// commands while the server feature is flagged.
-const Gate = "workload-api-llm"
 
 func Cmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -52,7 +49,7 @@ organization or group. The command group is shown when
 DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM=true is set.`,
 	}
 
-	features.SetGate(cmd, Gate)
+	features.SetGate(cmd, llm.Gate)
 
 	cmd.AddCommand(
 		list.Cmd(),

@@ -44,6 +44,7 @@ import (
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/info"
+	"github.com/datarobot/cli/cmd/llm"
 	llmgateway "github.com/datarobot/cli/cmd/llm-gateway"
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/datarobot/cli/cmd/plugin"
@@ -670,6 +671,7 @@ func (f *RootFactory) addSubcommands(adder *cli.CommandAdder) {
 		dotenv.Cmd(),
 		enclave.Cmd(),
 		llmgateway.Cmd(),
+		llm.Cmd(),
 		run.Cmd(),
 		self.Cmd(),
 		start.Cmd(),

@@ -263,7 +263,10 @@ Print a workload's current status as a bare value (for example `running`), so it
 
 ```bash
 dr workload status [<workload-id>] [--dir <path>] [--output-format text|json]
+dr workload status [<workload-id>] --watch [--poll-interval 5s] [--poll-timeout 30m]
 ```
+
+`--watch` follows the workload until it settles (`running`, `stopped`, `suspended`, `errored` or `terminated`), printing each status as it changes; Ctrl-C stops watching, not the workload. With `--output-format json` only the settled status is printed. Without `--watch` the command is a single fetch.
 
 ### `diagnose`
 
