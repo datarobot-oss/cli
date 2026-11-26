@@ -166,7 +166,7 @@ func TestRollout_DryRunSendsCleanRuntime(t *testing.T) {
 				"runtime": map[string]any{
 					"recipe":         map[string]any{"id": "r1"},
 					"resolvedRecipe": map[string]any{"id": "r1", "version": 2},
-					"workers":        map[string]any{"resourceBundles": []string{"gpu.b200.x8"}},
+					"workers":        map[string]any{"resourceBundles": []string{"gpu.b200.x8"}, "replicaCount": json.Number("9007199254740993")},
 				},
 			})
 		case "/api/v2/llmRecipes/r1":
@@ -192,6 +192,7 @@ func TestRollout_DryRunSendsCleanRuntime(t *testing.T) {
 	assert.Equal(t, "rolling", body.Strategy)
 	assert.NotContains(t, body.Runtime, "resolvedRecipe")
 	assert.Equal(t, map[string]any{"id": "r1", "mode": "strict", "version": 3.0}, body.Runtime["recipe"])
+	assert.Contains(t, out, "9007199254740993", "runtime integers are sent back exactly")
 }
 
 func TestRollout_NeedsATarget(t *testing.T) {
@@ -237,12 +238,12 @@ func TestChat_ExplainsRefusalWithServedModels(t *testing.T) {
 	base = serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v2/workloads/w1/":
-			writeJSON(w, http.StatusOK, map[string]any{"id": "w1", "type": "llm", "artifactId": "a1", "endpoint": base + "/e/"})
+			writeJSON(w, http.StatusOK, map[string]any{"id": "w1", "type": "llm", "artifactId": "a1", "endpoint": base + "/api/v2/endpoints/workloads/w1/"})
 		case "/api/v2/artifacts/a1/":
 			writeJSON(w, http.StatusOK, map[string]any{"type": "llm", "spec": map[string]any{"model": map[string]any{"servedName": "embed"}}})
-		case "/e/v1/chat/completions":
+		case "/api/v2/endpoints/workloads/w1/v1/chat/completions":
 			writeJSON(w, http.StatusBadRequest, map[string]any{"detail": "no chat template"})
-		case "/e/v1/models":
+		case "/api/v2/endpoints/workloads/w1/v1/models":
 			writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]any{{"id": "embed"}}})
 		}
 	}))

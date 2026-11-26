@@ -357,3 +357,72 @@ func mountReferences(v any) any {
 
 	return out
 }
+
+// GetWorkloadDocument reads a workload as a document with its numbers kept
+// exact (json.Number): a rollout sends the runtime back, and a float64 round
+// trip would round integers above 2^53.
+func GetWorkloadDocument(workloadID string) (map[string]any, error) {
+	u, err := drapi.EndpointURL("/workloads/"+url.PathEscape(workloadID)+"/", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := drapi.Get(u, "workload")
+	if err != nil {
+		return nil, explain(err)
+	}
+
+	defer resp.Body.Close()
+
+	dec := json.NewDecoder(resp.Body)
+	dec.UseNumber()
+
+	var doc map[string]any
+
+	if err := dec.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("read workload %s: %w", workloadID, err)
+	}
+
+	return doc, nil
+}
+
+// RecipeOf is the recipe a workload's runtime names, as an id and a version
+// (0 when unpinned). resolved prefers runtime.resolvedRecipe, which says what
+// was scheduled; otherwise runtime.recipe, which says what was asked for.
+func RecipeOf(runtime map[string]any, resolved bool) (string, int) {
+	keys := []string{"recipe"}
+	if resolved {
+		keys = []string{"resolvedRecipe", "recipe"}
+	}
+
+	for _, key := range keys {
+		ref, ok := runtime[key].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		id, _ := ref["id"].(string)
+
+		return id, intOf(ref["version"])
+	}
+
+	return "", 0
+}
+
+func intOf(v any) int {
+	switch n := v.(type) {
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0
+		}
+
+		return int(i)
+	case float64:
+		return int(n)
+	case int:
+		return n
+	default:
+		return 0
+	}
+}

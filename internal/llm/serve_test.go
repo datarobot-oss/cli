@@ -199,3 +199,73 @@ func TestServedName_RefusesNonLLMArtifact(t *testing.T) {
 	_, err := ServedName("a1")
 	require.ErrorContains(t, err, "not an llm one")
 }
+
+func TestRouteURL(t *testing.T) {
+	base := serveAPI(t, http.NotFoundHandler())
+
+	u, err := routeURL(base+"/api/v2/endpoints/workloads/w1/?protonId=p1", "v1/chat/completions")
+	require.NoError(t, err)
+	assert.Equal(t, base+"/api/v2/endpoints/workloads/w1/v1/chat/completions?protonId=p1", u, "the query stays a query")
+
+	_, err = routeURL(base+"/custom_applications/x/", "v1/models")
+	require.ErrorIs(t, err, ErrNotIngress, "a same-host URL outside the workload ingress gets no token")
+
+	_, err = routeURL(base+"/api/v2/endpoints/workloads/../../other/", "v1/models")
+	require.ErrorIs(t, err, ErrNotIngress, "dot segments cannot climb out of the ingress")
+
+	_, err = routeURL("https://agent-router.enclave.example/api/v2/endpoints/workloads/w1/", "v1/models")
+	require.ErrorIs(t, err, ErrOffHost)
+}
+
+func chatAgainst(t *testing.T, handler http.HandlerFunc, stream bool) (*ChatResult, error) {
+	t.Helper()
+
+	base := serveAPI(t, handler)
+
+	return Chat(context.Background(), ChatRequest{
+		Endpoint: base + "/api/v2/endpoints/workloads/w1/", ServedName: "m",
+		Messages: SmokeMessages(), Stream: stream,
+	}, nil)
+}
+
+func TestChat_NoChoiceIsNotAnAnswer(t *testing.T) {
+	for _, body := range []string{`{}`, `null`, `{"error":{"message":"overloaded"}}`} {
+		t.Run(body, func(t *testing.T) {
+			_, err := chatAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, body)
+			}, false)
+			require.ErrorContains(t, err, "no completion")
+		})
+	}
+}
+
+func TestChat_StreamFailures(t *testing.T) {
+	cases := map[string]struct {
+		events string
+		want   string
+	}{
+		"error event":     {`data: {"error":{"message":"engine died"}}` + "\n\n", "error mid-stream"},
+		"malformed event": {"data: {not json\n\n", "malformed event"},
+		"cut short":       {`data: {"choices":[{"delta":{"content":"Hel"}}]}` + "\n\n", "ended before"},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := chatAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprint(w, c.events)
+			}, true)
+			require.ErrorContains(t, err, c.want)
+		})
+	}
+}
+
+func TestChat_StreamFinishReasonEndsIt(t *testing.T) {
+	res, err := chatAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n\n")
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", res.Reply)
+}

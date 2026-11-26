@@ -80,6 +80,10 @@ func Smoke(ctx context.Context, workloadID string) (*SmokeResult, error) {
 		return &SmokeResult{Skipped: "the endpoint is on an Enclave, outside this installation"}, nil
 	}
 
+	if errors.Is(err, ErrNotIngress) {
+		return &SmokeResult{Skipped: "the endpoint is not this installation's public workload ingress, so it is not sent your credentials"}, nil
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("the workload is running but the model did not answer a chat request at %s: %w", t.Endpoint, err)
 	}

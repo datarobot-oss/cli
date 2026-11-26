@@ -81,7 +81,8 @@ Sends `POST {endpoint}/v1/chat/completions` to the endpoint workload-api adverti
 - Text output prints the reply and, on stderr, the token usage; `--stream` prints the reply as it is generated; `--output-format json` prints the raw completion.
 - On a `400`/`422` the command lists the models the endpoint serves, to tell a model with no chat template (an embedding model, for example) from one that is not served.
 - A `429` is Token Grid refusing admission; the server's reason is printed.
-- The credentials are only sent to this DataRobot installation's host. An Enclave endpoint on another host is refused for now.
+- Your DataRobot credentials are only sent to this installation's public workload ingress (`/api/v2/endpoints/workloads/` on the configured host), as in `dr workload up`'s endpoint check. Any other endpoint is refused, including an Enclave endpoint on another host.
+- A response without a completion, an error event in a stream, or a stream that ends before the model finishes is an error, so `--wait`'s smoke check only passes when the model actually answered.
 
 ## `status`, `watch`, `endpoint`
 

@@ -23,9 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/datarobot/cli/internal/config"
 	"github.com/datarobot/cli/internal/drapi"
 	"github.com/datarobot/cli/internal/workload/apiclient"
 )
@@ -81,7 +83,8 @@ var ErrOffHost = errors.New("the workload's endpoint is on another host than thi
 // the request shape workload-api's llm readiness gate uses. With Stream, each
 // content delta is written to out as it arrives.
 func Chat(ctx context.Context, req ChatRequest, out io.Writer) (*ChatResult, error) {
-	if err := checkEndpoint(req.Endpoint); err != nil {
+	u, err := routeURL(req.Endpoint, "v1/chat/completions")
+	if err != nil {
 		return nil, err
 	}
 
@@ -90,7 +93,7 @@ func Chat(ctx context.Context, req ChatRequest, out io.Writer) (*ChatResult, err
 		body["max_tokens"] = req.MaxTokens
 	}
 
-	resp, err := send(ctx, http.MethodPost, joinURL(req.Endpoint, "v1/chat/completions"), req.ServedName, body, req.Stream)
+	resp, err := send(ctx, http.MethodPost, u, req.ServedName, body, req.Stream)
 	if err != nil {
 		return nil, err
 	}
@@ -110,30 +113,34 @@ func Chat(ctx context.Context, req ChatRequest, out io.Writer) (*ChatResult, err
 		Choices []struct {
 			Message Message `json:"message"`
 		} `json:"choices"`
-		Usage *Usage `json:"usage"`
+		Usage *Usage          `json:"usage"`
+		Error json.RawMessage `json:"error"`
 	}
 
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, fmt.Errorf("the model answered with something other than a chat completion: %w", err)
 	}
 
-	result := &ChatResult{Usage: parsed.Usage, Raw: raw}
-	if len(parsed.Choices) > 0 {
-		result.Reply = parsed.Choices[0].Message.Content
+	// A 2xx without a choice is not an answer: an error object, {} or null
+	// must not let the smoke check report that the model answered. An empty
+	// content string in a real choice is a legitimate answer.
+	if len(parsed.Choices) == 0 {
+		return nil, fmt.Errorf("the model returned no completion: %s", snippet(raw))
 	}
 
-	return result, nil
+	return &ChatResult{Reply: parsed.Choices[0].Message.Content, Usage: parsed.Usage, Raw: raw}, nil
 }
 
 // ServedModels lists the models the endpoint serves (GET /v1/models): the
 // fallback when a chat completion is refused, to tell "serves, but has no
 // chat template" from "does not serve".
 func ServedModels(ctx context.Context, endpoint, servedName string) ([]string, error) {
-	if err := checkEndpoint(endpoint); err != nil {
+	u, err := routeURL(endpoint, "v1/models")
+	if err != nil {
 		return nil, err
 	}
 
-	resp, err := send(ctx, http.MethodGet, joinURL(endpoint, "v1/models"), servedName, nil, false)
+	resp, err := send(ctx, http.MethodGet, u, servedName, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -158,21 +165,75 @@ func ServedModels(ctx context.Context, endpoint, servedName string) ([]string, e
 	return ids, nil
 }
 
-func checkEndpoint(endpoint string) error {
+// workloadIngressPrefix is the only path that receives the DataRobot token,
+// as in `dr workload up`'s endpoint check: other URLs on the same host can be
+// direct service URLs that end in user-owned containers.
+const workloadIngressPrefix = config.DRAPIURLSuffix + "/endpoints/workloads/"
+
+// ErrNotIngress marks an endpoint on this installation's host that is not
+// its public workload ingress, so it is not sent the DataRobot token.
+var ErrNotIngress = errors.New("the workload's endpoint is not this installation's public workload ingress (" + workloadIngressPrefix + "), so the DataRobot token is not sent to it")
+
+// routeURL checks the endpoint may receive the DataRobot token (this
+// installation's host and its public workload ingress path, with no dot
+// segments) and joins route onto its path, keeping its query (a ?protonId=
+// pins the generation) where it belongs.
+func routeURL(endpoint, route string) (string, error) {
 	if endpoint == "" {
-		return errors.New("the workload has no endpoint yet")
+		return "", errors.New("the workload has no endpoint yet")
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse endpoint URL %q: %w", endpoint, err)
+	}
+
+	if u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("endpoint URL %q is not absolute", endpoint)
 	}
 
 	same, err := drapi.URLMatchesConfiguredBase(endpoint)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	if !same {
-		return ErrOffHost
+		return "", ErrOffHost
 	}
 
-	return nil
+	if !strings.HasPrefix(u.EscapedPath(), workloadIngressPrefix) || hasDotSegment(u.Path) {
+		return "", ErrNotIngress
+	}
+
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + route
+	u.RawPath = ""
+
+	return u.String(), nil
+}
+
+func hasDotSegment(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+
+	return false
+}
+
+func snippet(raw []byte) string {
+	const maxLen = 200
+
+	s := strings.TrimSpace(string(raw))
+	if len(s) > maxLen {
+		s = s[:maxLen] + "…"
+	}
+
+	if s == "" {
+		return "(empty body)"
+	}
+
+	return s
 }
 
 func send(ctx context.Context, method, u, servedName string, body any, stream bool) (*http.Response, error) {
@@ -210,8 +271,8 @@ func send(ctx context.Context, method, u, servedName string, body any, stream bo
 		timeout = streamTimeout
 	}
 
-	// The URL is the workload's endpoint, checked above to be on the
-	// configured DataRobot host, so the token never leaves it.
+	// The URL is the workload's endpoint, checked by routeURL to be this
+	// installation's public workload ingress, so the token never leaves it.
 	resp, err := drapi.Do(req, timeout)
 	if err != nil {
 		return nil, err
@@ -225,11 +286,14 @@ func send(ctx context.Context, method, u, servedName string, body any, stream bo
 }
 
 // readStream reads an OpenAI server-sent event stream, writing each content
-// delta to out and collecting the reply.
+// delta to out and collecting the reply. An error event, a malformed event,
+// or a stream that ends without [DONE] or a finish_reason is an error: a
+// truncated reply must not read as an answer.
 func readStream(r io.Reader, out io.Writer) (*ChatResult, error) {
 	var reply strings.Builder
 
 	result := &ChatResult{}
+	finished := false
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -241,42 +305,73 @@ func readStream(r io.Reader, out io.Writer) (*ChatResult, error) {
 
 		data = strings.TrimSpace(data)
 		if data == "[DONE]" {
+			finished = true
+
 			break
 		}
 
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-			Usage *Usage `json:"usage"`
+		done, err := readEvent(data, result, &reply, out)
+		if err != nil {
+			return nil, err
 		}
 
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
+		finished = finished || done
+	}
 
-		if chunk.Usage != nil {
-			result.Usage = chunk.Usage
-		}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
 
-		for _, c := range chunk.Choices {
-			reply.WriteString(c.Delta.Content)
-
-			if out != nil {
-				_, _ = io.WriteString(out, c.Delta.Content)
-			}
-		}
+	if !finished {
+		return nil, errors.New("the stream ended before the model finished its reply")
 	}
 
 	result.Reply = reply.String()
 
-	return result, scanner.Err()
+	return result, nil
 }
 
-func joinURL(base, path string) string {
-	return strings.TrimRight(base, "/") + "/" + path
+// readEvent applies one stream event and reports whether it finished the
+// reply (a finish_reason).
+func readEvent(data string, result *ChatResult, reply *strings.Builder, out io.Writer) (bool, error) {
+	var chunk struct {
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+			FinishReason *string `json:"finish_reason"`
+		} `json:"choices"`
+		Usage *Usage          `json:"usage"`
+		Error json.RawMessage `json:"error"`
+	}
+
+	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		return false, fmt.Errorf("the stream sent a malformed event: %s", snippet([]byte(data)))
+	}
+
+	if len(chunk.Error) > 0 && string(chunk.Error) != "null" {
+		return false, fmt.Errorf("the model reported an error mid-stream: %s", snippet(chunk.Error))
+	}
+
+	if chunk.Usage != nil {
+		result.Usage = chunk.Usage
+	}
+
+	finished := false
+
+	for _, c := range chunk.Choices {
+		reply.WriteString(c.Delta.Content)
+
+		if out != nil {
+			_, _ = io.WriteString(out, c.Delta.Content)
+		}
+
+		if c.FinishReason != nil && *c.FinishReason != "" {
+			finished = true
+		}
+	}
+
+	return finished, nil
 }
 
 // SmokeMessages is the fixed prompt of the deploy/rollout smoke check.

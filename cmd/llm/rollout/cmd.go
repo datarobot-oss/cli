@@ -133,21 +133,21 @@ type plan struct {
 }
 
 func planRollout(workloadID, recipeID string, recipeVersion int) (*plan, error) {
-	doc, err := workload.GetWorkloadDocument(workloadID)
+	doc, err := llm.GetWorkloadDocument(workloadID)
 	if err != nil {
 		return nil, err
 	}
 
-	if t := doc.String("type"); t != "" && t != "llm" {
+	if t, _ := doc["type"].(string); t != "" && t != "llm" {
 		return nil, fmt.Errorf("workload %s is a %q workload, not an llm one", workloadID, t)
 	}
 
-	artifactID := doc.String("artifactId")
+	artifactID, _ := doc["artifactId"].(string)
 	if artifactID == "" {
 		return nil, fmt.Errorf("workload %s reports no artifact", workloadID)
 	}
 
-	runtime := doc.Map("runtime")
+	runtime, _ := doc["runtime"].(map[string]any)
 	from, fromVersion := currentRecipe(runtime)
 
 	to := recipeID
@@ -183,21 +183,16 @@ func planRollout(workloadID, recipeID string, recipeVersion int) (*plan, error) 
 // currentRecipe is the recipe the workload runs: the resolved one, else the
 // one it asked for, with its version (resolved, pinned, or "latest").
 func currentRecipe(runtime map[string]any) (string, string) {
-	for _, key := range []string{"resolvedRecipe", "recipe"} {
-		ref, ok := runtime[key].(map[string]any)
-		if !ok {
-			continue
-		}
-
-		id, _ := ref["id"].(string)
-		if v, ok := ref["version"].(float64); ok && v > 0 {
-			return id, strconv.Itoa(int(v))
-		}
-
-		return id, "latest"
+	id, v := llm.RecipeOf(runtime, true)
+	if id == "" {
+		return "", ""
 	}
 
-	return "", ""
+	if v > 0 {
+		return id, strconv.Itoa(v)
+	}
+
+	return id, "latest"
 }
 
 func (p *plan) target() string {
@@ -229,7 +224,7 @@ func report(cmd *cobra.Command, format outputformat.OutputFormat, p *plan, start
 	if poll.Wait {
 		var err error
 
-		final, err = waitAndSmoke(cmd, format, p.workloadID, started, poll, noSmoke)
+		final, err = waitAndSmoke(cmd, format, p, started, poll, noSmoke)
 		if err != nil {
 			return err
 		}
@@ -239,12 +234,7 @@ func report(cmd *cobra.Command, format outputformat.OutputFormat, p *plan, start
 		return outputformat.PrintJSONEnvelope(out, "replacement", final)
 	}
 
-	status := final.Status
-	if poll.Wait && !workload.IsTerminalReplacementStatus(status) {
-		status = workload.ReplacementStatusCompleted
-	}
-
-	fmt.Fprintf(out, "Replacement: %s\n", status)
+	fmt.Fprintf(out, "Replacement: %s\n", final.Status)
 
 	if !poll.Wait {
 		fmt.Fprintf(out, "\nFollow it with: dr llm watch %s\n", p.workloadID)
@@ -253,13 +243,29 @@ func report(cmd *cobra.Command, format outputformat.OutputFormat, p *plan, start
 	return nil
 }
 
-func waitAndSmoke(cmd *cobra.Command, format outputformat.OutputFormat, workloadID string, started *workload.Replacement, poll pollflags.Set, noSmoke bool) (*workload.Replacement, error) {
-	final, err := workload.WaitForReplacement(cmd.Context(), workloadID, started, poll.Interval, poll.Timeout, nil)
-	if err != nil || noSmoke {
+// waitAndSmoke waits for the replacement and confirms it: a replacement whose
+// record vanished before a final status is not taken as success until the
+// workload itself names the requested recipe; only then is it reported
+// completed and smoke-tested.
+func waitAndSmoke(cmd *cobra.Command, format outputformat.OutputFormat, p *plan, started *workload.Replacement, poll pollflags.Set, noSmoke bool) (*workload.Replacement, error) {
+	final, err := workload.WaitForReplacement(cmd.Context(), p.workloadID, started, poll.Interval, poll.Timeout, nil)
+	if err != nil {
 		return final, err
 	}
 
-	res, err := llm.Smoke(cmd.Context(), workloadID)
+	if !workload.IsTerminalReplacementStatus(final.Status) {
+		if err := confirmRecipe(p); err != nil {
+			return final, err
+		}
+
+		final.Status = workload.ReplacementStatusCompleted
+	}
+
+	if noSmoke {
+		return final, nil
+	}
+
+	res, err := llm.Smoke(cmd.Context(), p.workloadID)
 	if err != nil {
 		return final, err
 	}
@@ -275,4 +281,23 @@ func waitAndSmoke(cmd *cobra.Command, format outputformat.OutputFormat, workload
 	}
 
 	return final, nil
+}
+
+// confirmRecipe checks the workload now asks for the recipe and version the
+// rollout requested, for a replacement that settled without a final status.
+func confirmRecipe(p *plan) error {
+	doc, err := llm.GetWorkloadDocument(p.workloadID)
+	if err != nil {
+		return fmt.Errorf("the rollout's outcome is unconfirmed: the replacement record is gone and the workload could not be read: %w", err)
+	}
+
+	runtime, _ := doc["runtime"].(map[string]any)
+
+	id, v := llm.RecipeOf(runtime, false)
+	if id != p.toRecipe || v != p.toVersion {
+		return fmt.Errorf("the rollout's outcome is unconfirmed: the replacement record is gone and workload %s still names recipe %s version %d; check 'dr llm status %s' and 'dr workload events %s'",
+			p.workloadID, id, v, p.workloadID, p.workloadID)
+	}
+
+	return nil
 }
