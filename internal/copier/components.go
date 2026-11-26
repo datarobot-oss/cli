@@ -44,6 +44,12 @@ func init() {
 		ComponentDetailsByURL[details.RepoURL] = details
 		ComponentDetailsByShortName[details.ShortName] = details
 
+		// Also register the remapped URL so lookups work when answers files have
+		// already been rewritten to use APPLICATION_TEMPLATE_GIT_BASE_URL.
+		if remapped := ApplyGitBaseURL(details.RepoURL); remapped != details.RepoURL {
+			ComponentDetailsByURL[remapped] = details
+		}
+
 		if details.Enabled {
 			EnabledComponents = append(EnabledComponents, details)
 			EnabledShortNames = append(EnabledShortNames, details.ShortName)
