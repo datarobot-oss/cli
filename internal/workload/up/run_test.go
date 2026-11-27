@@ -3591,18 +3591,53 @@ func TestRun_BadCredentialStopsBeforeTheCreate(t *testing.T) {
 	assert.Contains(t, stderr, "+ workload", "the plan is printed before the refusal, as on any other track")
 }
 
-// A dry run reaches no mutation, so it never spends the lookups. Verifying
-// would make --dry-run fail on a file it was asked only to describe.
-func TestRun_DryRunDoesNotVerifyCredentials(t *testing.T) {
+// A dry run refuses an id the platform does not know, because the real run
+// would. The plan is still printed above the refusal.
+func TestRun_DryRunRefusesACredentialThePlatformDoesNotKnow(t *testing.T) {
 	install(t, fakes{
 		cred: func(string) (*workload.Credential, error) {
-			t.Fatal("a dry run mutates nothing, so it has nothing to verify against")
+			return nil, &drapi.HTTPError{StatusCode: http.StatusNotFound}
+		},
+	})
+
+	_, stderr, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true, DryRun: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "OPENAI_API_KEY")
+	assert.Contains(t, err.Error(), "does not exist")
+	assert.Contains(t, stderr, "+ workload")
+}
+
+func TestRun_DryRunPassesWhenTheCredentialResolves(t *testing.T) {
+	var asked []string
+
+	install(t, fakes{
+		cred: func(id string) (*workload.Credential, error) {
+			asked = append(asked, id)
+
+			return &workload.Credential{CredentialID: id, Name: "my-app/OPENAI_API_KEY"}, nil
+		},
+	})
+
+	_, _, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true, DryRun: true})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"68b0cccc0000000000000003"}, asked)
+}
+
+// The setup wizard and --sync-env write PLACEHOLDER where a real run stores the
+// credential. A dry run stores nothing, so judging the reference would fail the
+// preview of a file that deploys.
+func TestRun_DryRunDoesNotJudgeAPlaceholder(t *testing.T) {
+	install(t, fakes{
+		cred: func(string) (*workload.Credential, error) {
+			t.Fatal("a placeholder names no credential, so there is nothing to look up")
 
 			return nil, nil
 		},
 	})
 
-	_, _, err := runIn(t, unboundCredentialManifest, Options{NonInteractive: true, DryRun: true})
+	withPlaceholder := strings.Replace(unboundCredentialManifest, "68b0cccc0000000000000003", "PLACEHOLDER", 1)
+
+	_, _, err := runIn(t, withPlaceholder, Options{NonInteractive: true, DryRun: true})
 	require.NoError(t, err)
 }
 

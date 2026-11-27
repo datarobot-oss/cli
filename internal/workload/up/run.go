@@ -1599,6 +1599,31 @@ func credentialRefs(loaded Loaded, plan Plan) []manifest.CredentialRef {
 	return loaded.Compiled.CredentialRefs
 }
 
+// previewCredentials is the credential check a real run makes, asked of a dry
+// run so that the preview and the deploy agree about the file. A plan whose
+// only change is the Use Case link is exempt, as it is when applied.
+//
+// A placeholder is not asked about. The setup wizard and --sync-env write it
+// where a real run stores the credential and puts its id, and a dry run stores
+// nothing, so judging it would refuse the preview of a file that deploys. A
+// placeholder left in the file by hand still stops a real run, and a dry run
+// does not say so.
+func previewCredentials(loaded Loaded, plan Plan, workloadName string) error {
+	if plan.Action() == ActionLinked {
+		return nil
+	}
+
+	var concrete []manifest.CredentialRef
+
+	for _, ref := range credentialRefs(loaded, plan) {
+		if ref.CredentialID != manifest.CredentialPlaceholder {
+			concrete = append(concrete, ref)
+		}
+	}
+
+	return verifyCredentials(concrete, workloadName)
+}
+
 // announce prints the plan and says whether the run may carry it out, which is
 // one act rather than two: whether the plan is going to be applied changes how
 // it has to be written, so the question is asked before anything is printed.
@@ -1616,6 +1641,10 @@ func announce(loaded Loaded, live Live, plan Plan, result Result, opts Options) 
 
 	if !plan.Empty() {
 		refused = refusal(loaded, live, plan, result.Name, opts.DryRun)
+
+		if refused == nil && opts.DryRun {
+			refused = previewCredentials(loaded, plan, result.Name)
+		}
 	}
 
 	summary := Summary{
