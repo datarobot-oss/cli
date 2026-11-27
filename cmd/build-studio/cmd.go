@@ -166,15 +166,22 @@ func runStudio(cmd *cobra.Command, args studioArgs) (int, error) {
 
 		// Export the user's consent so it survives process boundaries: -y
 		// cannot be forwarded as a flag (xp rejects flags it does not know),
-		// but env is inherited down the whole chain — dr xp passes it on to
-		// the `dr opencode serve` subprocess it spawns, whose wrapper
-		// installs OpenCode without prompting only when this is set
-		// (AECO-2370). Consent is converted here, never fabricated: the
-		// variable is set only when the user passed -y/--yes or already set
-		// it themselves.
+		// but env is inherited down the whole nested chain, where every dr
+		// honors it like --yes. That reach is deliberate and NOT scoped to
+		// the OpenCode installer (the AECO-2370 motivation): the
+		// `dr opencode serve` subprocess xp spawns installs OpenCode without
+		// prompting, auth skips its interactive URL picker, and telemetry
+		// reports non_interactive=true. Consent is converted here, never
+		// fabricated: the variable is set only when the user passed -y/--yes
+		// or already set it themselves.
 		if err := os.Setenv(reader.NonInteractiveEnv, "1"); err != nil {
-			log.Debug("Failed to export non-interactive consent", "error", err)
+			// Without the export we would be back to the original symptom
+			// (nested `dr opencode serve` prompts with no terminal), so fail
+			// loudly rather than degrade silently.
+			return 0, fmt.Errorf("export %s for nested plugins: %w", reader.NonInteractiveEnv, err)
 		}
+
+		log.Debug("Exported consent to nested processes", "env", reader.NonInteractiveEnv, "value", "1", "yes_flag", args.yes)
 	}
 
 	return executePlugin(cmd.Context(), xp.Manifest, xp.Executable, args.passthrough, cmd.Root().PersistentFlags(), execOpts...), nil
