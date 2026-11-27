@@ -72,7 +72,19 @@ type DeployOptions struct {
 	TokenGrid        bool
 	ConcurrencySlots int
 	TokensPerSecond  int
+
+	// Model weight storage for the workers (runtime.workers.mounts,
+	// modelWeight): a new storage of this size, created with the workload and
+	// deleted with it, or an existing one by id. Neither: the cluster's
+	// default, which an Enclave does not have.
+	ModelWeightSize      string
+	ModelWeightStorageID string
 }
+
+// quantity is a Kubernetes resource quantity as a storage size takes it.
+var quantity = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$`)
+
+var objectID = regexp.MustCompile(`^[0-9a-f]{24}$`)
 
 var servedNameUnsafe = regexp.MustCompile(`[^a-z0-9._-]+`)
 
@@ -106,6 +118,10 @@ func BuildDeployRequest(o DeployOptions) (map[string]any, error) {
 		return nil, errors.New("--bundle is required: the GPU resource bundles to run the workers on")
 	}
 
+	if err := checkModelWeight(o); err != nil {
+		return nil, err
+	}
+
 	body := map[string]any{"name": o.Name, "runtime": deployRuntime(o)}
 	if o.Description != "" {
 		body["description"] = o.Description
@@ -127,9 +143,51 @@ func BuildDeployRequest(o DeployOptions) (map[string]any, error) {
 	return body, nil
 }
 
-// deployRuntime is the workers' bundles, the recipe and the Token Grid opt-in.
+func checkModelWeight(o DeployOptions) error {
+	switch {
+	case o.ModelWeightSize != "" && o.ModelWeightStorageID != "":
+		return errors.New("--model-weight-size and --model-weight-storage-id are mutually exclusive: create a storage or name one")
+	case o.ModelWeightSize != "" && !quantity.MatchString(o.ModelWeightSize):
+		return fmt.Errorf("--model-weight-size %q is not a size: use a Kubernetes quantity such as 50Gi or 1Ti", o.ModelWeightSize)
+	case o.ModelWeightStorageID != "" && !objectID.MatchString(o.ModelWeightStorageID):
+		return fmt.Errorf("--model-weight-storage-id %q is not a storage id (24 hex characters)", o.ModelWeightStorageID)
+	}
+
+	return nil
+}
+
+// modelWeightMount binds the workers' modelWeight volume: an inline storage,
+// created by the workload create (and carried into the Enclave it lands in)
+// and deleted with the workload, or an existing storage by id. Nil when
+// neither is asked for, so the cluster's default storage applies.
+func modelWeightMount(o DeployOptions) map[string]any {
+	switch {
+	case o.ModelWeightStorageID != "":
+		return map[string]any{"name": "modelWeight", "storageId": o.ModelWeightStorageID}
+	case o.ModelWeightSize != "":
+		return map[string]any{
+			"name": "modelWeight",
+			"storage": map[string]any{
+				"name":      o.Name + "-weights",
+				"purpose":   "modelWeight",
+				"capacity":  map[string]any{"requested": o.ModelWeightSize},
+				"lifecycle": map[string]any{"deleteWithWorkload": true},
+			},
+		}
+	}
+
+	return nil
+}
+
+// deployRuntime is the workers' bundles and model weight storage, the recipe
+// and the Token Grid opt-in.
 func deployRuntime(o DeployOptions) map[string]any {
-	runtime := map[string]any{"workers": map[string]any{"resourceBundles": o.Bundles}}
+	workers := map[string]any{"resourceBundles": o.Bundles}
+	if mount := modelWeightMount(o); mount != nil {
+		workers["mounts"] = []any{mount}
+	}
+
+	runtime := map[string]any{"workers": workers}
 
 	if o.RecipeID != "" {
 		recipe := map[string]any{"id": o.RecipeID, "mode": "strict"}

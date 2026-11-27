@@ -96,6 +96,52 @@ func TestBuildDeployRequest_ReuseArtifactAndErrors(t *testing.T) {
 	require.ErrorContains(t, err, "capability")
 }
 
+func TestBuildDeployRequest_ModelWeight(t *testing.T) {
+	base := DeployOptions{Name: "qwen", Bundles: []string{"h100-nvl-1"}, ArtifactID: "a1"}
+
+	workers := func(t *testing.T, o DeployOptions) map[string]any {
+		t.Helper()
+
+		body, err := BuildDeployRequest(o)
+		require.NoError(t, err)
+
+		runtime, _ := body["runtime"].(map[string]any)
+		w, _ := runtime["workers"].(map[string]any)
+
+		return w
+	}
+
+	assert.NotContains(t, workers(t, base), "mounts", "no flag: the cluster's default storage")
+
+	inline := base
+	inline.ModelWeightSize = "50Gi"
+	assert.Equal(t, []any{map[string]any{
+		"name": "modelWeight",
+		"storage": map[string]any{
+			"name":      "qwen-weights",
+			"purpose":   "modelWeight",
+			"capacity":  map[string]any{"requested": "50Gi"},
+			"lifecycle": map[string]any{"deleteWithWorkload": true},
+		},
+	}}, workers(t, inline)["mounts"], "a storage created with the workload and deleted with it")
+
+	named := base
+	named.ModelWeightStorageID = "6a2b3c4d5e6f7a8b9c0d1e2f"
+	assert.Equal(t, []any{map[string]any{"name": "modelWeight", "storageId": "6a2b3c4d5e6f7a8b9c0d1e2f"}},
+		workers(t, named)["mounts"])
+
+	for name, o := range map[string]DeployOptions{
+		"both":     {Name: "q", Bundles: []string{"b"}, ArtifactID: "a", ModelWeightSize: "50Gi", ModelWeightStorageID: "6a2b3c4d5e6f7a8b9c0d1e2f"},
+		"bad size": {Name: "q", Bundles: []string{"b"}, ArtifactID: "a", ModelWeightSize: "50 gigs"},
+		"bad id":   {Name: "q", Bundles: []string{"b"}, ArtifactID: "a", ModelWeightStorageID: "storage-1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := BuildDeployRequest(o)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestRolloutRuntime_StripsResolvedAndInlineStorage(t *testing.T) {
 	current := map[string]any{
 		"resolvedRecipe": map[string]any{"id": "r1", "version": 3.0},

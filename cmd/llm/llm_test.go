@@ -128,6 +128,20 @@ func TestDeploy_DryRunPrintsRequest(t *testing.T) {
 	assert.Contains(t, out, `"servedName": "kimi-k3.1-pro"`)
 }
 
+func TestDeploy_DryRunWithEnclaveModelWeight(t *testing.T) {
+	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, recipeDoc)
+	}))
+
+	out, err := run(t, "deploy", "--recipe", "r1", "--name", "kimi-enclave", "--bundle", "h100-nvl-1",
+		"--use-case-id", "68a1b2c3d4e5f6a7b8c9d0e1", "--model-weight-size", "50Gi", "--dry-run")
+	require.NoError(t, err)
+	assert.Contains(t, out, `"useCaseId": "68a1b2c3d4e5f6a7b8c9d0e1"`)
+	assert.Contains(t, out, `"name": "kimi-enclave-weights"`)
+	assert.Contains(t, out, `"requested": "50Gi"`)
+}
+
 func TestDeploy_RefusesInvalidRecipe(t *testing.T) {
 	serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method, "nothing is created from an invalid recipe")

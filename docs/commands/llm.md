@@ -52,9 +52,22 @@ dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name kimi-prod --bundle gpu.b2
 | `--artifact-id` | `artifactId` | inline artifact |
 | `--token-grid`, `--concurrency-slots`, `--tokens-per-second` | `runtime.tokenGrid` | off |
 | `--use-case-id` | `useCaseId` | |
+| `--model-weight-size` (e.g. `50Gi`) | `runtime.workers.mounts`: `modelWeight` with an inline storage, deleted with the workload | cluster default |
+| `--model-weight-storage-id` | `runtime.workers.mounts`: `modelWeight` with `storageId` | cluster default |
 | `--wait`, `--poll-interval`, `--poll-timeout`, `--no-smoke` | | no wait |
 
-Model weight storage and Enclave placement are not supported yet: the workload runs on this installation with its default storage.
+### Model weights and Enclaves
+
+The workers serve the model from a model weight storage. Without a flag it is the cluster's default model weight storage. `--model-weight-size 50Gi` creates a storage for the workload, deleted with it; `--model-weight-storage-id` names an existing one (the two are mutually exclusive).
+
+A workload whose `--use-case-id` names a Use Case linked to an Enclave runs on that Enclave, and an Enclave has no default storage, so it needs one of the two:
+
+```bash
+dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name qwen-enclave --bundle gpu.h100.x1 \
+  --use-case-id 68a1b2c3d4e5f6a7b8c9d0e1 --model-weight-size 50Gi --wait
+```
+
+An installation whose Hub has no LLM serving engine refuses an llm workload that is not placed on an Enclave. On an Enclave the workload's endpoint is the Enclave's own URL, which `dr llm chat` does not send the DataRobot token to; `--wait` then reports the smoke check as skipped.
 
 ## `rollout`
 

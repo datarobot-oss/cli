@@ -56,14 +56,19 @@ not this tenant's, not for the cluster's engine, or not serving the model.
 --wait polls until the workload is running and then sends one chat request,
 so done means the model answers; --no-smoke skips that request.
 
-Model weight storage and Enclave placement are not supported yet: the
-workload runs on this installation with its default storage.
+Model weights are stored on the cluster's default model weight storage unless
+--model-weight-size creates a storage for this workload (deleted with it) or
+--model-weight-storage-id names an existing one. A workload placed on an
+Enclave (--use-case-id with a Use Case linked to one) needs one of them: an
+Enclave has no default.
 
 Example:
   dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name kimi-prod --bundle gpu.b200.x8 --wait
   dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name qwen --bundle gpu.h100.x2 \
     --model Qwen/Qwen3-32B --served-name qwen3-32b --recipe-version 2
-  dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name kimi-prod --bundle gpu.b200.x8 --dry-run`,
+  dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name kimi-prod --bundle gpu.b200.x8 --dry-run
+  dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name qwen-enclave --bundle gpu.h100.x1 \
+    --use-case-id 68a1b2c3d4e5f6a7b8c9d0e1 --model-weight-size 50Gi --wait`,
 		Args:         cobra.NoArgs,
 		PreRunE:      auth.EnsureAuthenticatedE,
 		SilenceUsage: true,
@@ -108,7 +113,9 @@ Example:
 	f.BoolVar(&opts.TokenGrid, "token-grid", false, "Opt the workload into Token Grid")
 	f.Var(countflags.NonNegativeInt(&opts.ConcurrencySlots, 0), "concurrency-slots", "Token Grid concurrent requests")
 	f.Var(countflags.NonNegativeInt(&opts.TokensPerSecond, 0), "tokens-per-second", "Token Grid throughput (server default 500)")
-	f.StringVar(&useCaseID, "use-case-id", "", "Link the workload to a Use Case")
+	f.StringVar(&opts.ModelWeightSize, "model-weight-size", "", "Create a model weight storage of this size for the workload, deleted with it (e.g. 50Gi)")
+	f.StringVar(&opts.ModelWeightStorageID, "model-weight-storage-id", "", "Serve the weights from an existing model weight storage")
+	f.StringVar(&useCaseID, "use-case-id", "", "Link the workload to a Use Case (one linked to an Enclave places it there)")
 	f.BoolVar(&dryRun, "dry-run", false, "Print the request and exit")
 	f.BoolVar(&noSmoke, "no-smoke", false, "With --wait, skip the chat request at the end")
 	pollflags.RegisterWithDefaults(cmd, &poll, pollflags.DefaultPollInterval, pollflags.DefaultPollTimeout,
@@ -120,6 +127,7 @@ Example:
 			"reuse_artifact":        opts.ArtifactID != "",
 			"model_source":          opts.ModelSource,
 			"token_grid":            opts.TokenGrid,
+			"model_weight":          modelWeightKind(opts),
 			"wait":                  poll.Wait,
 			"dry_run":               dryRun,
 			"output_format":         string(outputFormat),
@@ -161,6 +169,18 @@ func buildBody(cmd *cobra.Command, opts *llm.DeployOptions, useCaseID string) (m
 	}
 
 	return body, recipe, nil
+}
+
+// modelWeightKind is the model weight choice for telemetry, without values.
+func modelWeightKind(opts llm.DeployOptions) string {
+	switch {
+	case opts.ModelWeightStorageID != "":
+		return "storage"
+	case opts.ModelWeightSize != "":
+		return "inline"
+	}
+
+	return "default"
 }
 
 func checkFlags(opts *llm.DeployOptions) error {
