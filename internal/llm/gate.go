@@ -33,12 +33,22 @@ const FeatureFlag = "ENABLE_WORKLOAD_API_TOKEN_FACTORY"
 const (
 	clusterDisabledPhrase = "disabled on this cluster"
 	userFlagPhrase        = "not available for the current user"
+
+	// Workload Storage refusals, for a deploy with a model weight mount. Checked
+	// first: "Workload Storage is disabled on this cluster" also contains the
+	// LLM serving phrase.
+	storagePhrase         = "workload storage"
+	storageUserFlagPhrase = "not enabled for this user"
+	storageFeatureFlag    = "ENABLE_WORKLOAD_API_STORAGE"
 )
 
 // Remedies shown for the two gates.
 const (
 	ClusterDisabledRemedy = "LLM serving is not enabled on this installation. Ask your administrator to enable it."
 	UserFlagRemedy        = "LLM serving needs the " + FeatureFlag + " feature flag granted to your user, organization or group. Ask an administrator."
+
+	StorageClusterDisabledRemedy = "A model weight storage needs Workload Storage, which is not enabled on this installation. Ask your administrator to enable it, or deploy without --model-weight-size/--model-weight-storage-id."
+	StorageUserFlagRemedy        = "A model weight storage needs the " + storageFeatureFlag + " feature flag granted to your user, organization or group. Ask an administrator."
 )
 
 // GateError is a 403 from one of the two LLM serving gates. It keeps the
@@ -65,6 +75,10 @@ func explainGate(err error) error {
 	detail := strings.ToLower(httpErr.Detail)
 
 	switch {
+	case strings.Contains(detail, storagePhrase) && strings.Contains(detail, storageUserFlagPhrase):
+		return &GateError{Remedy: StorageUserFlagRemedy, Err: err}
+	case strings.Contains(detail, storagePhrase) && strings.Contains(detail, clusterDisabledPhrase):
+		return &GateError{Remedy: StorageClusterDisabledRemedy, Err: err}
 	case strings.Contains(detail, clusterDisabledPhrase):
 		return &GateError{Remedy: ClusterDisabledRemedy, Err: err}
 	case strings.Contains(detail, userFlagPhrase):

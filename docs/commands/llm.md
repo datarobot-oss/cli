@@ -58,7 +58,7 @@ dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name kimi-prod --bundle gpu.b2
 
 ### Model weights and Enclaves
 
-The workers serve the model from a model weight storage. Without a flag it is the cluster's default model weight storage. `--model-weight-size 50Gi` creates a storage for the workload, deleted with it; `--model-weight-storage-id` names an existing one (the two are mutually exclusive).
+The workers serve the model from a model weight storage. Without a flag it is the cluster's default model weight storage. `--model-weight-size 50Gi` creates a storage for the workload, deleted with it; `--model-weight-storage-id` names an existing one (the two are mutually exclusive). Either needs Workload Storage: enabled on the installation, and the `ENABLE_WORKLOAD_API_STORAGE` feature flag granted to your user, organization or group; the CLI names whichever is missing when the server refuses.
 
 A workload whose `--use-case-id` names a Use Case linked to an Enclave runs on that Enclave, and an Enclave has no default storage, so it needs one of the two:
 

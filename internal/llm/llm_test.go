@@ -136,6 +136,10 @@ func TestGateErrors_NameTheGate(t *testing.T) {
 	cases := map[string]string{
 		"LLM artifacts are disabled on this cluster":     ClusterDisabledRemedy,
 		"Recipes are not available for the current user": UserFlagRemedy,
+		// workload-api's Workload Storage refusals, as a model weight mount
+		// meets them; the first also contains the LLM serving phrase.
+		"Workload Storage is disabled on this cluster":  StorageClusterDisabledRemedy,
+		"Workload Storage is not enabled for this user": StorageUserFlagRemedy,
 	}
 
 	for detail, remedy := range cases {
