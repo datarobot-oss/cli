@@ -286,6 +286,14 @@ func TestRouteURL(t *testing.T) {
 	require.ErrorIs(t, err, ErrOffHost)
 }
 
+func TestChattable(t *testing.T) {
+	base := serveAPI(t, http.NotFoundHandler())
+
+	assert.True(t, Chattable(base+"/api/v2/endpoints/workloads/w1/"))
+	assert.False(t, Chattable("https://venkat.enclave.example/"), "an Enclave's own URL")
+	assert.False(t, Chattable(base+"/custom_applications/x/"))
+}
+
 func TestChat_DoesNotFollowRedirects(t *testing.T) {
 	var followed bool
 

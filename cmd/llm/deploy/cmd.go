@@ -225,7 +225,17 @@ func report(cmd *cobra.Command, format outputformat.OutputFormat, created *llm.C
 	}
 
 	fmt.Fprintf(out, "Status: %s\n", created.Status)
-	fmt.Fprintf(out, "\nNext:\n  dr llm status %s\n  dr llm chat %s \"Hello\"\n  dr workload logs %s\n", created.ID, created.ID, created.ID)
+	fmt.Fprintf(out, "\nNext:\n  dr llm status %s\n", created.ID)
+
+	// Without --wait the endpoint is not known yet; an Enclave's own URL is
+	// one chat does not send the token to, so it is not suggested there.
+	if created.Endpoint == "" || llm.Chattable(created.Endpoint) {
+		fmt.Fprintf(out, "  dr llm chat %s \"Hello\"\n", created.ID)
+	} else {
+		fmt.Fprintf(out, "  dr llm endpoint %s   (an Enclave endpoint: call it from where the Enclave is reachable)\n", created.ID)
+	}
+
+	fmt.Fprintf(out, "  dr workload logs %s\n", created.ID)
 
 	return nil
 }

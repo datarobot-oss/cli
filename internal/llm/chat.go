@@ -175,6 +175,14 @@ const workloadIngressPrefix = config.DRAPIURLSuffix + "/endpoints/workloads/"
 // its public workload ingress, so it is not sent the DataRobot token.
 var ErrNotIngress = errors.New("the workload's endpoint is not this installation's public workload ingress (" + workloadIngressPrefix + "), so the DataRobot token is not sent to it")
 
+// Chattable reports whether dr llm chat sends requests to the endpoint: this
+// installation's public workload ingress. An Enclave's own URL is not.
+func Chattable(endpoint string) bool {
+	_, err := routeURL(endpoint, "v1/models")
+
+	return err == nil
+}
+
 // routeURL checks the endpoint may receive the DataRobot token (this
 // installation's host and its public workload ingress path, with no dot
 // segments) and joins route onto its path, keeping its query (a ?protonId=
