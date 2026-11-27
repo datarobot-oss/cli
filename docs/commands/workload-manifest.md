@@ -73,7 +73,7 @@ Drift is measured against the running object, not against a record of the last d
 
 ## What `up` does
 
-Every run prints a plan, then carries it out. `--dry-run` prints the plan and stops. Nothing is confirmed: the plan is the review.
+Every run prints a plan, then carries it out. `--dry-run` prints the plan and stops. Nothing is confirmed: the plan is the review. A dry run also checks that each credential id the file references exists, as a real run does, and refuses when one does not. A dry run does not check a `PLACEHOLDER` id, because setup and `--sync-env` store the credential and replace it on a real run.
 
 A first deploy is one line:
 
