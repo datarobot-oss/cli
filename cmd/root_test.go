@@ -450,6 +450,34 @@ func TestPipelineCommandNotPresentByDefault(t *testing.T) {
 		"pipeline command should be present with DATAROBOT_CLI_FEATURE_PIPELINE=true")
 }
 
+// TestRecipeCommandNotPresentByDefault verifies that recipe is hidden while LLM
+// serving is behind the server feature flag, and shown once
+// DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM is set.
+func TestRecipeCommandNotPresentByDefault(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "")
+	assert.Nil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr recipe"),
+		"recipe command should not be present when the feature gate is not enabled")
+
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "true")
+	assert.NotNil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr recipe"),
+		"recipe command should be present with DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM=true")
+}
+
+// TestLLMCommand verifies that `dr llm` always resolves (its hidden list and
+// select forward to llm-gateway, which lost the `llm` alias), while its new
+// commands appear only with DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM.
+func TestLLMCommand(t *testing.T) {
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "")
+
+	root := newIsolatedRootCmd().Command
+	assert.NotNil(t, findCommandByPath(root, "dr llm list"), "dr llm list keeps working without the gate")
+	assert.Nil(t, findCommandByPath(root, "dr llm deploy"), "dr llm deploy needs the gate")
+	assert.Equal(t, "llm-gateway", findCommandByPath(root, "dr llm-gateway").Name())
+
+	t.Setenv("DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM", "true")
+	assert.NotNil(t, findCommandByPath(newIsolatedRootCmd().Command, "dr llm deploy"))
+}
+
 // TestPrivateCATLSFlagsAlwaysRegistered verifies that the private-CA TLS flags
 // are always registered on RootCmd (no longer feature-gated). Flag registration
 // happens during init(); no execution is required.

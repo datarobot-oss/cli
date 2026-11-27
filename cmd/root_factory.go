@@ -44,9 +44,11 @@ import (
 	"github.com/datarobot/cli/cmd/dotenv"
 	"github.com/datarobot/cli/cmd/enclave"
 	"github.com/datarobot/cli/cmd/info"
+	"github.com/datarobot/cli/cmd/llm"
 	llmgateway "github.com/datarobot/cli/cmd/llm-gateway"
 	"github.com/datarobot/cli/cmd/pipeline"
 	"github.com/datarobot/cli/cmd/plugin"
+	"github.com/datarobot/cli/cmd/recipe"
 	"github.com/datarobot/cli/cmd/self"
 	"github.com/datarobot/cli/cmd/start"
 	"github.com/datarobot/cli/cmd/task"
@@ -669,6 +671,7 @@ func (f *RootFactory) addSubcommands(adder *cli.CommandAdder) {
 		dotenv.Cmd(),
 		enclave.Cmd(),
 		llmgateway.Cmd(),
+		llm.Cmd(),
 		run.Cmd(),
 		self.Cmd(),
 		start.Cmd(),
@@ -677,6 +680,7 @@ func (f *RootFactory) addSubcommands(adder *cli.CommandAdder) {
 		workload.Cmd(),
 		plugin.Cmd(),
 		pipeline.Cmd(),
+		recipe.Cmd(),
 		info.Cmd(),
 		doctor.Cmd(),
 	)

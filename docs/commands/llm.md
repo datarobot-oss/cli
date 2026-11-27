@@ -1,0 +1,102 @@
+# dr llm
+
+Deploy LLMs on the Dynamo operator from [recipes](recipe.md), roll them onto new recipe versions, and chat with them, through the Workload API.
+
+> **Feature-gated.** The `dr llm` commands are shown when `DATAROBOT_CLI_FEATURE_WORKLOAD_API_LLM=true` is set. The server also needs LLM serving enabled on the installation and the `ENABLE_WORKLOAD_API_TOKEN_FACTORY` feature flag granted to your user, organization or group; the CLI names whichever gate is closed when a call is refused.
+>
+> `llm` used to be an alias of [`dr llm-gateway`](llm-gateway.md). `dr llm list` and `dr llm select` still run the `llm-gateway` commands, with or without the gate.
+
+## Synopsis
+
+```bash
+dr llm deploy --recipe <recipe-id> --name <name> --bundle <bundle-id> [--wait]
+dr llm rollout <workload-id> --recipe-version N | --latest | --recipe <id> [--wait]
+dr llm chat <workload-id> [prompt] [--stream]
+dr llm status|watch|endpoint [<workload-id>]
+```
+
+## Commands
+
+| Command    | API call                                                                                 | What it does                                             |
+| ---------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `deploy`   | `GET /llmRecipes/{id}`, then `POST /workloads/`                                          | Deploys a recipe as an llm workload                      |
+| `rollout`  | `GET /workloads/{id}`, then `POST /workloads/{id}/replacement/`                          | Rolls a running llm workload onto another recipe version |
+| `chat`     | `GET /workloads/{id}`, `GET /artifacts/{id}`, then `POST {endpoint}/v1/chat/completions` | Sends a chat request to a deployed LLM                   |
+| `status`   | Same as `dr workload status`                                                             | Is it up                                                 |
+| `watch`    | Same as `dr workload status --watch`                                                     | Follows the status until it settles                      |
+| `endpoint` | Same as `dr workload endpoint`                                                           | Prints the URL                                           |
+
+Logs, events, settings, stop, start and delete are [`dr workload`](workload.md) commands.
+
+## `deploy`
+
+One request: an llm artifact for the model (or `--artifact-id` to reuse one) and a runtime naming the recipe.
+
+```bash
+dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name kimi-prod --bundle gpu.b200.x8 --wait
+```
+
+- The model defaults to the recipe's own; the served name (what clients send as `model`) to its repository name, lowercased.
+- An `invalid` recipe is refused before anything is created. The server also refuses a recipe that is not this tenant's, not for the cluster's engine, or not serving the model.
+- `--wait` polls until the workload is running, then sends one chat request (`max_tokens: 1`), so done means the model answers. `--no-smoke` skips that request.
+- `--dry-run` prints the request.
+
+| Flag | Maps to | Default |
+| --- | --- | --- |
+| `--recipe` (required), `--recipe-version N` | `runtime.recipe` | latest when scheduled |
+| `--name` (required), `--description` | `name`, `description` | |
+| `--bundle` (repeatable, required) | `runtime.workers.resourceBundles` | |
+| `--model`, `--revision`, `--model-source huggingFace\|s3` | `artifact.spec.model.source` | the recipe's model, `huggingFace` |
+| `--served-name` | `artifact.spec.model.servedName` | from the repository name |
+| `--tool-calling`, `--reasoning` (`auto\|on\|off`) | `artifact.spec.model.toolCalling`, `reasoning` | `auto` (omitted) |
+| `--artifact-id` | `artifactId` | inline artifact |
+| `--token-grid`, `--concurrency-slots`, `--tokens-per-second` | `runtime.tokenGrid` | off |
+| `--use-case-id` | `useCaseId` | |
+| `--model-weight-size` (e.g. `50Gi`) | `runtime.workers.mounts`: `modelWeight` with an inline storage, deleted with the workload | cluster default |
+| `--model-weight-storage-id` | `runtime.workers.mounts`: `modelWeight` with `storageId` | cluster default |
+| `--wait`, `--poll-interval`, `--poll-timeout`, `--no-smoke` | | no wait |
+
+### Model weights and Enclaves
+
+The workers serve the model from a model weight storage. Without a flag it is the cluster's default model weight storage. `--model-weight-size 50Gi` creates a storage for the workload, deleted with it; `--model-weight-storage-id` names an existing one (the two are mutually exclusive). Either needs Workload Storage: enabled on the installation, and the `ENABLE_WORKLOAD_API_STORAGE` feature flag granted to your user, organization or group; the CLI names whichever is missing when the server refuses.
+
+A workload whose `--use-case-id` names a Use Case linked to an Enclave runs on that Enclave, and an Enclave has no default storage, so it needs one of the two:
+
+```bash
+dr llm deploy --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --name qwen-enclave --bundle gpu.h100.x1 \
+  --use-case-id 68a1b2c3d4e5f6a7b8c9d0e1 --model-weight-size 50Gi --wait
+```
+
+An installation whose Hub has no LLM serving engine refuses an llm workload that is not placed on an Enclave. On an Enclave the workload's endpoint is the Enclave's own URL, which `dr llm chat` does not send the DataRobot token to; `--wait` then reports the smoke check as skipped.
+
+## `rollout`
+
+A rolling replacement on the same artifact with only `runtime.recipe` changed: the new generation starts next to the old one and traffic moves when it is ready, so the endpoint and served name do not change. A recipe change is a replacement on the server; a settings update refuses it.
+
+```bash
+dr llm rollout 68b0c1d2e3f4a5b6c7d8e9f0 --recipe-version 3 --wait
+dr llm rollout 68b0c1d2e3f4a5b6c7d8e9f0 --latest
+dr llm rollout 68b0c1d2e3f4a5b6c7d8e9f0 --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --recipe-version 1
+```
+
+The workload's current runtime is sent back with read-only (`resolved*`) fields removed, mounts reduced to their storage ids, and the recipe replaced. A replacement already in flight is refused. `--wait` polls until the replacement finishes and then sends one chat request; without it, follow the replacement with `dr workload settings` and its outcome with `dr workload events` (the workload stays `running` throughout, so `dr llm watch` would not show it). `--dry-run` prints the request.
+
+## `chat`
+
+```bash
+dr llm chat 68b0c1d2e3f4a5b6c7d8e9f0 "Say hello in one word."
+echo "Summarise Dynamo in a sentence" | dr llm chat 68b0c1d2e3f4a5b6c7d8e9f0 --stream
+```
+
+Sends `POST {endpoint}/v1/chat/completions` to the endpoint workload-api advertises for the workload, with `model` and the `x-ai-eg-model` header set to the artifact's served name (the AI gateway authenticates before it reads the body), using your DataRobot credentials.
+
+- The prompt is the second argument, or stdin. `--system` adds a system message, `--max-tokens` defaults to 256.
+- Text output prints the reply and, on stderr, the token usage; `--stream` prints the reply as it is generated; `--output-format json` prints the raw completion.
+- On a `400`/`422` the command lists the models the endpoint serves, to tell a model with no chat template (an embedding model, for example) from one that is not served.
+- A `429` is Token Grid refusing admission; the server's reason is printed.
+- Your DataRobot credentials are only sent to this installation's public workload ingress (`/api/v2/endpoints/workloads/` on the configured host), as in `dr workload up`'s endpoint check. Any other endpoint is refused, including an Enclave endpoint on another host, and so is a path that leaves the ingress under any percent-encoding. Redirects are not followed.
+- A response without a completion, an error event in a stream, or a stream that ends before the model finishes is an error, so `--wait`'s smoke check only passes when the model actually answered.
+
+## `status`, `watch`, `endpoint`
+
+The `dr workload` commands under `dr llm`, with the same arguments, flags and output: [`status`](workload.md), `status --watch`, and [`endpoint`](workload.md).

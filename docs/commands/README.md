@@ -45,25 +45,27 @@ These flags are available for all commands:
 
 ### Main commands
 
-| Command                           | Description                                                  |
-| --------------------------------- | ------------------------------------------------------------ |
-| [`auth`](auth.md)                 | Authenticate with DataRobot.                                 |
-| `component`                       | Manage template components.                                  |
-| `templates`                       | Manage application templates.                                |
-| [`start`](start.md)               | Run the application quickstart process.                      |
-| [`run`](run.md)                   | Execute application tasks.                                   |
-| [`task`](task.md)                 | Manage Taskfile composition and task execution.              |
-| [`dotenv`](dotenv.md)             | Manage environment variables.                                |
-| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).  |
-| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                              |
-| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models). |
-| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).      |
-| [`artifact`](artifact.md)         | Build and manage workload artifacts.                         |
-| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                  |
-| [`info`](info.md)                 | Report what an install supports (feature-gated).             |
-| [`doctor`](doctor.md)             | Check that an install accepts your deploys (feature-gated).  |
-| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).     |
-| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).          |
+| Command                           | Description                                                       |
+| --------------------------------- | ----------------------------------------------------------------- |
+| [`auth`](auth.md)                 | Authenticate with DataRobot.                                      |
+| `component`                       | Manage template components.                                       |
+| `templates`                       | Manage application templates.                                     |
+| [`start`](start.md)               | Run the application quickstart process.                           |
+| [`run`](run.md)                   | Execute application tasks.                                        |
+| [`task`](task.md)                 | Manage Taskfile composition and task execution.                   |
+| [`dotenv`](dotenv.md)             | Manage environment variables.                                     |
+| [`self`](self.md)                 | CLI utility commands (update, version, completion, plugin).       |
+| [`plugin`](plugins.md)            | Inspect and manage CLI plugins.                                   |
+| [`llm-gateway`](llm-gateway.md)   | List and select the default LLM (gateway + deployed models).      |
+| [`llm`](llm.md)                   | Deploy, roll out and chat with LLMs from recipes (feature-gated). |
+| [`pipeline`](pipeline.md)         | Manage pipelines via the pipelines API (feature-gated).           |
+| [`recipe`](recipe.md)             | Manage LLM serving recipes (feature-gated).                       |
+| [`artifact`](artifact.md)         | Build and manage workload artifacts.                              |
+| [`workload`](workload.md)         | Deploy and manage workloads from artifacts.                       |
+| [`info`](info.md)                 | Report what an install supports (feature-gated).                  |
+| [`doctor`](doctor.md)             | Check that an install accepts your deploys (feature-gated).       |
+| [`enclave`](enclave.md)           | Register and manage enclaves (outposts) (feature-gated).          |
+| [`dependencies`](dependencies.md) | Check and install template dependencies (advanced).               |
 
 ### Command tree
 
@@ -96,7 +98,7 @@ dr
 │   ├── install        Install a plugin
 │   ├── uninstall      Uninstall a plugin
 │   └── update         Update plugins
-├── llm-gateway        LLM model management (alias: llm, llm-gateways)
+├── llm-gateway        LLM model management (alias: llm-gateways)
 │   ├── list           List available LLMs: gateway + deployed (alias: ls)
 │   └── select         Set the default LLM
 ├── info               Report what the install supports (feature-gated)
@@ -148,6 +150,21 @@ dr
 │   ├── source         Display the source code of a pipeline
 │   └── task           Inspect individual pipeline tasks (source + signature)
 │       └── get        Display task source, parameters, and input payload
+├── llm                Serve LLMs from recipes (feature-gated)
+│   ├── deploy         Deploy a recipe as an llm workload
+│   ├── rollout        Roll a running llm workload onto another recipe version
+│   ├── chat           Send a chat request to a deployed LLM
+│   ├── status         Same as dr workload status
+│   ├── watch          Same as dr workload status --watch
+│   └── endpoint       Same as dr workload endpoint
+├── recipe             LLM serving recipes (alias: recipes, feature-gated)
+│   ├── list           List the tenant's recipes
+│   ├── get            Show a recipe with its content
+│   ├── create         Register a recipe from a file
+│   ├── copy           Create a new recipe from an existing one
+│   ├── patch          Rename, describe, or replace the content as a new version
+│   ├── delete         Delete a recipe
+│   └── deployments    List the workloads deployed from a recipe
 ├── artifact           Artifact management
 │   ├── create         Create an artifact
 │   ├── get            Display details of an artifact
@@ -296,9 +313,9 @@ dr llm-gateway select <llm-id>
 Aliases:
 
 ```bash
-dr llm list       # llm-gateway → llm
-dr llm ls         # list → ls
-dr llm select
+dr llm-gateway ls # list → ls
+dr llm list       # still forwards to llm-gateway list
+dr llm select     # still forwards to llm-gateway select
 ```
 
 ### Running tasks
