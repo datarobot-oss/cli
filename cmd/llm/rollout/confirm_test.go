@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func serveWorkload(t *testing.T, recipe map[string]any) {
+func serveWorkload(t *testing.T, recipe map[string]any, resolved ...map[string]any) {
 	t.Helper()
 
 	prevSkip := viperx.GetBool(config.SkipAuthKey)
@@ -37,7 +37,13 @@ func serveWorkload(t *testing.T, recipe map[string]any) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "w1", "runtime": map[string]any{"recipe": recipe}})
+
+		runtime := map[string]any{"recipe": recipe}
+		if len(resolved) > 0 {
+			runtime["resolvedRecipe"] = resolved[0]
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "w1", "runtime": runtime})
 	}))
 
 	t.Cleanup(srv.Close)
@@ -59,4 +65,19 @@ func TestConfirmRecipe(t *testing.T) {
 
 	serveWorkload(t, map[string]any{"id": "r1", "version": 2})
 	require.ErrorContains(t, confirmRecipe(p), "unconfirmed", "a vanished replacement is not success")
+}
+
+func TestConfirmRecipe_LatestNeedsTheResolvedVersion(t *testing.T) {
+	p := &plan{workloadID: "w1", toRecipe: "r1", latestVersion: 4}
+	unpinned := map[string]any{"id": "r1"}
+
+	serveWorkload(t, unpinned, map[string]any{"id": "r1", "version": 3})
+	require.ErrorContains(t, confirmRecipe(p), "not version 4 or later",
+		"an unpinned workload still on the old version did not take the rollout")
+
+	serveWorkload(t, unpinned)
+	require.ErrorContains(t, confirmRecipe(p), "unconfirmed", "nothing resolved is nothing confirmed")
+
+	serveWorkload(t, unpinned, map[string]any{"id": "r1", "version": 4})
+	require.NoError(t, confirmRecipe(p))
 }

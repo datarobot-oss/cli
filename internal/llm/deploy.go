@@ -292,8 +292,14 @@ func RolloutRuntime(current map[string]any, recipeID string, recipeVersion int) 
 		return nil, errors.New("workload runtime is not an object")
 	}
 
+	// A workload without mounts sends none: "mounts": null is not "no
+	// mounts" to every reader.
 	if workers, ok := runtime["workers"].(map[string]any); ok {
-		workers["mounts"] = mountReferences(workers["mounts"])
+		if mounts := workers["mounts"]; mounts != nil {
+			workers["mounts"] = mountReferences(mounts)
+		} else {
+			delete(workers, "mounts")
+		}
 	}
 
 	recipe := map[string]any{"id": recipeID, "mode": "strict"}

@@ -129,7 +129,11 @@ type plan struct {
 	fromVersion string
 	toRecipe    string
 	toVersion   int
-	runtime     json.RawMessage
+	// latestVersion is the target recipe's version when the rollout was
+	// planned: for an unpinned rollout, the least the workload must resolve
+	// to before the rollout counts as applied.
+	latestVersion int
+	runtime       json.RawMessage
 }
 
 func planRollout(workloadID, recipeID string, recipeVersion int) (*plan, error) {
@@ -176,7 +180,7 @@ func planRollout(workloadID, recipeID string, recipeVersion int) (*plan, error) 
 	return &plan{
 		workloadID: workloadID, artifactID: artifactID,
 		fromRecipe: from, fromVersion: fromVersion,
-		toRecipe: to, toVersion: recipeVersion, runtime: body,
+		toRecipe: to, toVersion: recipeVersion, latestVersion: target.Version, runtime: body,
 	}, nil
 }
 
@@ -289,6 +293,8 @@ func waitAndSmoke(cmd *cobra.Command, format outputformat.OutputFormat, p *plan,
 
 // confirmRecipe checks the workload now asks for the recipe and version the
 // rollout requested, for a replacement that settled without a final status.
+// An unpinned request names version 0 before and after, so it is confirmed
+// by what the workload resolved: at least the latest version when planned.
 func confirmRecipe(p *plan) error {
 	doc, err := llm.GetWorkloadDocument(p.workloadID)
 	if err != nil {
@@ -299,9 +305,22 @@ func confirmRecipe(p *plan) error {
 
 	id, v := llm.RecipeOf(runtime, false)
 	if id != p.toRecipe || v != p.toVersion {
-		return fmt.Errorf("the rollout's outcome is unconfirmed: the replacement record is gone and workload %s still names recipe %s version %d; check 'dr llm status %s' and 'dr workload events %s'",
-			p.workloadID, id, v, p.workloadID, p.workloadID)
+		return unconfirmed(p, fmt.Sprintf("still names recipe %s version %d", id, v))
+	}
+
+	if p.toVersion > 0 {
+		return nil
+	}
+
+	rid, rv := llm.RecipeOf(runtime, true)
+	if rid != p.toRecipe || rv < p.latestVersion {
+		return unconfirmed(p, fmt.Sprintf("resolves recipe %s version %d, not version %d or later", rid, rv, p.latestVersion))
 	}
 
 	return nil
+}
+
+func unconfirmed(p *plan, state string) error {
+	return fmt.Errorf("the rollout's outcome is unconfirmed: the replacement record is gone and workload %s %s; check 'dr workload settings %s' and 'dr workload events %s'",
+		p.workloadID, state, p.workloadID, p.workloadID)
 }

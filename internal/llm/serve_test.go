@@ -131,6 +131,19 @@ func TestRolloutRuntime_StripsResolvedAndInlineStorage(t *testing.T) {
 	assert.True(t, stillThere, "the caller's runtime is not modified")
 }
 
+func TestRolloutRuntime_NoMountsSendsNone(t *testing.T) {
+	for name, workers := range map[string]map[string]any{
+		"absent": {"resourceBundles": []any{"gpu.b200.x8"}},
+		"null":   {"resourceBundles": []any{"gpu.b200.x8"}, "mounts": nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := RolloutRuntime(map[string]any{"workers": workers}, "r1", 0)
+			require.NoError(t, err)
+			assert.NotContains(t, string(raw), "mounts")
+		})
+	}
+}
+
 func TestChat_SendsModelHeaderAndBody(t *testing.T) {
 	base := serveAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v2/endpoints/workloads/w1/v1/chat/completions", r.URL.Path)
