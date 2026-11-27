@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -201,7 +202,7 @@ func routeURL(endpoint, route string) (string, error) {
 		return "", ErrOffHost
 	}
 
-	if !strings.HasPrefix(u.EscapedPath(), workloadIngressPrefix) || hasDotSegment(u.Path) {
+	if !strings.HasPrefix(u.EscapedPath(), workloadIngressPrefix) || climbsOut(u.EscapedPath()) {
 		return "", ErrNotIngress
 	}
 
@@ -211,14 +212,42 @@ func routeURL(endpoint, route string) (string, error) {
 	return u.String(), nil
 }
 
-func hasDotSegment(p string) bool {
-	for _, seg := range strings.Split(p, "/") {
-		if seg == "." || seg == ".." {
+// maxUnescapes bounds how many layers of percent-encoding climbsOut peels; a
+// path still changing after that many is refused rather than trusted.
+const maxUnescapes = 3
+
+// climbsOut reports whether the path has a dot segment under any layer of
+// percent-encoding (%2e%2e, %252e%252e), with a backslash counted as a
+// separator: a proxy in front of the ingress may decode and resolve either,
+// which would carry the token to another path on the host. Same rule as the
+// endpoint check in dr workload up.
+func climbsOut(path string) bool {
+	for range maxUnescapes {
+		if slices.ContainsFunc(strings.FieldsFunc(path, isPathSeparator), isDotSegment) {
 			return true
 		}
+
+		decoded, err := url.PathUnescape(path)
+		if err != nil {
+			return true
+		}
+
+		if decoded == path {
+			return false
+		}
+
+		path = decoded
 	}
 
-	return false
+	return true
+}
+
+func isPathSeparator(r rune) bool {
+	return r == '/' || r == '\\'
+}
+
+func isDotSegment(segment string) bool {
+	return segment == "." || segment == ".."
 }
 
 func snippet(raw []byte) string {
@@ -272,8 +301,15 @@ func send(ctx context.Context, method, u, servedName string, body any, stream bo
 	}
 
 	// The URL is the workload's endpoint, checked by routeURL to be this
-	// installation's public workload ingress, so the token never leaves it.
-	resp, err := drapi.Do(req, timeout)
+	// installation's public workload ingress. Redirects are not followed: a
+	// 307/308 would replay the token and the prompt to a URL routeURL never
+	// checked, so a redirect is reported as the 3xx it is.
+	client := drapi.NewHTTPClient(timeout)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

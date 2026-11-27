@@ -237,7 +237,11 @@ func report(cmd *cobra.Command, format outputformat.OutputFormat, p *plan, start
 	fmt.Fprintf(out, "Replacement: %s\n", final.Status)
 
 	if !poll.Wait {
-		fmt.Fprintf(out, "\nFollow it with: dr llm watch %s\n", p.workloadID)
+		// The workload stays running throughout a rolling replacement, so a
+		// status watch would settle at once; settings shows the replacement
+		// in flight and events its outcome.
+		fmt.Fprintf(out, "\nFollow it with: dr workload settings %s (the replacement in flight)\n", p.workloadID)
+		fmt.Fprintf(out, "Its outcome: dr workload events %s\n", p.workloadID)
 	}
 
 	return nil

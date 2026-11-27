@@ -66,7 +66,7 @@ dr llm rollout 68b0c1d2e3f4a5b6c7d8e9f0 --latest
 dr llm rollout 68b0c1d2e3f4a5b6c7d8e9f0 --recipe 6a1f0c2e9b7d4e3f2a1b0c9d --recipe-version 1
 ```
 
-The workload's current runtime is sent back with read-only (`resolved*`) fields removed, mounts reduced to their storage ids, and the recipe replaced. A replacement already in flight is refused. `--wait` polls until the replacement finishes and then sends one chat request; `--dry-run` prints the request.
+The workload's current runtime is sent back with read-only (`resolved*`) fields removed, mounts reduced to their storage ids, and the recipe replaced. A replacement already in flight is refused. `--wait` polls until the replacement finishes and then sends one chat request; without it, follow the replacement with `dr workload settings` and its outcome with `dr workload events` (the workload stays `running` throughout, so `dr llm watch` would not show it). `--dry-run` prints the request.
 
 ## `chat`
 
@@ -81,7 +81,7 @@ Sends `POST {endpoint}/v1/chat/completions` to the endpoint workload-api adverti
 - Text output prints the reply and, on stderr, the token usage; `--stream` prints the reply as it is generated; `--output-format json` prints the raw completion.
 - On a `400`/`422` the command lists the models the endpoint serves, to tell a model with no chat template (an embedding model, for example) from one that is not served.
 - A `429` is Token Grid refusing admission; the server's reason is printed.
-- Your DataRobot credentials are only sent to this installation's public workload ingress (`/api/v2/endpoints/workloads/` on the configured host), as in `dr workload up`'s endpoint check. Any other endpoint is refused, including an Enclave endpoint on another host.
+- Your DataRobot credentials are only sent to this installation's public workload ingress (`/api/v2/endpoints/workloads/` on the configured host), as in `dr workload up`'s endpoint check. Any other endpoint is refused, including an Enclave endpoint on another host, and so is a path that leaves the ingress under any percent-encoding. Redirects are not followed.
 - A response without a completion, an error event in a stream, or a stream that ends before the model finishes is an error, so `--wait`'s smoke check only passes when the model actually answered.
 
 ## `status`, `watch`, `endpoint`

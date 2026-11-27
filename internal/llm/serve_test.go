@@ -213,8 +213,35 @@ func TestRouteURL(t *testing.T) {
 	_, err = routeURL(base+"/api/v2/endpoints/workloads/../../other/", "v1/models")
 	require.ErrorIs(t, err, ErrNotIngress, "dot segments cannot climb out of the ingress")
 
+	for _, climb := range []string{
+		"%2e%2e/%2e%2e/other/",
+		"%252e%252e/%252e%252e/other/",
+		"..%5c..%5cother/",
+		"%25252e%25252e/other/",
+	} {
+		_, err = routeURL(base+"/api/v2/endpoints/workloads/"+climb, "v1/models")
+		require.ErrorIsf(t, err, ErrNotIngress, "%s cannot climb out under any encoding", climb)
+	}
+
 	_, err = routeURL("https://agent-router.enclave.example/api/v2/endpoints/workloads/w1/", "v1/models")
 	require.ErrorIs(t, err, ErrOffHost)
+}
+
+func TestChat_DoesNotFollowRedirects(t *testing.T) {
+	var followed bool
+
+	_, err := chatAgainst(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/elsewhere" {
+			followed = true
+
+			return
+		}
+
+		http.Redirect(w, r, "/elsewhere", http.StatusTemporaryRedirect)
+	}, false)
+
+	require.Error(t, err, "a redirect is not an answer")
+	assert.False(t, followed, "the token and prompt are not replayed past the checked URL")
 }
 
 func chatAgainst(t *testing.T, handler http.HandlerFunc, stream bool) (*ChatResult, error) {
