@@ -60,8 +60,11 @@ func serveWorkload(t *testing.T, recipe map[string]any, resolved ...map[string]a
 func TestConfirmRecipe(t *testing.T) {
 	p := &plan{workloadID: "w1", toRecipe: "r1", toVersion: 3}
 
+	serveWorkload(t, map[string]any{"id": "r1", "version": 3}, map[string]any{"id": "r1", "version": 3})
+	require.NoError(t, confirmRecipe(p), "the serving generation runs the requested version")
+
 	serveWorkload(t, map[string]any{"id": "r1", "version": 3})
-	require.NoError(t, confirmRecipe(p), "the workload names the requested version")
+	require.ErrorContains(t, confirmRecipe(p), "not version 3", "a declared version with nothing resolved confirms nothing")
 
 	serveWorkload(t, map[string]any{"id": "r1", "version": 2})
 	require.ErrorContains(t, confirmRecipe(p), "unconfirmed", "a vanished replacement is not success")

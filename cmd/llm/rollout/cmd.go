@@ -291,10 +291,12 @@ func waitAndSmoke(cmd *cobra.Command, format outputformat.OutputFormat, p *plan,
 	return final, nil
 }
 
-// confirmRecipe checks the workload now asks for the recipe and version the
+// confirmRecipe checks the workload now runs the recipe and version the
 // rollout requested, for a replacement that settled without a final status.
-// An unpinned request names version 0 before and after, so it is confirmed
-// by what the workload resolved: at least the latest version when planned.
+// The workload's runtime is its serving generation's (the pointer moves at
+// promotion), and the check reads what that generation resolved: the pinned
+// version, or for an unpinned request (which names version 0 before and
+// after) at least the latest version when the rollout was planned.
 func confirmRecipe(p *plan) error {
 	doc, err := llm.GetWorkloadDocument(p.workloadID)
 	if err != nil {
@@ -308,16 +310,22 @@ func confirmRecipe(p *plan) error {
 		return unconfirmed(p, fmt.Sprintf("still names recipe %s version %d", id, v))
 	}
 
-	if p.toVersion > 0 {
-		return nil
-	}
+	rid, rv := resolvedRecipe(runtime)
 
-	rid, rv := llm.RecipeOf(runtime, true)
-	if rid != p.toRecipe || rv < p.latestVersion {
+	switch {
+	case p.toVersion > 0 && (rid != p.toRecipe || rv != p.toVersion):
+		return unconfirmed(p, fmt.Sprintf("resolves recipe %s version %d, not version %d", rid, rv, p.toVersion))
+	case p.toVersion == 0 && (rid != p.toRecipe || rv < p.latestVersion):
 		return unconfirmed(p, fmt.Sprintf("resolves recipe %s version %d, not version %d or later", rid, rv, p.latestVersion))
 	}
 
 	return nil
+}
+
+// resolvedRecipe is runtime.resolvedRecipe alone: RecipeOf falls back to the
+// declared recipe, which would confirm a request by itself.
+func resolvedRecipe(runtime map[string]any) (string, int) {
+	return llm.RecipeOf(map[string]any{"resolvedRecipe": runtime["resolvedRecipe"]}, true)
 }
 
 func unconfirmed(p *plan, state string) error {
