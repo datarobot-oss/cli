@@ -281,10 +281,10 @@ func TestRenderRecipe_ShowsDiagnostics(t *testing.T) {
 func TestRenderPayload_YAML(t *testing.T) {
 	var buf bytes.Buffer
 
-	r := Recipe{ID: "abc", Payload: json.RawMessage(`{"format":"vllm.recipe/v1","recipe":{"hf_id":"Qwen/Qwen3-32B"}}`)}
+	r := Recipe{ID: "abc", Payload: json.RawMessage(`{"format":"vllm.recipe/v1","recipe":{"hf_id":"Qwen/Qwen3-32B","base_args":["--max-model-len","8192"]}}`)}
 	require.NoError(t, RenderPayload(&buf, outputformat.OutputFormatText, r))
-	assert.Contains(t, buf.String(), "format: vllm.recipe/v1")
-	assert.Contains(t, buf.String(), "hf_id: Qwen/Qwen3-32B")
+	assert.Equal(t, "format: vllm.recipe/v1\nrecipe:\n  hf_id: Qwen/Qwen3-32B\n  base_args:\n    - --max-model-len\n    - \"8192\"\n", buf.String(),
+		"block style, two-space indent, and a numeric-looking string stays quoted")
 }
 
 func TestListRecipes_RefusesARepeatedPage(t *testing.T) {

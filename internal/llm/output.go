@@ -236,12 +236,22 @@ func toYAML(raw json.RawMessage) (string, error) {
 
 	blockStyle(&node)
 
-	out, err := yaml.Marshal(&node)
-	if err != nil {
+	// Two-space indent, as recipe files are usually written (yaml.v3
+	// defaults to four).
+	var out strings.Builder
+
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+
+	if err := enc.Encode(&node); err != nil {
 		return "", err
 	}
 
-	return string(out), nil
+	if err := enc.Close(); err != nil {
+		return "", err
+	}
+
+	return out.String(), nil
 }
 
 // blockStyle clears the flow and quoting styles the JSON source carried. The
